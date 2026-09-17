@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Be Vietnam Pro', sans-serif;
+  --font-heading: 'Be Vietnam Pro', sans-serif;
+}
+
+:root {
+  font-family: 'Be Vietnam Pro', sans-serif !important;
+}
+
+*,
+::before,
+::after {
+  font-family: 'Be Vietnam Pro', sans-serif;
+}
+
+body {
+  font-family: 'Be Vietnam Pro', sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Force override legacy inline font-['Outfit'] and font-['Plus_Jakarta_Sans'] classes to Be Vietnam Pro */
+[class*="font-['Outfit']"],
+[class*="font-['Plus_Jakarta_Sans']"] {
+  font-family: 'Be Vietnam Pro', sans-serif !important;
+}

@@ -1,0 +1,6 @@
+{
+  "name": "SecondLife - AI Powered Second-Hand Marketplace",
+  "description": "Trust-first Vietnamese second-hand marketplace featuring AI price estimation, certified partner inspection & authentication workflows, and escrow payment protection.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

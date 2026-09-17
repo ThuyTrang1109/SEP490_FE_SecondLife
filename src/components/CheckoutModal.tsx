@@ -265,17 +265,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <span>Phí nền tảng Escrow (2.5%):</span>
               <span className="font-semibold text-slate-900">{formatVND(platformFee)}</span>
             </div>
-            <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm text-slate-900">
+            <div className="pt-2 border-t border-stone-200 flex justify-between font-bold text-sm text-stone-900">
               <span>Tổng số tiền thanh toán tạm giữ:</span>
-              <span className="text-base font-black text-emerald-800 font-['Outfit']">
+              <span className="text-base font-bold text-[#1B4D3E]">
                 {formatVND(totalAmount)}
               </span>
             </div>
           </div>
 
           {/* Escrow Guarantee Notice */}
-          <div className="p-3 bg-emerald-50/80 rounded-2xl border border-emerald-200 flex items-start gap-2 text-emerald-900 text-[11px]">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+          <div className="p-3 bg-emerald-50/80 rounded-xl border border-emerald-200/80 flex items-start gap-2 text-emerald-950 text-[11px]">
+            <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
             <span>
               <strong>Cam kết Escrow:</strong> Người bán KHÔNG nhận được tiền ngay. Tiền chỉ được giải ngân sau khi kiểm định viên đóng dấu ĐẠT và bạn hài lòng nhận hàng. Nếu phát hiện hàng nhái hoặc không đúng mô tả, hệ thống tự động hoàn tiền 100%.
             </span>
@@ -284,7 +284,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           {/* Submit */}
           <button
             onClick={handleConfirmOrder}
-            className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-2xl font-bold text-sm shadow-md shadow-emerald-600/20 transition flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-3 px-4 bg-[#1B4D3E] hover:bg-[#153e32] active:bg-[#113127] text-white rounded-xl font-semibold text-xs sm:text-sm shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
           >
             <Lock className="w-4 h-4" />
             <span>Phong Tỏa Tiền & Đặt Hàng Qua Escrow ({formatVND(totalAmount)})</span>

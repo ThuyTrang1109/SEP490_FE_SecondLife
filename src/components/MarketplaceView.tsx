@@ -15,7 +15,7 @@ interface MarketplaceViewProps {
 }
 
 const CATEGORIES: { id: ItemCategory | 'ALL'; nameVi: string; nameEn: string; icon: string }[] = [
-  { id: 'ALL', nameVi: 'Tất cả danh mục', nameEn: 'All Categories', icon: '✨' },
+  { id: 'ALL', nameVi: 'Tất cả sản phẩm', nameEn: 'All Categories', icon: '✦' },
   { id: 'Smartphones', nameVi: 'Điện thoại', nameEn: 'Smartphones', icon: '📱' },
   { id: 'Laptops & Computers', nameVi: 'Laptop & Máy tính', nameEn: 'Laptops & PC', icon: '💻' },
   { id: 'Cameras & Lens', nameVi: 'Máy ảnh & Ống kính', nameEn: 'Cameras & Lenses', icon: '📷' },
@@ -60,8 +60,8 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
   }, [listings, searchQuery, selectedCategory, selectedGrade, verifiedOnly, sortBy]);
 
   return (
-    <div className="space-y-8 pb-16">
-      {/* 3D Motion Showroom & Video Lobby */}
+    <div className="space-y-6 pb-16">
+      {/* 3D Motion Showroom Studio */}
       <ShowroomLobby3D
         lang={lang}
         onExplore3DProduct={() => {
@@ -71,7 +71,7 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
 
       {/* 3D Inspection Viewer Modal Popup */}
       {viewer3DListing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-md overflow-y-auto animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-stone-950/75 backdrop-blur-sm overflow-y-auto animate-fadeIn">
           <div className="max-w-4xl w-full max-h-[92vh] flex flex-col my-auto relative">
             <ProductViewer3D
               listing={viewer3DListing}
@@ -82,81 +82,43 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
         </div>
       )}
 
-      {/* Search & Filter Bar */}
-      <section className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200/80 space-y-5">
-        <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
-          {/* Search Input */}
-          <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t.searchPlaceholder}
-              className="w-full pl-11 pr-10 py-3 bg-slate-50 hover:bg-slate-100/70 focus:bg-white rounded-2xl border border-slate-200/90 text-sm focus:outline-hidden focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 transition shadow-xs"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 hover:text-slate-600 bg-slate-200/80 hover:bg-slate-200 px-2 py-1 rounded-full"
-              >
-                Xóa
-              </button>
-            )}
-          </div>
-
-          {/* Condition Grade Filter */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold text-slate-500 hidden sm:inline mr-1">
-              Tình trạng:
-            </span>
-            {(['ALL', 'Like New', 'Good', 'Fair'] as const).map((grade) => (
-              <button
-                key={grade}
-                onClick={() => setSelectedGrade(grade)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${selectedGrade === grade
-                    ? 'bg-slate-900 text-white shadow-sm'
-                    : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/80'
-                  }`}
-              >
-                {grade === 'ALL'
-                  ? (lang === 'vi' ? 'Tất cả' : 'All')
-                  : grade === 'Like New'
-                    ? t.gradeLikeNew
-                    : grade === 'Good'
-                      ? t.gradeGood
-                      : t.gradeFair}
-              </button>
-            ))}
-
-            {/* Verified Inspection Only Toggle */}
+      {/* Unified Search & Category Bar */}
+      <section className="bg-white rounded-2xl p-4 sm:p-5 shadow-xs border border-stone-200/80 space-y-3.5">
+        {/* Search Input Bar */}
+        <div className="relative">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={lang === 'vi' ? 'Tìm kiếm iPhone 15 Pro, MacBook, Sony A7 IV, Gucci, Apple Watch...' : 'Search for iPhone 15, MacBook, Sony, Gucci...'}
+            className="w-full pl-10 pr-10 py-2.5 bg-stone-50/70 hover:bg-stone-50 focus:bg-white rounded-xl border border-stone-200 text-xs sm:text-sm text-stone-800 placeholder-stone-400 focus:outline-hidden focus:ring-1 focus:ring-[#1B4D3E] focus:border-[#1B4D3E] transition shadow-2xs"
+          />
+          {searchQuery && (
             <button
-              onClick={() => setVerifiedOnly(!verifiedOnly)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition border ${verifiedOnly
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 ring-2 ring-emerald-500/20 shadow-xs'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                }`}
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-medium text-stone-400 hover:text-stone-700 bg-stone-200/70 px-2 py-0.5 rounded-md cursor-pointer"
             >
-              <ShieldCheck className={`w-4 h-4 ${verifiedOnly ? 'text-emerald-600' : 'text-slate-400'}`} />
-              <span>{lang === 'vi' ? 'Có Kiểm Định Hub' : 'Inspected Hub'}</span>
+              Xóa
             </button>
-          </div>
+          )}
         </div>
 
-        {/* Category horizontal scrolling chips */}
-        <div className="flex items-center gap-2.5 overflow-x-auto pb-1 pt-1 no-scrollbar text-sm">
+        {/* Categories Chips */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 no-scrollbar text-xs">
           {CATEGORIES.map((cat) => {
             const isSelected = selectedCategory === cat.id;
             return (
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl whitespace-nowrap transition text-xs font-bold border ${isSelected
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/20 scale-102'
-                    : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100 hover:border-slate-300'
-                  }`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap transition text-xs font-medium cursor-pointer border ${
+                  isSelected
+                    ? 'bg-[#1B4D3E] text-white border-[#1B4D3E] shadow-2xs'
+                    : 'bg-stone-50 text-stone-600 border-stone-200/70 hover:bg-stone-100 hover:text-stone-900'
+                }`}
               >
-                <span className="text-sm">{cat.icon}</span>
+                <span>{cat.icon}</span>
                 <span>{lang === 'vi' ? cat.nameVi : cat.nameEn}</span>
               </button>
             );
@@ -164,47 +126,86 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
         </div>
       </section>
 
-      {/* Listings Grid Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+      {/* Filter & Sort Bar above grid */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
         <div>
-          <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
-            {lang === 'vi' ? 'Sản Phẩm Đang Niêm Yết' : 'Active Listings'}
+          <h2 className="text-base sm:text-lg font-bold text-stone-900 tracking-tight">
+            {lang === 'vi' ? 'Danh Sách Sản Phẩm Niêm Yết' : 'Active Listings'}
           </h2>
-          <p className="text-xs text-slate-500 font-medium mt-0.5">
+          <p className="text-[11px] text-stone-500 font-normal">
             {lang === 'vi'
-              ? `Hiển thị ${filteredListings.length} sản phẩm đã qua xác thực & bảo lãnh Escrow`
-              : `Showing ${filteredListings.length} items with Escrow buyer protection`}
+              ? `${filteredListings.length} sản phẩm sẵn sàng giao dịch & kiểm định bảo lãnh Escrow`
+              : `${filteredListings.length} verified items with Escrow protection`}
           </p>
         </div>
 
-        {/* Sort selector */}
-        <div className="flex items-center gap-2 text-xs">
-          <ArrowUpDown className="w-4 h-4 text-emerald-600" />
-          <select
-            value={sortBy}
-            onChange={(e: any) => setSortBy(e.target.value)}
-            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 text-xs font-bold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden shadow-xs cursor-pointer"
+        {/* Filters and Sort */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {/* Condition Filter */}
+          <div className="flex items-center bg-stone-100 p-0.5 rounded-lg border border-stone-200/70">
+            {(['ALL', 'Like New', 'Good', 'Fair'] as const).map((grade) => (
+              <button
+                key={grade}
+                onClick={() => setSelectedGrade(grade)}
+                className={`px-2.5 py-1 rounded-md text-[11px] transition-all font-medium cursor-pointer ${
+                  selectedGrade === grade
+                    ? 'bg-white text-stone-900 shadow-2xs font-semibold'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                {grade === 'ALL'
+                  ? (lang === 'vi' ? 'Tất cả' : 'All')
+                  : grade === 'Like New'
+                    ? 'Như mới'
+                    : grade === 'Good'
+                      ? 'Tốt'
+                      : 'Khá'}
+              </button>
+            ))}
+          </div>
+
+          {/* Hub Verified Toggle */}
+          <button
+            onClick={() => setVerifiedOnly(!verifiedOnly)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition border cursor-pointer ${
+              verifiedOnly
+                ? 'bg-emerald-50 text-emerald-900 border-emerald-300 font-semibold shadow-2xs'
+                : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'
+            }`}
           >
-            <option value="newest">{lang === 'vi' ? 'Mới đăng nhất' : 'Newest'}</option>
-            <option value="priceAsc">{lang === 'vi' ? 'Giá thấp đến cao' : 'Price: Low to High'}</option>
-            <option value="priceDesc">{lang === 'vi' ? 'Giá cao đến thấp' : 'Price: High to Low'}</option>
-          </select>
+            <ShieldCheck className={`w-3.5 h-3.5 ${verifiedOnly ? 'text-emerald-700' : 'text-stone-400'}`} />
+            <span>{lang === 'vi' ? 'Có Kiểm Định Hub' : 'Inspected Hub'}</span>
+          </button>
+
+          {/* Sort Selector */}
+          <div className="flex items-center gap-1 bg-white border border-stone-200 rounded-lg px-2.5 py-1 text-stone-700 text-[11px]">
+            <ArrowUpDown className="w-3 h-3 text-stone-400" />
+            <select
+              value={sortBy}
+              onChange={(e: any) => setSortBy(e.target.value)}
+              className="bg-transparent text-stone-800 text-[11px] font-medium focus:outline-hidden cursor-pointer"
+            >
+              <option value="newest">{lang === 'vi' ? 'Mới đăng nhất' : 'Newest'}</option>
+              <option value="priceAsc">{lang === 'vi' ? 'Giá thấp đến cao' : 'Price: Low to High'}</option>
+              <option value="priceDesc">{lang === 'vi' ? 'Giá cao đến thấp' : 'Price: High to Low'}</option>
+            </select>
+          </div>
         </div>
       </div>
 
       {/* Listings Grid */}
       {filteredListings.length === 0 ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-slate-200/80 space-y-3">
-          <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
-            <Search className="w-6 h-6" />
+        <div className="bg-white rounded-2xl p-12 text-center border border-stone-200/80 space-y-3">
+          <div className="w-10 h-10 rounded-full bg-stone-100 text-stone-400 flex items-center justify-center mx-auto">
+            <Search className="w-5 h-5" />
           </div>
-          <h3 className="font-semibold text-slate-800">
+          <h3 className="font-semibold text-stone-800 text-sm">
             {lang === 'vi' ? 'Không tìm thấy sản phẩm phù hợp' : 'No listings found'}
           </h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+          <p className="text-xs text-stone-500 max-w-sm mx-auto">
             {lang === 'vi'
-              ? 'Hãy thử bỏ bớt bộ lọc hoặc tìm kiếm bằng từ khóa khác như "iPhone", "MacBook", "Sony"...'
-              : 'Try clearing some filters or searching for "iPhone", "MacBook", "Sony"...'}
+              ? 'Hãy thử điều chỉnh bộ lọc hoặc tìm kiếm tên thiết bị khác.'
+              : 'Try clearing some filters or searching for another keyword.'}
           </p>
           <button
             onClick={() => {
@@ -213,13 +214,13 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
               setSelectedGrade('ALL');
               setVerifiedOnly(false);
             }}
-            className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 underline cursor-pointer"
+            className="text-xs font-semibold text-emerald-800 hover:text-emerald-900 underline cursor-pointer"
           >
             {lang === 'vi' ? 'Đặt lại bộ lọc' : 'Reset all filters'}
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredListings.map((item) => (
             <ProductCard3D
               key={item.id}

@@ -83,14 +83,14 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   soundFx.playScanBeep();
                   setViewMode('3d');
                 }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${viewMode === '3d'
-                    ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
-                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${viewMode === '3d'
+                    ? 'bg-[#1B4D3E] text-white shadow-xs'
+                    : 'bg-emerald-50 text-emerald-900 hover:bg-emerald-100 border border-emerald-200/80'
                   }`}
               >
                 <Box className="w-3.5 h-3.5" />
                 <span>{lang === 'vi' ? 'Mô Hình 3D Xoay 360° & Soi Linh Kiện' : 'Interactive 3D 360° & X-Ray'}</span>
-                <span className="bg-white/20 text-[10px] px-1.5 py-0.5 rounded-full uppercase">Hot</span>
+                <span className="bg-white/20 text-[10px] px-1.5 py-0.2 rounded-full uppercase">3D</span>
               </button>
             </div>
 
@@ -228,17 +228,17 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                 <div className="space-y-2 pt-2">
                   <button
                     onClick={() => onBuyClick(listing)}
-                    className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold text-sm shadow-md shadow-emerald-600/20 transition flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-3 px-4 bg-[#1B4D3E] hover:bg-[#153e32] active:bg-[#113127] text-white rounded-xl font-semibold text-xs sm:text-sm shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <ShieldCheck className="w-5 h-5 text-white" />
+                    <ShieldCheck className="w-4 h-4 text-white" />
                     <span>{lang === 'vi' ? 'Mua Bảo Đảm Escrow & Kiểm Định' : 'Buy with Escrow & Inspection'}</span>
                   </button>
 
                   <button
                     onClick={() => onChatClick(listing)}
-                    className="w-full py-3 px-4 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl font-semibold text-sm transition flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-2.5 px-4 bg-white hover:bg-stone-50 text-stone-700 border border-stone-200 rounded-xl font-medium text-xs sm:text-sm transition flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <MessageSquare className="w-4 h-4 text-slate-500" />
+                    <MessageSquare className="w-4 h-4 text-stone-500" />
                     <span>{lang === 'vi' ? 'Đàm Phán Giá / Chat Với Người Bán' : 'Negotiate / Chat with Seller'}</span>
                   </button>
                 </div>

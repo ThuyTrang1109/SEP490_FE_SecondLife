@@ -213,30 +213,30 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       {/* 3-Step Progress Bar */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <div
-          className={`p-3 rounded-2xl border text-center transition-all ${currentStep === 1
-              ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-bold ring-2 ring-emerald-500/20'
-              : 'bg-white border-slate-200 text-slate-500'
+          className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${currentStep === 1
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-semibold shadow-2xs'
+              : 'bg-white border-stone-200 text-stone-500'
             }`}
         >
-          <div className="text-[11px] uppercase tracking-wider">{t.stepInfo}</div>
+          <div className="text-[11px] uppercase tracking-wider font-semibold">{t.stepInfo}</div>
         </div>
 
         <div
-          className={`p-3 rounded-2xl border text-center transition-all ${currentStep === 2
-              ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-bold ring-2 ring-emerald-500/20'
-              : 'bg-white border-slate-200 text-slate-500'
+          className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${currentStep === 2
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-semibold shadow-2xs'
+              : 'bg-white border-stone-200 text-stone-500'
             }`}
         >
-          <div className="text-[11px] uppercase tracking-wider">{t.stepPhotos}</div>
+          <div className="text-[11px] uppercase tracking-wider font-semibold">{t.stepPhotos}</div>
         </div>
 
         <div
-          className={`p-3 rounded-2xl border text-center transition-all ${currentStep === 3
-              ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-bold ring-2 ring-emerald-500/20'
-              : 'bg-white border-slate-200 text-slate-500'
+          className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${currentStep === 3
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-semibold shadow-2xs'
+              : 'bg-white border-stone-200 text-stone-500'
             }`}
         >
-          <div className="text-[11px] uppercase tracking-wider">{t.stepValuation}</div>
+          <div className="text-[11px] uppercase tracking-wider font-semibold">{t.stepValuation}</div>
         </div>
       </div>
 
@@ -366,7 +366,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
             <button
               onClick={() => setCurrentStep(2)}
-              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-md shadow-emerald-600/20 flex items-center gap-2"
+              className="px-5 py-2.5 bg-[#1B4D3E] hover:bg-[#153e32] text-white rounded-xl text-xs sm:text-sm font-medium shadow-xs flex items-center gap-2 cursor-pointer"
             >
               <span>Tiếp tục: Tải bộ ảnh 5 góc</span>
               <ArrowRight className="w-4 h-4" />
@@ -442,7 +442,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 setCurrentStep(3);
                 runAiValuation();
               }}
-              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-md shadow-emerald-600/20 flex items-center gap-2"
+              className="px-5 py-2.5 bg-[#1B4D3E] hover:bg-[#153e32] text-white rounded-xl text-xs sm:text-sm font-medium shadow-xs flex items-center gap-2 cursor-pointer"
             >
               <span>{t.runAiEstimation}</span>
               <Sparkles className="w-4 h-4" />
@@ -525,12 +525,12 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
 
               {/* Final Price Input Slider & Setting */}
-              <div className="bg-white p-5 rounded-2xl border-2 border-emerald-500/40 space-y-3">
+              <div className="bg-white p-5 rounded-2xl border border-stone-200/90 shadow-2xs space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-bold text-slate-900">
+                  <label className="text-sm font-semibold text-stone-900">
                     {t.finalListingPrice}
                   </label>
-                  <span className="text-xl font-black text-emerald-700 font-['Outfit']">
+                  <span className="text-xl font-bold text-[#1B4D3E]">
                     {formatVND(finalPriceVnd)}
                   </span>
                 </div>
@@ -542,17 +542,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   step={100000}
                   value={finalPriceVnd}
                   onChange={(e) => handlePriceChange(Number(e.target.value))}
-                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                  className="w-full h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-[#1B4D3E]"
                 />
 
-                <div className="flex justify-between text-[11px] text-slate-400">
+                <div className="flex justify-between text-[11px] text-stone-400">
                   <span>Giá bán gấp: {formatVND(aiEstimation.quickSaleVnd)}</span>
                   <span>Đề xuất: {formatVND(aiEstimation.suggestedVnd)}</span>
                   <span>Giá cao: {formatVND(aiEstimation.maxVnd * 1.1)}</span>
                 </div>
 
                 {fraudWarning && (
-                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2">
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
                     <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                     <span>{fraudWarning}</span>
                   </div>
@@ -560,17 +560,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
 
               {/* Advisory Disclaimer */}
-              <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-start gap-2">
-                <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+              <div className="text-xs text-stone-500 bg-stone-50 p-3 rounded-xl border border-stone-200 flex items-start gap-2">
+                <Info className="w-4 h-4 text-stone-400 shrink-0 mt-0.5" />
                 <span>{t.disclaimer}</span>
               </div>
             </div>
           ) : null}
 
-          <div className="flex justify-between pt-4 border-t border-slate-100">
+          <div className="flex justify-between pt-4 border-t border-stone-100">
             <button
               onClick={() => setCurrentStep(2)}
-              className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-semibold flex items-center gap-2"
+              className="px-4 py-2.5 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 text-xs sm:text-sm font-medium flex items-center gap-2 cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Quay lại chỉnh sửa</span>
@@ -578,9 +578,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
             <button
               onClick={handleSubmit}
-              className="px-8 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-extrabold shadow-lg shadow-emerald-600/25 flex items-center gap-2 cursor-pointer"
+              className="px-6 py-2.5 bg-[#1B4D3E] hover:bg-[#153e32] text-white rounded-xl text-xs sm:text-sm font-semibold shadow-xs flex items-center gap-2 cursor-pointer"
             >
-              <ShieldCheck className="w-5 h-5" />
+              <ShieldCheck className="w-4 h-4" />
               <span>{t.publishListing}</span>
             </button>
           </div>

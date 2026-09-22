@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { UserRole, Language, ThemeMode, Listing, EscrowOrder, DisputeCase } from './types';
+import { UserRole, Language, ThemeMode, Listing, EscrowOrder, DisputeCase, UserProfile } from './types';
 import { mockListings, mockOrders, mockDisputes } from './data/mockData';
 import { formatVND } from './utils/translations';
 import { Navbar } from './components/layout/Navbar';
+import { Footer } from './components/layout/Footer';
 import { MarketplaceView } from './pages/MarketplaceView';
 import { ListingDetailModal } from './components/modals/ListingDetailModal';
 import { CreateListingView } from './pages/CreateListingView';
@@ -14,6 +15,7 @@ import { ChatModal } from './components/modals/ChatModal';
 import { CheckoutModal } from './components/modals/CheckoutModal';
 import { HomePageView } from './pages/HomePageView';
 import { AuthModal } from './components/modals/AuthModal';
+import { ProfileDialog } from './components/modals/ProfileDialog';
 import { ShieldCheck, Sparkles, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
@@ -32,19 +34,26 @@ export default function App() {
   }, [theme]);
 
   // User Auth State
-  const [currentUser, setCurrentUser] = useState<{
-    id: string;
-    name: string;
-    email: string;
-    role: UserRole;
-  } | null>({
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>({
     id: 'USR-1001',
     name: 'Hoàng Quốc Khang',
     email: 'khang.buyer@secondlife.vn',
-    role: 'buyer'
+    role: 'buyer',
+    phone: '0912 345 678',
+    address: '92 Phan Châu Trinh, Phường Phước Ninh, Quận Hải Châu, TP. Đà Nẵng',
+    walletBalanceVnd: 24500000,
+    escrowLockedVnd: 19562500,
+    kycStatus: 'verified',
+    trustScore: 99,
+    bankAccount: {
+      bankName: 'Vietcombank',
+      accountNumber: '991204882910',
+      accountHolder: 'HOANG QUOC KHANG'
+    }
   });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
+  const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
 
   // Core Data State
   const [listings, setListings] = useState<Listing[]>(mockListings);
@@ -192,26 +201,29 @@ export default function App() {
         : 'bg-[#F4F5F8] text-[#0E121B] selection:bg-[#EC1577] selection:text-white'
     }`}>
       {/* Navigation */}
-      <Navbar
-        currentRole={currentRole}
-        onRoleChange={handleRoleChange}
-        lang={lang}
-        onLangChange={setLang}
-        theme={theme}
-        onThemeToggle={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        activeOrdersCount={orders.filter((o) => o.escrowStatus !== 'COMPLETED_RELEASED').length}
-        currentUser={currentUser}
-        onOpenAuth={(mode) => {
-          setAuthModalMode(mode);
-          setIsAuthModalOpen(true);
-        }}
-        onLogout={() => {
-          setCurrentUser(null);
-          showToast('Đã đăng xuất tài khoản thành công.');
-        }}
-      />
+      {activeTab !== 'admin-dashboard' && (
+        <Navbar
+          currentRole={currentRole}
+          onRoleChange={handleRoleChange}
+          lang={lang}
+          onLangChange={setLang}
+          theme={theme}
+          onThemeToggle={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          activeOrdersCount={orders.filter((o) => o.escrowStatus !== 'COMPLETED_RELEASED').length}
+          currentUser={currentUser}
+          onOpenAuth={(mode) => {
+            setAuthModalMode(mode);
+            setIsAuthModalOpen(true);
+          }}
+          onLogout={() => {
+            setCurrentUser(null);
+            showToast('Đã đăng xuất tài khoản thành công.');
+          }}
+          onOpenProfile={() => setIsProfileDialogOpen(true)}
+        />
+      )}
 
       {/* Floating Toast Notification */}
       {toastMessage && (
@@ -228,7 +240,7 @@ export default function App() {
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6">
+      <main className={activeTab === 'admin-dashboard' ? 'flex-1 w-full' : 'flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6'}>
         {activeTab === 'home' && (
           <HomePageView
             lang={lang}
@@ -263,6 +275,7 @@ export default function App() {
             listings={listings}
             onSelectListing={(listing) => setSelectedListing(listing)}
             onCreateListing={() => setActiveTab('create-listing')}
+            onViewOrders={() => setActiveTab('orders')}
             lang={lang}
           />
         )}
@@ -281,6 +294,8 @@ export default function App() {
             onConfirmReceipt={handleConfirmReceipt}
             onOpenDispute={handleOpenDispute}
             lang={lang}
+            userRole={currentRole}
+            onOpenChat={(listing) => setChatListing(listing)}
           />
         )}
 
@@ -299,6 +314,7 @@ export default function App() {
             listings={listings}
             onResolveDispute={handleResolveDispute}
             lang={lang}
+            onViewWebsite={() => setActiveTab('marketplace')}
           />
         )}
 
@@ -382,71 +398,39 @@ export default function App() {
         lang={lang}
       />
 
-      {/* Footer */}
-      <footer className="mt-auto border-t-2 border-[#EC1577]/40 bg-[#0E121B] text-slate-200 text-xs py-8 relative shadow-2xl">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <img
-                src="/logo.png"
-                alt="SecondLife Logo"
-                className="h-10 w-auto object-contain rounded-xl bg-white p-1 shadow-md shadow-black/20"
-              />
-              <div>
-                <span className="font-extrabold text-base text-white tracking-wide">SecondLife</span>
-                <p className="text-xs text-slate-300 font-medium">
-                  {lang === 'vi'
-                    ? 'Sàn thương mại đồ cũ tích hợp AI định giá và dịch vụ kiểm định xác thực'
-                    : 'AI Powered Second-Hand Marketplace with Price Estimation & Authentication Service'}
-                </p>
-              </div>
-            </div>
+      {/* User Profile Dialog */}
+      <ProfileDialog
+        isOpen={isProfileDialogOpen}
+        onClose={() => setIsProfileDialogOpen(false)}
+        currentUser={currentUser}
+        onUpdateProfile={(updated) => {
+          setCurrentUser(updated);
+          showToast(
+            lang === 'vi'
+              ? 'Đã lưu thông tin hồ sơ cá nhân thành công!'
+              : 'User profile updated successfully!'
+          );
+        }}
+        onRoleChange={handleRoleChange}
+        onLogout={() => {
+          setCurrentUser(null);
+          showToast(
+            lang === 'vi'
+              ? 'Đã đăng xuất tài khoản thành công.'
+              : 'Logged out successfully.'
+          );
+        }}
+        lang={lang}
+      />
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className="bg-white/15 text-white font-bold px-3 py-1 rounded-xl border border-white/25 text-xs shadow-xs">
-                Capstone Project 2026
-              </span>
-              <span className="bg-gradient-to-r from-[#EC1577]/30 to-[#F1622A]/30 text-white font-bold px-3 py-1 rounded-xl border border-[#EC1577]/60 text-xs shadow-xs">
-                LightGBM + EfficientNet + Escrow Protocol
-              </span>
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-white/15 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-            <div className="bg-white/[0.04] p-4 rounded-2xl border border-white/10 hover:border-[#EC1577]/40 transition-all shadow-sm">
-              <div className="font-extrabold text-white text-sm mb-1.5 flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white flex items-center justify-center text-[11px]">1</span>
-                <span>AI Price Estimation</span>
-              </div>
-              <p className="text-slate-300 leading-relaxed font-normal text-[11px]">
-                Mô hình Machine Learning đối chiếu dữ liệu giao dịch thực tế kết hợp thị giác máy tính phát hiện hao mòn ngoại quan.
-              </p>
-            </div>
-            <div className="bg-white/[0.04] p-4 rounded-2xl border border-white/10 hover:border-[#EC1577]/40 transition-all shadow-sm">
-              <div className="font-extrabold text-white text-sm mb-1.5 flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white flex items-center justify-center text-[11px]">2</span>
-                <span>Verify Then Ship</span>
-              </div>
-              <p className="text-slate-300 leading-relaxed font-normal text-[11px]">
-                Mạng lưới Trung tâm giám định SecondLife Hub tại Hà Nội, Đà Nẵng, TP.HCM dán tem niêm phong NFC chống tráo hàng.
-              </p>
-            </div>
-            <div className="bg-white/[0.04] p-4 rounded-2xl border border-white/10 hover:border-[#EC1577]/40 transition-all shadow-sm">
-              <div className="font-extrabold text-white text-sm mb-1.5 flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white flex items-center justify-center text-[11px]">3</span>
-                <span>Escrow Payment</span>
-              </div>
-              <p className="text-slate-300 leading-relaxed font-normal text-[11px]">
-                Tiền thanh toán được giữ an toàn trong quỹ tín thác, tự động hoàn tiền nếu kiểm định thất bại hoặc phát hiện hàng nhái.
-              </p>
-            </div>
-          </div>
-
-          <div className="pt-2 text-center text-xs text-slate-300 font-medium">
-            &copy; 2026 SecondLife Vietnam. All rights reserved. Registered Capstone Project proposal demonstration.
-          </div>
-        </div>
-      </footer>
+      {/* E-Commerce Footer */}
+      {activeTab !== 'admin-dashboard' && (
+        <Footer
+          lang={lang}
+          onTabChange={setActiveTab}
+          onOpenProfile={() => setIsProfileDialogOpen(true)}
+        />
+      )}
     </div>
   );
 }

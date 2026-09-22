@@ -1,12 +1,13 @@
 import express from 'express';
 import path from 'path';
+import os from 'os';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -379,9 +380,40 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`SecondLife Server running on http://0.0.0.0:${PORT}`);
-  });
+  function listenOnPort(currentPort: number) {
+    const server = app.listen(currentPort, '0.0.0.0', () => {
+      // Get local LAN IP
+      let networkIp: string | null = null;
+      const interfaces = os.networkInterfaces();
+      for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name] || []) {
+          if (iface.family === 'IPv4' && !iface.internal) {
+            networkIp = iface.address;
+            break;
+          }
+        }
+        if (networkIp) break;
+      }
+
+      console.log('\n  \x1b[32m\x1b[1m➜ SecondLife Server is running:\x1b[0m\n');
+      console.log(`  \x1b[36m➜\x1b[0m  \x1b[1mLocal:\x1b[0m   \x1b[36mhttp://localhost:${currentPort}/\x1b[0m`);
+      if (networkIp) {
+        console.log(`  \x1b[36m➜\x1b[0m  \x1b[1mNetwork:\x1b[0m \x1b[36mhttp://${networkIp}:${currentPort}/\x1b[0m`);
+      }
+      console.log(`  \x1b[36m➜\x1b[0m  \x1b[1mAI API:\x1b[0m  \x1b[90mhttp://localhost:${currentPort}/api/health\x1b[0m\n`);
+    });
+
+    server.on('error', (err: any) => {
+      if (err.code === 'EADDRINUSE') {
+        console.warn(`\x1b[33m[Thông báo] Cổng ${currentPort} đang bận, tự động chuyển sang cổng ${currentPort + 1}...\x1b[0m`);
+        listenOnPort(currentPort + 1);
+      } else {
+        console.error('Server error:', err);
+      }
+    });
+  }
+
+  listenOnPort(PORT);
 }
 
 startServer();

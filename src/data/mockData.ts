@@ -405,6 +405,241 @@ export const mockOrders: EscrowOrder[] = [
         'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=1000&q=80'
       ]
     }
+  },
+  {
+    id: 'ORD-2026-8802',
+    listingId: 'listing-maygiat-lg',
+    listing: mockListings[1],
+    buyerId: 'user-khang-dn',
+    buyerName: 'Hoàng Quốc Khang',
+    buyerPhone: '0912 345 678',
+    buyerAddress: '92 Phan Châu Trinh, Phường Phước Ninh, Quận Hải Châu, Đà Nẵng',
+    sellerId: 'user-nam-hn',
+    sellerName: 'Lê Phương Nam',
+    itemPriceVnd: 9800000,
+    inspectionFeeVnd: 300000,
+    shippingFeeVnd: 220000,
+    platformFeeVnd: 245000,
+    totalPaidVnd: 10565000,
+    escrowStatus: 'SHIPPED_TO_BUYER',
+    hasInspectionService: true,
+    inspectionReport: {
+      id: 'REP-HOME-905',
+      orderId: 'ORD-2026-8802',
+      centerId: 'center-hn-01',
+      centerName: 'SecondLife Hub Cầu Giấy Hà Nội',
+      inspectorName: 'Kỹ sư Đặng Quốc Huy',
+      inspectedAt: '2026-09-07T10:00:00Z',
+      verdict: 'PASS',
+      detectedGrade: 'Like New',
+      conditionScore: 97,
+      tamperSealId: 'SL-HOME-991204',
+      checklistResults: mockStandardChecklist['Máy giặt & Máy sấy'],
+      inspectorPhotos: [
+        'https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?auto=format&fit=crop&w=1000&q=80'
+      ],
+      summaryNotes: 'Máy giặt LG AI DD vận hành êm 64dB vắt cực mạnh, trục bạc đạn nguyên bản 100%. Đã dán tem niêm phong giao hàng.',
+      autoRefundTriggered: false
+    },
+    shippingLegs: [
+      {
+        id: 'LEG-1',
+        legType: 'SELLER_TO_CENTER',
+        carrier: 'GHTK',
+        trackingNumber: 'GHTK-WASH-1192',
+        status: 'DELIVERED',
+        origin: 'Cầu Giấy, Hà Nội',
+        destination: 'SecondLife Hub Hà Nội',
+        estimatedDelivery: '2026-09-06T14:00:00Z',
+        timeline: [
+          { timestamp: '2026-09-06T09:00:00Z', description: 'Đã nhận hàng từ người bán', location: 'Hà Nội' },
+          { timestamp: '2026-09-06T13:30:00Z', description: 'Đã tới kho kiểm định Hub Hà Nội', location: 'Hà Nội' }
+        ]
+      },
+      {
+        id: 'LEG-2',
+        legType: 'CENTER_TO_BUYER',
+        carrier: 'GHN',
+        trackingNumber: 'GHN-WASH-8821',
+        status: 'IN_TRANSIT',
+        origin: 'SecondLife Hub Hà Nội',
+        destination: '92 Phan Châu Trinh, Hải Châu, Đà Nẵng',
+        estimatedDelivery: '2026-09-09T17:00:00Z',
+        timeline: [
+          { timestamp: '2026-09-07T14:00:00Z', description: 'Đã xuất kho sau kiểm định, bàn giao bưu cục GHN liên tỉnh', location: 'Hà Nội' },
+          { timestamp: '2026-09-08T08:30:00Z', description: 'Đang luân chuyển vào bưu cục Đà Nẵng', location: 'Đà Nẵng' }
+        ]
+      }
+    ],
+    inspectionWindowEndsAt: '2026-09-11T18:00:00Z',
+    createdAt: '2026-09-06T08:00:00Z',
+    updatedAt: '2026-09-08T08:30:00Z',
+    multiStagePhotos: {
+      listingPhotos: [
+        'https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?auto=format&fit=crop&w=1000&q=80'
+      ],
+      inspectorPhotos: [
+        'https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?auto=format&fit=crop&w=1000&q=80'
+      ]
+    }
+  },
+  {
+    id: 'ORD-2026-8803',
+    listingId: 'listing-robot-ecovacs',
+    listing: mockListings[3],
+    buyerId: 'user-khang-dn',
+    buyerName: 'Hoàng Quốc Khang',
+    buyerPhone: '0912 345 678',
+    buyerAddress: '92 Phan Châu Trinh, Phường Phước Ninh, Quận Hải Châu, Đà Nẵng',
+    sellerId: 'user-mai-hcm',
+    sellerName: 'Vũ Mai Anh',
+    itemPriceVnd: 11500000,
+    inspectionFeeVnd: 250000,
+    shippingFeeVnd: 150000,
+    platformFeeVnd: 287500,
+    totalPaidVnd: 12187500,
+    escrowStatus: 'DELIVERED_INSPECTION_WINDOW',
+    hasInspectionService: true,
+    inspectionReport: {
+      id: 'REP-HOME-906',
+      orderId: 'ORD-2026-8803',
+      centerId: 'center-hcm-01',
+      centerName: 'SecondLife Hub Q7 TP.HCM',
+      inspectorName: 'Kỹ sư Lê Hoàng Long',
+      inspectedAt: '2026-09-04T15:00:00Z',
+      verdict: 'PASS',
+      detectedGrade: 'Like New',
+      conditionScore: 98,
+      tamperSealId: 'SL-ROBOT-8812',
+      checklistResults: mockStandardChecklist['Robot & Máy hút bụi'],
+      inspectorPhotos: [
+        'https://images.unsplash.com/photo-1558317374-067fb5f30001?auto=format&fit=crop&w=1000&q=80'
+      ],
+      summaryNotes: 'Robot hút bụi Deebot X1 Omni pin 98% dung lượng, trạm giẻ sấy khí nóng hoàn hảo.',
+      autoRefundTriggered: false
+    },
+    shippingLegs: [
+      {
+        id: 'LEG-1',
+        legType: 'SELLER_TO_CENTER',
+        carrier: 'GHTK',
+        trackingNumber: 'GHTK-ROBOT-01',
+        status: 'DELIVERED',
+        origin: 'Quận 2, TP.HCM',
+        destination: 'Hub Q7, TP.HCM',
+        estimatedDelivery: '2026-09-04T10:00:00Z',
+        timeline: [
+          { timestamp: '2026-09-04T08:30:00Z', description: 'Đã lấy từ người bán', location: 'TP.HCM' }
+        ]
+      },
+      {
+        id: 'LEG-2',
+        legType: 'CENTER_TO_BUYER',
+        carrier: 'GHTK',
+        trackingNumber: 'GHTK-ROBOT-02',
+        status: 'DELIVERED',
+        origin: 'Hub Q7, TP.HCM',
+        destination: 'Đà Nẵng',
+        estimatedDelivery: '2026-09-07T11:00:00Z',
+        timeline: [
+          { timestamp: '2026-09-07T10:30:00Z', description: 'Bưu tá đã giao thành công đến bạn. Bắt đầu thời gian 48h kiểm tra đối soát!', location: 'Đà Nẵng' }
+        ]
+      }
+    ],
+    inspectionWindowEndsAt: '2026-09-09T23:59:00Z',
+    createdAt: '2026-09-03T10:00:00Z',
+    updatedAt: '2026-09-07T10:30:00Z',
+    multiStagePhotos: {
+      listingPhotos: [
+        'https://images.unsplash.com/photo-1558317374-067fb5f30001?auto=format&fit=crop&w=1000&q=80'
+      ],
+      inspectorPhotos: [
+        'https://images.unsplash.com/photo-1558317374-067fb5f30001?auto=format&fit=crop&w=1000&q=80'
+      ]
+    }
+  },
+  {
+    id: 'ORD-2026-8804',
+    listingId: 'listing-noicom-cuckoo',
+    listing: mockListings[4],
+    buyerId: 'user-khang-dn',
+    buyerName: 'Hoàng Quốc Khang',
+    buyerPhone: '0912 345 678',
+    buyerAddress: '92 Phan Châu Trinh, Phường Phước Ninh, Quận Hải Châu, Đà Nẵng',
+    sellerId: 'user-thang-hn',
+    sellerName: 'Hoàng Đức Thắng',
+    itemPriceVnd: 4900000,
+    inspectionFeeVnd: 150000,
+    shippingFeeVnd: 100000,
+    platformFeeVnd: 122500,
+    totalPaidVnd: 5272500,
+    escrowStatus: 'COMPLETED_RELEASED',
+    hasInspectionService: true,
+    inspectionReport: {
+      id: 'REP-HOME-907',
+      orderId: 'ORD-2026-8804',
+      centerId: 'center-hn-01',
+      centerName: 'SecondLife Hub Cầu Giấy',
+      inspectorName: 'Kỹ sư Vũ Đức Thành',
+      inspectedAt: '2026-09-01T14:00:00Z',
+      verdict: 'PASS',
+      detectedGrade: 'Good',
+      conditionScore: 94,
+      tamperSealId: 'SL-RICE-3301',
+      checklistResults: mockStandardChecklist['Nồi cơm & Bếp từ'],
+      inspectorPhotos: [
+        'https://images.unsplash.com/photo-1544233726-9f1d2b27be8b?auto=format&fit=crop&w=1000&q=80'
+      ],
+      summaryNotes: 'Nồi cơm áp suất cao tần Cuckoo chuẩn 2.0 Bar, giữ kín hơi, nấu cơm ngon.',
+      autoRefundTriggered: false
+    },
+    shippingLegs: [
+      {
+        id: 'LEG-1',
+        legType: 'SELLER_TO_CENTER',
+        carrier: 'GHN',
+        trackingNumber: 'GHN-RICE-01',
+        status: 'DELIVERED',
+        origin: 'Hà Nội',
+        destination: 'Hub Hà Nội',
+        estimatedDelivery: '2026-09-01T12:00:00Z',
+        timeline: [{ timestamp: '2026-09-01T10:00:00Z', description: 'Đã nhận tại kho', location: 'Hà Nội' }]
+      }
+    ],
+    inspectionWindowEndsAt: '2026-09-03T18:00:00Z',
+    createdAt: '2026-08-30T09:00:00Z',
+    updatedAt: '2026-09-03T19:00:00Z',
+    multiStagePhotos: {
+      listingPhotos: [
+        'https://images.unsplash.com/photo-1544233726-9f1d2b27be8b?auto=format&fit=crop&w=1000&q=80'
+      ]
+    }
+  },
+  {
+    id: 'ORD-2026-8805',
+    listingId: 'listing-dieuhoa-daikin',
+    listing: mockListings[2],
+    buyerId: 'user-khang-dn',
+    buyerName: 'Hoàng Quốc Khang',
+    buyerPhone: '0912 345 678',
+    buyerAddress: '92 Phan Châu Trinh, Phường Phước Ninh, Quận Hải Châu, Đà Nẵng',
+    sellerId: 'user-huy-dn',
+    sellerName: 'Trần Quang Huy',
+    itemPriceVnd: 6200000,
+    inspectionFeeVnd: 280000,
+    shippingFeeVnd: 180000,
+    platformFeeVnd: 155000,
+    totalPaidVnd: 6815000,
+    escrowStatus: 'AWAITING_PAYMENT',
+    hasInspectionService: true,
+    shippingLegs: [],
+    createdAt: '2026-09-08T11:00:00Z',
+    updatedAt: '2026-09-08T11:00:00Z',
+    multiStagePhotos: {
+      listingPhotos: [
+        'https://images.unsplash.com/photo-1631545806604-510065a7825b?auto=format&fit=crop&w=1000&q=80'
+      ]
+    }
   }
 ];
 

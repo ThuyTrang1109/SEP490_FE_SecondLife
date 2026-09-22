@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Sun, Moon } from 'lucide-react';
+import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Sun, Moon, Phone } from 'lucide-react';
 import { UserRole, Language, ThemeMode } from '../../types';
 import { translations } from '../../utils/translations';
 
@@ -17,6 +17,7 @@ interface NavbarProps {
   currentUser?: { id: string; name: string; email: string; role: UserRole } | null;
   onOpenAuth: (mode: 'login' | 'register') => void;
   onLogout: () => void;
+  onOpenProfile?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -32,7 +33,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   unreadChatsCount = 1,
   currentUser,
   onOpenAuth,
-  onLogout
+  onLogout,
+  onOpenProfile
 }) => {
   const t = translations[lang];
 
@@ -54,51 +56,21 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5">
-          {/* Role Switcher */}
-          <div className="flex items-center gap-1 bg-white/10 p-0.5 rounded-xl border border-white/20 shadow-inner backdrop-blur-md">
-            <span className="text-slate-200 text-[10px] uppercase font-bold px-2 hidden sm:inline">
-              {lang === 'vi' ? 'Vai trò:' : 'Role:'}
+          {/* Customer Hotline & Support */}
+          <div className="hidden sm:flex items-center gap-2 text-slate-300 px-2 py-0.5 text-[11px]">
+            <a
+              href="tel:19008899"
+              className="flex items-center gap-1 hover:text-white transition"
+              title="Tổng đài CSKH SecondLife"
+            >
+              <Phone className="w-3 h-3 text-[#EC1577]" />
+              <span>Hotline: <strong className="text-white font-bold">1900 8899</strong></span>
+            </a>
+            <span className="text-white/20 hidden md:inline">|</span>
+            <span className="hidden md:flex items-center gap-1 text-slate-300">
+              <ShieldCheck className="w-3 h-3 text-emerald-400" />
+              <span>{lang === 'vi' ? 'Bảo lãnh Escrow 100%' : '100% Escrow Protected'}</span>
             </span>
-            <button
-              onClick={() => onRoleChange('buyer')}
-              className={`px-2.5 py-0.5 rounded-lg text-[11px] transition-all font-bold cursor-pointer ${
-                currentRole === 'buyer'
-                  ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/40 scale-105'
-                  : 'text-slate-200 hover:text-white hover:bg-white/15'
-              }`}
-            >
-              {lang === 'vi' ? 'Người Mua' : 'Buyer'}
-            </button>
-            <button
-              onClick={() => onRoleChange('seller')}
-              className={`px-2.5 py-0.5 rounded-lg text-[11px] transition-all font-bold cursor-pointer ${
-                currentRole === 'seller'
-                  ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/40 scale-105'
-                  : 'text-slate-200 hover:text-white hover:bg-white/15'
-              }`}
-            >
-              {lang === 'vi' ? 'Người Bán' : 'Seller'}
-            </button>
-            <button
-              onClick={() => onRoleChange('inspector')}
-              className={`px-2.5 py-0.5 rounded-lg text-[11px] transition-all font-bold cursor-pointer ${
-                currentRole === 'inspector'
-                  ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/40 scale-105'
-                  : 'text-slate-200 hover:text-white hover:bg-white/15'
-              }`}
-            >
-              {lang === 'vi' ? 'Kỹ Sư Hub' : 'Inspector'}
-            </button>
-            <button
-              onClick={() => onRoleChange('admin')}
-              className={`px-2.5 py-0.5 rounded-lg text-[11px] transition-all font-bold cursor-pointer ${
-                currentRole === 'admin'
-                  ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/40 scale-105'
-                  : 'text-slate-200 hover:text-white hover:bg-white/15'
-              }`}
-            >
-              Admin
-            </button>
           </div>
 
           {/* Theme Mode Toggle */}
@@ -288,20 +260,27 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {currentUser ? (
             <div className="flex items-center gap-2 pl-2 border-l border-white/10">
-              <div className="w-7 h-7 rounded-full bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white flex items-center justify-center font-bold text-[11px] shadow-sm">
-                {currentUser.name.charAt(0)}
-              </div>
-              <div className="hidden xl:block text-left">
-                <div className="text-xs font-bold text-white leading-tight truncate max-w-[110px]">
-                  {currentUser.name}
+              <button
+                type="button"
+                onClick={onOpenProfile}
+                className="flex items-center gap-2 text-left hover:opacity-85 transition cursor-pointer p-1 rounded-xl hover:bg-white/10"
+                title={lang === 'vi' ? 'Xem hồ sơ người dùng' : 'View User Profile'}
+              >
+                <div className="w-7 h-7 rounded-full bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white flex items-center justify-center font-bold text-[11px] shadow-sm ring-1 ring-white/20">
+                  {currentUser.name.charAt(0)}
                 </div>
-                <div className="text-[10px] text-slate-400 font-medium">
-                  {currentRole === 'buyer' && 'Verified Buyer'}
-                  {currentRole === 'seller' && 'Top Rated (4.9★)'}
-                  {currentRole === 'inspector' && 'Inspector'}
-                  {currentRole === 'admin' && 'Supervisor'}
+                <div className="hidden xl:block text-left">
+                  <div className="text-xs font-bold text-white leading-tight truncate max-w-[110px]">
+                    {currentUser.name}
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-medium">
+                    {currentRole === 'buyer' && 'Verified Buyer'}
+                    {currentRole === 'seller' && 'Top Rated (4.9★)'}
+                    {currentRole === 'inspector' && 'Inspector'}
+                    {currentRole === 'admin' && 'Supervisor'}
+                  </div>
                 </div>
-              </div>
+              </button>
               <button
                 onClick={onLogout}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"

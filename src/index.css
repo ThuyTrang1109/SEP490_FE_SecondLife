@@ -46,8 +46,7 @@ body.dark .bg-slate-50\/50 {
   border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
-body.dark .text-\[\#0E121B\],
-body.dark .text-[#0E121B] {
+body.dark .text-\[\#0E121B\] {
   color: #F8FAFC !important;
 }
 
@@ -123,4 +122,31 @@ body.dark ::-webkit-scrollbar-thumb {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Subtle & blurred translucent scrollbar for dialogs */
+.subtle-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.subtle-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.subtle-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 9999px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  transition: background 0.2s ease;
+}
+
+.subtle-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(236, 21, 119, 0.5);
+}
+
+.subtle-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.2) transparent;
 }

@@ -18,6 +18,7 @@ interface SellerDashboardViewProps {
   listings: Listing[];
   onSelectListing: (listing: Listing) => void;
   onCreateListing: () => void;
+  onViewOrders?: () => void;
   lang: Language;
 }
 
@@ -25,6 +26,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   listings,
   onSelectListing,
   onCreateListing,
+  onViewOrders,
 }) => {
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'active' | 'reserved' | 'sold'>('ALL');
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
@@ -93,6 +95,15 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               <PlusCircle className="w-4 h-4" />
               <span>Đăng Bán Đồ Gia Dụng Mới (AI)</span>
             </button>
+            {onViewOrders && (
+              <button
+                onClick={onViewOrders}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold text-xs transition cursor-pointer"
+              >
+                <Clock className="w-4 h-4 text-emerald-400" />
+                <span>Quản Lý Đơn Bán Hàng</span>
+              </button>
+            )}
             <button
               onClick={() => setIsPayoutModalOpen(true)}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 font-medium text-xs transition cursor-pointer"

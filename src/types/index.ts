@@ -193,3 +193,31 @@ export interface InspectionCenter {
   passRatePercentage: number;
   slaHours: number;
 }
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  phone?: string;
+  address?: string;
+  avatar?: string;
+  gender?: 'male' | 'female' | 'other';
+  birthday?: string;
+  walletBalanceVnd?: number;
+  escrowLockedVnd?: number;
+  kycStatus?: 'verified' | 'pending' | 'unverified';
+  trustScore?: number;
+  completedOrdersCount?: number;
+  sellerRating?: number;
+  isSellerRegistered?: boolean;
+  shopName?: string;
+  pickupAddress?: string;
+  idCardNumber?: string;
+  bankAccount?: {
+    bankName: string;
+    accountNumber: string;
+    accountHolder: string;
+  };
+}
+

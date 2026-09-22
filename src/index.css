@@ -7,30 +7,93 @@
 
 :root {
   font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, sans-serif !important;
-  color-scheme: light;
+  color-scheme: light dark;
 }
 
 *,
 ::before,
 ::after {
   font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, sans-serif;
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
 }
 
 body {
   font-family: 'Be Vietnam Pro', sans-serif !important;
-  background-color: #f8fafc;
-  color: #1e293b;
+  background-color: #F4F5F8;
+  color: #0E121B;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Force override legacy inline font-['Outfit'] and font-['Plus_Jakarta_Sans'] classes to Be Vietnam Pro */
-[class*="font-['Outfit']"],
-[class*="font-['Plus_Jakarta_Sans']"] {
-  font-family: 'Be Vietnam Pro', sans-serif !important;
+/* ================= DARK MODE OVERRIDES ================= */
+body.dark {
+  background-color: #0E121B !important;
+  color: #FFFFFF !important;
 }
 
-/* Subtle delicate scrollbar */
+body.dark .bg-\[\#FFFFFF\],
+body.dark .bg-white {
+  background-color: #161B26 !important;
+  color: #FFFFFF !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+body.dark .bg-\[\#F4F5F8\],
+body.dark .bg-slate-50,
+body.dark .bg-slate-50\/50 {
+  background-color: #0B0E15 !important;
+  color: #F1F5F9 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+body.dark .text-\[\#0E121B\],
+body.dark .text-[#0E121B] {
+  color: #F8FAFC !important;
+}
+
+body.dark .text-\[\#0E121B\]\/70,
+body.dark .text-\[\#0E121B\]\/60 {
+  color: #94A3B8 !important;
+}
+
+body.dark .border-slate-200,
+body.dark .border-gray-200,
+body.dark .border-gray-100 {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+body.dark input,
+body.dark textarea,
+body.dark select {
+  background-color: #0B0E15 !important;
+  color: #FFFFFF !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* New Palette Design System Tokens */
+.bg-brand-navy { background-color: #0E121B; }
+.text-brand-navy { color: #0E121B; }
+.border-brand-navy { border-color: #0E121B; }
+
+.bg-brand-pink { background-color: #EC1577; }
+.text-brand-pink { color: #EC1577; }
+.border-brand-pink { border-color: #EC1577; }
+
+.bg-brand-orange { background-color: #F1622A; }
+.text-brand-orange { color: #F1622A; }
+.border-brand-orange { border-color: #F1622A; }
+
+.bg-brand-gradient {
+  background-image: linear-gradient(to right, #EC1577, #F1622A);
+}
+
+.text-gradient {
+  background: linear-gradient(to right, #EC1577, #F1622A);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -41,18 +104,22 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #CBD5E1;
   border-radius: 9999px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+body.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
 }
 
-/* Hide scrollbar utility */
+::-webkit-scrollbar-thumb:hover {
+  background: #EC1577;
+}
+
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;

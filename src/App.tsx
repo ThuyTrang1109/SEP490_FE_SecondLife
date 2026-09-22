@@ -1,25 +1,35 @@
 import React, { useState } from 'react';
-import { UserRole, Language, Listing, EscrowOrder, DisputeCase } from './types';
+import { UserRole, Language, ThemeMode, Listing, EscrowOrder, DisputeCase } from './types';
 import { mockListings, mockOrders, mockDisputes } from './data/mockData';
-import { translations, formatVND } from './utils/translations';
-import { Navbar } from './components/Navbar';
-import { MarketplaceView } from './components/MarketplaceView';
-import { ListingDetailModal } from './components/ListingDetailModal';
-import { CreateListingView } from './components/CreateListingView';
-import { EscrowOrdersView } from './components/EscrowOrdersView';
-import { InspectorPortalView } from './components/InspectorPortalView';
-import { AdminDashboardView } from './components/AdminDashboardView';
-import { ChatModal } from './components/ChatModal';
-import { CheckoutModal } from './components/CheckoutModal';
-import { HomePageView } from './components/HomePageView';
-import { AuthModal } from './components/AuthModal';
-import { ShieldCheck, Sparkles, Building2, Lock, CheckCircle2, Heart, Award, ArrowRight } from 'lucide-react';
+import { formatVND } from './utils/translations';
+import { Navbar } from './components/layout/Navbar';
+import { MarketplaceView } from './pages/MarketplaceView';
+import { ListingDetailModal } from './components/modals/ListingDetailModal';
+import { CreateListingView } from './pages/CreateListingView';
+import { SellerDashboardView } from './pages/SellerDashboardView';
+import { EscrowOrdersView } from './pages/EscrowOrdersView';
+import { InspectorPortalView } from './pages/InspectorPortalView';
+import { AdminDashboardView } from './pages/AdminDashboardView';
+import { ChatModal } from './components/modals/ChatModal';
+import { CheckoutModal } from './components/modals/CheckoutModal';
+import { HomePageView } from './pages/HomePageView';
+import { AuthModal } from './components/modals/AuthModal';
+import { ShieldCheck, Sparkles, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
   // Global State
   const [currentRole, setCurrentRole] = useState<UserRole>('buyer');
   const [lang, setLang] = useState<Language>('vi');
+  const [theme, setTheme] = useState<ThemeMode>('light');
   const [activeTab, setActiveTab] = useState<string>('home');
+
+  React.useEffect(() => {
+    if (theme === 'dark') {
+      document.body.classList.add('dark');
+    } else {
+      document.body.classList.remove('dark');
+    }
+  }, [theme]);
 
   // User Auth State
   const [currentUser, setCurrentUser] = useState<{
@@ -64,7 +74,7 @@ export default function App() {
     } else if (newRole === 'admin') {
       setActiveTab('admin-dashboard');
     } else if (newRole === 'seller') {
-      setActiveTab('create-listing');
+      setActiveTab('seller-dashboard');
     } else {
       setActiveTab('marketplace');
     }
@@ -112,7 +122,7 @@ export default function App() {
     setOrders((prev) =>
       prev.map((o) => (o.id === order.id ? { ...o, escrowStatus: 'DISPUTED' } : o))
     );
-    showToast(`Đã mở khiếu nại đơn hàng #${order.id}! Tiền trong Escrow đã được đóng băng để Admin phân xử.`);
+    showToast(`Đã mở khiếu nại đơn hàng #${order.id}! Tiền trong Escrow đã được đóng bằng để Admin phân xử.`);
   };
 
   const handleCompleteInspection = (
@@ -176,13 +186,19 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-stone-900 selection:bg-[#1B4D3E] selection:text-white">
+    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${
+      theme === 'dark'
+        ? 'bg-[#0E121B] text-white selection:bg-[#EC1577] selection:text-white'
+        : 'bg-[#F4F5F8] text-[#0E121B] selection:bg-[#EC1577] selection:text-white'
+    }`}>
       {/* Navigation */}
       <Navbar
         currentRole={currentRole}
         onRoleChange={handleRoleChange}
         lang={lang}
         onLangChange={setLang}
+        theme={theme}
+        onThemeToggle={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
         activeTab={activeTab}
         onTabChange={setActiveTab}
         activeOrdersCount={orders.filter((o) => o.escrowStatus !== 'COMPLETED_RELEASED').length}
@@ -199,12 +215,12 @@ export default function App() {
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-md bg-stone-900 text-stone-100 px-4 py-3 rounded-xl shadow-xl border border-stone-800 flex items-center gap-3 animate-fadeIn">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+        <div className="fixed bottom-6 right-6 z-50 max-w-md bg-[#0E121B] text-white px-4 py-3 rounded-xl shadow-2xl border border-[#EC1577]/40 flex items-center gap-3 animate-fadeIn">
+          <CheckCircle2 className="w-4 h-4 text-[#EC1577] shrink-0" />
           <span className="text-xs font-medium">{toastMessage}</span>
           <button
             onClick={() => setToastMessage(null)}
-            className="text-stone-400 hover:text-white text-xs ml-auto cursor-pointer"
+            className="text-zinc-400 hover:text-white text-xs ml-auto cursor-pointer"
           >
             ✕
           </button>
@@ -216,6 +232,7 @@ export default function App() {
         {activeTab === 'home' && (
           <HomePageView
             lang={lang}
+            currentUser={currentUser}
             onExploreMarketplace={() => setActiveTab('marketplace')}
             onCreateListing={() => {
               if (!currentUser) {
@@ -238,6 +255,15 @@ export default function App() {
             onSelectListing={(listing) => setSelectedListing(listing)}
             lang={lang}
             onPostClick={() => setActiveTab('create-listing')}
+          />
+        )}
+
+        {activeTab === 'seller-dashboard' && (
+          <SellerDashboardView
+            listings={listings}
+            onSelectListing={(listing) => setSelectedListing(listing)}
+            onCreateListing={() => setActiveTab('create-listing')}
+            lang={lang}
           />
         )}
 
@@ -278,14 +304,14 @@ export default function App() {
 
         {activeTab === 'chat' && (
           <div className="max-w-3xl mx-auto space-y-6 pb-16">
-            <div className="bg-white rounded-2xl p-8 border border-stone-200/80 shadow-xs text-center space-y-4">
-              <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-800 flex items-center justify-center mx-auto border border-emerald-100">
+            <div className="bg-[#FFFFFF] rounded-2xl p-8 border border-slate-200 shadow-xs text-center space-y-4">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white flex items-center justify-center mx-auto shadow-md">
                 <Sparkles className="w-6 h-6" />
               </div>
-              <h2 className="text-xl font-bold text-stone-900">
+              <h2 className="text-xl font-bold text-[#0E121B]">
                 {lang === 'vi' ? 'Hệ Thống Đàm Phán & Chống Lừa Đảo AI' : 'Smart Negotiation & Anti-Fraud Chat'}
               </h2>
-              <p className="text-xs sm:text-sm text-stone-600 max-w-lg mx-auto">
+              <p className="text-xs sm:text-sm text-[#0E121B]/70 max-w-lg mx-auto">
                 {lang === 'vi'
                   ? 'Bấm chọn bất kỳ sản phẩm nào trên Sàn để mở phiên chat đàm phán giá. AI sẽ phân tích đề xuất và cảnh báo nếu có dấu hiệu chuyển khoản ngoài hệ thống.'
                   : 'Select any listing in the marketplace to start negotiating with live AI counter-offer advice and anti-scam warnings.'}
@@ -294,7 +320,7 @@ export default function App() {
                 onClick={() => {
                   setChatListing(listings[0]);
                 }}
-                className="px-5 py-2.5 bg-[#1B4D3E] hover:bg-[#153e32] text-white rounded-xl text-xs sm:text-sm font-medium shadow-xs transition cursor-pointer"
+                className="px-5 py-2.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-95 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md transition cursor-pointer"
               >
                 Mở Hội Thoại Thử Nghiệm với Sản Phẩm Mẫu &rarr;
               </button>
@@ -339,7 +365,7 @@ export default function App() {
         />
       )}
 
-      {/* Authentication Modal (Login & Register) */}
+      {/* Authentication Modal */}
       <AuthModal
         isOpen={isAuthModalOpen}
         initialMode={authModalMode}
@@ -356,17 +382,19 @@ export default function App() {
         lang={lang}
       />
 
-      {/* Footer with Capstone Project Content */}
-      <footer className="mt-auto border-t border-stone-200 bg-white text-stone-600 text-xs py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5">
+      {/* Footer */}
+      <footer className="mt-auto border-t-2 border-[#EC1577]/40 bg-[#0E121B] text-slate-200 text-xs py-8 relative shadow-2xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-[#1B4D3E] flex items-center justify-center text-white">
-                <ShieldCheck className="w-4 h-4 stroke-[2.2]" />
-              </div>
+            <div className="flex items-center gap-3">
+              <img
+                src="/logo.png"
+                alt="SecondLife Logo"
+                className="h-10 w-auto object-contain rounded-xl bg-white p-1 shadow-md shadow-black/20"
+              />
               <div>
-                <span className="font-bold text-sm text-stone-900">SecondLife</span>
-                <p className="text-[11px] text-stone-500">
+                <span className="font-extrabold text-base text-white tracking-wide">SecondLife</span>
+                <p className="text-xs text-slate-300 font-medium">
                   {lang === 'vi'
                     ? 'Sàn thương mại đồ cũ tích hợp AI định giá và dịch vụ kiểm định xác thực'
                     : 'AI Powered Second-Hand Marketplace with Price Estimation & Authentication Service'}
@@ -374,33 +402,47 @@ export default function App() {
               </div>
             </div>
 
-            {/* Capstone Badge */}
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="bg-emerald-50 text-emerald-900 font-medium px-2.5 py-0.5 rounded-lg border border-emerald-200/80 text-[11px]">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="bg-white/15 text-white font-bold px-3 py-1 rounded-xl border border-white/25 text-xs shadow-xs">
                 Capstone Project 2026
               </span>
-              <span className="bg-stone-100 text-stone-600 font-medium px-2.5 py-0.5 rounded-lg border border-stone-200 text-[11px]">
+              <span className="bg-gradient-to-r from-[#EC1577]/30 to-[#F1622A]/30 text-white font-bold px-3 py-1 rounded-xl border border-[#EC1577]/60 text-xs shadow-xs">
                 LightGBM + EfficientNet + Escrow Protocol
               </span>
             </div>
           </div>
 
-          <div className="pt-3 border-t border-stone-100 grid grid-cols-1 sm:grid-cols-3 gap-4 text-[11px] text-stone-500">
-            <div>
-              <div className="font-semibold text-stone-800 mb-1">1. AI Price Estimation</div>
-              <p>Mô hình Machine Learning đối chiếu dữ liệu giao dịch thực tế kết hợp thị giác máy tính phát hiện hao mòn ngoại quan.</p>
+          <div className="pt-4 border-t border-white/15 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+            <div className="bg-white/[0.04] p-4 rounded-2xl border border-white/10 hover:border-[#EC1577]/40 transition-all shadow-sm">
+              <div className="font-extrabold text-white text-sm mb-1.5 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white flex items-center justify-center text-[11px]">1</span>
+                <span>AI Price Estimation</span>
+              </div>
+              <p className="text-slate-300 leading-relaxed font-normal text-[11px]">
+                Mô hình Machine Learning đối chiếu dữ liệu giao dịch thực tế kết hợp thị giác máy tính phát hiện hao mòn ngoại quan.
+              </p>
             </div>
-            <div>
-              <div className="font-semibold text-stone-800 mb-1">2. Verify Then Ship</div>
-              <p>Mạng lưới Trung tâm giám định SecondLife Hub tại Hà Nội, Đà Nẵng, TP.HCM dán tem niêm phong NFC chống tráo hàng.</p>
+            <div className="bg-white/[0.04] p-4 rounded-2xl border border-white/10 hover:border-[#EC1577]/40 transition-all shadow-sm">
+              <div className="font-extrabold text-white text-sm mb-1.5 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white flex items-center justify-center text-[11px]">2</span>
+                <span>Verify Then Ship</span>
+              </div>
+              <p className="text-slate-300 leading-relaxed font-normal text-[11px]">
+                Mạng lưới Trung tâm giám định SecondLife Hub tại Hà Nội, Đà Nẵng, TP.HCM dán tem niêm phong NFC chống tráo hàng.
+              </p>
             </div>
-            <div>
-              <div className="font-semibold text-stone-800 mb-1">3. Escrow Payment</div>
-              <p>Tiền thanh toán được giữ an toàn trong quỹ tín thác, tự động hoàn tiền nếu kiểm định thất bại hoặc phát hiện hàng nhái.</p>
+            <div className="bg-white/[0.04] p-4 rounded-2xl border border-white/10 hover:border-[#EC1577]/40 transition-all shadow-sm">
+              <div className="font-extrabold text-white text-sm mb-1.5 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white flex items-center justify-center text-[11px]">3</span>
+                <span>Escrow Payment</span>
+              </div>
+              <p className="text-slate-300 leading-relaxed font-normal text-[11px]">
+                Tiền thanh toán được giữ an toàn trong quỹ tín thác, tự động hoàn tiền nếu kiểm định thất bại hoặc phát hiện hàng nhái.
+              </p>
             </div>
           </div>
 
-          <div className="pt-1 text-center text-[10px] text-stone-400">
+          <div className="pt-2 text-center text-xs text-slate-300 font-medium">
             &copy; 2026 SecondLife Vietnam. All rights reserved. Registered Capstone Project proposal demonstration.
           </div>
         </div>

@@ -108,20 +108,15 @@ Respond ONLY with a valid JSON object strictly matching this schema:
 
     // High-precision Vietnamese second-hand market rule engine fallback
     const basePrices: Record<string, number> = {
-      'iPhone 15 Pro Max': 24500000,
-      'iPhone 14 Pro Max': 18500000,
-      'iPhone 13': 11500000,
-      'MacBook Pro M2 14"': 32000000,
-      'MacBook Air M1': 13500000,
-      'Sony A7 IV': 41000000,
-      'Sony A7 III': 24000000,
-      'Apple Watch Ultra 2': 14800000,
-      'Louis Vuitton Pochette Metis': 36000000,
-      'Gucci GG Marmont': 21000000,
-      'AirPods Pro 2': 3800000,
-      'iPad Pro 11 M2': 17500000,
-      'Sony WH-1000XM5': 5600000,
-      'Fujifilm X-T4': 23000000
+      'Tủ Lạnh Hitachi': 18500000,
+      'Máy Giặt LG': 9800000,
+      'Điều Hòa Daikin': 6200000,
+      'Robot Ecovacs': 11500000,
+      'Nồi Cơm Cuckoo': 4900000,
+      'Lò Vi Sóng Panasonic': 2600000,
+      'Máy Lọc Không Khí Sharp': 3200000,
+      'Tủ Đông Sanaky': 5500000,
+      'Bếp Từ Bosch': 12500000
     };
 
     let base = 15000000;

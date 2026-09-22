@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sparkles, Camera, CheckCircle2, AlertTriangle, ShieldCheck, HelpCircle, ArrowRight, ArrowLeft, UploadCloud, Info, RefreshCw, Layers } from 'lucide-react';
+import { Sparkles, Camera, CheckCircle2, AlertTriangle, ShieldCheck, ArrowRight, ArrowLeft, UploadCloud, Info, RefreshCw } from 'lucide-react';
 import { ItemCategory, ConditionGrade, Listing, PhotoChecklist, Language } from '../types';
 import { translations, formatVND } from '../utils/translations';
 
@@ -16,31 +16,28 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 }) => {
   const t = translations[lang];
 
-  // Steps: 1: Info, 2: Photos, 3: AI Valuation & Publish
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
 
   // Form State
   const [title, setTitle] = useState('');
-  const [category, setCategory] = useState<ItemCategory>('Smartphones');
-  const [brand, setBrand] = useState('Apple');
+  const [category, setCategory] = useState<ItemCategory>('Tủ lạnh & Tủ đông');
+  const [brand, setBrand] = useState('Hitachi');
   const [model, setModel] = useState('');
   const [purchaseYear, setPurchaseYear] = useState<number>(2024);
-  const [originalPriceVnd, setOriginalPriceVnd] = useState<number>(30000000);
+  const [originalPriceVnd, setOriginalPriceVnd] = useState<number>(29990000);
   const [declaredCondition, setDeclaredCondition] = useState<ConditionGrade>('Like New');
   const [declaredConditionText, setDeclaredConditionText] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedAccessories, setSelectedAccessories] = useState<string[]>(['Hộp zin (Box)', 'Cáp sạc chính hãng']);
+  const [selectedAccessories] = useState<string[]>(['Sách HDSD', 'Khay đá & Khay trứng zin', 'Phiếu bảo hành hãng']);
 
-  // Photo Checklist (5 required angles)
-  const [photos, setPhotos] = useState<PhotoChecklist>({
-    front: 'https://images.unsplash.com/photo-1695048133142-1a20484d2569?auto=format&fit=crop&w=1000&q=80',
-    back: 'https://images.unsplash.com/photo-1695048065036-0f7236531ea3?auto=format&fit=crop&w=1000&q=80',
-    screenOrDetails: 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?auto=format&fit=crop&w=1000&q=80',
-    accessoriesOrBox: 'https://images.unsplash.com/photo-1580910051074-3eb694886505?auto=format&fit=crop&w=1000&q=80',
-    serialOrReceipt: 'https://images.unsplash.com/photo-1510557880182-3d4d3cba35a5?auto=format&fit=crop&w=1000&q=80'
+  const [photos] = useState<PhotoChecklist>({
+    front: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=1000&q=80',
+    back: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=1000&q=80',
+    screenOrDetails: 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?auto=format&fit=crop&w=1000&q=80',
+    accessoriesOrBox: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=1000&q=80',
+    serialOrReceipt: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=1000&q=80'
   });
 
-  // AI Estimation result state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiEstimation, setAiEstimation] = useState<{
     minVnd: number;
@@ -52,27 +49,22 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     keyFactors: string[];
   } | null>(null);
 
-  // Fraud / Anomaly warning
   const [fraudWarning, setFraudWarning] = useState<string | null>(null);
+  const [finalPriceVnd, setFinalPriceVnd] = useState<number>(18500000);
 
-  // Final Price set by seller
-  const [finalPriceVnd, setFinalPriceVnd] = useState<number>(23500000);
-
-  // Quick autofill preset for demonstration
   const handleAutofillDemo = () => {
-    setTitle('iPhone 15 Pro 128GB Titan Tự Nhiên VN/A Pin 95%');
-    setCategory('Smartphones');
-    setBrand('Apple');
-    setModel('iPhone 15 Pro 128GB');
+    setTitle('Tủ Lạnh Hitachi Inverter 540L 4 Cửa R-FW690PGV7X Mặt Kính Đen');
+    setCategory('Tủ lạnh & Tủ đông');
+    setBrand('Hitachi');
+    setModel('R-FW690PGV7X');
     setPurchaseYear(2024);
-    setOriginalPriceVnd(28990000);
+    setOriginalPriceVnd(29990000);
     setDeclaredCondition('Like New');
-    setDeclaredConditionText('Máy zin áp suất, ngoại hình 99% không cấn móp, pin 95%.');
-    setDescription('Lên đời iPhone 16 nên pass lại iPhone 15 Pro 128GB màu Titan Tự Nhiên cực sang. Hàng chính hãng mã VN/A, nguyên bản chưa từng chạm ốc.');
-    setFinalPriceVnd(20800000);
+    setDeclaredConditionText('Tủ lạnh dùng 10 tháng giữ gìn cẩn thận, mặt kính bóng đẹp không vết xước. Máy nén êm ru, làm đá tự động cực nhanh.');
+    setDescription('Gia đình chuyển nhà cần nhượng lại tủ lạnh Hitachi 540L 4 cửa cao cấp. Đầy đủ hóa đơn mua hàng tại Điện Máy Xanh, còn bảo hành máy nén 8 năm.');
+    setFinalPriceVnd(18500000);
   };
 
-  // Run AI Price estimation via server endpoint
   const runAiValuation = async () => {
     setIsAnalyzing(true);
     setFraudWarning(null);
@@ -111,9 +103,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         });
         setFinalPriceVnd(est.suggestedListingPriceVnd);
       }
-    } catch (err) {
-      console.warn('API error, applying client-side fallback estimation:', err);
-      // Fallback
+    } catch {
       setAiEstimation({
         minVnd: 19500000,
         maxVnd: 21800000,
@@ -132,7 +122,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
   };
 
-  // Check pricing anomaly when seller changes final price
   const handlePriceChange = (val: number) => {
     setFinalPriceVnd(val);
     if (aiEstimation) {
@@ -146,7 +135,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
   };
 
-  // Submit listing
   const handleSubmit = () => {
     const newListing: Listing = {
       id: `listing-${Date.now().toString().slice(-6)}`,
@@ -186,25 +174,25 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-16">
+    <div className="max-w-4xl mx-auto space-y-8 pb-16 text-[#0E121B]">
       {/* Title & Quick demo helper */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200">
-            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFFFFF] border border-gray-200 text-[#0E121B] text-xs font-bold shadow-xs">
+            <Sparkles className="w-3.5 h-3.5 text-[#EC1577]" />
             <span>AI Price Estimation & Verification Engine</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-2 font-['Outfit']">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0E121B] mt-2">
             {t.createListingTitle}
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500">
+          <p className="text-xs sm:text-sm text-[#0E121B]/70">
             {t.createListingSubtitle}
           </p>
         </div>
 
         <button
           onClick={handleAutofillDemo}
-          className="self-start sm:self-auto px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold border border-slate-300 transition flex items-center gap-1.5"
+          className="self-start sm:self-auto px-3 py-1.5 bg-[#FFFFFF] hover:bg-[#F4F5F8] text-[#0E121B] rounded-xl text-xs font-semibold border border-gray-200 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
         >
           <span>⚡ Điền nhanh mẫu thử nghiệm</span>
         </button>
@@ -213,28 +201,31 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       {/* 3-Step Progress Bar */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <div
-          className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${currentStep === 1
-              ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-semibold shadow-2xs'
-              : 'bg-white border-stone-200 text-stone-500'
-            }`}
+          className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${
+            currentStep === 1
+              ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] border-[#EC1577] text-white font-semibold'
+              : 'bg-[#FFFFFF] border-gray-200 text-[#0E121B]/60'
+          }`}
         >
           <div className="text-[11px] uppercase tracking-wider font-semibold">{t.stepInfo}</div>
         </div>
 
         <div
-          className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${currentStep === 2
-              ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-semibold shadow-2xs'
-              : 'bg-white border-stone-200 text-stone-500'
-            }`}
+          className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${
+            currentStep === 2
+              ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] border-[#EC1577] text-white font-semibold'
+              : 'bg-[#FFFFFF] border-gray-200 text-[#0E121B]/60'
+          }`}
         >
           <div className="text-[11px] uppercase tracking-wider font-semibold">{t.stepPhotos}</div>
         </div>
 
         <div
-          className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${currentStep === 3
-              ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-semibold shadow-2xs'
-              : 'bg-white border-stone-200 text-stone-500'
-            }`}
+          className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${
+            currentStep === 3
+              ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] border-[#EC1577] text-white font-semibold'
+              : 'bg-[#FFFFFF] border-gray-200 text-[#0E121B]/60'
+          }`}
         >
           <div className="text-[11px] uppercase tracking-wider font-semibold">{t.stepValuation}</div>
         </div>
@@ -242,78 +233,78 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
       {/* Step 1: Basic Information */}
       {currentStep === 1 && (
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
-          <h2 className="text-lg font-bold text-slate-900 font-['Outfit'] flex items-center gap-2">
+        <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
+          <h2 className="text-lg font-bold text-[#0E121B] flex items-center gap-2">
             <span>Thông tin sản phẩm</span>
           </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">{t.filterCategory} *</label>
+              <label className="text-xs font-semibold text-[#0E121B]">{t.filterCategory} *</label>
               <select
                 value={category}
                 onChange={(e: any) => setCategory(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                className="w-full px-3.5 py-2.5 bg-[#F4F5F8] border border-gray-200 rounded-xl text-sm text-[#0E121B] focus:outline-none focus:border-[#0E121B]"
               >
-                <option value="Smartphones">Điện thoại (Smartphones)</option>
-                <option value="Laptops & Computers">Laptop & Máy tính</option>
-                <option value="Cameras & Lens">Máy ảnh & Ống kính</option>
-                <option value="Watches & Smartwatches">Đồng hồ & Smartwatch</option>
-                <option value="Luxury & Bags">Túi xách & Hàng hiệu</option>
-                <option value="Audio & Headphones">Tai nghe & Âm thanh</option>
+                <option value="Tủ lạnh & Tủ đông" className="bg-[#FFFFFF] text-[#0E121B]">Tủ lạnh & Tủ đông (Refrigerators)</option>
+                <option value="Máy giặt & Máy sấy" className="bg-[#FFFFFF] text-[#0E121B]">Máy giặt & Máy sấy (Washing Machines)</option>
+                <option value="Điều hòa & Máy lọc" className="bg-[#FFFFFF] text-[#0E121B]">Điều hòa & Máy lọc không khí</option>
+                <option value="Robot & Máy hút bụi" className="bg-[#FFFFFF] text-[#0E121B]">Robot hút bụi & Máy hút bụi</option>
+                <option value="Lò vi sóng & Lò nướng" className="bg-[#FFFFFF] text-[#0E121B]">Lò vi sóng & Lò nướng</option>
+                <option value="Nồi cơm & Bếp từ" className="bg-[#FFFFFF] text-[#0E121B]">Nồi cơm điện & Bếp từ</option>
               </select>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">{t.itemBrand} *</label>
+              <label className="text-xs font-semibold text-[#0E121B]">{t.itemBrand} *</label>
               <input
                 type="text"
                 value={brand}
                 onChange={(e) => setBrand(e.target.value)}
-                placeholder="VD: Apple, Sony, Dell, Louis Vuitton..."
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                placeholder="VD: Hitachi, Toshiba, LG, Panasonic..."
+                className="w-full px-3.5 py-2.5 bg-[#F4F5F8] border border-gray-200 rounded-xl text-sm text-[#0E121B] focus:outline-none focus:border-[#0E121B]"
               />
             </div>
 
             <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">{t.itemTitle} *</label>
+              <label className="text-xs font-semibold text-[#0E121B]">{t.itemTitle} *</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="VD: iPhone 15 Pro 128GB Titan Tự Nhiên VN/A Fullbox"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                placeholder="VD: Tủ Lạnh Hitachi Inverter 540L 4 Cửa R-FW690PGV7X"
+                className="w-full px-3.5 py-2.5 bg-[#F4F5F8] border border-gray-200 rounded-xl text-sm text-[#0E121B] focus:outline-none focus:border-[#0E121B]"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">{t.purchaseYear} *</label>
+              <label className="text-xs font-semibold text-[#0E121B]">{t.purchaseYear} *</label>
               <input
                 type="number"
                 value={purchaseYear}
                 onChange={(e) => setPurchaseYear(Number(e.target.value))}
                 min={2018}
                 max={2026}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                className="w-full px-3.5 py-2.5 bg-[#F4F5F8] border border-gray-200 rounded-xl text-sm text-[#0E121B] focus:outline-none focus:border-[#0E121B]"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">{t.originalPrice}</label>
+              <label className="text-xs font-semibold text-[#0E121B]">{t.originalPrice}</label>
               <input
                 type="number"
                 value={originalPriceVnd}
                 onChange={(e) => setOriginalPriceVnd(Number(e.target.value))}
                 step={500000}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                className="w-full px-3.5 py-2.5 bg-[#F4F5F8] border border-gray-200 rounded-xl text-sm text-[#0E121B] focus:outline-none focus:border-[#0E121B]"
               />
             </div>
 
             <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">{t.declaredCondition} *</label>
+              <label className="text-xs font-semibold text-[#0E121B]">{t.declaredCondition} *</label>
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  { grade: 'Like New', title: 'Như mới (99%)', desc: 'Không xước, pin > 90%, đủ box' },
+                  { grade: 'Like New', title: 'Như mới (99%)', desc: 'Không xước, máy nén êm, đủ phụ kiện' },
                   { grade: 'Good', title: 'Tốt (95%)', desc: 'Xước dăm rất nhẹ, máy zin' },
                   { grade: 'Fair', title: 'Khá (90%)', desc: 'Có cấn viền hoặc trầy xước' }
                 ].map((item) => (
@@ -321,52 +312,53 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     key={item.grade}
                     type="button"
                     onClick={() => setDeclaredCondition(item.grade as ConditionGrade)}
-                    className={`p-3 rounded-xl border text-left transition ${declaredCondition === item.grade
-                        ? 'border-emerald-600 bg-emerald-50/70 text-emerald-900 ring-2 ring-emerald-500/20'
-                        : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-                      }`}
+                    className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                      declaredCondition === item.grade
+                        ? 'border-[#EC1577] bg-[#EC1577]/10 text-[#0E121B] ring-1 ring-[#EC1577]'
+                        : 'border-gray-200 bg-[#F4F5F8] text-[#0E121B]/70 hover:bg-[#FFFFFF]'
+                    }`}
                   >
                     <div className="font-bold text-xs">{item.title}</div>
-                    <div className="text-[10px] text-slate-500 mt-0.5">{item.desc}</div>
+                    <div className="text-[10px] text-[#0E121B]/60 mt-0.5">{item.desc}</div>
                   </button>
                 ))}
               </div>
             </div>
 
             <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">Tóm tắt tình trạng ngoại quan</label>
+              <label className="text-xs font-semibold text-[#0E121B]">Tóm tắt tình trạng ngoại quan</label>
               <input
                 type="text"
                 value={declaredConditionText}
                 onChange={(e) => setDeclaredConditionText(e.target.value)}
-                placeholder="VD: Dán màn hình từ đầu, viền không trầy xước, pin 95%..."
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                placeholder="VD: Dán bảo vệ từ đầu, không trầy xước, chạy êm..."
+                className="w-full px-3.5 py-2.5 bg-[#F4F5F8] border border-gray-200 rounded-xl text-sm text-[#0E121B] focus:outline-none focus:border-[#0E121B]"
               />
             </div>
 
             <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">{t.description}</label>
+              <label className="text-xs font-semibold text-[#0E121B]">{t.description}</label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
                 placeholder="Mô tả nguồn gốc mua hàng, lý do bán, các linh kiện kèm theo..."
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                className="w-full px-3.5 py-2.5 bg-[#F4F5F8] border border-gray-200 rounded-xl text-sm text-[#0E121B] focus:outline-none focus:border-[#0E121B]"
               />
             </div>
           </div>
 
-          <div className="flex justify-between pt-4 border-t border-slate-100">
+          <div className="flex justify-between pt-4 border-t border-gray-100">
             <button
               onClick={onCancel}
-              className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-semibold"
+              className="px-5 py-2.5 rounded-xl border border-gray-200 text-[#0E121B] hover:bg-[#F4F5F8] text-sm font-semibold cursor-pointer"
             >
               Hủy
             </button>
 
             <button
               onClick={() => setCurrentStep(2)}
-              className="px-5 py-2.5 bg-[#1B4D3E] hover:bg-[#153e32] text-white rounded-xl text-xs sm:text-sm font-medium shadow-xs flex items-center gap-2 cursor-pointer"
+              className="px-5 py-2.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs flex items-center gap-2 cursor-pointer"
             >
               <span>Tiếp tục: Tải bộ ảnh 5 góc</span>
               <ArrowRight className="w-4 h-4" />
@@ -377,61 +369,60 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
       {/* Step 2: 5-Photo Checklist Upload */}
       {currentStep === 2 && (
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+        <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
           <div>
-            <h2 className="text-lg font-bold text-slate-900 font-['Outfit'] flex items-center gap-2">
-              <Camera className="w-5 h-5 text-emerald-600" />
+            <h2 className="text-lg font-bold text-[#0E121B] flex items-center gap-2">
+              <Camera className="w-5 h-5 text-[#EC1577]" />
               <span>{t.photoChecklistTitle}</span>
             </h2>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-[#0E121B]/70 mt-1">
               SecondLife yêu cầu chuẩn hóa 5 góc chụp để AI quét vết xước, nhận diện linh kiện và làm bằng chứng pháp lý trong Escrow.
             </p>
           </div>
 
-          {/* 5 Slots */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {[
-              { key: 'front' as const, label: t.photoFront, desc: 'Màn hình bật sáng hiển thị' },
-              { key: 'back' as const, label: t.photoBack, desc: 'Mặt lưng và 4 góc viền máy' },
+              { key: 'front' as const, label: t.photoFront, desc: 'Mặt trước hiển thị tổng quan' },
+              { key: 'back' as const, label: t.photoBack, desc: 'Mặt sau và 4 góc viền máy' },
               { key: 'screenOrDetails' as const, label: t.photoScreenOrDetails, desc: 'Chụp cận cảnh vết xước (nếu có)' },
               { key: 'accessoriesOrBox' as const, label: t.photoAccessories, desc: 'Hộp máy, cáp sạc, hóa đơn' },
-              { key: 'serialOrReceipt' as const, label: t.photoSerialOrReceipt, desc: 'Ảnh chụp màn hình IMEI/Serial' }
+              { key: 'serialOrReceipt' as const, label: t.photoSerialOrReceipt, desc: 'Ảnh chụp tem Serial / Mã máy' }
             ].map((slot) => (
               <div
                 key={slot.key}
-                className="border border-slate-200 rounded-2xl p-3 bg-slate-50 space-y-2 flex flex-col justify-between"
+                className="border border-gray-200 rounded-2xl p-3 bg-[#F4F5F8] space-y-2 flex flex-col justify-between"
               >
                 <div>
-                  <div className="text-xs font-bold text-slate-900">{slot.label}</div>
-                  <div className="text-[11px] text-slate-500">{slot.desc}</div>
+                  <div className="text-xs font-bold text-[#0E121B]">{slot.label}</div>
+                  <div className="text-[11px] text-[#0E121B]/60">{slot.desc}</div>
                 </div>
 
-                <div className="relative aspect-4/3 rounded-xl overflow-hidden bg-slate-200 border border-slate-300">
+                <div className="relative aspect-4/3 rounded-xl overflow-hidden bg-[#FFFFFF] border border-gray-200">
                   <img
                     src={photos[slot.key]}
                     alt={slot.label}
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute top-2 right-2 bg-emerald-600 text-white rounded-full p-1 shadow-xs">
+                  <div className="absolute top-2 right-2 bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white rounded-full p-1 shadow-xs">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                   </div>
                 </div>
 
                 <button
                   type="button"
-                  className="w-full py-1.5 px-2 bg-white hover:bg-slate-100 rounded-lg text-xs font-medium text-slate-700 border border-slate-200 flex items-center justify-center gap-1.5"
+                  className="w-full py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#F4F5F8] rounded-lg text-xs font-medium text-[#0E121B] border border-gray-200 flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <UploadCloud className="w-3.5 h-3.5 text-slate-500" />
+                  <UploadCloud className="w-3.5 h-3.5 text-gray-400" />
                   <span>Đổi ảnh góc này</span>
                 </button>
               </div>
             ))}
           </div>
 
-          <div className="flex justify-between pt-4 border-t border-slate-100">
+          <div className="flex justify-between pt-4 border-t border-gray-100">
             <button
               onClick={() => setCurrentStep(1)}
-              className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-semibold flex items-center gap-2"
+              className="px-5 py-2.5 rounded-xl border border-gray-200 text-[#0E121B] hover:bg-[#F4F5F8] text-sm font-semibold flex items-center gap-2 cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Quay lại</span>
@@ -442,7 +433,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 setCurrentStep(3);
                 runAiValuation();
               }}
-              className="px-5 py-2.5 bg-[#1B4D3E] hover:bg-[#153e32] text-white rounded-xl text-xs sm:text-sm font-medium shadow-xs flex items-center gap-2 cursor-pointer"
+              className="px-5 py-2.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs flex items-center gap-2 cursor-pointer"
             >
               <span>{t.runAiEstimation}</span>
               <Sparkles className="w-4 h-4" />
@@ -453,84 +444,81 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
       {/* Step 3: AI Price Estimation & Final Publishing */}
       {currentStep === 3 && (
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+        <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900 font-['Outfit'] flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-emerald-600" />
+            <h2 className="text-lg font-bold text-[#0E121B] flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-[#EC1577]" />
               <span>{t.aiValuationResult}</span>
             </h2>
 
             <button
               onClick={runAiValuation}
               disabled={isAnalyzing}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
+              className="px-3 py-1.5 bg-[#F4F5F8] hover:bg-gray-200 text-[#0E121B] rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border border-gray-200"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzing ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 text-[#EC1577] ${isAnalyzing ? 'animate-spin' : ''}`} />
               <span>Tính toán lại</span>
             </button>
           </div>
 
           {isAnalyzing ? (
             <div className="py-12 text-center space-y-3">
-              <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto animate-pulse">
+              <div className="w-12 h-12 rounded-full bg-[#0E121B] text-[#EC1577] flex items-center justify-center mx-auto animate-pulse">
                 <Sparkles className="w-6 h-6 animate-spin" />
               </div>
-              <h3 className="font-bold text-slate-800">{t.analyzingMarket}</h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
+              <h3 className="font-bold text-[#0E121B]">{t.analyzingMarket}</h3>
+              <p className="text-xs text-[#0E121B]/70 max-w-md mx-auto">
                 Hệ thống đang đối chiếu dữ liệu khấu hao theo năm sản xuất ({purchaseYear}), mức độ hao mòn ngoại quan ({declaredCondition}) và biên độ giao dịch thực tế...
               </p>
             </div>
           ) : aiEstimation ? (
             <div className="space-y-6">
-              {/* Valuation Dashboard */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-1">
-                  <div className="text-xs font-semibold text-emerald-800">{t.suggestedPrice}</div>
-                  <div className="text-2xl font-black text-emerald-900 font-['Outfit']">
+                <div className="bg-[#F4F5F8] border border-gray-200 rounded-2xl p-4 space-y-1">
+                  <div className="text-xs font-semibold text-[#0E121B]/70">{t.suggestedPrice}</div>
+                  <div className="text-2xl font-black text-[#EC1577]">
                     {formatVND(aiEstimation.suggestedVnd)}
                   </div>
-                  <div className="text-[11px] text-emerald-700">Dự kiến bán trong 7 ngày</div>
+                  <div className="text-[11px] text-[#0E121B]/60">Dự kiến bán trong 7 ngày</div>
                 </div>
 
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-1">
-                  <div className="text-xs font-semibold text-slate-700">{t.fairRange}</div>
-                  <div className="text-lg font-extrabold text-slate-900 font-['Outfit']">
+                <div className="bg-[#F4F5F8] border border-gray-200 rounded-2xl p-4 space-y-1">
+                  <div className="text-xs font-semibold text-[#0E121B]/70">{t.fairRange}</div>
+                  <div className="text-lg font-extrabold text-[#0E121B]">
                     {formatVND(aiEstimation.minVnd)} - {formatVND(aiEstimation.maxVnd)}
                   </div>
-                  <div className="text-[11px] text-slate-500">Biên độ chuẩn cho máy Grade A</div>
+                  <div className="text-[11px] text-[#0E121B]/60">Biên độ chuẩn cho máy Grade A</div>
                 </div>
 
-                <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 space-y-1">
-                  <div className="text-xs font-semibold text-amber-800">{t.quickSalePrice}</div>
-                  <div className="text-2xl font-black text-amber-900 font-['Outfit']">
+                <div className="bg-[#F4F5F8] border border-gray-200 rounded-2xl p-4 space-y-1">
+                  <div className="text-xs font-semibold text-[#0E121B]/70">{t.quickSalePrice}</div>
+                  <div className="text-2xl font-black text-[#0E121B]">
                     {formatVND(aiEstimation.quickSaleVnd)}
                   </div>
-                  <div className="text-[11px] text-amber-700">Khớp lệnh nhanh trong 3 ngày</div>
+                  <div className="text-[11px] text-[#0E121B]/60">Khớp lệnh nhanh trong 3 ngày</div>
                 </div>
               </div>
 
-              {/* Key Valuation Factors */}
-              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-2">
-                <div className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+              <div className="bg-[#F4F5F8] rounded-2xl p-4 border border-gray-200 space-y-2">
+                <div className="text-xs font-bold text-[#0E121B] uppercase tracking-wider">
                   Các yếu tố tác động tới định giá của AI:
                 </div>
-                <ul className="space-y-1 text-xs text-slate-600">
+                <ul className="space-y-1 text-xs text-[#0E121B]/70">
                   {aiEstimation.keyFactors.map((factor, i) => (
                     <li key={i} className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#EC1577] shrink-0" />
                       <span>{factor}</span>
                     </li>
                   ))}
                 </ul>
               </div>
 
-              {/* Final Price Input Slider & Setting */}
-              <div className="bg-white p-5 rounded-2xl border border-stone-200/90 shadow-2xs space-y-3">
+              <div className="bg-[#F4F5F8] p-5 rounded-2xl border border-gray-200 space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-semibold text-stone-900">
+                  <label className="text-sm font-semibold text-[#0E121B]">
                     {t.finalListingPrice}
                   </label>
-                  <span className="text-xl font-bold text-[#1B4D3E]">
+                  <span className="text-xl font-bold text-[#EC1577]">
                     {formatVND(finalPriceVnd)}
                   </span>
                 </div>
@@ -542,35 +530,34 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   step={100000}
                   value={finalPriceVnd}
                   onChange={(e) => handlePriceChange(Number(e.target.value))}
-                  className="w-full h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-[#1B4D3E]"
+                  className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-[#EC1577]"
                 />
 
-                <div className="flex justify-between text-[11px] text-stone-400">
+                <div className="flex justify-between text-[11px] text-[#0E121B]/60">
                   <span>Giá bán gấp: {formatVND(aiEstimation.quickSaleVnd)}</span>
                   <span>Đề xuất: {formatVND(aiEstimation.suggestedVnd)}</span>
                   <span>Giá cao: {formatVND(aiEstimation.maxVnd * 1.1)}</span>
                 </div>
 
                 {fraudWarning && (
-                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="p-3 rounded-xl bg-[#0E121B] border border-[#EC1577] text-white text-xs flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-[#EC1577] shrink-0 mt-0.5" />
                     <span>{fraudWarning}</span>
                   </div>
                 )}
               </div>
 
-              {/* Advisory Disclaimer */}
-              <div className="text-xs text-stone-500 bg-stone-50 p-3 rounded-xl border border-stone-200 flex items-start gap-2">
-                <Info className="w-4 h-4 text-stone-400 shrink-0 mt-0.5" />
+              <div className="text-xs text-[#0E121B]/70 bg-[#F4F5F8] p-3 rounded-xl border border-gray-200 flex items-start gap-2">
+                <Info className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
                 <span>{t.disclaimer}</span>
               </div>
             </div>
           ) : null}
 
-          <div className="flex justify-between pt-4 border-t border-stone-100">
+          <div className="flex justify-between pt-4 border-t border-gray-100">
             <button
               onClick={() => setCurrentStep(2)}
-              className="px-4 py-2.5 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 text-xs sm:text-sm font-medium flex items-center gap-2 cursor-pointer"
+              className="px-4 py-2.5 rounded-xl border border-gray-200 text-[#0E121B] hover:bg-[#F4F5F8] text-xs sm:text-sm font-medium flex items-center gap-2 cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Quay lại chỉnh sửa</span>
@@ -578,7 +565,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
             <button
               onClick={handleSubmit}
-              className="px-6 py-2.5 bg-[#1B4D3E] hover:bg-[#153e32] text-white rounded-xl text-xs sm:text-sm font-semibold shadow-xs flex items-center gap-2 cursor-pointer"
+              className="px-6 py-2.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs flex items-center gap-2 cursor-pointer"
             >
               <ShieldCheck className="w-4 h-4" />
               <span>{t.publishListing}</span>

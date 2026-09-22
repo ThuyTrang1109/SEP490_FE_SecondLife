@@ -2,9 +2,17 @@ export type UserRole = 'buyer' | 'seller' | 'inspector' | 'admin';
 
 export type Language = 'vi' | 'en';
 
+export type ThemeMode = 'dark' | 'light';
+
 export type ConditionGrade = 'Like New' | 'Good' | 'Fair';
 
-export type ItemCategory = 'Smartphones' | 'Laptops & Computers' | 'Cameras & Lens' | 'Watches & Smartwatches' | 'Luxury & Bags' | 'Audio & Headphones';
+export type ItemCategory = 
+  | 'Tủ lạnh & Tủ đông'
+  | 'Máy giặt & Máy sấy'
+  | 'Điều hòa & Máy lọc'
+  | 'Robot & Máy hút bụi'
+  | 'Lò vi sóng & Lò nướng'
+  | 'Nồi cơm & Bếp từ';
 
 export type ListingStatus = 'active' | 'reserved' | 'sold' | 'draft';
 
@@ -169,6 +177,7 @@ export interface ChatMessage {
   offerAmountVnd?: number;
   offerStatus?: 'pending' | 'accepted' | 'declined' | 'countered';
   safetyWarning?: string;
+  isUnsent?: boolean;
 }
 
 export interface InspectionCenter {

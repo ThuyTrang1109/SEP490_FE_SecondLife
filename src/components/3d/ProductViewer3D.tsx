@@ -4,22 +4,16 @@ import {
   RotateCcw,
   ZoomIn,
   ZoomOut,
-  Maximize2,
-  Sparkles,
   Layers,
   ShieldCheck,
-  Cpu,
-  Info,
-  Camera,
   Eye,
-  CheckCircle2,
   Sun,
   Palette,
   Compass,
   Download
 } from 'lucide-react';
-import { Listing } from '../types';
-import { soundFx } from '../utils/soundEffects';
+import { Listing } from '../../types';
+import { soundFx } from '../../utils/soundEffects';
 
 interface ProductViewer3DProps {
   listing?: Listing | null;
@@ -39,10 +33,10 @@ interface Hotspot {
 }
 
 const COLORWAYS = [
-  { id: 'natural', name: 'Titan Tự Nhiên', hex: 0x9b958c, roughness: 0.25, metalness: 0.95 },
-  { id: 'black', name: 'Titan Đen', hex: 0x242426, roughness: 0.3, metalness: 0.95 },
-  { id: 'blue', name: 'Titan Xanh', hex: 0x2c3b4d, roughness: 0.25, metalness: 0.95 },
-  { id: 'white', name: 'Titan Trắng', hex: 0xe5e5ea, roughness: 0.2, metalness: 0.9 }
+  { id: 'glass-black', name: 'Đen Tuyển Onyx', hex: 0x121212, roughness: 0.15, metalness: 0.9 },
+  { id: 'stainless', name: 'Xám Titan Kim Loại', hex: 0x4a4a4a, roughness: 0.3, metalness: 0.95 },
+  { id: 'silver', name: 'Bạc Metallic', hex: 0xa1a1aa, roughness: 0.25, metalness: 0.9 },
+  { id: 'pure-white', name: 'Trắng Ceramic', hex: 0xf4f4f5, roughness: 0.2, metalness: 0.6 }
 ];
 
 export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang, onClose }) => {
@@ -57,44 +51,44 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
   const [zoomLevel, setZoomLevel] = useState(1);
   const [snapshotTaken, setSnapshotTaken] = useState(false);
 
-  // Define Hotspots for inspection
+  // Define Hotspots for Home Appliance inspection
   const hotspots: Hotspot[] = [
     {
-      id: 'camera',
-      titleVi: 'Cụm 3 Camera Sapphire',
-      titleEn: 'Triple Sapphire Camera Island',
-      descVi: 'Ống kính trong suốt không một vết trầy xước. Lớp tráng phủ chống lóa nguyên bản, cảm biến chống rung OIS hoạt động chính xác 100%.',
-      descEn: 'Pristine sapphire crystal glass with no scratches. Original anti-reflective coating intact, OIS stabilization passes 100%.',
+      id: 'compressor',
+      titleVi: 'Máy Nén Compressor & Hệ Thống Gas',
+      titleEn: 'Inverter Compressor & Refrigerant Gas',
+      descVi: 'Máy nén Inverter vận hành siêu êm 38dB, nạp gas R600a/R32 nguyên bản, duy trì độ lạnh sâu -19.2°C chuẩn xác.',
+      descEn: 'Ultra-quiet 38dB Inverter compressor, sealed R600a/R32 gas line maintaining stable -19.2°C freezing temperature.',
       position: [0.55, 1.15, -0.22],
       targetCamera: [1.2, 1.4, -2.2],
       status: 'passed'
     },
     {
-      id: 'screen',
-      titleVi: 'Màn Hình Super Retina XDR OLED',
-      titleEn: 'Super Retina XDR OLED Display',
-      descVi: 'Độ sáng đạt chuẩn 2,000 nits. Cảm ứng mượt mà 120Hz ProMotion, TrueTone và Face ID nhạy bén, không điểm chết (0 dead pixels).',
-      descEn: 'Full 2,000 nits peak brightness. 120Hz ProMotion touch responsiveness, TrueTone & Face ID active with 0 dead pixels.',
+      id: 'control_panel',
+      titleVi: 'Bảng Điều Khiển Cảm Ứng & Bo Mạch AI',
+      titleEn: 'Touch Control Panel & AI Board',
+      descVi: 'Bo mạch chính nguyên tem niêm phong hãng. Màn hình điều khiển LED cảm ứng nhạy bén, cảm biến nhiệt lượng chuẩn 100%.',
+      descEn: 'OEM sealed mainboard. Responsive touch LED display panel with 100% accurate thermal sensors.',
       position: [0, 0.4, 0.22],
       targetCamera: [0, 0.4, 3.2],
       status: 'passed'
     },
     {
-      id: 'frame',
-      titleVi: 'Khung Viền Titanium Cấp Hàng Không',
-      titleEn: 'Aerospace Grade Titanium Frame',
-      descVi: 'Khung titan đúc nguyên khối. Ghi nhận vi xước dăm 0.1mm góc cổng sạc do cọ xát chìa khóa, đã được AI định giá chiết khấu minh bạch.',
-      descEn: 'Unibody titanium chassis. Recorded micro-abrasion 0.1mm near charging port, factored objectively by AI valuation model.',
+      id: 'body_chassis',
+      titleVi: 'Khung Vỏ Thép & Gioăng Cao Su',
+      titleEn: 'Steel Body & Rubber Door Seal',
+      descVi: 'Khung vỏ sơn tĩnh điện cao cấp. Gioăng cao su cánh cửa đàn hồi hít kín chống thất thoát nhiệt, ghi nhận vết xước dăm 0.2mm ở chân đế.',
+      descEn: 'Powder-coated steel chassis. Magnetic door gasket perfectly sealed with micro 0.2mm scratch near foot stand.',
       position: [0.95, -0.6, 0],
       targetCamera: [2.5, -0.6, 0.5],
       status: 'minor'
     },
     {
-      id: 'battery',
-      titleVi: 'Cell Pin & Bo Mạch Logic',
-      titleEn: 'Original Battery Cell & Logic Board',
-      descVi: 'Pin zin theo máy dung lượng 93% (238 chu kỳ sạc). Chip A17 Pro nguyên bản, chưa qua sửa chữa hoặc câu dây nguồn.',
-      descEn: 'Original OEM battery with 93% health (238 charge cycles). Unmodified motherboard with genuine SoC.',
+      id: 'internal_components',
+      titleVi: 'Lồng Giặt Inox / Khay Kính Lực',
+      titleEn: 'Stainless Drum / Tempered Glass Shelves',
+      descVi: 'Cơ cấu truyền động lồng giặt 3D / Khay kính chịu lực 100kg không nứt vỡ, sạch bong không bám cặn vôi.',
+      descEn: 'Heavy-duty 3D washer drum / 100kg tempered glass shelves in pristine condition without limescale deposits.',
       position: [-0.3, -0.2, 0],
       targetCamera: [-1.5, 0.2, 2.5],
       status: 'verified'
@@ -157,7 +151,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
     mainLight.castShadow = true;
     scene.add(mainLight);
 
-    const accentLight = new THREE.PointLight(0x10b981, 2, 20);
+    const accentLight = new THREE.PointLight(0xffffff, 2, 20);
     accentLight.position.set(-4, -2, -3);
     scene.add(accentLight);
 
@@ -185,7 +179,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
       color: 0x050505,
       metalness: 0.9,
       roughness: 0.08,
-      emissive: 0x064e3b,
+      emissive: 0x27272a,
       emissiveIntensity: 0.25
     });
     const screenMesh = new THREE.Mesh(screenGeo, screenMat);
@@ -263,22 +257,22 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
 
     // Battery pack
     const batteryGeo = new THREE.BoxGeometry(1.0, 2.3, 0.08);
-    const batteryMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4 });
+    const batteryMat = new THREE.MeshStandardMaterial({ color: 0x27272a, roughness: 0.4 });
     const batteryMesh = new THREE.Mesh(batteryGeo, batteryMat);
     batteryMesh.position.set(0.35, -0.3, 0);
     internalsGroup.add(batteryMesh);
 
     // Motherboard PCB
     const pcbGeo = new THREE.BoxGeometry(1.6, 1.3, 0.06);
-    const pcbMat = new THREE.MeshStandardMaterial({ color: 0x064e3b, roughness: 0.3 });
+    const pcbMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.3 });
     const pcbMesh = new THREE.Mesh(pcbGeo, pcbMat);
     pcbMesh.position.set(0, 1.1, 0);
     internalsGroup.add(pcbMesh);
 
-    // A17 Pro SoC Chip with Metallic Heat Shield
+    // SoC Chip with Metallic Heat Shield
     const chipGeo = new THREE.BoxGeometry(0.5, 0.5, 0.04);
     const chipMat = new THREE.MeshStandardMaterial({
-      color: 0x475569,
+      color: 0x52525b,
       metalness: 0.9,
       roughness: 0.2
     });
@@ -289,8 +283,8 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
     // SecondLife Tamper-Evident NFC Seal inside chassis
     const sealGeo = new THREE.BoxGeometry(0.6, 0.3, 0.02);
     const sealMat = new THREE.MeshStandardMaterial({
-      color: 0x10b981,
-      emissive: 0x059669,
+      color: 0xffffff,
+      emissive: 0xd4d4d8,
       emissiveIntensity: 0.5
     });
     const sealMesh = new THREE.Mesh(sealGeo, sealMat);
@@ -320,7 +314,6 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
       modelGroup.rotation.y += deltaX * 0.008;
       modelGroup.rotation.x += deltaY * 0.008;
 
-      // Restrict x rotation to prevent flipping upside down
       modelGroup.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, modelGroup.rotation.x));
 
       previousMousePosition = { x: e.clientX, y: e.clientY };
@@ -342,7 +335,6 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
     window.addEventListener('pointerup', handlePointerUp);
     canvas.addEventListener('wheel', handleWheel, { passive: false });
 
-    // Handle Window Resize
     const handleResize = () => {
       if (!canvas) return;
       const w = canvas.clientWidth;
@@ -353,7 +345,6 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
     };
     window.addEventListener('resize', handleResize);
 
-    // Animation Loop
     let clock = new THREE.Clock();
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
@@ -405,27 +396,25 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
       ambient.intensity = 1.3;
       main.color.setHex(0xffffff);
       main.intensity = 2.4;
-      accent.color.setHex(0x10b981);
+      accent.color.setHex(0xffffff);
       accent.intensity = 1.2;
     } else if (lightingPreset === 'cyber') {
-      ambient.color.setHex(0x064e3b);
+      ambient.color.setHex(0x27272a);
       ambient.intensity = 1.8;
-      main.color.setHex(0x38bdf8);
+      main.color.setHex(0xffffff);
       main.intensity = 3.0;
-      accent.color.setHex(0xa855f7);
+      accent.color.setHex(0x71717a);
       accent.intensity = 2.5;
     } else {
-      // sun
-      ambient.color.setHex(0xfef3c7);
+      ambient.color.setHex(0xf4f4f5);
       ambient.intensity = 1.1;
-      main.color.setHex(0xfbbf24);
+      main.color.setHex(0xffffff);
       main.intensity = 3.5;
-      accent.color.setHex(0x60a5fa);
+      accent.color.setHex(0xa1a1aa);
       accent.intensity = 0.8;
     }
   }, [lightingPreset]);
 
-  // Handle Exploded View Toggle
   const toggleExplodedView = () => {
     soundFx.playScanBeep();
     const newExploded = !explodedView;
@@ -434,9 +423,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
     if (backCoverRef.current && internalsGroupRef.current) {
       if (newExploded) {
         internalsGroupRef.current.visible = true;
-        // Slide back cover backward
         backCoverRef.current.position.z = -1.2;
-        // Pause auto-rotate to inspect
         setAutoRotate(false);
       } else {
         internalsGroupRef.current.visible = false;
@@ -445,7 +432,6 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
     }
   };
 
-  // Reset Camera View
   const handleResetCamera = () => {
     soundFx.playChime();
     setActiveHotspot(null);
@@ -457,7 +443,6 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
     }
   };
 
-  // Zoom In/Out
   const handleZoom = (delta: number) => {
     soundFx.playChime();
     if (cameraRef.current) {
@@ -466,21 +451,18 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
     }
   };
 
-  // Hotspot Click
   const handleHotspotClick = (spot: Hotspot) => {
     soundFx.playScanBeep();
     setActiveHotspot(spot);
     setAutoRotate(false);
 
     if (cameraRef.current && modelGroupRef.current) {
-      // Smoothly animate camera toward target camera angle
       const [tx, ty, tz] = spot.targetCamera;
       cameraRef.current.position.set(tx, ty, tz);
       cameraRef.current.lookAt(0, 0, 0);
     }
   };
 
-  // Capture High-Res Snapshot
   const handleSnapshot = () => {
     soundFx.playScanBeep();
     setSnapshotTaken(true);
@@ -496,19 +478,19 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
   };
 
   return (
-    <div className="bg-slate-950 rounded-3xl overflow-hidden border border-emerald-500/40 text-white shadow-2xl flex flex-col h-full relative">
+    <div className="bg-[#0E121B] rounded-3xl overflow-hidden border border-white/10 text-white shadow-2xl flex flex-col h-full relative">
       {/* Top Controls Bar */}
-      <div className="px-5 py-3.5 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 z-10">
+      <div className="px-5 py-3.5 bg-[#0E121B] border-b border-white/10 flex flex-wrap items-center justify-between gap-3 z-10">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/40">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white flex items-center justify-center shadow-md">
             <Compass className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-bold text-white font-['Outfit']">
+              <h2 className="text-sm font-bold text-white tracking-tight">
                 {listing?.title || (lang === 'vi' ? 'Mô Hình 3D Kiểm Định Thiết Bị' : '3D Hardware Inspection Model')}
               </h2>
-              <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-mono px-2 py-0.5 rounded-full border border-emerald-500/30">
+              <span className="text-[10px] bg-white/10 text-white font-mono px-2 py-0.5 rounded-full border border-white/20">
                 PBR 3D SHADER
               </span>
             </div>
@@ -522,13 +504,12 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Exploded / X-Ray Teardown Button */}
           <button
             onClick={toggleExplodedView}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer ${
               explodedView
-                ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-400/40'
-                : 'bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700'
+                ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md'
+                : 'bg-white/10 text-white hover:bg-white/20 border border-white/20'
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
@@ -539,7 +520,6 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
             </span>
           </button>
 
-          {/* Auto Rotate Toggle */}
           <button
             onClick={() => {
               soundFx.playChime();
@@ -547,36 +527,34 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
             }}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition border cursor-pointer ${
               autoRotate
-                ? 'bg-emerald-600/80 text-white border-emerald-500'
-                : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white border-transparent'
+                : 'bg-white/10 text-slate-400 border-white/20 hover:text-white'
             }`}
           >
             {autoRotate ? 'Tắt Xoay Tự Động' : 'Bật Xoay Tự Động'}
           </button>
 
-          {/* Reset Camera */}
           <button
             onClick={handleResetCamera}
-            className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 border border-slate-700 transition cursor-pointer"
+            className="p-2 rounded-xl bg-white/10 text-white hover:bg-white/20 border border-white/20 transition cursor-pointer"
             title="Khôi phục góc nhìn"
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
 
-          {/* Snapshot Button */}
           <button
             onClick={handleSnapshot}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-95 text-white text-xs font-bold transition cursor-pointer shadow-md"
             title="Chụp ảnh 3D & Lưu"
           >
-            <Download className="w-3.5 h-3.5 text-emerald-400" />
+            <Download className="w-3.5 h-3.5 text-white" />
             <span>{snapshotTaken ? 'Đã Lưu!' : 'Chụp 3D'}</span>
           </button>
 
           {onClose && (
             <button
               onClick={onClose}
-              className="px-3 py-1.5 rounded-xl bg-red-500/20 text-red-300 hover:bg-red-500/30 text-xs font-bold border border-red-500/30 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-white/10 text-white hover:bg-white/20 text-xs font-bold border border-white/20 cursor-pointer"
             >
               Đóng
             </button>
@@ -585,16 +563,15 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
       </div>
 
       {/* Main 3D Canvas Area */}
-      <div className="relative flex-1 min-h-[440px] sm:min-h-[500px] w-full bg-gradient-to-b from-slate-950 via-slate-900 to-black overflow-hidden flex items-center justify-center">
+      <div className="relative flex-1 min-h-[440px] sm:min-h-[500px] w-full bg-[#0E121B] overflow-hidden flex items-center justify-center">
         <canvas ref={canvasRef} className="w-full h-full block cursor-grab active:cursor-grabbing" />
 
-        {/* Ambient Grid overlay */}
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#05966908_1px,transparent_1px),linear-gradient(to_bottom,#05966908_1px,transparent_1px)] bg-[size:30px_30px] pointer-events-none" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:30px_30px] pointer-events-none" />
 
         {/* Left Floating Hotspot Inspection Points */}
         <div className="absolute left-4 top-4 z-10 flex flex-col gap-2 max-w-[240px]">
           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-            <Eye className="w-3 h-3 text-emerald-400" />
+            <Eye className="w-3 h-3 text-[#EC1577]" />
             <span>{lang === 'vi' ? 'Điểm Kiểm Tra Vi Mô' : 'Inspection Pins'}</span>
           </div>
 
@@ -606,23 +583,23 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
                 onClick={() => handleHotspotClick(spot)}
                 className={`text-left p-2 rounded-xl text-xs transition border backdrop-blur-md cursor-pointer flex items-center justify-between gap-2 ${
                   isActive
-                    ? 'bg-emerald-600/90 text-white border-emerald-400 ring-2 ring-emerald-500/30 shadow-lg'
-                    : 'bg-slate-900/80 text-slate-300 border-slate-700/80 hover:bg-slate-800'
+                    ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white border-transparent shadow-lg'
+                    : 'bg-[#FFFFFF]/90 text-[#0E121B] border-slate-200 hover:bg-[#F4F5F8]'
                 }`}
               >
                 <div className="truncate">
                   <div className="font-bold truncate">{lang === 'vi' ? spot.titleVi : spot.titleEn}</div>
-                  <div className="text-[10px] text-slate-400 truncate">
+                  <div className={`text-[10px] ${isActive ? 'text-white/90' : 'text-slate-500'} truncate`}>
                     {spot.status === 'passed' ? '✓ Đạt 100%' : spot.status === 'verified' ? '★ Xác thực Hub' : '⚠ Vi xước nhẹ'}
                   </div>
                 </div>
                 <div
                   className={`w-2 h-2 rounded-full shrink-0 ${
                     spot.status === 'passed'
-                      ? 'bg-emerald-400'
+                      ? 'bg-white'
                       : spot.status === 'verified'
-                      ? 'bg-teal-400'
-                      : 'bg-amber-400'
+                      ? 'bg-[#EC1577]'
+                      : 'bg-slate-400'
                   }`}
                 />
               </button>
@@ -630,73 +607,73 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
           })}
         </div>
 
-        {/* Active Hotspot Detail Card Modal Overlay */}
+        {/* Active Hotspot Detail Card Overlay */}
         {activeHotspot && (
-          <div className="absolute right-4 top-4 z-10 max-w-sm bg-slate-900/95 backdrop-blur-xl border border-emerald-500/50 rounded-2xl p-4 shadow-2xl space-y-2 animate-fadeIn">
+          <div className="absolute right-4 top-4 z-10 max-w-sm bg-[#FFFFFF] backdrop-blur-xl border border-slate-200 rounded-2xl p-4 shadow-2xl space-y-2 animate-fadeIn text-[#0E121B]">
             <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 uppercase bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/30">
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-white uppercase bg-gradient-to-r from-[#EC1577] to-[#F1622A] px-2 py-0.5 rounded shadow-sm">
                 <ShieldCheck className="w-3 h-3" />
                 <span>SecondLife Hub Verified</span>
               </span>
               <button
                 onClick={() => setActiveHotspot(null)}
-                className="text-slate-400 hover:text-white text-xs px-1"
+                className="text-slate-400 hover:text-[#0E121B] text-xs px-1"
               >
                 ✕
               </button>
             </div>
 
-            <h3 className="font-bold text-white text-sm">
+            <h3 className="font-bold text-[#0E121B] text-sm">
               {lang === 'vi' ? activeHotspot.titleVi : activeHotspot.titleEn}
             </h3>
 
-            <p className="text-xs text-slate-300 leading-relaxed">
+            <p className="text-xs text-[#0E121B]/80 leading-relaxed">
               {lang === 'vi' ? activeHotspot.descVi : activeHotspot.descEn}
             </p>
 
-            <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+            <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500 font-mono">
               <span>Độ phân giải siêu âm: 0.05mm</span>
-              <span className="text-emerald-400 font-bold">KẾT QUẢ: ĐẠT CHUẨN</span>
+              <span className="text-[#EC1577] font-bold">KẾT QUẢ: ĐẠT CHUẨN</span>
             </div>
           </div>
         )}
 
         {/* Exploded Mode HUD Indicator */}
         {explodedView && (
-          <div className="absolute top-4 inset-x-0 mx-auto w-fit z-10 bg-amber-500/20 backdrop-blur-md border border-amber-400/40 text-amber-300 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 animate-pulse">
-            <Layers className="w-3.5 h-3.5" />
+          <div className="absolute top-4 inset-x-0 mx-auto w-fit z-10 bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-lg">
+            <Layers className="w-3.5 h-3.5 text-white" />
             <span>{lang === 'vi' ? 'ĐANG BÓC TÁCH LINH KIỆN & PIN (X-RAY)' : 'EXPLODED HARDWARE VIEW ACTIVE'}</span>
           </div>
         )}
 
-        {/* Floating Zoom & Compass Controls (Bottom Right) */}
-        <div className="absolute right-4 bottom-4 z-10 flex flex-col gap-1.5 bg-slate-900/80 backdrop-blur-md p-1.5 rounded-2xl border border-slate-800">
+        {/* Floating Zoom Controls */}
+        <div className="absolute right-4 bottom-4 z-10 flex flex-col gap-1.5 bg-[#0E121B]/90 backdrop-blur-md p-1.5 rounded-2xl border border-white/10">
           <button
             onClick={() => handleZoom(0.5)}
-            className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition"
+            className="p-2 rounded-xl text-white hover:bg-white/10 transition"
             title="Phóng to"
           >
             <ZoomIn className="w-4 h-4" />
           </button>
           <button
             onClick={() => handleZoom(-0.5)}
-            className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition"
+            className="p-2 rounded-xl text-white hover:bg-white/10 transition"
             title="Thu nhỏ"
           >
             <ZoomOut className="w-4 h-4" />
           </button>
-          <div className="text-[10px] font-mono text-center text-slate-400 pt-1 border-t border-slate-800">
+          <div className="text-[10px] font-mono text-center text-slate-400 pt-1 border-t border-white/10">
             {zoomLevel}x
           </div>
         </div>
       </div>
 
       {/* Bottom Colorway & Lighting Customizer Toolbar */}
-      <div className="px-5 py-3 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 flex flex-wrap items-center justify-between gap-4 z-10 text-xs">
+      <div className="px-5 py-3 bg-[#0E121B] border-t border-white/10 flex flex-wrap items-center justify-between gap-4 z-10 text-xs">
         {/* Color Switcher */}
         <div className="flex items-center gap-2.5">
           <div className="flex items-center gap-1 text-slate-400 font-semibold">
-            <Palette className="w-3.5 h-3.5 text-emerald-400" />
+            <Palette className="w-3.5 h-3.5 text-[#EC1577]" />
             <span>{lang === 'vi' ? 'Màu Hoàn Thiện:' : 'Colorway:'}</span>
           </div>
           <div className="flex items-center gap-2">
@@ -707,10 +684,10 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
                   soundFx.playChime();
                   setSelectedColor(c);
                 }}
-                className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-xl border transition ${
+                className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-xl border transition cursor-pointer ${
                   selectedColor.id === c.id
-                    ? 'bg-slate-800 border-emerald-500 text-white font-bold'
-                    : 'bg-slate-900/70 border-slate-700 text-slate-400 hover:text-slate-200'
+                    ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] border-transparent text-white font-bold'
+                    : 'bg-white/10 border-white/20 text-slate-400 hover:text-white'
                 }`}
               >
                 <span
@@ -726,7 +703,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
         {/* Lighting Atmosphere Preset */}
         <div className="flex items-center gap-2.5">
           <div className="flex items-center gap-1 text-slate-400 font-semibold">
-            <Sun className="w-3.5 h-3.5 text-amber-400" />
+            <Sun className="w-3.5 h-3.5 text-[#EC1577]" />
             <span>{lang === 'vi' ? 'Ánh Sáng Studio:' : 'Lighting:'}</span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -735,10 +712,10 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
                 soundFx.playChime();
                 setLightingPreset('studio');
               }}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition ${
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
                 lightingPreset === 'studio'
-                  ? 'bg-white text-slate-950 shadow-sm'
-                  : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                  ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white font-bold shadow-sm'
+                  : 'bg-white/10 text-slate-400 hover:text-white border border-white/20'
               }`}
             >
               Phòng Lab
@@ -748,23 +725,23 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
                 soundFx.playChime();
                 setLightingPreset('cyber');
               }}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition ${
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
                 lightingPreset === 'cyber'
-                  ? 'bg-emerald-500 text-slate-950 font-bold shadow-sm'
-                  : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                  ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white font-bold shadow-sm'
+                  : 'bg-white/10 text-slate-400 hover:text-white border border-white/20'
               }`}
             >
-              Cyber Hologram
+              Monochrome Glow
             </button>
             <button
               onClick={() => {
                 soundFx.playChime();
                 setLightingPreset('sun');
               }}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition ${
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
                 lightingPreset === 'sun'
-                  ? 'bg-amber-400 text-slate-950 font-bold shadow-sm'
-                  : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                  ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white font-bold shadow-sm'
+                  : 'bg-white/10 text-slate-400 hover:text-white border border-white/20'
               }`}
             >
               Nắng Tự Nhiên

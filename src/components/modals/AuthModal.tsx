@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { UserRole, Language } from '../../types';
 import { soundFx } from '../../utils/soundEffects';
+import { authService } from '../../services/authService';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -58,6 +59,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [resetSent, setResetSent] = useState(false);
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const getPasswordStrength = (pass: string) => {
     if (!pass) return 0;
@@ -75,6 +77,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setMode(initialMode);
       setErrorMsg(null);
       setResetSent(false);
+      setIsLoading(false);
     }
   }, [isOpen, initialMode]);
 
@@ -127,6 +130,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
     ];
 
+  const mapBackendRole = (roles?: string[]): UserRole => {
+    if (!roles || roles.length === 0) return 'buyer';
+    if (roles.includes('ROLE_ADMIN') || roles.includes('ADMIN')) return 'admin';
+    if (roles.includes('ROLE_INSPECTOR') || roles.includes('INSPECTOR') || roles.includes('HUB_INSPECTOR')) return 'inspector';
+    if (roles.includes('ROLE_SELLER') || roles.includes('SELLER')) return 'seller';
+    return 'buyer';
+  };
+
   const handleDemoLogin = (account: typeof demoAccounts[0]) => {
     soundFx.playChime();
     onLoginSuccess({
@@ -138,7 +149,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     onClose();
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     if (!emailOrPhone.trim() || !password.trim()) {
@@ -150,17 +161,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    soundFx.playChime();
-    onLoginSuccess({
-      id: `USR-${Math.floor(1000 + Math.random() * 9000)}`,
-      name: emailOrPhone.split('@')[0] || (lang === 'vi' ? 'Người Dùng' : 'User'),
-      email: emailOrPhone.includes('@') ? emailOrPhone : `${emailOrPhone}@user.secondlife.vn`,
-      role: selectedRole
-    });
-    onClose();
+    setIsLoading(true);
+    try {
+      const res = await authService.login({
+        email: emailOrPhone.trim(),
+        password: password
+      });
+      soundFx.playChime();
+      const mappedRole = mapBackendRole(res.roles);
+      onLoginSuccess({
+        id: res.user.id,
+        name: res.user.fullName || res.user.email,
+        email: res.user.email,
+        role: mappedRole
+      });
+      onClose();
+    } catch (err: any) {
+      setErrorMsg(err.message || (lang === 'vi' ? 'Đăng nhập thất bại. Vui lòng kiểm tra lại.' : 'Login failed. Please check credentials.'));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     if (!fullName.trim() || !registerEmail.trim() || !registerPassword.trim()) {
@@ -178,17 +201,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    soundFx.playChime();
-    onLoginSuccess({
-      id: `USR-${Math.floor(1000 + Math.random() * 9000)}`,
-      name: fullName,
-      email: registerEmail,
-      role: selectedRole
-    });
-    onClose();
+    setIsLoading(true);
+    try {
+      const res = await authService.register({
+        email: registerEmail.trim(),
+        password: registerPassword,
+        fullName: fullName.trim(),
+        phone: phoneNumber.trim() || undefined
+      });
+      soundFx.playChime();
+      const mappedRole = mapBackendRole(res.roles);
+      onLoginSuccess({
+        id: res.user.id,
+        name: res.user.fullName || res.user.email,
+        email: res.user.email,
+        role: mappedRole
+      });
+      onClose();
+    } catch (err: any) {
+      setErrorMsg(err.message || (lang === 'vi' ? 'Đăng ký thất bại. Vui lòng thử lại.' : 'Registration failed. Please try again.'));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleForgotSubmit = (e: React.FormEvent) => {
+  const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     if (!resetEmail.trim()) {
@@ -197,9 +234,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       );
       return;
     }
-    soundFx.playChime();
-    setResetSent(true);
+
+    setIsLoading(true);
+    try {
+      await authService.forgotPassword(resetEmail.trim());
+      soundFx.playChime();
+      setResetSent(true);
+    } catch (err: any) {
+      setErrorMsg(err.message || (lang === 'vi' ? 'Gửi yêu cầu thất bại.' : 'Failed to send reset link.'));
+    } finally {
+      setIsLoading(false);
+    }
   };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/60 backdrop-blur-lg overflow-y-auto animate-fadeIn">
@@ -495,10 +542,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                 <button
                   type="submit"
-                  className="w-full py-3 px-4 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 group"
+                  disabled={isLoading}
+                  className="w-full py-3 px-4 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 group"
                 >
-                  <span>{lang === 'vi' ? 'Đăng Nhập Tài Khoản' : 'Log In Account'}</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  <span>
+                    {isLoading
+                      ? (lang === 'vi' ? 'Đang xử lý...' : 'Logging in...')
+                      : (lang === 'vi' ? 'Đăng Nhập Tài Khoản' : 'Log In Account')}
+                  </span>
+                  {!isLoading && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
                 </button>
               </form>
             )}
@@ -650,10 +702,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                 <button
                   type="submit"
-                  className="w-full py-3 px-4 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 group"
+                  disabled={isLoading}
+                  className="w-full py-3 px-4 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 group"
                 >
-                  <span>{lang === 'vi' ? 'Hoàn Tất Đăng Ký Tài Khoản' : 'Create Account Now'}</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  <span>
+                    {isLoading
+                      ? (lang === 'vi' ? 'Đang khởi tạo tài khoản...' : 'Creating account...')
+                      : (lang === 'vi' ? 'Hoàn Tất Đăng Ký Tài Khoản' : 'Create Account Now')}
+                  </span>
+                  {!isLoading && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
                 </button>
               </form>
             )}

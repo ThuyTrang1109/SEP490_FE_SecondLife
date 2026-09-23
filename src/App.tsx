@@ -17,6 +17,7 @@ import { HomePageView } from './pages/HomePageView';
 import { AuthModal } from './components/modals/AuthModal';
 import { ProfileDialog } from './components/modals/ProfileDialog';
 import { ShieldCheck, Sparkles, CheckCircle2 } from 'lucide-react';
+import { authService, userService, getAccessToken, clearAuthTokens } from './services';
 
 export default function App() {
   // Global State
@@ -51,6 +52,35 @@ export default function App() {
       accountHolder: 'HOANG QUOC KHANG'
     }
   });
+
+  // Session Restore Effect
+  React.useEffect(() => {
+    const token = getAccessToken();
+    if (token) {
+      userService.getMyProfile()
+        .then((profile) => {
+          let role: UserRole = 'buyer';
+          if (profile.roles?.includes('ROLE_ADMIN') || profile.roles?.includes('ADMIN')) role = 'admin';
+          else if (profile.roles?.includes('ROLE_INSPECTOR') || profile.roles?.includes('INSPECTOR')) role = 'inspector';
+          else if (profile.roles?.includes('ROLE_SELLER') || profile.roles?.includes('SELLER')) role = 'seller';
+
+          setCurrentUser({
+            id: profile.id,
+            name: profile.fullName || profile.email,
+            email: profile.email,
+            role: role,
+            phone: profile.phone || '',
+            kycStatus: profile.emailVerified ? 'verified' : 'unverified'
+          });
+          setCurrentRole(role);
+        })
+        .catch(() => {
+          // Token invalid or expired
+          clearAuthTokens();
+        });
+    }
+  }, []);
+
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
@@ -217,6 +247,7 @@ export default function App() {
             setIsAuthModalOpen(true);
           }}
           onLogout={() => {
+            authService.logout();
             setCurrentUser(null);
             showToast('Đã đăng xuất tài khoản thành công.');
           }}
@@ -412,6 +443,7 @@ export default function App() {
         }}
         onRoleChange={handleRoleChange}
         onLogout={() => {
+          authService.logout();
           setCurrentUser(null);
           showToast(
             lang === 'vi'

@@ -1,0 +1,160 @@
+﻿{
+    "openapi":  "3.1.0",
+    "info":  {
+                 "title":  "SecondLife - API Documentation",
+                 "description":  "AI-Powered Second-Hand Marketplace with Price Estimation \u0026 Authentication Service - Identity \u0026 Access Management Module",
+                 "contact":  {
+                                 "name":  "SecondLife Team",
+                                 "email":  "support@secondlife.com"
+                             },
+                 "license":  {
+                                 "name":  "Apache 2.0",
+                                 "url":  "https://www.apache.org/licenses/LICENSE-2.0"
+                             },
+                 "version":  "v1.0.0"
+             },
+    "servers":  [
+                    {
+                        "url":  "http://localhost:8080",
+                        "description":  "Generated server url"
+                    }
+                ],
+    "security":  [
+                     {
+                         "BearerAuth":  ""
+                     }
+                 ],
+    "tags":  [
+                 {
+                     "name":  "Admin - Seller Verifications",
+                     "description":  "Admin seller verification review and Inspection Center provisioning APIs"
+                 },
+                 {
+                     "name":  "Authentication",
+                     "description":  "User registration, authentication, token refresh, and password reset APIs"
+                 },
+                 {
+                     "name":  "Admin - Users",
+                     "description":  "Admin user administration and status management APIs"
+                 },
+                 {
+                     "name":  "User Profile",
+                     "description":  "User profile and password management APIs"
+                 },
+                 {
+                     "name":  "Seller Verification",
+                     "description":  "Seller identity verification submission and status APIs"
+                 }
+             ],
+    "paths":  {
+                  "/api/v1/seller-verifications":  {
+                                                       "post":  "@{tags=System.Object[]; summary=Submit seller verification request; operationId=submitVerification; requestBody=; responses=}"
+                                                   },
+                  "/api/v1/seller-verifications/{verificationId}/resubmit":  {
+                                                                                 "post":  "@{tags=System.Object[]; summary=Resubmit documents for a verification requiring resubmission; operationId=resubmitVerification; parameters=System.Object[]; requestBody=; responses=}"
+                                                                             },
+                  "/api/v1/me/change-password":  {
+                                                     "post":  "@{tags=System.Object[]; summary=Change own password and revoke active sessions; operationId=changeMyPassword; requestBody=; responses=}"
+                                                 },
+                  "/api/v1/auth/verify-email":  {
+                                                    "post":  "@{tags=System.Object[]; summary=Verify account email using 6-digit OTP code; operationId=verifyEmail; requestBody=; responses=}"
+                                                },
+                  "/api/v1/auth/reset-password":  {
+                                                      "post":  "@{tags=System.Object[]; summary=Reset account password with 6-digit OTP code; operationId=resetPassword; requestBody=; responses=}"
+                                                  },
+                  "/api/v1/auth/resend-verification":  {
+                                                           "post":  "@{tags=System.Object[]; summary=Resend account verification email; operationId=resendVerification; requestBody=; responses=}"
+                                                       },
+                  "/api/v1/auth/register":  {
+                                                "post":  "@{tags=System.Object[]; summary=Register a new user account (defaults to BUYER role); operationId=register; requestBody=; responses=}"
+                                            },
+                  "/api/v1/auth/refresh":  {
+                                               "post":  "@{tags=System.Object[]; summary=Refresh JWT access token using refresh token; operationId=refresh; requestBody=; responses=}"
+                                           },
+                  "/api/v1/auth/logout":  {
+                                              "post":  "@{tags=System.Object[]; summary=Logout and revoke active refresh token; operationId=logout; requestBody=; responses=}"
+                                          },
+                  "/api/v1/auth/login":  {
+                                             "post":  "@{tags=System.Object[]; summary=Authenticate with email and password; operationId=login; requestBody=; responses=}"
+                                         },
+                  "/api/v1/auth/google":  {
+                                              "post":  "@{tags=System.Object[]; summary=Authenticate with Google ID token (auto-registers new user with BUYER role if not exists); operationId=googleLogin; requestBody=; responses=}"
+                                          },
+                  "/api/v1/auth/forgot-password":  {
+                                                       "post":  "@{tags=System.Object[]; summary=Request password reset email; operationId=forgotPassword; requestBody=; responses=}"
+                                                   },
+                  "/api/v1/admin/seller-verifications/{id}/reject":  {
+                                                                         "post":  "@{tags=System.Object[]; summary=Reject seller verification in NEEDS_REVIEW status with structured rejection reason; operationId=rejectSellerVerification; parameters=System.Object[]; requestBody=; responses=}"
+                                                                     },
+                  "/api/v1/admin/seller-verifications/{id}/approve":  {
+                                                                          "post":  "@{tags=System.Object[]; summary=Approve seller verification in NEEDS_REVIEW status and assign SELLER role; operationId=approveSellerVerification; parameters=System.Object[]; responses=}"
+                                                                      },
+                  "/api/v1/admin/inspection-center-accounts":  {
+                                                                   "post":  "@{tags=System.Object[]; summary=Create Inspection Center partner account; operationId=createInspectionCenterAccount; requestBody=; responses=}"
+                                                               },
+                  "/api/v1/me":  {
+                                     "get":  "@{tags=System.Object[]; summary=Get current user profile; operationId=getMyProfile; responses=}",
+                                     "patch":  "@{tags=System.Object[]; summary=Update current user profile; operationId=updateMyProfile; requestBody=; responses=}"
+                                 },
+                  "/api/v1/admin/users/{userId}/status":  {
+                                                              "patch":  "@{tags=System.Object[]; summary=Update user account status (ACTIVE, LOCKED, DISABLED); operationId=updateUserStatus; parameters=System.Object[]; requestBody=; responses=}"
+                                                          },
+                  "/api/v1/seller-verifications/me":  {
+                                                          "get":  "@{tags=System.Object[]; summary=Get current seller verification status; operationId=getMyVerification; responses=}"
+                                                      },
+                  "/api/v1/admin/users":  {
+                                              "get":  "@{tags=System.Object[]; summary=Get users with filtering and pagination; operationId=getUsers; parameters=System.Object[]; responses=}"
+                                          },
+                  "/api/v1/admin/users/{userId}":  {
+                                                       "get":  "@{tags=System.Object[]; summary=Get user details by ID; operationId=getUserById; parameters=System.Object[]; responses=}"
+                                                   },
+                  "/api/v1/admin/seller-verifications":  {
+                                                             "get":  "@{tags=System.Object[]; summary=Get seller verifications with filters (status, ekycStatus, riskStatus, reasonCode) and pagination; operationId=getSellerVerifications; parameters=System.Object[]; responses=}"
+                                                         },
+                  "/api/v1/admin/seller-verifications/{id}":  {
+                                                                  "get":  "@{tags=System.Object[]; summary=Get detailed seller verification by ID including eKYC metrics and event history; operationId=getSellerVerificationById; parameters=System.Object[]; responses=}"
+                                                              }
+              },
+    "components":  {
+                       "schemas":  {
+                                       "SellerVerificationRequest":  "@{type=object; properties=; required=System.Object[]}",
+                                       "ApiResponseSellerVerificationResponse":  "@{type=object; properties=}",
+                                       "SellerVerificationResponse":  "@{type=object; properties=}",
+                                       "SellerVerificationResubmitRequest":  "@{type=object; properties=; required=System.Object[]}",
+                                       "ChangePasswordRequest":  "@{type=object; properties=; required=System.Object[]}",
+                                       "ApiResponseVoid":  "@{type=object; properties=}",
+                                       "VerifyEmailRequest":  "@{type=object; properties=; required=System.Object[]}",
+                                       "ResetPasswordRequest":  "@{type=object; properties=; required=System.Object[]}",
+                                       "ResendVerificationRequest":  "@{type=object; properties=; required=System.Object[]}",
+                                       "RegisterRequest":  "@{type=object; properties=; required=System.Object[]}",
+                                       "ApiResponseAuthResponse":  "@{type=object; properties=}",
+                                       "AuthResponse":  "@{type=object; properties=}",
+                                       "UserSummaryResponse":  "@{type=object; properties=}",
+                                       "RefreshTokenRequest":  "@{type=object; properties=; required=System.Object[]}",
+                                       "ApiResponseTokenResponse":  "@{type=object; properties=}",
+                                       "TokenResponse":  "@{type=object; properties=}",
+                                       "LoginRequest":  "@{type=object; properties=; required=System.Object[]}",
+                                       "GoogleLoginRequest":  "@{type=object; properties=; required=System.Object[]}",
+                                       "ForgotPasswordRequest":  "@{type=object; properties=; required=System.Object[]}",
+                                       "SellerVerificationReviewRequest":  "@{type=object; properties=; required=System.Object[]}",
+                                       "CreateInspectionCenterRequest":  "@{type=object; properties=; required=System.Object[]}",
+                                       "ApiResponseUserSummaryResponse":  "@{type=object; properties=}",
+                                       "UpdateProfileRequest":  "@{type=object; properties=}",
+                                       "ApiResponseUserProfileResponse":  "@{type=object; properties=}",
+                                       "UserProfileResponse":  "@{type=object; properties=}",
+                                       "AdminStatusUpdateRequest":  "@{type=object; properties=; required=System.Object[]}",
+                                       "ApiResponseUserAdminResponse":  "@{type=object; properties=}",
+                                       "UserAdminResponse":  "@{type=object; properties=}",
+                                       "ApiResponsePageResponseUserAdminResponse":  "@{type=object; properties=}",
+                                       "PageResponseUserAdminResponse":  "@{type=object; properties=}",
+                                       "ApiResponsePageResponseSellerVerificationResponse":  "@{type=object; properties=}",
+                                       "PageResponseSellerVerificationResponse":  "@{type=object; properties=}",
+                                       "AdminSellerVerificationDetailResponse":  "@{type=object; properties=}",
+                                       "ApiResponseAdminSellerVerificationDetailResponse":  "@{type=object; properties=}",
+                                       "VerificationEventResponse":  "@{type=object; properties=}"
+                                   },
+                       "securitySchemes":  {
+                                               "BearerAuth":  "@{type=http; description=Enter your JWT Bearer token obtained from /api/v1/auth/login or /api/v1/auth/register; name=BearerAuth; scheme=bearer; bearerFormat=JWT}"
+                                           }
+                   }
+}

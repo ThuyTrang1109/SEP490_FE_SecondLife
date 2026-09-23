@@ -50,8 +50,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="hidden sm:inline text-slate-600">|</span>
           <span className="hidden md:inline text-slate-200 font-medium">
             {lang === 'vi'
-              ? 'Bảo vệ tài chính 100% qua Quỹ tín thác & Kiểm định chuyên gia SecondLife Hub'
-              : '100% Escrow buyer protection & Certified hardware inspection'}
+              ? 'Bảo vệ tài chính qua Quỹ tín thác & Kiểm định chuyên gia SecondLife Hub'
+              : 'Escrow buyer protection & Certified hardware inspection'}
           </span>
         </div>
 
@@ -69,7 +69,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="text-white/20 hidden md:inline">|</span>
             <span className="hidden md:flex items-center gap-1 text-slate-300">
               <ShieldCheck className="w-3 h-3 text-emerald-400" />
-              <span>{lang === 'vi' ? 'Bảo lãnh Escrow 100%' : '100% Escrow Protected'}</span>
+              <span>{lang === 'vi' ? 'Bảo lãnh Escrow' : 'Escrow Protected'}</span>
             </span>
           </div>
 

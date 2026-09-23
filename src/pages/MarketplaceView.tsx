@@ -59,12 +59,7 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
   return (
     <div className="space-y-6 pb-16 text-[#2F2F2F]">
       {/* 3D Motion Showroom Studio */}
-      <ShowroomLobby3D
-        lang={lang}
-        onExplore3DProduct={() => {
-          setViewer3DListing(filteredListings[0] || listings[0]);
-        }}
-      />
+      <ShowroomLobby3D lang={lang} />
 
       {/* 3D Inspection Viewer Modal Popup */}
       {viewer3DListing && (

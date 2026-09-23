@@ -547,13 +547,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       <div className="flex-1 flex relative">
         {/* LEFT SIDEBAR */}
         <aside
-          className={`bg-[#0E121B] text-white transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] ${
-            isSidebarCollapsed ? 'w-16' : 'w-60 sm:w-64'
-          } ${
-            isMobileSidebarOpen
+          className={`bg-[#0E121B] text-white transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] ${isSidebarCollapsed ? 'w-16' : 'w-60 sm:w-64'
+            } ${isMobileSidebarOpen
               ? 'fixed inset-y-13 left-0 shadow-2xl block'
               : 'hidden md:flex'
-          }`}
+            }`}
         >
           {/* User Block */}
           <div className="p-3.5 sm:p-4 border-b border-slate-800/80 flex items-center gap-3">
@@ -595,18 +593,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     setActiveTab(item.id);
                     setIsMobileSidebarOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition cursor-pointer group ${
-                    isActive
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition cursor-pointer group ${isActive
                       ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md'
                       : 'text-slate-300 hover:text-white hover:bg-white/8'
-                  }`}
+                    }`}
                   title={item.label}
                 >
                   <div className="flex items-center gap-3 truncate">
                     <Icon
-                      className={`w-4 h-4 shrink-0 transition ${
-                        isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'
-                      }`}
+                      className={`w-4 h-4 shrink-0 transition ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'
+                        }`}
                     />
                     {!isSidebarCollapsed && (
                       <span className="truncate">{item.label}</span>
@@ -617,17 +613,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <div className="flex items-center gap-1.5 shrink-0">
                       {item.badge !== null && item.badge !== undefined && (
                         <span
-                          className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                            item.badgeColor || 'bg-slate-700 text-slate-200'
-                          }`}
+                          className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${item.badgeColor || 'bg-slate-700 text-slate-200'
+                            }`}
                         >
                           {item.badge}
                         </span>
                       )}
                       <ChevronRight
-                        className={`w-3.5 h-3.5 transition-transform ${
-                          isActive ? 'text-white translate-x-0.5' : 'text-slate-500 group-hover:text-slate-300'
-                        }`}
+                        className={`w-3.5 h-3.5 transition-transform ${isActive ? 'text-white translate-x-0.5' : 'text-slate-500 group-hover:text-slate-300'
+                          }`}
                       />
                     </div>
                   )}
@@ -1131,7 +1125,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           </td>
                           <td className="py-3 text-center">
                             {ord.escrowStatus !== 'COMPLETED_RELEASED' &&
-                            ord.escrowStatus !== 'REFUNDED_TO_BUYER' ? (
+                              ord.escrowStatus !== 'REFUNDED_TO_BUYER' ? (
                               <button
                                 onClick={() => handleForceReleaseEscrow(ord.id)}
                                 className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold transition cursor-pointer shadow-xs"
@@ -1245,11 +1239,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           </td>
                           <td className="py-3 text-center">
                             <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                isVisible
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${isVisible
                                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                   : 'bg-gray-100 text-gray-600'
-                              }`}
+                                }`}
                             >
                               {isVisible ? 'Đang Hiển Thị' : 'Tạm Ẩn'}
                             </span>
@@ -1305,11 +1298,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <div
                         key={disp.id}
                         onClick={() => setSelectedDisputeId(disp.id)}
-                        className={`p-3.5 rounded-xl border transition cursor-pointer ${
-                          isSelected
+                        className={`p-3.5 rounded-xl border transition cursor-pointer ${isSelected
                             ? 'bg-[#0E121B] text-white border-[#0E121B] shadow-sm'
                             : 'bg-white border-slate-200 hover:border-[#EC1577] text-slate-800'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center justify-between text-[11px] opacity-80">
                           <span className="font-mono font-bold">#{disp.id}</span>

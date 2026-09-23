@@ -1,0 +1,2099 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "SecondLife - API Documentation",
+        "description": "AI-Powered Second-Hand Marketplace with Price Estimation & Authentication Service - Identity & Access Management Module",
+        "contact": {
+            "name": "SecondLife Team",
+            "email": "support@secondlife.com"
+        },
+        "license": {
+            "name": "Apache 2.0",
+            "url": "https://www.apache.org/licenses/LICENSE-2.0"
+        },
+        "version": "v1.0.0"
+    },
+    "servers": [
+        {
+            "url": "http://localhost:8080",
+            "description": "Generated server url"
+        }
+    ],
+    "security": [
+        {
+            "BearerAuth": []
+        }
+    ],
+    "tags": [
+        {
+            "name": "Admin - Seller Verifications",
+            "description": "Admin seller verification review and Inspection Center provisioning APIs"
+        },
+        {
+            "name": "Authentication",
+            "description": "User registration, authentication, token refresh, and password reset APIs"
+        },
+        {
+            "name": "Admin - Users",
+            "description": "Admin user administration and status management APIs"
+        },
+        {
+            "name": "User Profile",
+            "description": "User profile and password management APIs"
+        },
+        {
+            "name": "Seller Verification",
+            "description": "Seller identity verification submission and status APIs"
+        }
+    ],
+    "paths": {
+        "/api/v1/seller-verifications": {
+            "post": {
+                "tags": [
+                    "Seller Verification"
+                ],
+                "summary": "Submit seller verification request",
+                "operationId": "submitVerification",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SellerVerificationRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSellerVerificationResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/seller-verifications/{verificationId}/resubmit": {
+            "post": {
+                "tags": [
+                    "Seller Verification"
+                ],
+                "summary": "Resubmit documents for a verification requiring resubmission",
+                "operationId": "resubmitVerification",
+                "parameters": [
+                    {
+                        "name": "verificationId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SellerVerificationResubmitRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSellerVerificationResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/me/change-password": {
+            "post": {
+                "tags": [
+                    "User Profile"
+                ],
+                "summary": "Change own password and revoke active sessions",
+                "operationId": "changeMyPassword",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChangePasswordRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseVoid"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/verify-email": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Verify account email using 6-digit OTP code",
+                "operationId": "verifyEmail",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/VerifyEmailRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseVoid"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/reset-password": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Reset account password with 6-digit OTP code",
+                "operationId": "resetPassword",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ResetPasswordRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseVoid"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/resend-verification": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Resend account verification email",
+                "operationId": "resendVerification",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ResendVerificationRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseVoid"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/register": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Register a new user account (defaults to BUYER role)",
+                "operationId": "register",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RegisterRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseAuthResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/refresh": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Refresh JWT access token using refresh token",
+                "operationId": "refresh",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RefreshTokenRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseTokenResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/logout": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Logout and revoke active refresh token",
+                "operationId": "logout",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RefreshTokenRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseVoid"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/login": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Authenticate with email and password",
+                "operationId": "login",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LoginRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseAuthResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/google": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Authenticate with Google ID token (auto-registers new user with BUYER role if not exists)",
+                "operationId": "googleLogin",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/GoogleLoginRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseAuthResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/forgot-password": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Request password reset email",
+                "operationId": "forgotPassword",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ForgotPasswordRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseVoid"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/seller-verifications/{id}/reject": {
+            "post": {
+                "tags": [
+                    "Admin - Seller Verifications"
+                ],
+                "summary": "Reject seller verification in NEEDS_REVIEW status with structured rejection reason",
+                "operationId": "rejectSellerVerification",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SellerVerificationReviewRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSellerVerificationResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/seller-verifications/{id}/approve": {
+            "post": {
+                "tags": [
+                    "Admin - Seller Verifications"
+                ],
+                "summary": "Approve seller verification in NEEDS_REVIEW status and assign SELLER role",
+                "operationId": "approveSellerVerification",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSellerVerificationResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/inspection-center-accounts": {
+            "post": {
+                "tags": [
+                    "Admin - Seller Verifications"
+                ],
+                "summary": "Create Inspection Center partner account",
+                "operationId": "createInspectionCenterAccount",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateInspectionCenterRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseUserSummaryResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/me": {
+            "get": {
+                "tags": [
+                    "User Profile"
+                ],
+                "summary": "Get current user profile",
+                "operationId": "getMyProfile",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseUserProfileResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "User Profile"
+                ],
+                "summary": "Update current user profile",
+                "operationId": "updateMyProfile",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateProfileRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseUserProfileResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/users/{userId}/status": {
+            "patch": {
+                "tags": [
+                    "Admin - Users"
+                ],
+                "summary": "Update user account status (ACTIVE, LOCKED, DISABLED)",
+                "operationId": "updateUserStatus",
+                "parameters": [
+                    {
+                        "name": "userId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AdminStatusUpdateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseUserAdminResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/seller-verifications/me": {
+            "get": {
+                "tags": [
+                    "Seller Verification"
+                ],
+                "summary": "Get current seller verification status",
+                "operationId": "getMyVerification",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSellerVerificationResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/users": {
+            "get": {
+                "tags": [
+                    "Admin - Users"
+                ],
+                "summary": "Get users with filtering and pagination",
+                "operationId": "getUsers",
+                "parameters": [
+                    {
+                        "name": "email",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "ACTIVE",
+                                "LOCKED",
+                                "DISABLED",
+                                "PENDING_VERIFICATION"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "role",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "description": "Zero-based page index (0..N)",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 0,
+                            "minimum": 0
+                        }
+                    },
+                    {
+                        "name": "size",
+                        "in": "query",
+                        "description": "The size of the page to be returned",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 10,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "sort",
+                        "in": "query",
+                        "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+                        "required": false,
+                        "schema": {
+                            "type": "array",
+                            "default": [
+                                "createdAt,DESC"
+                            ],
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponsePageResponseUserAdminResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/users/{userId}": {
+            "get": {
+                "tags": [
+                    "Admin - Users"
+                ],
+                "summary": "Get user details by ID",
+                "operationId": "getUserById",
+                "parameters": [
+                    {
+                        "name": "userId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseUserAdminResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/seller-verifications": {
+            "get": {
+                "tags": [
+                    "Admin - Seller Verifications"
+                ],
+                "summary": "Get seller verifications with filters (status, ekycStatus, riskStatus, reasonCode) and pagination",
+                "operationId": "getSellerVerifications",
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "SUBMITTED",
+                                "EKYC_PENDING",
+                                "RESUBMIT_REQUIRED",
+                                "NEEDS_REVIEW",
+                                "APPROVED",
+                                "REJECTED"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "ekycStatus",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "NOT_STARTED",
+                                "PENDING",
+                                "PASSED",
+                                "FAILED",
+                                "UNCERTAIN",
+                                "PROVIDER_ERROR"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "riskStatus",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "NOT_EVALUATED",
+                                "CLEAR",
+                                "REVIEW",
+                                "BLOCK"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "reasonCode",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "DOCUMENT_EXPIRED",
+                                "DOCUMENT_SUSPECTED_FAKE",
+                                "FACE_MISMATCH",
+                                "LIVENESS_FAILED",
+                                "UNSUPPORTED_DOCUMENT",
+                                "CONFIRMED_IDENTITY_MISMATCH",
+                                "IMAGE_TOO_BLURRY",
+                                "IMAGE_GLARE",
+                                "DOCUMENT_NOT_FULLY_VISIBLE",
+                                "SELFIE_QUALITY_LOW",
+                                "OCR_LOW_CONFIDENCE_DUE_TO_IMAGE",
+                                "OCR_LOW_CONFIDENCE",
+                                "FACE_MATCH_BORDERLINE",
+                                "DOCUMENT_DATA_INCONSISTENCY",
+                                "OCR_INCONSISTENT",
+                                "PROVIDER_MANUAL_REVIEW_REQUIRED",
+                                "DUPLICATE_IDENTITY_EXCEPTION",
+                                "AMBIGUOUS_IDENTITY_RESULT",
+                                "PROVIDER_TIMEOUT",
+                                "PROVIDER_UNAVAILABLE",
+                                "DUPLICATE_IDENTITY",
+                                "ACCOUNT_LOCKED",
+                                "ACCOUNT_DISABLED",
+                                "PERMANENT_SELLER_BAN",
+                                "REPEATED_EKYC_FAILURES",
+                                "RISK_FLAGGED",
+                                "MANUAL_REVIEW_REQUIRED",
+                                "NONE"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "description": "Zero-based page index (0..N)",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 0,
+                            "minimum": 0
+                        }
+                    },
+                    {
+                        "name": "size",
+                        "in": "query",
+                        "description": "The size of the page to be returned",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 10,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "sort",
+                        "in": "query",
+                        "description": "Sorting criteria in the format: property,(asc|desc). Default sort order is ascending. Multiple sort criteria are supported.",
+                        "required": false,
+                        "schema": {
+                            "type": "array",
+                            "default": [
+                                "submittedAt,DESC"
+                            ],
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponsePageResponseSellerVerificationResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/seller-verifications/{id}": {
+            "get": {
+                "tags": [
+                    "Admin - Seller Verifications"
+                ],
+                "summary": "Get detailed seller verification by ID including eKYC metrics and event history",
+                "operationId": "getSellerVerificationById",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseAdminSellerVerificationDetailResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "SellerVerificationRequest": {
+                "type": "object",
+                "properties": {
+                    "verificationType": {
+                        "type": "string",
+                        "enum": [
+                            "CITIZEN_ID",
+                            "PASSPORT",
+                            "BUSINESS_LICENSE"
+                        ]
+                    },
+                    "documentNumber": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "minLength": 0
+                    },
+                    "documentFrontUrl": {
+                        "type": "string",
+                        "maxLength": 1024,
+                        "minLength": 0
+                    },
+                    "documentBackUrl": {
+                        "type": "string",
+                        "maxLength": 1024,
+                        "minLength": 0
+                    },
+                    "selfieUrl": {
+                        "type": "string",
+                        "maxLength": 1024,
+                        "minLength": 0
+                    }
+                },
+                "required": [
+                    "documentBackUrl",
+                    "documentFrontUrl",
+                    "documentNumber",
+                    "verificationType"
+                ]
+            },
+            "ApiResponseSellerVerificationResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/SellerVerificationResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "SellerVerificationResponse": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "userId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "userEmail": {
+                        "type": "string"
+                    },
+                    "userFullName": {
+                        "type": "string"
+                    },
+                    "verificationType": {
+                        "type": "string",
+                        "enum": [
+                            "CITIZEN_ID",
+                            "PASSPORT",
+                            "BUSINESS_LICENSE"
+                        ]
+                    },
+                    "documentNumber": {
+                        "type": "string"
+                    },
+                    "documentFrontUrl": {
+                        "type": "string"
+                    },
+                    "documentBackUrl": {
+                        "type": "string"
+                    },
+                    "selfieUrl": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "SUBMITTED",
+                            "EKYC_PENDING",
+                            "RESUBMIT_REQUIRED",
+                            "NEEDS_REVIEW",
+                            "APPROVED",
+                            "REJECTED"
+                        ]
+                    },
+                    "ekycStatus": {
+                        "type": "string",
+                        "enum": [
+                            "NOT_STARTED",
+                            "PENDING",
+                            "PASSED",
+                            "FAILED",
+                            "UNCERTAIN",
+                            "PROVIDER_ERROR"
+                        ]
+                    },
+                    "riskStatus": {
+                        "type": "string",
+                        "enum": [
+                            "NOT_EVALUATED",
+                            "CLEAR",
+                            "REVIEW",
+                            "BLOCK"
+                        ]
+                    },
+                    "reviewSource": {
+                        "type": "string",
+                        "enum": [
+                            "SYSTEM",
+                            "ADMIN"
+                        ]
+                    },
+                    "reasonCode": {
+                        "type": "string",
+                        "enum": [
+                            "DOCUMENT_EXPIRED",
+                            "DOCUMENT_SUSPECTED_FAKE",
+                            "FACE_MISMATCH",
+                            "LIVENESS_FAILED",
+                            "UNSUPPORTED_DOCUMENT",
+                            "CONFIRMED_IDENTITY_MISMATCH",
+                            "IMAGE_TOO_BLURRY",
+                            "IMAGE_GLARE",
+                            "DOCUMENT_NOT_FULLY_VISIBLE",
+                            "SELFIE_QUALITY_LOW",
+                            "OCR_LOW_CONFIDENCE_DUE_TO_IMAGE",
+                            "OCR_LOW_CONFIDENCE",
+                            "FACE_MATCH_BORDERLINE",
+                            "DOCUMENT_DATA_INCONSISTENCY",
+                            "OCR_INCONSISTENT",
+                            "PROVIDER_MANUAL_REVIEW_REQUIRED",
+                            "DUPLICATE_IDENTITY_EXCEPTION",
+                            "AMBIGUOUS_IDENTITY_RESULT",
+                            "PROVIDER_TIMEOUT",
+                            "PROVIDER_UNAVAILABLE",
+                            "DUPLICATE_IDENTITY",
+                            "ACCOUNT_LOCKED",
+                            "ACCOUNT_DISABLED",
+                            "PERMANENT_SELLER_BAN",
+                            "REPEATED_EKYC_FAILURES",
+                            "RISK_FLAGGED",
+                            "MANUAL_REVIEW_REQUIRED",
+                            "NONE"
+                        ]
+                    },
+                    "resubmissionCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "submittedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "reviewedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "reviewedBy": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "rejectionReason": {
+                        "type": "string"
+                    }
+                }
+            },
+            "SellerVerificationResubmitRequest": {
+                "type": "object",
+                "properties": {
+                    "documentFrontUrl": {
+                        "type": "string",
+                        "maxLength": 1024,
+                        "minLength": 0
+                    },
+                    "documentBackUrl": {
+                        "type": "string",
+                        "maxLength": 1024,
+                        "minLength": 0
+                    },
+                    "selfieUrl": {
+                        "type": "string",
+                        "maxLength": 1024,
+                        "minLength": 0
+                    }
+                },
+                "required": [
+                    "documentBackUrl",
+                    "documentFrontUrl"
+                ]
+            },
+            "ChangePasswordRequest": {
+                "type": "object",
+                "properties": {
+                    "currentPassword": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "newPassword": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "confirmPassword": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": [
+                    "confirmPassword",
+                    "currentPassword",
+                    "newPassword"
+                ]
+            },
+            "ApiResponseVoid": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "data": {},
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "VerifyEmailRequest": {
+                "type": "object",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "Account email address",
+                        "example": "buyer@example.com",
+                        "minLength": 1
+                    },
+                    "otp": {
+                        "type": "string",
+                        "description": "6-digit OTP received via email",
+                        "example": "123456",
+                        "minLength": 1,
+                        "pattern": "^[0-9]{6}$"
+                    }
+                },
+                "required": [
+                    "email",
+                    "otp"
+                ]
+            },
+            "ResetPasswordRequest": {
+                "type": "object",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "Account email address",
+                        "example": "buyer@example.com",
+                        "minLength": 1
+                    },
+                    "otp": {
+                        "type": "string",
+                        "description": "6-digit OTP received via email",
+                        "example": "123456",
+                        "minLength": 1,
+                        "pattern": "^[0-9]{6}$"
+                    },
+                    "newPassword": {
+                        "type": "string",
+                        "description": "New password (min 8 chars, uppercase, lowercase, digit, special char)",
+                        "example": "NewSecretPass@123",
+                        "minLength": 1
+                    },
+                    "confirmPassword": {
+                        "type": "string",
+                        "description": "Confirm new password",
+                        "example": "NewSecretPass@123",
+                        "minLength": 1
+                    }
+                },
+                "required": [
+                    "confirmPassword",
+                    "email",
+                    "newPassword",
+                    "otp"
+                ]
+            },
+            "ResendVerificationRequest": {
+                "type": "object",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "minLength": 1
+                    }
+                },
+                "required": [
+                    "email"
+                ]
+            },
+            "RegisterRequest": {
+                "type": "object",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "minLength": 1
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "fullName": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "minLength": 2
+                    },
+                    "phone": {
+                        "type": "string",
+                        "pattern": "^[+0-9\\-\\s()]{7,20}$"
+                    }
+                },
+                "required": [
+                    "email",
+                    "fullName",
+                    "password"
+                ]
+            },
+            "ApiResponseAuthResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/AuthResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "AuthResponse": {
+                "type": "object",
+                "properties": {
+                    "accessToken": {
+                        "type": "string"
+                    },
+                    "refreshToken": {
+                        "type": "string"
+                    },
+                    "accessTokenExpiresInMs": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "user": {
+                        "$ref": "#/components/schemas/UserSummaryResponse"
+                    },
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "uniqueItems": true
+                    },
+                    "permissions": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "uniqueItems": true
+                    }
+                }
+            },
+            "UserSummaryResponse": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "email": {
+                        "type": "string"
+                    },
+                    "fullName": {
+                        "type": "string"
+                    },
+                    "phone": {
+                        "type": "string"
+                    },
+                    "avatarUrl": {
+                        "type": "string"
+                    },
+                    "accountStatus": {
+                        "type": "string",
+                        "enum": [
+                            "ACTIVE",
+                            "LOCKED",
+                            "DISABLED",
+                            "PENDING_VERIFICATION"
+                        ]
+                    },
+                    "emailVerified": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "RefreshTokenRequest": {
+                "type": "object",
+                "properties": {
+                    "refreshToken": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": [
+                    "refreshToken"
+                ]
+            },
+            "ApiResponseTokenResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/TokenResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "TokenResponse": {
+                "type": "object",
+                "properties": {
+                    "accessToken": {
+                        "type": "string"
+                    },
+                    "refreshToken": {
+                        "type": "string"
+                    },
+                    "accessTokenExpiresInMs": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                }
+            },
+            "LoginRequest": {
+                "type": "object",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "minLength": 1
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": [
+                    "email",
+                    "password"
+                ]
+            },
+            "GoogleLoginRequest": {
+                "type": "object",
+                "properties": {
+                    "idToken": {
+                        "type": "string",
+                        "description": "ID token obtained from Google Sign-In on client application",
+                        "example": "eyJhbGciOiJSUzI1NiIsImtpZCI6...",
+                        "minLength": 1
+                    }
+                },
+                "required": [
+                    "idToken"
+                ]
+            },
+            "ForgotPasswordRequest": {
+                "type": "object",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "minLength": 1
+                    }
+                },
+                "required": [
+                    "email"
+                ]
+            },
+            "SellerVerificationReviewRequest": {
+                "type": "object",
+                "properties": {
+                    "rejectionReason": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "minLength": 0
+                    }
+                },
+                "required": [
+                    "rejectionReason"
+                ]
+            },
+            "CreateInspectionCenterRequest": {
+                "type": "object",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "minLength": 1
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "fullName": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "minLength": 2
+                    },
+                    "phone": {
+                        "type": "string",
+                        "pattern": "^[+0-9\\-\\s()]{7,20}$"
+                    }
+                },
+                "required": [
+                    "email",
+                    "fullName",
+                    "password"
+                ]
+            },
+            "ApiResponseUserSummaryResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/UserSummaryResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "UpdateProfileRequest": {
+                "type": "object",
+                "properties": {
+                    "fullName": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "minLength": 2
+                    },
+                    "phone": {
+                        "type": "string",
+                        "pattern": "^[+0-9\\-\\s()]{7,20}$"
+                    },
+                    "avatarUrl": {
+                        "type": "string",
+                        "maxLength": 1024,
+                        "minLength": 0
+                    }
+                }
+            },
+            "ApiResponseUserProfileResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/UserProfileResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "UserProfileResponse": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "email": {
+                        "type": "string"
+                    },
+                    "fullName": {
+                        "type": "string"
+                    },
+                    "phone": {
+                        "type": "string"
+                    },
+                    "avatarUrl": {
+                        "type": "string"
+                    },
+                    "accountStatus": {
+                        "type": "string",
+                        "enum": [
+                            "ACTIVE",
+                            "LOCKED",
+                            "DISABLED",
+                            "PENDING_VERIFICATION"
+                        ]
+                    },
+                    "emailVerified": {
+                        "type": "boolean"
+                    },
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "uniqueItems": true
+                    },
+                    "permissions": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "uniqueItems": true
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "lastLoginAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "AdminStatusUpdateRequest": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "ACTIVE",
+                            "LOCKED",
+                            "DISABLED",
+                            "PENDING_VERIFICATION"
+                        ]
+                    }
+                },
+                "required": [
+                    "status"
+                ]
+            },
+            "ApiResponseUserAdminResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/UserAdminResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "UserAdminResponse": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "email": {
+                        "type": "string"
+                    },
+                    "fullName": {
+                        "type": "string"
+                    },
+                    "phone": {
+                        "type": "string"
+                    },
+                    "avatarUrl": {
+                        "type": "string"
+                    },
+                    "accountStatus": {
+                        "type": "string",
+                        "enum": [
+                            "ACTIVE",
+                            "LOCKED",
+                            "DISABLED",
+                            "PENDING_VERIFICATION"
+                        ]
+                    },
+                    "emailVerified": {
+                        "type": "boolean"
+                    },
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "uniqueItems": true
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "lastLoginAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "ApiResponsePageResponseUserAdminResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/PageResponseUserAdminResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "PageResponseUserAdminResponse": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/UserAdminResponse"
+                        }
+                    },
+                    "page": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "size": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "totalElements": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "totalPages": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "isLast": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "ApiResponsePageResponseSellerVerificationResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/PageResponseSellerVerificationResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "PageResponseSellerVerificationResponse": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SellerVerificationResponse"
+                        }
+                    },
+                    "page": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "size": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "totalElements": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "totalPages": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "isLast": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "AdminSellerVerificationDetailResponse": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "userId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "userEmail": {
+                        "type": "string"
+                    },
+                    "userFullName": {
+                        "type": "string"
+                    },
+                    "verificationType": {
+                        "type": "string",
+                        "enum": [
+                            "CITIZEN_ID",
+                            "PASSPORT",
+                            "BUSINESS_LICENSE"
+                        ]
+                    },
+                    "documentNumberMasked": {
+                        "type": "string"
+                    },
+                    "documentFrontUrl": {
+                        "type": "string"
+                    },
+                    "documentBackUrl": {
+                        "type": "string"
+                    },
+                    "selfieUrl": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "SUBMITTED",
+                            "EKYC_PENDING",
+                            "RESUBMIT_REQUIRED",
+                            "NEEDS_REVIEW",
+                            "APPROVED",
+                            "REJECTED"
+                        ]
+                    },
+                    "ekycStatus": {
+                        "type": "string",
+                        "enum": [
+                            "NOT_STARTED",
+                            "PENDING",
+                            "PASSED",
+                            "FAILED",
+                            "UNCERTAIN",
+                            "PROVIDER_ERROR"
+                        ]
+                    },
+                    "riskStatus": {
+                        "type": "string",
+                        "enum": [
+                            "NOT_EVALUATED",
+                            "CLEAR",
+                            "REVIEW",
+                            "BLOCK"
+                        ]
+                    },
+                    "reviewSource": {
+                        "type": "string",
+                        "enum": [
+                            "SYSTEM",
+                            "ADMIN"
+                        ]
+                    },
+                    "reasonCode": {
+                        "type": "string",
+                        "enum": [
+                            "DOCUMENT_EXPIRED",
+                            "DOCUMENT_SUSPECTED_FAKE",
+                            "FACE_MISMATCH",
+                            "LIVENESS_FAILED",
+                            "UNSUPPORTED_DOCUMENT",
+                            "CONFIRMED_IDENTITY_MISMATCH",
+                            "IMAGE_TOO_BLURRY",
+                            "IMAGE_GLARE",
+                            "DOCUMENT_NOT_FULLY_VISIBLE",
+                            "SELFIE_QUALITY_LOW",
+                            "OCR_LOW_CONFIDENCE_DUE_TO_IMAGE",
+                            "OCR_LOW_CONFIDENCE",
+                            "FACE_MATCH_BORDERLINE",
+                            "DOCUMENT_DATA_INCONSISTENCY",
+                            "OCR_INCONSISTENT",
+                            "PROVIDER_MANUAL_REVIEW_REQUIRED",
+                            "DUPLICATE_IDENTITY_EXCEPTION",
+                            "AMBIGUOUS_IDENTITY_RESULT",
+                            "PROVIDER_TIMEOUT",
+                            "PROVIDER_UNAVAILABLE",
+                            "DUPLICATE_IDENTITY",
+                            "ACCOUNT_LOCKED",
+                            "ACCOUNT_DISABLED",
+                            "PERMANENT_SELLER_BAN",
+                            "REPEATED_EKYC_FAILURES",
+                            "RISK_FLAGGED",
+                            "MANUAL_REVIEW_REQUIRED",
+                            "NONE"
+                        ]
+                    },
+                    "providerName": {
+                        "type": "string"
+                    },
+                    "providerReferenceId": {
+                        "type": "string"
+                    },
+                    "faceMatchScore": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "livenessScore": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "documentScore": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "riskScore": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "resubmissionCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "submittedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "ekycCompletedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "riskEvaluatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "reviewedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "reviewedBy": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "rejectionReason": {
+                        "type": "string"
+                    },
+                    "eventHistory": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/VerificationEventResponse"
+                        }
+                    }
+                }
+            },
+            "ApiResponseAdminSellerVerificationDetailResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/AdminSellerVerificationDetailResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "VerificationEventResponse": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "eventType": {
+                        "type": "string",
+                        "enum": [
+                            "SUBMITTED",
+                            "EKYC_STARTED",
+                            "EKYC_PASSED",
+                            "EKYC_FAILED",
+                            "RESUBMISSION_REQUIRED",
+                            "RISK_REVIEW_REQUIRED",
+                            "SYSTEM_APPROVED",
+                            "SYSTEM_REJECTED",
+                            "ADMIN_APPROVED",
+                            "ADMIN_REJECTED"
+                        ]
+                    },
+                    "fromStatus": {
+                        "type": "string",
+                        "enum": [
+                            "SUBMITTED",
+                            "EKYC_PENDING",
+                            "RESUBMIT_REQUIRED",
+                            "NEEDS_REVIEW",
+                            "APPROVED",
+                            "REJECTED"
+                        ]
+                    },
+                    "toStatus": {
+                        "type": "string",
+                        "enum": [
+                            "SUBMITTED",
+                            "EKYC_PENDING",
+                            "RESUBMIT_REQUIRED",
+                            "NEEDS_REVIEW",
+                            "APPROVED",
+                            "REJECTED"
+                        ]
+                    },
+                    "reasonCode": {
+                        "type": "string",
+                        "enum": [
+                            "DOCUMENT_EXPIRED",
+                            "DOCUMENT_SUSPECTED_FAKE",
+                            "FACE_MISMATCH",
+                            "LIVENESS_FAILED",
+                            "UNSUPPORTED_DOCUMENT",
+                            "CONFIRMED_IDENTITY_MISMATCH",
+                            "IMAGE_TOO_BLURRY",
+                            "IMAGE_GLARE",
+                            "DOCUMENT_NOT_FULLY_VISIBLE",
+                            "SELFIE_QUALITY_LOW",
+                            "OCR_LOW_CONFIDENCE_DUE_TO_IMAGE",
+                            "OCR_LOW_CONFIDENCE",
+                            "FACE_MATCH_BORDERLINE",
+                            "DOCUMENT_DATA_INCONSISTENCY",
+                            "OCR_INCONSISTENT",
+                            "PROVIDER_MANUAL_REVIEW_REQUIRED",
+                            "DUPLICATE_IDENTITY_EXCEPTION",
+                            "AMBIGUOUS_IDENTITY_RESULT",
+                            "PROVIDER_TIMEOUT",
+                            "PROVIDER_UNAVAILABLE",
+                            "DUPLICATE_IDENTITY",
+                            "ACCOUNT_LOCKED",
+                            "ACCOUNT_DISABLED",
+                            "PERMANENT_SELLER_BAN",
+                            "REPEATED_EKYC_FAILURES",
+                            "RISK_FLAGGED",
+                            "MANUAL_REVIEW_REQUIRED",
+                            "NONE"
+                        ]
+                    },
+                    "actorType": {
+                        "type": "string"
+                    },
+                    "actorUserId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "notes": {
+                        "type": "string"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "description": "Enter your JWT Bearer token obtained from /api/v1/auth/login or /api/v1/auth/register",
+                "name": "BearerAuth",
+                "scheme": "bearer",
+                "bearerFormat": "JWT"
+            }
+        }
+    }
+}

@@ -1,268 +1,85 @@
-import React, { useState, useEffect, useRef } from 'react';
-import * as THREE from 'three';
-import { Eye, Play, Volume2, VolumeX, ShieldCheck, Box, RefreshCw, Cpu } from 'lucide-react';
+import React, { useState } from 'react';
+import { ShieldCheck, Box, RefreshCw, Cpu, Move3d } from 'lucide-react';
 import { soundFx } from '../../utils/soundEffects';
 import { BlurText } from '../react-bits/BlurText';
 import { CountUp } from '../react-bits/CountUp';
+import { Appliance3DViewer } from './Appliance3DViewer';
 
 interface ShowroomLobby3DProps {
-  lang: 'vi' | 'en';
-  onExplore3DProduct: () => void;
+  lang?: 'vi' | 'en';
+  onExplore3DProduct?: () => void;
 }
 
-export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({ lang, onExplore3DProduct }) => {
-  const [mode, setMode] = useState<'video' | 'three3d'>('video');
-  const [isMuted, setIsMuted] = useState(true);
-  const [selectedVideo, setSelectedVideo] = useState<'cyber' | 'lab'>('cyber');
-  const [videoError, setVideoError] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-
-  // High-performance motion video loops
-  const videoSources = {
-    cyber: 'https://assets.mixkit.co/videos/preview/mixkit-futuristic-motherboard-processor-with-illuminated-circuits-40348-large.mp4',
-    lab: 'https://assets.mixkit.co/videos/preview/mixkit-hands-of-an-engineer-working-on-a-circuit-board-42358-large.mp4'
-  };
-
-  // Toggle audio
-  const handleToggleSound = () => {
-    const muted = soundFx.toggleMute();
-    setIsMuted(muted);
-    if (videoRef.current) {
-      videoRef.current.muted = muted;
-    }
-  };
-
-  // Three.js interactive 3D scene
-  useEffect(() => {
-    if (mode !== 'three3d' && !videoError) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    let animationFrameId: number;
-    const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x000000, 0.04);
-
-    const width = canvas.clientWidth || 800;
-    const height = canvas.clientHeight || 400;
-
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    camera.position.set(0, 2.5, 8.5);
-
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-    // Studio Ambient & Directional Lights
-    const ambientLight = new THREE.AmbientLight(0x71717a, 1.2);
-    scene.add(ambientLight);
-
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
-    keyLight.position.set(4, 6, 4);
-    scene.add(keyLight);
-
-    const fillLight = new THREE.PointLight(0xffffff, 1.2, 15);
-    fillLight.position.set(-3, 3, 2);
-    scene.add(fillLight);
-
-    // Studio Pedestal (Brushed dark stone)
-    const pedestalGeo = new THREE.CylinderGeometry(2.4, 2.8, 0.35, 32);
-    const pedestalMat = new THREE.MeshStandardMaterial({
-      color: 0x18181b,
-      metalness: 0.8,
-      roughness: 0.3,
-    });
-    const pedestal = new THREE.Mesh(pedestalGeo, pedestalMat);
-    pedestal.position.y = -1.1;
-    scene.add(pedestal);
-
-    // Subtle refined metallic ring
-    const ringGeo = new THREE.TorusGeometry(3.0, 0.02, 16, 64);
-    const ringMat = new THREE.MeshStandardMaterial({
-      color: 0xa1a1aa,
-      metalness: 0.9,
-      roughness: 0.2
-    });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = Math.PI / 2;
-    ring.position.y = -1.0;
-    scene.add(ring);
-
-    // Floating stylized phone device
-    const phoneGroup = new THREE.Group();
-
-    const bodyGeo = new THREE.BoxGeometry(1.6, 3.2, 0.16);
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: 0x27272a,
-      metalness: 0.9,
-      roughness: 0.2
-    });
-    const phoneBody = new THREE.Mesh(bodyGeo, bodyMat);
-    phoneGroup.add(phoneBody);
-
-    // Screen
-    const screenGeo = new THREE.PlaneGeometry(1.5, 3.06);
-    const screenMat = new THREE.MeshStandardMaterial({
-      color: 0x09090b,
-      metalness: 0.5,
-      roughness: 0.3
-    });
-    const screen = new THREE.Mesh(screenGeo, screenMat);
-    screen.position.z = 0.09;
-    phoneGroup.add(screen);
-
-    // Camera island
-    const camIslandGeo = new THREE.BoxGeometry(0.7, 0.7, 0.08);
-    const camIslandMat = new THREE.MeshStandardMaterial({
-      color: 0x18181b,
-      metalness: 0.95,
-      roughness: 0.1
-    });
-    const camIsland = new THREE.Mesh(camIslandGeo, camIslandMat);
-    camIsland.position.set(-0.35, 1.1, -0.1);
-    phoneGroup.add(camIsland);
-
-    phoneGroup.position.y = 0.5;
-    scene.add(phoneGroup);
-
-    // Resize handling
-    const handleResize = () => {
-      if (!canvas) return;
-      const newW = canvas.clientWidth;
-      const newH = canvas.clientHeight;
-      camera.aspect = newW / newH;
-      camera.updateProjectionMatrix();
-      renderer.setSize(newW, newH);
-    };
-    window.addEventListener('resize', handleResize);
-
-    // Animation Loop
-    let mouseX = 0;
-    let mouseY = 0;
-    const handleMouseMove = (e: MouseEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    };
-    canvas.addEventListener('mousemove', handleMouseMove);
-
-    const clock = new THREE.Clock();
-    const animate = () => {
-      animationFrameId = requestAnimationFrame(animate);
-      const elapsed = clock.getElapsedTime();
-
-      phoneGroup.rotation.y = elapsed * 0.4 + mouseX * 0.5;
-      phoneGroup.position.y = 0.4 + Math.sin(elapsed * 1.5) * 0.08;
-      ring.rotation.z = elapsed * 0.2;
-
-      camera.position.x += (mouseX * 0.8 - camera.position.x) * 0.05;
-      camera.position.y += (-mouseY * 0.4 + 2.5 - camera.position.y) * 0.05;
-      camera.lookAt(0, 0.3, 0);
-
-      renderer.render(scene, camera);
-    };
-
-    animate();
-
-    return () => {
-      cancelAnimationFrame(animationFrameId);
-      window.removeEventListener('resize', handleResize);
-      canvas.removeEventListener('mousemove', handleMouseMove);
-      renderer.dispose();
-    };
-  }, [mode, videoError]);
+export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
+  lang = 'vi',
+  onExplore3DProduct,
+}) => {
+  const [applianceType, setApplianceType] = useState<'fridge' | 'washer'>('fridge');
+  const [autoRotate, setAutoRotate] = useState(true);
 
   return (
-    <section className="relative overflow-hidden rounded-3xl bg-[#0E121B] text-white shadow-2xl border border-white/10 group">
-      {/* Visual Background Container */}
-      <div className="relative w-full h-[360px] sm:h-[390px] overflow-hidden bg-[#0E121B]">
-        {mode === 'video' && !videoError ? (
-          <>
-            <video
-              ref={videoRef}
-              src={videoSources[selectedVideo]}
-              autoPlay
-              loop
-              muted={isMuted}
-              playsInline
-              onError={() => setVideoError(true)}
-              className="absolute inset-0 w-full h-full object-cover opacity-35 filter grayscale scale-102 transition-all duration-1000 group-hover:scale-100"
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#0E121B] via-[#0E121B]/80 to-transparent z-1" />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0E121B] via-transparent to-[#0E121B]/40 z-1" />
-          </>
-        ) : (
-          <div className="absolute inset-0 w-full h-full">
-            <canvas ref={canvasRef} className="w-full h-full block cursor-grab active:cursor-grabbing" />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#0E121B] via-[#0E121B]/70 to-transparent pointer-events-none z-1" />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0E121B] via-transparent to-transparent pointer-events-none z-1" />
-          </div>
-        )}
+    <section className="relative overflow-hidden rounded-3xl bg-[#090d14] text-white shadow-2xl border border-white/10 group">
+      {/* Dynamic Background Studio Glow */}
+      <div className="absolute top-0 right-1/4 w-[450px] h-[450px] bg-[#EC1577]/15 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-0 left-1/4 w-[380px] h-[380px] bg-[#F1622A]/10 rounded-full blur-3xl pointer-events-none" />
 
-        {/* Top Status Bar */}
-        <div className="absolute top-4 left-4 right-4 z-10 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2 bg-[#0E121B]/90 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-slate-300 text-[11px]">
-            <span className="w-2 h-2 rounded-full bg-[#EC1577] animate-pulse" />
-            <span className="font-semibold tracking-wide">
-              {lang === 'vi' ? 'SẢNH KIỂM ĐỊNH 3D SECONDLIFE' : 'SECONDLIFE 3D INSPECTION LOBBY'}
-            </span>
-          </div>
-
-          {/* Media Controls */}
-          <div className="flex items-center gap-1.5 bg-[#0E121B]/90 backdrop-blur-md p-1 rounded-xl border border-white/10">
-            <button
-              onClick={() => {
-                soundFx.playChime();
-                setMode('video');
-              }}
-              className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-medium transition cursor-pointer ${
-                mode === 'video'
-                  ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white font-bold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Play className="w-3 h-3" />
-              <span>Video</span>
-            </button>
-
-            <button
-              onClick={() => {
-                soundFx.playChime();
-                setMode('three3d');
-              }}
-              className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-medium transition cursor-pointer ${
-                mode === 'three3d'
-                  ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white font-bold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Box className="w-3 h-3" />
-              <span>3D Interactive</span>
-            </button>
-
-            {mode === 'video' && (
-              <button
-                onClick={() => setSelectedVideo(selectedVideo === 'cyber' ? 'lab' : 'cyber')}
-                className="px-2 py-0.5 text-[11px] text-slate-400 hover:text-white transition cursor-pointer"
-                title="Đổi góc quay"
-              >
-                <RefreshCw className="w-3 h-3 inline mr-1" />
-                {selectedVideo === 'cyber' ? 'Góc Vi Mạch' : 'Góc Phòng Lab'}
-              </button>
-            )}
-
-            <button
-              onClick={handleToggleSound}
-              className="p-1 rounded-lg text-slate-400 hover:text-white transition cursor-pointer"
-              title={isMuted ? 'Bật âm thanh' : 'Tắt âm thanh'}
-            >
-              {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5 text-[#EC1577]" />}
-            </button>
-          </div>
+      {/* Top Status & Controls Bar */}
+      <div className="relative z-20 px-6 sm:px-8 pt-6 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2 bg-[#0E121B]/90 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 text-slate-300 text-[11px]">
+          <span className="w-2 h-2 rounded-full bg-[#EC1577] animate-pulse" />
+          <span className="font-semibold tracking-wide">
+            {lang === 'vi' ? 'SẢNH KIỂM ĐỊNH 3D SECONDLIFE' : 'SECONDLIFE 3D INSPECTION LOBBY'}
+          </span>
         </div>
 
-        {/* Hero Content Overlay */}
-        <div className="relative z-10 h-full flex flex-col justify-end p-6 sm:p-8 max-w-2xl space-y-3">
+        {/* 3D Model Switcher & 360° Controls */}
+        <div className="flex items-center gap-1.5 bg-[#0E121B]/90 backdrop-blur-md p-1 rounded-xl border border-white/10">
+          <button
+            onClick={() => {
+              soundFx.playChime();
+              setApplianceType('fridge');
+            }}
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition cursor-pointer ${
+              applianceType === 'fridge'
+                ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white font-bold'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            {lang === 'vi' ? 'Tủ Lạnh Hitachi' : 'Hitachi Fridge'}
+          </button>
+          <button
+            onClick={() => {
+              soundFx.playChime();
+              setApplianceType('washer');
+            }}
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition cursor-pointer ${
+              applianceType === 'washer'
+                ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white font-bold'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            {lang === 'vi' ? 'Máy Giặt Electrolux' : 'Electrolux Washer'}
+          </button>
+          <button
+            onClick={() => {
+              soundFx.playChime();
+              setAutoRotate((prev) => !prev);
+            }}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition cursor-pointer ${
+              autoRotate ? 'text-[#EC1577] font-semibold bg-white/5' : 'text-slate-400 hover:text-white'
+            }`}
+            title="Bật / tắt tự động xoay 360°"
+          >
+            <RefreshCw className={`w-3 h-3 ${autoRotate ? 'animate-spin' : ''}`} style={{ animationDuration: '6s' }} />
+            <span>360°</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Main 3-Column Layout: Left Text | Center 3D Appliance Viewer | Right Hub Card */}
+      <div className="relative w-full min-h-[460px] sm:min-h-[480px] flex flex-col lg:flex-row items-center justify-between p-6 sm:p-8 pt-4 gap-6 overflow-hidden">
+        {/* 1. Cột chữ bên trái */}
+        <div className="w-full lg:w-[420px] shrink-0 z-10 space-y-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#0E121B] border border-white/10 text-slate-300 text-xs font-medium backdrop-blur-md w-fit">
             <ShieldCheck className="w-3.5 h-3.5 text-[#EC1577]" />
             <span>{lang === 'vi' ? 'Sàn Đồ Cũ Kiểm Định & AI Định Giá Uy Tín' : 'Certified Recommerce & AI Valuation'}</span>
@@ -280,42 +97,25 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({ lang, onExplor
 
           <p className="text-slate-300 text-xs sm:text-sm leading-relaxed max-w-xl font-normal">
             {lang === 'vi'
-              ? 'Kiểm tra chi tiết thiết bị với mô hình 3D 360°, tra cứu biên bản kiểm định phần cứng và thanh toán được bảo vệ trọn vẹn qua Quỹ tín thác.'
+              ? 'Kiểm tra chi tiết thiết bị với mô hình 3D 360°, xoay cuộn zoom đa chiều, tra cứu biên bản kiểm định phần cứng và thanh toán được bảo vệ trọn vẹn qua Quỹ tín thác.'
               : 'Inspect devices in 360° 3D, verify hardware hub reports, and pay safely via Escrow protection.'}
           </p>
 
           {/* Quick Actions */}
           <div className="flex flex-wrap items-center gap-2.5 pt-1">
-            <button
-              onClick={() => {
-                soundFx.playScanBeep();
-                onExplore3DProduct();
-              }}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-95 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
-            >
-              <Box className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? 'Trải Nghiệm Soi 3D' : 'Launch 3D Viewer'}</span>
-            </button>
-
-            <button
-              onClick={() => {
-                soundFx.playChime();
-                setMode(mode === 'video' ? 'three3d' : 'video');
-              }}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs border border-white/10 backdrop-blur-md transition cursor-pointer"
-            >
-              <Eye className="w-3.5 h-3.5 text-slate-300" />
-              <span>{mode === 'video' ? 'Chuyển Chế Độ 3D' : 'Chuyển Sang Video'}</span>
-            </button>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 text-slate-300 text-xs font-medium border border-white/10 backdrop-blur-md">
+              <Move3d className="w-3.5 h-3.5 text-[#EC1577]" />
+              <span>{lang === 'vi' ? 'Kéo để xoay • Cuộn để zoom' : 'Drag to rotate • Scroll to zoom'}</span>
+            </div>
           </div>
 
           {/* Statistics Grid */}
           <div className="pt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 max-w-xl">
             <div className="bg-[#0B0E15]/90 backdrop-blur-md rounded-xl p-2 border border-white/10">
               <div className="text-base font-bold text-[#EC1577]">
-                <CountUp to={100} duration={2} />%
+                {lang === 'vi' ? 'Bảo Đảm' : 'Protected'}
               </div>
-              <div className="text-[11px] text-slate-400">Bảo vệ tiền Escrow</div>
+              <div className="text-[11px] text-slate-400">{lang === 'vi' ? 'Cơ chế Escrow' : 'Escrow Protection'}</div>
             </div>
             <div className="bg-[#0B0E15]/90 backdrop-blur-md rounded-xl p-2 border border-white/10">
               <div className="text-base font-bold text-white">
@@ -338,32 +138,45 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({ lang, onExplor
           </div>
         </div>
 
-        {/* Right Studio Inspection Pill (Desktop) */}
-        <div className="hidden lg:flex absolute right-8 bottom-6 z-10 flex-col gap-2 pointer-events-none">
-          <div className="bg-[#0B0E15]/95 backdrop-blur-xl border border-white/10 rounded-2xl p-3.5 space-y-2 max-w-[240px] text-xs">
+        {/* 2. CHÍNH LÀ CHỖ NÀY: Khoảng trống ở giữa chỉ cần gọi Component vào */}
+        <div className="flex-1 w-full h-[360px] sm:h-[420px] mx-0 lg:mx-4 relative flex items-center justify-center z-10">
+          <Appliance3DViewer type={applianceType} autoRotate={autoRotate} />
+        </div>
+
+        {/* 3. Thẻ thông tin SecondLife Hub bên phải */}
+        <div className="w-full sm:w-auto lg:w-[260px] shrink-0 z-10 flex flex-col gap-2">
+          <div className="bg-[#0B0E15]/95 backdrop-blur-xl border border-white/10 rounded-2xl p-4 space-y-2.5 w-full text-xs shadow-xl">
             <div className="flex items-center justify-between text-[11px]">
               <span className="font-semibold text-slate-300 flex items-center gap-1.5">
                 <Cpu className="w-3.5 h-3.5 text-[#EC1577]" />
                 <span>SecondLife Hub</span>
               </span>
-              <span className="text-[10px] bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white px-1.5 py-0.2 rounded font-bold">VERIFIED</span>
+              <span className="text-[10px] bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white px-1.5 py-0.5 rounded font-bold">VERIFIED</span>
             </div>
-            <div className="space-y-1 text-[11px] text-slate-400">
+            <div className="space-y-1.5 text-[11px] text-slate-400">
               <div className="flex justify-between">
                 <span>Thiết bị:</span>
-                <span className="text-slate-200 font-medium">Tủ Lạnh Hitachi 540L</span>
+                <span className="text-slate-200 font-medium">
+                  {applianceType === 'fridge' ? 'Tủ Lạnh Hitachi 540L' : 'Máy Giặt Electrolux Inverter'}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span>Tình trạng:</span>
-                <span className="text-white font-medium">Như mới (99%)</span>
+                <span className="text-white font-medium">
+                  {applianceType === 'fridge' ? 'Như mới (99%)' : 'Nguyên bản (98%)'}
+                </span>
               </div>
               <div className="flex justify-between">
-                <span>Máy nén/Gas:</span>
-                <span className="text-slate-200 font-medium">Gas R600a (-19°C)</span>
+                <span>{applianceType === 'fridge' ? 'Máy nén/Gas:' : 'Động cơ/Lồng:'}</span>
+                <span className="text-slate-200 font-medium">
+                  {applianceType === 'fridge' ? 'Gas R600a (-19°C)' : 'EcoInverter (1400 RPM)'}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span>Tem niêm phong:</span>
-                <span className="text-slate-200 font-medium">#SL-HOME-8839</span>
+                <span className="text-slate-200 font-medium">
+                  {applianceType === 'fridge' ? '#SL-HOME-8839' : '#SL-WASH-9912'}
+                </span>
               </div>
             </div>
           </div>
@@ -372,3 +185,6 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({ lang, onExplor
     </section>
   );
 };
+
+// Export alias HeroBanner for convenience
+export const HeroBanner = ShowroomLobby3D;

@@ -89,43 +89,43 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     avatarBg: string;
     icon: React.ReactNode;
   }> = [
-    {
-      label: lang === 'vi' ? 'Người Mua (Buyer)' : 'Buyer Account',
-      role: 'buyer',
-      name: 'Hoàng Quốc Khang',
-      email: 'khang.buyer@secondlife.vn',
-      desc: lang === 'vi' ? 'Tìm kiếm, đàm phán & cọc Escrow' : 'Browse, negotiate & Escrow deposit',
-      avatarBg: 'bg-zinc-800 text-white',
-      icon: <User className="w-3.5 h-3.5 text-zinc-300" />
-    },
-    {
-      label: lang === 'vi' ? 'Người Bán (Seller)' : 'Seller Account',
-      role: 'seller',
-      name: 'Nguyễn Minh Tuấn',
-      email: 'tuan.seller@secondlife.vn',
-      desc: lang === 'vi' ? 'Người bán uy tín có sản phẩm sàn' : 'Verified seller with active listings',
-      avatarBg: 'bg-zinc-800 text-white',
-      icon: <Sparkles className="w-3.5 h-3.5 text-zinc-300" />
-    },
-    {
-      label: lang === 'vi' ? 'Kỹ Sư Hub (Inspector)' : 'Hub Inspector',
-      role: 'inspector',
-      name: 'KTV Trưởng Hải Đăng',
-      email: 'haidang.hub@secondlife.vn',
-      desc: lang === 'vi' ? 'Nghiệm thu bo mạch tại SecondLife Hub' : 'Hardware inspection specialist at Hub',
-      avatarBg: 'bg-zinc-800 text-white',
-      icon: <Building2 className="w-3.5 h-3.5 text-zinc-300" />
-    },
-    {
-      label: lang === 'vi' ? 'Quản Trị (Admin)' : 'System Admin',
-      role: 'admin',
-      name: 'Admin Điều Hành',
-      email: 'admin@secondlife.vn',
-      desc: lang === 'vi' ? 'Trọng tài phân xử khiếu nại Escrow' : 'Escrow dispute arbitrator & manager',
-      avatarBg: 'bg-zinc-800 text-white',
-      icon: <ShieldAlert className="w-3.5 h-3.5 text-zinc-300" />
-    }
-  ];
+      {
+        label: lang === 'vi' ? 'Người Mua (Buyer)' : 'Buyer Account',
+        role: 'buyer',
+        name: 'Hoàng Quốc Khang',
+        email: 'khang.buyer@secondlife.vn',
+        desc: lang === 'vi' ? 'Tìm kiếm, đàm phán & cọc Escrow' : 'Browse, negotiate & Escrow deposit',
+        avatarBg: 'bg-zinc-800 text-white',
+        icon: <User className="w-3.5 h-3.5 text-zinc-300" />
+      },
+      {
+        label: lang === 'vi' ? 'Người Bán (Seller)' : 'Seller Account',
+        role: 'seller',
+        name: 'Nguyễn Minh Tuấn',
+        email: 'tuan.seller@secondlife.vn',
+        desc: lang === 'vi' ? 'Người bán uy tín có sản phẩm sàn' : 'Verified seller with active listings',
+        avatarBg: 'bg-zinc-800 text-white',
+        icon: <Sparkles className="w-3.5 h-3.5 text-zinc-300" />
+      },
+      {
+        label: lang === 'vi' ? 'Kỹ Sư Hub (Inspector)' : 'Hub Inspector',
+        role: 'inspector',
+        name: 'KTV Trưởng Hải Đăng',
+        email: 'haidang.hub@secondlife.vn',
+        desc: lang === 'vi' ? 'Nghiệm thu bo mạch tại SecondLife Hub' : 'Hardware inspection specialist at Hub',
+        avatarBg: 'bg-zinc-800 text-white',
+        icon: <Building2 className="w-3.5 h-3.5 text-zinc-300" />
+      },
+      {
+        label: lang === 'vi' ? 'Quản Trị (Admin)' : 'System Admin',
+        role: 'admin',
+        name: 'Admin Điều Hành',
+        email: 'admin@secondlife.vn',
+        desc: lang === 'vi' ? 'Trọng tài phân xử khiếu nại Escrow' : 'Escrow dispute arbitrator & manager',
+        avatarBg: 'bg-zinc-800 text-white',
+        icon: <ShieldAlert className="w-3.5 h-3.5 text-zinc-300" />
+      }
+    ];
 
   const handleDemoLogin = (account: typeof demoAccounts[0]) => {
     soundFx.playChime();
@@ -237,8 +237,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </h3>
               <p className="text-xs text-white/70 leading-relaxed">
                 {lang === 'vi'
-                  ? 'Bảo vệ tài chính 100% qua Quỹ Tín Thác Escrow. Đã kiểm định hơn 10,000+ thiết bị điện tử.'
-                  : '100% financial protection guaranteed via Escrow trust fund & certified hardware inspection.'}
+                  ? 'Bảo vệ tài chính qua Quỹ Tín Thác Escrow. Đã kiểm định hơn 10,000+ thiết bị điện tử.'
+                  : 'Financial protection guaranteed via Escrow trust fund & certified hardware inspection.'}
               </p>
             </div>
 
@@ -342,11 +342,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     setErrorMsg(null);
                     setMode('login');
                   }}
-                  className={`py-2.5 rounded-xl transition-all cursor-pointer text-center font-bold ${
-                    mode === 'login'
+                  className={`py-2.5 rounded-xl transition-all cursor-pointer text-center font-bold ${mode === 'login'
                       ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-sm font-extrabold'
                       : 'text-[#0E121B]/70 hover:text-[#0E121B]'
-                  }`}
+                    }`}
                 >
                   {lang === 'vi' ? 'Đăng Nhập' : 'Log In'}
                 </button>
@@ -356,11 +355,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     setErrorMsg(null);
                     setMode('register');
                   }}
-                  className={`py-2.5 rounded-xl transition-all cursor-pointer text-center font-bold ${
-                    mode === 'register'
+                  className={`py-2.5 rounded-xl transition-all cursor-pointer text-center font-bold ${mode === 'register'
                       ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-sm font-extrabold'
                       : 'text-[#0E121B]/70 hover:text-[#0E121B]'
-                  }`}
+                    }`}
                 >
                   {lang === 'vi' ? 'Đăng Ký Thành Viên' : 'Register Account'}
                 </button>
@@ -564,11 +562,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setSelectedRole('buyer')}
-                      className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between ${
-                        selectedRole === 'buyer'
+                      className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between ${selectedRole === 'buyer'
                           ? 'bg-[#EC1577]/10 border-[#EC1577] text-[#0E121B] ring-1 ring-[#EC1577]'
                           : 'bg-[#F4F5F8] border-gray-200 text-[#0E121B]/70 hover:bg-[#FFFFFF]'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center gap-2">
                         <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${selectedRole === 'buyer' ? 'bg-[#EC1577] text-white' : 'bg-gray-200 text-[#0E121B]'}`}>
@@ -585,11 +582,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setSelectedRole('seller')}
-                      className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between ${
-                        selectedRole === 'seller'
+                      className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between ${selectedRole === 'seller'
                           ? 'bg-[#EC1577]/10 border-[#EC1577] text-[#0E121B] ring-1 ring-[#EC1577]'
                           : 'bg-[#F4F5F8] border-gray-200 text-[#0E121B]/70 hover:bg-[#FFFFFF]'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center gap-2">
                         <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${selectedRole === 'seller' ? 'bg-[#EC1577] text-white' : 'bg-gray-200 text-[#0E121B]'}`}>

@@ -195,11 +195,10 @@ export default function App() {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${
-      theme === 'dark'
+    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${theme === 'dark'
         ? 'bg-[#0E121B] text-white selection:bg-[#EC1577] selection:text-white'
         : 'bg-[#F4F5F8] text-[#0E121B] selection:bg-[#EC1577] selection:text-white'
-    }`}>
+      }`}>
       {/* Navigation */}
       {activeTab !== 'admin-dashboard' && (
         <Navbar

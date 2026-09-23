@@ -292,11 +292,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         <div className="px-6 sm:px-8 mt-5 border-b border-gray-100 flex items-center gap-1 sm:gap-2 overflow-x-auto scrollbar-none">
           <button
             onClick={() => setActiveTab('info')}
-            className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              activeTab === 'info'
+            className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'info'
                 ? 'text-[#EC1577]'
                 : 'text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             <User className="w-4 h-4" />
             <span>Thông Tin Cá Nhân</span>
@@ -307,11 +306,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
           <button
             onClick={() => setActiveTab('wallet')}
-            className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              activeTab === 'wallet'
+            className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'wallet'
                 ? 'text-[#EC1577]'
                 : 'text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             <Wallet className="w-4 h-4" />
             <span>Ví Escrow & Ngân Hàng</span>
@@ -322,11 +320,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
           <button
             onClick={() => setActiveTab('kyc')}
-            className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              activeTab === 'kyc'
+            className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'kyc'
                 ? 'text-[#EC1577]'
                 : 'text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             <Shield className="w-4 h-4" />
             <span>Định Danh & Bảo Mật</span>
@@ -337,11 +334,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
           <button
             onClick={() => setActiveTab('settings')}
-            className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              activeTab === 'settings'
+            className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'settings'
                 ? 'text-[#EC1577]'
                 : 'text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             <KeyRound className="w-4 h-4" />
             <span>Đổi Vai Trò</span>
@@ -698,18 +694,16 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       setTimeout(() => setSellerFormSuccess(null), 3000);
                     }
                   }}
-                  className={`p-4 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between relative ${
-                    currentUser.role === 'buyer'
+                  className={`p-4 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between relative ${currentUser.role === 'buyer'
                       ? 'bg-gradient-to-br from-blue-50/70 to-indigo-50/70 border-blue-500 ring-2 ring-blue-500/20 shadow-sm'
                       : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-xs'
-                  }`}
+                    }`}
                 >
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <div className={`p-2 rounded-xl ${
-                          currentUser.role === 'buyer' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'
-                        }`}>
+                        <div className={`p-2 rounded-xl ${currentUser.role === 'buyer' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'
+                          }`}>
                           <ShoppingBag className="w-4 h-4" />
                         </div>
                         <div>
@@ -755,20 +749,18 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       setSellerFormError(null);
                     }
                   }}
-                  className={`p-4 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between relative ${
-                    currentUser.role === 'seller'
+                  className={`p-4 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between relative ${currentUser.role === 'seller'
                       ? 'bg-gradient-to-br from-[#EC1577]/10 to-[#F1622A]/10 border-[#EC1577] ring-2 ring-[#EC1577]/20 shadow-sm'
                       : 'bg-white border-gray-200 hover:border-[#EC1577]/50 hover:shadow-xs'
-                  }`}
+                    }`}
                 >
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <div className={`p-2 rounded-xl ${
-                          currentUser.role === 'seller'
+                        <div className={`p-2 rounded-xl ${currentUser.role === 'seller'
                             ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white'
                             : 'bg-rose-50 text-[#EC1577]'
-                        }`}>
+                          }`}>
                           <Store className="w-4 h-4" />
                         </div>
                         <div>
@@ -807,8 +799,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       {currentUser.role === 'seller'
                         ? 'Chi tiết gian hàng'
                         : isSellerRegistered
-                        ? 'Bấm để chuyển vai trò'
-                        : 'Điền đơn đăng ký →'}
+                          ? 'Bấm để chuyển vai trò'
+                          : 'Điền đơn đăng ký →'}
                     </span>
                   </div>
                 </div>

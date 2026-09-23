@@ -247,7 +247,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               <div className="flex items-center gap-2">
                 <span className="px-3.5 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4" />
-                  <span>Bảo Lãnh Escrow 100%</span>
+                  <span>Bảo Lãnh Escrow</span>
                 </span>
               </div>
             </div>
@@ -993,7 +993,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
               <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
                 <span>Dịch vụ Verify Then Ship 2 chặng</span>
-                <span className="font-mono text-emerald-700 font-bold">100% Bảo Hiểm Escrow</span>
+                <span className="font-mono text-emerald-700 font-bold">Bảo Hiểm Escrow</span>
               </div>
             </div>
 

@@ -57,7 +57,7 @@ export const Footer: React.FC<FooterProps> = ({
             </div>
             <div>
               <h5 className="font-bold text-white text-xs leading-snug">
-                {lang === 'vi' ? 'Bảo Lãnh Escrow 100%' : '100% Escrow Protection'}
+                {lang === 'vi' ? 'Bảo Lãnh Escrow' : 'Escrow Protection'}
               </h5>
               <p className="text-[11px] text-slate-400 mt-0.5 leading-tight">
                 {lang === 'vi' ? 'Giữ tiền cọc, chỉ chi khi nhận hàng' : 'Funds held safely in escrow'}

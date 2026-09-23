@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   User,
@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, UserRole, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
+import { userService, sellerService } from '../../services';
 
 interface ProfileDialogProps {
   isOpen: boolean;
@@ -40,6 +41,8 @@ interface ProfileDialogProps {
   onUpdateProfile: (updated: UserProfile) => void;
   onRoleChange: (role: UserRole) => void;
   onLogout: () => void;
+  onChangePassword?: () => void;
+  onOpenVerifyEmail?: (email: string) => void;
   lang?: Language;
 }
 
@@ -52,6 +55,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   onUpdateProfile,
   onRoleChange,
   onLogout,
+  onChangePassword,
+  onOpenVerifyEmail,
   lang = 'vi',
 }) => {
   if (!isOpen || !currentUser) return null;
@@ -61,10 +66,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   // Form states
   const [name, setName] = useState(currentUser.name || '');
   const [email, setEmail] = useState(currentUser.email || '');
-  const [phone, setPhone] = useState(currentUser.phone || '0912 345 678');
-  const [address, setAddress] = useState(
-    currentUser.address || '92 Phan Châu Trinh, Phường Phước Ninh, Quận Hải Châu, TP. Đà Nẵng'
-  );
+  const [phone, setPhone] = useState(currentUser.phone || '');
+  const [address, setAddress] = useState(currentUser.address || '');
   const [gender, setGender] = useState<'male' | 'female' | 'other'>(currentUser.gender || 'male');
   const [birthday, setBirthday] = useState(currentUser.birthday || '1998-05-18');
   const [bankName, setBankName] = useState(currentUser.bankAccount?.bankName || 'Vietcombank');
@@ -72,7 +75,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     currentUser.bankAccount?.accountNumber || '991204882910'
   );
   const [accountHolder, setAccountHolder] = useState(
-    currentUser.bankAccount?.accountHolder || 'HOANG QUOC KHANG'
+    currentUser.bankAccount?.accountHolder || (currentUser.name ? currentUser.name.toUpperCase() : 'HOANG QUOC KHANG')
   );
 
   const [isSaved, setIsSaved] = useState(false);
@@ -84,9 +87,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [shopName, setShopName] = useState(
     currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop')
   );
-  const [sellerPhone, setSellerPhone] = useState(currentUser.phone || '0912 345 678');
+  const [sellerPhone, setSellerPhone] = useState(currentUser.phone || '');
   const [pickupAddress, setPickupAddress] = useState(
-    currentUser.pickupAddress || currentUser.address || '92 Phan Châu Trinh, Phường Phước Ninh, Quận Hải Châu, TP. Đà Nẵng'
+    currentUser.pickupAddress || currentUser.address || ''
   );
   const [idCardNumber, setIdCardNumber] = useState(currentUser.idCardNumber || '048299102941');
   const [sellerBankName, setSellerBankName] = useState(
@@ -96,13 +99,34 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     currentUser.bankAccount?.accountNumber || '991204882910'
   );
   const [sellerAccountHolder, setSellerAccountHolder] = useState(
-    currentUser.bankAccount?.accountHolder || 'HOANG QUOC KHANG'
+    currentUser.bankAccount?.accountHolder || (currentUser.name ? currentUser.name.toUpperCase() : 'HOANG QUOC KHANG')
   );
   const [sellerProductTypes, setSellerProductTypes] = useState('Tủ lạnh, Máy giặt, Thiết bị điện lạnh gia dụng');
   const [sellerTermsAgreed, setSellerTermsAgreed] = useState(true);
   const [showSellerRegistrationForm, setShowSellerRegistrationForm] = useState(false);
   const [sellerFormSuccess, setSellerFormSuccess] = useState<string | null>(null);
   const [sellerFormError, setSellerFormError] = useState<string | null>(null);
+
+  // Sync state whenever currentUser or modal opens
+  useEffect(() => {
+    if (currentUser) {
+      setName(currentUser.name || '');
+      setEmail(currentUser.email || '');
+      setPhone(currentUser.phone || '');
+      setAddress(currentUser.address || '');
+      if (currentUser.gender) setGender(currentUser.gender);
+      if (currentUser.birthday) setBirthday(currentUser.birthday);
+      if (currentUser.bankAccount) {
+        if (currentUser.bankAccount.bankName) setBankName(currentUser.bankAccount.bankName);
+        if (currentUser.bankAccount.accountNumber) setAccountNumber(currentUser.bankAccount.accountNumber);
+        if (currentUser.bankAccount.accountHolder) setAccountHolder(currentUser.bankAccount.accountHolder);
+      }
+      setIsSellerRegistered(Boolean(currentUser.isSellerRegistered || currentUser.role === 'seller'));
+      setShopName(currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop'));
+      setSellerPhone(currentUser.phone || '');
+      setPickupAddress(currentUser.pickupAddress || currentUser.address || '');
+    }
+  }, [currentUser, isOpen]);
 
   const handleRegisterSeller = (e: React.FormEvent) => {
     e.preventDefault();
@@ -144,6 +168,17 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       },
     };
 
+    // Call Backend POST /api/v1/seller-verifications
+    sellerService.submitVerification({
+      verificationType: 'CITIZEN_ID',
+      documentNumber: idCardNumber.trim(),
+      documentFrontUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136',
+      documentBackUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136',
+      selfieUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136',
+    }).catch(() => {
+      // Backend may be offline or user already submitted
+    });
+
     setIsSellerRegistered(true);
     setShowSellerRegistrationForm(false);
     onUpdateProfile(updated);
@@ -168,6 +203,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         accountHolder,
       },
     };
+
+    // Call Backend PATCH /api/v1/me
+    userService.updateMyProfile({
+      fullName: name.trim(),
+      phone: phone.trim() || undefined,
+    }).catch(() => {
+      // Backend fallback
+    });
+
     onUpdateProfile(updated);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
@@ -177,22 +221,22 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     switch (role) {
       case 'buyer':
         return {
-          label: 'Người Mua Xác Thực (Verified Buyer)',
+          label: lang === 'vi' ? 'Người Mua Xác Thực (Verified Buyer)' : 'Verified Buyer',
           className: 'bg-blue-500/15 text-blue-600 border-blue-500/30',
         };
       case 'seller':
         return {
-          label: 'Nhà Bán Hàng Uy Tín (Top Seller 4.9★)',
+          label: lang === 'vi' ? 'Nhà Bán Hàng Uy Tín (Top Seller 4.9★)' : 'Verified Seller (4.9★)',
           className: 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30',
         };
       case 'inspector':
         return {
-          label: 'Kỹ Sư Giám Định Hub (Certified Lab Tech)',
+          label: lang === 'vi' ? 'Kỹ Sư Giám Định Hub (Certified Lab Tech)' : 'Certified Lab Tech',
           className: 'bg-purple-500/15 text-purple-600 border-purple-500/30',
         };
       case 'admin':
         return {
-          label: 'Quản Trị Viên Hệ Thống (Supervisor)',
+          label: lang === 'vi' ? 'Quản Trị Viên Hệ Thống (Supervisor)' : 'System Administrator',
           className: 'bg-rose-500/15 text-rose-600 border-rose-500/30',
         };
       default:
@@ -250,7 +294,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 </div>
                 <button
                   type="button"
-                  title="Thay đổi ảnh đại diện"
+                  title={lang === 'vi' ? 'Thay đổi ảnh đại diện' : 'Change avatar'}
                   className="absolute bottom-1 right-1 p-1.5 rounded-lg bg-white shadow-md border border-gray-200 text-gray-700 hover:text-[#EC1577] transition cursor-pointer"
                 >
                   <Camera className="w-3.5 h-3.5" />
@@ -278,11 +322,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             <div className="flex sm:flex-col items-center sm:items-end gap-1.5 text-xs text-slate-500 pt-2 sm:pt-0">
               <div className="flex items-center gap-1 bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg border border-emerald-200 font-bold text-[11px]">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>eKYC: Đã Xác Thực CCCD</span>
+                <span>{lang === 'vi' ? 'eKYC: Đã Xác Thực CCCD' : 'eKYC: ID Verified'}</span>
               </div>
               <div className="flex items-center gap-1 text-[11px] text-slate-600">
                 <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                <span>Điểm Uy Tín: <strong className="text-slate-900 font-bold">99/100</strong></span>
+                <span>{lang === 'vi' ? 'Điểm Uy Tín: ' : 'Trust Score: '}<strong className="text-slate-900 font-bold">99/100</strong></span>
               </div>
             </div>
           </div>
@@ -298,7 +342,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               }`}
           >
             <User className="w-4 h-4" />
-            <span>Thông Tin Cá Nhân</span>
+            <span>{lang === 'vi' ? 'Thông Tin Cá Nhân' : 'Personal Profile'}</span>
             {activeTab === 'info' && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] rounded-t-full" />
             )}
@@ -312,7 +356,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               }`}
           >
             <Wallet className="w-4 h-4" />
-            <span>Ví Escrow & Ngân Hàng</span>
+            <span>{lang === 'vi' ? 'Ví Escrow & Ngân Hàng' : 'Escrow Wallet & Bank'}</span>
             {activeTab === 'wallet' && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] rounded-t-full" />
             )}
@@ -326,7 +370,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               }`}
           >
             <Shield className="w-4 h-4" />
-            <span>Định Danh & Bảo Mật</span>
+            <span>{lang === 'vi' ? 'Định Danh & Bảo Mật' : 'Identity & Security'}</span>
             {activeTab === 'kyc' && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] rounded-t-full" />
             )}
@@ -339,8 +383,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 : 'text-slate-500 hover:text-slate-800'
               }`}
           >
-            <KeyRound className="w-4 h-4" />
-            <span>Đổi Vai Trò</span>
+            <Store className="w-4 h-4" />
+            <span>
+              {currentUser.role === 'seller'
+                ? (lang === 'vi' ? 'Gian Hàng Người Bán' : 'Seller Store')
+                : (lang === 'vi' ? 'Đăng Ký Thành Người Bán' : 'Register as Seller')}
+            </span>
             {activeTab === 'settings' && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] rounded-t-full" />
             )}
@@ -355,7 +403,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                    Họ và Tên
+                    {lang === 'vi' ? 'Họ và Tên' : 'Full Name'}
                   </label>
                   <div className="relative">
                     <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -370,9 +418,24 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                    Địa Chỉ Email
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      {lang === 'vi' ? 'Địa Chỉ Email' : 'Email Address'}
+                    </label>
+                    {currentUser.emailVerified ? (
+                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 inline-flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" /> {lang === 'vi' ? 'Đã xác thực' : 'Verified'}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onOpenVerifyEmail?.(email || currentUser.email)}
+                        className="text-[10px] font-bold text-[#EC1577] bg-pink-50 hover:bg-pink-100 px-2 py-0.5 rounded-md border border-pink-200 inline-flex items-center gap-1 cursor-pointer transition shadow-xs"
+                      >
+                        <Mail className="w-3 h-3" /> {lang === 'vi' ? 'Xác thực OTP ngay' : 'Verify OTP now'}
+                      </button>
+                    )}
+                  </div>
                   <div className="relative">
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
@@ -387,7 +450,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                 <div>
                   <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                    Số Điện Thoại (Nhận mã OTP / Bưu tá gọi)
+                    {lang === 'vi' ? 'Số Điện Thoại (Nhận mã OTP / Bưu tá gọi)' : 'Phone Number (OTP / Courier)'}
                   </label>
                   <div className="relative">
                     <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -403,7 +466,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                 <div>
                   <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                    Ngày Sinh
+                    {lang === 'vi' ? 'Ngày Sinh' : 'Date of Birth'}
                   </label>
                   <div className="relative">
                     <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -419,7 +482,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
               <div>
                 <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                  Giới Tính
+                  {lang === 'vi' ? 'Giới Tính' : 'Gender'}
                 </label>
                 <div className="flex items-center gap-4 text-xs font-medium text-slate-700">
                   <label className="flex items-center gap-1.5 cursor-pointer">
@@ -431,7 +494,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       onChange={() => setGender('male')}
                       className="accent-[#EC1577]"
                     />
-                    <span>Nam</span>
+                    <span>{lang === 'vi' ? 'Nam' : 'Male'}</span>
                   </label>
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input
@@ -442,7 +505,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       onChange={() => setGender('female')}
                       className="accent-[#EC1577]"
                     />
-                    <span>Nữ</span>
+                    <span>{lang === 'vi' ? 'Nữ' : 'Female'}</span>
                   </label>
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input
@@ -453,14 +516,14 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       onChange={() => setGender('other')}
                       className="accent-[#EC1577]"
                     />
-                    <span>Khác</span>
+                    <span>{lang === 'vi' ? 'Khác' : 'Other'}</span>
                   </label>
                 </div>
               </div>
 
               <div>
                 <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                  Địa Chỉ Nhận Hàng & Lấy Hàng Mặc Định
+                  {lang === 'vi' ? 'Địa Chỉ' : 'Address'}
                 </label>
                 <div className="relative">
                   <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
@@ -468,8 +531,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     rows={2}
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
-                    required
-                    placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành phố..."
+                    placeholder={lang === 'vi' ? 'Nhập địa chỉ' : 'Enter address'}
                     className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] transition"
                   />
                 </div>
@@ -481,7 +543,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   {isSaved && (
                     <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 animate-in fade-in">
                       <CheckCircle2 className="w-4 h-4" />
-                      <span>Đã lưu thông tin thành công!</span>
+                      <span>{lang === 'vi' ? 'Đã lưu thông tin thành công!' : 'Profile saved successfully!'}</span>
                     </span>
                   )}
                 </div>
@@ -491,7 +553,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white font-bold text-xs sm:text-sm shadow-md hover:opacity-95 transition flex items-center gap-2 cursor-pointer"
                 >
                   <Save className="w-4 h-4" />
-                  <span>Lưu Thay Đổi</span>
+                  <span>{lang === 'vi' ? 'Lưu Thay Đổi' : 'Save Changes'}</span>
                 </button>
               </div>
             </form>
@@ -506,17 +568,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <div className="flex items-center justify-between text-xs text-slate-300">
                     <span className="font-semibold flex items-center gap-1.5">
                       <Wallet className="w-4 h-4 text-[#EC1577]" />
-                      Số Dư Khả Dụng Trong Ví
+                      {lang === 'vi' ? 'Số Dư Khả Dụng Trong Ví' : 'Available Wallet Balance'}
                     </span>
                     <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-mono">
-                      Sẵn Sàng Rút
+                      {lang === 'vi' ? 'Sẵn Sàng Rút' : 'Ready to Withdraw'}
                     </span>
                   </div>
                   <div className="text-2xl font-black text-white tracking-tight">
                     {formatVND(currentUser.walletBalanceVnd || 24500000)}
                   </div>
                   <p className="text-[11px] text-slate-400">
-                    Tiền bán hàng đã hoàn tất giải ngân từ người mua qua quỹ Escrow.
+                    {lang === 'vi'
+                      ? 'Tiền bán hàng đã hoàn tất giải ngân từ người mua qua quỹ Escrow.'
+                      : 'Sales proceeds released from buyers via the Escrow trust fund.'}
                   </p>
                 </div>
 
@@ -524,17 +588,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <div className="flex items-center justify-between text-xs text-slate-600">
                     <span className="font-semibold flex items-center gap-1.5">
                       <Lock className="w-4 h-4 text-[#EC1577]" />
-                      Tiền Đang Phong Tỏa Escrow
+                      {lang === 'vi' ? 'Tiền Đang Phong Tỏa Escrow' : 'Funds in Escrow Hold'}
                     </span>
                     <span className="text-[10px] bg-[#EC1577]/10 text-[#EC1577] px-2 py-0.5 rounded font-bold">
-                      Đang Bảo Lãnh
+                      {lang === 'vi' ? 'Đang Bảo Lãnh' : 'Under Escrow Protection'}
                     </span>
                   </div>
                   <div className="text-2xl font-black text-[#EC1577] tracking-tight">
                     {formatVND(currentUser.escrowLockedVnd || 19562500)}
                   </div>
                   <p className="text-[11px] text-slate-500">
-                    Bảo đảm an toàn cho các đơn hàng đang trên đường giao hoặc chờ kiểm tra 48h.
+                    {lang === 'vi'
+                      ? 'Bảo đảm an toàn cho các đơn hàng đang trên đường giao hoặc chờ kiểm tra 48h.'
+                      : 'Safeguarding orders currently in transit or in the 48h inspection window.'}
                   </p>
                 </div>
               </div>
@@ -545,17 +611,17 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <div className="flex items-center gap-2">
                     <Building className="w-4 h-4 text-slate-700" />
                     <h3 className="font-bold text-sm text-slate-900">
-                      Tài Khoản Ngân Hàng Nhận Tiền Bán
+                      {lang === 'vi' ? 'Tài Khoản Ngân Hàng Nhận Tiền Bán' : 'Bank Account for Payouts'}
                     </h3>
                   </div>
                   <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    Đã Xác Thực 24/7
+                    {lang === 'vi' ? 'Đã Xác Thực 24/7' : 'Verified 24/7'}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1">
                   <div>
-                    <label className="text-slate-500 text-[11px] block">Ngân hàng</label>
+                    <label className="text-slate-500 text-[11px] block">{lang === 'vi' ? 'Ngân hàng' : 'Bank name'}</label>
                     <input
                       type="text"
                       value={bankName}
@@ -564,7 +630,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="text-slate-500 text-[11px] block">Số tài khoản</label>
+                    <label className="text-slate-500 text-[11px] block">{lang === 'vi' ? 'Số tài khoản' : 'Account number'}</label>
                     <input
                       type="text"
                       value={accountNumber}
@@ -573,7 +639,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="text-slate-500 text-[11px] block">Tên chủ tài khoản</label>
+                    <label className="text-slate-500 text-[11px] block">{lang === 'vi' ? 'Tên chủ tài khoản' : 'Account holder name'}</label>
                     <input
                       type="text"
                       value={accountHolder}
@@ -588,7 +654,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     onClick={handleSave}
                     className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition cursor-pointer"
                   >
-                    Cập Nhật Tài Khoản Ngân Hàng
+                    {lang === 'vi' ? 'Cập Nhật Tài Khoản Ngân Hàng' : 'Update Bank Account'}
                   </button>
                 </div>
               </div>
@@ -604,16 +670,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 </div>
                 <div className="space-y-1">
                   <h4 className="text-xs sm:text-sm font-bold text-emerald-950">
-                    Tài khoản đã hoàn tất định danh eKYC Căn Cước Công Dân
+                    {lang === 'vi'
+                      ? 'Tài khoản đã hoàn tất định danh eKYC Căn Cước Công Dân'
+                      : 'Account verified via Citizen Identity eKYC'}
                   </h4>
                   <p className="text-xs text-emerald-800/80 leading-relaxed">
-                    Hồ sơ của bạn đã được đối soát sinh trắc học và dán tem xác thực SecondLife Verified.
-                    Bạn có thể đăng bán và giải ngân không giới hạn hạn mức.
+                    {lang === 'vi'
+                      ? 'Hồ sơ của bạn đã được đối soát sinh trắc học và dán tem xác thực SecondLife Verified. Bạn có thể đăng bán và giải ngân không giới hạn hạn mức.'
+                      : 'Your profile has passed biometric matching with a SecondLife Verified badge. You can list items and withdraw funds without limits.'}
                   </p>
                   <div className="flex items-center gap-3 pt-1 text-[11px] font-semibold text-emerald-700">
-                    <span>Mã Định Danh: <strong>KYC-VN-9920148</strong></span>
+                    <span>{lang === 'vi' ? 'Mã Định Danh: ' : 'Verification ID: '}<strong>KYC-VN-9920148</strong></span>
                     <span>•</span>
-                    <span>Ngày Phê Duyệt: 15/01/2026</span>
+                    <span>{lang === 'vi' ? 'Ngày Phê Duyệt: ' : 'Approval Date: '}15/01/2026</span>
                   </div>
                 </div>
               </div>
@@ -621,19 +690,25 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               {/* Security Checklist */}
               <div className="space-y-2.5">
                 <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  Cài Đặt An Toàn & Bảo Vệ Tài Khoản
+                  {lang === 'vi' ? 'Cài Đặt An Toàn & Bảo Vệ Tài Khoản' : 'Security & Account Protection Settings'}
                 </h4>
 
                 <div className="p-3.5 rounded-xl border border-gray-200 bg-white flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Phone className="w-4 h-4 text-slate-500" />
                     <div>
-                      <span className="text-xs font-bold text-slate-900 block">Xác thực 2 bước (2FA qua SMS)</span>
-                      <span className="text-[11px] text-slate-500">Gửi mã OTP xác nhận mỗi khi chuyển tiền Escrow</span>
+                      <span className="text-xs font-bold text-slate-900 block">
+                        {lang === 'vi' ? 'Xác thực 2 bước (2FA qua SMS)' : 'Two-Factor Authentication (2FA SMS)'}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {lang === 'vi'
+                          ? 'Gửi mã OTP xác nhận mỗi khi chuyển tiền Escrow'
+                          : 'Sends an OTP confirmation code whenever transferring Escrow funds'}
+                      </span>
                     </div>
                   </div>
                   <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                    Đang Bật
+                    {lang === 'vi' ? 'Đang Bật' : 'Enabled'}
                   </span>
                 </div>
 
@@ -641,15 +716,23 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <div className="flex items-center gap-3">
                     <Lock className="w-4 h-4 text-slate-500" />
                     <div>
-                      <span className="text-xs font-bold text-slate-900 block">Mật khẩu đăng nhập</span>
-                      <span className="text-[11px] text-slate-500">Đã đổi 45 ngày trước (Độ mạnh: Rất cao)</span>
+                      <span className="text-xs font-bold text-slate-900 block">
+                        {lang === 'vi' ? 'Mật khẩu đăng nhập' : 'Login Password'}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {lang === 'vi' ? 'Đã đổi 45 ngày trước (Độ mạnh: Rất cao)' : 'Changed 45 days ago (Strength: Very Strong)'}
+                      </span>
                     </div>
                   </div>
                   <button
                     type="button"
+                    onClick={() => {
+                      onClose();
+                      onChangePassword?.();
+                    }}
                     className="text-xs font-bold text-[#EC1577] hover:underline cursor-pointer"
                   >
-                    Đổi Mật Khẩu
+                    {lang === 'vi' ? 'Đổi Mật Khẩu' : 'Change Password'}
                   </button>
                 </div>
               </div>
@@ -662,14 +745,18 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    Chuyển Đổi Vai Trò Tài Khoản
+                    {lang === 'vi' ? 'Đăng Ký Thành Người Bán (Seller Center)' : 'Seller Registration & Hub Onboarding'}
                   </h4>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                    Người Mua & Người Bán
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-50 text-[#EC1577] border border-rose-200">
+                    {currentUser.role === 'seller' || isSellerRegistered
+                      ? (lang === 'vi' ? 'Đã Kích Hoạt Người Bán' : 'Seller Active')
+                      : (lang === 'vi' ? 'Chưa Kích Hoạt' : 'Not Registered')}
                   </span>
                 </div>
                 <p className="text-xs text-slate-500">
-                  Hệ thống cho phép bạn chuyển đổi linh hoạt giữa Người Mua và Người Bán. Để chuyển sang Người Bán, bạn cần hoàn tất thông tin đăng ký gian hàng và địa chỉ kho lấy hàng.
+                  {lang === 'vi'
+                    ? 'Đăng ký thông tin gian hàng và địa chỉ kho lấy hàng để bắt đầu đăng bán thiết bị, bưu tá đến tận nơi nhận hàng giao Hub kiểm định 48 bước và nhận tiền bảo lãnh qua Escrow.'
+                    : 'Register your store profile and warehouse pickup location to start listing appliances, with doorstep courier pickup for 48-point Hub inspection and secure Escrow payouts.'}
                 </p>
               </div>
 
@@ -681,131 +768,6 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 </div>
               )}
 
-              {/* 2 Roles Switcher Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                {/* 1. NGƯỜI MUA */}
-                <div
-                  onClick={() => {
-                    if (currentUser.role !== 'buyer') {
-                      onRoleChange('buyer');
-                      onUpdateProfile({ ...currentUser, role: 'buyer' });
-                      setShowSellerRegistrationForm(false);
-                      setSellerFormSuccess('Đã chuyển thành công sang vai trò Người Mua (Buyer).');
-                      setTimeout(() => setSellerFormSuccess(null), 3000);
-                    }
-                  }}
-                  className={`p-4 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between relative ${currentUser.role === 'buyer'
-                      ? 'bg-gradient-to-br from-blue-50/70 to-indigo-50/70 border-blue-500 ring-2 ring-blue-500/20 shadow-sm'
-                      : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-xs'
-                    }`}
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <div className={`p-2 rounded-xl ${currentUser.role === 'buyer' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'
-                          }`}>
-                          <ShoppingBag className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <span className="text-xs font-bold text-slate-900 block">
-                            Người Mua (Buyer)
-                          </span>
-                          <span className="text-[10px] text-slate-400">Dành cho khách mua hàng</span>
-                        </div>
-                      </div>
-                      {currentUser.role === 'buyer' ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded-full border border-blue-200">
-                          <CheckCircle2 className="w-3 h-3 text-blue-600" />
-                          Đang Dùng
-                        </span>
-                      ) : (
-                        <span className="text-[11px] font-bold text-blue-600 hover:underline">
-                          Chọn vai trò
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">
-                      Duyệt sàn đồ gia dụng cũ đã qua kiểm định, xem điểm giám định Hub 3D & tem NFC, đặt cọc giữ tiền Escrow an toàn tuyệt đối.
-                    </p>
-                  </div>
-
-                  <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between text-[10px] text-slate-400">
-                    <span>Quyền lợi: Mua cọc Escrow, hoàn tiền khi lỗi</span>
-                  </div>
-                </div>
-
-                {/* 2. NGƯỜI BÁN */}
-                <div
-                  onClick={() => {
-                    if (currentUser.role === 'seller') {
-                      setShowSellerRegistrationForm(!showSellerRegistrationForm);
-                    } else if (isSellerRegistered) {
-                      onRoleChange('seller');
-                      onUpdateProfile({ ...currentUser, role: 'seller' });
-                      setSellerFormSuccess('Đã chuyển thành công sang vai trò Người Bán (Seller).');
-                      setTimeout(() => setSellerFormSuccess(null), 3000);
-                    } else {
-                      setShowSellerRegistrationForm(true);
-                      setSellerFormError(null);
-                    }
-                  }}
-                  className={`p-4 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between relative ${currentUser.role === 'seller'
-                      ? 'bg-gradient-to-br from-[#EC1577]/10 to-[#F1622A]/10 border-[#EC1577] ring-2 ring-[#EC1577]/20 shadow-sm'
-                      : 'bg-white border-gray-200 hover:border-[#EC1577]/50 hover:shadow-xs'
-                    }`}
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <div className={`p-2 rounded-xl ${currentUser.role === 'seller'
-                            ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white'
-                            : 'bg-rose-50 text-[#EC1577]'
-                          }`}>
-                          <Store className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <span className="text-xs font-bold text-slate-900 block">
-                            Người Bán (Seller)
-                          </span>
-                          <span className="text-[10px] text-slate-400">Dành cho chủ shop / cá nhân bán</span>
-                        </div>
-                      </div>
-
-                      {currentUser.role === 'seller' ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#EC1577] bg-[#EC1577]/10 px-2 py-0.5 rounded-full border border-[#EC1577]/30">
-                          <CheckCircle2 className="w-3 h-3 text-[#EC1577]" />
-                          Đang Dùng
-                        </span>
-                      ) : isSellerRegistered ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          Đã Đăng Ký
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                          <AlertTriangle className="w-3 h-3 text-amber-600" />
-                          Cần Đăng Ký
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">
-                      Đăng bán máy lạnh, tủ lạnh, máy giặt cũ... Định giá AI tự động, bưu tá lấy hàng giao Hub kiểm định, nhận tiền qua Escrow.
-                    </p>
-                  </div>
-
-                  <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between text-[10px]">
-                    <span className="text-slate-400">Yêu cầu: Đăng ký kho & thông tin nhận tiền</span>
-                    <span className="font-bold text-[#EC1577]">
-                      {currentUser.role === 'seller'
-                        ? 'Chi tiết gian hàng'
-                        : isSellerRegistered
-                          ? 'Bấm để chuyển vai trò'
-                          : 'Điền đơn đăng ký →'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
               {/* THÔNG TIN GIAN HÀNG ĐÃ ĐĂNG KÝ (HIỂN THỊ KHI ĐÃ LÀ SELLER HOẶC ĐÃ ĐĂNG KÝ) */}
               {isSellerRegistered && !showSellerRegistrationForm && (
                 <div className="p-4 rounded-2xl bg-slate-50 border border-gray-200 space-y-3 animate-in fade-in">
@@ -813,41 +775,61 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <div className="flex items-center gap-2">
                       <Store className="w-4 h-4 text-[#EC1577]" />
                       <span className="text-xs font-bold text-slate-900">
-                        Hồ Sơ Gian Hàng Người Bán Của Bạn
+                        {lang === 'vi' ? 'Hồ Sơ Gian Hàng Người Bán Của Bạn' : 'Your Seller Store Profile'}
                       </span>
                       <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">
-                        Đã Kích Hoạt
+                        {lang === 'vi' ? 'Đã Kích Hoạt' : 'Active'}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowSellerRegistrationForm(true)}
-                      className="inline-flex items-center gap-1 text-xs font-bold text-[#EC1577] hover:underline cursor-pointer"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span>Chỉnh sửa thông tin</span>
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {currentUser.role === 'seller' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onRoleChange('buyer');
+                            onUpdateProfile({ ...currentUser, role: 'buyer' });
+                            setSellerFormSuccess(
+                              lang === 'vi'
+                                ? 'Đã chuyển sang vai trò Người Mua (Buyer).'
+                                : 'Switched to Buyer role.'
+                            );
+                            setTimeout(() => setSellerFormSuccess(null), 3000);
+                          }}
+                          className="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
+                        >
+                          {lang === 'vi' ? 'Chuyển về Người Mua' : 'Switch to Buyer'}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowSellerRegistrationForm(true)}
+                        className="inline-flex items-center gap-1 text-xs font-bold text-[#EC1577] hover:underline cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>{lang === 'vi' ? 'Chỉnh sửa thông tin' : 'Edit Information'}</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
                     <div className="p-2.5 bg-white rounded-xl border border-gray-200/80">
-                      <span className="text-[10px] text-slate-400 block mb-0.5">Tên gian hàng</span>
-                      <span className="font-bold text-slate-800">{shopName || 'Gian Hàng SecondLife'}</span>
+                      <span className="text-[10px] text-slate-400 block mb-0.5">{lang === 'vi' ? 'Tên gian hàng' : 'Store name'}</span>
+                      <span className="font-bold text-slate-800">{shopName || (lang === 'vi' ? 'Gian Hàng SecondLife' : 'SecondLife Store')}</span>
                     </div>
                     <div className="p-2.5 bg-white rounded-xl border border-gray-200/80">
-                      <span className="text-[10px] text-slate-400 block mb-0.5">Hotline bán hàng & Zalo</span>
+                      <span className="text-[10px] text-slate-400 block mb-0.5">{lang === 'vi' ? 'Hotline bán hàng & Zalo' : 'Sales hotline & Zalo'}</span>
                       <span className="font-bold text-slate-800">{sellerPhone || phone}</span>
                     </div>
                     <div className="p-2.5 bg-white rounded-xl border border-gray-200/80 sm:col-span-2">
-                      <span className="text-[10px] text-slate-400 block mb-0.5">Địa chỉ kho bưu tá lấy hàng</span>
+                      <span className="text-[10px] text-slate-400 block mb-0.5">{lang === 'vi' ? 'Địa chỉ kho bưu tá lấy hàng' : 'Courier pickup warehouse address'}</span>
                       <span className="font-medium text-slate-800">{pickupAddress || address}</span>
                     </div>
                     <div className="p-2.5 bg-white rounded-xl border border-gray-200/80">
-                      <span className="text-[10px] text-slate-400 block mb-0.5">Số CCCD định danh</span>
+                      <span className="text-[10px] text-slate-400 block mb-0.5">{lang === 'vi' ? 'Số CCCD định danh' : 'Citizen ID number'}</span>
                       <span className="font-bold text-slate-800">{idCardNumber || '048299102941'}</span>
                     </div>
                     <div className="p-2.5 bg-white rounded-xl border border-gray-200/80">
-                      <span className="text-[10px] text-slate-400 block mb-0.5">Tài khoản nhận tiền Escrow</span>
+                      <span className="text-[10px] text-slate-400 block mb-0.5">{lang === 'vi' ? 'Tài khoản nhận tiền Escrow' : 'Escrow payout account'}</span>
                       <span className="font-bold text-slate-800">{sellerBankName} - {sellerAccountNumber}</span>
                     </div>
                   </div>
@@ -867,10 +849,14 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       </div>
                       <div>
                         <h5 className="text-xs font-black text-slate-900 uppercase tracking-wide">
-                          {isSellerRegistered ? 'Cập Nhật Thông Tin Gian Hàng' : 'Đơn Đăng Ký Chuyển Tài Khoản Người Bán'}
+                          {isSellerRegistered
+                            ? (lang === 'vi' ? 'Cập Nhật Thông Tin Gian Hàng' : 'Update Store Information')
+                            : (lang === 'vi' ? 'Đơn Đăng Ký Chuyển Tài Khoản Người Bán' : 'Seller Registration Form')}
                         </h5>
                         <p className="text-[11px] text-slate-500">
-                          Điền thông tin để Kỹ sư Hub và đơn vị vận chuyển (GHTK/GHN) đến nhận thiết bị giám định
+                          {lang === 'vi'
+                            ? 'Điền thông tin để Kỹ sư Hub và đơn vị vận chuyển (GHTK/GHN) đến nhận thiết bị giám định'
+                            : 'Fill in details so Hub inspectors and couriers (GHTK/GHN) can collect devices for inspection'}
                         </p>
                       </div>
                     </div>
@@ -880,7 +866,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         onClick={() => setShowSellerRegistrationForm(false)}
                         className="text-xs text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
                       >
-                        Đóng
+                        {lang === 'vi' ? 'Đóng' : 'Close'}
                       </button>
                     )}
                   </div>
@@ -889,15 +875,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <div className="grid grid-cols-3 gap-2 py-1 text-[11px]">
                     <div className="flex items-center gap-1.5 p-2 rounded-xl bg-rose-50/60 border border-rose-100 text-slate-700">
                       <ShieldCheck className="w-3.5 h-3.5 text-[#EC1577] shrink-0" />
-                      <span>Xác minh CCCD</span>
+                      <span>{lang === 'vi' ? 'Xác minh CCCD' : 'National ID'}</span>
                     </div>
                     <div className="flex items-center gap-1.5 p-2 rounded-xl bg-amber-50/60 border border-amber-100 text-slate-700">
                       <Truck className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                      <span>Lấy hàng tận kho</span>
+                      <span>{lang === 'vi' ? 'Lấy hàng tận kho' : 'Doorstep Pickup'}</span>
                     </div>
                     <div className="flex items-center gap-1.5 p-2 rounded-xl bg-emerald-50/60 border border-emerald-100 text-slate-700">
                       <Wallet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>Giải ngân Escrow</span>
+                      <span>{lang === 'vi' ? 'Giải ngân Escrow' : 'Escrow Payout'}</span>
                     </div>
                   </div>
 
@@ -913,28 +899,28 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                          Tên Gian Hàng / Cửa Hàng <span className="text-red-500">*</span>
+                          {lang === 'vi' ? 'Tên Gian Hàng / Cửa Hàng' : 'Store / Shop Name'} <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="text"
                           required
                           value={shopName}
                           onChange={(e) => setShopName(e.target.value)}
-                          placeholder="VD: Điện Máy Cũ Hoàng Khang"
+                          placeholder={lang === 'vi' ? 'VD: Điện Máy Cũ Hoàng Khang' : 'e.g., Hoang Khang Pre-owned Tech'}
                           className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs bg-white text-slate-900"
                         />
                       </div>
 
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                          Số Điện Thoại Kinh Doanh & Zalo <span className="text-red-500">*</span>
+                          {lang === 'vi' ? 'Số Điện Thoại Kinh Doanh & Zalo' : 'Business Phone & Zalo'} <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="text"
                           required
                           value={sellerPhone}
                           onChange={(e) => setSellerPhone(e.target.value)}
-                          placeholder="VD: 0912 345 678"
+                          placeholder="0912 345 678"
                           className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs bg-white text-slate-900"
                         />
                       </div>
@@ -942,45 +928,47 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                     <div>
                       <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                        Địa Chỉ Kho / Nơi Bưu Tá Đến Lấy Hàng Giao Hub <span className="text-red-500">*</span>
+                        {lang === 'vi' ? 'Địa Chỉ Kho / Nơi Bưu Tá Đến Lấy Hàng Giao Hub' : 'Warehouse / Pickup Location for Hub'} <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="text"
                         required
                         value={pickupAddress}
                         onChange={(e) => setPickupAddress(e.target.value)}
-                        placeholder="Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành phố"
+                        placeholder={lang === 'vi' ? 'Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành phố' : 'Street address, ward, district, city'}
                         className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs bg-white text-slate-900"
                       />
                       <span className="text-[10px] text-slate-400 block mt-1">
-                        Đối tác vận chuyển (GHTK / GHN) sẽ đến địa chỉ này tiếp nhận thiết bị gửi về Hub kiểm định.
+                        {lang === 'vi'
+                          ? 'Đối tác vận chuyển (GHTK / GHN) sẽ đến địa chỉ này tiếp nhận thiết bị gửi về Hub kiểm định.'
+                          : 'Couriers (GHTK / GHN) will pick up devices from this address and deliver them to Hub for inspection.'}
                       </span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                          Số Căn Cước Công Dân (CCCD/CMND) <span className="text-red-500">*</span>
+                          {lang === 'vi' ? 'Số Căn Cước Công Dân (CCCD/CMND)' : 'Citizen Identity Number (CCCD)'} <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="text"
                           required
                           value={idCardNumber}
                           onChange={(e) => setIdCardNumber(e.target.value)}
-                          placeholder="VD: 048299102941"
+                          placeholder="048299102941"
                           className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs bg-white text-slate-900"
                         />
                       </div>
 
                       <div>
                         <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                          Loại Thiết Bị Bán Chủ Yếu
+                          {lang === 'vi' ? 'Loại Thiết Bị Bán Chủ Yếu' : 'Primary Product Category'}
                         </label>
                         <input
                           type="text"
                           value={sellerProductTypes}
                           onChange={(e) => setSellerProductTypes(e.target.value)}
-                          placeholder="VD: Tủ lạnh, Máy giặt, Máy pha cafe..."
+                          placeholder={lang === 'vi' ? 'VD: Tủ lạnh, Máy giặt, Máy pha cafe...' : 'e.g., Refrigerators, Washers, Coffee machines...'}
                           className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs bg-white text-slate-900"
                         />
                       </div>
@@ -990,12 +978,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <div className="p-3 rounded-2xl bg-white border border-gray-200 space-y-2.5">
                       <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
                         <CreditCard className="w-3.5 h-3.5 text-[#EC1577]" />
-                        <span>Tài Khoản Ngân Hàng Nhận Tiền Bán (Giải Ngân Escrow)</span>
+                        <span>{lang === 'vi' ? 'Tài Khoản Ngân Hàng Nhận Tiền Bán (Giải Ngân Escrow)' : 'Bank Account for Escrow Payout'}</span>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                         <div>
-                          <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Ngân hàng</label>
+                          <label className="text-[10px] font-bold text-slate-500 block mb-0.5">{lang === 'vi' ? 'Ngân hàng' : 'Bank name'}</label>
                           <input
                             type="text"
                             value={sellerBankName}
@@ -1005,7 +993,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           />
                         </div>
                         <div>
-                          <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Số tài khoản</label>
+                          <label className="text-[10px] font-bold text-slate-500 block mb-0.5">{lang === 'vi' ? 'Số tài khoản' : 'Account number'}</label>
                           <input
                             type="text"
                             value={sellerAccountNumber}
@@ -1015,7 +1003,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           />
                         </div>
                         <div>
-                          <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Chủ tài khoản</label>
+                          <label className="text-[10px] font-bold text-slate-500 block mb-0.5">{lang === 'vi' ? 'Chủ tài khoản' : 'Account holder'}</label>
                           <input
                             type="text"
                             value={sellerAccountHolder}
@@ -1036,7 +1024,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         className="mt-0.5 rounded text-[#EC1577] focus:ring-[#EC1577] w-4 h-4 cursor-pointer"
                       />
                       <span className="text-[11px] text-slate-600 leading-relaxed">
-                        Tôi cam kết mọi thiết bị đăng bán là chính hãng, đúng tình trạng; sẵn sàng giao hàng cho bưu tá để Kỹ sư Hub kiểm định dán tem NFC và tuân thủ quy chế giải ngân qua quỹ tín thác Escrow của SecondLife.
+                        {lang === 'vi'
+                          ? 'Tôi cam kết mọi thiết bị đăng bán là chính hãng, đúng tình trạng; sẵn sàng giao hàng cho bưu tá để Kỹ sư Hub kiểm định dán tem NFC và tuân thủ quy chế giải ngân qua quỹ tín thác Escrow của SecondLife.'
+                          : 'I commit that all listed appliances are authentic and match their described condition; I agree to hand them over to couriers for Hub inspection and NFC sealing, and abide by the SecondLife Escrow payout terms.'}
                       </span>
                     </label>
                   </div>
@@ -1049,7 +1039,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         onClick={() => setShowSellerRegistrationForm(false)}
                         className="px-4 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-100 text-slate-600 text-xs font-bold transition cursor-pointer"
                       >
-                        Hủy
+                        {lang === 'vi' ? 'Hủy' : 'Cancel'}
                       </button>
                     )}
                     <button
@@ -1059,8 +1049,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <CheckCircle2 className="w-4 h-4" />
                       <span>
                         {isSellerRegistered
-                          ? 'Cập Nhật Hồ Sơ Gian Hàng'
-                          : 'Xác Nhận Đăng Ký & Kích Hoạt Người Bán'}
+                          ? (lang === 'vi' ? 'Cập Nhật Hồ Sơ Gian Hàng' : 'Update Store Profile')
+                          : (lang === 'vi' ? 'Xác Nhận Đăng Ký & Kích Hoạt Người Bán' : 'Confirm Registration & Activate Seller')}
                       </span>
                     </button>
                   </div>
@@ -1080,7 +1070,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             className="flex items-center gap-1.5 text-xs font-bold text-red-600 hover:text-red-700 transition cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
-            <span>Đăng Xuất Khỏi Thiết Bị</span>
+            <span>{lang === 'vi' ? 'Đăng Xuất Khỏi Thiết Bị' : 'Log Out from Device'}</span>
           </button>
 
           <div className="flex items-center gap-2.5">
@@ -1088,14 +1078,14 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               onClick={onClose}
               className="px-5 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-100 text-slate-700 text-xs font-bold transition cursor-pointer"
             >
-              Đóng
+              {lang === 'vi' ? 'Đóng' : 'Close'}
             </button>
             <button
               onClick={handleSave}
               className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-95 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>Lưu Hồ Sơ</span>
+              <span>{lang === 'vi' ? 'Lưu Hồ Sơ' : 'Save Profile'}</span>
             </button>
           </div>
         </div>

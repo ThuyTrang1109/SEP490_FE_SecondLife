@@ -121,9 +121,23 @@ export const adminService = {
 
   async rejectSellerVerification(
     id: string,
-    data: SellerVerificationReviewRequestDto
+    data: { rejectionReason: string }
   ): Promise<SellerVerificationResponseDto> {
     const res = await request<SellerVerificationResponseDto>(`/admin/seller-verifications/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return res.data;
+  },
+
+  async createInspectionCenterAccount(data: {
+    email: string;
+    password: string;
+    fullName: string;
+    phone?: string;
+  }): Promise<any> {
+    const res = await request<any>('/admin/inspection-center-accounts', {
       method: 'POST',
       body: JSON.stringify(data),
       requiresAuth: true,

@@ -13,6 +13,7 @@ interface InspectorPortalViewProps {
 export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   orders,
   onCompleteInspection,
+  lang,
 }) => {
   const [activeCenter, setActiveCenter] = useState<InspectionCenter>(mockInspectionCenters[0]);
   const [selectedOrderId, setSelectedOrderId] = useState<string>(orders[0]?.id || '');
@@ -46,7 +47,11 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         inspectorNotes
       );
       setIsSubmitting(false);
-      setSuccessMessage(`Đã nghiệm thu thành công đơn hàng #${activeOrder.id}! Báo cáo số đã được xuất và dán tem ${tamperSealInput}.`);
+      setSuccessMessage(
+        lang === 'vi'
+          ? `Đã nghiệm thu thành công đơn hàng #${activeOrder.id}! Báo cáo số đã được xuất và dán tem ${tamperSealInput}.`
+          : `Order #${activeOrder.id} successfully inspected! Digital report issued with seal ${tamperSealInput}.`
+      );
       setTimeout(() => setSuccessMessage(null), 5000);
     }, 800);
   };
@@ -59,18 +64,25 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-white text-xs font-semibold">
               <Building2 className="w-3.5 h-3.5 text-[#EC1577]" />
-              <span>Cổng Giám Định Viên & Đối Tác Trung Tâm Kiểm Định</span>
+              <span>
+                {lang === 'vi'
+                  ? 'Cổng Giám Định Viên & Đối Tác Trung Tâm Kiểm Định'
+                  : 'Inspector Portal & Verification Center Partners'}
+              </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black mt-2 text-white">
               {activeCenter.name}
             </h1>
             <p className="text-xs sm:text-sm text-white/70 mt-1">
-              {activeCenter.address} • Hotline kỹ thuật: {activeCenter.phone}
+              {activeCenter.address} • {lang === 'vi' ? 'Hotline kỹ thuật: ' : 'Technical hotline: '}
+              {activeCenter.phone}
             </p>
           </div>
 
           <div className="bg-white/10 p-2 rounded-2xl border border-white/20 flex flex-col gap-1.5 self-start md:self-auto">
-            <span className="text-[11px] font-bold text-white/70 px-2">Chọn Trung Tâm Giám Định:</span>
+            <span className="text-[11px] font-bold text-white/70 px-2">
+              {lang === 'vi' ? 'Chọn Trung Tâm Giám Định:' : 'Select Inspection Center:'}
+            </span>
             <div className="flex flex-wrap gap-1">
               {mockInspectionCenters.map((hub) => (
                 <button
@@ -92,20 +104,32 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         {/* Center Live Metrics */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-white/10">
           <div className="bg-[#FFFFFF] text-[#0E121B] rounded-xl p-3 border border-gray-200 shadow-sm">
-            <div className="text-xs text-[#0E121B]/70">Công suất Hub / ngày</div>
-            <div className="text-xl font-extrabold text-[#0E121B]">{activeCenter.capacityPerDay} thiết bị</div>
+            <div className="text-xs text-[#0E121B]/70">
+              {lang === 'vi' ? 'Công suất Hub / ngày' : 'Hub Daily Capacity'}
+            </div>
+            <div className="text-xl font-extrabold text-[#0E121B]">
+              {activeCenter.capacityPerDay} {lang === 'vi' ? 'thiết bị' : 'units'}
+            </div>
           </div>
           <div className="bg-[#FFFFFF] text-[#0E121B] rounded-xl p-3 border border-gray-200 shadow-sm">
-            <div className="text-xs text-[#0E121B]/70">Hàng đợi hiện tại</div>
-            <div className="text-xl font-extrabold text-[#EC1577]">{activeCenter.currentQueue} đơn chờ</div>
+            <div className="text-xs text-[#0E121B]/70">
+              {lang === 'vi' ? 'Hàng đợi hiện tại' : 'Current Queue'}
+            </div>
+            <div className="text-xl font-extrabold text-[#EC1577]">
+              {activeCenter.currentQueue} {lang === 'vi' ? 'đơn chờ' : 'pending'}
+            </div>
           </div>
           <div className="bg-[#FFFFFF] text-[#0E121B] rounded-xl p-3 border border-gray-200 shadow-sm">
-            <div className="text-xs text-[#0E121B]/70">Tỷ lệ đạt chuẩn Pass</div>
+            <div className="text-xs text-[#0E121B]/70">
+              {lang === 'vi' ? 'Tỷ lệ đạt chuẩn Pass' : 'Standard Pass Rate'}
+            </div>
             <div className="text-xl font-extrabold text-[#0E121B]">{activeCenter.passRatePercentage}%</div>
           </div>
           <div className="bg-[#FFFFFF] text-[#0E121B] rounded-xl p-3 border border-gray-200 shadow-sm">
-            <div className="text-xs text-[#0E121B]/70">SLA Cam kết kết quả</div>
-            <div className="text-xl font-extrabold text-[#0E121B]">&lt; {activeCenter.slaHours} giờ</div>
+            <div className="text-xs text-[#0E121B]/70">
+              {lang === 'vi' ? 'SLA Cam kết kết quả' : 'Result SLA'}
+            </div>
+            <div className="text-xl font-extrabold text-[#0E121B]">&lt; {activeCenter.slaHours} {lang === 'vi' ? 'giờ' : 'hours'}</div>
           </div>
         </div>
       </div>
@@ -124,14 +148,14 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
           <div className="bg-[#FFFFFF] rounded-2xl p-4 border border-gray-200 shadow-xs space-y-3">
             <div className="flex items-center gap-2 text-xs font-bold text-[#0E121B] uppercase tracking-wider">
               <QrCode className="w-4 h-4 text-[#EC1577]" />
-              <span>Quét mã QR / Nhận gói hàng từ bưu tá</span>
+              <span>{lang === 'vi' ? 'Quét mã QR / Nhận gói hàng từ bưu tá' : 'Scan QR / Courier Handover Intake'}</span>
             </div>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={qrCodeInput}
                 onChange={(e) => setQrCodeInput(e.target.value)}
-                placeholder="Nhập mã đơn / quét mã vạch..."
+                placeholder={lang === 'vi' ? 'Nhập mã đơn / quét mã vạch...' : 'Enter order ID / scan barcode...'}
                 className="flex-1 px-3 py-2 bg-[#F4F5F8] border border-gray-200 rounded-xl text-xs text-[#0E121B]"
               />
               <button
@@ -143,14 +167,16 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                 }}
                 className="px-3 py-2 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white rounded-xl text-xs font-bold cursor-pointer"
               >
-                Nhận máy
+                {lang === 'vi' ? 'Nhận máy' : 'Intake'}
               </button>
             </div>
           </div>
 
           <div className="space-y-2">
             <div className="text-xs font-bold text-[#0E121B]/70 uppercase tracking-wider">
-              Hàng đợi kiểm định cần xử lý ({orders.length})
+              {lang === 'vi'
+                ? `Hàng đợi kiểm định cần xử lý (${orders.length})`
+                : `Pending Inspection Queue (${orders.length})`}
             </div>
 
             <div className="space-y-3">
@@ -180,7 +206,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     </h4>
 
                     <div className="text-xs opacity-75 mt-1 flex justify-between">
-                      <span>Người bán: {ord.sellerName}</span>
+                      <span>{lang === 'vi' ? 'Người bán: ' : 'Seller: '}{ord.sellerName}</span>
                       <span className="font-extrabold text-[#EC1577]">
                         {formatVND(ord.itemPriceVnd)}
                       </span>
@@ -204,13 +230,13 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                 />
                 <div>
                   <span className="text-[11px] font-bold text-[#0E121B]/70 uppercase tracking-wider">
-                    {activeOrder.listing.brand} • Năm {activeOrder.listing.purchaseYear}
+                    {activeOrder.listing.brand} • {lang === 'vi' ? 'Năm ' : 'Year '}{activeOrder.listing.purchaseYear}
                   </span>
                   <h3 className="font-extrabold text-base text-[#0E121B]">
                     {activeOrder.listing.title}
                   </h3>
                   <div className="text-xs text-[#0E121B]/70 mt-0.5">
-                    Tình trạng người bán khai báo:{' '}
+                    {lang === 'vi' ? 'Tình trạng người bán khai báo: ' : 'Declared condition: '}
                     <span className="font-semibold text-[#0E121B]">
                       {activeOrder.listing.declaredConditionText}
                     </span>
@@ -223,7 +249,11 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
               <div className="flex items-center justify-between">
                 <div className="text-xs font-bold text-[#0E121B] uppercase tracking-wider flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-[#EC1577]" />
-                  <span>Checklist kiểm định phần cứng tiêu chuẩn ({checklist.length} hạng mục)</span>
+                  <span>
+                    {lang === 'vi'
+                      ? `Checklist kiểm định phần cứng tiêu chuẩn (${checklist.length} hạng mục)`
+                      : `Standard Hardware Inspection Checklist (${checklist.length} items)`}
+                  </span>
                 </div>
               </div>
 
@@ -240,7 +270,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                       <div className="text-[11px] text-[#0E121B]/70">{item.description}</div>
                       {item.testedValue && (
                         <div className="text-[11px] font-mono text-[#0E121B] bg-[#FFFFFF] px-2 py-0.5 rounded w-fit border border-gray-200">
-                          Kết quả đo: {item.testedValue}
+                          {lang === 'vi' ? 'Kết quả đo: ' : 'Measured: '}{item.testedValue}
                         </div>
                       )}
                     </div>
@@ -277,18 +307,26 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[#0E121B]">Mã tem niêm phong NFC chống tráo *</label>
+                <label className="text-xs font-bold text-[#0E121B]">
+                  {lang === 'vi' ? 'Mã tem niêm phong NFC chống tráo *' : 'Anti-Tamper NFC Security Seal Code *'}
+                </label>
                 <input
                   type="text"
                   value={tamperSealInput}
                   onChange={(e) => setTamperSealInput(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-[#F4F5F8] border border-gray-200 rounded-xl text-xs font-mono font-bold text-[#0E121B]"
                 />
-                <span className="text-[10px] text-[#0E121B]/60">Tem dán niêm phong che vít máy hoặc khóa túi hàng hiệu</span>
+                <span className="text-[10px] text-[#0E121B]/60">
+                  {lang === 'vi'
+                    ? 'Tem dán niêm phong che vít máy hoặc khóa túi hàng hiệu'
+                    : 'Tamper-evident seal over housing screws or secure closures'}
+                </span>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[#0E121B]">Kết luận tổng thể *</label>
+                <label className="text-xs font-bold text-[#0E121B]">
+                  {lang === 'vi' ? 'Kết luận tổng thể *' : 'Overall Inspection Verdict *'}
+                </label>
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -300,7 +338,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     }`}
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>ĐẠT CHUẨN (PASS)</span>
+                    <span>{lang === 'vi' ? 'ĐẠT CHUẨN (PASS)' : 'PASSED (VERIFIED)'}</span>
                   </button>
 
                   <button
@@ -313,13 +351,15 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     }`}
                   >
                     <XCircle className="w-4 h-4" />
-                    <span>TỪ CHỐI (FAIL)</span>
+                    <span>{lang === 'vi' ? 'TỪ CHỐI (FAIL)' : 'REJECTED (FAIL)'}</span>
                   </button>
                 </div>
               </div>
 
               <div className="sm:col-span-2 space-y-1.5">
-                <label className="text-xs font-bold text-[#0E121B]">Ghi chú kết quả kỹ sư giám định</label>
+                <label className="text-xs font-bold text-[#0E121B]">
+                  {lang === 'vi' ? 'Ghi chú kết quả kỹ sư giám định' : 'Inspector Diagnostic Notes'}
+                </label>
                 <textarea
                   value={inspectorNotes}
                   onChange={(e) => setInspectorNotes(e.target.value)}
@@ -332,7 +372,11 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
             <div className="pt-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-3">
               <div className="text-xs text-[#0E121B]/70 flex items-center gap-1">
                 <Printer className="w-4 h-4 text-gray-400" />
-                <span>Báo cáo điện tử sẽ tự động đồng bộ lên hồ sơ đơn hàng của Người mua & Người bán.</span>
+                <span>
+                  {lang === 'vi'
+                    ? 'Báo cáo điện tử sẽ tự động đồng bộ lên hồ sơ đơn hàng của Người mua & Người bán.'
+                    : 'Digital report will automatically sync to buyer & seller order records.'}
+                </span>
               </div>
 
               <button
@@ -341,7 +385,11 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                 className="w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white rounded-xl text-sm font-bold shadow-md flex items-center justify-center gap-2 cursor-pointer"
               >
                 <ShieldCheck className="w-4 h-4 text-white" />
-                <span>{isSubmitting ? 'Đang ký số...' : 'Ký Số & Phát Hành Báo Cáo Nghiệm Thu'}</span>
+                <span>
+                  {isSubmitting
+                    ? (lang === 'vi' ? 'Đang ký số...' : 'Signing...')
+                    : (lang === 'vi' ? 'Ký Số & Phát Hành Báo Cáo Nghiệm Thu' : 'Digitally Sign & Issue Inspection Report')}
+                </span>
               </button>
             </div>
           </div>

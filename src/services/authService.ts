@@ -39,7 +39,8 @@ export interface RegisterRequestDto {
 
 export interface VerifyEmailRequestDto {
   email: string;
-  code: string;
+  otp?: string;
+  code?: string;
 }
 
 export interface ForgotPasswordRequestDto {
@@ -48,8 +49,10 @@ export interface ForgotPasswordRequestDto {
 
 export interface ResetPasswordRequestDto {
   email: string;
-  code: string;
+  otp?: string;
+  code?: string;
   newPassword: string;
+  confirmPassword?: string;
 }
 
 export interface GoogleLoginRequestDto {
@@ -112,9 +115,13 @@ export const authService = {
   },
 
   async verifyEmail(data: VerifyEmailRequestDto): Promise<void> {
+    const payload = {
+      email: data.email,
+      otp: data.otp || data.code || '',
+    };
     await request<void>('/auth/verify-email', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
       requiresAuth: false,
     });
   },
@@ -136,9 +143,15 @@ export const authService = {
   },
 
   async resetPassword(data: ResetPasswordRequestDto): Promise<void> {
+    const payload = {
+      email: data.email,
+      otp: data.otp || data.code || '',
+      newPassword: data.newPassword,
+      confirmPassword: data.confirmPassword || data.newPassword,
+    };
     await request<void>('/auth/reset-password', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
       requiresAuth: false,
     });
   },

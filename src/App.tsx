@@ -16,12 +16,13 @@ import { CheckoutModal } from './components/modals/CheckoutModal';
 import { HomePageView } from './pages/HomePageView';
 import { AuthModal } from './components/modals/AuthModal';
 import { ProfileDialog } from './components/modals/ProfileDialog';
+import { VerifyEmailModal } from './components/modals/VerifyEmailModal';
+import { LogoutConfirmModal } from './components/modals/LogoutConfirmModal';
 import { ShieldCheck, Sparkles, CheckCircle2 } from 'lucide-react';
-import { authService, userService, getAccessToken, clearAuthTokens } from './services';
+import { authService, userService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
 
 export default function App() {
   // Global State
-  const [currentRole, setCurrentRole] = useState<UserRole>('buyer');
   const [lang, setLang] = useState<Language>('vi');
   const [theme, setTheme] = useState<ThemeMode>('light');
   const [activeTab, setActiveTab] = useState<string>('home');
@@ -34,56 +35,80 @@ export default function App() {
     }
   }, [theme]);
 
-  // User Auth State
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>({
-    id: 'USR-1001',
-    name: 'Hoàng Quốc Khang',
-    email: 'khang.buyer@secondlife.vn',
-    role: 'buyer',
-    phone: '0912 345 678',
-    address: '92 Phan Châu Trinh, Phường Phước Ninh, Quận Hải Châu, TP. Đà Nẵng',
-    walletBalanceVnd: 24500000,
-    escrowLockedVnd: 19562500,
-    kycStatus: 'verified',
-    trustScore: 99,
-    bankAccount: {
-      bankName: 'Vietcombank',
-      accountNumber: '991204882910',
-      accountHolder: 'HOANG QUOC KHANG'
-    }
+  // User Auth State - Isolated per browser/device via localStorage
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    const token = getAccessToken();
+    const stored = getStoredUser();
+    return token && stored ? (stored as UserProfile) : null;
   });
 
-  // Session Restore Effect
+  const [currentRole, setCurrentRole] = useState<UserRole>(() => {
+    const token = getAccessToken();
+    const stored = getStoredUser();
+    return token && stored && stored.role ? stored.role : 'buyer';
+  });
+
+  // Pending action after login (redirect or resume action)
+  const [pendingTab, setPendingTab] = useState<string | null>(null);
+  const [pendingCheckoutItem, setPendingCheckoutItem] = useState<Listing | null>(null);
+
+  // Restore & verify session for THIS browser from Backend /me on startup/refresh
   React.useEffect(() => {
     const token = getAccessToken();
-    if (token) {
-      userService.getMyProfile()
-        .then((profile) => {
-          let role: UserRole = 'buyer';
-          if (profile.roles?.includes('ROLE_ADMIN') || profile.roles?.includes('ADMIN')) role = 'admin';
-          else if (profile.roles?.includes('ROLE_INSPECTOR') || profile.roles?.includes('INSPECTOR')) role = 'inspector';
-          else if (profile.roles?.includes('ROLE_SELLER') || profile.roles?.includes('SELLER')) role = 'seller';
-
-          setCurrentUser({
+    if (token && !token.startsWith('demo-jwt-')) {
+      userService.getMyProfile().then((profile) => {
+        if (profile) {
+          const syncedUser: UserProfile = {
             id: profile.id,
             name: profile.fullName || profile.email,
             email: profile.email,
-            role: role,
+            role: (profile.roles?.includes('ADMIN') || profile.roles?.includes('ROLE_ADMIN'))
+              ? 'admin'
+              : (profile.roles?.includes('INSPECTOR') || profile.roles?.includes('ROLE_INSPECTOR') || profile.roles?.includes('HUB_INSPECTOR'))
+              ? 'inspector'
+              : (profile.roles?.includes('SELLER') || profile.roles?.includes('ROLE_SELLER'))
+              ? 'seller'
+              : 'buyer',
             phone: profile.phone || '',
-            kycStatus: profile.emailVerified ? 'verified' : 'unverified'
-          });
-          setCurrentRole(role);
-        })
-        .catch(() => {
-          // Token invalid or expired
+            avatar: profile.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
+            kycStatus: profile.accountStatus === 'ACTIVE' ? 'verified' : 'pending',
+            emailVerified: profile.emailVerified ?? true,
+          };
+          setCurrentUser(syncedUser);
+          setCurrentRole(syncedUser.role);
+          setStoredUser(syncedUser);
+        }
+      }).catch((err: any) => {
+        // If the token is invalid/revoked on server, clear this browser's session
+        if (err.message && (err.message.includes('401') || err.message.includes('Unauthorized') || err.message.includes('Invalid JWT') || err.message.includes('revoked'))) {
           clearAuthTokens();
-        });
+          setCurrentUser(null);
+          setCurrentRole('buyer');
+        }
+      });
     }
   }, []);
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
+  const [isVerifyEmailModalOpen, setIsVerifyEmailModalOpen] = useState(false);
+  const [verifyEmailTarget, setVerifyEmailTarget] = useState('');
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+
+  const handleConfirmLogout = () => {
+    authService.logout();
+    clearAuthTokens();
+    setCurrentUser(null);
+    setCurrentRole('buyer');
+    setActiveTab('home');
+    setIsProfileDialogOpen(false);
+    showToast(
+      lang === 'vi'
+        ? 'Đã đăng xuất tài khoản thành công.'
+        : 'Logged out successfully.'
+    );
+  };
 
   // Core Data State
   const [listings, setListings] = useState<Listing[]>(mockListings);
@@ -102,6 +127,60 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 5000);
   };
 
+  // Auth Guard Helper
+  const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'admin-dashboard', 'chat'];
+
+  const requireAuth = (onSuccessAction?: () => void, customMsg?: string): boolean => {
+    if (!currentUser) {
+      setAuthModalMode('login');
+      setIsAuthModalOpen(true);
+      showToast(
+        customMsg || (lang === 'vi'
+          ? 'Vui lòng đăng nhập để tiếp tục thực hiện hành động này.'
+          : 'Please log in to proceed.')
+      );
+      return false;
+    }
+    onSuccessAction?.();
+    return true;
+  };
+
+  const handleTabChange = (tab: string) => {
+    if (protectedTabs.includes(tab) && !currentUser) {
+      setPendingTab(tab);
+      let promptMsg = lang === 'vi'
+        ? 'Vui lòng đăng nhập để truy cập khu vực này.'
+        : 'Please log in to access this section.';
+      if (tab === 'create-listing') {
+        promptMsg = lang === 'vi'
+          ? 'Vui lòng đăng nhập để thử nghiệm định giá AI và đăng bán sản phẩm.'
+          : 'Please log in to use AI valuation and post a listing.';
+      } else if (tab === 'chat') {
+        promptMsg = lang === 'vi'
+          ? 'Vui lòng đăng nhập để sử dụng tính năng Chat & Đàm phán AI.'
+          : 'Please log in to use AI Negotiation Chat.';
+      } else if (tab === 'orders') {
+        promptMsg = lang === 'vi'
+          ? 'Vui lòng đăng nhập để xem danh sách đơn hàng ký quỹ.'
+          : 'Please log in to view escrow orders.';
+      } else if (tab === 'seller-dashboard') {
+        promptMsg = lang === 'vi'
+          ? 'Vui lòng đăng nhập với tài khoản Người Bán để vào Kênh người bán.'
+          : 'Please log in with a seller account to access Seller Hub.';
+      }
+      requireAuth(undefined, promptMsg);
+      return;
+    }
+    setActiveTab(tab);
+  };
+
+  // Guard activeTab if logged out
+  React.useEffect(() => {
+    if (!currentUser && protectedTabs.includes(activeTab)) {
+      setActiveTab('home');
+    }
+  }, [currentUser, activeTab]);
+
   // Handlers
   const handleRoleChange = (newRole: UserRole) => {
     setCurrentRole(newRole);
@@ -109,13 +188,13 @@ export default function App() {
       setCurrentUser((prev) => prev ? { ...prev, role: newRole } : null);
     }
     if (newRole === 'inspector') {
-      setActiveTab('inspection-hub');
+      handleTabChange('inspection-hub');
     } else if (newRole === 'admin') {
-      setActiveTab('admin-dashboard');
+      handleTabChange('admin-dashboard');
     } else if (newRole === 'seller') {
-      setActiveTab('seller-dashboard');
+      handleTabChange('seller-dashboard');
     } else {
-      setActiveTab('marketplace');
+      handleTabChange('marketplace');
     }
   };
 
@@ -239,7 +318,7 @@ export default function App() {
           theme={theme}
           onThemeToggle={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabChange}
           activeOrdersCount={orders.filter((o) => o.escrowStatus !== 'COMPLETED_RELEASED').length}
           currentUser={currentUser}
           onOpenAuth={(mode) => {
@@ -247,11 +326,15 @@ export default function App() {
             setIsAuthModalOpen(true);
           }}
           onLogout={() => {
-            authService.logout();
-            setCurrentUser(null);
-            showToast('Đã đăng xuất tài khoản thành công.');
+            setIsLogoutModalOpen(true);
           }}
-          onOpenProfile={() => setIsProfileDialogOpen(true)}
+          onOpenProfile={() => {
+            if (!currentUser) {
+              requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để xem hồ sơ cá nhân.' : 'Please log in to view your profile.');
+            } else {
+              setIsProfileDialogOpen(true);
+            }
+          }}
         />
       )}
 
@@ -278,8 +361,10 @@ export default function App() {
             onExploreMarketplace={() => setActiveTab('marketplace')}
             onCreateListing={() => {
               if (!currentUser) {
-                setAuthModalMode('login');
-                setIsAuthModalOpen(true);
+                setPendingTab('create-listing');
+                requireAuth(undefined, lang === 'vi'
+                  ? 'Vui lòng đăng nhập để thử nghiệm định giá AI và đăng bán sản phẩm.'
+                  : 'Please log in to experience AI valuation and create listings.');
               } else {
                 setActiveTab('create-listing');
               }
@@ -296,7 +381,7 @@ export default function App() {
             listings={listings}
             onSelectListing={(listing) => setSelectedListing(listing)}
             lang={lang}
-            onPostClick={() => setActiveTab('create-listing')}
+            onPostClick={() => handleTabChange('create-listing')}
           />
         )}
 
@@ -304,8 +389,8 @@ export default function App() {
           <SellerDashboardView
             listings={listings}
             onSelectListing={(listing) => setSelectedListing(listing)}
-            onCreateListing={() => setActiveTab('create-listing')}
-            onViewOrders={() => setActiveTab('orders')}
+            onCreateListing={() => handleTabChange('create-listing')}
+            onViewOrders={() => handleTabChange('orders')}
             lang={lang}
           />
         )}
@@ -364,6 +449,10 @@ export default function App() {
               </p>
               <button
                 onClick={() => {
+                  if (!currentUser) {
+                    requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để sử dụng tính năng Chat & Đàm phán.' : 'Please log in to chat.');
+                    return;
+                  }
                   setChatListing(listings[0]);
                 }}
                 className="px-5 py-2.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-95 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md transition cursor-pointer"
@@ -381,10 +470,23 @@ export default function App() {
           listing={selectedListing}
           onClose={() => setSelectedListing(null)}
           onBuyClick={(item) => {
+            if (!currentUser) {
+              setPendingCheckoutItem(item);
+              requireAuth(undefined, lang === 'vi'
+                ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
+                : 'Please log in to purchase with Escrow protection.');
+              return;
+            }
             setSelectedListing(null);
             setCheckoutListing(item);
           }}
           onChatClick={(item) => {
+            if (!currentUser) {
+              requireAuth(undefined, lang === 'vi'
+                ? 'Vui lòng đăng nhập để chat và thương lượng giá với người bán.'
+                : 'Please log in to chat and negotiate with seller.');
+              return;
+            }
             setChatListing(item);
           }}
           lang={lang}
@@ -395,6 +497,7 @@ export default function App() {
       {checkoutListing && (
         <CheckoutModal
           listing={checkoutListing}
+          currentUser={currentUser}
           onClose={() => setCheckoutListing(null)}
           onOrderPlaced={handleOrderPlaced}
           lang={lang}
@@ -417,13 +520,33 @@ export default function App() {
         initialMode={authModalMode}
         onClose={() => setIsAuthModalOpen(false)}
         onLoginSuccess={(user) => {
-          setCurrentUser(user);
+          const profileUser: UserProfile = {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            phone: user.phone || '',
+            address: user.address || '',
+            role: user.role,
+            avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
+            kycStatus: 'verified',
+            emailVerified: true,
+          };
+          setCurrentUser(profileUser);
           setCurrentRole(user.role);
+          setStoredUser(profileUser);
           showToast(
             lang === 'vi'
               ? `Chào mừng ${user.name} (${user.role === 'buyer' ? 'Người Mua' : user.role === 'seller' ? 'Người Bán' : user.role === 'inspector' ? 'Kỹ Sư Hub' : 'Quản Trị'}) đã đăng nhập!`
               : `Welcome ${user.name}! Logged in successfully as ${user.role.toUpperCase()}.`
           );
+          if (pendingCheckoutItem) {
+            setSelectedListing(null);
+            setCheckoutListing(pendingCheckoutItem);
+            setPendingCheckoutItem(null);
+          } else if (pendingTab) {
+            setActiveTab(pendingTab);
+            setPendingTab(null);
+          }
         }}
         lang={lang}
       />
@@ -433,8 +556,10 @@ export default function App() {
         isOpen={isProfileDialogOpen}
         onClose={() => setIsProfileDialogOpen(false)}
         currentUser={currentUser}
+        lang={lang}
         onUpdateProfile={(updated) => {
           setCurrentUser(updated);
+          setStoredUser(updated);
           showToast(
             lang === 'vi'
               ? 'Đã lưu thông tin hồ sơ cá nhân thành công!'
@@ -442,15 +567,48 @@ export default function App() {
           );
         }}
         onRoleChange={handleRoleChange}
+        onChangePassword={() => {
+          setIsProfileDialogOpen(false);
+          setAuthModalMode('forgot');
+          setIsAuthModalOpen(true);
+        }}
         onLogout={() => {
-          authService.logout();
-          setCurrentUser(null);
+          setIsLogoutModalOpen(true);
+        }}
+        onOpenVerifyEmail={(targetEmail) => {
+          setVerifyEmailTarget(targetEmail);
+          setIsVerifyEmailModalOpen(true);
+        }}
+      />
+
+      {/* 6-Digit OTP Email Verification Modal Popup */}
+      <VerifyEmailModal
+        isOpen={isVerifyEmailModalOpen}
+        email={verifyEmailTarget || currentUser?.email || 'user@secondlife.vn'}
+        onClose={() => setIsVerifyEmailModalOpen(false)}
+        onSuccess={() => {
+          if (currentUser) {
+            const updatedUser: UserProfile = {
+              ...currentUser,
+              emailVerified: true,
+            };
+            setCurrentUser(updatedUser);
+            setStoredUser(updatedUser);
+          }
           showToast(
             lang === 'vi'
-              ? 'Đã đăng xuất tài khoản thành công.'
-              : 'Logged out successfully.'
+              ? 'Xác thực địa chỉ email thành công! Tài khoản đã được bảo mật toàn diện.'
+              : 'Email address verified successfully! Your account is now fully secured.'
           );
         }}
+        lang={lang}
+      />
+
+      {/* Logout Confirmation Modal Popup */}
+      <LogoutConfirmModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={handleConfirmLogout}
         lang={lang}
       />
 
@@ -458,8 +616,14 @@ export default function App() {
       {activeTab !== 'admin-dashboard' && (
         <Footer
           lang={lang}
-          onTabChange={setActiveTab}
-          onOpenProfile={() => setIsProfileDialogOpen(true)}
+          onTabChange={handleTabChange}
+          onOpenProfile={() => {
+            if (!currentUser) {
+              requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để xem thông tin hồ sơ.' : 'Please log in to view profile.');
+            } else {
+              setIsProfileDialogOpen(true);
+            }
+          }}
         />
       )}
     </div>

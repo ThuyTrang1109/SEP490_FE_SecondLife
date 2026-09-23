@@ -270,7 +270,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
 
                 <div className="flex items-center gap-2 bg-[#0E121B] text-white px-3 py-1 rounded-full text-xs font-bold">
                   <Award className="w-3.5 h-3.5 text-[#EC1577]" />
-                  <span>Độ tin cậy mô hình: {listing.aiPriceEstimation.confidence}%</span>
+                  <span>{lang === 'vi' ? 'Độ tin cậy mô hình' : 'Model Confidence'}: {listing.aiPriceEstimation.confidence}%</span>
                 </div>
               </div>
 
@@ -280,7 +280,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   <div className="text-sm font-extrabold text-[#0E121B]">
                     {formatVND(listing.aiPriceEstimation.minVnd)} - {formatVND(listing.aiPriceEstimation.maxVnd)}
                   </div>
-                  <div className="text-[10px] text-gray-400 font-medium mt-0.5">Biên độ thanh khoản tốt</div>
+                  <div className="text-[10px] text-gray-400 font-medium mt-0.5">{lang === 'vi' ? 'Biên độ thanh khoản tốt' : 'Optimal liquidity range'}</div>
                 </div>
 
                 <div className="bg-[#FFFFFF] rounded-xl p-3 border border-gray-200 shadow-2xs">
@@ -288,7 +288,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   <div className="text-sm font-extrabold text-[#EC1577]">
                     {formatVND(listing.aiPriceEstimation.suggestedVnd)}
                   </div>
-                  <div className="text-[10px] text-gray-400 mt-0.5">Thời gian bán ~ 7 ngày</div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">{lang === 'vi' ? 'Thời gian bán ~ 7 ngày' : 'Avg. sale time ~ 7 days'}</div>
                 </div>
 
                 <div className="bg-[#FFFFFF] rounded-xl p-3 border border-gray-200 shadow-2xs">
@@ -296,7 +296,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   <div className="text-sm font-extrabold text-[#0E121B]">
                     {formatVND(listing.aiPriceEstimation.quickSaleVnd)}
                   </div>
-                  <div className="text-[10px] text-gray-400 font-medium mt-0.5">Bán nhanh trong 3 ngày</div>
+                  <div className="text-[10px] text-gray-400 font-medium mt-0.5">{lang === 'vi' ? 'Bán nhanh trong 3 ngày' : 'Quick sale in 3 days'}</div>
                 </div>
               </div>
 
@@ -342,7 +342,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
             </div>
 
             <span className="text-xs font-bold text-white bg-[#0E121B] px-3 py-1.5 rounded-xl whitespace-nowrap">
-              Phí kiểm định: 250,000đ
+              {lang === 'vi' ? 'Phí kiểm định: 250,000đ' : 'Inspection fee: 250,000 VND'}
             </span>
           </div>
         </div>

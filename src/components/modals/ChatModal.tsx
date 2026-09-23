@@ -152,7 +152,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             onClick={onClose}
             className="text-white/70 hover:text-white p-1 rounded-lg text-xs cursor-pointer transition"
           >
-            ✕ Đóng
+            {lang === 'vi' ? '✕ Đóng' : '✕ Close'}
           </button>
         </div>
 
@@ -161,16 +161,24 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           <div className="flex items-center gap-2 text-[#0E121B]">
             <Sparkles className="w-4 h-4 text-[#EC1577] shrink-0" />
             <span className="text-[11px] font-medium leading-snug">
-              <span className="font-bold text-[#0E121B]">AI Tư vấn đàm phán: </span>
+              <span className="font-bold text-[#0E121B]">
+                {lang === 'vi' ? 'AI Tư vấn đàm phán: ' : 'AI Negotiation Advisor: '}
+              </span>
               {aiAdvice.adviceText}
             </span>
           </div>
 
           <button
-            onClick={() => handleSendMessage(`Mình đề xuất chốt mức ${formatVND(aiAdvice.counterOfferVnd)} qua kiểm định nhé!`)}
+            onClick={() =>
+              handleSendMessage(
+                lang === 'vi'
+                  ? `Mình đề xuất chốt mức ${formatVND(aiAdvice.counterOfferVnd)} qua kiểm định nhé!`
+                  : `I propose a deal at ${formatVND(aiAdvice.counterOfferVnd)} through Hub inspection!`
+              )
+            }
             className="shrink-0 ml-2 px-2.5 py-1 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white rounded-lg text-[10px] font-bold cursor-pointer transition"
           >
-            Dùng giá gợi ý: {formatVND(aiAdvice.counterOfferVnd)}
+            {lang === 'vi' ? 'Dùng giá gợi ý:' : 'Use suggestion:'} {formatVND(aiAdvice.counterOfferVnd)}
           </button>
         </div>
 
@@ -200,10 +208,10 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     <button
                       onClick={() => handleUnsendMessage(msg.id)}
                       className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-gray-400 hover:text-[#0E121B] font-medium flex items-center gap-0.5 cursor-pointer ml-1"
-                      title="Thu hồi tin nhắn"
+                      title={lang === 'vi' ? 'Thu hồi tin nhắn' : 'Unsend message'}
                     >
                       <RotateCcw className="w-2.5 h-2.5" />
-                      <span>Thu hồi</span>
+                      <span>{lang === 'vi' ? 'Thu hồi' : 'Unsend'}</span>
                     </button>
                   )}
                 </div>
@@ -220,18 +228,24 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   {msg.isUnsent ? (
                     <p className="flex items-center gap-1.5 text-gray-400 font-normal not-italic">
                       <RotateCcw className="w-3 h-3 text-gray-400 shrink-0" />
-                      <span className="italic">Tin nhắn đã được thu hồi</span>
+                      <span className="italic">
+                        {lang === 'vi' ? 'Tin nhắn đã được thu hồi' : 'Message was unsent'}
+                      </span>
                     </p>
                   ) : (
                     <>
                       <p>{msg.text}</p>
 
                       {msg.isOffer && msg.offerAmountVnd && (
-                        <div className={`mt-2.5 p-3 rounded-xl border ${
-                          isMe ? 'bg-[#FFFFFF]/10 border-white/20 text-white' : 'bg-[#F4F5F8] border-gray-200 text-[#0E121B]'
-                        }`}>
+                        <div
+                          className={`mt-2.5 p-3 rounded-xl border ${
+                            isMe
+                              ? 'bg-[#FFFFFF]/10 border-white/20 text-white'
+                              : 'bg-[#F4F5F8] border-gray-200 text-[#0E121B]'
+                          }`}
+                        >
                           <div className="text-[10px] uppercase font-bold tracking-wider opacity-80">
-                            Đề xuất mức giá chính thức:
+                            {lang === 'vi' ? 'Đề xuất mức giá chính thức:' : 'Official Counter Offer:'}
                           </div>
                           <div className="text-base font-black mt-0.5 text-[#EC1577]">
                             {formatVND(msg.offerAmountVnd)}
@@ -245,21 +259,29 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                                     onClick={() => handleRespondOffer(msg.id, 'accepted')}
                                     className="flex-1 py-1.5 px-2 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition"
                                   >
-                                    <Check className="w-3.5 h-3.5" /> Đồng ý
+                                    <Check className="w-3.5 h-3.5" /> {lang === 'vi' ? 'Đồng ý' : 'Accept'}
                                   </button>
                                   <button
                                     onClick={() => handleRespondOffer(msg.id, 'declined')}
                                     className="flex-1 py-1.5 px-2 bg-[#0E121B] hover:bg-[#0E121B]/80 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition"
                                   >
-                                    <X className="w-3.5 h-3.5" /> Từ chối
+                                    <X className="w-3.5 h-3.5" /> {lang === 'vi' ? 'Từ chối' : 'Decline'}
                                   </button>
                                 </>
                               ) : (
-                                <span className="text-[10px] opacity-75">Đang chờ đối phương phản hồi...</span>
+                                <span className="text-[10px] opacity-75">
+                                  {lang === 'vi' ? 'Đang chờ đối phương phản hồi...' : 'Waiting for counterparty response...'}
+                                </span>
                               )
                             ) : (
-                              <span className={`text-[10px] font-bold ${msg.offerStatus === 'accepted' ? 'text-[#EC1577]' : 'text-gray-400'}`}>
-                                {msg.offerStatus === 'accepted' ? '✓ Đã đồng ý giá này' : '✕ Đã từ chối'}
+                              <span
+                                className={`text-[10px] font-bold ${
+                                  msg.offerStatus === 'accepted' ? 'text-[#EC1577]' : 'text-gray-400'
+                                }`}
+                              >
+                                {msg.offerStatus === 'accepted'
+                                  ? (lang === 'vi' ? '✓ Đã đồng ý giá này' : '✓ Offer accepted')
+                                  : (lang === 'vi' ? '✕ Đã từ chối' : '✕ Declined')}
                               </span>
                             )}
                           </div>
@@ -284,7 +306,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         {showOfferForm && (
           <div className="p-3 bg-[#FFFFFF] border-t border-gray-200 flex items-center gap-3">
             <div className="flex-1">
-              <label className="text-[10px] font-bold text-gray-400">Nhập mức giá muốn đề xuất (VNĐ):</label>
+              <label className="text-[10px] font-bold text-gray-400">
+                {lang === 'vi' ? 'Nhập mức giá muốn đề xuất (VNĐ):' : 'Enter offer amount (VND):'}
+              </label>
               <input
                 type="number"
                 step={100000}
@@ -297,13 +321,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               onClick={handleSendOffer}
               className="px-4 py-2 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white rounded-xl text-xs font-bold mt-3 cursor-pointer transition"
             >
-              Gửi giá
+              {lang === 'vi' ? 'Gửi giá' : 'Send Offer'}
             </button>
             <button
               onClick={() => setShowOfferForm(false)}
               className="px-3 py-2 bg-[#F4F5F8] hover:bg-gray-200 text-[#0E121B] border border-gray-200 rounded-xl text-xs mt-3 cursor-pointer transition"
             >
-              Hủy
+              {lang === 'vi' ? 'Hủy' : 'Cancel'}
             </button>
           </div>
         )}
@@ -314,7 +338,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             onClick={() => setShowOfferForm(!showOfferForm)}
             className="px-3 py-2 bg-[#0E121B] hover:bg-[#0E121B]/90 text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer"
           >
-            💰 Trả giá
+            {lang === 'vi' ? '💰 Trả giá' : '💰 Counter Offer'}
           </button>
 
           <input
@@ -322,7 +346,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-            placeholder="Nhắn tin thương lượng (an toàn qua Escrow)..."
+            placeholder={
+              lang === 'vi'
+                ? 'Nhắn tin thương lượng (an toàn qua Escrow)...'
+                : 'Send negotiation message (safe via Escrow)...'
+            }
             className="flex-1 px-3.5 py-2 bg-[#F4F5F8] border border-gray-200 rounded-xl text-xs text-[#0E121B] focus:outline-none focus:border-[#EC1577]"
           />
 

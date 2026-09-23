@@ -304,9 +304,21 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <label className="text-xs font-semibold text-[#0E121B]">{t.declaredCondition} *</label>
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  { grade: 'Like New', title: 'Như mới (99%)', desc: 'Không xước, máy nén êm, đủ phụ kiện' },
-                  { grade: 'Good', title: 'Tốt (95%)', desc: 'Xước dăm rất nhẹ, máy zin' },
-                  { grade: 'Fair', title: 'Khá (90%)', desc: 'Có cấn viền hoặc trầy xước' }
+                  {
+                    grade: 'Like New',
+                    title: lang === 'vi' ? 'Như mới (99%)' : 'Like New (99%)',
+                    desc: lang === 'vi' ? 'Không xước, máy nén êm, đủ phụ kiện' : 'No scratches, silent compressor, full accessories'
+                  },
+                  {
+                    grade: 'Good',
+                    title: lang === 'vi' ? 'Tốt (95%)' : 'Good (95%)',
+                    desc: lang === 'vi' ? 'Xước dăm rất nhẹ, máy zin' : 'Minor micro-scratches, original parts'
+                  },
+                  {
+                    grade: 'Fair',
+                    title: lang === 'vi' ? 'Khá (90%)' : 'Fair (90%)',
+                    desc: lang === 'vi' ? 'Có cấn viền hoặc trầy xước' : 'Visible scuffs or cosmetic wear'
+                  }
                 ].map((item) => (
                   <button
                     key={item.grade}
@@ -326,12 +338,14 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </div>
 
             <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-semibold text-[#0E121B]">Tóm tắt tình trạng ngoại quan</label>
+              <label className="text-xs font-semibold text-[#0E121B]">
+                {lang === 'vi' ? 'Tóm tắt tình trạng ngoại quan' : 'Condition Summary'}
+              </label>
               <input
                 type="text"
                 value={declaredConditionText}
                 onChange={(e) => setDeclaredConditionText(e.target.value)}
-                placeholder="VD: Dán bảo vệ từ đầu, không trầy xước, chạy êm..."
+                placeholder={lang === 'vi' ? 'VD: Dán bảo vệ từ đầu, không trầy xước, chạy êm...' : 'E.g.: Protected from day 1, no scratches, runs smoothly...'}
                 className="w-full px-3.5 py-2.5 bg-[#F4F5F8] border border-gray-200 rounded-xl text-sm text-[#0E121B] focus:outline-none focus:border-[#0E121B]"
               />
             </div>
@@ -342,7 +356,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
-                placeholder="Mô tả nguồn gốc mua hàng, lý do bán, các linh kiện kèm theo..."
+                placeholder={lang === 'vi' ? 'Mô tả nguồn gốc mua hàng, lý do bán, các linh kiện kèm theo...' : 'Describe origin, reason for sale, included accessories...'}
                 className="w-full px-3.5 py-2.5 bg-[#F4F5F8] border border-gray-200 rounded-xl text-sm text-[#0E121B] focus:outline-none focus:border-[#0E121B]"
               />
             </div>
@@ -353,14 +367,14 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               onClick={onCancel}
               className="px-5 py-2.5 rounded-xl border border-gray-200 text-[#0E121B] hover:bg-[#F4F5F8] text-sm font-semibold cursor-pointer"
             >
-              Hủy
+              {lang === 'vi' ? 'Hủy' : 'Cancel'}
             </button>
 
             <button
               onClick={() => setCurrentStep(2)}
               className="px-5 py-2.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs flex items-center gap-2 cursor-pointer"
             >
-              <span>Tiếp tục: Tải bộ ảnh 5 góc</span>
+              <span>{lang === 'vi' ? 'Tiếp tục: Tải bộ ảnh 5 góc' : 'Next: Upload 5 Photos'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -376,17 +390,39 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <span>{t.photoChecklistTitle}</span>
             </h2>
             <p className="text-xs text-[#0E121B]/70 mt-1">
-              SecondLife yêu cầu chuẩn hóa 5 góc chụp để AI quét vết xước, nhận diện linh kiện và làm bằng chứng pháp lý trong Escrow.
+              {lang === 'vi'
+                ? 'SecondLife yêu cầu chuẩn hóa 5 góc chụp để AI quét vết xước, nhận diện linh kiện và làm bằng chứng pháp lý trong Escrow.'
+                : 'SecondLife mandates 5 standard camera angles for AI defect scanning, parts verification, and Escrow dispute protection.'}
             </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {[
-              { key: 'front' as const, label: t.photoFront, desc: 'Mặt trước hiển thị tổng quan' },
-              { key: 'back' as const, label: t.photoBack, desc: 'Mặt sau và 4 góc viền máy' },
-              { key: 'screenOrDetails' as const, label: t.photoScreenOrDetails, desc: 'Chụp cận cảnh vết xước (nếu có)' },
-              { key: 'accessoriesOrBox' as const, label: t.photoAccessories, desc: 'Hộp máy, cáp sạc, hóa đơn' },
-              { key: 'serialOrReceipt' as const, label: t.photoSerialOrReceipt, desc: 'Ảnh chụp tem Serial / Mã máy' }
+              {
+                key: 'front' as const,
+                label: t.photoFront,
+                desc: lang === 'vi' ? 'Mặt trước hiển thị tổng quan' : 'Front overall display'
+              },
+              {
+                key: 'back' as const,
+                label: t.photoBack,
+                desc: lang === 'vi' ? 'Mặt sau và 4 góc viền máy' : 'Back side & 4 chassis corners'
+              },
+              {
+                key: 'screenOrDetails' as const,
+                label: t.photoScreenOrDetails,
+                desc: lang === 'vi' ? 'Chụp cận cảnh vết xước (nếu có)' : 'Close-up of blemishes/screen'
+              },
+              {
+                key: 'accessoriesOrBox' as const,
+                label: t.photoAccessories,
+                desc: lang === 'vi' ? 'Hộp máy, cáp sạc, hóa đơn' : 'Box, cords, warranty bill'
+              },
+              {
+                key: 'serialOrReceipt' as const,
+                label: t.photoSerialOrReceipt,
+                desc: lang === 'vi' ? 'Ảnh chụp tem Serial / Mã máy' : 'Serial number / model sticker'
+              }
             ].map((slot) => (
               <div
                 key={slot.key}
@@ -413,7 +449,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   className="w-full py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#F4F5F8] rounded-lg text-xs font-medium text-[#0E121B] border border-gray-200 flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <UploadCloud className="w-3.5 h-3.5 text-gray-400" />
-                  <span>Đổi ảnh góc này</span>
+                  <span>{lang === 'vi' ? 'Đổi ảnh góc này' : 'Replace Photo'}</span>
                 </button>
               </div>
             ))}
@@ -425,7 +461,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               className="px-5 py-2.5 rounded-xl border border-gray-200 text-[#0E121B] hover:bg-[#F4F5F8] text-sm font-semibold flex items-center gap-2 cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span>Quay lại</span>
+              <span>{lang === 'vi' ? 'Quay lại' : 'Back'}</span>
             </button>
 
             <button
@@ -457,7 +493,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               className="px-3 py-1.5 bg-[#F4F5F8] hover:bg-gray-200 text-[#0E121B] rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border border-gray-200"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-[#EC1577] ${isAnalyzing ? 'animate-spin' : ''}`} />
-              <span>Tính toán lại</span>
+              <span>{lang === 'vi' ? 'Tính toán lại' : 'Recalculate'}</span>
             </button>
           </div>
 
@@ -468,7 +504,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
               <h3 className="font-bold text-[#0E121B]">{t.analyzingMarket}</h3>
               <p className="text-xs text-[#0E121B]/70 max-w-md mx-auto">
-                Hệ thống đang đối chiếu dữ liệu khấu hao theo năm sản xuất ({purchaseYear}), mức độ hao mòn ngoại quan ({declaredCondition}) và biên độ giao dịch thực tế...
+                {lang === 'vi'
+                  ? `Hệ thống đang đối chiếu dữ liệu khấu hao theo năm sản xuất (${purchaseYear}), mức độ hao mòn ngoại quan (${declaredCondition}) và biên độ giao dịch thực tế...`
+                  : `Matching tech depreciation for purchase year (${purchaseYear}), declared cosmetic grade (${declaredCondition}) with active liquidity benchmarks...`}
               </p>
             </div>
           ) : aiEstimation ? (
@@ -479,7 +517,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <div className="text-2xl font-black text-[#EC1577]">
                     {formatVND(aiEstimation.suggestedVnd)}
                   </div>
-                  <div className="text-[11px] text-[#0E121B]/60">Dự kiến bán trong 7 ngày</div>
+                  <div className="text-[11px] text-[#0E121B]/60">
+                    {lang === 'vi' ? 'Dự kiến bán trong 7 ngày' : 'Est. 7 days to sell'}
+                  </div>
                 </div>
 
                 <div className="bg-[#F4F5F8] border border-gray-200 rounded-2xl p-4 space-y-1">
@@ -487,7 +527,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <div className="text-lg font-extrabold text-[#0E121B]">
                     {formatVND(aiEstimation.minVnd)} - {formatVND(aiEstimation.maxVnd)}
                   </div>
-                  <div className="text-[11px] text-[#0E121B]/60">Biên độ chuẩn cho máy Grade A</div>
+                  <div className="text-[11px] text-[#0E121B]/60">
+                    {lang === 'vi' ? 'Biên độ chuẩn cho máy Grade A' : 'Standard range for Grade A'}
+                  </div>
                 </div>
 
                 <div className="bg-[#F4F5F8] border border-gray-200 rounded-2xl p-4 space-y-1">
@@ -495,13 +537,15 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <div className="text-2xl font-black text-[#0E121B]">
                     {formatVND(aiEstimation.quickSaleVnd)}
                   </div>
-                  <div className="text-[11px] text-[#0E121B]/60">Khớp lệnh nhanh trong 3 ngày</div>
+                  <div className="text-[11px] text-[#0E121B]/60">
+                    {lang === 'vi' ? 'Khớp lệnh nhanh trong 3 ngày' : 'Quick match in 3 days'}
+                  </div>
                 </div>
               </div>
 
               <div className="bg-[#F4F5F8] rounded-2xl p-4 border border-gray-200 space-y-2">
                 <div className="text-xs font-bold text-[#0E121B] uppercase tracking-wider">
-                  Các yếu tố tác động tới định giá của AI:
+                  {lang === 'vi' ? 'Các yếu tố tác động tới định giá của AI:' : 'AI Valuation Drivers:'}
                 </div>
                 <ul className="space-y-1 text-xs text-[#0E121B]/70">
                   {aiEstimation.keyFactors.map((factor, i) => (
@@ -534,9 +578,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 />
 
                 <div className="flex justify-between text-[11px] text-[#0E121B]/60">
-                  <span>Giá bán gấp: {formatVND(aiEstimation.quickSaleVnd)}</span>
-                  <span>Đề xuất: {formatVND(aiEstimation.suggestedVnd)}</span>
-                  <span>Giá cao: {formatVND(aiEstimation.maxVnd * 1.1)}</span>
+                  <span>{lang === 'vi' ? 'Giá bán gấp:' : 'Quick sale:'} {formatVND(aiEstimation.quickSaleVnd)}</span>
+                  <span>{lang === 'vi' ? 'Đề xuất:' : 'Suggested:'} {formatVND(aiEstimation.suggestedVnd)}</span>
+                  <span>{lang === 'vi' ? 'Giá cao:' : 'Higher limit:'} {formatVND(aiEstimation.maxVnd * 1.1)}</span>
                 </div>
 
                 {fraudWarning && (
@@ -560,7 +604,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               className="px-4 py-2.5 rounded-xl border border-gray-200 text-[#0E121B] hover:bg-[#F4F5F8] text-xs sm:text-sm font-medium flex items-center gap-2 cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span>Quay lại chỉnh sửa</span>
+              <span>{lang === 'vi' ? 'Quay lại chỉnh sửa' : 'Back to Edit'}</span>
             </button>
 
             <button

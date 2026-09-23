@@ -124,30 +124,42 @@ export const Footer: React.FC<FooterProps> = ({
             </div>
 
             <p className="text-slate-400 text-xs leading-relaxed">
-              SecondLife giải quyết triệt để nỗi lo tráo đồ, hỏng ngầm và lừa đảo tiền cọc khi mua bán tủ lạnh, máy giặt, máy lạnh, máy pha cà phê cũ thông qua cơ chế kiểm định phòng Lab và bảo lãnh tài chính Escrow.
+              {lang === 'vi'
+                ? 'SecondLife giải quyết triệt để nỗi lo tráo đồ, hỏng ngầm và lừa đảo tiền cọc khi mua bán tủ lạnh, máy giặt, máy lạnh, máy pha cà phê cũ thông qua cơ chế kiểm định phòng Lab và bảo lãnh tài chính Escrow.'
+                : 'SecondLife eliminates the risks of component swapping, hidden defects, and deposit fraud when trading used home appliances and electronics through certified Lab Hub testing and Escrow payment protection.'}
             </p>
 
             <div className="space-y-2 pt-1 text-xs">
               <div className="flex items-center gap-2 text-slate-300">
                 <Phone className="w-4 h-4 text-[#EC1577] shrink-0" />
                 <span>
-                  Tổng đài tư vấn: <strong className="text-white font-bold text-sm">1900 8899</strong> (8:00 - 21:00)
+                  {lang === 'vi' ? 'Tổng đài tư vấn: ' : 'Hotline: '}
+                  <strong className="text-white font-bold text-sm">1900 8899</strong> (8:00 - 21:00)
                 </span>
               </div>
               <div className="flex items-center gap-2 text-slate-300">
                 <Mail className="w-4 h-4 text-[#EC1577] shrink-0" />
-                <span>Email hỗ trợ: <strong className="text-white font-medium">hotro@secondlife.vn</strong></span>
+                <span>
+                  {lang === 'vi' ? 'Email hỗ trợ: ' : 'Support Email: '}
+                  <strong className="text-white font-medium">hotro@secondlife.vn</strong>
+                </span>
               </div>
               <div className="flex items-start gap-2 text-slate-300">
                 <MapPin className="w-4 h-4 text-[#EC1577] shrink-0 mt-0.5" />
                 <span>
-                  Địa chỉ: 92 Phan Châu Trinh, Phường Phước Ninh, Quận Hải Châu, TP. Đà Nẵng
+                  {lang === 'vi'
+                    ? 'Địa chỉ: 92 Phan Châu Trinh, Phường Phước Ninh, Quận Hải Châu, TP. Đà Nẵng'
+                    : 'Headquarters: 92 Phan Chau Trinh, Phuoc Ninh, Hai Chau, Da Nang City'}
                 </span>
               </div>
               <div className="flex items-start gap-2 text-slate-400 text-[11px]">
                 <Building className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
                 <span>
-                  Mạng lưới Hub kiểm định: <strong>Hà Nội</strong> (Cầu Giấy) &bull; <strong>Đà Nẵng</strong> (Hải Châu) &bull; <strong>TP. Hồ Chí Minh</strong> (Quận 10)
+                  {lang === 'vi' ? (
+                    <>Mạng lưới Hub kiểm định: <strong>Hà Nội</strong> (Cầu Giấy) &bull; <strong>Đà Nẵng</strong> (Hải Châu) &bull; <strong>TP. Hồ Chí Minh</strong> (Quận 10)</>
+                  ) : (
+                    <>Inspection Hub Network: <strong>Hanoi</strong> (Cau Giay) &bull; <strong>Da Nang</strong> (Hai Chau) &bull; <strong>Ho Chi Minh City</strong> (District 10)</>
+                  )}
                 </span>
               </div>
             </div>
@@ -161,37 +173,37 @@ export const Footer: React.FC<FooterProps> = ({
             <ul className="space-y-2 text-xs text-slate-400">
               <li>
                 <a href="#help" onClick={(e) => { e.preventDefault(); onTabChange?.('home'); }} className="hover:text-white transition flex items-center gap-1.5">
-                  <span>Trung tâm trợ giúp 24/7</span>
+                  <span>{lang === 'vi' ? 'Trung tâm trợ giúp 24/7' : '24/7 Help Center'}</span>
                 </a>
               </li>
               <li>
                 <a href="#escrow-guide" onClick={(e) => { e.preventDefault(); onTabChange?.('orders'); }} className="hover:text-white transition flex items-center gap-1.5">
-                  <span>Hướng dẫn mua cọc Escrow</span>
+                  <span>{lang === 'vi' ? 'Hướng dẫn mua cọc Escrow' : 'Escrow Buying Guide'}</span>
                 </a>
               </li>
               <li>
                 <a href="#seller-guide" onClick={(e) => { e.preventDefault(); onOpenProfile?.(); }} className="hover:text-white transition flex items-center gap-1.5">
-                  <span>Đăng ký bán hàng & gửi Hub</span>
+                  <span>{lang === 'vi' ? 'Đăng ký bán hàng & gửi Hub' : 'Register to Sell & Hub Logistics'}</span>
                 </a>
               </li>
               <li>
                 <a href="#inspection-process" onClick={(e) => { e.preventDefault(); onTabChange?.('home'); }} className="hover:text-white transition flex items-center gap-1.5">
-                  <span>Quy trình kiểm định 48 bước</span>
+                  <span>{lang === 'vi' ? 'Quy trình kiểm định 48 bước' : '48-Point Inspection Process'}</span>
                 </a>
               </li>
               <li>
                 <a href="#nfc-lookup" onClick={(e) => { e.preventDefault(); onTabChange?.('home'); }} className="hover:text-white transition flex items-center gap-1.5">
-                  <span>Tra cứu tem niêm phong NFC</span>
+                  <span>{lang === 'vi' ? 'Tra cứu tem niêm phong NFC' : 'NFC Security Seal Verification'}</span>
                 </a>
               </li>
               <li>
                 <a href="#return-policy" onClick={(e) => { e.preventDefault(); onTabChange?.('orders'); }} className="hover:text-white transition flex items-center gap-1.5">
-                  <span>Chính sách đổi trả & hoàn tiền</span>
+                  <span>{lang === 'vi' ? 'Chính sách đổi trả & hoàn tiền' : 'Return & Refund Policy'}</span>
                 </a>
               </li>
               <li>
                 <a href="#dispute" onClick={(e) => { e.preventDefault(); onTabChange?.('orders'); }} className="hover:text-white transition flex items-center gap-1.5">
-                  <span>Giải quyết tranh chấp Escrow</span>
+                  <span>{lang === 'vi' ? 'Giải quyết tranh chấp Escrow' : 'Escrow Dispute Resolution'}</span>
                 </a>
               </li>
             </ul>
@@ -205,42 +217,32 @@ export const Footer: React.FC<FooterProps> = ({
             <ul className="space-y-2 text-xs text-slate-400">
               <li>
                 <a href="#about" onClick={(e) => { e.preventDefault(); onTabChange?.('home'); }} className="hover:text-white transition">
-                  Giới thiệu về SecondLife
+                  {lang === 'vi' ? 'Giới thiệu về SecondLife' : 'About SecondLife Platform'}
                 </a>
               </li>
               <li>
                 <a href="#hubs" onClick={(e) => { e.preventDefault(); onTabChange?.('home'); }} className="hover:text-white transition">
-                  Hệ thống phòng Lab Hub
+                  {lang === 'vi' ? 'Hệ thống phòng Lab Hub' : 'Inspection Hub Labs System'}
                 </a>
               </li>
               <li>
                 <a href="#grades" onClick={(e) => { e.preventDefault(); onTabChange?.('home'); }} className="hover:text-white transition">
-                  Quy chuẩn phân hạng Grade S/A/B
+                  {lang === 'vi' ? 'Quy chuẩn phân hạng Grade S/A/B' : 'Grade S/A/B Quality Standards'}
                 </a>
               </li>
               <li>
                 <a href="#careers" onClick={(e) => { e.preventDefault(); }} className="hover:text-white transition">
-                  Tuyển dụng Kỹ sư giám định Hub
+                  {lang === 'vi' ? 'Tuyển dụng Kỹ sư giám định Hub' : 'Careers & Inspector Opportunities'}
                 </a>
               </li>
               <li>
                 <a href="#terms" onClick={(e) => { e.preventDefault(); }} className="hover:text-white transition">
-                  Điều khoản & Quy chế hoạt động
+                  {lang === 'vi' ? 'Điều khoản & Quy chế hoạt động' : 'Terms of Service & Rules'}
                 </a>
               </li>
               <li>
                 <a href="#privacy" onClick={(e) => { e.preventDefault(); }} className="hover:text-white transition">
-                  Chính sách bảo mật dữ liệu
-                </a>
-              </li>
-              <li>
-                <a href="#seller-channel" onClick={(e) => { e.preventDefault(); onOpenProfile?.(); }} className="hover:text-[#EC1577] transition font-bold">
-                  Kênh Người Bán (Seller Center) &rarr;
-                </a>
-              </li>
-              <li>
-                <a href="#admin-dashboard" onClick={(e) => { e.preventDefault(); onTabChange?.('admin-dashboard'); }} className="hover:text-slate-200 transition text-[11px] text-slate-400">
-                  Cổng Quản Trị Hệ Thống (Admin Dashboard) &rarr;
+                  {lang === 'vi' ? 'Chính sách bảo mật dữ liệu' : 'Data Privacy Policy'}
                 </a>
               </li>
             </ul>
@@ -283,12 +285,12 @@ export const Footer: React.FC<FooterProps> = ({
             {/* Chứng nhận TMĐT & Tem bảo chứng */}
             <div>
               <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-2">
-                Chứng Nhận & Bảo Mật
+                {lang === 'vi' ? 'Chứng Nhận & Bảo Mật' : 'Certifications & Security'}
               </h4>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-rose-500/15 border border-rose-500/30 text-[#EC1577] text-[10px] font-bold">
                   <ShieldCheck className="w-3 h-3 text-[#EC1577]" />
-                  Hệ Thống Bán Đồ Cũ Kiểm Định
+                  {lang === 'vi' ? 'Hệ Thống Bán Đồ Cũ Kiểm Định' : 'Certified Recommerce System'}
                 </span>
                 <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold">
                   <Lock className="w-3 h-3 text-emerald-400" />
@@ -305,19 +307,29 @@ export const Footer: React.FC<FooterProps> = ({
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 text-center md:text-left text-[11px] text-slate-400">
           <div>
             <p className="font-bold text-slate-300">
-              &copy; 2026 SecondLife - Hệ thống bán đồ cũ uy tín & kiểm định chất lượng.
+              {lang === 'vi'
+                ? '© 2026 SecondLife - Hệ thống bán đồ cũ uy tín & kiểm định chất lượng.'
+                : '© 2026 SecondLife - Certified Recommerce & Escrow Marketplace.'}
             </p>
             <p className="text-slate-400 text-[11px] mt-0.5">
-              Hệ thống bán đồ cũ thiết bị gia dụng và công nghệ, hỗ trợ kiểm định phòng Lab và bảo lãnh thanh toán an toàn.
+              {lang === 'vi'
+                ? 'Hệ thống bán đồ cũ thiết bị gia dụng và công nghệ, hỗ trợ kiểm định phòng Lab và bảo lãnh thanh toán an toàn.'
+                : 'Certified marketplace for pre-owned home appliances and tech, verified by Hub Labs with Escrow guarantees.'}
             </p>
           </div>
 
           <div className="flex items-center gap-4 text-slate-300">
-            <span className="hover:text-white cursor-pointer transition">Chính sách bảo mật</span>
+            <span className="hover:text-white cursor-pointer transition">
+              {lang === 'vi' ? 'Chính sách bảo mật' : 'Privacy Policy'}
+            </span>
             <span>&bull;</span>
-            <span className="hover:text-white cursor-pointer transition">Quy chế hoạt động</span>
+            <span className="hover:text-white cursor-pointer transition">
+              {lang === 'vi' ? 'Quy chế hoạt động' : 'Terms of Service'}
+            </span>
             <span>&bull;</span>
-            <span className="hover:text-white cursor-pointer transition">Bảo lãnh Escrow</span>
+            <span className="hover:text-white cursor-pointer transition">
+              {lang === 'vi' ? 'Bảo lãnh Escrow' : 'Escrow Protection'}
+            </span>
           </div>
         </div>
       </div>

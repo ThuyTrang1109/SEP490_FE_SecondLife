@@ -156,14 +156,18 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-600 border border-amber-500/30">
             <Clock className="w-3.5 h-3.5" />
-            <span>{isSeller ? 'Chờ Bạn Giao Bưu Tá' : 'Chờ Lấy Hàng & Đóng Gói'}</span>
+            <span>
+              {lang === 'vi'
+                ? isSeller ? 'Chờ Bạn Giao Bưu Tá' : 'Chờ Lấy Hàng & Đóng Gói'
+                : isSeller ? 'Awaiting Courier Handover' : 'Awaiting Pickup & Packaging'}
+            </span>
           </span>
         );
       case 'INSPECTION_IN_PROGRESS':
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-xs">
             <Clock className="w-3.5 h-3.5 animate-spin" />
-            <span>Đang Kiểm Định Tại Hub</span>
+            <span>{lang === 'vi' ? 'Đang Kiểm Định Tại Hub' : 'In Hub Inspection'}</span>
           </span>
         );
       case 'INSPECTION_PASSED':
@@ -171,28 +175,40 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-500/15 text-blue-600 border border-blue-500/30">
             <Truck className="w-3.5 h-3.5" />
-            <span>{isSeller ? 'Đang Giao Tới Người Mua' : 'Đang Giao Hàng Tới Bạn'}</span>
+            <span>
+              {lang === 'vi'
+                ? isSeller ? 'Đang Giao Tới Người Mua' : 'Đang Giao Hàng Tới Bạn'
+                : isSeller ? 'Delivering to Buyer' : 'Delivering to You'}
+            </span>
           </span>
         );
       case 'DELIVERED_INSPECTION_WINDOW':
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>{isSeller ? 'Khách Đang Kiểm Máy (48h)' : 'Đã Giao • 48h Kiểm Tra Đối Soát'}</span>
+            <span>
+              {lang === 'vi'
+                ? isSeller ? 'Khách Đang Kiểm Máy (48h)' : 'Đã Giao • 48h Kiểm Tra Đối Soát'
+                : isSeller ? 'Buyer Review (48h Window)' : 'Delivered • 48h Inspection Window'}
+            </span>
           </span>
         );
       case 'COMPLETED_RELEASED':
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            <span>{isSeller ? 'Đã Nhận Tiền Vào Ví' : 'Hoàn Tất • Đã Giải Ngân'}</span>
+            <span>
+              {lang === 'vi'
+                ? isSeller ? 'Đã Nhận Tiền Vào Ví' : 'Hoàn Tất • Đã Giải Ngân'
+                : isSeller ? 'Payout Transferred to Wallet' : 'Completed • Escrow Released'}
+            </span>
           </span>
         );
       case 'DISPUTED':
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-500/15 text-red-600 border border-red-500/30">
             <AlertTriangle className="w-3.5 h-3.5" />
-            <span>Đang Tranh Chấp • Đóng Băng Escrow</span>
+            <span>{lang === 'vi' ? 'Đang Tranh Chấp • Đóng Băng Escrow' : 'Disputed • Escrow Frozen'}</span>
           </span>
         );
       default:
@@ -206,22 +222,22 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
   const tabs: { key: OrderFilterTab; label: string }[] = isSeller
     ? [
-        { key: 'all', label: 'Tất cả đơn bán' },
-        { key: 'awaiting_pickup', label: 'Chờ giao bưu tá' },
-        { key: 'inspecting', label: 'Đang kiểm định Hub' },
-        { key: 'shipping', label: 'Đang giao người mua' },
-        { key: 'delivered', label: 'Chờ nghiệm thu (48h)' },
-        { key: 'completed', label: 'Đã nhận tiền' },
-        { key: 'disputed', label: 'Khiếu nại / Trả hàng' },
+        { key: 'all', label: lang === 'vi' ? 'Tất cả đơn bán' : 'All Seller Orders' },
+        { key: 'awaiting_pickup', label: lang === 'vi' ? 'Chờ giao bưu tá' : 'Awaiting Courier' },
+        { key: 'inspecting', label: lang === 'vi' ? 'Đang kiểm định Hub' : 'Hub Inspection' },
+        { key: 'shipping', label: lang === 'vi' ? 'Đang giao người mua' : 'Delivering' },
+        { key: 'delivered', label: lang === 'vi' ? 'Chờ nghiệm thu (48h)' : 'Review (48h)' },
+        { key: 'completed', label: lang === 'vi' ? 'Đã nhận tiền' : 'Funds Released' },
+        { key: 'disputed', label: lang === 'vi' ? 'Khiếu nại / Trả hàng' : 'Disputes / Returns' },
       ]
     : [
-        { key: 'all', label: 'Tất cả' },
-        { key: 'awaiting_pickup', label: 'Chờ lấy hàng' },
-        { key: 'inspecting', label: 'Đang kiểm định Hub' },
-        { key: 'shipping', label: 'Đang giao hàng' },
-        { key: 'delivered', label: 'Đã nhận hàng' },
-        { key: 'completed', label: 'Hoàn thành' },
-        { key: 'disputed', label: 'Trả hàng / Tranh chấp' },
+        { key: 'all', label: lang === 'vi' ? 'Tất cả' : 'All Orders' },
+        { key: 'awaiting_pickup', label: lang === 'vi' ? 'Chờ lấy hàng' : 'Awaiting Pickup' },
+        { key: 'inspecting', label: lang === 'vi' ? 'Đang kiểm định Hub' : 'Hub Inspection' },
+        { key: 'shipping', label: lang === 'vi' ? 'Đang giao hàng' : 'Delivering' },
+        { key: 'delivered', label: lang === 'vi' ? 'Đã nhận hàng' : 'Delivered' },
+        { key: 'completed', label: lang === 'vi' ? 'Hoàn thành' : 'Completed' },
+        { key: 'disputed', label: lang === 'vi' ? 'Trả hàng / Tranh chấp' : 'Disputes / Refunds' },
       ];
 
   return (
@@ -234,20 +250,22 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               <div>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-white text-xs font-bold border border-white/20">
                   <Store className="w-3.5 h-3.5 text-[#EC1577]" />
-                  <span>Kênh Người Bán SecondLife &bull; Quản Lý Đơn Hàng</span>
+                  <span>{lang === 'vi' ? 'Kênh Người Bán SecondLife • Quản Lý Đơn Hàng' : 'SecondLife Seller Center • Order Management'}</span>
                 </div>
                 <h1 className="text-2xl sm:text-3xl font-black text-white mt-2">
-                  Quản Lý Đơn Bán Hàng & Dòng Tiền Escrow
+                  {lang === 'vi' ? 'Quản Lý Đơn Bán Hàng & Dòng Tiền Escrow' : 'Seller Orders & Escrow Payouts'}
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-300 mt-1">
-                  Theo dõi lịch bưu tá đến kho lấy hàng chuyển về Hub, kết quả kiểm định kỹ thuật và đối soát tiền giải ngân vào ví người bán.
+                  {lang === 'vi'
+                    ? 'Theo dõi lịch bưu tá đến kho lấy hàng chuyển về Hub, kết quả kiểm định kỹ thuật và đối soát tiền giải ngân vào ví người bán.'
+                    : 'Track courier pickup schedules to Hub, technical inspection results, and automated escrow payouts to seller wallet.'}
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
                 <span className="px-3.5 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4" />
-                  <span>Bảo Lãnh Escrow</span>
+                  <span>{lang === 'vi' ? 'Bảo Lãnh Escrow' : 'Escrow Protection'}</span>
                 </span>
               </div>
             </div>
@@ -255,35 +273,51 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             {/* Seller Metric Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-white/10">
               <div className="bg-white rounded-2xl p-3.5 border border-slate-200 text-slate-900 shadow-sm">
-                <div className="text-[11px] text-slate-500 font-medium">Tiền Chờ Giải Ngân (Escrow)</div>
+                <div className="text-[11px] text-slate-500 font-medium">
+                  {lang === 'vi' ? 'Tiền Chờ Giải Ngân (Escrow)' : 'Pending Escrow Payout'}
+                </div>
                 <div className="text-lg sm:text-xl font-black text-[#EC1577] mt-0.5">
                   {formatVND(pendingEscrowTotal)}
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Tự động giải ngân sau giao</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  {lang === 'vi' ? 'Tự động giải ngân sau giao' : 'Auto-released after delivery'}
+                </div>
               </div>
 
               <div className="bg-white rounded-2xl p-3.5 border border-slate-200 text-slate-900 shadow-sm">
-                <div className="text-[11px] text-slate-500 font-medium">Cần Giao Bưu Tá (Kho lấy)</div>
+                <div className="text-[11px] text-slate-500 font-medium">
+                  {lang === 'vi' ? 'Cần Giao Bưu Tá (Kho lấy)' : 'Awaiting Courier Pickup'}
+                </div>
                 <div className="text-lg sm:text-xl font-black text-amber-600 mt-0.5">
-                  {awaitingPickupCount} Đơn
+                  {awaitingPickupCount} {lang === 'vi' ? 'Đơn' : 'Orders'}
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Hẹn bưu tá GHTK/GHN</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  {lang === 'vi' ? 'Hẹn bưu tá GHTK/GHN' : 'GHTK/GHN Express'}
+                </div>
               </div>
 
               <div className="bg-white rounded-2xl p-3.5 border border-slate-200 text-slate-900 shadow-sm">
-                <div className="text-[11px] text-slate-500 font-medium">Đang Kiểm Định Tại Hub</div>
+                <div className="text-[11px] text-slate-500 font-medium">
+                  {lang === 'vi' ? 'Đang Kiểm Định Tại Hub' : 'In Hub Inspection'}
+                </div>
                 <div className="text-lg sm:text-xl font-black text-purple-600 mt-0.5">
-                  {inHubInspectionCount} Thiết Bị
+                  {inHubInspectionCount} {lang === 'vi' ? 'Thiết Bị' : 'Items'}
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Test 48 bước & dán NFC</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  {lang === 'vi' ? 'Test 48 bước & dán NFC' : '48-step test & NFC seal'}
+                </div>
               </div>
 
               <div className="bg-white rounded-2xl p-3.5 border border-slate-200 text-slate-900 shadow-sm">
-                <div className="text-[11px] text-slate-500 font-medium">Đã Nhận Tiền Thành Công</div>
-                <div className="text-lg sm:text-xl font-black text-emerald-600 mt-0.5">
-                  {completedPaidCount} Đơn
+                <div className="text-[11px] text-slate-500 font-medium">
+                  {lang === 'vi' ? 'Đã Nhận Tiền Thành Công' : 'Successfully Paid Out'}
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Tiền đã cộng vào tài khoản</div>
+                <div className="text-lg sm:text-xl font-black text-emerald-600 mt-0.5">
+                  {completedPaidCount} {lang === 'vi' ? 'Đơn' : 'Orders'}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  {lang === 'vi' ? 'Tiền đã cộng vào tài khoản' : 'Credited to balance'}
+                </div>
               </div>
             </div>
           </div>
@@ -303,10 +337,12 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             <span>SecondLife Smart Escrow & Multi-Leg Logistics</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0E121B] mt-2">
-            Đơn Hàng & Escrow
+            {lang === 'vi' ? 'Đơn Hàng & Escrow' : 'Orders & Escrow Protection'}
           </h1>
           <p className="text-xs sm:text-sm text-[#0E121B]/70">
-            Theo dõi hành trình 2 chặng: Người bán → Trung tâm kiểm định → Người mua, biên bản nghiệm thu và ảnh 3 giai đoạn.
+            {lang === 'vi'
+              ? 'Theo dõi hành trình 2 chặng: Người bán → Trung tâm kiểm định → Người mua, biên bản nghiệm thu và ảnh 3 giai đoạn.'
+              : 'Multi-leg tracking: Seller → Certified Inspection Hub → Buyer, digital inspection reports, and 3-stage photo logs.'}
           </p>
         </div>
       )}
@@ -356,7 +392,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={isSeller ? 'Tìm mã đơn #ORD, tên sản phẩm hoặc tên người mua...' : 'Tìm kiếm theo mã đơn #ORD, tên sản phẩm hoặc người bán...'}
+              placeholder={
+                lang === 'vi'
+                  ? (isSeller ? 'Tìm mã đơn #ORD, tên sản phẩm hoặc tên người mua...' : 'Tìm kiếm theo mã đơn #ORD, tên sản phẩm hoặc người bán...')
+                  : (isSeller ? 'Search by #ORD, product title or buyer name...' : 'Search by #ORD, product title or seller...')
+              }
               className="w-full pl-9 pr-3 py-2 text-xs bg-[#FFFFFF] border border-gray-200 rounded-xl focus:outline-none focus:border-[#EC1577] transition-all"
             />
           </div>
@@ -365,7 +405,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               onClick={() => setSearchQuery('')}
               className="px-3 py-2 text-xs text-slate-500 hover:text-slate-800 bg-gray-200/70 rounded-xl transition cursor-pointer"
             >
-              Xóa tìm kiếm
+              {lang === 'vi' ? 'Xóa tìm kiếm' : 'Clear search'}
             </button>
           )}
         </div>
@@ -375,9 +415,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       {filteredOrders.length === 0 ? (
         <div className="bg-[#FFFFFF] rounded-3xl p-12 text-center border border-gray-200 text-[#0E121B] shadow-xs">
           <Package className="w-14 h-14 text-gray-300 mx-auto mb-3" />
-          <h3 className="font-bold text-base text-[#0E121B]">Chưa có đơn hàng nào trong mục này</h3>
+          <h3 className="font-bold text-base text-[#0E121B]">
+            {lang === 'vi' ? 'Chưa có đơn hàng nào trong mục này' : 'No orders found in this category'}
+          </h3>
           <p className="text-xs text-[#0E121B]/70 mt-1 max-w-md mx-auto">
-            Không tìm thấy đơn hàng nào ở trạng thái này. Bạn có thể chọn tab "{isSeller ? 'Tất cả đơn bán' : 'Tất cả'}" để xem toàn bộ danh sách.
+            {lang === 'vi'
+              ? `Không tìm thấy đơn hàng nào ở trạng thái này. Bạn có thể chọn tab "${isSeller ? 'Tất cả đơn bán' : 'Tất cả'}" để xem toàn bộ danh sách.`
+              : `No orders currently match this status tab. Select "${isSeller ? 'All Seller Orders' : 'All Orders'}" to view all.`}
           </p>
         </div>
       ) : (
@@ -397,7 +441,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                       <>
                         <User className="w-4 h-4 text-blue-600" />
                         <span className="text-xs font-bold text-slate-900">
-                          Khách mua: {ord.buyerName}
+                          {lang === 'vi' ? 'Khách mua:' : 'Buyer:'} {ord.buyerName}
                         </span>
                         <span className="text-[11px] text-slate-400">({ord.buyerPhone})</span>
                       </>
@@ -409,7 +453,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                     )}
                     <span className="text-[11px] font-mono text-slate-400">#{ord.id}</span>
                     <span className="hidden sm:inline-block text-[11px] text-slate-400">
-                      • {new Date(ord.createdAt).toLocaleDateString('vi-VN')}
+                      • {new Date(ord.createdAt).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US')}
                     </span>
                   </div>
                   <div>{getStatusBadge(ord.escrowStatus)}</div>
@@ -432,22 +476,25 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           {ord.listing.category}
                         </span>
                         <span>•</span>
-                        <span>Tình trạng: <strong className="text-slate-800">{ord.listing.conditionGrade}</strong></span>
+                        <span>
+                          {lang === 'vi' ? 'Tình trạng:' : 'Condition:'}{' '}
+                          <strong className="text-slate-800">{ord.listing.conditionGrade}</strong>
+                        </span>
                         <span>•</span>
-                        <span>Số lượng: 1</span>
+                        <span>{lang === 'vi' ? 'Số lượng: 1' : 'Qty: 1'}</span>
                       </div>
 
                       {isSeller ? (
                         <div className="flex items-center gap-2 text-[11px] text-slate-500">
                           <span className="inline-flex items-center gap-1 text-slate-600">
                             <Truck className="w-3.5 h-3.5 text-slate-400" />
-                            <span>Bưu tá: GHTK Express (Lấy tại kho Seller)</span>
+                            <span>{lang === 'vi' ? 'Bưu tá: GHTK Express (Lấy tại kho Seller)' : 'Courier: GHTK Express (Pickup at Seller)'}</span>
                           </span>
                         </div>
                       ) : (
                         <div className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                           <ShieldCheck className="w-3.5 h-3.5" />
-                          <span>Bảo chứng Escrow & Kiểm định Hub</span>
+                          <span>{lang === 'vi' ? 'Bảo chứng Escrow & Kiểm định Hub' : 'Escrow Protection & Hub Inspected'}</span>
                         </div>
                       )}
                     </div>
@@ -456,7 +503,9 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   {/* Price Tag */}
                   <div className="text-left sm:text-right shrink-0">
                     <span className="text-xs text-slate-400 block">
-                      {isSeller ? 'Giá niêm yết bán' : 'Đơn giá sản phẩm'}
+                      {isSeller
+                        ? (lang === 'vi' ? 'Giá niêm yết bán' : 'Listing Price')
+                        : (lang === 'vi' ? 'Đơn giá sản phẩm' : 'Item Price')}
                     </span>
                     <span className="text-base sm:text-lg font-black text-slate-900">
                       {formatVND(ord.itemPriceVnd)}
@@ -470,7 +519,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                     {isSeller ? (
                       <>
                         <span className="text-xs text-slate-500">
-                          Thực nhận về ví (Đã trừ 2.5% phí sàn):
+                          {lang === 'vi' ? 'Thực nhận về ví (Đã trừ 2.5% phí sàn):' : 'Net Payout (after 2.5% platform fee):'}
                         </span>
                         <span className="text-base sm:text-lg font-black text-emerald-600">
                           +{formatVND(sellerNetPayout)}
@@ -479,7 +528,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                     ) : (
                       <>
                         <span className="text-xs text-slate-500">
-                          Thành tiền (đã bao gồm phí kiểm định & bảo lãnh):
+                          {lang === 'vi' ? 'Thành tiền (đã bao gồm phí kiểm định & bảo lãnh):' : 'Total (incl. inspection & escrow guarantee):'}
                         </span>
                         <span className="text-base sm:text-lg font-black text-[#EC1577]">
                           {formatVND(ord.totalPaidVnd)}
@@ -503,7 +552,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               className="px-3 py-2 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
                             >
                               <Clock className="w-3.5 h-3.5" />
-                              <span>Hẹn Bưu Tá Lấy Hàng</span>
+                              <span>{lang === 'vi' ? 'Hẹn Bưu Tá Lấy Hàng' : 'Schedule Pickup'}</span>
                             </button>
                             <button
                               onClick={(e) => {
@@ -513,7 +562,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               className="px-3 py-2 rounded-xl bg-white border border-gray-300 hover:border-[#EC1577] text-slate-700 hover:text-[#EC1577] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
                             >
                               <Printer className="w-3.5 h-3.5" />
-                              <span>In Phiếu Gửi Hub</span>
+                              <span>{lang === 'vi' ? 'In Phiếu Gửi Hub' : 'Print Label'}</span>
                             </button>
                           </>
                         )}
@@ -522,7 +571,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                         {ord.escrowStatus === 'COMPLETED_RELEASED' && (
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-200">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Đã Giải Ngân Vào Ví</span>
+                            <span>{lang === 'vi' ? 'Đã Giải Ngân Vào Ví' : 'Funds Credited to Wallet'}</span>
                           </span>
                         )}
 
@@ -534,7 +583,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               onOpenChat(ord.listing);
                             }}
                             className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
-                            title="Nhắn tin với người mua"
+                            title={lang === 'vi' ? 'Nhắn tin với người mua' : 'Chat with buyer'}
                           >
                             <MessageSquare className="w-3.5 h-3.5" />
                           </button>
@@ -549,7 +598,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           className="px-3.5 py-2 rounded-xl bg-white border border-gray-300 hover:border-[#EC1577] text-slate-700 hover:text-[#EC1577] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
                         >
                           <Eye className="w-3.5 h-3.5" />
-                          <span>Chi Tiết Đơn</span>
+                          <span>{lang === 'vi' ? 'Chi Tiết Đơn' : 'Order Details'}</span>
                         </button>
                       </>
                     ) : (
@@ -563,7 +612,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-white border border-gray-300 hover:border-[#EC1577] text-slate-700 hover:text-[#EC1577] text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
                         >
                           <Eye className="w-3.5 h-3.5" />
-                          <span>Xem Chi Tiết</span>
+                          <span>{lang === 'vi' ? 'Xem Chi Tiết' : 'View Details'}</span>
                         </button>
 
                         {ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' && (
@@ -575,7 +624,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Đã Nhận Hàng</span>
+                            <span>{lang === 'vi' ? 'Đã Nhận Hàng' : 'Confirm Receipt'}</span>
                           </button>
                         )}
 
@@ -587,7 +636,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             }}
                             className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold transition cursor-pointer"
                           >
-                            <span>Khiếu Nại</span>
+                            <span>{lang === 'vi' ? 'Khiếu Nại' : 'Dispute'}</span>
                           </button>
                         )}
 
@@ -599,7 +648,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             }}
                             className="px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold hover:bg-emerald-100 transition cursor-pointer"
                           >
-                            <span>Xem Biên Bản Hub</span>
+                            <span>{lang === 'vi' ? 'Xem Biên Bản Hub' : 'Hub Report'}</span>
                           </button>
                         )}
                       </>
@@ -627,14 +676,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               <div>
                 <div className="flex items-center gap-2.5">
                   <h2 className="text-lg sm:text-xl font-black text-[#0E121B]">
-                    Chi Tiết Đơn Hàng #{detailModalOrder.id}
+                    {lang === 'vi' ? 'Chi Tiết Đơn Hàng' : 'Order Details'} #{detailModalOrder.id}
                   </h2>
                   {getStatusBadge(detailModalOrder.escrowStatus)}
                 </div>
                 <p className="text-xs text-slate-500 mt-1">
-                  Người bán: <strong className="text-slate-800">{detailModalOrder.sellerName}</strong> • Người mua:{' '}
-                  <strong className="text-slate-800">{detailModalOrder.buyerName}</strong> • Đặt ngày{' '}
-                  {new Date(detailModalOrder.createdAt).toLocaleDateString('vi-VN')}
+                  {lang === 'vi' ? 'Người bán:' : 'Seller:'} <strong className="text-slate-800">{detailModalOrder.sellerName}</strong> • {lang === 'vi' ? 'Người mua:' : 'Buyer:'}{' '}
+                  <strong className="text-slate-800">{detailModalOrder.buyerName}</strong> • {lang === 'vi' ? 'Đặt ngày' : 'Ordered on'}{' '}
+                  {new Date(detailModalOrder.createdAt).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US')}
                 </p>
               </div>
 
@@ -659,7 +708,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                     {detailModalOrder.listing.title}
                   </h4>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {detailModalOrder.listing.category} • Tình trạng: {detailModalOrder.listing.conditionGrade}
+                    {detailModalOrder.listing.category} • {lang === 'vi' ? 'Tình trạng:' : 'Condition:'} {detailModalOrder.listing.conditionGrade}
                   </p>
                   <div className="text-sm font-extrabold text-[#EC1577] mt-1">
                     {formatVND(detailModalOrder.itemPriceVnd)}

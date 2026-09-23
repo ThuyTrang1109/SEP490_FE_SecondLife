@@ -8,21 +8,23 @@ interface CheckoutModalProps {
   onClose: () => void;
   onOrderPlaced: (order: EscrowOrder) => void;
   lang: Language;
+  currentUser?: { id: string; name: string; email?: string; phone?: string; address?: string } | null;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   listing,
   onClose,
   onOrderPlaced,
-  lang
+  lang,
+  currentUser
 }) => {
   const t = translations[lang];
 
   const [hasInspection, setHasInspection] = useState(true);
   const [carrier] = useState<'GHTK' | 'GHN'>('GHTK');
-  const [buyerName, setBuyerName] = useState('Hoàng Quốc Khang');
-  const [buyerPhone, setBuyerPhone] = useState('0912 345 678');
-  const [buyerAddress, setBuyerAddress] = useState('92 Phan Châu Trinh, Hải Châu, Đà Nẵng');
+  const [buyerName, setBuyerName] = useState(currentUser?.name || 'Khách hàng SecondLife');
+  const [buyerPhone, setBuyerPhone] = useState(currentUser?.phone || '0912 345 678');
+  const [buyerAddress, setBuyerAddress] = useState(currentUser?.address || '92 Phan Châu Trinh, Hải Châu, Đà Nẵng');
 
   const itemPrice = listing.priceVnd;
   const inspectionFee = hasInspection ? 250000 : 0;
@@ -36,7 +38,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       id: orderId,
       listingId: listing.id,
       listing,
-      buyerId: 'buyer-current',
+      buyerId: currentUser?.id || 'buyer-current',
       buyerName,
       buyerPhone,
       buyerAddress,
@@ -126,9 +128,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
             <div>
               <h3 className="font-extrabold text-base text-white">
-                Thanh Toán Bảo Lãnh Escrow
+                {lang === 'vi' ? 'Thanh Toán Bảo Lãnh Escrow' : 'Escrow Protected Checkout'}
               </h3>
-              <p className="text-[11px] text-white/70">Tiền được giữ an toàn 100% tại ngân hàng liên kết</p>
+              <p className="text-[11px] text-white/70">
+                {lang === 'vi' ? 'Tiền được giữ an toàn 100% tại ngân hàng liên kết' : '100% funds held securely in partner custodial bank'}
+              </p>
             </div>
           </div>
 
@@ -158,7 +162,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           {/* Workflow Toggle */}
           <div className="space-y-2">
             <label className="font-bold text-[#0E121B] uppercase tracking-wider text-[11px]">
-              Chọn phương thức giao dịch:
+              {lang === 'vi' ? 'Chọn phương thức giao dịch:' : 'Select Transaction Mode:'}
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -174,14 +178,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <div>
                   <div className="font-bold text-xs flex items-center gap-1 text-[#0E121B]">
                     <ShieldCheck className="w-4 h-4 text-[#EC1577]" />
-                    <span>Kiểm Định Trước Khi Nhận</span>
+                    <span>{lang === 'vi' ? 'Kiểm Định Trước Khi Nhận' : 'Inspection Before Delivery'}</span>
                   </div>
                   <p className="text-[10px] text-[#0E121B]/60 mt-1">
-                    Hàng gửi tới SecondLife Hub để kỹ sư test máy & dán tem NFC trước khi giao.
+                    {lang === 'vi'
+                      ? 'Hàng gửi tới SecondLife Hub để kỹ sư test máy & dán tem NFC trước khi giao.'
+                      : 'Shipped to SecondLife Hub for hardware diagnostics & NFC tamper sealing before delivery.'}
                   </p>
                 </div>
                 <div className="text-xs font-black text-[#EC1577] mt-2">
-                  Phí: 250,000đ (Khuyên dùng)
+                  {lang === 'vi' ? 'Phí: 250,000đ (Khuyên dùng)' : 'Fee: 250,000 VND (Recommended)'}
                 </div>
               </button>
 
@@ -197,14 +203,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <div>
                   <div className="font-bold text-xs flex items-center gap-1 text-[#0E121B]">
                     <Truck className="w-4 h-4 text-gray-400" />
-                    <span>Giao Thẳng (Standard Escrow)</span>
+                    <span>{lang === 'vi' ? 'Giao Thẳng (Standard Escrow)' : 'Direct Delivery (Standard Escrow)'}</span>
                   </div>
                   <p className="text-[10px] text-[#0E121B]/60 mt-1">
-                    Người bán ship trực tiếp. Bạn tự kiểm tra trong 48h trước khi tiền giải ngân.
+                    {lang === 'vi'
+                      ? 'Người bán ship trực tiếp. Bạn tự kiểm tra trong 48h trước khi tiền giải ngân.'
+                      : 'Seller ships directly. You verify within 48h before escrow release.'}
                   </p>
                 </div>
                 <div className="text-xs font-bold text-gray-400 mt-2">
-                  Miễn phí kiểm định
+                  {lang === 'vi' ? 'Miễn phí kiểm định' : 'No inspection fee'}
                 </div>
               </button>
             </div>
@@ -213,11 +221,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           {/* Delivery Details */}
           <div className="space-y-3 bg-[#F4F5F8] p-4 rounded-2xl border border-gray-200">
             <div className="font-bold text-[#0E121B] text-xs uppercase tracking-wider">
-              Thông tin nhận hàng
+              {lang === 'vi' ? 'Thông tin nhận hàng' : 'Shipping Information'}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] font-semibold text-[#0E121B]/70">Họ tên người nhận:</label>
+                <label className="text-[10px] font-semibold text-[#0E121B]/70">{lang === 'vi' ? 'Họ tên người nhận:' : 'Recipient Name:'}</label>
                 <input
                   type="text"
                   value={buyerName}
@@ -226,7 +234,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 />
               </div>
               <div>
-                <label className="text-[10px] font-semibold text-[#0E121B]/70">Số điện thoại:</label>
+                <label className="text-[10px] font-semibold text-[#0E121B]/70">{lang === 'vi' ? 'Số điện thoại:' : 'Phone Number:'}</label>
                 <input
                   type="text"
                   value={buyerPhone}
@@ -235,7 +243,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="text-[10px] font-semibold text-[#0E121B]/70">Địa chỉ giao hàng:</label>
+                <label className="text-[10px] font-semibold text-[#0E121B]/70">{lang === 'vi' ? 'Địa chỉ giao hàng:' : 'Delivery Address:'}</label>
                 <input
                   type="text"
                   value={buyerAddress}
@@ -254,20 +262,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
             {hasInspection && (
               <div className="flex justify-between text-[#0E121B]/70">
-                <span>Phí dịch vụ kiểm định xác thực:</span>
+                <span>{lang === 'vi' ? 'Phí dịch vụ kiểm định xác thực:' : 'Certified Inspection Fee:'}</span>
                 <span className="font-semibold text-[#0E121B]">{formatVND(inspectionFee)}</span>
               </div>
             )}
             <div className="flex justify-between text-[#0E121B]/70">
-              <span>Phí vận chuyển & bảo hiểm hàng hóa:</span>
+              <span>{lang === 'vi' ? 'Phí vận chuyển & bảo hiểm hàng hóa:' : 'Shipping & Insurance Fee:'}</span>
               <span className="font-semibold text-[#0E121B]">{formatVND(shippingFee)}</span>
             </div>
             <div className="flex justify-between text-[#0E121B]/70">
-              <span>Phí nền tảng Escrow (2.5%):</span>
+              <span>{lang === 'vi' ? 'Phí nền tảng Escrow (2.5%):' : 'Escrow Platform Fee (2.5%):'}</span>
               <span className="font-semibold text-[#0E121B]">{formatVND(platformFee)}</span>
             </div>
             <div className="pt-2 border-t border-gray-100 flex justify-between font-bold text-sm text-[#0E121B]">
-              <span>Tổng số tiền thanh toán tạm giữ:</span>
+              <span>{lang === 'vi' ? 'Tổng số tiền thanh toán tạm giữ:' : 'Total Escrow Custody Amount:'}</span>
               <span className="text-base font-extrabold text-[#EC1577]">
                 {formatVND(totalAmount)}
               </span>
@@ -278,7 +286,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           <div className="p-3 bg-[#F4F5F8] rounded-xl border border-gray-200 flex items-start gap-2 text-[#0E121B] text-[11px]">
             <CheckCircle2 className="w-4 h-4 text-[#EC1577] shrink-0 mt-0.5" />
             <span>
-              <strong>Cam kết Escrow:</strong> Người bán KHÔNG nhận được tiền ngay. Tiền chỉ được giải ngân sau khi kiểm định viên đóng dấu ĐẠT và bạn hài lòng nhận hàng. Nếu phát hiện hàng nhái hoặc không đúng mô tả, hệ thống tự động hoàn tiền 100%.
+              <strong>{lang === 'vi' ? 'Cam kết Escrow:' : 'Escrow Guarantee:'}</strong>{' '}
+              {lang === 'vi'
+                ? 'Người bán KHÔNG nhận được tiền ngay. Tiền chỉ được giải ngân sau khi kiểm định viên đóng dấu ĐẠT và bạn hài lòng nhận hàng. Nếu phát hiện hàng nhái hoặc không đúng mô tả, hệ thống tự động hoàn tiền 100%.'
+                : 'The seller does NOT receive funds immediately. Money is released only after the technician certifies PASS and you confirm receipt. Full 100% refund if counterfeit or not as described.'}
             </span>
           </div>
 
@@ -288,7 +299,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             className="w-full py-3 px-4 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
           >
             <Lock className="w-4 h-4 text-white" />
-            <span>Phong Tỏa Tiền & Đặt Hàng Qua Escrow ({formatVND(totalAmount)})</span>
+            <span>
+              {lang === 'vi'
+                ? `Phong Tỏa Tiền & Đặt Hàng Qua Escrow (${formatVND(totalAmount)})`
+                : `Lock Funds & Place Escrow Order (${formatVND(totalAmount)})`}
+            </span>
           </button>
         </div>
       </div>

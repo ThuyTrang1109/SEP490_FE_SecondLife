@@ -18,6 +18,7 @@ const BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhos
 
 export const ACCESS_TOKEN_KEY = 'secondlife_access_token';
 export const REFRESH_TOKEN_KEY = 'secondlife_refresh_token';
+export const USER_INFO_KEY = 'secondlife_user_session';
 
 export const getAccessToken = (): string | null => {
   return localStorage.getItem(ACCESS_TOKEN_KEY);
@@ -34,9 +35,28 @@ export const setAuthTokens = (accessToken: string, refreshToken?: string) => {
   }
 };
 
+export const getStoredUser = (): any | null => {
+  try {
+    const raw = localStorage.getItem(USER_INFO_KEY);
+    if (!raw || raw === 'undefined' || raw === 'null') return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
+export const setStoredUser = (user: any) => {
+  if (user) {
+    localStorage.setItem(USER_INFO_KEY, JSON.stringify(user));
+  } else {
+    localStorage.removeItem(USER_INFO_KEY);
+  }
+};
+
 export const clearAuthTokens = () => {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
+  localStorage.removeItem(USER_INFO_KEY);
 };
 
 export interface RequestOptions extends RequestInit {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   EscrowOrder,
   DisputeCase,
@@ -7,6 +7,7 @@ import {
   EscrowStatus
 } from '../types';
 import { translations, formatVND } from '../utils/translations';
+import { adminService, UserAdminResponseDto, SellerVerificationResponseDto } from '../services';
 import {
   ShieldAlert,
   CheckCircle2,
@@ -135,6 +136,28 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   // Local state for listings and orders moderation
   const [localListings, setLocalListings] = useState<Listing[]>(initialListings);
   const [localOrders, setLocalOrders] = useState<EscrowOrder[]>(initialOrders);
+
+  // Real backend users & seller verifications from Swagger API
+  const [backendUsers, setBackendUsers] = useState<UserAdminResponseDto[]>([]);
+  const [backendVerifications, setBackendVerifications] = useState<SellerVerificationResponseDto[]>([]);
+
+  useEffect(() => {
+    adminService.getAdminUsers({ page: 0, size: 20 })
+      .then(res => {
+        if (res && res.items && res.items.length > 0) {
+          setBackendUsers(res.items);
+        }
+      })
+      .catch(() => {});
+
+    adminService.getSellerVerifications({ page: 0, size: 20 })
+      .then(res => {
+        if (res && res.items && res.items.length > 0) {
+          setBackendVerifications(res.items);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Modal dialog states
   const [selectedOrderModal, setSelectedOrderModal] = useState<EscrowOrder | null>(null);
@@ -368,21 +391,45 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const getEscrowStatusBadge = (status: EscrowStatus) => {
     switch (status) {
       case 'AWAITING_PAYMENT':
-        return { label: 'Chờ Thanh Toán', bg: 'bg-amber-50 text-amber-700 border-amber-200' };
+        return {
+          label: lang === 'vi' ? 'Chờ Thanh Toán' : 'Awaiting Payment',
+          bg: 'bg-amber-50 text-amber-700 border-amber-200'
+        };
       case 'HELD_IN_ESCROW':
-        return { label: 'Đang Giữ Ký Quỹ', bg: 'bg-sky-50 text-sky-700 border-sky-200' };
+        return {
+          label: lang === 'vi' ? 'Đang Giữ Ký Quỹ' : 'Held in Escrow',
+          bg: 'bg-sky-50 text-sky-700 border-sky-200'
+        };
       case 'INSPECTION_IN_PROGRESS':
-        return { label: 'Đang Test Tại Hub', bg: 'bg-purple-50 text-purple-700 border-purple-200' };
+        return {
+          label: lang === 'vi' ? 'Đang Test Tại Hub' : 'Hub Testing',
+          bg: 'bg-purple-50 text-purple-700 border-purple-200'
+        };
       case 'INSPECTION_PASSED':
-        return { label: 'Hub Đạt & Dán NFC', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+        return {
+          label: lang === 'vi' ? 'Hub Đạt & Dán NFC' : 'Passed & NFC Sealed',
+          bg: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+        };
       case 'SHIPPED_TO_BUYER':
-        return { label: 'Đang Giao Bưu Tá', bg: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
+        return {
+          label: lang === 'vi' ? 'Đang Giao Bưu Tá' : 'Courier Delivering',
+          bg: 'bg-indigo-50 text-indigo-700 border-indigo-200'
+        };
       case 'COMPLETED_RELEASED':
-        return { label: 'Đã Giải Ngân Xong', bg: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold' };
+        return {
+          label: lang === 'vi' ? 'Đã Giải Ngân Xong' : 'Disbursed / Completed',
+          bg: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold'
+        };
       case 'DISPUTED':
-        return { label: 'Đang Tranh Chấp', bg: 'bg-rose-100 text-rose-800 border-rose-300 font-bold animate-pulse' };
+        return {
+          label: lang === 'vi' ? 'Đang Tranh Chấp' : 'Disputed',
+          bg: 'bg-rose-100 text-rose-800 border-rose-300 font-bold animate-pulse'
+        };
       case 'REFUNDED_TO_BUYER':
-        return { label: 'Đã Hoàn Tiền', bg: 'bg-gray-100 text-gray-700 border-gray-300' };
+        return {
+          label: lang === 'vi' ? 'Đã Hoàn Tiền' : 'Refunded',
+          bg: 'bg-gray-100 text-gray-700 border-gray-300'
+        };
       default:
         return { label: status, bg: 'bg-gray-100 text-gray-700 border-gray-200' };
     }
@@ -398,45 +445,45 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     },
     {
       id: 'listings' as AdminTab,
-      label: 'QUẢN TRỊ DANH MỤC',
+      label: lang === 'vi' ? 'QUẢN TRỊ DANH MỤC' : 'CATALOG MANAGEMENT',
       icon: Tag,
       badge: localListings.length
     },
     {
       id: 'orders' as AdminTab,
-      label: 'QUẢN LÝ BÁN HÀNG',
+      label: lang === 'vi' ? 'QUẢN LÝ BÁN HÀNG' : 'SALES ORDERS',
       icon: Package,
       badge: localOrders.length || 1,
       badgeColor: 'bg-[#F1622A]'
     },
     {
       id: 'disputes' as AdminTab,
-      label: 'PHÂN XỬ TRANH CHẤP',
+      label: lang === 'vi' ? 'PHÂN XỬ TRANH CHẤP' : 'DISPUTE RESOLUTION',
       icon: Gavel,
       badge: disputes.length || 0,
       badgeColor: 'bg-[#EC1577]'
     },
     {
       id: 'customers' as AdminTab,
-      label: 'QUẢN LÝ KHÁCH HÀNG',
+      label: lang === 'vi' ? 'QUẢN LÝ KHÁCH HÀNG' : 'CUSTOMERS',
       icon: Users,
       badge: 44
     },
     {
       id: 'hubs' as AdminTab,
-      label: 'QUẢN LÝ TRẠM HUB',
+      label: lang === 'vi' ? 'QUẢN LÝ TRẠM HUB' : 'HUB CENTERS',
       icon: Building2,
       badge: 3
     },
     {
       id: 'ai-settings' as AdminTab,
-      label: 'CẤU HÌNH THUẬT TOÁN AI',
+      label: lang === 'vi' ? 'CẤU HÌNH THUẬT TOÁN AI' : 'AI CONFIGURATION',
       icon: Sliders,
       badge: null
     },
     {
       id: 'permissions' as AdminTab,
-      label: 'PHÂN QUYỀN & USER',
+      label: lang === 'vi' ? 'PHÂN QUYỀN & USER' : 'ROLES & PERMISSIONS',
       icon: ShieldCheck,
       badge: null
     }
@@ -468,7 +515,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               setIsMobileSidebarOpen(!isMobileSidebarOpen);
             }}
             className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
-            title="Đóng / Mở menu"
+            title={lang === 'vi' ? 'Đóng / Mở menu' : 'Toggle menu'}
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -479,7 +526,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-slate-200 hover:text-white hover:bg-white/10 transition cursor-pointer"
           >
             <ExternalLink className="w-3.5 h-3.5 text-[#EC1577]" />
-            <span className="font-semibold">Xem website</span>
+            <span className="font-semibold">{lang === 'vi' ? 'Xem website' : 'View Website'}</span>
           </button>
         </div>
 
@@ -504,7 +551,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {showUserDropdown && (
             <div className="absolute right-0 mt-2 w-48 bg-[#0E121B] text-white rounded-xl shadow-2xl border border-white/15 py-1 z-50 text-xs">
               <div className="px-3 py-2 border-b border-white/10">
-                <p className="font-bold text-white">Quản Trị Viên Hệ Thống</p>
+                <p className="font-bold text-white">
+                  {lang === 'vi' ? 'Quản Trị Viên Hệ Thống' : 'System Administrator'}
+                </p>
                 <p className="text-[11px] text-slate-400">admin@secondlife.vn</p>
               </div>
               <button
@@ -515,7 +564,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 className="w-full text-left px-3 py-2 hover:bg-white/10 flex items-center gap-2 text-slate-200 hover:text-white cursor-pointer"
               >
                 <ExternalLink className="w-3.5 h-3.5 text-[#EC1577]" />
-                <span>Về trang mua bán</span>
+                <span>{lang === 'vi' ? 'Về trang mua bán' : 'Back to Marketplace'}</span>
               </button>
               <button
                 onClick={() => {
@@ -525,7 +574,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 className="w-full text-left px-3 py-2 hover:bg-white/10 flex items-center gap-2 text-slate-200 hover:text-white cursor-pointer"
               >
                 <Sliders className="w-3.5 h-3.5 text-[#F1622A]" />
-                <span>Cấu hình thuật toán</span>
+                <span>{lang === 'vi' ? 'Cấu hình thuật toán' : 'AI Algorithm Config'}</span>
               </button>
               <div className="border-t border-white/10 my-1"></div>
               <button
@@ -536,7 +585,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 className="w-full text-left px-3 py-2 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 flex items-center gap-2 cursor-pointer font-medium"
               >
                 <X className="w-3.5 h-3.5" />
-                <span>Thoát quyền Admin</span>
+                <span>{lang === 'vi' ? 'Thoát quyền Admin' : 'Exit Admin'}</span>
               </button>
             </div>
           )}
@@ -1427,30 +1476,63 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {[
-                      { name: 'Nguyễn Văn An', phone: '0912 345 678', email: 'an.nguyen@gmail.com', role: 'Người mua', orders: 12, kyc: 'Đã định danh CCCD' },
-                      { name: 'kt05 (Cửa hàng Gia Dụng Đức)', phone: '0988 765 432', email: 'kt05@gmail.com', role: 'Người bán Pro', orders: 48, kyc: 'Đã định danh CCCD' },
-                      { name: 'Lê Hoàng Long', phone: '0903 112 233', email: 'long.lh@techcorp.vn', role: 'Người mua', orders: 4, kyc: 'Đã định danh CCCD' },
-                      { name: 'Phạm Hương Giang', phone: '0977 445 566', email: 'giang.pham@gmail.com', role: 'Người bán', orders: 19, kyc: 'Đã định danh CCCD' },
-                      { name: 'Vũ Đình Trọng', phone: '0936 889 900', email: 'trong.vd@gmail.com', role: 'Người mua', orders: 7, kyc: 'Chờ duyệt ảnh thẻ' }
-                    ].map((user, i) => (
-                      <tr key={i} className="hover:bg-slate-50/70 transition">
-                        <td className="py-3 px-4 font-bold text-slate-900">{user.name}</td>
-                        <td className="py-3 px-4 font-mono text-slate-600">{user.phone}</td>
-                        <td className="py-3 px-4 text-slate-600">{user.email}</td>
-                        <td className="py-3 px-4">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
-                            {user.role}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 font-bold text-slate-800">{user.orders} đơn</td>
-                        <td className="py-3 px-4">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            {user.kyc}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {backendUsers.length > 0 ? (
+                      backendUsers.map((user, i) => (
+                        <tr key={user.id || i} className="hover:bg-slate-50/70 transition">
+                          <td className="py-3 px-4 font-bold text-slate-900">{user.fullName || 'Thành viên SecondLife'}</td>
+                          <td className="py-3 px-4 font-mono text-slate-600">{user.phone || '—'}</td>
+                          <td className="py-3 px-4 text-slate-600">{user.email}</td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                              {user.roles && user.roles.length > 0 ? user.roles.join(', ') : 'BUYER'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-bold text-slate-800">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              user.accountStatus === 'ACTIVE'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-rose-50 text-rose-700 border border-rose-200'
+                            }`}>
+                              {user.accountStatus}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              user.emailVerified
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                            }`}>
+                              {user.emailVerified ? 'Đã xác thực OTP' : 'Chờ xác thực OTP'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      [
+                        { name: 'Nguyễn Văn An', phone: '0912 345 678', email: 'an.nguyen@gmail.com', role: 'Người mua', orders: 12, kyc: 'Đã định danh CCCD' },
+                        { name: 'kt05 (Cửa hàng Gia Dụng Đức)', phone: '0988 765 432', email: 'kt05@gmail.com', role: 'Người bán Pro', orders: 48, kyc: 'Đã định danh CCCD' },
+                        { name: 'Lê Hoàng Long', phone: '0903 112 233', email: 'long.lh@techcorp.vn', role: 'Người mua', orders: 4, kyc: 'Đã định danh CCCD' },
+                        { name: 'Phạm Hương Giang', phone: '0977 445 566', email: 'giang.pham@gmail.com', role: 'Người bán', orders: 19, kyc: 'Đã định danh CCCD' },
+                        { name: 'Vũ Đình Trọng', phone: '0936 889 900', email: 'trong.vd@gmail.com', role: 'Người mua', orders: 7, kyc: 'Chờ duyệt ảnh thẻ' }
+                      ].map((user, i) => (
+                        <tr key={i} className="hover:bg-slate-50/70 transition">
+                          <td className="py-3 px-4 font-bold text-slate-900">{user.name}</td>
+                          <td className="py-3 px-4 font-mono text-slate-600">{user.phone}</td>
+                          <td className="py-3 px-4 text-slate-600">{user.email}</td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                              {user.role}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-bold text-slate-800">{user.orders} đơn</td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              {user.kyc}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>

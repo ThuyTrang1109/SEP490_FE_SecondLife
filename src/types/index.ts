@@ -207,6 +207,8 @@ export interface UserProfile {
   walletBalanceVnd?: number;
   escrowLockedVnd?: number;
   kycStatus?: 'verified' | 'pending' | 'unverified';
+  emailVerified?: boolean;
+  accountStatus?: string;
   trustScore?: number;
   completedOrdersCount?: number;
   sellerRating?: number;

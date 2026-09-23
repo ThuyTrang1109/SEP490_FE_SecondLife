@@ -48,9 +48,9 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
   };
 
   const getConditionLabel = () => {
-    if (item.conditionGrade === 'Like New') return 'Như mới (99%)';
-    if (item.conditionGrade === 'Good') return 'Tốt (95%)';
-    return 'Khá (90%)';
+    if (item.conditionGrade === 'Like New') return lang === 'vi' ? 'Như mới (99%)' : 'Like New (99%)';
+    if (item.conditionGrade === 'Good') return lang === 'vi' ? 'Tốt (95%)' : 'Good (95%)';
+    return lang === 'vi' ? 'Khá (90%)' : 'Fair (90%)';
   };
 
   return (
@@ -89,7 +89,7 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
           {item.isInspectionGuaranteed && (
             <span
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white backdrop-blur-md shadow-xs"
-              title="Đã kiểm định tại SecondLife Hub"
+              title={lang === 'vi' ? 'Đã kiểm định tại SecondLife Hub' : 'Inspected at SecondLife Hub'}
             >
               <ShieldCheck className="w-3 h-3 text-white" />
               <span>Hub Verified</span>

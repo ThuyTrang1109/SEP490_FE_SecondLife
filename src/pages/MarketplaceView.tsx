@@ -90,7 +90,7 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
               onClick={() => setSearchQuery('')}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-medium text-slate-400 hover:text-[#0E121B] bg-[#FFFFFF] px-2 py-0.5 rounded-md cursor-pointer border border-slate-200"
             >
-              Xóa
+              {lang === 'vi' ? 'Xóa' : 'Clear'}
             </button>
           )}
         </div>
@@ -144,10 +144,10 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
                 {grade === 'ALL'
                   ? (lang === 'vi' ? 'Tất cả' : 'All')
                   : grade === 'Like New'
-                  ? 'Như mới'
+                  ? (lang === 'vi' ? 'Như mới' : 'Like New')
                   : grade === 'Good'
-                  ? 'Tốt'
-                  : 'Khá'}
+                  ? (lang === 'vi' ? 'Tốt' : 'Good')
+                  : (lang === 'vi' ? 'Khá' : 'Fair')}
               </button>
             ))}
           </div>

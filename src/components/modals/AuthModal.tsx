@@ -157,8 +157,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   // Login Field Errors
   const getLoginEmailError = () => {
-    if (!emailOrPhone.trim()) return lang === 'vi' ? 'Vui lòng nhập Email hoặc Số điện thoại.' : 'Please enter your email or phone number.';
-    if (!isValidEmailOrPhone(emailOrPhone)) return lang === 'vi' ? 'Email hoặc Số điện thoại không hợp lệ (VD: user@secondlife.vn hoặc 0912345678).' : 'Invalid email or phone number format.';
+    if (!emailOrPhone.trim()) return lang === 'vi' ? 'Vui lòng nhập địa chỉ Email.' : 'Please enter your email address.';
+    if (!isValidEmail(emailOrPhone)) return lang === 'vi' ? 'Email không đúng định dạng (VD: user@secondlife.vn).' : 'Invalid email format (e.g. user@secondlife.vn).';
     return null;
   };
 
@@ -216,8 +216,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   // Change Password Field Errors
   const getResetEmailError = () => {
-    if (!resetEmail.trim()) return lang === 'vi' ? 'Vui lòng nhập Email hoặc Số điện thoại tài khoản.' : 'Please enter your registered email or phone.';
-    if (!isValidEmailOrPhone(resetEmail)) return lang === 'vi' ? 'Email hoặc Số điện thoại không hợp lệ.' : 'Invalid email or phone number.';
+    if (!resetEmail.trim()) return lang === 'vi' ? 'Vui lòng nhập địa chỉ Email tài khoản.' : 'Please enter your registered email.';
+    if (!isValidEmail(resetEmail)) return lang === 'vi' ? 'Email không đúng định dạng (VD: user@secondlife.vn).' : 'Invalid email format.';
     return null;
   };
 
@@ -396,7 +396,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         name: res.user.fullName || res.user.email,
         email: res.user.email,
         role: mappedRole,
-        phone: res.user.phone || (!emailOrPhone.includes('@') ? emailOrPhone.trim() : ''),
+        phone: res.user.phone || '',
         address: ''
       });
       onClose();
@@ -435,28 +435,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         fullName: fullName.trim(),
         phone: phoneNumber.trim() || undefined
       });
-    } catch {
-      // Allow fallback if offline
+      soundFx.playChime();
+      setVerifyEmailAddress(registerEmail.trim());
+      setVerifyOtpCode('');
+      setVerifyDigits(['', '', '', '', '', '']);
+      setResendCountdown(60);
+      setSubmitted(false);
+      setTouched({});
+      setMode('verify-email');
+      setTimeout(() => {
+        verifyOtpInputRefs.current[0]?.focus();
+      }, 150);
+      setSuccessMsg(
+        lang === 'vi'
+          ? `Tạo tài khoản thành công! Mã OTP xác thực 6 chữ số đã được gửi tới ${registerEmail.trim()}.`
+          : `Account registered! Verification code sent to ${registerEmail.trim()}.`
+      );
+    } catch (err: any) {
+      soundFx.playCancel();
+      setErrorMsg(err.message || (lang === 'vi' ? 'Đăng ký không thành công. Email có thể đã được sử dụng.' : 'Registration failed. Email may already be in use.'));
+      return;
     } finally {
       setIsLoading(false);
     }
-
-    soundFx.playChime();
-    setVerifyEmailAddress(registerEmail.trim());
-    setVerifyOtpCode('');
-    setVerifyDigits(['', '', '', '', '', '']);
-    setResendCountdown(60);
-    setSubmitted(false);
-    setTouched({});
-    setMode('verify-email');
-    setTimeout(() => {
-      verifyOtpInputRefs.current[0]?.focus();
-    }, 150);
-    setSuccessMsg(
-      lang === 'vi'
-        ? `Tạo tài khoản thành công! Mã OTP xác thực 6 chữ số đã được gửi tới ${registerEmail.trim()}.`
-        : `Account registered! Verification code sent to ${registerEmail.trim()}.`
-    );
   };
 
   // Verify Email Submit (/api/v1/auth/verify-email)
@@ -479,22 +480,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         email: verifyEmailAddress,
         code: verifyOtpCode.trim()
       });
-    } catch {
-      // Fallback verify success if offline
+      soundFx.playChime();
+      onLoginSuccess({
+        id: `USR-${Math.floor(1000 + Math.random() * 9000)}`,
+        name: fullName.trim() || 'Thành viên SecondLife',
+        email: verifyEmailAddress,
+        role: 'buyer',
+        phone: phoneNumber.trim() || '',
+        address: ''
+      });
+      onClose();
+    } catch (err: any) {
+      soundFx.playCancel();
+      setErrorMsg(err.message || (lang === 'vi' ? 'Mã xác thực không hợp lệ hoặc đã hết hạn.' : 'Invalid or expired OTP code.'));
+      return;
     } finally {
       setIsLoading(false);
     }
-
-    soundFx.playChime();
-    onLoginSuccess({
-      id: `USR-${Math.floor(1000 + Math.random() * 9000)}`,
-      name: fullName.trim() || 'Thành viên SecondLife',
-      email: verifyEmailAddress,
-      role: 'buyer',
-      phone: phoneNumber.trim() || '',
-      address: ''
-    });
-    onClose();
   };
 
   // Resend Email OTP (/api/v1/auth/resend-verification)
@@ -504,19 +506,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMsg(null);
     try {
       await authService.resendVerification(verifyEmailAddress);
-    } catch {
-      // Suppress
+      soundFx.playChime();
+      setResendCountdown(60);
+      setSuccessMsg(
+        lang === 'vi'
+          ? `Đã gửi lại mã xác thực mới tới ${verifyEmailAddress}!`
+          : `New verification code resent to ${verifyEmailAddress}!`
+      );
+    } catch (err: any) {
+      soundFx.playCancel();
+      setErrorMsg(err.message || (lang === 'vi' ? 'Không thể gửi lại mã xác thực. Vui lòng thử lại sau.' : 'Failed to resend verification code.'));
     } finally {
       setIsLoading(false);
     }
-
-    soundFx.playChime();
-    setResendCountdown(60);
-    setSuccessMsg(
-      lang === 'vi'
-        ? `Đã gửi lại mã xác thực mới tới ${verifyEmailAddress}! (Mã mẫu: 123456)`
-        : `New verification code resent to ${verifyEmailAddress}!`
-    );
   };
 
   // Change Password - Send OTP (/api/v1/auth/forgot-password)
@@ -533,20 +535,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
     try {
       await authService.forgotPassword(resetEmail.trim());
-    } catch {
-      // Fallback mock OTP support if backend is offline
+      soundFx.playChime();
+      setGeneratedResetOtp('889922');
+      setResetOtpCountdown(60);
+      setSuccessMsg(
+        lang === 'vi'
+          ? `Mã xác thực OTP đã được gửi tới email ${resetEmail.trim()}! (Mã thử nghiệm: 889922)`
+          : `OTP verification code sent to ${resetEmail.trim()}! (Test code: 889922)`
+      );
+    } catch (err: any) {
+      soundFx.playCancel();
+      setErrorMsg(err.message || (lang === 'vi' ? 'Không tìm thấy tài khoản với email này.' : 'Account not found with this email.'));
+      return;
     } finally {
       setIsLoading(false);
     }
-
-    soundFx.playChime();
-    setGeneratedResetOtp('889922');
-    setResetOtpCountdown(60);
-    setSuccessMsg(
-      lang === 'vi'
-        ? 'Mã xác thực OTP đã được gửi! Bạn có thể dùng mã thử nghiệm: 889922 để đổi mật khẩu ngay.'
-        : 'OTP verification code sent! Use test code: 889922 to proceed.'
-    );
   };
 
   // Change Password - Reset Password Submit (/api/v1/auth/reset-password)
@@ -574,26 +577,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         code: otpCode.trim(),
         newPassword: newPassword
       });
-    } catch {
-      // Fallback mock success if offline
+      soundFx.playChime();
+      setSuccessMsg(
+        lang === 'vi'
+          ? 'Đổi mật khẩu thành công! Bạn có thể đăng nhập ngay với mật khẩu mới.'
+          : 'Password changed successfully! You can now log in with your new password.'
+      );
+      setEmailOrPhone(resetEmail);
+      setPassword('');
+      setSubmitted(false);
+      setTouched({});
+      setTimeout(() => {
+        setMode('login');
+        setErrorMsg(null);
+      }, 1500);
+    } catch (err: any) {
+      soundFx.playCancel();
+      setErrorMsg(err.message || (lang === 'vi' ? 'Đổi mật khẩu thất bại. Vui lòng kiểm tra lại mã OTP.' : 'Failed to reset password. Please check your OTP.'));
+      return;
     } finally {
       setIsLoading(false);
     }
-
-    soundFx.playChime();
-    setSuccessMsg(
-      lang === 'vi'
-        ? 'Đổi mật khẩu thành công! Bạn có thể đăng nhập ngay với mật khẩu mới.'
-        : 'Password changed successfully! You can now log in with your new password.'
-    );
-    setEmailOrPhone(resetEmail);
-    setPassword('');
-    setSubmitted(false);
-    setTouched({});
-    setTimeout(() => {
-      setMode('login');
-      setErrorMsg(null);
-    }, 1800);
   };
 
   if (!isOpen) return null;
@@ -808,10 +812,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {/* ================= 1. LOGIN FORM ================= */}
             {mode === 'login' && (
               <form onSubmit={handleLoginSubmit} noValidate className="space-y-3">
-                {/* Email / Phone Field */}
+                {/* Email Field */}
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-[#0E121B] flex items-center justify-between">
-                    <span>{lang === 'vi' ? 'Email hoặc Số điện thoại' : 'Email or Phone'} <strong className="text-rose-500">*</strong></span>
+                    <span>{lang === 'vi' ? 'Địa chỉ Email' : 'Email Address'} <strong className="text-rose-500">*</strong></span>
                   </label>
                   <div className="relative">
                     <Mail className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
@@ -822,11 +826,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         : 'text-gray-400'
                     }`} />
                     <input
-                      type="text"
+                      type="email"
                       value={emailOrPhone}
                       onChange={(e) => setEmailOrPhone(e.target.value)}
                       onBlur={() => markTouched('emailOrPhone')}
-                      placeholder="khang.buyer@secondlife.vn hoặc 0912345678"
+                      placeholder="khang.buyer@secondlife.vn"
                       className={`w-full pl-10 pr-3 py-2.5 rounded-xl border text-xs sm:text-sm font-medium transition ${
                         (touched.emailOrPhone || submitted) && getLoginEmailError()
                           ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
@@ -1351,10 +1355,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {/* ================= 4. CHANGE / RESET PASSWORD FORM (/auth/forgot-password & /auth/reset-password) ================= */}
             {mode === 'forgot' && (
               <form onSubmit={handleChangePasswordSubmit} noValidate className="space-y-3">
-                {/* Email / Phone input with Send OTP button */}
+                {/* Email input with Send OTP button */}
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-[#0E121B] flex items-center justify-between">
-                    <span>{lang === 'vi' ? 'Email hoặc Số điện thoại tài khoản' : 'Registered Email or Phone'} <strong className="text-rose-500">*</strong></span>
+                    <span>{lang === 'vi' ? 'Địa chỉ Email tài khoản' : 'Registered Email Address'} <strong className="text-rose-500">*</strong></span>
                   </label>
                   <div className="flex gap-2">
                     <div className="relative flex-1">
@@ -1362,7 +1366,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         (touched.resetEmail || submitted) && getResetEmailError() ? 'text-rose-500' : 'text-gray-400'
                       }`} />
                       <input
-                        type="text"
+                        type="email"
                         value={resetEmail}
                         onChange={(e) => setResetEmail(e.target.value)}
                         onBlur={() => markTouched('resetEmail')}

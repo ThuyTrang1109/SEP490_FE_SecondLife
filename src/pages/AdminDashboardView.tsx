@@ -140,6 +140,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   // Real backend users & seller verifications from Swagger API
   const [backendUsers, setBackendUsers] = useState<UserAdminResponseDto[]>([]);
   const [backendVerifications, setBackendVerifications] = useState<SellerVerificationResponseDto[]>([]);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
 
   useEffect(() => {
     adminService.getAdminUsers({ page: 0, size: 20 })
@@ -1457,6 +1458,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
                   <input
                     type="text"
+                    value={userSearchTerm}
+                    onChange={(e) => setUserSearchTerm(e.target.value)}
                     placeholder="Tìm tên, SĐT, email..."
                     className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-[#F1622A]"
                   />
@@ -1471,20 +1474,58 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <th className="py-2.5 px-4">Số điện thoại</th>
                       <th className="py-2.5 px-4">Email</th>
                       <th className="py-2.5 px-4">Vai trò</th>
-                      <th className="py-2.5 px-4">Đơn hoàn tất</th>
-                      <th className="py-2.5 px-4">Trạng thái KYC</th>
+                      <th className="py-2.5 px-4">Trạng thái tài khoản</th>
+                      <th className="py-2.5 px-4">Xác thực Email</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {backendUsers.length > 0 ? (
-                      backendUsers.map((user, i) => (
+                    {(() => {
+                      const userList = backendUsers.length > 0
+                        ? backendUsers.map(u => ({
+                            id: u.id,
+                            name: u.fullName || 'Thành viên SecondLife',
+                            phone: u.phone || '—',
+                            email: u.email,
+                            role: u.roles && u.roles.length > 0 ? u.roles.join(', ') : 'BUYER',
+                            accountStatus: u.accountStatus || 'ACTIVE',
+                            emailVerified: u.emailVerified
+                          }))
+                        : [
+                            { id: '1', name: 'Nguyễn Văn An', phone: '0912 345 678', email: 'an.nguyen@gmail.com', role: 'BUYER', accountStatus: 'ACTIVE', emailVerified: true },
+                            { id: '2', name: 'kt05 (Cửa hàng Gia Dụng Đức)', phone: '0988 765 432', email: 'kt05@gmail.com', role: 'SELLER', accountStatus: 'ACTIVE', emailVerified: true },
+                            { id: '3', name: 'Lê Hoàng Long', phone: '0903 112 233', email: 'long.lh@techcorp.vn', role: 'BUYER', accountStatus: 'ACTIVE', emailVerified: true },
+                            { id: '4', name: 'Phạm Hương Giang', phone: '0977 445 566', email: 'giang.pham@gmail.com', role: 'SELLER', accountStatus: 'ACTIVE', emailVerified: true },
+                            { id: '5', name: 'Vũ Đình Trọng', phone: '0936 889 900', email: 'trong.vd@gmail.com', role: 'BUYER', accountStatus: 'LOCKED', emailVerified: false }
+                          ];
+
+                      const filtered = userList.filter(user => {
+                        if (!userSearchTerm.trim()) return true;
+                        const term = userSearchTerm.toLowerCase();
+                        return (
+                          user.name.toLowerCase().includes(term) ||
+                          user.email.toLowerCase().includes(term) ||
+                          user.phone.toLowerCase().includes(term)
+                        );
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={6} className="py-8 text-center text-slate-400">
+                              Không tìm thấy khách hàng nào khớp với từ khóa "{userSearchTerm}".
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return filtered.map((user, i) => (
                         <tr key={user.id || i} className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 px-4 font-bold text-slate-900">{user.fullName || 'Thành viên SecondLife'}</td>
-                          <td className="py-3 px-4 font-mono text-slate-600">{user.phone || '—'}</td>
+                          <td className="py-3 px-4 font-bold text-slate-900">{user.name}</td>
+                          <td className="py-3 px-4 font-mono text-slate-600">{user.phone}</td>
                           <td className="py-3 px-4 text-slate-600">{user.email}</td>
                           <td className="py-3 px-4">
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
-                              {user.roles && user.roles.length > 0 ? user.roles.join(', ') : 'BUYER'}
+                              {user.role}
                             </span>
                           </td>
                           <td className="py-3 px-4 font-bold text-slate-800">
@@ -1506,33 +1547,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             </span>
                           </td>
                         </tr>
-                      ))
-                    ) : (
-                      [
-                        { name: 'Nguyễn Văn An', phone: '0912 345 678', email: 'an.nguyen@gmail.com', role: 'Người mua', orders: 12, kyc: 'Đã định danh CCCD' },
-                        { name: 'kt05 (Cửa hàng Gia Dụng Đức)', phone: '0988 765 432', email: 'kt05@gmail.com', role: 'Người bán Pro', orders: 48, kyc: 'Đã định danh CCCD' },
-                        { name: 'Lê Hoàng Long', phone: '0903 112 233', email: 'long.lh@techcorp.vn', role: 'Người mua', orders: 4, kyc: 'Đã định danh CCCD' },
-                        { name: 'Phạm Hương Giang', phone: '0977 445 566', email: 'giang.pham@gmail.com', role: 'Người bán', orders: 19, kyc: 'Đã định danh CCCD' },
-                        { name: 'Vũ Đình Trọng', phone: '0936 889 900', email: 'trong.vd@gmail.com', role: 'Người mua', orders: 7, kyc: 'Chờ duyệt ảnh thẻ' }
-                      ].map((user, i) => (
-                        <tr key={i} className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 px-4 font-bold text-slate-900">{user.name}</td>
-                          <td className="py-3 px-4 font-mono text-slate-600">{user.phone}</td>
-                          <td className="py-3 px-4 text-slate-600">{user.email}</td>
-                          <td className="py-3 px-4">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
-                              {user.role}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 font-bold text-slate-800">{user.orders} đơn</td>
-                          <td className="py-3 px-4">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              {user.kyc}
-                            </span>
-                          </td>
-                        </tr>
-                      ))
-                    )}
+                      ));
+                    })()}
                   </tbody>
                 </table>
               </div>

@@ -181,14 +181,13 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
       );
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err: any) {
-      soundFx.playChime();
-      setCountdown(60);
-      setSuccessMsg(
-        lang === 'vi'
-          ? `Đã gửi lại mã OTP 6 chữ số đến ${email}! (Mã mẫu: 123456)`
-          : `OTP code resent to ${email}!`
+      soundFx.playCancel();
+      setErrorMsg(
+        err?.message ||
+          (lang === 'vi'
+            ? 'Không thể gửi lại mã OTP. Vui lòng thử lại sau.'
+            : 'Failed to resend OTP code. Please try again.')
       );
-      setTimeout(() => setSuccessMsg(null), 4000);
     } finally {
       setIsLoading(false);
     }

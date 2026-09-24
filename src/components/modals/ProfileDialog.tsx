@@ -106,6 +106,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [showSellerRegistrationForm, setShowSellerRegistrationForm] = useState(false);
   const [sellerFormSuccess, setSellerFormSuccess] = useState<string | null>(null);
   const [sellerFormError, setSellerFormError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSubmittingSeller, setIsSubmittingSeller] = useState(false);
 
   // Sync state whenever currentUser or modal opens
   useEffect(() => {
@@ -128,9 +131,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     }
   }, [currentUser, isOpen]);
 
-  const handleRegisterSeller = (e: React.FormEvent) => {
+  const handleRegisterSeller = async (e: React.FormEvent) => {
     e.preventDefault();
     setSellerFormError(null);
+    setSellerFormSuccess(null);
 
     if (!shopName.trim()) {
       setSellerFormError('Vui lòng nhập tên gian hàng / cửa hàng.');
@@ -153,50 +157,67 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       return;
     }
 
-    const updated: UserProfile = {
-      ...currentUser,
-      role: 'seller',
-      isSellerRegistered: true,
-      shopName: shopName.trim(),
-      pickupAddress: pickupAddress.trim(),
-      phone: sellerPhone.trim(),
-      idCardNumber: idCardNumber.trim(),
-      bankAccount: {
-        bankName: sellerBankName.trim() || bankName,
-        accountNumber: sellerAccountNumber.trim() || accountNumber,
-        accountHolder: sellerAccountHolder.trim() || accountHolder,
-      },
-    };
+    setIsSubmittingSeller(true);
+    try {
+      // Call Backend POST /api/v1/seller-verifications
+      await sellerService.submitVerification({
+        verificationType: 'CITIZEN_ID',
+        documentNumber: idCardNumber.trim(),
+        documentFrontUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136',
+        documentBackUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136',
+        selfieUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136',
+      });
 
-    // Call Backend POST /api/v1/seller-verifications
-    sellerService.submitVerification({
-      verificationType: 'CITIZEN_ID',
-      documentNumber: idCardNumber.trim(),
-      documentFrontUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136',
-      documentBackUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136',
-      selfieUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136',
-    }).catch(() => {
-      // Backend may be offline or user already submitted
-    });
+      const updated: UserProfile = {
+        ...currentUser,
+        isSellerRegistered: true,
+        kycStatus: 'pending',
+        shopName: shopName.trim(),
+        pickupAddress: pickupAddress.trim(),
+        phone: sellerPhone.trim(),
+        idCardNumber: idCardNumber.trim(),
+        bankAccount: {
+          bankName: sellerBankName.trim() || bankName,
+          accountNumber: sellerAccountNumber.trim() || accountNumber,
+          accountHolder: sellerAccountHolder.trim() || accountHolder,
+        },
+      };
 
-    setIsSellerRegistered(true);
-    setShowSellerRegistrationForm(false);
-    onUpdateProfile(updated);
-    onRoleChange('seller');
-    setSellerFormSuccess('Đăng ký tài khoản Người Bán thành công! Vai trò đã chuyển sang Người Bán.');
-    setTimeout(() => setSellerFormSuccess(null), 4000);
+      setIsSellerRegistered(true);
+      setShowSellerRegistrationForm(false);
+      onUpdateProfile(updated);
+      setSellerFormSuccess(
+        lang === 'vi'
+          ? 'Hồ sơ định danh eKYC đã được gửi thành công! Hồ sơ đang ở trạng thái Chờ duyệt (Pending) bởi Quản trị viên. Quyền Người Bán sẽ được kích hoạt sau khi được phê duyệt.'
+          : 'eKYC verification submitted successfully! It is pending review by the Administrator.'
+      );
+      setTimeout(() => setSellerFormSuccess(null), 5000);
+    } catch (err: any) {
+      setSellerFormError(
+        err.message ||
+        (lang === 'vi'
+          ? 'Gửi hồ sơ định danh không thành công. Vui lòng kiểm tra lại thông tin.'
+          : 'Failed to submit eKYC verification. Please try again.')
+      );
+    } finally {
+      setIsSubmittingSeller(false);
+    }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaveError(null);
+    setIsSaving(true);
+
     const updated: UserProfile = {
       ...currentUser,
-      name,
+      name: name.trim(),
       email,
-      phone,
+      phone: phone.trim(),
       address,
       gender,
       birthday,
+      avatar: currentUser.avatar,
       bankAccount: {
         bankName,
         accountNumber,
@@ -204,17 +225,28 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       },
     };
 
-    // Call Backend PATCH /api/v1/me
-    userService.updateMyProfile({
-      fullName: name.trim(),
-      phone: phone.trim() || undefined,
-    }).catch(() => {
-      // Backend fallback
-    });
+    try {
+      // Call Backend PATCH /api/v1/me with schema fields (fullName, phone, avatarUrl)
+      await userService.updateMyProfile({
+        fullName: name.trim(),
+        phone: phone.trim() || undefined,
+        avatarUrl: currentUser.avatar || undefined,
+      });
 
-    onUpdateProfile(updated);
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 3000);
+      onUpdateProfile(updated);
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3000);
+    } catch (err: any) {
+      setSaveError(
+        err.message ||
+        (lang === 'vi'
+          ? 'Cập nhật thông tin thất bại. Vui lòng thử lại.'
+          : 'Failed to update profile. Please try again.')
+      );
+      setTimeout(() => setSaveError(null), 4000);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const getRoleBadge = (role: UserRole) => {
@@ -546,14 +578,21 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <span>{lang === 'vi' ? 'Đã lưu thông tin thành công!' : 'Profile saved successfully!'}</span>
                     </span>
                   )}
+                  {saveError && (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-600 animate-in fade-in">
+                      <AlertCircle className="w-4 h-4 text-rose-500" />
+                      <span>{saveError}</span>
+                    </span>
+                  )}
                 </div>
 
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white font-bold text-xs sm:text-sm shadow-md hover:opacity-95 transition flex items-center gap-2 cursor-pointer"
+                  disabled={isSaving}
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white font-bold text-xs sm:text-sm shadow-md hover:opacity-95 disabled:opacity-50 transition flex items-center gap-2 cursor-pointer"
                 >
                   <Save className="w-4 h-4" />
-                  <span>{lang === 'vi' ? 'Lưu Thay Đổi' : 'Save Changes'}</span>
+                  <span>{isSaving ? (lang === 'vi' ? 'Đang lưu...' : 'Saving...') : (lang === 'vi' ? 'Lưu Thay Đổi' : 'Save Changes')}</span>
                 </button>
               </div>
             </form>
@@ -777,8 +816,18 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <span className="text-xs font-bold text-slate-900">
                         {lang === 'vi' ? 'Hồ Sơ Gian Hàng Người Bán Của Bạn' : 'Your Seller Store Profile'}
                       </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">
-                        {lang === 'vi' ? 'Đã Kích Hoạt' : 'Active'}
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        currentUser.kycStatus === 'pending'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                          : currentUser.role === 'seller' || currentUser.kycStatus === 'verified'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-slate-200 text-slate-700'
+                      }`}>
+                        {currentUser.kycStatus === 'pending'
+                          ? (lang === 'vi' ? 'Đang Chờ Quản Trị Viên Duyệt' : 'Pending Review')
+                          : (currentUser.role === 'seller' || currentUser.kycStatus === 'verified')
+                          ? (lang === 'vi' ? 'Đã Kích Hoạt' : 'Active')
+                          : (lang === 'vi' ? 'Chưa Định Danh' : 'Unverified')}
                       </span>
                     </div>
                     <div className="flex items-center gap-3">
@@ -1044,13 +1093,16 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     )}
                     <button
                       type="submit"
-                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-95 text-white text-xs font-bold shadow-sm transition flex items-center gap-2 cursor-pointer"
+                      disabled={isSubmittingSeller}
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-95 disabled:opacity-50 text-white text-xs font-bold shadow-sm transition flex items-center gap-2 cursor-pointer"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       <span>
-                        {isSellerRegistered
+                        {isSubmittingSeller
+                          ? (lang === 'vi' ? 'Đang Gửi Hồ Sơ...' : 'Submitting...')
+                          : isSellerRegistered
                           ? (lang === 'vi' ? 'Cập Nhật Hồ Sơ Gian Hàng' : 'Update Store Profile')
-                          : (lang === 'vi' ? 'Xác Nhận Đăng Ký & Kích Hoạt Người Bán' : 'Confirm Registration & Activate Seller')}
+                          : (lang === 'vi' ? 'Xác Nhận Đăng Ký & Gửi Duyệt eKYC' : 'Confirm Registration & Submit eKYC')}
                       </span>
                     </button>
                   </div>

@@ -121,7 +121,7 @@ export const adminService = {
 
   async rejectSellerVerification(
     id: string,
-    data: { rejectionReason: string }
+    data: { rejectionReason: string; reasonCode?: string; allowResubmission?: boolean }
   ): Promise<SellerVerificationResponseDto> {
     const res = await request<SellerVerificationResponseDto>(`/admin/seller-verifications/${id}/reject`, {
       method: 'POST',
@@ -134,8 +134,12 @@ export const adminService = {
   async createInspectionCenterAccount(data: {
     email: string;
     password: string;
-    fullName: string;
+    fullName?: string;
+    hubCenterName?: string;
+    inspectionCenterName?: string;
     phone?: string;
+    city?: string;
+    address?: string;
   }): Promise<any> {
     const res = await request<any>('/admin/inspection-center-accounts', {
       method: 'POST',

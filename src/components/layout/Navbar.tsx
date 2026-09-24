@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Sun, Moon, Phone } from 'lucide-react';
+import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Sun, Moon, Phone, Coins } from 'lucide-react';
 import { UserRole, Language, ThemeMode } from '../../types';
 import { translations } from '../../utils/translations';
 
@@ -18,6 +18,8 @@ interface NavbarProps {
   onOpenAuth: (mode: 'login' | 'register') => void;
   onLogout: () => void;
   onOpenProfile?: () => void;
+  onOpenTopUp?: () => void;
+  userCreditBalance?: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -34,7 +36,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentUser,
   onOpenAuth,
   onLogout,
-  onOpenProfile
+  onOpenProfile,
+  onOpenTopUp,
+  userCreditBalance = 100
 }) => {
   const t = translations[lang];
 
@@ -55,7 +59,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </span>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-3">
           {/* Customer Hotline & Support */}
           <div className="hidden sm:flex items-center gap-2 text-slate-300 px-2 py-0.5 text-[11px]">
             <a
@@ -235,6 +239,19 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Action buttons & Profile */}
         <div className="flex items-center gap-2">
+          {/* TopUp Coins Badge Button */}
+          {currentUser && (
+            <button
+              onClick={onOpenTopUp}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-emerald-500/10 hover:from-amber-500/30 hover:to-emerald-500/20 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-md shadow-amber-500/5 hover:scale-105"
+              title="Click để nạp Xu SecondLife"
+            >
+              <Coins className="w-4 h-4 text-amber-400" />
+              <span>{userCreditBalance.toLocaleString('vi-VN')} Xu</span>
+              <span className="text-[10px] px-1 py-0.2 bg-amber-400 text-slate-950 rounded font-black leading-none ml-0.5">+</span>
+            </button>
+          )}
+
           <button
             onClick={() => onTabChange('chat')}
             className={`p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 relative transition cursor-pointer ${

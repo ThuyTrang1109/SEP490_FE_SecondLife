@@ -67,6 +67,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       .catch(() => {
         // Ignored if not verified yet
       });
+
+    // Fetch backend categories & public posts
+    import('../services').then(({ categoryService, postService }) => {
+      categoryService.getCategories().catch(() => []);
+      postService.getPublicPosts().catch(() => []);
+    });
   }, []);
 
   const handleFileUpload = async (file: File, type: 'front' | 'back' | 'selfie') => {

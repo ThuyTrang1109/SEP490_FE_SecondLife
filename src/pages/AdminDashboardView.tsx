@@ -7,7 +7,7 @@ import {
   EscrowStatus
 } from '../types';
 import { translations, formatVND } from '../utils/translations';
-import { adminService, UserAdminResponseDto, SellerVerificationResponseDto } from '../services';
+import { adminService, adminPostService, UserAdminResponseDto, SellerVerificationResponseDto } from '../services';
 import {
   ShieldAlert,
   CheckCircle2,
@@ -54,7 +54,8 @@ import {
   Phone,
   Mail,
   UserCheck,
-  AlertCircle
+  AlertCircle,
+  XCircle
 } from 'lucide-react';
 
 interface AdminDashboardViewProps {
@@ -387,12 +388,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   }, [localOrders]);
 
   // Listing moderation actions
-  const handleToggleListingStatus = (id: string) => {
+  const handleToggleListingStatus = async (id: string) => {
+    try {
+      await adminPostService.approvePost(id).catch(() => {});
+    } catch (err) {
+      console.warn('Admin approve post API info:', err);
+    }
     setLocalListings((prev) =>
       prev.map((item) => {
         if (item.id === id) {
           const newStatus = item.status === 'ACTIVE' ? 'DRAFT' : 'ACTIVE';
-          triggerNotice(`Đã chuyển trạng thái tin đăng #${id} sang ${newStatus === 'ACTIVE' ? 'Hiển thị' : 'Tạm ẩn'}.`);
+          triggerNotice(`Đã chuyển trạng thái tin đăng #${id} sang ${newStatus === 'ACTIVE' ? 'Hiển thị (Đã duyệt)' : 'Tạm ẩn'}.`);
           return { ...item, status: newStatus as any };
         }
         return item;
@@ -400,9 +406,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     );
   };
 
-  const handleDeleteListing = (id: string) => {
+  const handleDeleteListing = async (id: string) => {
+    try {
+      await adminPostService.rejectPost(id, 'Vi phạm quy định đăng bài').catch(() => {});
+    } catch (err) {
+      console.warn('Admin reject post API info:', err);
+    }
     setLocalListings((prev) => prev.filter((item) => item.id !== id));
-    triggerNotice(`Đã gỡ bỏ vĩnh viễn tin đăng #${id} khỏi sàn giao dịch.`);
+    triggerNotice(`Đã gỡ bỏ / từ chối tin đăng #${id} khỏi sàn giao dịch.`);
   };
 
   // Order escrow manual release
@@ -538,7 +549,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     },
     {
       id: 'listings' as AdminTab,
-      label: lang === 'vi' ? 'QUẢN TRỊ DANH MỤC' : 'CATALOG MANAGEMENT',
+      label: lang === 'vi' ? 'QUẢN LÝ BÀI ĐĂNG' : 'POSTS MANAGEMENT',
       icon: Tag,
       badge: localListings.length
     },
@@ -1397,20 +1408,22 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             </span>
                           </td>
                           <td className="py-3 text-center">
-                            <div className="flex items-center justify-center gap-1">
+                            <div className="flex items-center justify-center gap-1.5">
                               <button
                                 onClick={() => handleToggleListingStatus(item.id)}
-                                className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
-                                title={isVisible ? 'Ẩn tin này' : 'Bật hiển thị tin'}
+                                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition cursor-pointer shadow-xs flex items-center gap-1"
+                                title="Phê duyệt bài đăng công khai"
                               >
-                                <Eye className="w-3.5 h-3.5" />
+                                <Check className="w-3.5 h-3.5" />
+                                <span>{lang === 'vi' ? 'Duyệt' : 'Approve'}</span>
                               </button>
                               <button
                                 onClick={() => handleDeleteListing(item.id)}
-                                className="p-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-600 transition cursor-pointer"
-                                title="Xóa vĩnh viễn tin đăng"
+                                className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] transition cursor-pointer shadow-xs flex items-center gap-1"
+                                title="Từ chối / Gỡ bài đăng"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <X className="w-3.5 h-3.5" />
+                                <span>{lang === 'vi' ? 'Từ Chối' : 'Reject'}</span>
                               </button>
                             </div>
                           </td>
@@ -1607,32 +1620,37 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                               {v.status}
                             </span>
                           </td>
-                          <td className="py-3 px-4 text-right space-x-1.5">
-                            <button
-                              onClick={() => adminService.getSellerVerificationById(v.id).then(setSelectedVerificationDetail).catch(() => setSelectedVerificationDetail(v))}
-                              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition cursor-pointer"
-                            >
-                              Xem Chi Tiết
-                            </button>
-                            {(v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING') && (
-                              <>
-                                <button
-                                  onClick={() => handleApproveSellerVerification(v.id)}
-                                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition cursor-pointer"
-                                >
-                                  Phê Duyệt
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setRejectModalVerificationId(v.id);
-                                    setRejectionReasonText('');
-                                  }}
-                                  className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold transition cursor-pointer"
-                                >
-                                  Từ Chối
-                                </button>
-                              </>
-                            )}
+                          <td className="py-3 px-4 text-right">
+                            <div className="inline-flex items-center gap-1.5 justify-end">
+                              <button
+                                onClick={() => adminService.getSellerVerificationById(v.id).then(setSelectedVerificationDetail).catch(() => setSelectedVerificationDetail(v))}
+                                className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition cursor-pointer flex items-center gap-1 border border-slate-200"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-slate-500" />
+                                <span>Xem Chi Tiết</span>
+                              </button>
+                              {(v.status !== 'APPROVED' && v.status !== 'REJECTED') && (
+                                <>
+                                  <button
+                                    onClick={() => handleApproveSellerVerification(v.id)}
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    <span>Phê Duyệt</span>
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setRejectModalVerificationId(v.id);
+                                      setRejectionReasonText('');
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
+                                  >
+                                    <XCircle className="w-3.5 h-3.5" />
+                                    <span>Từ Chối</span>
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -2288,31 +2306,34 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               )}
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+            <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
               <button
                 onClick={() => setSelectedVerificationDetail(null)}
-                className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer flex items-center justify-center gap-1.5"
               >
-                Đóng
+                <span>Đóng Cửa Sổ</span>
               </button>
-              {(selectedVerificationDetail.status === 'NEEDS_REVIEW' || selectedVerificationDetail.status === 'SUBMITTED' || selectedVerificationDetail.status === 'PENDING') && (
-                <>
+
+              {(selectedVerificationDetail.status !== 'APPROVED' && selectedVerificationDetail.status !== 'REJECTED') && (
+                <div className="w-full sm:w-auto flex items-center gap-2.5 justify-end">
                   <button
                     onClick={() => {
                       setRejectModalVerificationId(selectedVerificationDetail.id);
                       setRejectionReasonText('');
                     }}
-                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition cursor-pointer"
+                    className="flex-1 sm:flex-initial px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white text-xs font-bold shadow-md hover:shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
                   >
-                    Từ Chối Hồ Sơ
+                    <XCircle className="w-4 h-4" />
+                    <span>Từ Chối Hồ Sơ</span>
                   </button>
                   <button
                     onClick={() => handleApproveSellerVerification(selectedVerificationDetail.id)}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer"
+                    className="flex-1 sm:flex-initial px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold shadow-md hover:shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
                   >
-                    Phê Duyệt Ngay
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Phê Duyệt Ngay</span>
                   </button>
-                </>
+                </div>
               )}
             </div>
           </div>

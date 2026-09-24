@@ -158,7 +158,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Login Field Errors
   const getLoginEmailError = () => {
     if (!emailOrPhone.trim()) return lang === 'vi' ? 'Vui lòng nhập địa chỉ Email.' : 'Please enter your email address.';
-    if (!isValidEmail(emailOrPhone)) return lang === 'vi' ? 'Email không đúng định dạng (VD: user@secondlife.vn).' : 'Invalid email format (e.g. user@secondlife.vn).';
+    if (!isValidEmail(emailOrPhone.trim())) return lang === 'vi' ? 'Email không đúng định dạng (Ví dụ: user@secondlife.vn).' : 'Invalid email format (e.g. user@secondlife.vn).';
     return null;
   };
 
@@ -453,8 +453,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       );
     } catch (err: any) {
       soundFx.playCancel();
-      setErrorMsg(err.message || (lang === 'vi' ? 'Đăng ký không thành công. Email có thể đã được sử dụng.' : 'Registration failed. Email may already be in use.'));
-      return;
+      setErrorMsg(err.message || (lang === 'vi' ? 'Đăng ký không thành công. Email có thể đã được đăng ký trước đó.' : 'Registration failed. Email may already be registered.'));
     } finally {
       setIsLoading(false);
     }
@@ -830,7 +829,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       value={emailOrPhone}
                       onChange={(e) => setEmailOrPhone(e.target.value)}
                       onBlur={() => markTouched('emailOrPhone')}
-                      placeholder="khang.buyer@secondlife.vn"
+                      placeholder="user@secondlife.vn"
                       className={`w-full pl-10 pr-3 py-2.5 rounded-xl border text-xs sm:text-sm font-medium transition ${
                         (touched.emailOrPhone || submitted) && getLoginEmailError()
                           ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'

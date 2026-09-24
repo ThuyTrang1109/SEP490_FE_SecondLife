@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
   PlusCircle,
@@ -9,10 +9,16 @@ import {
   Eye,
   Edit3,
   Star,
-  TrendingUp
+  TrendingUp,
+  AlertCircle,
+  Upload,
+  RefreshCw,
+  X
 } from 'lucide-react';
 import { Listing, Language } from '../types';
 import { formatVND } from '../utils/translations';
+import { sellerService, SellerVerificationResponseDto } from '../services/sellerService';
+import { mediaService } from '../services/mediaService';
 
 interface SellerDashboardViewProps {
   listings: Listing[];
@@ -37,6 +43,67 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [payoutAmount, setPayoutAmount] = useState<number>(42800000);
   const [payoutSuccessMsg, setPayoutSuccessMsg] = useState<string | null>(null);
 
+  // Seller Verification State
+  const [myVerification, setMyVerification] = useState<SellerVerificationResponseDto | null>(null);
+  const [isResubmitModalOpen, setIsResubmitModalOpen] = useState(false);
+  const [resubmitFrontUrl, setResubmitFrontUrl] = useState('');
+  const [resubmitBackUrl, setResubmitBackUrl] = useState('');
+  const [resubmitSelfieUrl, setResubmitSelfieUrl] = useState('');
+  const [resubmitDocNum, setResubmitDocNum] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [resubmitMsg, setResubmitMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    sellerService.getMyVerification()
+      .then((ver) => {
+        if (ver) {
+          setMyVerification(ver);
+          setResubmitDocNum(ver.documentNumber || '');
+          setResubmitFrontUrl(ver.documentFrontUrl || '');
+          setResubmitBackUrl(ver.documentBackUrl || '');
+          setResubmitSelfieUrl(ver.selfieUrl || '');
+        }
+      })
+      .catch(() => {
+        // Ignored if not verified yet
+      });
+  }, []);
+
+  const handleFileUpload = async (file: File, type: 'front' | 'back' | 'selfie') => {
+    try {
+      setIsUploading(true);
+      const res = await mediaService.uploadImage(file, 'ekyc-resubmit');
+      if (type === 'front') setResubmitFrontUrl(res.url);
+      else if (type === 'back') setResubmitBackUrl(res.url);
+      else setResubmitSelfieUrl(res.url);
+    } catch (err: any) {
+      alert('Tải ảnh thất bại: ' + (err.message || 'Lỗi hệ thống'));
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleResubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!myVerification?.id) return;
+    try {
+      setIsUploading(true);
+      const updated = await sellerService.resubmitVerification(myVerification.id, {
+        documentNumber: resubmitDocNum,
+        documentFrontUrl: resubmitFrontUrl,
+        documentBackUrl: resubmitBackUrl,
+        selfieUrl: resubmitSelfieUrl,
+      });
+      setMyVerification(updated);
+      setResubmitMsg('Đã nộp lại hồ sơ eKYC thành công. Quản trị viên sẽ xem xét duyệt lại hồ sơ của bạn.');
+      setIsResubmitModalOpen(false);
+    } catch (err: any) {
+      setResubmitMsg('Nộp lại thất bại: ' + (err.message || 'Đã có lỗi xảy ra'));
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const sellerListings = listings.filter(l => l.sellerId === 'user-tuan-hcm' || true);
   const filteredListings = sellerListings.filter(l => filterStatus === 'ALL' || l.status === filterStatus);
 
@@ -55,6 +122,56 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   return (
     <div className="space-y-8 pb-16 text-[#0E121B]">
+      {/* eKYC Verification Status Banner */}
+      {myVerification && (
+        <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs ${
+          myVerification.status === 'APPROVED' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' :
+          myVerification.status === 'REJECTED' || myVerification.status === 'RESUBMIT_REQUIRED' ? 'bg-rose-50 border-rose-200 text-rose-900' :
+          'bg-amber-50 border-amber-200 text-amber-900'
+        }`}>
+          <div className="flex items-center gap-3">
+            {myVerification.status === 'APPROVED' ? (
+              <ShieldCheck className="w-6 h-6 text-emerald-600 shrink-0" />
+            ) : myVerification.status === 'REJECTED' || myVerification.status === 'RESUBMIT_REQUIRED' ? (
+              <AlertCircle className="w-6 h-6 text-rose-600 shrink-0" />
+            ) : (
+              <Clock className="w-6 h-6 text-amber-600 shrink-0" />
+            )}
+            <div>
+              <div className="font-bold text-sm">
+                {myVerification.status === 'APPROVED' && 'Tài khoản người bán đã được xác minh eKYC!'}
+                {(myVerification.status === 'PENDING' || myVerification.status === 'NEEDS_REVIEW') && 'Hồ sơ xác minh eKYC đang được xem xét (Pending Review)'}
+                {(myVerification.status === 'REJECTED' || myVerification.status === 'RESUBMIT_REQUIRED') && 'Hồ sơ xác minh eKYC bị từ chối / Cần bổ sung'}
+              </div>
+              <p className="mt-0.5">
+                {myVerification.status === 'APPROVED' && 'Tất cả các tin đăng của bạn sẽ hiển thị huy hiệu Người Bán Uy Tín & Đã Kiểm Định.'}
+                {(myVerification.status === 'PENDING' || myVerification.status === 'NEEDS_REVIEW') && 'Đã nhận hồ sơ CCCD ' + myVerification.documentNumber + '. Ban quản trị đang rà soát điểm rủi ro & ảnh đối chiếu.'}
+                {(myVerification.status === 'REJECTED' || myVerification.status === 'RESUBMIT_REQUIRED') && (
+                  <span>Lý do từ chối: <strong>{myVerification.rejectionReason || 'Giấy tờ mờ hoặc không trùng khớp với thông tin cá nhân.'}</strong></span>
+                )}
+              </p>
+            </div>
+          </div>
+
+          {(myVerification.status === 'REJECTED' || myVerification.status === 'RESUBMIT_REQUIRED') && (
+            <button
+              onClick={() => setIsResubmitModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition cursor-pointer shrink-0 flex items-center gap-1.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Nộp Lại Hồ Sơ eKYC</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {resubmitMsg && (
+        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-between">
+          <span>{resubmitMsg}</span>
+          <button onClick={() => setResubmitMsg(null)} className="text-emerald-600 hover:text-emerald-800">✕</button>
+        </div>
+      )}
+
       {/* Top Banner */}
       <div className="bg-[#0E121B] text-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-white/10 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -361,6 +478,160 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 {lang === 'vi' ? 'Xác Nhận Rút Tiền Ngay' : 'Confirm Instant Withdrawal'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: RESUBMIT eKYC VERIFICATION                         */}
+      {/* ======================================================== */}
+      {isResubmitModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200 my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-5 h-5 text-rose-600" />
+                <h3 className="font-bold text-sm text-slate-900">
+                  Nộp Lại Hồ Sơ Xác Minh Định Danh (eKYC)
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsResubmitModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleResubmit} className="space-y-4 text-xs">
+              {myVerification?.rejectionReason && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800">
+                  <strong className="block font-bold">Lý do từ chối trước đó:</strong>
+                  <p className="mt-0.5">{myVerification.rejectionReason}</p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Số Căn Cước Công Dân (CCCD):</label>
+                <input
+                  type="text"
+                  required
+                  value={resubmitDocNum}
+                  onChange={(e) => setResubmitDocNum(e.target.value)}
+                  placeholder="Nhập 12 số CCCD"
+                  className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-rose-600 font-mono"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Front Image Upload */}
+                <div className="space-y-1.5">
+                  <label className="block text-slate-700 font-bold text-[11px]">Ảnh CCCD Mặt Trước *</label>
+                  <div className="relative border-2 border-dashed border-slate-200 rounded-xl p-3 text-center bg-slate-50 hover:bg-slate-100 transition">
+                    {resubmitFrontUrl ? (
+                      <div className="relative group">
+                        <img src={resubmitFrontUrl} alt="CCCD Mặt trước" className="h-28 w-full object-cover rounded-lg" />
+                        <button
+                          type="button"
+                          onClick={() => setResubmitFrontUrl('')}
+                          className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 hover:bg-black"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="cursor-pointer block py-3 space-y-1">
+                        <Upload className="w-6 h-6 text-slate-400 mx-auto" />
+                        <span className="text-[11px] text-slate-500 font-medium block">Tải ảnh mặt trước</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'front')}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                {/* Back Image Upload */}
+                <div className="space-y-1.5">
+                  <label className="block text-slate-700 font-bold text-[11px]">Ảnh CCCD Mặt Sau *</label>
+                  <div className="relative border-2 border-dashed border-slate-200 rounded-xl p-3 text-center bg-slate-50 hover:bg-slate-100 transition">
+                    {resubmitBackUrl ? (
+                      <div className="relative group">
+                        <img src={resubmitBackUrl} alt="CCCD Mặt sau" className="h-28 w-full object-cover rounded-lg" />
+                        <button
+                          type="button"
+                          onClick={() => setResubmitBackUrl('')}
+                          className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 hover:bg-black"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="cursor-pointer block py-3 space-y-1">
+                        <Upload className="w-6 h-6 text-slate-400 mx-auto" />
+                        <span className="text-[11px] text-slate-500 font-medium block">Tải ảnh mặt sau</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'back')}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Selfie Image Upload */}
+              <div className="space-y-1.5">
+                <label className="block text-slate-700 font-bold text-[11px]">Ảnh Chân Dung Selfie (Tùy chọn)</label>
+                <div className="relative border-2 border-dashed border-slate-200 rounded-xl p-3 text-center bg-slate-50 hover:bg-slate-100 transition">
+                  {resubmitSelfieUrl ? (
+                    <div className="relative group">
+                      <img src={resubmitSelfieUrl} alt="Selfie" className="h-28 w-32 object-cover rounded-lg mx-auto" />
+                      <button
+                        type="button"
+                        onClick={() => setResubmitSelfieUrl('')}
+                        className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 hover:bg-black"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="cursor-pointer block py-2 space-y-1">
+                      <Upload className="w-5 h-5 text-slate-400 mx-auto" />
+                      <span className="text-[11px] text-slate-500 font-medium block">Tải ảnh chân dung khuôn mặt</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'selfie')}
+                      />
+                    </label>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsResubmitModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                >
+                  Hủy Bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUploading || !resubmitDocNum || !resubmitFrontUrl || !resubmitBackUrl}
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 disabled:opacity-50 text-white font-bold text-xs shadow-md transition cursor-pointer"
+                >
+                  {isUploading ? 'Đang Tải / Đang Xử Lý...' : 'Cập Nhật & Nộp Lại'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

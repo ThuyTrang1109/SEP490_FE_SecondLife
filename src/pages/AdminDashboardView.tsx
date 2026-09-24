@@ -53,7 +53,8 @@ import {
   Calendar,
   Phone,
   Mail,
-  UserCheck
+  UserCheck,
+  AlertCircle
 } from 'lucide-react';
 
 interface AdminDashboardViewProps {
@@ -73,6 +74,7 @@ type AdminTab =
   | 'hubs'
   | 'ai-settings'
   | 'customers'
+  | 'seller-kyc'
   | 'permissions';
 
 interface BookingAppointment {
@@ -160,6 +162,23 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       .catch(() => {});
   }, []);
 
+  // Seller Verification Review Modal states
+  const [selectedVerificationDetail, setSelectedVerificationDetail] = useState<any | null>(null);
+  const [rejectModalVerificationId, setRejectModalVerificationId] = useState<string | null>(null);
+  const [rejectionReasonCode, setRejectionReasonCode] = useState<string>('IMAGE_TOO_BLURRY');
+  const [rejectionReasonText, setRejectionReasonText] = useState<string>('');
+
+  // Inspection center creation modal state
+  const [showAddHubModal, setShowAddHubModal] = useState<boolean>(false);
+  const [newHubData, setNewHubData] = useState({
+    hubCenterName: '',
+    email: '',
+    password: '',
+    phone: '',
+    city: 'TP. Hồ Chí Minh',
+    address: '',
+  });
+
   // Modal dialog states
   const [selectedOrderModal, setSelectedOrderModal] = useState<EscrowOrder | null>(null);
   const [selectedBookingModal, setSelectedBookingModal] = useState<BookingAppointment | null>(null);
@@ -179,6 +198,79 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const triggerNotice = (msg: string) => {
     setActionNotice(msg);
     setTimeout(() => setActionNotice(null), 4000);
+  };
+
+  const handleApproveSellerVerification = async (id: string) => {
+    try {
+      await adminService.approveSellerVerification(id);
+      triggerNotice('Đã phê duyệt hồ sơ người bán thành công! Vai trò SELLER đã được gán.');
+      const res = await adminService.getSellerVerifications({ page: 0, size: 20 });
+      if (res?.items) setBackendVerifications(res.items);
+      if (selectedVerificationDetail?.id === id) setSelectedVerificationDetail(null);
+    } catch (err: any) {
+      alert(err.message || 'Phê duyệt hồ sơ thất bại');
+    }
+  };
+
+  const handleRejectSellerVerification = async () => {
+    if (!rejectModalVerificationId) return;
+    try {
+      await adminService.rejectSellerVerification(rejectModalVerificationId, {
+        reasonCode: rejectionReasonCode,
+        rejectionReason: rejectionReasonText || 'Hồ sơ chưa đạt yêu cầu kiểm định identity.',
+        allowResubmission: true
+      });
+      triggerNotice('Đã từ chối hồ sơ xác thực người bán.');
+      setRejectModalVerificationId(null);
+      setRejectionReasonText('');
+      const res = await adminService.getSellerVerifications({ page: 0, size: 20 });
+      if (res?.items) setBackendVerifications(res.items);
+      if (selectedVerificationDetail?.id === rejectModalVerificationId) setSelectedVerificationDetail(null);
+    } catch (err: any) {
+      alert(err.message || 'Từ chối hồ sơ thất bại');
+    }
+  };
+
+  const handleToggleUserStatus = async (userId: string, currentStatus: string) => {
+    const nextStatus = currentStatus === 'ACTIVE' ? 'LOCKED' : 'ACTIVE';
+    try {
+      await adminService.updateUserStatus(userId, {
+        status: nextStatus as any,
+        reason: 'Thay đổi trạng thái bởi Admin'
+      });
+      triggerNotice(`Đã chuyển trạng thái tài khoản thành ${nextStatus}.`);
+      const res = await adminService.getAdminUsers({ page: 0, size: 20 });
+      if (res?.items) setBackendUsers(res.items);
+    } catch (err: any) {
+      alert(err.message || 'Cập nhật trạng thái người dùng thất bại');
+    }
+  };
+
+  const handleCreateHubAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await adminService.createInspectionCenterAccount({
+        fullName: newHubData.hubCenterName.trim(),
+        email: newHubData.email.trim(),
+        password: newHubData.password,
+        phone: newHubData.phone.trim() || undefined,
+        hubCenterName: newHubData.hubCenterName.trim() || undefined,
+        city: newHubData.city,
+        address: newHubData.address
+      });
+      triggerNotice('Tạo tài khoản Trạm Kiểm Định Hub thành công!');
+      setShowAddHubModal(false);
+      setNewHubData({
+        hubCenterName: '',
+        email: '',
+        password: '',
+        phone: '',
+        city: 'TP. Hồ Chí Minh',
+        address: '',
+      });
+    } catch (err: any) {
+      alert(err.message || 'Tạo tài khoản Trạm Hub thất bại');
+    }
   };
 
   // Mock Bookings Data (Khách hàng đặt lịch)
@@ -465,10 +557,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       badgeColor: 'bg-[#EC1577]'
     },
     {
+      id: 'seller-kyc' as AdminTab,
+      label: lang === 'vi' ? 'DUYỆT eKYC NGƯỜI BÁN' : 'SELLER KYC REVIEW',
+      icon: ShieldCheck,
+      badge: backendVerifications.length || null,
+      badgeColor: 'bg-rose-600'
+    },
+    {
       id: 'customers' as AdminTab,
       label: lang === 'vi' ? 'QUẢN LÝ KHÁCH HÀNG' : 'CUSTOMERS',
       icon: Users,
-      badge: 44
+      badge: backendUsers.length || 44
     },
     {
       id: 'hubs' as AdminTab,
@@ -1441,6 +1540,116 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           )}
 
           {/* ======================================================== */}
+          {/* TAB: SELLER-KYC (DUYỆT HỒ SƠ ĐỊNH DANH NGƯỜI BÁN)        */}
+          {/* ======================================================== */}
+          {activeTab === 'seller-kyc' && (
+            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-rose-600 p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 uppercase flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-rose-600" />
+                    <span>Duyệt Hồ Sơ Định Danh Người Bán (Seller eKYC & Risk Verification)</span>
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Phê duyệt hồ sơ xác minh danh tính người bán, kiểm tra kết quả eKYC & điểm đánh giá rủi ro (Risk Engine)
+                  </p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
+                      <th className="py-2.5 px-4">Tài khoản Người bán</th>
+                      <th className="py-2.5 px-4">Loại giấy tờ & Số CCCD</th>
+                      <th className="py-2.5 px-4">eKYC Status</th>
+                      <th className="py-2.5 px-4">Risk Status</th>
+                      <th className="py-2.5 px-4">Trạng thái Hồ sơ</th>
+                      <th className="py-2.5 px-4 text-right">Thao tác Quản trị</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {backendVerifications.length > 0 ? (
+                      backendVerifications.map((v) => (
+                        <tr key={v.id} className="hover:bg-slate-50/70 transition">
+                          <td className="py-3 px-4 font-bold text-slate-900">
+                            <div>{v.userFullName || v.userEmail || 'Người bán SecondLife'}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">{v.userId}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-mono font-bold text-slate-800">{v.documentNumber}</span>
+                            <span className="text-[10px] text-slate-400 block">{v.verificationType}</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              v.ekycStatus === 'PASSED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                              v.ekycStatus === 'FAILED' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                              'bg-amber-50 text-amber-700 border border-amber-200'
+                            }`}>
+                              {v.ekycStatus || 'NOT_STARTED'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              v.riskStatus === 'CLEAR' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                              v.riskStatus === 'BLOCK' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                              'bg-purple-50 text-purple-700 border border-purple-200'
+                            }`}>
+                              {v.riskStatus || 'NOT_EVALUATED'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                              v.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                              v.status === 'REJECTED' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
+                              'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse'
+                            }`}>
+                              {v.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right space-x-1.5">
+                            <button
+                              onClick={() => adminService.getSellerVerificationById(v.id).then(setSelectedVerificationDetail).catch(() => setSelectedVerificationDetail(v))}
+                              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition cursor-pointer"
+                            >
+                              Xem Chi Tiết
+                            </button>
+                            {(v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING') && (
+                              <>
+                                <button
+                                  onClick={() => handleApproveSellerVerification(v.id)}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition cursor-pointer"
+                                >
+                                  Phê Duyệt
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setRejectModalVerificationId(v.id);
+                                    setRejectionReasonText('');
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold transition cursor-pointer"
+                                >
+                                  Từ Chối
+                                </button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-slate-400 text-xs font-medium">
+                          Chưa có hồ sơ xác thực người bán nào trong hệ thống
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================== */}
           {/* TAB: CUSTOMERS (QUẢN LÝ KHÁCH HÀNG & NGƯỜI DÙNG)        */}
           {/* ======================================================== */}
           {activeTab === 'customers' && (
@@ -1448,7 +1657,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 uppercase">
-                    Danh Sách Khách Hàng & Tài Khoản Hoạt Động (44 Thành Viên)
+                    Danh Sách Khách Hàng & Tài Khoản Hoạt Động ({backendUsers.length || 44} Thành Viên)
                   </h3>
                   <p className="text-xs text-slate-500">
                     Quản lý danh tính người mua, người bán đã xác thực căn cước & bảo chứng tài chính
@@ -1474,52 +1683,68 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <th className="py-2.5 px-4">Số điện thoại</th>
                       <th className="py-2.5 px-4">Email</th>
                       <th className="py-2.5 px-4">Vai trò</th>
-                      <th className="py-2.5 px-4">Trạng thái tài khoản</th>
-                      <th className="py-2.5 px-4">Xác thực Email</th>
+                      <th className="py-2.5 px-4">Trạng thái Tài khoản</th>
+                      <th className="py-2.5 px-4">Xác thực Email OTP</th>
+                      <th className="py-2.5 px-4 text-right">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {(() => {
-                      const userList = backendUsers.length > 0
-                        ? backendUsers.map(u => ({
-                            id: u.id,
-                            name: u.fullName || 'Thành viên SecondLife',
-                            phone: u.phone || '—',
-                            email: u.email,
-                            role: u.roles && u.roles.length > 0 ? u.roles.join(', ') : 'BUYER',
-                            accountStatus: u.accountStatus || 'ACTIVE',
-                            emailVerified: u.emailVerified
-                          }))
-                        : [
-                            { id: '1', name: 'Nguyễn Văn An', phone: '0912 345 678', email: 'an.nguyen@gmail.com', role: 'BUYER', accountStatus: 'ACTIVE', emailVerified: true },
-                            { id: '2', name: 'kt05 (Cửa hàng Gia Dụng Đức)', phone: '0988 765 432', email: 'kt05@gmail.com', role: 'SELLER', accountStatus: 'ACTIVE', emailVerified: true },
-                            { id: '3', name: 'Lê Hoàng Long', phone: '0903 112 233', email: 'long.lh@techcorp.vn', role: 'BUYER', accountStatus: 'ACTIVE', emailVerified: true },
-                            { id: '4', name: 'Phạm Hương Giang', phone: '0977 445 566', email: 'giang.pham@gmail.com', role: 'SELLER', accountStatus: 'ACTIVE', emailVerified: true },
-                            { id: '5', name: 'Vũ Đình Trọng', phone: '0936 889 900', email: 'trong.vd@gmail.com', role: 'BUYER', accountStatus: 'LOCKED', emailVerified: false }
-                          ];
-
-                      const filtered = userList.filter(user => {
-                        if (!userSearchTerm.trim()) return true;
-                        const term = userSearchTerm.toLowerCase();
-                        return (
-                          user.name.toLowerCase().includes(term) ||
-                          user.email.toLowerCase().includes(term) ||
-                          user.phone.toLowerCase().includes(term)
-                        );
-                      });
-
-                      if (filtered.length === 0) {
-                        return (
-                          <tr>
-                            <td colSpan={6} className="py-8 text-center text-slate-400">
-                              Không tìm thấy khách hàng nào khớp với từ khóa "{userSearchTerm}".
+                    {backendUsers.length > 0 ? (
+                      backendUsers
+                        .filter((u) =>
+                          !userSearchTerm ||
+                          u.email.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+                          (u.fullName && u.fullName.toLowerCase().includes(userSearchTerm.toLowerCase())) ||
+                          (u.phone && u.phone.includes(userSearchTerm))
+                        )
+                        .map((user, i) => (
+                          <tr key={user.id || i} className="hover:bg-slate-50/70 transition">
+                            <td className="py-3 px-4 font-bold text-slate-900">{user.fullName || 'Thành viên SecondLife'}</td>
+                            <td className="py-3 px-4 font-mono text-slate-600">{user.phone || '—'}</td>
+                            <td className="py-3 px-4 text-slate-600">{user.email}</td>
+                            <td className="py-3 px-4">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                                {user.roles && user.roles.length > 0 ? user.roles.join(', ') : 'BUYER'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 font-bold text-slate-800">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                user.accountStatus === 'ACTIVE'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-rose-50 text-rose-700 border border-rose-200'
+                              }`}>
+                                {user.accountStatus}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                user.emailVerified
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}>
+                                {user.emailVerified ? 'Đã xác thực OTP' : 'Chờ xác thực OTP'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                onClick={() => handleToggleUserStatus(user.id, user.accountStatus)}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                                  user.accountStatus === 'ACTIVE'
+                                    ? 'bg-rose-100 hover:bg-rose-200 text-rose-700'
+                                    : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700'
+                                }`}
+                              >
+                                {user.accountStatus === 'ACTIVE' ? 'Khóa Tài Khoản' : 'Mở Khóa'}
+                              </button>
                             </td>
                           </tr>
-                        );
-                      }
-
-                      return filtered.map((user, i) => (
-                        <tr key={user.id || i} className="hover:bg-slate-50/70 transition">
+                        ))
+                    ) : (
+                      [
+                        { name: 'Nguyễn Văn An', phone: '0912 345 678', email: 'an.nguyen@gmail.com', role: 'Người mua', status: 'ACTIVE', kyc: 'Đã xác thực OTP' },
+                        { name: 'Cửa hàng Gia Dụng Đức', phone: '0988 765 432', email: 'kt05@gmail.com', role: 'Người bán', status: 'ACTIVE', kyc: 'Đã xác thực OTP' }
+                      ].map((user, i) => (
+                        <tr key={i} className="hover:bg-slate-50/70 transition">
                           <td className="py-3 px-4 font-bold text-slate-900">{user.name}</td>
                           <td className="py-3 px-4 font-mono text-slate-600">{user.phone}</td>
                           <td className="py-3 px-4 text-slate-600">{user.email}</td>
@@ -1529,26 +1754,21 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             </span>
                           </td>
                           <td className="py-3 px-4 font-bold text-slate-800">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              user.accountStatus === 'ACTIVE'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-rose-50 text-rose-700 border border-rose-200'
-                            }`}>
-                              {user.accountStatus}
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              {user.status}
                             </span>
                           </td>
                           <td className="py-3 px-4">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              user.emailVerified
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-amber-50 text-amber-700 border border-amber-200'
-                            }`}>
-                              {user.emailVerified ? 'Đã xác thực OTP' : 'Chờ xác thực OTP'}
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              {user.kyc}
                             </span>
                           </td>
+                          <td className="py-3 px-4 text-right">
+                            <span className="text-[10px] text-slate-400 font-bold">—</span>
+                          </td>
                         </tr>
-                      ));
-                    })()}
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1560,6 +1780,25 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* ======================================================== */}
           {activeTab === 'hubs' && (
             <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 uppercase flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-[#F1622A]" />
+                    <span>Danh Sách Trạm Kiểm Định Hub & Quản Lý Kỹ Thuật Viên</span>
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Tạo tài khoản Trạm Kiểm Định Hub mới và quản lý năng lực xử lý kiểm định thiết bị
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowAddHubModal(true)}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white text-xs font-bold shadow-sm hover:opacity-95 transition cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Tạo Tài Khoản Hub Mới</span>
+                </button>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {hubCenters.map((hub) => (
                   <div
@@ -1951,6 +2190,311 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 Đóng
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: SELLER eKYC VERIFICATION DETAIL                   */}
+      {/* ======================================================== */}
+      {selectedVerificationDetail && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-rose-600" />
+                <h3 className="font-bold text-base text-slate-900">
+                  Chi Tiết Hồ Sơ eKYC Ngược Mẫu #{selectedVerificationDetail.id}
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedVerificationDetail(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div>
+                  <span className="text-slate-500 text-[10px] block">Người bán / Email:</span>
+                  <span className="font-bold text-slate-900 block">{selectedVerificationDetail.userFullName || selectedVerificationDetail.userEmail || 'Chưa cập nhật'}</span>
+                  <span className="text-[10px] text-slate-400 font-mono">{selectedVerificationDetail.userId}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 text-[10px] block">Số CCCD / CMND:</span>
+                  <span className="font-mono font-bold text-slate-900 text-sm block">{selectedVerificationDetail.documentNumber}</span>
+                  <span className="text-[10px] text-slate-500">{selectedVerificationDetail.verificationType}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+                <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                  <span className="text-slate-400 text-[10px] block">Trạng Thái Hồ Sơ</span>
+                  <span className="font-bold text-slate-800">{selectedVerificationDetail.status}</span>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                  <span className="text-slate-400 text-[10px] block">eKYC Score</span>
+                  <span className="font-bold text-emerald-600">{selectedVerificationDetail.ekycScore || '100'} / 100</span>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                  <span className="text-slate-400 text-[10px] block">Risk Rating</span>
+                  <span className="font-bold text-purple-600">{selectedVerificationDetail.riskStatus || 'LOW_RISK'}</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-bold text-slate-800 text-xs">Ảnh Giấy Tờ & Chân Dung Xác Minh:</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-slate-500 block">Mặt trước CCCD</span>
+                    <div className="h-32 rounded-lg border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center">
+                      {selectedVerificationDetail.documentFrontUrl ? (
+                        <img src={selectedVerificationDetail.documentFrontUrl} alt="CCCD Mặt trước" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-slate-400 text-[10px]">Chưa có ảnh</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-slate-500 block">Mặt sau CCCD</span>
+                    <div className="h-32 rounded-lg border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center">
+                      {selectedVerificationDetail.documentBackUrl ? (
+                        <img src={selectedVerificationDetail.documentBackUrl} alt="CCCD Mặt sau" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-slate-400 text-[10px]">Chưa có ảnh</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-slate-500 block">Ảnh Chân Dung Selfie</span>
+                    <div className="h-32 rounded-lg border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center">
+                      {selectedVerificationDetail.selfieUrl ? (
+                        <img src={selectedVerificationDetail.selfieUrl} alt="Selfie Chân dung" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-slate-400 text-[10px]">Chưa có ảnh</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {selectedVerificationDetail.rejectionReason && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+                  <strong className="block font-bold mb-0.5">Lý do bị từ chối trước đó:</strong>
+                  <span>{selectedVerificationDetail.rejectionReason}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                onClick={() => setSelectedVerificationDetail(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+              >
+                Đóng
+              </button>
+              {(selectedVerificationDetail.status === 'NEEDS_REVIEW' || selectedVerificationDetail.status === 'SUBMITTED' || selectedVerificationDetail.status === 'PENDING') && (
+                <>
+                  <button
+                    onClick={() => {
+                      setRejectModalVerificationId(selectedVerificationDetail.id);
+                      setRejectionReasonText('');
+                    }}
+                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition cursor-pointer"
+                  >
+                    Từ Chối Hồ Sơ
+                  </button>
+                  <button
+                    onClick={() => handleApproveSellerVerification(selectedVerificationDetail.id)}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer"
+                  >
+                    Phê Duyệt Ngay
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: REJECT REASON INPUT POPUP                         */}
+      {/* ======================================================== */}
+      {rejectModalVerificationId && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-rose-600" />
+                <span>Nhập Lý Do Từ Chối eKYC Người Bán</span>
+              </h3>
+              <button
+                onClick={() => setRejectModalVerificationId(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Mã lý do từ chối (Reason Code):</label>
+                <select
+                  value={rejectionReasonCode}
+                  onChange={(e) => setRejectionReasonCode(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-slate-300 text-xs font-medium outline-none focus:border-rose-600"
+                >
+                  <option value="INVALID_DOCUMENT">Giấy tờ không hợp lệ / không chính chủ</option>
+                  <option value="DOCUMENT_EXPIRED">Giấy tờ hết hạn sử dụng</option>
+                  <option value="FACIAL_MISMATCH">Khuôn mặt selfie không khớp với ảnh CCCD</option>
+                  <option value="BLURRY_IMAGE">Hình ảnh mờ, chói sáng không nhìn rõ chữ</option>
+                  <option value="OTHER">Lý do khác (Nhập chi tiết bên dưới)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Chi tiết lý do từ chối:</label>
+                <textarea
+                  rows={3}
+                  value={rejectionReasonText}
+                  onChange={(e) => setRejectionReasonText(e.target.value)}
+                  placeholder="Nhập hướng dẫn cụ thể để người bán bổ sung lại giấy tờ..."
+                  className="w-full p-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-rose-600"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2">
+              <button
+                onClick={() => setRejectModalVerificationId(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+              >
+                Hủy Bỏ
+              </button>
+              <button
+                onClick={handleRejectSellerVerification}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition cursor-pointer"
+              >
+                Xác Nhận Từ Chối
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: CREATE INSPECTION CENTER (HUB) ACCOUNT             */}
+      {/* ======================================================== */}
+      {showAddHubModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200 my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-[#F1622A]" />
+                <h3 className="font-bold text-sm text-slate-900">
+                  Tạo Tài Khoản Trạm Kiểm Định (Hub) Mới
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowAddHubModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateHubAccount} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Tên Trạm Hub / Trung tâm:</label>
+                <input
+                  type="text"
+                  required
+                  value={newHubData.hubCenterName}
+                  onChange={(e) => setNewHubData({ ...newHubData, hubCenterName: e.target.value })}
+                  placeholder="Ví dụ: Trạm Kiểm Định Hub Tân Bình"
+                  className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#F1622A]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Email đăng nhập Quản lý Hub:</label>
+                <input
+                  type="email"
+                  required
+                  value={newHubData.email}
+                  onChange={(e) => setNewHubData({ ...newHubData, email: e.target.value })}
+                  placeholder="hub.tanbinh@secondlife.vn"
+                  className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#F1622A]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Mật khẩu khởi tạo:</label>
+                <input
+                  type="password"
+                  required
+                  value={newHubData.password}
+                  onChange={(e) => setNewHubData({ ...newHubData, password: e.target.value })}
+                  placeholder="Tối thiểu 6 ký tự"
+                  className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#F1622A]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Tỉnh / Thành phố:</label>
+                  <input
+                    type="text"
+                    required
+                    value={newHubData.city}
+                    onChange={(e) => setNewHubData({ ...newHubData, city: e.target.value })}
+                    placeholder="TP. Hồ Chí Minh"
+                    className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#F1622A]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Số điện thoại trạm:</label>
+                  <input
+                    type="tel"
+                    required
+                    value={newHubData.phone}
+                    onChange={(e) => setNewHubData({ ...newHubData, phone: e.target.value })}
+                    placeholder="0909123456"
+                    className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#F1622A]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Địa chỉ chi tiết trạm Hub:</label>
+                <input
+                  type="text"
+                  required
+                  value={newHubData.address}
+                  onChange={(e) => setNewHubData({ ...newHubData, address: e.target.value })}
+                  placeholder="123 Cộng Hòa, Phường 13, Q. Tân Bình"
+                  className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#F1622A]"
+                />
+              </div>
+
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddHubModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                >
+                  Hủy Bỏ
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white text-xs font-bold transition cursor-pointer shadow-sm hover:opacity-95"
+                >
+                  Tạo Tài Khoản Hub
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Sparkles, Camera, CheckCircle2, AlertTriangle, ShieldCheck, ArrowRight, ArrowLeft, UploadCloud, Info, RefreshCw } from 'lucide-react';
+import { Sparkles, Camera, CheckCircle2, AlertTriangle, ShieldCheck, ArrowRight, ArrowLeft, UploadCloud, Info, RefreshCw, Loader2 } from 'lucide-react';
 import { ItemCategory, ConditionGrade, Listing, PhotoChecklist, Language } from '../types';
 import { translations, formatVND } from '../utils/translations';
+import { mediaService } from '../services/mediaService';
 
 interface CreateListingViewProps {
   onListingCreated: (newListing: Listing) => void;
@@ -30,13 +31,26 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [description, setDescription] = useState('');
   const [selectedAccessories] = useState<string[]>(['Sách HDSD', 'Khay đá & Khay trứng zin', 'Phiếu bảo hành hãng']);
 
-  const [photos] = useState<PhotoChecklist>({
+  const [photos, setPhotos] = useState<PhotoChecklist>({
     front: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=1000&q=80',
     back: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=1000&q=80',
     screenOrDetails: 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?auto=format&fit=crop&w=1000&q=80',
     accessoriesOrBox: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=1000&q=80',
     serialOrReceipt: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=1000&q=80'
   });
+  const [uploadingSlot, setUploadingSlot] = useState<string | null>(null);
+
+  const handlePhotoUpload = async (key: keyof PhotoChecklist, file: File) => {
+    try {
+      setUploadingSlot(key);
+      const res = await mediaService.uploadImage(file, 'product-listings');
+      setPhotos(prev => ({ ...prev, [key]: res.url }));
+    } catch (err: any) {
+      alert('Tải ảnh sản phẩm thất bại: ' + (err.message || 'Lỗi kết nối server'));
+    } finally {
+      setUploadingSlot(null);
+    }
+  };
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiEstimation, setAiEstimation] = useState<{
@@ -444,13 +458,25 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  className="w-full py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#F4F5F8] rounded-lg text-xs font-medium text-[#0E121B] border border-gray-200 flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <UploadCloud className="w-3.5 h-3.5 text-gray-400" />
-                  <span>{lang === 'vi' ? 'Đổi ảnh góc này' : 'Replace Photo'}</span>
-                </button>
+                <label className="w-full py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#F4F5F8] rounded-lg text-xs font-medium text-[#0E121B] border border-gray-200 flex items-center justify-center gap-1.5 cursor-pointer transition">
+                  {uploadingSlot === slot.key ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 text-[#EC1577] animate-spin" />
+                      <span>{lang === 'vi' ? 'Đang tải ảnh...' : 'Uploading...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <UploadCloud className="w-3.5 h-3.5 text-gray-400" />
+                      <span>{lang === 'vi' ? 'Đổi ảnh góc này' : 'Replace Photo'}</span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => e.target.files?.[0] && handlePhotoUpload(slot.key, e.target.files[0])}
+                  />
+                </label>
               </div>
             ))}
           </div>

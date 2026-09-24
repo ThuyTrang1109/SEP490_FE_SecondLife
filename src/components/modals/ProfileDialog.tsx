@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, UserRole, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
-import { userService, sellerService } from '../../services';
+import { userService, sellerService, mediaService } from '../../services';
 
 interface ProfileDialogProps {
   isOpen: boolean;
@@ -110,6 +110,22 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmittingSeller, setIsSubmittingSeller] = useState(false);
 
+  // Avatar & eKYC document upload states
+  const [avatarUrl, setAvatarUrl] = useState<string>(currentUser?.avatar || '');
+  const [docFrontUrl, setDocFrontUrl] = useState<string>('');
+  const [docBackUrl, setDocBackUrl] = useState<string>('');
+  const [selfieUrl, setSelfieUrl] = useState<string>('');
+  const [uploadingField, setUploadingField] = useState<'avatar' | 'front' | 'back' | 'selfie' | null>(null);
+
+  // Change password modal state
+  const [isChangePassModalOpen, setIsChangePassModalOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passError, setPassError] = useState<string | null>(null);
+  const [passSuccess, setPassSuccess] = useState<string | null>(null);
+  const [isSubmittingPass, setIsSubmittingPass] = useState(false);
+
   // Sync state whenever currentUser or modal opens
   useEffect(() => {
     if (currentUser) {
@@ -117,6 +133,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       setEmail(currentUser.email || '');
       setPhone(currentUser.phone || '');
       setAddress(currentUser.address || '');
+      setAvatarUrl(currentUser.avatar || '');
       if (currentUser.gender) setGender(currentUser.gender);
       if (currentUser.birthday) setBirthday(currentUser.birthday);
       if (currentUser.bankAccount) {
@@ -130,6 +147,25 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       setPickupAddress(currentUser.pickupAddress || currentUser.address || '');
     }
   }, [currentUser, isOpen]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: 'avatar' | 'front' | 'back' | 'selfie') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingField(field);
+    try {
+      const folder = field === 'avatar' ? 'avatars' : 'seller-verifications';
+      const uploaded = await mediaService.uploadImage(file, folder);
+      if (field === 'avatar') setAvatarUrl(uploaded.url);
+      if (field === 'front') setDocFrontUrl(uploaded.url);
+      if (field === 'back') setDocBackUrl(uploaded.url);
+      if (field === 'selfie') setSelfieUrl(uploaded.url);
+    } catch (err: any) {
+      alert(err.message || 'Tải ảnh lên không thành công');
+    } finally {
+      setUploadingField(null);
+    }
+  };
 
   const handleRegisterSeller = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,6 +188,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       setSellerFormError('Vui lòng nhập số CCCD để xác minh danh tính người bán.');
       return;
     }
+    if (!docFrontUrl || !docBackUrl) {
+      setSellerFormError('Vui lòng tải lên đầy đủ ảnh CCCD mặt trước và mặt sau.');
+      return;
+    }
     if (!sellerTermsAgreed) {
       setSellerFormError('Vui lòng đồng ý với cam kết chất lượng Hub và cơ chế Escrow.');
       return;
@@ -159,13 +199,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
     setIsSubmittingSeller(true);
     try {
-      // Call Backend POST /api/v1/seller-verifications
       await sellerService.submitVerification({
         verificationType: 'CITIZEN_ID',
         documentNumber: idCardNumber.trim(),
-        documentFrontUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136',
-        documentBackUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136',
-        selfieUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136',
+        documentFrontUrl: docFrontUrl,
+        documentBackUrl: docBackUrl,
+        selfieUrl: selfieUrl || undefined,
       });
 
       const updated: UserProfile = {
@@ -204,6 +243,45 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     }
   };
 
+  const handleChangePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPassError(null);
+    setPassSuccess(null);
+
+    if (!currentPassword) {
+      setPassError('Vui lòng nhập mật khẩu hiện tại.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPassError('Mật khẩu mới phải có ít nhất 6 ký tự.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPassError('Mật khẩu mới và mật khẩu xác nhận không trùng khớp.');
+      return;
+    }
+
+    setIsSubmittingPass(true);
+    try {
+      await userService.changeMyPassword({
+        currentPassword,
+        newPassword,
+      });
+      setPassSuccess('Đổi mật khẩu thành công! Tất cả các phiên đăng nhập khác đã được đăng xuất.');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => {
+        setIsChangePassModalOpen(false);
+        setPassSuccess(null);
+      }, 3000);
+    } catch (err: any) {
+      setPassError(err.message || 'Đổi mật khẩu thất bại. Mật khẩu hiện tại không đúng.');
+    } finally {
+      setIsSubmittingPass(false);
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaveError(null);
@@ -215,9 +293,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       email,
       phone: phone.trim(),
       address,
+      avatar: avatarUrl || currentUser.avatar,
       gender,
       birthday,
-      avatar: currentUser.avatar,
       bankAccount: {
         bankName,
         accountNumber,
@@ -226,11 +304,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     };
 
     try {
-      // Call Backend PATCH /api/v1/me with schema fields (fullName, phone, avatarUrl)
       await userService.updateMyProfile({
         fullName: name.trim(),
         phone: phone.trim() || undefined,
-        avatarUrl: currentUser.avatar || undefined,
+        avatarUrl: avatarUrl || undefined,
       });
 
       onUpdateProfile(updated);
@@ -766,8 +843,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      onClose();
-                      onChangePassword?.();
+                      setIsChangePassModalOpen(true);
                     }}
                     className="text-xs font-bold text-[#EC1577] hover:underline cursor-pointer"
                   >
@@ -1023,6 +1099,86 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       </div>
                     </div>
 
+                    {/* eKYC Document Photo Upload Section */}
+                    <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-slate-200 space-y-3">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                        <FileCheck className="w-4 h-4 text-[#EC1577]" />
+                        <span>{lang === 'vi' ? 'Ảnh Tải Lên Xác Thực eKYC (Mặt Trước, Mặt Sau, Chân Dung)' : 'eKYC Verification Photo Uploads'}</span>
+                        <span className="text-red-500">*</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {/* Front ID */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '1. Ảnh CCCD Mặt Trước' : '1. Front ID Card'}</label>
+                          <div className="relative border border-dashed border-slate-300 hover:border-[#EC1577] rounded-xl p-2 bg-white text-center transition">
+                            {docFrontUrl ? (
+                              <div className="space-y-1">
+                                <img src={docFrontUrl} alt="Front ID" className="w-full h-20 object-cover rounded-lg" />
+                                <span className="text-[10px] text-emerald-600 font-bold block flex items-center justify-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3" /> {lang === 'vi' ? 'Đã tải lên' : 'Uploaded'}
+                                </span>
+                              </div>
+                            ) : (
+                              <label className="cursor-pointer block py-3 space-y-1">
+                                <Camera className="w-5 h-5 text-slate-400 mx-auto" />
+                                <span className="text-[10px] font-bold text-slate-600 block">
+                                  {uploadingField === 'front' ? (lang === 'vi' ? 'Đang tải lên...' : 'Uploading...') : (lang === 'vi' ? 'Chọn ảnh mặt trước' : 'Select Front Photo')}
+                                </span>
+                                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'front')} />
+                              </label>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Back ID */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '2. Ảnh CCCD Mặt Sau' : '2. Back ID Card'}</label>
+                          <div className="relative border border-dashed border-slate-300 hover:border-[#EC1577] rounded-xl p-2 bg-white text-center transition">
+                            {docBackUrl ? (
+                              <div className="space-y-1">
+                                <img src={docBackUrl} alt="Back ID" className="w-full h-20 object-cover rounded-lg" />
+                                <span className="text-[10px] text-emerald-600 font-bold block flex items-center justify-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3" /> {lang === 'vi' ? 'Đã tải lên' : 'Uploaded'}
+                                </span>
+                              </div>
+                            ) : (
+                              <label className="cursor-pointer block py-3 space-y-1">
+                                <Camera className="w-5 h-5 text-slate-400 mx-auto" />
+                                <span className="text-[10px] font-bold text-slate-600 block">
+                                  {uploadingField === 'back' ? (lang === 'vi' ? 'Đang tải lên...' : 'Uploading...') : (lang === 'vi' ? 'Chọn ảnh mặt sau' : 'Select Back Photo')}
+                                </span>
+                                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'back')} />
+                              </label>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Selfie */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '3. Ảnh Chân Dung Selfie' : '3. Selfie Photo'}</label>
+                          <div className="relative border border-dashed border-slate-300 hover:border-[#EC1577] rounded-xl p-2 bg-white text-center transition">
+                            {selfieUrl ? (
+                              <div className="space-y-1">
+                                <img src={selfieUrl} alt="Selfie" className="w-full h-20 object-cover rounded-lg" />
+                                <span className="text-[10px] text-emerald-600 font-bold block flex items-center justify-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3" /> {lang === 'vi' ? 'Đã tải lên' : 'Uploaded'}
+                                </span>
+                              </div>
+                            ) : (
+                              <label className="cursor-pointer block py-3 space-y-1">
+                                <Camera className="w-5 h-5 text-slate-400 mx-auto" />
+                                <span className="text-[10px] font-bold text-slate-600 block">
+                                  {uploadingField === 'selfie' ? (lang === 'vi' ? 'Đang tải lên...' : 'Uploading...') : (lang === 'vi' ? 'Chọn ảnh chân dung' : 'Select Selfie Photo')}
+                                </span>
+                                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'selfie')} />
+                              </label>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Bank Information for Payout */}
                     <div className="p-3 rounded-2xl bg-white border border-gray-200 space-y-2.5">
                       <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
@@ -1141,6 +1297,101 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Change Password Modal */}
+        {isChangePassModalOpen && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-[100] animate-fadeIn">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-100 space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2 text-slate-900 font-bold text-base">
+                  <Lock className="w-5 h-5 text-[#EC1577]" />
+                  <span>{lang === 'vi' ? 'Đổi Mật Khẩu Đăng Nhập' : 'Change Account Password'}</span>
+                </div>
+                <button
+                  onClick={() => setIsChangePassModalOpen(false)}
+                  className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {passError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{passError}</span>
+                </div>
+              )}
+
+              {passSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span>{passSuccess}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleChangePasswordSubmit} className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    {lang === 'vi' ? 'Mật Khẩu Hiện Tại' : 'Current Password'} <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    {lang === 'vi' ? 'Mật Khẩu Mới' : 'New Password'} <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Tối thiểu 6 ký tự"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    {lang === 'vi' ? 'Xác Nhận Mật Khẩu Mới' : 'Confirm New Password'} <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Nhập lại mật khẩu mới"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs text-slate-900"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsChangePassModalOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                  >
+                    {lang === 'vi' ? 'Hủy' : 'Cancel'}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingPass}
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white text-xs font-bold hover:opacity-90 transition disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSubmittingPass ? (lang === 'vi' ? 'Đang xử lý...' : 'Processing...') : (lang === 'vi' ? 'Cập Nhật Mật Khẩu' : 'Update Password')}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

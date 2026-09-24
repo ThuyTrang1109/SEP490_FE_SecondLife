@@ -72,9 +72,7 @@ export default function App() {
             phone: profile.phone || '',
             avatar: profile.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
             accountStatus: profile.accountStatus,
-            kycStatus: (profile.roles?.includes('SELLER') || profile.roles?.includes('ROLE_SELLER'))
-              ? 'verified'
-              : 'unverified',
+            kycStatus: (profile.roles?.includes('SELLER') || profile.roles?.includes('ROLE_SELLER')) ? 'verified' : 'unverified',
             emailVerified: profile.emailVerified ?? true,
           };
           setCurrentUser(syncedUser);

@@ -157,8 +157,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   // Login Field Errors
   const getLoginEmailError = () => {
-    if (!emailOrPhone.trim()) return lang === 'vi' ? 'Vui lòng nhập Email hoặc Số điện thoại.' : 'Please enter your email or phone number.';
-    if (!isValidEmailOrPhone(emailOrPhone)) return lang === 'vi' ? 'Email hoặc Số điện thoại không hợp lệ (VD: user@secondlife.vn hoặc 0912345678).' : 'Invalid email or phone number format.';
+    if (!emailOrPhone.trim()) return lang === 'vi' ? 'Vui lòng nhập địa chỉ Email.' : 'Please enter your email address.';
+    if (!isValidEmail(emailOrPhone.trim())) return lang === 'vi' ? 'Email không đúng định dạng (Ví dụ: user@secondlife.vn).' : 'Invalid email format (e.g. user@secondlife.vn).';
     return null;
   };
 
@@ -435,28 +435,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         fullName: fullName.trim(),
         phone: phoneNumber.trim() || undefined
       });
-    } catch {
-      // Allow fallback if offline
+      soundFx.playChime();
+      setVerifyEmailAddress(registerEmail.trim());
+      setVerifyOtpCode('');
+      setVerifyDigits(['', '', '', '', '', '']);
+      setResendCountdown(60);
+      setSubmitted(false);
+      setTouched({});
+      setMode('verify-email');
+      setTimeout(() => {
+        verifyOtpInputRefs.current[0]?.focus();
+      }, 150);
+      setSuccessMsg(
+        lang === 'vi'
+          ? `Tạo tài khoản thành công! Mã OTP xác thực 6 chữ số đã được gửi tới ${registerEmail.trim()}.`
+          : `Account registered! Verification code sent to ${registerEmail.trim()}.`
+      );
+    } catch (err: any) {
+      soundFx.playCancel();
+      setErrorMsg(err.message || (lang === 'vi' ? 'Đăng ký không thành công. Email có thể đã được đăng ký trước đó.' : 'Registration failed. Email may already be registered.'));
     } finally {
       setIsLoading(false);
     }
-
-    soundFx.playChime();
-    setVerifyEmailAddress(registerEmail.trim());
-    setVerifyOtpCode('');
-    setVerifyDigits(['', '', '', '', '', '']);
-    setResendCountdown(60);
-    setSubmitted(false);
-    setTouched({});
-    setMode('verify-email');
-    setTimeout(() => {
-      verifyOtpInputRefs.current[0]?.focus();
-    }, 150);
-    setSuccessMsg(
-      lang === 'vi'
-        ? `Tạo tài khoản thành công! Mã OTP xác thực 6 chữ số đã được gửi tới ${registerEmail.trim()}.`
-        : `Account registered! Verification code sent to ${registerEmail.trim()}.`
-    );
   };
 
   // Verify Email Submit (/api/v1/auth/verify-email)
@@ -808,10 +808,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {/* ================= 1. LOGIN FORM ================= */}
             {mode === 'login' && (
               <form onSubmit={handleLoginSubmit} noValidate className="space-y-3">
-                {/* Email / Phone Field */}
+                {/* Email Field */}
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-[#0E121B] flex items-center justify-between">
-                    <span>{lang === 'vi' ? 'Email hoặc Số điện thoại' : 'Email or Phone'} <strong className="text-rose-500">*</strong></span>
+                    <span>{lang === 'vi' ? 'Địa chỉ Email' : 'Email Address'} <strong className="text-rose-500">*</strong></span>
                   </label>
                   <div className="relative">
                     <Mail className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
@@ -822,11 +822,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         : 'text-gray-400'
                     }`} />
                     <input
-                      type="text"
+                      type="email"
                       value={emailOrPhone}
                       onChange={(e) => setEmailOrPhone(e.target.value)}
                       onBlur={() => markTouched('emailOrPhone')}
-                      placeholder="khang.buyer@secondlife.vn hoặc 0912345678"
+                      placeholder="user@secondlife.vn"
                       className={`w-full pl-10 pr-3 py-2.5 rounded-xl border text-xs sm:text-sm font-medium transition ${
                         (touched.emailOrPhone || submitted) && getLoginEmailError()
                           ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'

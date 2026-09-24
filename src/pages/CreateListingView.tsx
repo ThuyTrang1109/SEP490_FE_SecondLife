@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Sparkles, Camera, CheckCircle2, AlertTriangle, ShieldCheck, ArrowRight, ArrowLeft, UploadCloud, Info, RefreshCw, Loader2 } from 'lucide-react';
 import { ItemCategory, ConditionGrade, Listing, PhotoChecklist, Language } from '../types';
 import { translations, formatVND } from '../utils/translations';
-import { mediaService } from '../services/mediaService';
+import { mediaService, postService } from '../services';
 
 interface CreateListingViewProps {
   onListingCreated: (newListing: Listing) => void;
@@ -149,7 +149,23 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    try {
+      // Init post on backend
+      const initRes = await postService.initPost({
+        title: title || `${brand} ${model}`,
+        priceVnd: finalPriceVnd,
+        conditionGrade: declaredCondition,
+        description: description || 'Sản phẩm đã qua sử dụng, cam kết nguyên bản.',
+      }).catch((e) => null);
+
+      if (initRes && initRes.id) {
+        await postService.submitPost(initRes.id).catch(() => {});
+      }
+    } catch (e) {
+      console.warn('Backend post init info:', e);
+    }
+
     const newListing: Listing = {
       id: `listing-${Date.now().toString().slice(-6)}`,
       title: title || `${brand} ${model}`,

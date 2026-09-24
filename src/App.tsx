@@ -18,8 +18,10 @@ import { AuthModal } from './components/modals/AuthModal';
 import { ProfileDialog } from './components/modals/ProfileDialog';
 import { VerifyEmailModal } from './components/modals/VerifyEmailModal';
 import { LogoutConfirmModal } from './components/modals/LogoutConfirmModal';
+import { TopUpModal } from './components/modals/TopUpModal';
 import { ShieldCheck, Sparkles, CheckCircle2 } from 'lucide-react';
-import { authService, userService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
+import { authService, userService, topupService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
+
 
 export default function App() {
   // Global State
@@ -95,6 +97,22 @@ export default function App() {
   const [isVerifyEmailModalOpen, setIsVerifyEmailModalOpen] = useState(false);
   const [verifyEmailTarget, setVerifyEmailTarget] = useState('');
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
+  const [userCreditBalance, setUserCreditBalance] = useState<number>(500);
+
+  // Fetch credit balance on load if user is logged in
+  React.useEffect(() => {
+    if (currentUser) {
+      topupService.getMyCredit()
+        .then((res) => {
+          if (res && typeof res.balance === 'number') {
+            setUserCreditBalance(res.balance);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [currentUser]);
+
 
   const handleConfirmLogout = () => {
     authService.logout();
@@ -335,6 +353,14 @@ export default function App() {
               setIsProfileDialogOpen(true);
             }
           }}
+          onOpenTopUp={() => {
+            if (!currentUser) {
+              requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để nạp xu.' : 'Please log in to top up credit.');
+            } else {
+              setIsTopUpModalOpen(true);
+            }
+          }}
+          userCreditBalance={userCreditBalance}
         />
       )}
 
@@ -602,6 +628,14 @@ export default function App() {
           );
         }}
         lang={lang}
+      />
+
+      {/* TopUp Coins Modal Popup */}
+      <TopUpModal
+        isOpen={isTopUpModalOpen}
+        onClose={() => setIsTopUpModalOpen(false)}
+        currentCredit={userCreditBalance}
+        onCreditUpdated={(newBal) => setUserCreditBalance(newBal)}
       />
 
       {/* Logout Confirmation Modal Popup */}

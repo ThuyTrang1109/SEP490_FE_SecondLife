@@ -223,3 +223,46 @@ export interface UserProfile {
   };
 }
 
+export interface TopupPackage {
+  id: string;
+  name?: string;
+  packageName?: string;
+  price?: number;
+  priceVnd?: number;
+  postCredits?: number;
+  chatCredits?: number;
+  creditPoints?: number;
+  bonusPoints?: number;
+  description?: string;
+  discountPercentage?: number;
+  isPopular?: boolean;
+}
+
+export interface UserCredit {
+  id?: string;
+  userId?: string;
+  balance?: number;
+  postCredits?: number;
+  chatCredits?: number;
+  updatedAt?: string;
+}
+
+export interface CategoryBackend {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface ItemBackend {
+  id: string;
+  name: string;
+  categoryId: string;
+  description?: string;
+}
+
+export interface AiChatResponseDto {
+  sessionId: string;
+  reply: string;
+}
+
+

@@ -15,21 +15,33 @@ import {
   Smartphone,
   HelpCircle,
   FileText,
-  ShieldAlert
+  ShieldAlert,
+  Copy
 } from 'lucide-react';
 import { Language } from '../../types';
+import { PolicyTabKey } from '../modals/PolicyModal';
 
 interface FooterProps {
   lang?: Language;
   onTabChange?: (tab: string) => void;
   onOpenProfile?: () => void;
+  onOpenPolicy?: (policyKey: PolicyTabKey) => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({
   lang = 'vi',
   onTabChange,
-  onOpenProfile
+  onOpenProfile,
+  onOpenPolicy
 }) => {
+  const [copiedEmail, setCopiedEmail] = React.useState(false);
+
+  const handleCopyEmail = (e: React.MouseEvent) => {
+    e.preventDefault();
+    navigator.clipboard.writeText('noreply.homeappliance@gmail.com');
+    setCopiedEmail(true);
+    setTimeout(() => setCopiedEmail(false), 2000);
+  };
   return (
     <footer className="mt-auto bg-[#0A0D14] text-slate-300 text-xs border-t-2 border-[#EC1577]/30 shadow-2xl relative">
       {/* 1. Value Proposition Banner (Thanh Cam Kết Chất Lượng TMĐT) */}
@@ -139,26 +151,40 @@ export const Footer: React.FC<FooterProps> = ({
               </div>
               <div className="flex items-center gap-2 text-slate-300">
                 <Mail className="w-4 h-4 text-[#EC1577] shrink-0" />
-                <span>
-                  {lang === 'vi' ? 'Email hỗ trợ: ' : 'Support Email: '}
-                  <strong className="text-white font-medium">hotro@secondlife.vn</strong>
-                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span>{lang === 'vi' ? 'Email hỗ trợ: ' : 'Support Email: '}</span>
+                  <button
+                    onClick={handleCopyEmail}
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white/10 hover:bg-[#EC1577]/20 border border-white/10 hover:border-[#EC1577]/50 text-white font-medium hover:text-[#EC1577] transition cursor-pointer group active:scale-95"
+                    title={lang === 'vi' ? 'Bấm để sao chép địa chỉ email' : 'Click to copy email address'}
+                  >
+                    <span>noreply.homeappliance@gmail.com</span>
+                    {copiedEmail ? (
+                      <span className="text-emerald-400 font-bold text-[10px] flex items-center gap-1 bg-emerald-500/20 px-1.5 py-0.5 rounded animate-fadeIn">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        {lang === 'vi' ? 'Đã sao chép!' : 'Copied!'}
+                      </span>
+                    ) : (
+                      <Copy className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#EC1577] transition" />
+                    )}
+                  </button>
+                </div>
               </div>
               <div className="flex items-start gap-2 text-slate-300">
                 <MapPin className="w-4 h-4 text-[#EC1577] shrink-0 mt-0.5" />
                 <span>
                   {lang === 'vi'
-                    ? 'Địa chỉ: 92 Phan Châu Trinh, Phường Phước Ninh, Quận Hải Châu, TP. Đà Nẵng'
-                    : 'Headquarters: 92 Phan Chau Trinh, Phuoc Ninh, Hai Chau, Da Nang City'}
+                    ? 'Địa chỉ: Lô E2a-7, Đường D1, Khu Công nghệ cao, Phường Tăng Nhơn Phú, TP. Hồ Chí Minh.'
+                    : 'Address: Lot E2a-7, D1 Street, High-Tech Park, Tang Nhon Phu Ward, Ho Chi Minh City.'}
                 </span>
               </div>
               <div className="flex items-start gap-2 text-slate-400 text-[11px]">
                 <Building className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
                 <span>
                   {lang === 'vi' ? (
-                    <>Mạng lưới Hub kiểm định: <strong>Hà Nội</strong> (Cầu Giấy) &bull; <strong>Đà Nẵng</strong> (Hải Châu) &bull; <strong>TP. Hồ Chí Minh</strong> (Quận 10)</>
+                    <>Mạng lưới Hub kiểm định: <strong>Hà Nội</strong> (Cầu Giấy) &bull; <strong>Đà Nẵng</strong> (Hải Châu) &bull; <strong>TP. Hồ Chí Minh</strong> (Khu CNC Tăng Nhơn Phú)</>
                   ) : (
-                    <>Inspection Hub Network: <strong>Hanoi</strong> (Cau Giay) &bull; <strong>Da Nang</strong> (Hai Chau) &bull; <strong>Ho Chi Minh City</strong> (District 10)</>
+                    <>Inspection Hub Network: <strong>Hanoi</strong> (Cau Giay) &bull; <strong>Da Nang</strong> (Hai Chau) &bull; <strong>Ho Chi Minh City</strong> (High-Tech Park)</>
                   )}
                 </span>
               </div>
@@ -172,39 +198,39 @@ export const Footer: React.FC<FooterProps> = ({
             </h4>
             <ul className="space-y-2 text-xs text-slate-400">
               <li>
-                <a href="#help" onClick={(e) => { e.preventDefault(); onTabChange?.('home'); }} className="hover:text-white transition flex items-center gap-1.5">
+                <button onClick={() => onOpenPolicy?.('rules')} className="hover:text-white transition flex items-center gap-1.5 text-left cursor-pointer">
                   <span>{lang === 'vi' ? 'Trung tâm trợ giúp 24/7' : '24/7 Help Center'}</span>
-                </a>
+                </button>
               </li>
               <li>
-                <a href="#escrow-guide" onClick={(e) => { e.preventDefault(); onTabChange?.('orders'); }} className="hover:text-white transition flex items-center gap-1.5">
+                <button onClick={() => onOpenPolicy?.('terms')} className="hover:text-white transition flex items-center gap-1.5 text-left cursor-pointer">
                   <span>{lang === 'vi' ? 'Hướng dẫn mua cọc Escrow' : 'Escrow Buying Guide'}</span>
-                </a>
+                </button>
               </li>
               <li>
-                <a href="#seller-guide" onClick={(e) => { e.preventDefault(); onOpenProfile?.(); }} className="hover:text-white transition flex items-center gap-1.5">
+                <button onClick={() => onOpenProfile?.()} className="hover:text-white transition flex items-center gap-1.5 text-left cursor-pointer">
                   <span>{lang === 'vi' ? 'Đăng ký bán hàng & gửi Hub' : 'Register to Sell & Hub Logistics'}</span>
-                </a>
+                </button>
               </li>
               <li>
-                <a href="#inspection-process" onClick={(e) => { e.preventDefault(); onTabChange?.('home'); }} className="hover:text-white transition flex items-center gap-1.5">
+                <button onClick={() => onOpenPolicy?.('lab')} className="hover:text-white transition flex items-center gap-1.5 text-left cursor-pointer">
                   <span>{lang === 'vi' ? 'Quy trình kiểm định 48 bước' : '48-Point Inspection Process'}</span>
-                </a>
+                </button>
               </li>
               <li>
-                <a href="#nfc-lookup" onClick={(e) => { e.preventDefault(); onTabChange?.('home'); }} className="hover:text-white transition flex items-center gap-1.5">
+                <button onClick={() => onOpenPolicy?.('lab')} className="hover:text-white transition flex items-center gap-1.5 text-left cursor-pointer">
                   <span>{lang === 'vi' ? 'Tra cứu tem niêm phong NFC' : 'NFC Security Seal Verification'}</span>
-                </a>
+                </button>
               </li>
               <li>
-                <a href="#return-policy" onClick={(e) => { e.preventDefault(); onTabChange?.('orders'); }} className="hover:text-white transition flex items-center gap-1.5">
+                <button onClick={() => onOpenPolicy?.('terms')} className="hover:text-white transition flex items-center gap-1.5 text-left cursor-pointer">
                   <span>{lang === 'vi' ? 'Chính sách đổi trả & hoàn tiền' : 'Return & Refund Policy'}</span>
-                </a>
+                </button>
               </li>
               <li>
-                <a href="#dispute" onClick={(e) => { e.preventDefault(); onTabChange?.('orders'); }} className="hover:text-white transition flex items-center gap-1.5">
+                <button onClick={() => onOpenPolicy?.('rules')} className="hover:text-white transition flex items-center gap-1.5 text-left cursor-pointer">
                   <span>{lang === 'vi' ? 'Giải quyết tranh chấp Escrow' : 'Escrow Dispute Resolution'}</span>
-                </a>
+                </button>
               </li>
             </ul>
           </div>
@@ -216,34 +242,34 @@ export const Footer: React.FC<FooterProps> = ({
             </h4>
             <ul className="space-y-2 text-xs text-slate-400">
               <li>
-                <a href="#about" onClick={(e) => { e.preventDefault(); onTabChange?.('home'); }} className="hover:text-white transition">
+                <button onClick={() => onOpenPolicy?.('about')} className="hover:text-white transition text-left cursor-pointer">
                   {lang === 'vi' ? 'Giới thiệu về SecondLife' : 'About SecondLife Platform'}
-                </a>
+                </button>
               </li>
               <li>
-                <a href="#hubs" onClick={(e) => { e.preventDefault(); onTabChange?.('home'); }} className="hover:text-white transition">
+                <button onClick={() => onOpenPolicy?.('lab')} className="hover:text-white transition text-left cursor-pointer">
                   {lang === 'vi' ? 'Hệ thống phòng Lab Hub' : 'Inspection Hub Labs System'}
-                </a>
+                </button>
               </li>
               <li>
-                <a href="#grades" onClick={(e) => { e.preventDefault(); onTabChange?.('home'); }} className="hover:text-white transition">
+                <button onClick={() => onOpenPolicy?.('lab')} className="hover:text-white transition text-left cursor-pointer">
                   {lang === 'vi' ? 'Quy chuẩn phân hạng Grade S/A/B' : 'Grade S/A/B Quality Standards'}
-                </a>
+                </button>
               </li>
               <li>
-                <a href="#careers" onClick={(e) => { e.preventDefault(); }} className="hover:text-white transition">
-                  {lang === 'vi' ? 'Tuyển dụng Kỹ sư giám định Hub' : 'Careers & Inspector Opportunities'}
-                </a>
+                <button onClick={() => onOpenPolicy?.('rules')} className="hover:text-white transition text-left cursor-pointer">
+                  {lang === 'vi' ? 'Quy chế hoạt động sàn' : 'Operating Rules'}
+                </button>
               </li>
               <li>
-                <a href="#terms" onClick={(e) => { e.preventDefault(); }} className="hover:text-white transition">
-                  {lang === 'vi' ? 'Điều khoản & Quy chế hoạt động' : 'Terms of Service & Rules'}
-                </a>
+                <button onClick={() => onOpenPolicy?.('terms')} className="hover:text-white transition text-left cursor-pointer">
+                  {lang === 'vi' ? 'Điều khoản dịch vụ' : 'Terms of Service'}
+                </button>
               </li>
               <li>
-                <a href="#privacy" onClick={(e) => { e.preventDefault(); }} className="hover:text-white transition">
+                <button onClick={() => onOpenPolicy?.('privacy')} className="hover:text-white transition text-left cursor-pointer">
                   {lang === 'vi' ? 'Chính sách bảo mật dữ liệu' : 'Data Privacy Policy'}
-                </a>
+                </button>
               </li>
             </ul>
           </div>
@@ -319,17 +345,17 @@ export const Footer: React.FC<FooterProps> = ({
           </div>
 
           <div className="flex items-center gap-4 text-slate-300">
-            <span className="hover:text-white cursor-pointer transition">
+            <button onClick={() => onOpenPolicy?.('privacy')} className="hover:text-white cursor-pointer transition">
               {lang === 'vi' ? 'Chính sách bảo mật' : 'Privacy Policy'}
-            </span>
+            </button>
             <span>&bull;</span>
-            <span className="hover:text-white cursor-pointer transition">
-              {lang === 'vi' ? 'Quy chế hoạt động' : 'Terms of Service'}
-            </span>
+            <button onClick={() => onOpenPolicy?.('rules')} className="hover:text-white cursor-pointer transition">
+              {lang === 'vi' ? 'Quy chế hoạt động' : 'Operating Rules'}
+            </button>
             <span>&bull;</span>
-            <span className="hover:text-white cursor-pointer transition">
-              {lang === 'vi' ? 'Bảo lãnh Escrow' : 'Escrow Protection'}
-            </span>
+            <button onClick={() => onOpenPolicy?.('terms')} className="hover:text-white cursor-pointer transition">
+              {lang === 'vi' ? 'Điều khoản dịch vụ' : 'Terms of Service'}
+            </button>
           </div>
         </div>
       </div>

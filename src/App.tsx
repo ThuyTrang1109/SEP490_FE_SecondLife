@@ -19,6 +19,7 @@ import { ProfileDialog } from './components/modals/ProfileDialog';
 import { VerifyEmailModal } from './components/modals/VerifyEmailModal';
 import { LogoutConfirmModal } from './components/modals/LogoutConfirmModal';
 import { TopUpModal } from './components/modals/TopUpModal';
+import { PolicyModal, PolicyTabKey } from './components/modals/PolicyModal';
 import { ShieldCheck, Sparkles, CheckCircle2 } from 'lucide-react';
 import { authService, userService, topupService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
 
@@ -57,7 +58,7 @@ export default function App() {
   // Restore & verify session for THIS browser from Backend /me on startup/refresh
   React.useEffect(() => {
     const token = getAccessToken();
-    if (token && !token.startsWith('demo-jwt-')) {
+    if (token) {
       userService.getMyProfile().then((profile) => {
         if (profile) {
           const syncedUser: UserProfile = {
@@ -79,16 +80,33 @@ export default function App() {
           setCurrentUser(syncedUser);
           setCurrentRole(syncedUser.role);
           setStoredUser(syncedUser);
-        }
-      }).catch((err: any) => {
-        // If the token is invalid/revoked on server, clear this browser's session
-        if (err.message && (err.message.includes('401') || err.message.includes('Unauthorized') || err.message.includes('Invalid JWT') || err.message.includes('revoked'))) {
+        } else {
           clearAuthTokens();
           setCurrentUser(null);
           setCurrentRole('buyer');
         }
+      }).catch(() => {
+        // Clear session on any token verification error
+        clearAuthTokens();
+        setCurrentUser(null);
+        setCurrentRole('buyer');
       });
+    } else {
+      clearAuthTokens();
+      setCurrentUser(null);
+      setCurrentRole('buyer');
     }
+  }, []);
+
+  // Listen for 401 Unauthorized session revocation events
+  React.useEffect(() => {
+    const handleUnauthorized = () => {
+      clearAuthTokens();
+      setCurrentUser(null);
+      setCurrentRole('buyer');
+    };
+    window.addEventListener('unauthorized_session', handleUnauthorized);
+    return () => window.removeEventListener('unauthorized_session', handleUnauthorized);
   }, []);
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -99,6 +117,10 @@ export default function App() {
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
   const [userCreditBalance, setUserCreditBalance] = useState<number>(500);
+
+  // Policy Modal State
+  const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
+  const [policyInitialTab, setPolicyInitialTab] = useState<PolicyTabKey>('about');
 
   // Fetch credit balance on load if user is logged in
   React.useEffect(() => {
@@ -364,14 +386,19 @@ export default function App() {
         />
       )}
 
-      {/* Floating Toast Notification */}
+      {/* Floating Top Welcome Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-md bg-[#0E121B] text-white px-4 py-3 rounded-xl shadow-2xl border border-[#EC1577]/40 flex items-center gap-3 animate-fadeIn">
-          <CheckCircle2 className="w-4 h-4 text-[#EC1577] shrink-0" />
-          <span className="text-xs font-medium">{toastMessage}</span>
+        <div className="fixed top-4 sm:top-6 left-1/2 -translate-x-1/2 z-[100] w-[92%] sm:w-auto min-w-[340px] max-w-xl bg-[#0E121B]/95 dark:bg-[#161B26]/95 backdrop-blur-2xl text-white px-5 py-3.5 rounded-2xl shadow-[0_16px_40px_rgba(236,21,119,0.35)] border-2 border-[#EC1577]/60 flex items-center gap-3.5 transition-all duration-300 transform scale-100 animate-fadeIn">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#EC1577] to-[#F1622A] flex items-center justify-center shrink-0 shadow-md shadow-[#EC1577]/40 ring-2 ring-white/20">
+            <Sparkles className="w-5 h-5 text-white animate-pulse" />
+          </div>
+          <div className="flex-1 pr-2">
+            <span className="text-xs sm:text-sm font-semibold tracking-wide text-white leading-tight block">{toastMessage}</span>
+          </div>
           <button
             onClick={() => setToastMessage(null)}
-            className="text-zinc-400 hover:text-white text-xs ml-auto cursor-pointer"
+            className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center text-xs transition-colors shrink-0 cursor-pointer border border-white/10"
+            title="Đóng"
           >
             ✕
           </button>
@@ -646,6 +673,14 @@ export default function App() {
         lang={lang}
       />
 
+      {/* Policies & System Information Modal */}
+      <PolicyModal
+        isOpen={isPolicyModalOpen}
+        initialTab={policyInitialTab}
+        onClose={() => setIsPolicyModalOpen(false)}
+        lang={lang}
+      />
+
       {/* E-Commerce Footer */}
       {activeTab !== 'admin-dashboard' && (
         <Footer
@@ -657,6 +692,10 @@ export default function App() {
             } else {
               setIsProfileDialogOpen(true);
             }
+          }}
+          onOpenPolicy={(policyKey) => {
+            setPolicyInitialTab(policyKey);
+            setIsPolicyModalOpen(true);
           }}
         />
       )}

@@ -100,6 +100,12 @@ export async function request<T>(
     }
 
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        clearAuthTokens();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('unauthorized_session'));
+        }
+      }
       const errorMessage =
         resData?.message ||
         resData?.error ||

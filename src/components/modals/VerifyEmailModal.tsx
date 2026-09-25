@@ -193,12 +193,6 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
     }
   };
 
-  const handleFillDemoCode = () => {
-    setDigits(['1', '2', '3', '4', '5', '6']);
-    setErrorMsg(null);
-    inputRefs.current[5]?.focus();
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fadeIn select-none font-sans">
       <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden transform transition-all text-[#0E121B]">
@@ -252,19 +246,11 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
             </div>
           </div>
 
-          {/* Quick Demo Fill Helper */}
+          {/* Code Validity info */}
           <div className="flex items-center justify-between text-xs px-1">
             <span className="text-[11px] font-semibold text-gray-400">
               {lang === 'vi' ? 'Mã có hiệu lực trong 5 phút' : 'Code valid for 5 minutes'}
             </span>
-            <button
-              type="button"
-              onClick={handleFillDemoCode}
-              className="text-[11px] font-bold text-[#EC1577] hover:underline cursor-pointer inline-flex items-center gap-1"
-            >
-              <Sparkles className="w-3 h-3 text-[#F1622A]" />
-              <span>{lang === 'vi' ? 'Điền nhanh: 123456' : 'Fill demo: 123456'}</span>
-            </button>
           </div>
 
           {/* 6 Digit Input Cells */}

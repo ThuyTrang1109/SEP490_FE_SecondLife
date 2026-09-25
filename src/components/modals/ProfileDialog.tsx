@@ -34,6 +34,13 @@ import { UserProfile, UserRole, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
 import { userService, sellerService } from '../../services';
 
+export type ProfileTab = 'info' | 'wallet' | 'kyc' | 'settings';
+
+const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+const isStrongPassword = (pass: string): boolean => {
+  return STRONG_PASSWORD_REGEX.test(pass);
+};
+
 interface ProfileDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -44,9 +51,8 @@ interface ProfileDialogProps {
   onChangePassword?: () => void;
   onOpenVerifyEmail?: (email: string) => void;
   lang?: Language;
+  initialTab?: ProfileTab;
 }
-
-type ProfileTab = 'info' | 'wallet' | 'kyc' | 'settings';
 
 export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   isOpen,
@@ -58,10 +64,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   onChangePassword,
   onOpenVerifyEmail,
   lang = 'vi',
+  initialTab = 'info',
 }) => {
   if (!isOpen || !currentUser) return null;
 
-  const [activeTab, setActiveTab] = useState<ProfileTab>('info');
+  const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
 
   // Form states
   const [name, setName] = useState(currentUser.name || '');
@@ -110,6 +117,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmittingSeller, setIsSubmittingSeller] = useState(false);
 
+  // Change password modal state
+  const [isChangePassModalOpen, setIsChangePassModalOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passError, setPassError] = useState<string | null>(null);
+  const [passSuccess, setPassSuccess] = useState<string | null>(null);
+  const [isSubmittingPass, setIsSubmittingPass] = useState(false);
+
   // Sync state whenever currentUser or modal opens
   useEffect(() => {
     if (currentUser) {
@@ -128,8 +144,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       setShopName(currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop'));
       setSellerPhone(currentUser.phone || '');
       setPickupAddress(currentUser.pickupAddress || currentUser.address || '');
+      if (initialTab) {
+        setActiveTab(initialTab);
+      }
     }
-  }, [currentUser, isOpen]);
+  }, [currentUser, isOpen, initialTab]);
 
   const handleRegisterSeller = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -204,6 +223,70 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     }
   };
 
+  const handleChangePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPassError(null);
+    setPassSuccess(null);
+
+    if (!currentPassword) {
+      setPassError(lang === 'vi' ? 'Vui lòng nhập mật khẩu hiện tại.' : 'Please enter your current password.');
+      return;
+    }
+    if (!newPassword) {
+      setPassError(lang === 'vi' ? 'Vui lòng nhập mật khẩu mới.' : 'Please enter a new password.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPassError(lang === 'vi' ? 'Mật khẩu mới phải có ít nhất 8 ký tự.' : 'New password must be at least 8 characters long.');
+      return;
+    }
+    if (!isStrongPassword(newPassword)) {
+      setPassError(
+        lang === 'vi'
+          ? 'Mật khẩu mới phải chứa chữ hoa, chữ thường, số và ký tự đặc biệt.'
+          : 'New password must contain uppercase, lowercase, numbers, and special characters.'
+      );
+      return;
+    }
+    if (!confirmPassword) {
+      setPassError(lang === 'vi' ? 'Vui lòng nhập lại mật khẩu mới để xác nhận.' : 'Please confirm your new password.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPassError(lang === 'vi' ? 'Xác nhận mật khẩu không khớp.' : 'Password confirmation does not match.');
+      return;
+    }
+
+    setIsSubmittingPass(true);
+    try {
+      await userService.changeMyPassword({
+        currentPassword,
+        newPassword,
+        confirmPassword,
+      });
+      setPassSuccess(
+        lang === 'vi'
+          ? 'Đổi mật khẩu thành công! Tất cả các phiên đăng nhập khác đã được đăng xuất.'
+          : 'Password changed successfully! All other sessions have been logged out.'
+      );
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => {
+        setIsChangePassModalOpen(false);
+        setPassSuccess(null);
+      }, 2500);
+    } catch (err: any) {
+      setPassError(
+        err?.message ||
+        (lang === 'vi'
+          ? 'Đổi mật khẩu thất bại. Mật khẩu hiện tại không đúng.'
+          : 'Failed to change password. Current password may be incorrect.')
+      );
+    } finally {
+      setIsSubmittingPass(false);
+    }
+  };
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaveError(null);
@@ -766,8 +849,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      onClose();
-                      onChangePassword?.();
+                      setCurrentPassword('');
+                      setNewPassword('');
+                      setConfirmPassword('');
+                      setPassError(null);
+                      setPassSuccess(null);
+                      setIsChangePassModalOpen(true);
                     }}
                     className="text-xs font-bold text-[#EC1577] hover:underline cursor-pointer"
                   >
@@ -1141,6 +1228,127 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             </button>
           </div>
         </div>
+        {/* Change Password Modal */}
+        {isChangePassModalOpen && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-[100] animate-fadeIn">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-100 space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2 text-slate-900 font-bold text-base">
+                  <Lock className="w-5 h-5 text-[#EC1577]" />
+                  <span>{lang === 'vi' ? 'Đổi Mật Khẩu Đăng Nhập' : 'Change Account Password'}</span>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsChangePassModalOpen(false);
+                    setCurrentPassword('');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                    setPassError(null);
+                    setPassSuccess(null);
+                  }}
+                  className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {passError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{passError}</span>
+                </div>
+              )}
+
+              {passSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span>{passSuccess}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleChangePasswordSubmit} className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    {lang === 'vi' ? 'Mật Khẩu Hiện Tại' : 'Current Password'} <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={currentPassword}
+                    onChange={(e) => {
+                      setCurrentPassword(e.target.value);
+                      if (passError) setPassError(null);
+                    }}
+                    placeholder="••••••••"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    {lang === 'vi' ? 'Mật Khẩu Mới' : 'New Password'} <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={newPassword}
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      if (passError) setPassError(null);
+                    }}
+                    placeholder={
+                      lang === 'vi'
+                        ? 'Tối thiểu 8 ký tự, chữ hoa, thường, số, ký tự đặc biệt'
+                        : 'Min 8 chars, uppercase, lowercase, number, symbol'
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    {lang === 'vi' ? 'Xác Nhận Mật Khẩu Mới' : 'Confirm New Password'} <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      if (passError) setPassError(null);
+                    }}
+                    placeholder={lang === 'vi' ? 'Nhập lại mật khẩu mới' : 'Re-enter new password'}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs text-slate-900"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsChangePassModalOpen(false);
+                      setCurrentPassword('');
+                      setNewPassword('');
+                      setConfirmPassword('');
+                      setPassError(null);
+                      setPassSuccess(null);
+                    }}
+                    className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                  >
+                    {lang === 'vi' ? 'Hủy' : 'Cancel'}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingPass}
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white text-xs font-bold hover:opacity-90 transition disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSubmittingPass ? (lang === 'vi' ? 'Đang xử lý...' : 'Processing...') : (lang === 'vi' ? 'Cập Nhật Mật Khẩu' : 'Update Password')}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

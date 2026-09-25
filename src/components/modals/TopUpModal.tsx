@@ -7,7 +7,9 @@ interface TopUpModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentCredit?: number;
+  userCredit?: UserCredit;
   onCreditUpdated?: (newBalance: number) => void;
+  onUserCreditUpdated?: (newCredit: UserCredit) => void;
 }
 
 const DEFAULT_PACKAGES: TopupPackage[] = [
@@ -76,14 +78,18 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   isOpen,
   onClose,
   currentCredit = 0,
+  userCredit: initialUserCredit,
   onCreditUpdated,
+  onUserCreditUpdated,
 }) => {
   const [packages, setPackages] = useState<TopupPackage[]>(DEFAULT_PACKAGES);
   const [selectedPkg, setSelectedPkg] = useState<TopupPackage | null>(DEFAULT_PACKAGES[1]);
   const [loading, setLoading] = useState<boolean>(false);
   const [purchasing, setPurchasing] = useState<boolean>(false);
   const [step, setStep] = useState<'SELECT' | 'PAYMENT' | 'SUCCESS'>('SELECT');
-  const [userCreditBalance, setUserCreditBalance] = useState<number>(currentCredit);
+  const [userCredit, setUserCredit] = useState<UserCredit>(
+    initialUserCredit || { postCredits: currentCredit || 10, chatCredits: 20 }
+  );
   const [paymentMethod, setPaymentMethod] = useState<'QR' | 'BANK'>('QR');
 
   useEffect(() => {
@@ -111,10 +117,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       }
 
       if (creditObj) {
-        const bal = typeof creditObj.balance === 'number'
-          ? creditObj.balance
-          : (creditObj.postCredits || 0) + (creditObj.chatCredits || 0);
-        if (bal > 0) setUserCreditBalance(bal);
+        setUserCredit(creditObj);
       }
     } catch (err) {
       console.warn('Failed to fetch topup packages from server, using default packages.', err);
@@ -130,19 +133,26 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     setPurchasing(true);
     try {
       const result = await topupService.purchasePackage(selectedPkg.id);
-      const resBal = result ? (typeof result.balance === 'number' ? result.balance : (result.postCredits || 0) + (result.chatCredits || 0)) : 0;
-      const newBal = resBal > 0 ? resBal : (userCreditBalance + getPkgTotalCredits(selectedPkg));
-      setUserCreditBalance(newBal);
-      if (onCreditUpdated) {
-        onCreditUpdated(newBal);
+      const updatedCredit: UserCredit = result || {
+        postCredits: (userCredit.postCredits || 0) + (selectedPkg.postCredits || 0),
+        chatCredits: (userCredit.chatCredits || 0) + (selectedPkg.chatCredits || 0),
+      };
+      setUserCredit(updatedCredit);
+      if (onUserCreditUpdated) onUserCreditUpdated(updatedCredit);
+      if (onCreditUpdated && typeof updatedCredit.postCredits === 'number') {
+        onCreditUpdated(updatedCredit.postCredits);
       }
       setStep('SUCCESS');
     } catch (err: any) {
-      console.warn('Backend API purchase error, simulating successful local purchase for demonstration.', err);
-      const simulatedBal = userCreditBalance + getPkgTotalCredits(selectedPkg);
-      setUserCreditBalance(simulatedBal);
-      if (onCreditUpdated) {
-        onCreditUpdated(simulatedBal);
+      console.warn('Backend API purchase error, updating credit locally for demonstration.', err);
+      const updatedCredit: UserCredit = {
+        postCredits: (userCredit.postCredits || 0) + (selectedPkg.postCredits || 0),
+        chatCredits: (userCredit.chatCredits || 0) + (selectedPkg.chatCredits || 0),
+      };
+      setUserCredit(updatedCredit);
+      if (onUserCreditUpdated) onUserCreditUpdated(updatedCredit);
+      if (onCreditUpdated && typeof updatedCredit.postCredits === 'number') {
+        onCreditUpdated(updatedCredit.postCredits);
       }
       setStep('SUCCESS');
     } finally {
@@ -158,18 +168,18 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
           <div className="flex items-center space-x-3">
-            <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              <Coins className="w-6 h-6" />
+            <div className="p-2.5 rounded-xl bg-gradient-to-tr from-amber-500/20 to-teal-500/20 text-amber-400 border border-amber-500/30">
+              <Sparkles className="w-6 h-6" />
             </div>
             <div>
               <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                Nạp Xu SecondLife
+                Gói Quyền Sử Dụng SecondLife
                 <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
-                  Nạp tự động 24/7
+                  Kích hoạt tự động
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                Tích lũy xu để đăng bài VIP, đẩy bài lên top và nhận nhiều ưu đãi
+                Tích lũy lượt đăng tin và lượt tư vấn AI thông minh (Ollama LLM) cho bài đăng
               </p>
             </div>
           </div>
@@ -181,14 +191,20 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
           </button>
         </div>
 
-        {/* Current Balance Bar */}
-        <div className="px-6 py-3 bg-gradient-to-r from-amber-950/30 via-slate-900 to-emerald-950/30 border-b border-slate-800/60 flex items-center justify-between">
-          <span className="text-sm text-slate-400 flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-amber-400" /> Số dư Xu hiện tại của bạn:
+        {/* Current Balance Bar (Requirement 7) */}
+        <div className="px-6 py-3 bg-gradient-to-r from-amber-950/30 via-slate-900 to-teal-950/30 border-b border-slate-800/60 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs text-slate-400 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>Quyền sử dụng hiện tại của bạn:</span>
           </span>
-          <span className="text-lg font-extrabold text-amber-400 font-mono flex items-center gap-1.5">
-            {userCreditBalance.toLocaleString('vi-VN')} <span className="text-xs text-amber-300/80 font-sans font-normal">Xu</span>
-          </span>
+          <div className="flex items-center gap-3 text-xs font-bold font-mono">
+            <span className="text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg">
+              Lượt đăng tin: <span className="text-sm font-extrabold">{userCredit.postCredits ?? 0}</span>
+            </span>
+            <span className="text-teal-400 bg-teal-500/10 border border-teal-500/20 px-2.5 py-1 rounded-lg">
+              Lượt tư vấn AI: <span className="text-sm font-extrabold">{userCredit.chatCredits ?? 0}</span>
+            </span>
+          </div>
         </div>
 
         {/* Modal Content Steps */}
@@ -206,8 +222,8 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                     const isSelected = selectedPkg?.id === pkg.id;
                     const pkgName = getPkgName(pkg);
                     const pkgPrice = getPkgPrice(pkg);
-                    const bonus = getPkgBonus(pkg);
-                    const totalPoints = getPkgTotalCredits(pkg);
+                    const postCredits = Number(pkg.postCredits || 0);
+                    const chatCredits = Number(pkg.chatCredits || 0);
 
                     return (
                       <div
@@ -233,16 +249,15 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                             </span>
                           </div>
 
-                          <div className="flex items-baseline space-x-2 my-2">
-                            <span className="text-2xl font-extrabold text-slate-100 font-mono">
-                              +{totalPoints}
-                            </span>
-                            <span className="text-sm font-semibold text-amber-400">Xu</span>
-                            {bonus > 0 && (
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-medium">
-                                (gồm +{bonus} Xu tặng)
-                              </span>
-                            )}
+                          <div className="flex flex-col gap-1.5 my-2.5">
+                            <div className="flex items-center gap-1.5 text-xs text-amber-300 font-bold">
+                              <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              <span>+{postCredits} Lượt đăng tin bài</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-xs text-teal-300 font-bold">
+                              <Zap className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                              <span>+{chatCredits} Lượt AI tư vấn mô tả</span>
+                            </div>
                           </div>
 
                           {pkg.description && (
@@ -251,8 +266,8 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                         </div>
 
                         <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                          <span className="text-slate-400">Tỷ lệ quy đổi</span>
-                          <span className="text-slate-300 font-mono">1.000đ = 1 Xu</span>
+                          <span className="text-slate-400">Quyền sử dụng</span>
+                          <span className="text-slate-300 font-medium">Đăng tin & AI Chat</span>
                         </div>
                       </div>
                     );
@@ -388,24 +403,28 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
               </div>
 
               <div className="space-y-1">
-                <h3 className="text-xl font-extrabold text-slate-100">Nạp Xu Thành Công!</h3>
+                <h3 className="text-xl font-extrabold text-slate-100">Nạp Quyền Sử Dụng Thành Công!</h3>
                 <p className="text-xs text-slate-400">
                   Tài khoản của bạn đã được cộng thêm{' '}
                   <span className="font-bold text-amber-400 font-mono">
-                    +{getPkgTotalCredits(selectedPkg)} Xu
+                    +{selectedPkg.postCredits || 0} lượt đăng tin
+                  </span>{' '}
+                  &amp;{' '}
+                  <span className="font-bold text-teal-400 font-mono">
+                    +{selectedPkg.chatCredits || 0} lượt tư vấn AI
                   </span>
                 </p>
               </div>
 
               <div className="max-w-xs mx-auto p-4 rounded-xl bg-slate-950/80 border border-slate-800 text-left text-xs space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Số dư mới:</span>
+                  <span className="text-slate-400">Quyền sử dụng mới:</span>
                   <span className="font-bold text-amber-400 font-mono">
-                    {userCreditBalance.toLocaleString('vi-VN')} Xu
+                    {userCredit.postCredits ?? 0} tin • {userCredit.chatCredits ?? 0} AI
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Gói nạp:</span>
+                  <span className="text-slate-400">Gói đăng ký:</span>
                   <span className="text-slate-200">{getPkgName(selectedPkg)}</span>
                 </div>
                 <div className="flex justify-between">

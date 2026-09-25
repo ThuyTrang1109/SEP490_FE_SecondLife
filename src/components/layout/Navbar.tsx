@@ -1,6 +1,6 @@
 import React from 'react';
 import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Sun, Moon, Phone, Coins } from 'lucide-react';
-import { UserRole, Language, ThemeMode } from '../../types';
+import { UserRole, Language, ThemeMode, UserCredit } from '../../types';
 import { translations } from '../../utils/translations';
 
 interface NavbarProps {
@@ -17,9 +17,9 @@ interface NavbarProps {
   currentUser?: { id: string; name: string; email: string; role: UserRole } | null;
   onOpenAuth: (mode: 'login' | 'register') => void;
   onLogout: () => void;
-  onOpenProfile?: () => void;
   onOpenTopUp?: () => void;
   userCreditBalance?: number;
+  userCredit?: UserCredit;
   onOpenSellerRegister?: () => void;
 }
 
@@ -40,6 +40,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenProfile,
   onOpenTopUp,
   userCreditBalance = 100,
+  userCredit,
   onOpenSellerRegister,
 }) => {
   const t = translations[lang];
@@ -141,11 +142,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         <nav className="hidden lg:flex items-center gap-1">
           <button
             onClick={() => onTabChange('home')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              activeTab === 'home'
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'home'
                 ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/30 font-extrabold'
                 : 'text-slate-200 hover:text-white hover:bg-white/15'
-            }`}
+              }`}
           >
             <Home className="w-3.5 h-3.5" />
             <span>{lang === 'vi' ? 'Trang Chủ' : 'Home'}</span>
@@ -153,11 +153,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <button
             onClick={() => onTabChange('marketplace')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              activeTab === 'marketplace'
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'marketplace'
                 ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/30 font-extrabold'
                 : 'text-slate-200 hover:text-white hover:bg-white/15'
-            }`}
+              }`}
           >
             <ShoppingBag className="w-3.5 h-3.5" />
             <span>{lang === 'vi' ? 'Sàn Đồ Cũ' : 'Marketplace'}</span>
@@ -166,11 +165,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           {currentUser && currentRole === 'seller' && (
             <button
               onClick={() => onTabChange('seller-dashboard')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'seller-dashboard'
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'seller-dashboard'
                   ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/30 font-extrabold'
                   : 'text-slate-200 hover:text-white hover:bg-white/15'
-              }`}
+                }`}
             >
               <Building2 className="w-3.5 h-3.5" />
               <span>{lang === 'vi' ? 'Kênh Người Bán' : 'Seller Hub'}</span>
@@ -180,11 +178,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           {currentUser && currentRole === 'seller' && (
             <button
               onClick={() => onTabChange('create-listing')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'create-listing'
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'create-listing'
                   ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/30 font-extrabold'
                   : 'text-slate-200 hover:text-white hover:bg-white/15'
-              }`}
+                }`}
             >
               <PlusCircle className="w-3.5 h-3.5" />
               <span>{lang === 'vi' ? 'Đăng Bán AI' : 'Post Listing'}</span>
@@ -194,11 +191,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           {currentUser && (currentRole === 'buyer' || currentRole === 'seller' || currentRole === 'admin') && (
             <button
               onClick={() => onTabChange('orders')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${
-                activeTab === 'orders'
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${activeTab === 'orders'
                   ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/30 font-extrabold'
                   : 'text-slate-200 hover:text-white hover:bg-white/15'
-              }`}
+                }`}
             >
               <Clock className="w-3.5 h-3.5" />
               <span>{lang === 'vi' ? (currentRole === 'buyer' ? 'Đơn Hàng Ký Quỹ' : 'Quản Lý Đơn') : 'Orders'}</span>
@@ -213,11 +209,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           {currentUser && (currentRole === 'inspector' || currentRole === 'admin') && (
             <button
               onClick={() => onTabChange('inspection-hub')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'inspection-hub'
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'inspection-hub'
                   ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/30 font-extrabold'
                   : 'text-slate-200 hover:text-white hover:bg-white/15'
-              }`}
+                }`}
             >
               <Building2 className="w-3.5 h-3.5" />
               <span>{lang === 'vi' ? 'Kiểm Định Home Hub' : 'Inspection Hub'}</span>
@@ -227,11 +222,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           {currentUser && currentRole === 'admin' && (
             <button
               onClick={() => onTabChange('admin-dashboard')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'admin-dashboard'
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'admin-dashboard'
                   ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/30 font-extrabold'
                   : 'text-slate-200 hover:text-white hover:bg-white/15'
-              }`}
+                }`}
             >
               <ShieldAlert className="w-3.5 h-3.5" />
               <span>{lang === 'vi' ? 'Quản Trị Admin' : 'Admin'}</span>
@@ -241,24 +235,28 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Action buttons & Profile */}
         <div className="flex items-center gap-2">
-          {/* TopUp Coins Badge Button */}
+          {/* TopUp Credits Badge Button (Requirement 7) */}
           {currentUser && (
             <button
               onClick={onOpenTopUp}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-emerald-500/10 hover:from-amber-500/30 hover:to-emerald-500/20 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-md shadow-amber-500/5 hover:scale-105"
-              title="Click để nạp Xu SecondLife"
+              className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-teal-500/10 hover:from-amber-500/25 hover:to-teal-500/20 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-sm"
+              title={lang === 'vi' ? 'Quyền sử dụng: Lượt đăng tin & Lượt tư vấn AI' : 'Usage rights: Post & AI credits'}
             >
-              <Coins className="w-4 h-4 text-amber-400" />
-              <span>{userCreditBalance.toLocaleString('vi-VN')} Xu</span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <div className="flex items-center gap-1.5 text-[11px]">
+                <span className="font-bold text-slate-200 hidden sm:inline">{lang === 'vi' ? 'Quyền sử dụng:' : 'Credits:'}</span>
+                <span className="text-amber-400 font-extrabold">{userCredit?.postCredits ?? (userCreditBalance ?? 0)} {lang === 'vi' ? 'tin' : 'posts'}</span>
+                <span className="text-slate-500">•</span>
+                <span className="text-teal-300 font-extrabold">{userCredit?.chatCredits ?? 15} AI</span>
+              </div>
               <span className="text-[10px] px-1 py-0.2 bg-amber-400 text-slate-950 rounded font-black leading-none ml-0.5">+</span>
             </button>
           )}
 
           <button
             onClick={() => onTabChange('chat')}
-            className={`p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 relative transition cursor-pointer ${
-              activeTab === 'chat' ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white' : ''
-            }`}
+            className={`p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 relative transition cursor-pointer ${activeTab === 'chat' ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white' : ''
+              }`}
             title="Chat & Smart Negotiation"
           >
             <MessageSquare className="w-4 h-4" />
@@ -343,18 +341,16 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="md:hidden border-t border-white/10 bg-[#0B0E15] px-3 py-1.5 flex items-center justify-around text-[11px] font-medium text-slate-400">
         <button
           onClick={() => onTabChange('home')}
-          className={`flex items-center gap-1 py-1 px-2 rounded-md ${
-            activeTab === 'home' ? 'text-white font-bold bg-gradient-to-r from-[#EC1577] to-[#F1622A]' : ''
-          }`}
+          className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'home' ? 'text-white font-bold bg-gradient-to-r from-[#EC1577] to-[#F1622A]' : ''
+            }`}
         >
           <Home className="w-3.5 h-3.5" />
           <span>{lang === 'vi' ? 'Trang chủ' : 'Home'}</span>
         </button>
         <button
           onClick={() => onTabChange('marketplace')}
-          className={`flex items-center gap-1 py-1 px-2 rounded-md ${
-            activeTab === 'marketplace' ? 'text-white font-bold bg-gradient-to-r from-[#EC1577] to-[#F1622A]' : ''
-          }`}
+          className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'marketplace' ? 'text-white font-bold bg-gradient-to-r from-[#EC1577] to-[#F1622A]' : ''
+            }`}
         >
           <ShoppingBag className="w-3.5 h-3.5" />
           <span>{lang === 'vi' ? 'Sàn đồ cũ' : 'Market'}</span>
@@ -365,9 +361,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             {currentRole === 'seller' ? (
               <button
                 onClick={() => onTabChange('create-listing')}
-                className={`flex items-center gap-1 py-1 px-2 rounded-md ${
-                  activeTab === 'create-listing' ? 'text-white font-bold bg-gradient-to-r from-[#EC1577] to-[#F1622A]' : ''
-                }`}
+                className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'create-listing' ? 'text-white font-bold bg-gradient-to-r from-[#EC1577] to-[#F1622A]' : ''
+                  }`}
               >
                 <PlusCircle className="w-3.5 h-3.5" />
                 <span>{lang === 'vi' ? 'Đăng tin' : 'Post Listing'}</span>
@@ -389,9 +384,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
             <button
               onClick={() => onTabChange('orders')}
-              className={`flex items-center gap-1 py-1 px-2 rounded-md relative ${
-                activeTab === 'orders' ? 'text-white font-bold bg-gradient-to-r from-[#EC1577] to-[#F1622A]' : ''
-              }`}
+              className={`flex items-center gap-1 py-1 px-2 rounded-md relative ${activeTab === 'orders' ? 'text-white font-bold bg-gradient-to-r from-[#EC1577] to-[#F1622A]' : ''
+                }`}
             >
               <Clock className="w-3.5 h-3.5" />
               <span>{lang === 'vi' ? 'Đơn hàng' : 'Orders'}</span>
@@ -399,9 +393,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             {currentRole === 'admin' ? (
               <button
                 onClick={() => onTabChange('admin-dashboard')}
-                className={`flex items-center gap-1 py-1 px-2 rounded-md ${
-                  activeTab === 'admin-dashboard' ? 'text-white font-bold bg-gradient-to-r from-[#EC1577] to-[#F1622A]' : ''
-                }`}
+                className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'admin-dashboard' ? 'text-white font-bold bg-gradient-to-r from-[#EC1577] to-[#F1622A]' : ''
+                  }`}
               >
                 <ShieldAlert className="w-3.5 h-3.5" />
                 <span>Admin</span>

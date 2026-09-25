@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserRole, Language, ThemeMode, Listing, EscrowOrder, DisputeCase, UserProfile } from './types';
+import { UserRole, Language, ThemeMode, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit } from './types';
 import { mockListings, mockOrders, mockDisputes } from './data/mockData';
 import { formatVND } from './utils/translations';
 import { Navbar } from './components/layout/Navbar';
@@ -67,10 +67,10 @@ export default function App() {
             role: (profile.roles?.includes('ADMIN') || profile.roles?.includes('ROLE_ADMIN'))
               ? 'admin'
               : (profile.roles?.includes('INSPECTOR') || profile.roles?.includes('ROLE_INSPECTOR') || profile.roles?.includes('HUB_INSPECTOR'))
-              ? 'inspector'
-              : (profile.roles?.includes('SELLER') || profile.roles?.includes('ROLE_SELLER'))
-              ? 'seller'
-              : 'buyer',
+                ? 'inspector'
+                : (profile.roles?.includes('SELLER') || profile.roles?.includes('ROLE_SELLER'))
+                  ? 'seller'
+                  : 'buyer',
             phone: profile.phone || '',
             avatar: profile.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
             accountStatus: profile.accountStatus,
@@ -101,17 +101,24 @@ export default function App() {
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
   const [userCreditBalance, setUserCreditBalance] = useState<number>(500);
+  const [userCredit, setUserCredit] = useState<UserCredit>({
+    postCredits: 10,
+    chatCredits: 20,
+  });
 
   // Fetch credit balance on load if user is logged in
   React.useEffect(() => {
     if (currentUser) {
       topupService.getMyCredit()
         .then((res) => {
-          if (res && typeof res.balance === 'number') {
-            setUserCreditBalance(res.balance);
+          if (res) {
+            setUserCredit(res);
+            if (typeof res.balance === 'number') {
+              setUserCreditBalance(res.balance);
+            }
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [currentUser]);
 
@@ -333,8 +340,8 @@ export default function App() {
 
   return (
     <div className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${theme === 'dark'
-        ? 'bg-[#0E121B] text-white selection:bg-[#EC1577] selection:text-white'
-        : 'bg-[#F4F5F8] text-[#0E121B] selection:bg-[#EC1577] selection:text-white'
+      ? 'bg-[#0E121B] text-white selection:bg-[#EC1577] selection:text-white'
+      : 'bg-[#F4F5F8] text-[#0E121B] selection:bg-[#EC1577] selection:text-white'
       }`}>
       {/* Navigation */}
       {activeTab !== 'admin-dashboard' && (
@@ -371,6 +378,7 @@ export default function App() {
             }
           }}
           userCreditBalance={userCreditBalance}
+          userCredit={userCredit}
           onOpenSellerRegister={() => setIsSellerRegistrationModalOpen(true)}
         />
       )}
@@ -695,12 +703,14 @@ export default function App() {
         }}
       />
 
-      {/* TopUp Coins Modal Popup */}
+      {/* TopUp Credits Modal Popup (Requirement 7) */}
       <TopUpModal
         isOpen={isTopUpModalOpen}
         onClose={() => setIsTopUpModalOpen(false)}
         currentCredit={userCreditBalance}
+        userCredit={userCredit}
         onCreditUpdated={(newBal) => setUserCreditBalance(newBal)}
+        onUserCreditUpdated={(newCredit) => setUserCredit(newCredit)}
       />
       {/* Logout Confirmation Modal Popup */}
       <LogoutConfirmModal

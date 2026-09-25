@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { Sparkles, Camera, CheckCircle2, AlertTriangle, ShieldCheck, ArrowRight, ArrowLeft, UploadCloud, Info, RefreshCw, Loader2 } from 'lucide-react';
-import { ItemCategory, ConditionGrade, Listing, PhotoChecklist, Language } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Sparkles, Camera, CheckCircle2, AlertTriangle, ShieldCheck, ArrowRight, ArrowLeft, UploadCloud, Info, RefreshCw, Loader2, Plus, Bot } from 'lucide-react';
+import { ItemCategory, ConditionGrade, Listing, PhotoChecklist, Language, CategoryBackend, ItemBackend } from '../types';
 import { translations, formatVND } from '../utils/translations';
-import { mediaService, postService } from '../services';
+import { mediaService, postService, categoryService, itemService } from '../services';
+import { AiListingAssistant } from '../components/listing/AiListingAssistant';
 
 interface CreateListingViewProps {
   onListingCreated: (newListing: Listing) => void;
@@ -17,7 +18,20 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 }) => {
   const t = translations[lang];
 
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+
+  // Backend Category & Item
+  const [backendCategories, setBackendCategories] = useState<CategoryBackend[]>([]);
+  const [backendItems, setBackendItems] = useState<ItemBackend[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [selectedItemId, setSelectedItemId] = useState<string>('');
+
+  // Primary image base64 & AI Session / Post states
+  const [primaryBase64, setPrimaryBase64] = useState<string>('');
+  const [postId, setPostId] = useState<string | null>(null);
+  const [aiSessionId, setAiSessionId] = useState<string | null>(null);
+  const [aiInitialMessage, setAiInitialMessage] = useState<string>('');
+  const [isInitializingPost, setIsInitializingPost] = useState(false);
 
   // Form State
   const [title, setTitle] = useState('');
@@ -40,16 +54,94 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   });
   const [uploadingSlot, setUploadingSlot] = useState<string | null>(null);
 
+  // Fetch backend categories
+  useEffect(() => {
+    categoryService.getCategories()
+      .then((catList) => {
+        if (Array.isArray(catList) && catList.length > 0) {
+          setBackendCategories(catList);
+          setSelectedCategoryId(catList[0].id);
+          setCategory(catList[0].name as any);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Fetch backend items when category changes
+  useEffect(() => {
+    if (selectedCategoryId) {
+      itemService.getItemsByCategory(selectedCategoryId)
+        .then((itemList) => {
+          if (Array.isArray(itemList) && itemList.length > 0) {
+            setBackendItems(itemList);
+            setSelectedItemId(itemList[0].id);
+          } else {
+            setBackendItems([]);
+            setSelectedItemId('');
+          }
+        })
+        .catch(() => {
+          setBackendItems([]);
+          setSelectedItemId('');
+        });
+    }
+  }, [selectedCategoryId]);
+
   const handlePhotoUpload = async (key: keyof PhotoChecklist, file: File) => {
     try {
       setUploadingSlot(key);
       const res = await mediaService.uploadImage(file, 'product-listings');
       setPhotos(prev => ({ ...prev, [key]: res.url }));
+      if (key === 'front') {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') setPrimaryBase64(reader.result);
+        };
+        reader.readAsDataURL(file);
+      }
     } catch (err: any) {
       alert('Tải ảnh sản phẩm thất bại: ' + (err.message || 'Lỗi kết nối server'));
     } finally {
       setUploadingSlot(null);
     }
+  };
+
+  const handleMultiplePhotosUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files: File[] = e.target.files ? Array.from(e.target.files) : [];
+    if (files.length === 0) return;
+
+    try {
+      setUploadingSlot('batch');
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setPrimaryBase64(reader.result);
+        }
+      };
+      reader.readAsDataURL(files[0]);
+
+      // Call batch upload endpoint
+      const uploadedList = await mediaService.uploadMultipleImages(files, 'product-listings');
+      if (uploadedList && uploadedList.length > 0) {
+        setPhotos(prev => ({
+          ...prev,
+          front: uploadedList[0]?.url || prev.front,
+          back: uploadedList[1]?.url || prev.back,
+          screenOrDetails: uploadedList[2]?.url || prev.screenOrDetails,
+          accessoriesOrBox: uploadedList[3]?.url || prev.accessoriesOrBox,
+          serialOrReceipt: uploadedList[4]?.url || prev.serialOrReceipt,
+        }));
+      }
+    } catch (err: any) {
+      alert('Tải nhiều ảnh thất bại: ' + (err.message || 'Lỗi server'));
+    } finally {
+      setUploadingSlot(null);
+    }
+  };
+
+  const getEnsureBase64 = async (): Promise<string> => {
+    if (primaryBase64) return primaryBase64;
+    return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
   };
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -149,58 +241,32 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
   };
 
-  const handleSubmit = async () => {
+  const handleInitPostAndChat = async () => {
+    setIsInitializingPost(true);
     try {
-      // Init post on backend
+      const base64Image = await getEnsureBase64();
+      const catId = selectedCategoryId || (backendCategories[0]?.id || '00000000-0000-0000-0000-000000000001');
+      const itmId = selectedItemId || (backendItems[0]?.id || '00000000-0000-0000-0000-000000000001');
+
       const initRes = await postService.initPost({
-        title: title || `${brand} ${model}`,
-        priceVnd: finalPriceVnd,
-        conditionGrade: declaredCondition,
-        description: description || 'Sản phẩm đã qua sử dụng, cam kết nguyên bản.',
-      }).catch((e) => null);
+        categoryId: catId,
+        itemId: itmId,
+        base64Image,
+      });
 
-      if (initRes && initRes.id) {
-        await postService.submitPost(initRes.id).catch(() => {});
+      if (initRes && initRes.postId && initRes.sessionId) {
+        setPostId(initRes.postId);
+        setAiSessionId(initRes.sessionId);
+        setAiInitialMessage(initRes.aiInitialMessage || '');
+        setCurrentStep(4);
+      } else {
+        throw new Error('Hệ thống không trả về postId hoặc sessionId');
       }
-    } catch (e) {
-      console.warn('Backend post init info:', e);
+    } catch (err: any) {
+      alert('Khởi tạo bài đăng thất bại: ' + (err?.message || 'Lỗi kết nối server'));
+    } finally {
+      setIsInitializingPost(false);
     }
-
-    const newListing: Listing = {
-      id: `listing-${Date.now().toString().slice(-6)}`,
-      title: title || `${brand} ${model}`,
-      category,
-      brand,
-      model: model || 'Standard',
-      purchaseYear,
-      priceVnd: finalPriceVnd,
-      originalPriceVnd,
-      conditionGrade: declaredCondition,
-      declaredConditionText: declaredConditionText || 'Tình trạng thực tế đúng như mô tả và ảnh chụp.',
-      description: description || 'Sản phẩm đã qua sử dụng, cam kết nguyên bản.',
-      location: 'Quận 1, TP. Hồ Chí Minh',
-      sellerId: 'user-current',
-      sellerName: 'Nguyễn Minh Tuấn',
-      sellerRating: 4.9,
-      sellerCompletedOrders: 38,
-      sellerVerified: true,
-      status: 'active',
-      createdAt: new Date().toISOString(),
-      isInspectionGuaranteed: true,
-      requiresInspection: true,
-      photos,
-      photoGallery: [photos.front, photos.back, photos.screenOrDetails, photos.accessoriesOrBox],
-      aiPriceEstimation: aiEstimation ? {
-        minVnd: aiEstimation.minVnd,
-        maxVnd: aiEstimation.maxVnd,
-        suggestedVnd: aiEstimation.suggestedVnd,
-        quickSaleVnd: aiEstimation.quickSaleVnd,
-        confidence: aiEstimation.confidence,
-        daysToSell: aiEstimation.daysToSell
-      } : undefined
-    };
-
-    onListingCreated(newListing);
   };
 
   return (
@@ -228,8 +294,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         </button>
       </div>
 
-      {/* 3-Step Progress Bar */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+      {/* 4-Step Progress Bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
         <div
           className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${
             currentStep === 1
@@ -237,7 +303,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               : 'bg-[#FFFFFF] border-gray-200 text-[#0E121B]/60'
           }`}
         >
-          <div className="text-[11px] uppercase tracking-wider font-semibold">{t.stepInfo}</div>
+          <div className="text-[11px] uppercase tracking-wider font-semibold">1. {t.stepInfo}</div>
         </div>
 
         <div
@@ -247,7 +313,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               : 'bg-[#FFFFFF] border-gray-200 text-[#0E121B]/60'
           }`}
         >
-          <div className="text-[11px] uppercase tracking-wider font-semibold">{t.stepPhotos}</div>
+          <div className="text-[11px] uppercase tracking-wider font-semibold">2. {t.stepPhotos}</div>
         </div>
 
         <div
@@ -257,7 +323,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               : 'bg-[#FFFFFF] border-gray-200 text-[#0E121B]/60'
           }`}
         >
-          <div className="text-[11px] uppercase tracking-wider font-semibold">{t.stepValuation}</div>
+          <div className="text-[11px] uppercase tracking-wider font-semibold">3. {t.stepValuation}</div>
+        </div>
+
+        <div
+          className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${
+            currentStep === 4
+              ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] border-[#EC1577] text-white font-semibold'
+              : 'bg-[#FFFFFF] border-gray-200 text-[#0E121B]/60'
+          }`}
+        >
+          <div className="text-[11px] uppercase tracking-wider font-semibold">4. {lang === 'vi' ? 'Trợ lý AI' : 'AI Assistant'}</div>
         </div>
       </div>
 
@@ -272,16 +348,54 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-[#0E121B]">{t.filterCategory} *</label>
               <select
-                value={category}
-                onChange={(e: any) => setCategory(e.target.value)}
+                value={selectedCategoryId || category}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedCategoryId(val);
+                  const matched = backendCategories.find(c => c.id === val);
+                  if (matched) setCategory(matched.name as any);
+                }}
                 className="w-full px-3.5 py-2.5 bg-[#F4F5F8] border border-gray-200 rounded-xl text-sm text-[#0E121B] focus:outline-none focus:border-[#0E121B]"
               >
-                <option value="Tủ lạnh & Tủ đông" className="bg-[#FFFFFF] text-[#0E121B]">Tủ lạnh & Tủ đông (Refrigerators)</option>
-                <option value="Máy giặt & Máy sấy" className="bg-[#FFFFFF] text-[#0E121B]">Máy giặt & Máy sấy (Washing Machines)</option>
-                <option value="Điều hòa & Máy lọc" className="bg-[#FFFFFF] text-[#0E121B]">Điều hòa & Máy lọc không khí</option>
-                <option value="Robot & Máy hút bụi" className="bg-[#FFFFFF] text-[#0E121B]">Robot hút bụi & Máy hút bụi</option>
-                <option value="Lò vi sóng & Lò nướng" className="bg-[#FFFFFF] text-[#0E121B]">Lò vi sóng & Lò nướng</option>
-                <option value="Nồi cơm & Bếp từ" className="bg-[#FFFFFF] text-[#0E121B]">Nồi cơm điện & Bếp từ</option>
+                {backendCategories.length > 0 ? (
+                  backendCategories.map((cat) => (
+                    <option key={cat.id} value={cat.id} className="bg-[#FFFFFF] text-[#0E121B]">
+                      {cat.name}
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="Tủ lạnh & Tủ đông" className="bg-[#FFFFFF] text-[#0E121B]">Tủ lạnh & Tủ đông (Refrigerators)</option>
+                    <option value="Máy giặt & Máy sấy" className="bg-[#FFFFFF] text-[#0E121B]">Máy giặt & Máy sấy (Washing Machines)</option>
+                    <option value="Điều hòa & Máy lọc" className="bg-[#FFFFFF] text-[#0E121B]">Điều hòa & Máy lọc không khí</option>
+                    <option value="Robot & Máy hút bụi" className="bg-[#FFFFFF] text-[#0E121B]">Robot hút bụi & Máy hút bụi</option>
+                    <option value="Lò vi sóng & Lò nướng" className="bg-[#FFFFFF] text-[#0E121B]">Lò vi sóng & Lò nướng</option>
+                    <option value="Nồi cơm & Bếp từ" className="bg-[#FFFFFF] text-[#0E121B]">Nồi cơm điện & Bếp từ</option>
+                  </>
+                )}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#0E121B]">
+                {lang === 'vi' ? 'Vật phẩm chi tiết (Item)' : 'Item'} *
+              </label>
+              <select
+                value={selectedItemId}
+                onChange={(e) => setSelectedItemId(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-[#F4F5F8] border border-gray-200 rounded-xl text-sm text-[#0E121B] focus:outline-none focus:border-[#0E121B]"
+              >
+                {backendItems.length > 0 ? (
+                  backendItems.map((itm) => (
+                    <option key={itm.id} value={itm.id} className="bg-[#FFFFFF] text-[#0E121B]">
+                      {itm.name}
+                    </option>
+                  ))
+                ) : (
+                  <option value="" className="bg-[#FFFFFF] text-[#0E121B]">
+                    {lang === 'vi' ? '-- Chọn hoặc tải danh mục trước --' : '-- Select category first --'}
+                  </option>
+                )}
               </select>
             </div>
 
@@ -424,6 +538,47 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 ? 'SecondLife yêu cầu chuẩn hóa 5 góc chụp để AI quét vết xước, nhận diện linh kiện và làm bằng chứng pháp lý trong Escrow.'
                 : 'SecondLife mandates 5 standard camera angles for AI defect scanning, parts verification, and Escrow dispute protection.'}
             </p>
+          </div>
+
+          {/* Multiple Image Upload Box (Requirement 8) */}
+          <div className="p-4 rounded-2xl border-2 border-dashed border-gray-300 hover:border-[#EC1577] bg-slate-50 transition flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#EC1577]/20 to-[#F1622A]/20 text-[#EC1577] flex items-center justify-center shrink-0">
+                <UploadCloud className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-slate-800">
+                  {lang === 'vi' ? 'Tải lên nhiều ảnh cùng lúc' : 'Upload multiple photos at once'}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {lang === 'vi'
+                    ? 'Chọn đồng thời nhiều ảnh để tải lên nhanh bằng hệ thống Media Cloudinary (tự động phân bổ vào các góc)'
+                    : 'Select multiple photos to upload at once via Media Cloudinary (auto-assigned to angle slots)'}
+                </div>
+              </div>
+            </div>
+
+            <label className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white text-xs font-bold shadow-xs hover:opacity-95 transition cursor-pointer flex items-center gap-1.5 shrink-0">
+              {uploadingSlot === 'batch' ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{lang === 'vi' ? 'Đang tải nhiều ảnh...' : 'Uploading batch...'}</span>
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4" />
+                  <span>{lang === 'vi' ? 'Chọn nhiều ảnh' : 'Select Multiple Photos'}</span>
+                </>
+              )}
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                className="hidden"
+                disabled={uploadingSlot !== null}
+                onChange={handleMultiplePhotosUpload}
+              />
+            </label>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -650,14 +805,72 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </button>
 
             <button
-              onClick={handleSubmit}
-              className="px-6 py-2.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs flex items-center gap-2 cursor-pointer"
+              onClick={handleInitPostAndChat}
+              disabled={isInitializingPost}
+              className="px-6 py-2.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
-              <ShieldCheck className="w-4 h-4" />
-              <span>{t.publishListing}</span>
+              {isInitializingPost ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{lang === 'vi' ? 'Đang khởi tạo bài đăng...' : 'Initializing...'}</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>{lang === 'vi' ? 'Tiếp tục: AI Trợ lý tạo mô tả' : 'Next: AI Listing Assistant'}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </div>
         </div>
+      )}
+
+      {/* Step 4: AI Listing Assistant */}
+      {currentStep === 4 && postId && aiSessionId && (
+        <AiListingAssistant
+          sessionId={aiSessionId}
+          postId={postId}
+          aiInitialMessage={aiInitialMessage}
+          lang={lang}
+          onCancel={() => setCurrentStep(3)}
+          onPostSubmitted={(submittedPostId) => {
+            const newListing: Listing = {
+              id: submittedPostId,
+              title: title || `${brand} ${model}`,
+              category,
+              brand,
+              model: model || 'Standard',
+              purchaseYear,
+              priceVnd: finalPriceVnd,
+              originalPriceVnd,
+              conditionGrade: declaredCondition,
+              declaredConditionText: declaredConditionText || 'Tình trạng thực tế đúng như mô tả và ảnh chụp.',
+              description: description || 'Sản phẩm đã qua sử dụng, cam kết nguyên bản.',
+              location: 'Quận 1, TP. Hồ Chí Minh',
+              sellerId: 'user-current',
+              sellerName: 'Người Bán SecondLife',
+              sellerRating: 5.0,
+              sellerCompletedOrders: 1,
+              sellerVerified: true,
+              status: 'active',
+              createdAt: new Date().toISOString(),
+              isInspectionGuaranteed: true,
+              requiresInspection: true,
+              photos,
+              photoGallery: [photos.front, photos.back, photos.screenOrDetails, photos.accessoriesOrBox],
+              aiPriceEstimation: aiEstimation ? {
+                minVnd: aiEstimation.minVnd,
+                maxVnd: aiEstimation.maxVnd,
+                suggestedVnd: aiEstimation.suggestedVnd,
+                quickSaleVnd: aiEstimation.quickSaleVnd,
+                confidence: aiEstimation.confidence,
+                daysToSell: aiEstimation.daysToSell
+              } : undefined
+            };
+            onListingCreated(newListing);
+          }}
+        />
       )}
     </div>
   );

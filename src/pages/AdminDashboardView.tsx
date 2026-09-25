@@ -55,7 +55,8 @@ import {
   Mail,
   UserCheck,
   AlertCircle,
-  XCircle
+  XCircle,
+  Loader2
 } from 'lucide-react';
 
 interface AdminDashboardViewProps {
@@ -185,6 +186,27 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [selectedBookingModal, setSelectedBookingModal] = useState<BookingAppointment | null>(null);
   const [selectedContactModal, setSelectedContactModal] = useState<CustomerContact | null>(null);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+
+  // Admin User Detail Modal states (Requirement 9)
+  const [selectedUserDetailId, setSelectedUserDetailId] = useState<string | null>(null);
+  const [userDetailModalData, setUserDetailModalData] = useState<UserAdminResponseDto | null>(null);
+  const [isLoadingUserDetail, setIsLoadingUserDetail] = useState(false);
+  const [userDetailError, setUserDetailError] = useState<string | null>(null);
+
+  const handleViewUserDetail = async (userId: string) => {
+    setSelectedUserDetailId(userId);
+    setIsLoadingUserDetail(true);
+    setUserDetailError(null);
+    setUserDetailModalData(null);
+    try {
+      const data = await adminService.getAdminUserById(userId);
+      setUserDetailModalData(data);
+    } catch (err: any) {
+      setUserDetailError(err?.message || 'Không thể tải thông tin chi tiết người dùng');
+    } finally {
+      setIsLoadingUserDetail(false);
+    }
+  };
 
   // AI & Platform Configurations
   const [duplicateThreshold, setDuplicateThreshold] = useState(85);
@@ -1744,16 +1766,26 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                               </span>
                             </td>
                             <td className="py-3 px-4 text-right">
-                              <button
-                                onClick={() => handleToggleUserStatus(user.id, user.accountStatus)}
-                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-                                  user.accountStatus === 'ACTIVE'
-                                    ? 'bg-rose-100 hover:bg-rose-200 text-rose-700'
-                                    : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700'
-                                }`}
-                              >
-                                {user.accountStatus === 'ACTIVE' ? 'Khóa Tài Khoản' : 'Mở Khóa'}
-                              </button>
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => handleViewUserDetail(user.id)}
+                                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center gap-1 transition cursor-pointer"
+                                  title="Xem chi tiết tài khoản"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>Chi tiết</span>
+                                </button>
+                                <button
+                                  onClick={() => handleToggleUserStatus(user.id, user.accountStatus)}
+                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                                    user.accountStatus === 'ACTIVE'
+                                      ? 'bg-rose-100 hover:bg-rose-200 text-rose-700'
+                                      : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700'
+                                  }`}
+                                >
+                                  {user.accountStatus === 'ACTIVE' ? 'Khóa' : 'Mở Khóa'}
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))
@@ -2516,6 +2548,146 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Admin User Detail Modal (Requirement 9) */}
+      {selectedUserDetailId && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-xl w-full shadow-2xl border border-slate-100 space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#EC1577]/20 to-[#F1622A]/20 flex items-center justify-center text-[#EC1577]">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Chi Tiết Tài Khoản Người Dùng</h3>
+                  <p className="text-xs text-slate-500 font-mono">ID: {selectedUserDetailId}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedUserDetailId(null)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {isLoadingUserDetail ? (
+              <div className="py-12 flex flex-col items-center justify-center space-y-3">
+                <Loader2 className="w-8 h-8 text-[#EC1577] animate-spin" />
+                <p className="text-xs text-slate-500">Đang tải dữ liệu từ máy chủ (GET /admin/users/{selectedUserDetailId})...</p>
+              </div>
+            ) : userDetailError ? (
+              <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs space-y-2">
+                <div className="flex items-center gap-2 font-bold">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>Lỗi khi tải thông tin:</span>
+                </div>
+                <p>{userDetailError}</p>
+                <button
+                  onClick={() => handleViewUserDetail(selectedUserDetailId)}
+                  className="px-3 py-1 bg-white border border-rose-300 rounded-lg text-rose-700 text-xs font-bold hover:bg-rose-100 transition cursor-pointer"
+                >
+                  Thử lại
+                </button>
+              </div>
+            ) : userDetailModalData ? (
+              <div className="space-y-4 text-xs">
+                {/* User Header Info Card */}
+                <div className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#EC1577] to-[#F1622A] text-white flex items-center justify-center text-xl font-black shadow-md overflow-hidden shrink-0">
+                    {userDetailModalData.avatarUrl ? (
+                      <img src={userDetailModalData.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      (userDetailModalData.fullName || userDetailModalData.email || 'U').charAt(0).toUpperCase()
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-slate-900 text-sm">{userDetailModalData.fullName || 'Thành viên SecondLife'}</h4>
+                    <p className="text-slate-500 font-mono">{userDetailModalData.email}</p>
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        userDetailModalData.accountStatus === 'ACTIVE'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-rose-50 text-rose-700 border border-rose-200'
+                      }`}>
+                        {userDetailModalData.accountStatus}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        userDetailModalData.emailVerified
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200'
+                      }`}>
+                        {userDetailModalData.emailVerified ? 'Đã xác thực OTP' : 'Chưa xác thực OTP'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Details Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl border border-slate-100 bg-white space-y-1">
+                    <span className="text-[11px] text-slate-400 font-bold block">Số điện thoại:</span>
+                    <span className="font-mono text-slate-800 font-bold text-xs">{userDetailModalData.phone || 'Chưa cung cấp'}</span>
+                  </div>
+
+                  <div className="p-3 rounded-xl border border-slate-100 bg-white space-y-1">
+                    <span className="text-[11px] text-slate-400 font-bold block">Vai trò (Roles):</span>
+                    <div className="flex flex-wrap gap-1">
+                      {userDetailModalData.roles && userDetailModalData.roles.length > 0 ? (
+                        userDetailModalData.roles.map((r, idx) => (
+                          <span key={idx} className="px-2 py-0.5 rounded bg-slate-100 text-slate-800 text-[10px] font-bold">
+                            {r}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="font-mono text-slate-500">BUYER</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl border border-slate-100 bg-white space-y-1">
+                    <span className="text-[11px] text-slate-400 font-bold block">Ngày tạo tài khoản:</span>
+                    <span className="font-mono text-slate-700 text-xs">
+                      {userDetailModalData.createdAt ? new Date(userDetailModalData.createdAt).toLocaleString('vi-VN') : '—'}
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded-xl border border-slate-100 bg-white space-y-1">
+                    <span className="text-[11px] text-slate-400 font-bold block">Cập nhật gần nhất:</span>
+                    <span className="font-mono text-slate-700 text-xs">
+                      {userDetailModalData.updatedAt ? new Date(userDetailModalData.updatedAt).toLocaleString('vi-VN') : '—'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Permissions if any */}
+                {userDetailModalData.permissions && userDetailModalData.permissions.length > 0 && (
+                  <div className="p-3 rounded-xl border border-slate-100 bg-white space-y-1.5">
+                    <span className="text-[11px] text-slate-400 font-bold block">Quyền hạn hệ thống (Permissions):</span>
+                    <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                      {userDetailModalData.permissions.map((p, idx) => (
+                        <span key={idx} className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 text-[9px] font-mono font-medium">
+                          {p}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            <div className="pt-2 flex justify-end border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSelectedUserDetailId(null)}
+                className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
           </div>
         </div>
       )}

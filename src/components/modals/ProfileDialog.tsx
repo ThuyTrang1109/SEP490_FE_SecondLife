@@ -34,6 +34,13 @@ import { UserProfile, UserRole, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
 import { userService, sellerService, mediaService } from '../../services';
 
+export type ProfileTab = 'info' | 'wallet' | 'kyc' | 'settings';
+
+const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+const isStrongPassword = (pass: string): boolean => {
+  return STRONG_PASSWORD_REGEX.test(pass);
+};
+
 interface ProfileDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -44,9 +51,8 @@ interface ProfileDialogProps {
   onChangePassword?: () => void;
   onOpenVerifyEmail?: (email: string) => void;
   lang?: Language;
+  initialTab?: ProfileTab;
 }
-
-type ProfileTab = 'info' | 'wallet' | 'kyc' | 'settings';
 
 export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   isOpen,
@@ -58,10 +64,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   onChangePassword,
   onOpenVerifyEmail,
   lang = 'vi',
+  initialTab = 'info',
 }) => {
   if (!isOpen || !currentUser) return null;
 
-  const [activeTab, setActiveTab] = useState<ProfileTab>('info');
+  const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
 
   // Form states
   const [name, setName] = useState(currentUser.name || '');
@@ -145,8 +152,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       setShopName(currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop'));
       setSellerPhone(currentUser.phone || '');
       setPickupAddress(currentUser.pickupAddress || currentUser.address || '');
+      if (initialTab) {
+        setActiveTab(initialTab);
+      }
     }
-  }, [currentUser, isOpen]);
+  }, [currentUser, isOpen, initialTab]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: 'avatar' | 'front' | 'back' | 'selfie') => {
     const file = e.target.files?.[0];
@@ -249,15 +259,31 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     setPassSuccess(null);
 
     if (!currentPassword) {
-      setPassError('Vui lòng nhập mật khẩu hiện tại.');
+      setPassError(lang === 'vi' ? 'Vui lòng nhập mật khẩu hiện tại.' : 'Please enter your current password.');
       return;
     }
-    if (newPassword.length < 6) {
-      setPassError('Mật khẩu mới phải có ít nhất 6 ký tự.');
+    if (!newPassword) {
+      setPassError(lang === 'vi' ? 'Vui lòng nhập mật khẩu mới.' : 'Please enter a new password.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPassError(lang === 'vi' ? 'Mật khẩu mới phải có ít nhất 8 ký tự.' : 'New password must be at least 8 characters long.');
+      return;
+    }
+    if (!isStrongPassword(newPassword)) {
+      setPassError(
+        lang === 'vi'
+          ? 'Mật khẩu mới phải chứa chữ hoa, chữ thường, số và ký tự đặc biệt.'
+          : 'New password must contain uppercase, lowercase, numbers, and special characters.'
+      );
+      return;
+    }
+    if (!confirmPassword) {
+      setPassError(lang === 'vi' ? 'Vui lòng nhập lại mật khẩu mới để xác nhận.' : 'Please confirm your new password.');
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPassError('Mật khẩu mới và mật khẩu xác nhận không trùng khớp.');
+      setPassError(lang === 'vi' ? 'Xác nhận mật khẩu không khớp.' : 'Password confirmation does not match.');
       return;
     }
 
@@ -266,17 +292,27 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       await userService.changeMyPassword({
         currentPassword,
         newPassword,
+        confirmPassword,
       });
-      setPassSuccess('Đổi mật khẩu thành công! Tất cả các phiên đăng nhập khác đã được đăng xuất.');
+      setPassSuccess(
+        lang === 'vi'
+          ? 'Đổi mật khẩu thành công! Tất cả các phiên đăng nhập khác đã được đăng xuất.'
+          : 'Password changed successfully! All other sessions have been logged out.'
+      );
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setTimeout(() => {
         setIsChangePassModalOpen(false);
         setPassSuccess(null);
-      }, 3000);
+      }, 2500);
     } catch (err: any) {
-      setPassError(err.message || 'Đổi mật khẩu thất bại. Mật khẩu hiện tại không đúng.');
+      setPassError(
+        err?.message ||
+        (lang === 'vi'
+          ? 'Đổi mật khẩu thất bại. Mật khẩu hiện tại không đúng.'
+          : 'Failed to change password. Current password may be incorrect.')
+      );
     } finally {
       setIsSubmittingPass(false);
     }
@@ -843,6 +879,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <button
                     type="button"
                     onClick={() => {
+                      setCurrentPassword('');
+                      setNewPassword('');
+                      setConfirmPassword('');
+                      setPassError(null);
+                      setPassSuccess(null);
                       setIsChangePassModalOpen(true);
                     }}
                     className="text-xs font-bold text-[#EC1577] hover:underline cursor-pointer"
@@ -1308,7 +1349,14 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <span>{lang === 'vi' ? 'Đổi Mật Khẩu Đăng Nhập' : 'Change Account Password'}</span>
                 </div>
                 <button
-                  onClick={() => setIsChangePassModalOpen(false)}
+                  onClick={() => {
+                    setIsChangePassModalOpen(false);
+                    setCurrentPassword('');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                    setPassError(null);
+                    setPassSuccess(null);
+                  }}
                   className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
                 >
                   <X className="w-5 h-5" />
@@ -1338,7 +1386,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     type="password"
                     required
                     value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    onChange={(e) => {
+                      setCurrentPassword(e.target.value);
+                      if (passError) setPassError(null);
+                    }}
                     placeholder="••••••••"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs text-slate-900"
                   />
@@ -1352,8 +1403,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     type="password"
                     required
                     value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Tối thiểu 6 ký tự"
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      if (passError) setPassError(null);
+                    }}
+                    placeholder={
+                      lang === 'vi'
+                        ? 'Tối thiểu 8 ký tự, chữ hoa, thường, số, ký tự đặc biệt'
+                        : 'Min 8 chars, uppercase, lowercase, number, symbol'
+                    }
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs text-slate-900"
                   />
                 </div>
@@ -1366,8 +1424,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     type="password"
                     required
                     value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Nhập lại mật khẩu mới"
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      if (passError) setPassError(null);
+                    }}
+                    placeholder={lang === 'vi' ? 'Nhập lại mật khẩu mới' : 'Re-enter new password'}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs text-slate-900"
                   />
                 </div>
@@ -1375,7 +1436,14 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 <div className="flex items-center justify-end gap-2.5 pt-2">
                   <button
                     type="button"
-                    onClick={() => setIsChangePassModalOpen(false)}
+                    onClick={() => {
+                      setIsChangePassModalOpen(false);
+                      setCurrentPassword('');
+                      setNewPassword('');
+                      setConfirmPassword('');
+                      setPassError(null);
+                      setPassSuccess(null);
+                    }}
                     className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
                   >
                     {lang === 'vi' ? 'Hủy' : 'Cancel'}

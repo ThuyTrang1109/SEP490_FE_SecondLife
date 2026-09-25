@@ -20,6 +20,7 @@ interface NavbarProps {
   onOpenProfile?: () => void;
   onOpenTopUp?: () => void;
   userCreditBalance?: number;
+  onOpenSellerRegister?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -38,7 +39,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
   onOpenProfile,
   onOpenTopUp,
-  userCreditBalance = 100
+  userCreditBalance = 100,
+  onOpenSellerRegister,
 }) => {
   const t = translations[lang];
 
@@ -266,7 +268,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <button
-            onClick={() => onTabChange('create-listing')}
+            onClick={() => {
+              if (!currentUser) {
+                onTabChange('create-listing');
+              } else if (currentRole !== 'seller') {
+                if (onOpenSellerRegister) {
+                  onOpenSellerRegister();
+                } else {
+                  onTabChange('create-listing');
+                }
+              } else {
+                onTabChange('create-listing');
+              }
+            }}
             className="hidden sm:inline-flex items-center gap-1.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-95 text-white px-3.5 py-2 rounded-xl font-extrabold text-xs shadow-md transition cursor-pointer"
           >
             <Sparkles className="w-3.5 h-3.5 fill-white" />
@@ -348,7 +362,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {currentUser ? (
           <>
-            {currentRole === 'seller' && (
+            {currentRole === 'seller' ? (
               <button
                 onClick={() => onTabChange('create-listing')}
                 className={`flex items-center gap-1 py-1 px-2 rounded-md ${
@@ -356,6 +370,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 <PlusCircle className="w-3.5 h-3.5" />
+                <span>{lang === 'vi' ? 'Đăng tin' : 'Post Listing'}</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  if (onOpenSellerRegister) {
+                    onOpenSellerRegister();
+                  } else {
+                    onTabChange('create-listing');
+                  }
+                }}
+                className="flex items-center gap-1 py-1 px-2 rounded-md hover:text-white"
+              >
+                <PlusCircle className="w-3.5 h-3.5 text-[#EC1577]" />
                 <span>{lang === 'vi' ? 'Đăng tin' : 'Post Listing'}</span>
               </button>
             )}

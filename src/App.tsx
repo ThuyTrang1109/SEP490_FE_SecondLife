@@ -16,12 +16,12 @@ import { CheckoutModal } from './components/modals/CheckoutModal';
 import { HomePageView } from './pages/HomePageView';
 import { AuthModal } from './components/modals/AuthModal';
 import { ProfileDialog } from './components/modals/ProfileDialog';
+import { SellerRegistrationModal } from './components/modals/SellerRegistrationModal';
 import { VerifyEmailModal } from './components/modals/VerifyEmailModal';
 import { LogoutConfirmModal } from './components/modals/LogoutConfirmModal';
 import { TopUpModal } from './components/modals/TopUpModal';
-import { ShieldCheck, Sparkles, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
 import { authService, userService, topupService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
-
 
 export default function App() {
   // Global State
@@ -95,6 +95,7 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
+  const [isSellerRegistrationModalOpen, setIsSellerRegistrationModalOpen] = useState(false);
   const [isVerifyEmailModalOpen, setIsVerifyEmailModalOpen] = useState(false);
   const [verifyEmailTarget, setVerifyEmailTarget] = useState('');
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
@@ -190,6 +191,14 @@ export default function App() {
       requireAuth(undefined, promptMsg);
       return;
     }
+
+    if (tab === 'create-listing') {
+      if (currentUser && currentUser.role !== 'seller') {
+        setIsSellerRegistrationModalOpen(true);
+        return;
+      }
+    }
+
     setActiveTab(tab);
   };
 
@@ -362,6 +371,7 @@ export default function App() {
             }
           }}
           userCreditBalance={userCreditBalance}
+          onOpenSellerRegister={() => setIsSellerRegistrationModalOpen(true)}
         />
       )}
 
@@ -392,6 +402,8 @@ export default function App() {
                 requireAuth(undefined, lang === 'vi'
                   ? 'Vui lòng đăng nhập để thử nghiệm định giá AI và đăng bán sản phẩm.'
                   : 'Please log in to experience AI valuation and create listings.');
+              } else if (currentUser.role !== 'seller') {
+                setIsSellerRegistrationModalOpen(true);
               } else {
                 setActiveTab('create-listing');
               }
@@ -423,11 +435,41 @@ export default function App() {
         )}
 
         {activeTab === 'create-listing' && (
-          <CreateListingView
-            onListingCreated={handleListingCreated}
-            lang={lang}
-            onCancel={() => setActiveTab('marketplace')}
-          />
+          currentUser && currentUser.role !== 'seller' ? (
+            <div className="py-12 px-4 text-center max-w-xl mx-auto space-y-4">
+              <div className="w-16 h-16 rounded-3xl bg-rose-50 text-[#EC1577] flex items-center justify-center mx-auto shadow-md">
+                <Store className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900">
+                {lang === 'vi' ? 'Bạn Cần Đăng Ký Thành Người Bán' : 'Seller Registration Required'}
+              </h3>
+              <p className="text-sm text-slate-500">
+                {lang === 'vi'
+                  ? 'Để đảm bảo chất lượng kiểm định Hub và an toàn giao dịch qua quỹ Escrow, vui lòng hoàn tất đăng ký thông tin gian hàng và xác thực eKYC trước khi đăng bán sản phẩm.'
+                  : 'To ensure Hub inspection quality and Escrow transaction safety, please register your store profile and complete eKYC before posting listings.'}
+              </p>
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  onClick={() => setActiveTab('marketplace')}
+                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition cursor-pointer"
+                >
+                  {lang === 'vi' ? 'Quay lại Sàn' : 'Back to Market'}
+                </button>
+                <button
+                  onClick={() => setIsSellerRegistrationModalOpen(true)}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white text-sm font-bold shadow-md hover:opacity-95 transition cursor-pointer"
+                >
+                  {lang === 'vi' ? 'Đăng Ký Người Bán Ngay' : 'Register as Seller Now'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <CreateListingView
+              onListingCreated={handleListingCreated}
+              lang={lang}
+              onCancel={() => setActiveTab('marketplace')}
+            />
+          )
         )}
 
         {activeTab === 'orders' && (
@@ -571,8 +613,9 @@ export default function App() {
             setCheckoutListing(pendingCheckoutItem);
             setPendingCheckoutItem(null);
           } else if (pendingTab) {
-            setActiveTab(pendingTab);
+            const targetTab = pendingTab;
             setPendingTab(null);
+            handleTabChange(targetTab);
           }
         }}
         lang={lang}
@@ -631,6 +674,27 @@ export default function App() {
         lang={lang}
       />
 
+      {/* Seller Registration Modal */}
+      <SellerRegistrationModal
+        isOpen={isSellerRegistrationModalOpen}
+        onClose={() => setIsSellerRegistrationModalOpen(false)}
+        currentUser={currentUser}
+        lang={lang}
+        onUpdateProfile={(updated) => {
+          setCurrentUser(updated);
+          setStoredUser(updated);
+          showToast(
+            lang === 'vi'
+              ? 'Đã cập nhật hồ sơ người bán thành công!'
+              : 'Seller profile updated successfully!'
+          );
+        }}
+        onRoleChange={handleRoleChange}
+        onNavigateToCreateListing={() => {
+          setActiveTab('create-listing');
+        }}
+      />
+
       {/* TopUp Coins Modal Popup */}
       <TopUpModal
         isOpen={isTopUpModalOpen}
@@ -638,7 +702,6 @@ export default function App() {
         currentCredit={userCreditBalance}
         onCreditUpdated={(newBal) => setUserCreditBalance(newBal)}
       />
-
       {/* Logout Confirmation Modal Popup */}
       <LogoutConfirmModal
         isOpen={isLogoutModalOpen}

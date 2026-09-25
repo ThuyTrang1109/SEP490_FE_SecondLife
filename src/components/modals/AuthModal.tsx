@@ -1223,20 +1223,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <label className="text-xs font-bold text-[#0E121B]">
                       {lang === 'vi' ? 'Nhập mã OTP 6 chữ số' : '6-digit OTP Code'} <strong className="text-rose-500">*</strong>
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const demoDigits = ['1', '2', '3', '4', '5', '6'];
-                        setVerifyDigits(demoDigits);
-                        setVerifyOtpCode('123456');
-                        setErrorMsg(null);
-                        verifyOtpInputRefs.current[5]?.focus();
-                      }}
-                      className="text-[11px] font-bold text-[#EC1577] hover:underline cursor-pointer flex items-center gap-1"
-                    >
-                      <Sparkles className="w-3 h-3 text-[#F1622A]" />
-                      <span>{lang === 'vi' ? 'Điền nhanh: 123456' : 'Fill demo: 123456'}</span>
-                    </button>
                   </div>
 
                   {/* 6 Individual Numeric Boxes */}

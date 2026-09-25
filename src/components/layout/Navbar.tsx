@@ -48,92 +48,94 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="sticky top-0 z-50 bg-[#0E121B] text-white shadow-xl border-b border-white/10 transition-all">
       {/* Top micro-bar */}
-      <div className="bg-[#0B0E15] text-slate-200 text-[11px] px-4 sm:px-6 lg:px-8 py-1.5 border-b border-white/10 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2.5">
-          <span className="inline-flex items-center gap-1.5 font-bold text-white bg-gradient-to-r from-[#EC1577]/20 to-[#F1622A]/20 px-3 py-0.5 rounded-full border border-[#EC1577]/50 text-[11px] shadow-xs">
-            <Sparkles className="w-3.5 h-3.5 text-[#EC1577]" />
-            AI & Escrow Verification
-          </span>
-          <span className="hidden sm:inline text-slate-600">|</span>
-          <span className="hidden md:inline text-slate-200 font-medium">
-            {lang === 'vi'
-              ? 'Bảo vệ tài chính qua Quỹ tín thác & Kiểm định chuyên gia SecondLife Hub'
-              : 'Escrow buyer protection & Certified hardware inspection'}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Customer Hotline & Support */}
-          <div className="hidden sm:flex items-center gap-2 text-slate-300 px-2 py-0.5 text-[11px]">
-            <a
-              href="tel:19008899"
-              className="flex items-center gap-1 hover:text-white transition"
-              title="Tổng đài CSKH SecondLife"
-            >
-              <Phone className="w-3 h-3 text-[#EC1577]" />
-              <span>Hotline: <strong className="text-white font-bold">1900 8899</strong></span>
-            </a>
-            <span className="text-white/20 hidden md:inline">|</span>
-            <span className="hidden md:flex items-center gap-1 text-slate-300">
-              <ShieldCheck className="w-3 h-3 text-emerald-400" />
-              <span>{lang === 'vi' ? 'Bảo lãnh Escrow' : 'Escrow Protected'}</span>
+      <div className="bg-[#0B0E15] text-slate-200 text-[11px] border-b border-white/10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-1.5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <span className="inline-flex items-center gap-1.5 font-bold text-white bg-gradient-to-r from-[#EC1577]/20 to-[#F1622A]/20 px-2.5 py-0.5 rounded-full border border-[#EC1577]/50 text-[11px] shadow-xs shrink-0">
+              <Sparkles className="w-3.5 h-3.5 text-[#EC1577]" />
+              AI & Escrow
+            </span>
+            <span className="hidden sm:inline text-slate-600 shrink-0">|</span>
+            <span className="hidden md:inline text-slate-300 font-medium truncate">
+              {lang === 'vi'
+                ? 'Bảo vệ tài chính qua Quỹ tín thác & Kiểm định chuyên gia SecondLife Hub'
+                : 'Escrow buyer protection & Certified hardware inspection'}
             </span>
           </div>
 
-          {/* Theme Mode Toggle */}
-          <button
-            onClick={onThemeToggle}
-            className="flex items-center gap-1.5 px-2.5 py-0.5 bg-white/10 hover:bg-white/20 rounded-xl text-white border border-white/20 text-[11px] font-bold transition cursor-pointer shadow-xs"
-            title={theme === 'dark' ? 'Chuyển sang Giao diện Sáng (Light Mode)' : 'Chuyển sang Giao diện Tối (Dark Mode)'}
-          >
-            {theme === 'dark' ? (
-              <>
-                <Sun className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                <span className="font-bold">Light</span>
-              </>
-            ) : (
-              <>
-                <Moon className="w-3.5 h-3.5 text-indigo-300 fill-indigo-300" />
-                <span className="font-bold">Dark</span>
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-2.5 shrink-0">
+            {/* Customer Hotline & Support */}
+            <div className="hidden sm:flex items-center gap-2 text-slate-300 px-1 text-[11px]">
+              <a
+                href="tel:19008899"
+                className="flex items-center gap-1 hover:text-white transition"
+                title="Tổng đài CSKH SecondLife"
+              >
+                <Phone className="w-3 h-3 text-[#EC1577]" />
+                <span>Hotline: <strong className="text-white font-bold">1900 8899</strong></span>
+              </a>
+              <span className="text-white/20 hidden md:inline">|</span>
+              <span className="hidden md:flex items-center gap-1 text-slate-300">
+                <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                <span>{lang === 'vi' ? 'Bảo lãnh Escrow' : 'Escrow Protected'}</span>
+              </span>
+            </div>
 
-          {/* Language Toggle */}
-          <button
-            onClick={() => onLangChange(lang === 'vi' ? 'en' : 'vi')}
-            className="flex items-center gap-1.5 px-2.5 py-0.5 bg-white/10 hover:bg-white/20 rounded-xl text-white border border-white/20 text-[11px] font-bold transition cursor-pointer"
-            title="Toggle Vietnamese / English"
-          >
-            <Globe className="w-3.5 h-3.5 text-slate-200" />
-            <span className="font-extrabold uppercase">{lang}</span>
-          </button>
+            {/* Theme Mode Toggle */}
+            <button
+              onClick={onThemeToggle}
+              className="flex items-center gap-1 px-2 py-0.5 bg-white/10 hover:bg-white/20 rounded-lg text-white border border-white/20 text-[11px] font-bold transition cursor-pointer shadow-xs"
+              title={theme === 'dark' ? 'Chuyển sang Giao diện Sáng (Light Mode)' : 'Chuyển sang Giao diện Tối (Dark Mode)'}
+            >
+              {theme === 'dark' ? (
+                <>
+                  <Sun className="w-3 h-3 text-amber-400 fill-amber-400" />
+                  <span className="font-bold">Light</span>
+                </>
+              ) : (
+                <>
+                  <Moon className="w-3 h-3 text-indigo-300 fill-indigo-300" />
+                  <span className="font-bold">Dark</span>
+                </>
+              )}
+            </button>
+
+            {/* Language Toggle */}
+            <button
+              onClick={() => onLangChange(lang === 'vi' ? 'en' : 'vi')}
+              className="flex items-center gap-1 px-2 py-0.5 bg-white/10 hover:bg-white/20 rounded-lg text-white border border-white/20 text-[11px] font-bold transition cursor-pointer"
+              title="Toggle Vietnamese / English"
+            >
+              <Globe className="w-3 h-3 text-slate-200" />
+              <span className="font-extrabold uppercase">{lang}</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Main Navbar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
         {/* Logo */}
         <div
-          className="flex items-center gap-3 cursor-pointer select-none group"
+          className="flex items-center gap-2.5 cursor-pointer select-none group shrink-0"
           onClick={() => onTabChange('home')}
         >
           <img
             src="/logo.png"
             alt="SecondLife Logo"
-            className="h-10 w-auto object-contain rounded-xl bg-white p-1 shadow-md shadow-black/20 group-hover:scale-105 transition-transform"
+            className="h-9 w-auto object-contain rounded-xl bg-white p-1 shadow-md shadow-black/20 group-hover:scale-105 transition-transform"
           />
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="font-black text-xl tracking-tight text-white group-hover:text-slate-100 transition">
+              <span className="font-black text-lg tracking-tight text-white group-hover:text-slate-100 transition">
                 SecondLife
               </span>
-              <span className="bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white text-[10px] font-black px-1.5 py-0.2 rounded shadow-xs border border-white/20 tracking-wider">
+              <span className="bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white text-[9px] font-black px-1.5 py-0.2 rounded shadow-xs border border-white/20 tracking-wider">
                 VERIFIED
               </span>
             </div>
-            <p className="text-[10px] text-slate-300 font-medium hidden sm:block">
-              {lang === 'vi' ? 'Sàn đồ cũ kiểm định & AI định giá' : 'Certified Recommerce & AI Valuation'}
+            <p className="text-[10px] text-slate-400 font-medium hidden sm:block">
+              {lang === 'vi' ? 'Sàn đồ cũ kiểm định & AI' : 'Certified Recommerce & AI'}
             </p>
           </div>
         </div>
@@ -142,10 +144,11 @@ export const Navbar: React.FC<NavbarProps> = ({
         <nav className="hidden lg:flex items-center gap-1">
           <button
             onClick={() => onTabChange('home')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'home'
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'home'
                 ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/30 font-extrabold'
-                : 'text-slate-200 hover:text-white hover:bg-white/15'
-              }`}
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
+            }`}
           >
             <Home className="w-3.5 h-3.5" />
             <span>{lang === 'vi' ? 'Trang Chủ' : 'Home'}</span>
@@ -153,10 +156,11 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <button
             onClick={() => onTabChange('marketplace')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'marketplace'
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'marketplace'
                 ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/30 font-extrabold'
-                : 'text-slate-200 hover:text-white hover:bg-white/15'
-              }`}
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
+            }`}
           >
             <ShoppingBag className="w-3.5 h-3.5" />
             <span>{lang === 'vi' ? 'Sàn Đồ Cũ' : 'Marketplace'}</span>
@@ -165,10 +169,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           {currentUser && currentRole === 'seller' && (
             <button
               onClick={() => onTabChange('seller-dashboard')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'seller-dashboard'
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                activeTab === 'seller-dashboard'
                   ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/30 font-extrabold'
-                  : 'text-slate-200 hover:text-white hover:bg-white/15'
-                }`}
+                  : 'text-slate-300 hover:text-white hover:bg-white/10'
+              }`}
             >
               <Building2 className="w-3.5 h-3.5" />
               <span>{lang === 'vi' ? 'Kênh Người Bán' : 'Seller Hub'}</span>
@@ -178,10 +183,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           {currentUser && currentRole === 'seller' && (
             <button
               onClick={() => onTabChange('create-listing')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'create-listing'
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                activeTab === 'create-listing'
                   ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/30 font-extrabold'
-                  : 'text-slate-200 hover:text-white hover:bg-white/15'
-                }`}
+                  : 'text-slate-300 hover:text-white hover:bg-white/10'
+              }`}
             >
               <PlusCircle className="w-3.5 h-3.5" />
               <span>{lang === 'vi' ? 'Đăng Bán AI' : 'Post Listing'}</span>
@@ -191,13 +197,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           {currentUser && (currentRole === 'buyer' || currentRole === 'seller' || currentRole === 'admin') && (
             <button
               onClick={() => onTabChange('orders')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${activeTab === 'orders'
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${
+                activeTab === 'orders'
                   ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/30 font-extrabold'
-                  : 'text-slate-200 hover:text-white hover:bg-white/15'
-                }`}
+                  : 'text-slate-300 hover:text-white hover:bg-white/10'
+              }`}
             >
               <Clock className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? (currentRole === 'buyer' ? 'Đơn Hàng Ký Quỹ' : 'Quản Lý Đơn') : 'Orders'}</span>
+              <span>{lang === 'vi' ? (currentRole === 'buyer' ? 'Đơn Ký Quỹ' : 'Quản Lý Đơn') : 'Orders'}</span>
               {activeOrdersCount > 0 && (
                 <span className="ml-0.5 px-1.5 py-0.2 bg-white text-[#0E121B] rounded-full text-[10px] font-extrabold shadow-xs">
                   {activeOrdersCount}
@@ -209,23 +216,25 @@ export const Navbar: React.FC<NavbarProps> = ({
           {currentUser && (currentRole === 'inspector' || currentRole === 'admin') && (
             <button
               onClick={() => onTabChange('inspection-hub')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'inspection-hub'
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                activeTab === 'inspection-hub'
                   ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/30 font-extrabold'
-                  : 'text-slate-200 hover:text-white hover:bg-white/15'
-                }`}
+                  : 'text-slate-300 hover:text-white hover:bg-white/10'
+              }`}
             >
               <Building2 className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? 'Kiểm Định Home Hub' : 'Inspection Hub'}</span>
+              <span>{lang === 'vi' ? 'Kiểm Định Hub' : 'Inspection Hub'}</span>
             </button>
           )}
 
           {currentUser && currentRole === 'admin' && (
             <button
               onClick={() => onTabChange('admin-dashboard')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'admin-dashboard'
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                activeTab === 'admin-dashboard'
                   ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md shadow-[#EC1577]/30 font-extrabold'
-                  : 'text-slate-200 hover:text-white hover:bg-white/15'
-                }`}
+                  : 'text-slate-300 hover:text-white hover:bg-white/10'
+              }`}
             >
               <ShieldAlert className="w-3.5 h-3.5" />
               <span>{lang === 'vi' ? 'Quản Trị Admin' : 'Admin'}</span>
@@ -234,29 +243,30 @@ export const Navbar: React.FC<NavbarProps> = ({
         </nav>
 
         {/* Action buttons & Profile */}
-        <div className="flex items-center gap-2">
-          {/* TopUp Credits Badge Button (Requirement 7) */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* TopUp Credits Badge Button */}
           {currentUser && (
             <button
               onClick={onOpenTopUp}
-              className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-teal-500/10 hover:from-amber-500/25 hover:to-teal-500/20 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-sm"
-              title={lang === 'vi' ? 'Quyền sử dụng: Lượt đăng tin & Lượt tư vấn AI' : 'Usage rights: Post & AI credits'}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-teal-500/10 hover:from-amber-500/25 hover:to-teal-500/20 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-xs"
+              title={lang === 'vi' ? 'Click để nạp thêm lượt đăng tin & lượt tư vấn AI' : 'Click to top up post & AI credits'}
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <div className="flex items-center gap-1.5 text-[11px]">
-                <span className="font-bold text-slate-200 hidden sm:inline">{lang === 'vi' ? 'Quyền sử dụng:' : 'Credits:'}</span>
+              <div className="flex items-center gap-1 text-[11px]">
                 <span className="text-amber-400 font-extrabold">{userCredit?.postCredits ?? (userCreditBalance ?? 0)} {lang === 'vi' ? 'tin' : 'posts'}</span>
                 <span className="text-slate-500">•</span>
                 <span className="text-teal-300 font-extrabold">{userCredit?.chatCredits ?? 15} AI</span>
               </div>
-              <span className="text-[10px] px-1 py-0.2 bg-amber-400 text-slate-950 rounded font-black leading-none ml-0.5">+</span>
+              <span className="text-[9px] px-1 py-0.2 bg-amber-400 text-slate-950 rounded font-black leading-none ml-0.5">+</span>
             </button>
           )}
 
+          {/* Chat Button */}
           <button
             onClick={() => onTabChange('chat')}
-            className={`p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 relative transition cursor-pointer ${activeTab === 'chat' ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white' : ''
-              }`}
+            className={`p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 relative transition cursor-pointer ${
+              activeTab === 'chat' ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white' : ''
+            }`}
             title="Chat & Smart Negotiation"
           >
             <MessageSquare className="w-4 h-4" />
@@ -265,6 +275,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
 
+          {/* Post Listing Button */}
           <button
             onClick={() => {
               if (!currentUser) {
@@ -279,32 +290,33 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onTabChange('create-listing');
               }
             }}
-            className="hidden sm:inline-flex items-center gap-1.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-95 text-white px-3.5 py-2 rounded-xl font-extrabold text-xs shadow-md transition cursor-pointer"
+            className="hidden sm:inline-flex items-center gap-1.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-95 text-white px-3 py-1.5 rounded-xl font-extrabold text-xs shadow-md transition cursor-pointer"
           >
             <Sparkles className="w-3.5 h-3.5 fill-white" />
             <span>{lang === 'vi' ? 'Đăng Bán' : 'Post Listing'}</span>
           </button>
 
+          {/* Profile User Badge */}
           {currentUser ? (
-            <div className="flex items-center gap-2 pl-2 border-l border-white/10">
+            <div className="flex items-center gap-1.5 pl-2 border-l border-white/10">
               <button
                 type="button"
                 onClick={onOpenProfile}
-                className="flex items-center gap-2 text-left hover:opacity-85 transition cursor-pointer p-1 rounded-xl hover:bg-white/10"
+                className="flex items-center gap-2 text-left hover:opacity-90 transition cursor-pointer p-1 rounded-xl hover:bg-white/10"
                 title={lang === 'vi' ? 'Xem hồ sơ người dùng' : 'View User Profile'}
               >
-                <div className="w-7 h-7 rounded-full bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white flex items-center justify-center font-bold text-[11px] shadow-sm ring-1 ring-white/20">
-                  {currentUser.name.charAt(0)}
+                <div className="w-7 h-7 rounded-full bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white flex items-center justify-center font-bold text-[11px] shadow-xs ring-1 ring-white/20 shrink-0">
+                  {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
                 </div>
-                <div className="hidden xl:block text-left">
-                  <div className="text-xs font-bold text-white leading-tight truncate max-w-[110px]">
+                <div className="hidden 2xl:block text-left max-w-[100px]">
+                  <div className="text-xs font-bold text-white leading-tight truncate">
                     {currentUser.name}
                   </div>
-                  <div className="text-[10px] text-slate-400 font-medium">
-                    {currentRole === 'buyer' && 'Verified Buyer'}
-                    {currentRole === 'seller' && 'Top Rated (4.9★)'}
+                  <div className="text-[9px] text-slate-400 font-medium truncate">
+                    {currentRole === 'buyer' && 'Buyer'}
+                    {currentRole === 'seller' && 'Seller'}
                     {currentRole === 'inspector' && 'Inspector'}
-                    {currentRole === 'admin' && 'Supervisor'}
+                    {currentRole === 'admin' && 'Admin'}
                   </div>
                 </div>
               </button>

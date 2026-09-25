@@ -480,19 +480,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         code: verifyOtpCode.trim()
       });
       soundFx.playChime();
-      onLoginSuccess({
-        id: `USR-${Math.floor(1000 + Math.random() * 9000)}`,
-        name: fullName.trim() || 'Thành viên SecondLife',
-        email: verifyEmailAddress,
-        role: 'buyer',
-        phone: phoneNumber.trim() || '',
-        address: ''
-      });
-      onClose();
+      setSuccessMsg(
+        lang === 'vi'
+          ? 'Xác thực địa chỉ email thành công! Vui lòng đăng nhập tài khoản của bạn.'
+          : 'Email address verified successfully! Please log in to your account.'
+      );
+      setTimeout(() => {
+        setMode('login');
+        setEmailOrPhone(verifyEmailAddress);
+        setPassword('');
+      }, 1200);
     } catch (err: any) {
       soundFx.playCancel();
-      setErrorMsg(err.message || (lang === 'vi' ? 'Mã xác thực không hợp lệ hoặc đã hết hạn.' : 'Invalid or expired OTP code.'));
-      return;
+      setErrorMsg(err.message || (lang === 'vi' ? 'Mã OTP xác thực không chính xác hoặc đã hết hạn.' : 'Invalid or expired OTP code.'));
     } finally {
       setIsLoading(false);
     }

@@ -165,7 +165,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         );
       case 'INSPECTION_IN_PROGRESS':
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-xs">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white shadow-xs">
             <Clock className="w-3.5 h-3.5 animate-spin" />
             <span>{lang === 'vi' ? 'Đang Kiểm Định Tại Hub' : 'In Hub Inspection'}</span>
           </span>
@@ -241,21 +241,21 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       ];
 
   return (
-    <div className="space-y-6 pb-16 text-[#0E121B]">
+    <div className="space-y-6 pb-16 text-[#2b1d16]">
       {/* Top Banner: Switch between Buyer and Seller mode */}
       {isSeller ? (
         <div className="space-y-4">
-          <div className="bg-[#0E121B] text-white rounded-3xl p-6 sm:p-7 shadow-xl border border-white/10 space-y-5">
+          <div className="bg-[#cea981] text-[#2b1d16] rounded-3xl p-6 sm:p-7 shadow-xl border border-white/20 space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-white text-xs font-bold border border-white/20">
-                  <Store className="w-3.5 h-3.5 text-[#EC1577]" />
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/40 text-[#2b1d16] text-xs font-bold border border-[#2b1d16]/20 shadow-xs">
+                  <Store className="w-3.5 h-3.5 text-[#2b1d16]" />
                   <span>{lang === 'vi' ? 'Kênh Người Bán SecondLife • Quản Lý Đơn Hàng' : 'SecondLife Seller Center • Order Management'}</span>
                 </div>
-                <h1 className="text-2xl sm:text-3xl font-black text-white mt-2">
+                <h1 className="text-2xl sm:text-3xl font-black text-[#2b1d16] mt-2">
                   {lang === 'vi' ? 'Quản Lý Đơn Bán Hàng & Dòng Tiền Escrow' : 'Seller Orders & Escrow Payouts'}
                 </h1>
-                <p className="text-xs sm:text-sm text-slate-300 mt-1">
+                <p className="text-xs sm:text-sm text-[#2b1d16]/80 mt-1 font-semibold">
                   {lang === 'vi'
                     ? 'Theo dõi lịch bưu tá đến kho lấy hàng chuyển về Hub, kết quả kiểm định kỹ thuật và đối soát tiền giải ngân vào ví người bán.'
                     : 'Track courier pickup schedules to Hub, technical inspection results, and automated escrow payouts to seller wallet.'}
@@ -263,8 +263,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="px-3.5 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4" />
+                <span className="px-3.5 py-2 rounded-xl bg-white/40 text-[#2b1d16] border border-[#2b1d16]/20 text-xs font-bold flex items-center gap-1.5 shadow-xs">
+                  <ShieldCheck className="w-4 h-4 text-emerald-800" />
                   <span>{lang === 'vi' ? 'Bảo Lãnh Escrow' : 'Escrow Protection'}</span>
                 </span>
               </div>
@@ -276,7 +276,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 <div className="text-[11px] text-slate-500 font-medium">
                   {lang === 'vi' ? 'Tiền Chờ Giải Ngân (Escrow)' : 'Pending Escrow Payout'}
                 </div>
-                <div className="text-lg sm:text-xl font-black text-[#EC1577] mt-0.5">
+                <div className="text-lg sm:text-xl font-black text-[#2b1d16] mt-0.5">
                   {formatVND(pendingEscrowTotal)}
                 </div>
                 <div className="text-[10px] text-slate-400 mt-0.5">
@@ -332,14 +332,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       ) : (
         /* Buyer Header */
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFFFFF] text-[#0E121B] text-xs font-bold border border-gray-200 shadow-xs">
-            <ShieldCheck className="w-3.5 h-3.5 text-[#EC1577]" />
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFFFFF] text-[#2b1d16] text-xs font-bold border border-gray-200 shadow-xs">
+            <ShieldCheck className="w-3.5 h-3.5 text-[#2b1d16]" />
             <span>SecondLife Smart Escrow & Multi-Leg Logistics</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0E121B] mt-2">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#2b1d16] mt-2">
             {lang === 'vi' ? 'Đơn Hàng & Escrow' : 'Orders & Escrow Protection'}
           </h1>
-          <p className="text-xs sm:text-sm text-[#0E121B]/70">
+          <p className="text-xs sm:text-sm text-[#2b1d16]/70">
             {lang === 'vi'
               ? 'Theo dõi hành trình 2 chặng: Người bán → Trung tâm kiểm định → Người mua, biên bản nghiệm thu và ảnh 3 giai đoạn.'
               : 'Multi-leg tracking: Seller → Certified Inspection Hub → Buyer, digital inspection reports, and 3-stage photo logs.'}
@@ -359,7 +359,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 onClick={() => setActiveTab(tab.key)}
                 className={`relative px-4 sm:px-6 py-3.5 text-xs sm:text-sm font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer shrink-0 ${
                   isActive
-                    ? 'text-[#EC1577] font-bold'
+                    ? 'text-[#2b1d16] font-bold'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
@@ -368,7 +368,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   <span
                     className={`px-1.5 py-0.2 rounded-full text-[11px] font-bold ${
                       isActive
-                        ? 'bg-[#EC1577]/10 text-[#EC1577]'
+                        ? 'bg-[#cea981]/10 text-[#2b1d16]'
                         : 'bg-gray-100 text-gray-600'
                     }`}
                   >
@@ -377,7 +377,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 )}
                 {/* Active underline indicator */}
                 {isActive && (
-                  <div className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-[#EC1577] to-[#F1622A] rounded-t-full" />
+                  <div className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-[#cea981] to-[#ccbb9e] rounded-t-full" />
                 )}
               </button>
             );
@@ -397,7 +397,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   ? (isSeller ? 'Tìm mã đơn #ORD, tên sản phẩm hoặc tên người mua...' : 'Tìm kiếm theo mã đơn #ORD, tên sản phẩm hoặc người bán...')
                   : (isSeller ? 'Search by #ORD, product title or buyer name...' : 'Search by #ORD, product title or seller...')
               }
-              className="w-full pl-9 pr-3 py-2 text-xs bg-[#FFFFFF] border border-gray-200 rounded-xl focus:outline-none focus:border-[#EC1577] transition-all"
+              className="w-full pl-9 pr-3 py-2 text-xs bg-[#FFFFFF] border border-gray-200 rounded-xl focus:outline-none focus:border-[#cea981] transition-all"
             />
           </div>
           {searchQuery && (
@@ -413,12 +413,12 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
       {/* Shopee-style Orders List */}
       {filteredOrders.length === 0 ? (
-        <div className="bg-[#FFFFFF] rounded-3xl p-12 text-center border border-gray-200 text-[#0E121B] shadow-xs">
+        <div className="bg-[#FFFFFF] rounded-3xl p-12 text-center border border-gray-200 text-[#2b1d16] shadow-xs">
           <Package className="w-14 h-14 text-gray-300 mx-auto mb-3" />
-          <h3 className="font-bold text-base text-[#0E121B]">
+          <h3 className="font-bold text-base text-[#2b1d16]">
             {lang === 'vi' ? 'Chưa có đơn hàng nào trong mục này' : 'No orders found in this category'}
           </h3>
-          <p className="text-xs text-[#0E121B]/70 mt-1 max-w-md mx-auto">
+          <p className="text-xs text-[#2b1d16]/70 mt-1 max-w-md mx-auto">
             {lang === 'vi'
               ? `Không tìm thấy đơn hàng nào ở trạng thái này. Bạn có thể chọn tab "${isSeller ? 'Tất cả đơn bán' : 'Tất cả'}" để xem toàn bộ danh sách.`
               : `No orders currently match this status tab. Select "${isSeller ? 'All Seller Orders' : 'All Orders'}" to view all.`}
@@ -432,7 +432,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               <div
                 key={ord.id}
                 onClick={() => setDetailModalOrder(ord)}
-                className="bg-[#FFFFFF] rounded-2xl border border-gray-200 hover:border-[#EC1577]/50 shadow-xs hover:shadow-md transition-all cursor-pointer overflow-hidden group"
+                className="bg-[#FFFFFF] rounded-2xl border border-gray-200 hover:border-[#cea981]/50 shadow-xs hover:shadow-md transition-all cursor-pointer overflow-hidden group"
               >
                 {/* Order Top Bar */}
                 <div className="px-4 sm:px-6 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2 bg-slate-50/50">
@@ -468,7 +468,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                       className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover border border-gray-200 shrink-0 bg-slate-100 group-hover:scale-102 transition-transform"
                     />
                     <div className="space-y-1.5">
-                      <h3 className="font-bold text-sm sm:text-base text-slate-900 line-clamp-2 group-hover:text-[#EC1577] transition-colors">
+                      <h3 className="font-bold text-sm sm:text-base text-slate-900 line-clamp-2 group-hover:text-[#2b1d16] transition-colors">
                         {ord.listing.title}
                       </h3>
                       <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
@@ -530,7 +530,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                         <span className="text-xs text-slate-500">
                           {lang === 'vi' ? 'Thành tiền (đã bao gồm phí kiểm định & bảo lãnh):' : 'Total (incl. inspection & escrow guarantee):'}
                         </span>
-                        <span className="text-base sm:text-lg font-black text-[#EC1577]">
+                        <span className="text-base sm:text-lg font-black text-[#2b1d16]">
                           {formatVND(ord.totalPaidVnd)}
                         </span>
                       </>
@@ -549,7 +549,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                 e.stopPropagation();
                                 handleConfirmCourierPickup(ord.id);
                               }}
-                              className="px-3 py-2 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                              className="px-3 py-2 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-90 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
                             >
                               <Clock className="w-3.5 h-3.5" />
                               <span>{lang === 'vi' ? 'Hẹn Bưu Tá Lấy Hàng' : 'Schedule Pickup'}</span>
@@ -559,7 +559,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                 e.stopPropagation();
                                 setShippingLabelOrder(ord);
                               }}
-                              className="px-3 py-2 rounded-xl bg-white border border-gray-300 hover:border-[#EC1577] text-slate-700 hover:text-[#EC1577] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                              className="px-3 py-2 rounded-xl bg-white border border-gray-300 hover:border-[#cea981] text-slate-700 hover:text-[#2b1d16] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
                             >
                               <Printer className="w-3.5 h-3.5" />
                               <span>{lang === 'vi' ? 'In Phiếu Gửi Hub' : 'Print Label'}</span>
@@ -595,7 +595,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             e.stopPropagation();
                             setDetailModalOrder(ord);
                           }}
-                          className="px-3.5 py-2 rounded-xl bg-white border border-gray-300 hover:border-[#EC1577] text-slate-700 hover:text-[#EC1577] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                          className="px-3.5 py-2 rounded-xl bg-white border border-gray-300 hover:border-[#cea981] text-slate-700 hover:text-[#2b1d16] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           <span>{lang === 'vi' ? 'Chi Tiết Đơn' : 'Order Details'}</span>
@@ -609,7 +609,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             e.stopPropagation();
                             setDetailModalOrder(ord);
                           }}
-                          className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-white border border-gray-300 hover:border-[#EC1577] text-slate-700 hover:text-[#EC1577] text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                          className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-white border border-gray-300 hover:border-[#cea981] text-slate-700 hover:text-[#2b1d16] text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           <span>{lang === 'vi' ? 'Xem Chi Tiết' : 'View Details'}</span>
@@ -621,7 +621,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               e.stopPropagation();
                               onConfirmReceipt(ord.id);
                             }}
-                            className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                            className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
                             <span>{lang === 'vi' ? 'Đã Nhận Hàng' : 'Confirm Receipt'}</span>
@@ -668,14 +668,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           onClick={() => setDetailModalOrder(null)}
         >
           <div
-            className="relative w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-3xl bg-[#FFFFFF] border border-gray-200 p-5 sm:p-7 shadow-2xl text-[#0E121B] scrollbar-thin scrollbar-thumb-gray-300"
+            className="relative w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-3xl bg-[#FFFFFF] border border-gray-200 p-5 sm:p-7 shadow-2xl text-[#2b1d16] scrollbar-thin scrollbar-thumb-gray-300"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
             <div className="flex items-start justify-between gap-4 pb-4 border-b border-gray-100">
               <div>
                 <div className="flex items-center gap-2.5">
-                  <h2 className="text-lg sm:text-xl font-black text-[#0E121B]">
+                  <h2 className="text-lg sm:text-xl font-black text-[#2b1d16]">
                     {lang === 'vi' ? 'Chi Tiết Đơn Hàng' : 'Order Details'} #{detailModalOrder.id}
                   </h2>
                   {getStatusBadge(detailModalOrder.escrowStatus)}
@@ -697,7 +697,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
             <div className="space-y-6 pt-5">
               {/* Product Info Card in Modal */}
-              <div className="flex items-center gap-4 p-4 rounded-2xl bg-[#F4F5F8] border border-gray-200">
+              <div className="flex items-center gap-4 p-4 rounded-2xl bg-[#f6f5eb] border border-gray-200">
                 <img
                   src={detailModalOrder.listing.photos.front}
                   alt={detailModalOrder.listing.title}
@@ -710,7 +710,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   <p className="text-xs text-slate-500 mt-0.5">
                     {detailModalOrder.listing.category} • {lang === 'vi' ? 'Tình trạng:' : 'Condition:'} {detailModalOrder.listing.conditionGrade}
                   </p>
-                  <div className="text-sm font-extrabold text-[#EC1577] mt-1">
+                  <div className="text-sm font-extrabold text-[#2b1d16] mt-1">
                     {formatVND(detailModalOrder.itemPriceVnd)}
                   </div>
                 </div>
@@ -718,62 +718,62 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
               {/* 2-Leg Shipping Visualizer */}
               <div className="space-y-3">
-                <div className="text-xs font-bold text-[#0E121B] uppercase tracking-wider flex items-center gap-1.5">
-                  <Truck className="w-4 h-4 text-[#EC1577]" />
+                <div className="text-xs font-bold text-[#2b1d16] uppercase tracking-wider flex items-center gap-1.5">
+                  <Truck className="w-4 h-4 text-[#2b1d16]" />
                   <span>Hành trình giao nhận 2 chặng (Verify Then Ship)</span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Leg 1: Seller to Center */}
                   {detailModalOrder.shippingLegs[0] ? (
-                    <div className="bg-[#F4F5F8] rounded-2xl p-4 border border-gray-200 space-y-2">
+                    <div className="bg-[#f6f5eb] rounded-2xl p-4 border border-gray-200 space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-white bg-gradient-to-r from-[#EC1577] to-[#F1622A] px-2 py-0.5 rounded-md">
+                        <span className="text-[11px] font-bold text-white bg-gradient-to-r from-[#cea981] to-[#ccbb9e] px-2 py-0.5 rounded-md">
                           {t.leg1}
                         </span>
-                        <span className="text-xs font-mono font-bold text-[#0E121B]">
+                        <span className="text-xs font-mono font-bold text-[#2b1d16]">
                           {detailModalOrder.shippingLegs[0].carrier} #{detailModalOrder.shippingLegs[0].trackingNumber}
                         </span>
                       </div>
 
-                      <div className="text-xs text-[#0E121B]/70 space-y-1 pt-1">
-                        <div>Từ: <span className="font-semibold text-[#0E121B]">{detailModalOrder.shippingLegs[0].origin}</span></div>
-                        <div>Đến: <span className="font-semibold text-[#0E121B]">{detailModalOrder.shippingLegs[0].destination}</span></div>
+                      <div className="text-xs text-[#2b1d16]/70 space-y-1 pt-1">
+                        <div>Từ: <span className="font-semibold text-[#2b1d16]">{detailModalOrder.shippingLegs[0].origin}</span></div>
+                        <div>Đến: <span className="font-semibold text-[#2b1d16]">{detailModalOrder.shippingLegs[0].destination}</span></div>
                       </div>
 
-                      <div className="pt-2 border-t border-gray-200 text-[11px] text-[#0E121B]/70">
+                      <div className="pt-2 border-t border-gray-200 text-[11px] text-[#2b1d16]/70">
                         {detailModalOrder.shippingLegs[0].timeline[detailModalOrder.shippingLegs[0].timeline.length - 1]?.description || 'Đã bàn giao bưu tá'}
                       </div>
                     </div>
                   ) : (
-                    <div className="bg-[#F4F5F8] rounded-2xl p-4 border border-gray-200 text-xs text-slate-500">
+                    <div className="bg-[#f6f5eb] rounded-2xl p-4 border border-gray-200 text-xs text-slate-500">
                       Chặng 1 đang chờ bưu tá phân phối lấy hàng từ nhà người bán.
                     </div>
                   )}
 
                   {/* Leg 2: Center to Buyer */}
                   {detailModalOrder.shippingLegs[1] ? (
-                    <div className="bg-[#F4F5F8] rounded-2xl p-4 border border-gray-200 space-y-2">
+                    <div className="bg-[#f6f5eb] rounded-2xl p-4 border border-gray-200 space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-white bg-gradient-to-r from-[#EC1577] to-[#F1622A] px-2 py-0.5 rounded-md">
+                        <span className="text-[11px] font-bold text-white bg-gradient-to-r from-[#cea981] to-[#ccbb9e] px-2 py-0.5 rounded-md">
                           {t.leg2}
                         </span>
-                        <span className="text-xs font-mono font-bold text-[#0E121B]">
+                        <span className="text-xs font-mono font-bold text-[#2b1d16]">
                           {detailModalOrder.shippingLegs[1].carrier} #{detailModalOrder.shippingLegs[1].trackingNumber}
                         </span>
                       </div>
 
-                      <div className="text-xs text-[#0E121B]/70 space-y-1 pt-1">
-                        <div>Từ: <span className="font-semibold text-[#0E121B]">{detailModalOrder.shippingLegs[1].origin}</span></div>
-                        <div>Giao đến: <span className="font-semibold text-[#0E121B]">{detailModalOrder.shippingLegs[1].destination}</span></div>
+                      <div className="text-xs text-[#2b1d16]/70 space-y-1 pt-1">
+                        <div>Từ: <span className="font-semibold text-[#2b1d16]">{detailModalOrder.shippingLegs[1].origin}</span></div>
+                        <div>Giao đến: <span className="font-semibold text-[#2b1d16]">{detailModalOrder.shippingLegs[1].destination}</span></div>
                       </div>
 
-                      <div className="pt-2 border-t border-gray-200 text-[11px] text-[#0E121B] font-medium">
+                      <div className="pt-2 border-t border-gray-200 text-[11px] text-[#2b1d16] font-medium">
                         {detailModalOrder.shippingLegs[1].timeline[detailModalOrder.shippingLegs[1].timeline.length - 1]?.description}
                       </div>
                     </div>
                   ) : (
-                    <div className="bg-[#F4F5F8] rounded-2xl p-4 border border-gray-200 text-xs text-slate-500 flex items-center justify-center">
+                    <div className="bg-[#f6f5eb] rounded-2xl p-4 border border-gray-200 text-xs text-slate-500 flex items-center justify-center">
                       Chặng 2 sẽ tự động kích hoạt sau khi kiểm định Hub đạt chuẩn.
                     </div>
                   )}
@@ -782,43 +782,43 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
               {/* Inspection Certificate & Tamper Seal Section */}
               {detailModalOrder.inspectionReport && (
-                <div className="rounded-2xl bg-[#F4F5F8] p-5 border border-gray-200 space-y-3">
+                <div className="rounded-2xl bg-[#f6f5eb] p-5 border border-gray-200 space-y-3">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-[#0E121B] text-white flex items-center justify-center">
-                        <FileCheck className="w-4 h-4 text-[#EC1577]" />
+                      <div className="w-8 h-8 rounded-lg bg-[#2b1d16] text-white flex items-center justify-center">
+                        <FileCheck className="w-4 h-4 text-white" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-sm text-[#0E121B]">
+                        <h4 className="font-bold text-sm text-[#2b1d16]">
                           Biên Bản Giám Định Xác Thực #{detailModalOrder.inspectionReport.id}
                         </h4>
-                        <p className="text-xs text-[#0E121B]/70">
+                        <p className="text-xs text-[#2b1d16]/70">
                           {detailModalOrder.inspectionReport.centerName} • {detailModalOrder.inspectionReport.inspectorName}
                         </p>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span className="px-3 py-1 rounded-full text-xs font-black bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white">
+                      <span className="px-3 py-1 rounded-full text-xs font-black bg-[#2b1d16] text-white">
                         {detailModalOrder.inspectionReport.verdict === 'PASS' ? 'KẾT QUẢ: ĐẠT CHUẨN' : 'KHÔNG ĐẠT'}
                       </span>
-                      <span className="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-[#FFFFFF] text-[#0E121B] border border-gray-200">
+                      <span className="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-[#FFFFFF] text-[#2b1d16] border border-gray-200">
                         Mã Tem NFC: {detailModalOrder.inspectionReport.tamperSealId}
                       </span>
                     </div>
                   </div>
 
-                  <p className="text-xs text-[#0E121B] bg-[#FFFFFF] p-3 rounded-xl border border-gray-200 italic">
+                  <p className="text-xs text-[#2b1d16] bg-[#FFFFFF] p-3 rounded-xl border border-gray-200 italic">
                     "{detailModalOrder.inspectionReport.summaryNotes}"
                   </p>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                     {detailModalOrder.inspectionReport.checklistResults.slice(0, 4).map((chk) => (
                       <div key={chk.id} className="flex items-center gap-2 bg-[#FFFFFF] p-2 rounded-lg border border-gray-200">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-[#EC1577] shrink-0" />
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#2b1d16] shrink-0" />
                         <div className="truncate">
-                          <span className="font-semibold text-[#0E121B]">{chk.category}: </span>
-                          <span className="text-[#0E121B]/70">{chk.testedValue || 'Đạt'}</span>
+                          <span className="font-semibold text-[#2b1d16]">{chk.category}: </span>
+                          <span className="text-[#2b1d16]/70">{chk.testedValue || 'Đạt'}</span>
                         </div>
                       </div>
                     ))}
@@ -829,38 +829,38 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               {/* 3-Stage Multi-Version Photo Audit */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold text-[#0E121B] uppercase tracking-wider flex items-center gap-1.5">
-                    <Layers className="w-4 h-4 text-[#EC1577]" />
+                  <div className="text-xs font-bold text-[#2b1d16] uppercase tracking-wider flex items-center gap-1.5">
+                    <Layers className="w-4 h-4 text-[#2b1d16]" />
                     <span>{t.multiStageTitle}</span>
                   </div>
 
-                  <div className="flex items-center gap-1 bg-[#F4F5F8] p-1 rounded-xl text-xs border border-gray-200">
+                  <div className="flex items-center gap-1 bg-[#f6f5eb] p-1 rounded-xl text-xs border border-gray-200">
                     <button
                       onClick={() => setActivePhotoStage('listing')}
-                      className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
+                      className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
                         activePhotoStage === 'listing'
-                          ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white font-bold'
-                          : 'text-[#0E121B]/70'
+                          ? 'bg-[#2b1d16] text-white'
+                          : 'text-[#2b1d16]/70'
                       }`}
                     >
                       1. Người bán
                     </button>
                     <button
                       onClick={() => setActivePhotoStage('inspector')}
-                      className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
+                      className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
                         activePhotoStage === 'inspector'
-                          ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white font-bold'
-                          : 'text-[#0E121B]/70'
+                          ? 'bg-[#2b1d16] text-white'
+                          : 'text-[#2b1d16]/70'
                       }`}
                     >
                       2. Kiểm định Hub
                     </button>
                     <button
                       onClick={() => setActivePhotoStage('handover')}
-                      className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
+                      className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
                         activePhotoStage === 'handover'
-                          ? 'bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white font-bold'
-                          : 'text-[#0E121B]/70'
+                          ? 'bg-[#2b1d16] text-white'
+                          : 'text-[#2b1d16]/70'
                       }`}
                     >
                       3. Niêm phong giao
@@ -875,13 +875,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                     ? detailModalOrder.multiStagePhotos.inspectorPhotos || []
                     : detailModalOrder.multiStagePhotos.handoverPhotos || []
                   ).map((photoUrl, idx) => (
-                    <div key={idx} className="relative aspect-4/3 rounded-xl overflow-hidden bg-[#F4F5F8] border border-gray-200 group">
+                    <div key={idx} className="relative aspect-4/3 rounded-xl overflow-hidden bg-[#f6f5eb] border border-gray-200 group">
                       <img
                         src={photoUrl}
                         alt="Stage audit"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                       />
-                      <div className="absolute bottom-1.5 left-1.5 bg-[#0E121B]/80 backdrop-blur-xs text-white text-[10px] px-2 py-0.5 rounded border border-white/20">
+                      <div className="absolute bottom-1.5 left-1.5 bg-[#2b1d16]/85 backdrop-blur-xs text-white text-[10px] px-2 py-0.5 rounded border border-white/20 font-bold">
                         {activePhotoStage === 'listing' && 'Ảnh rao bán'}
                         {activePhotoStage === 'inspector' && 'Ảnh soi Hub'}
                         {activePhotoStage === 'handover' && 'Ảnh dán tem NFC'}
@@ -892,29 +892,29 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               </div>
 
               {/* Escrow Fee Breakdown */}
-              <div className="bg-[#F4F5F8] rounded-2xl p-4 border border-gray-200 space-y-2 text-xs">
-                <div className="font-bold text-[#0E121B] uppercase tracking-wider text-[11px]">
+              <div className="bg-[#f6f5eb] rounded-2xl p-4 border border-gray-200 space-y-2 text-xs">
+                <div className="font-bold text-[#2b1d16] uppercase tracking-wider text-[11px]">
                   {t.orderSummary}
                 </div>
-                <div className="flex justify-between text-[#0E121B]/70">
+                <div className="flex justify-between text-[#2b1d16]/70">
                   <span>{t.itemAmount}:</span>
-                  <span className="font-semibold text-[#0E121B]">{formatVND(detailModalOrder.itemPriceVnd)}</span>
+                  <span className="font-semibold text-[#2b1d16]">{formatVND(detailModalOrder.itemPriceVnd)}</span>
                 </div>
-                <div className="flex justify-between text-[#0E121B]/70">
+                <div className="flex justify-between text-[#2b1d16]/70">
                   <span>{t.inspectionFee}:</span>
-                  <span className="font-semibold text-[#0E121B]">{formatVND(detailModalOrder.inspectionFeeVnd)}</span>
+                  <span className="font-semibold text-[#2b1d16]">{formatVND(detailModalOrder.inspectionFeeVnd)}</span>
                 </div>
-                <div className="flex justify-between text-[#0E121B]/70">
+                <div className="flex justify-between text-[#2b1d16]/70">
                   <span>{t.shippingFee} (2 chặng GHTK + GHN):</span>
-                  <span className="font-semibold text-[#0E121B]">{formatVND(detailModalOrder.shippingFeeVnd)}</span>
+                  <span className="font-semibold text-[#2b1d16]">{formatVND(detailModalOrder.shippingFeeVnd)}</span>
                 </div>
-                <div className="flex justify-between text-[#0E121B]/70">
+                <div className="flex justify-between text-[#2b1d16]/70">
                   <span>{t.platformFee}:</span>
-                  <span className="font-semibold text-[#0E121B]">{formatVND(detailModalOrder.platformFeeVnd)}</span>
+                  <span className="font-semibold text-[#2b1d16]">{formatVND(detailModalOrder.platformFeeVnd)}</span>
                 </div>
-                <div className="pt-2 border-t border-gray-200 flex justify-between font-bold text-sm text-[#0E121B]">
+                <div className="pt-2 border-t border-gray-200 flex justify-between font-bold text-sm text-[#2b1d16]">
                   <span>{t.totalEscrow}:</span>
-                  <span className="font-extrabold text-[#EC1577]">
+                  <span className="font-extrabold text-[#2b1d16]">
                     {formatVND(detailModalOrder.totalPaidVnd)}
                   </span>
                 </div>
@@ -930,7 +930,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           onConfirmReceipt(detailModalOrder.id);
                           setDetailModalOrder(null);
                         }}
-                        className="flex-1 py-3 px-4 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-90 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                        className="flex-1 py-3 px-4 bg-[#2b1d16] hover:bg-black text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
                       >
                         <CheckCircle2 className="w-4 h-4" />
                         <span>{t.confirmReceipt}</span>
@@ -941,9 +941,9 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           onOpenDispute(detailModalOrder);
                           setDetailModalOrder(null);
                         }}
-                        className="py-3 px-4 bg-[#0E121B] hover:bg-[#0E121B]/80 text-white border border-[#0E121B] rounded-xl font-semibold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="py-3 px-4 bg-white hover:bg-gray-100 text-[#2b1d16] border border-[#2b1d16]/30 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
                       >
-                        <AlertTriangle className="w-4 h-4 text-[#EC1577]" />
+                        <AlertTriangle className="w-4 h-4 text-[#2b1d16]" />
                         <span>{t.openDispute}</span>
                       </button>
                     </>
@@ -951,7 +951,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
                 <button
                   onClick={() => setDetailModalOrder(null)}
-                  className="py-3 px-5 bg-gray-100 hover:bg-gray-200 text-slate-700 rounded-xl font-semibold text-xs sm:text-sm transition cursor-pointer"
+                  className="py-3 px-5 bg-white hover:bg-gray-100 text-[#2b1d16] border border-[#2b1d16]/20 rounded-xl font-bold text-xs sm:text-sm transition cursor-pointer"
                 >
                   Đóng
                 </button>
@@ -974,7 +974,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             {/* Header */}
             <div className="flex items-center justify-between pb-4 border-b border-gray-200">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white">
+                <div className="p-2 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white">
                   <Printer className="w-5 h-5" />
                 </div>
                 <div>
@@ -1036,7 +1036,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Chỉ dẫn bưu tá:</span>
-                  <span className="font-bold text-[#EC1577]">Giao trực tiếp phòng Lab kiểm định</span>
+                  <span className="font-bold text-[#2b1d16]">Giao trực tiếp phòng Lab kiểm định</span>
                 </div>
               </div>
 
@@ -1058,7 +1058,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 onClick={() => {
                   window.print();
                 }}
-                className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-95 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-95 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5 cursor-pointer"
               >
                 <Printer className="w-3.5 h-3.5" />
                 <span>In Phiếu Gửi Hàng</span>

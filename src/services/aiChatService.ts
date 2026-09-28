@@ -1,34 +1,47 @@
-import { getAccessToken } from './apiClient';
+import { request } from './apiClient';
 import { AiChatResponseDto } from '../types';
+
+export interface AiChatRequest {
+  sessionId?: string;
+  postId?: string;
+  message: string;
+  base64Image?: string;
+}
 
 export const aiChatService = {
   /**
-   * Gửi tin nhắn tư vấn AI Chatbot (nhận reply từ Ollama / LLM Backend)
+   * Gửi tin nhắn tư vấn AI Chatbot (nhận reply từ LLM Backend)
+   * Gửi JSON { sessionId, postId, message, base64Image } khớp đúng AiChatRequest DTO ở BE
    */
-  async chat(message: string, sessionId?: string, postId?: string, image?: File): Promise<AiChatResponseDto> {
-    const formData = new FormData();
-    formData.append('message', message);
-    if (sessionId) formData.append('sessionId', sessionId);
-    if (postId) formData.append('postId', postId);
-    if (image) formData.append('image', image);
-
-    const token = getAccessToken();
-    const BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
-
-    const res = await fetch(`${BASE_URL}/ai/chat`, {
-      method: 'POST',
-      headers: {
-        Authorization: token ? `Bearer ${token}` : '',
-      },
-      body: formData,
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text || `Lỗi AI Chatbot (${res.status})`);
+  async chat(
+    messageOrPayload: string | AiChatRequest,
+    sessionId?: string,
+    postId?: string,
+    base64Image?: string
+  ): Promise<AiChatResponseDto> {
+    let payload: AiChatRequest;
+    if (typeof messageOrPayload === 'string') {
+      payload = {
+        message: messageOrPayload,
+        sessionId: sessionId || undefined,
+        postId: postId || undefined,
+        base64Image: base64Image || undefined,
+      };
+    } else {
+      payload = {
+        message: messageOrPayload.message,
+        sessionId: messageOrPayload.sessionId || sessionId || undefined,
+        postId: messageOrPayload.postId || postId || undefined,
+        base64Image: messageOrPayload.base64Image || base64Image || undefined,
+      };
     }
 
-    const responseJson = await res.json();
-    return responseJson?.data || responseJson;
+    const response = await request<AiChatResponseDto>('/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      requiresAuth: true,
+    });
+
+    return (response as any)?.data || response;
   },
 };

@@ -35,11 +35,11 @@ export const LogoutConfirmModal: React.FC<LogoutConfirmModalProps> = ({
       onClick={handleCancel}
     >
       <div
-        className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden transform transition-all text-[#0E121B]"
+        className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden transform transition-all text-[#2b1d16]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Warning Strip */}
-        <div className="h-2 w-full bg-gradient-to-r from-rose-500 via-amber-500 to-[#EC1577]" />
+        <div className="h-2 w-full bg-gradient-to-r from-rose-500 via-amber-500 to-[#cea981]" />
 
         {/* Close Button */}
         <button
@@ -62,7 +62,7 @@ export const LogoutConfirmModal: React.FC<LogoutConfirmModalProps> = ({
           </div>
 
           <div className="space-y-1.5">
-            <h3 className="text-lg font-black text-[#0E121B] tracking-tight">
+            <h3 className="text-lg font-black text-[#2b1d16] tracking-tight">
               {lang === 'vi' ? 'Xác Nhận Đăng Xuất' : 'Confirm Logout'}
             </h3>
             <p className="text-xs text-gray-500 leading-relaxed max-w-xs mx-auto">

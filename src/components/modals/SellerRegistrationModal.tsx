@@ -223,22 +223,22 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
       <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-gray-100 overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-slate-900 to-[#0E121B] text-white">
+        <div className="px-6 py-4 border-b border-[#2b1d16]/15 flex items-center justify-between bg-[#cea981] text-[#2b1d16]">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white shadow-md">
+            <div className="p-2.5 rounded-2xl bg-[#2b1d16] text-white shadow-md">
               <Store className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-sm sm:text-base font-extrabold text-white">
+                <h3 className="text-sm sm:text-base font-black text-[#2b1d16]">
                   {lang === 'vi' ? 'Đăng Ký Thành Người Bán' : 'Seller Hub Onboarding'}
                 </h3>
                 <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
                   currentUser.role === 'seller'
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    ? 'bg-white text-emerald-900 border-emerald-500'
                     : currentUser.kycStatus === 'pending' || currentUser.isSellerRegistered
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                    : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                    ? 'bg-white text-amber-900 border-amber-500'
+                    : 'bg-white text-rose-900 border-rose-500'
                 }`}>
                   {currentUser.role === 'seller'
                     ? (lang === 'vi' ? 'Đã Kích Hoạt Người Bán' : 'Seller Active')
@@ -247,7 +247,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     : (lang === 'vi' ? 'Chưa Kích Hoạt' : 'Not Registered')}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-300 mt-0.5">
+              <p className="text-[11px] text-[#2b1d16]/80 font-bold mt-0.5">
                 {lang === 'vi'
                   ? 'Đăng ký gian hàng & địa chỉ kho để bắt đầu đăng bán thiết bị gia dụng trên SecondLife'
                   : 'Register store profile & warehouse to post appliances on SecondLife'}
@@ -257,7 +257,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+            className="p-1.5 rounded-xl text-[#2b1d16] hover:bg-white/40 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -268,7 +268,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
           {/* Highlights Banner */}
           <div className="grid grid-cols-3 gap-2.5 py-1 text-xs">
             <div className="flex items-center gap-2 p-2.5 rounded-2xl bg-rose-50/70 border border-rose-100 text-slate-700">
-              <ShieldCheck className="w-4 h-4 text-[#EC1577] shrink-0" />
+              <ShieldCheck className="w-4 h-4 text-[#2b1d16] shrink-0" />
               <div>
                 <span className="font-bold block text-[11px] text-slate-900">{lang === 'vi' ? 'Xác minh CCCD' : 'National ID'}</span>
                 <span className="text-[10px] text-slate-500 hidden sm:block">{lang === 'vi' ? 'Định danh eKYC 48h' : 'eKYC Verified'}</span>
@@ -311,7 +311,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
             <div className="p-5 rounded-3xl bg-slate-50 border border-gray-200 space-y-4 animate-in fade-in">
               <div className="flex items-center justify-between border-b border-gray-200/80 pb-3">
                 <div className="flex items-center gap-2.5">
-                  <Store className="w-4 h-4 text-[#EC1577]" />
+                  <Store className="w-4 h-4 text-[#2b1d16]" />
                   <span className="text-xs font-bold text-slate-900">
                     {lang === 'vi' ? 'Hồ Sơ Gian Hàng Của Bạn' : 'Your Seller Store Profile'}
                   </span>
@@ -333,7 +333,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                 <button
                   type="button"
                   onClick={() => setShowForm(true)}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[#EC1577] hover:underline cursor-pointer"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[#2b1d16] hover:underline cursor-pointer"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
                   <span>{lang === 'vi' ? 'Chỉnh sửa thông tin' : 'Edit Info'}</span>
@@ -377,7 +377,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                           onClose();
                           onNavigateToCreateListing();
                         }}
-                        className="px-4 py-2 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-95 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                        className="px-4 py-2 bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-95 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                       >
                         <Sparkles className="w-3.5 h-3.5" />
                         <span>{lang === 'vi' ? 'Đến Trang Đăng Bán' : 'Post Listing'}</span>
@@ -411,11 +411,11 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
           {(showForm || !isRegistered) && (
             <form
               onSubmit={handleSubmit}
-              className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-white to-slate-50 border-2 border-[#EC1577]/30 shadow-md space-y-4 animate-in fade-in"
+              className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-white to-slate-50 border-2 border-[#cea981]/30 shadow-md space-y-4 animate-in fade-in"
             >
               <div className="flex items-center justify-between border-b border-gray-100 pb-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white">
+                  <div className="p-2 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white">
                     <Store className="w-4 h-4" />
                   </div>
                   <div>
@@ -456,7 +456,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       value={shopName}
                       onChange={(e) => setShopName(e.target.value)}
                       placeholder={lang === 'vi' ? 'VD: Điện Máy Cũ Hoàng Khang' : 'e.g., Hoang Khang Pre-owned Tech'}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs bg-white text-slate-900"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs bg-white text-slate-900"
                     />
                   </div>
 
@@ -470,7 +470,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       value={sellerPhone}
                       onChange={(e) => setSellerPhone(e.target.value)}
                       placeholder="0912 345 678"
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs bg-white text-slate-900"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs bg-white text-slate-900"
                     />
                   </div>
                 </div>
@@ -485,7 +485,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     value={pickupAddress}
                     onChange={(e) => setPickupAddress(e.target.value)}
                     placeholder={lang === 'vi' ? 'Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành phố' : 'Street address, ward, district, city'}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs bg-white text-slate-900"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs bg-white text-slate-900"
                   />
                   <span className="text-[10px] text-slate-400 block mt-1">
                     {lang === 'vi'
@@ -505,7 +505,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       value={idCardNumber}
                       onChange={(e) => setIdCardNumber(e.target.value)}
                       placeholder="048299102941"
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs bg-white text-slate-900"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs bg-white text-slate-900"
                     />
                   </div>
 
@@ -518,15 +518,15 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       value={sellerProductTypes}
                       onChange={(e) => setSellerProductTypes(e.target.value)}
                       placeholder={lang === 'vi' ? 'VD: Tủ lạnh, Máy giặt, Máy pha cafe...' : 'e.g., Refrigerators, Washers...'}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#EC1577] focus:ring-1 focus:ring-[#EC1577] outline-none text-xs bg-white text-slate-900"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs bg-white text-slate-900"
                     />
                   </div>
                 </div>
 
                 {/* eKYC Document Photo Upload Section */}
-                <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-slate-200 space-y-3">
+                <div className="p-3.5 rounded-2xl bg-[#f6f5eb] border border-slate-200 space-y-3">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                    <FileCheck className="w-4 h-4 text-[#EC1577]" />
+                    <FileCheck className="w-4 h-4 text-[#2b1d16]" />
                     <span>{lang === 'vi' ? 'Ảnh Tải Lên Xác Thực eKYC (Mặt Trước, Mặt Sau, Chân Dung)' : 'eKYC Verification Photo Uploads'}</span>
                     <span className="text-red-500">*</span>
                   </div>
@@ -535,7 +535,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     {/* Front ID */}
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '1. Ảnh CCCD Mặt Trước' : '1. Front ID Card'} *</label>
-                      <div className="relative border border-dashed border-slate-300 hover:border-[#EC1577] rounded-xl p-2 bg-white text-center transition">
+                      <div className="relative border border-dashed border-slate-300 hover:border-[#cea981] rounded-xl p-2 bg-white text-center transition">
                         {docFrontUrl ? (
                           <div className="space-y-1">
                             <img src={docFrontUrl} alt="Front ID" className="w-full h-20 object-cover rounded-lg" />
@@ -558,7 +558,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     {/* Back ID */}
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '2. Ảnh CCCD Mặt Sau' : '2. Back ID Card'} *</label>
-                      <div className="relative border border-dashed border-slate-300 hover:border-[#EC1577] rounded-xl p-2 bg-white text-center transition">
+                      <div className="relative border border-dashed border-slate-300 hover:border-[#cea981] rounded-xl p-2 bg-white text-center transition">
                         {docBackUrl ? (
                           <div className="space-y-1">
                             <img src={docBackUrl} alt="Back ID" className="w-full h-20 object-cover rounded-lg" />
@@ -581,7 +581,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     {/* Selfie */}
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '3. Ảnh Chân Dung Selfie' : '3. Selfie Photo'}</label>
-                      <div className="relative border border-dashed border-slate-300 hover:border-[#EC1577] rounded-xl p-2 bg-white text-center transition">
+                      <div className="relative border border-dashed border-slate-300 hover:border-[#cea981] rounded-xl p-2 bg-white text-center transition">
                         {selfieUrl ? (
                           <div className="space-y-1">
                             <img src={selfieUrl} alt="Selfie" className="w-full h-20 object-cover rounded-lg" />
@@ -606,7 +606,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                 {/* Bank Information for Payout */}
                 <div className="p-3 rounded-2xl bg-white border border-gray-200 space-y-2.5">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                    <CreditCard className="w-3.5 h-3.5 text-[#EC1577]" />
+                    <CreditCard className="w-3.5 h-3.5 text-[#2b1d16]" />
                     <span>{lang === 'vi' ? 'Tài Khoản Ngân Hàng Nhận Tiền Bán (Giải Ngân Escrow)' : 'Bank Account for Escrow Payout'}</span>
                   </div>
 
@@ -618,7 +618,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                         value={sellerBankName}
                         onChange={(e) => setSellerBankName(e.target.value)}
                         placeholder="Vietcombank"
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#EC1577]"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#cea981]"
                       />
                     </div>
                     <div>
@@ -628,7 +628,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                         value={sellerAccountNumber}
                         onChange={(e) => setSellerAccountNumber(e.target.value)}
                         placeholder="991204882910"
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#EC1577]"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#cea981]"
                       />
                     </div>
                     <div>
@@ -638,7 +638,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                         value={sellerAccountHolder}
                         onChange={(e) => setSellerAccountHolder(e.target.value)}
                         placeholder="HOANG QUOC KHANG"
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#EC1577]"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#cea981]"
                       />
                     </div>
                   </div>
@@ -650,7 +650,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     type="checkbox"
                     checked={sellerTermsAgreed}
                     onChange={(e) => setSellerTermsAgreed(e.target.checked)}
-                    className="mt-0.5 rounded text-[#EC1577] focus:ring-[#EC1577] w-4 h-4 cursor-pointer"
+                    className="mt-0.5 rounded text-[#2b1d16] focus:ring-[#cea981] w-4 h-4 cursor-pointer"
                   />
                   <span className="text-[11px] text-slate-600 leading-relaxed">
                     {lang === 'vi'
@@ -684,7 +684,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-95 disabled:opacity-50 text-white text-xs font-bold shadow-sm transition flex items-center gap-2 cursor-pointer"
+                    className="px-5 py-2.5 rounded-xl bg-[#2b1d16] hover:bg-black disabled:opacity-50 text-white text-xs font-black shadow-sm transition flex items-center gap-2 cursor-pointer"
                   >
                     <CheckCircle2 className="w-4 h-4" />
                     <span>

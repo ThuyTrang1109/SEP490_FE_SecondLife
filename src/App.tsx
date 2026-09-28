@@ -362,8 +362,8 @@ export default function App() {
 
   return (
     <div className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${theme === 'dark'
-      ? 'bg-[#0E121B] text-white selection:bg-[#EC1577] selection:text-white'
-      : 'bg-[#F4F5F8] text-[#0E121B] selection:bg-[#EC1577] selection:text-white'
+      ? 'bg-[#cea981] text-white selection:bg-[#cea981] selection:text-white'
+      : 'bg-[#f6f5eb] text-[#2b1d16] selection:bg-[#cea981] selection:text-white'
       }`}>
       {/* Navigation */}
       {activeTab !== 'admin-dashboard' && (
@@ -407,16 +407,16 @@ export default function App() {
 
       {/* Floating Top Welcome Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-4 sm:top-6 left-1/2 -translate-x-1/2 z-[100] w-[92%] sm:w-auto min-w-[340px] max-w-xl bg-[#0E121B]/95 dark:bg-[#161B26]/95 backdrop-blur-2xl text-white px-5 py-3.5 rounded-2xl shadow-[0_16px_40px_rgba(236,21,119,0.35)] border-2 border-[#EC1577]/60 flex items-center gap-3.5 transition-all duration-300 transform scale-100 animate-fadeIn">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#EC1577] to-[#F1622A] flex items-center justify-center shrink-0 shadow-md shadow-[#EC1577]/40 ring-2 ring-white/20">
+        <div className="fixed top-4 sm:top-6 left-1/2 -translate-x-1/2 z-[100] w-[92%] sm:w-auto min-w-[340px] max-w-xl bg-[#cea981] backdrop-blur-2xl text-[#2b1d16] px-5 py-3.5 rounded-2xl shadow-2xl border-2 border-[#2b1d16]/20 flex items-center gap-3.5 transition-all duration-300 transform scale-100 animate-fadeIn">
+          <div className="w-9 h-9 rounded-xl bg-[#2b1d16] flex items-center justify-center shrink-0 shadow-md ring-2 ring-white/40">
             <Sparkles className="w-5 h-5 text-white animate-pulse" />
           </div>
           <div className="flex-1 pr-2">
-            <span className="text-xs sm:text-sm font-semibold tracking-wide text-white leading-tight block">{toastMessage}</span>
+            <span className="text-xs sm:text-sm font-bold tracking-wide text-[#2b1d16] leading-tight block">{toastMessage}</span>
           </div>
           <button
             onClick={() => setToastMessage(null)}
-            className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center text-xs transition-colors shrink-0 cursor-pointer border border-white/10"
+            className="w-7 h-7 rounded-full bg-white/40 hover:bg-white/60 text-[#2b1d16] flex items-center justify-center text-xs transition-colors shrink-0 cursor-pointer border border-[#2b1d16]/20 font-bold"
             title="Đóng"
           >
             ✕
@@ -472,7 +472,7 @@ export default function App() {
         {activeTab === 'create-listing' && (
           currentUser && currentUser.role !== 'seller' ? (
             <div className="py-12 px-4 text-center max-w-xl mx-auto space-y-4">
-              <div className="w-16 h-16 rounded-3xl bg-rose-50 text-[#EC1577] flex items-center justify-center mx-auto shadow-md">
+              <div className="w-16 h-16 rounded-3xl bg-[#f6f5eb] text-[#2b1d16] flex items-center justify-center mx-auto shadow-md">
                 <Store className="w-8 h-8" />
               </div>
               <h3 className="text-xl font-bold text-slate-900">
@@ -492,7 +492,7 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => setIsSellerRegistrationModalOpen(true)}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white text-sm font-bold shadow-md hover:opacity-95 transition cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white text-sm font-bold shadow-md hover:opacity-95 transition cursor-pointer"
                 >
                   {lang === 'vi' ? 'Đăng Ký Người Bán Ngay' : 'Register as Seller Now'}
                 </button>
@@ -540,13 +540,13 @@ export default function App() {
         {activeTab === 'chat' && (
           <div className="max-w-3xl mx-auto space-y-6 pb-16">
             <div className="bg-[#FFFFFF] rounded-2xl p-8 border border-slate-200 shadow-xs text-center space-y-4">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-[#EC1577] to-[#F1622A] text-white flex items-center justify-center mx-auto shadow-md">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white flex items-center justify-center mx-auto shadow-md">
                 <Sparkles className="w-6 h-6" />
               </div>
-              <h2 className="text-xl font-bold text-[#0E121B]">
+              <h2 className="text-xl font-bold text-[#2b1d16]">
                 {lang === 'vi' ? 'Hệ Thống Đàm Phán & Chống Lừa Đảo AI' : 'Smart Negotiation & Anti-Fraud Chat'}
               </h2>
-              <p className="text-xs sm:text-sm text-[#0E121B]/70 max-w-lg mx-auto">
+              <p className="text-xs sm:text-sm text-[#2b1d16]/70 max-w-lg mx-auto">
                 {lang === 'vi'
                   ? 'Bấm chọn bất kỳ sản phẩm nào trên Sàn để mở phiên chat đàm phán giá. AI sẽ phân tích đề xuất và cảnh báo nếu có dấu hiệu chuyển khoản ngoài hệ thống.'
                   : 'Select any listing in the marketplace to start negotiating with live AI counter-offer advice and anti-scam warnings.'}
@@ -559,7 +559,7 @@ export default function App() {
                   }
                   setChatListing(listings[0]);
                 }}
-                className="px-5 py-2.5 bg-gradient-to-r from-[#EC1577] to-[#F1622A] hover:opacity-95 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md transition cursor-pointer"
+                className="px-5 py-2.5 bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-95 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md transition cursor-pointer"
               >
                 Mở Hội Thoại Thử Nghiệm với Sản Phẩm Mẫu &rarr;
               </button>

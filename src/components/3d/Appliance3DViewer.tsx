@@ -50,7 +50,7 @@ export const Appliance3DViewer: React.FC<Appliance3DViewerProps> = ({
     frontFill.position.set(0, 1.5, 4);
     scene.add(frontFill);
 
-    const rimLight = new THREE.PointLight(0xf43f5e, 3.5, 8); // Ánh viền hồng Rose của SecondLife
+    const rimLight = new THREE.PointLight(0xccbb9e, 3.5, 8); // Ánh viền vàng cát ấm của SecondLife
     rimLight.position.set(-3, 1, -2);
     scene.add(rimLight);
 

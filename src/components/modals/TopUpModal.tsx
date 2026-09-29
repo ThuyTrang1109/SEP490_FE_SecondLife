@@ -165,47 +165,49 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in">
-      <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl bg-[#f6f5eb] border border-[#2b1d16]/15 text-[#2b1d16] shadow-2xl">
+      <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl bg-[#faf8f5] border border-[#24263e]/15 text-[#24263e] shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#2b1d16]/15 bg-[#cea981]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-[#24263e]">
           <div className="flex items-center space-x-3">
-            <img
-              src={logoImg}
-              alt="SecondLife Logo"
-              className="h-10 w-auto object-contain shrink-0"
-            />
+            <div className="logo-badge bg-white p-1.5 rounded-xl shadow-xs border border-white/80 flex items-center justify-center shrink-0">
+              <img
+                src={logoImg}
+                alt="SecondLife Logo"
+                className="h-8 w-auto object-contain shrink-0"
+              />
+            </div>
             <div>
-              <h3 className="text-base sm:text-lg font-black text-[#2b1d16] flex items-center gap-2">
-                Gói Quyền Sử Dụng SecondLife
-                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-white text-[#2b1d16] border border-[#2b1d16]/20 font-black uppercase tracking-wider">
+              <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                Gói Quyền Sử Dụng Second<span className="text-[#c34c36]">Life</span>
+                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-[#c34c36] text-white font-black uppercase tracking-wider shadow-xs">
                   Kích hoạt tự động
                 </span>
               </h3>
-              <p className="text-xs text-[#2b1d16]/85 font-bold">
+              <p className="text-xs text-[#fce5da] font-medium">
                 Tích lũy lượt đăng tin và lượt tư vấn AI thông minh (Ollama LLM) cho bài đăng
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-full bg-white/40 hover:bg-white/60 text-[#2b1d16] flex items-center justify-center text-sm font-bold transition cursor-pointer border border-[#2b1d16]/20 shrink-0"
+            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition cursor-pointer border border-white/15 shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Current Balance Bar */}
-        <div className="px-6 py-3 bg-[#ccbb9e]/20 border-b border-[#2b1d16]/15 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-xs text-[#2b1d16] font-bold flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-[#2b1d16] shrink-0" />
+        <div className="px-6 py-3 bg-[#fce5da]/20 border-b border-[#24263e]/15 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs text-[#24263e] font-bold flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-[#24263e] shrink-0" />
             <span>Quyền sử dụng hiện tại của bạn:</span>
           </span>
           <div className="flex items-center gap-3 text-xs font-bold font-mono">
-            <span className="text-[#2b1d16] bg-white border border-[#2b1d16]/15 px-3 py-1 rounded-xl shadow-xs font-bold text-xs">
-              Lượt đăng tin: <span className="text-sm font-black text-[#2b1d16] ml-1">{userCredit.postCredits ?? 0}</span>
+            <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-3 py-1 rounded-xl shadow-xs font-bold text-xs">
+              Lượt đăng tin: <span className="text-sm font-black text-[#24263e] ml-1">{userCredit.postCredits ?? 0}</span>
             </span>
-            <span className="text-[#2b1d16] bg-white border border-[#2b1d16]/15 px-3 py-1 rounded-xl shadow-xs font-bold text-xs">
-              Lượt tư vấn AI: <span className="text-sm font-black text-[#2b1d16] ml-1">{userCredit.chatCredits ?? 0}</span>
+            <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-3 py-1 rounded-xl shadow-xs font-bold text-xs">
+              Lượt tư vấn AI: <span className="text-sm font-black text-[#24263e] ml-1">{userCredit.chatCredits ?? 0}</span>
             </span>
           </div>
         </div>
@@ -216,8 +218,8 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
             <>
               {loading ? (
                 <div className="py-12 flex flex-col items-center justify-center space-y-3">
-                  <Loader2 className="w-8 h-8 text-[#2b1d16] animate-spin" />
-                  <p className="text-sm text-[#2b1d16]/80 font-bold">Đang tải danh sách gói nạp...</p>
+                  <Loader2 className="w-8 h-8 text-[#24263e] animate-spin" />
+                  <p className="text-sm text-[#24263e]/80 font-bold">Đang tải danh sách gói nạp...</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -234,43 +236,43 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                         onClick={() => setSelectedPkg(pkg)}
                         className={`relative p-5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
                           isSelected
-                            ? 'bg-white border-2 border-[#cea981] shadow-xl ring-2 ring-[#cea981]/40 transform -translate-y-0.5'
-                            : 'bg-white/90 border-[#2b1d16]/15 hover:border-[#cea981] hover:bg-white hover:shadow-md'
+                            ? 'bg-white border-2 border-[#c34c36] shadow-xl ring-2 ring-[#c34c36]/40 transform -translate-y-0.5'
+                            : 'bg-white/90 border-[#24263e]/15 hover:border-[#c34c36] hover:bg-white hover:shadow-md'
                         }`}
                       >
                         {pkg.isPopular && (
-                          <span className="absolute -top-2.5 right-3 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-full bg-[#cea981] text-[#2b1d16] border border-[#2b1d16]/20 shadow-sm">
+                          <span className="absolute -top-2.5 right-3 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-full bg-[#c34c36] text-[#24263e] border border-[#24263e]/20 shadow-sm">
                             Phổ Biến Nhất
                           </span>
                         )}
 
                         <div>
                           <div className="flex items-center justify-between mb-2">
-                            <h4 className="font-black text-base text-[#2b1d16]">{pkgName}</h4>
-                            <span className="text-base font-black text-[#2b1d16] font-mono">
+                            <h4 className="font-black text-base text-[#24263e]">{pkgName}</h4>
+                            <span className="text-base font-black text-[#24263e] font-mono">
                               {pkgPrice.toLocaleString('vi-VN')} đ
                             </span>
                           </div>
 
                           <div className="flex flex-col gap-1.5 my-3">
-                            <div className="flex items-center gap-2 text-xs text-[#2b1d16] font-bold">
-                              <Sparkles className="w-3.5 h-3.5 text-[#cea981] shrink-0" />
+                            <div className="flex items-center gap-2 text-xs text-[#24263e] font-bold">
+                              <Sparkles className="w-3.5 h-3.5 text-[#c34c36] shrink-0" />
                               <span>+{postCredits} Lượt đăng tin bài</span>
                             </div>
-                            <div className="flex items-center gap-2 text-xs text-[#2b1d16] font-bold">
-                              <Zap className="w-3.5 h-3.5 text-[#cea981] shrink-0" />
+                            <div className="flex items-center gap-2 text-xs text-[#24263e] font-bold">
+                              <Zap className="w-3.5 h-3.5 text-[#c34c36] shrink-0" />
                               <span>+{chatCredits} Lượt AI tư vấn mô tả</span>
                             </div>
                           </div>
 
                           {pkg.description && (
-                            <p className="text-xs text-[#2b1d16]/80 mt-1 font-medium">{pkg.description}</p>
+                            <p className="text-xs text-[#24263e]/80 mt-1 font-medium">{pkg.description}</p>
                           )}
                         </div>
 
-                        <div className="mt-4 pt-3 border-t border-[#2b1d16]/10 flex items-center justify-between text-xs font-semibold">
-                          <span className="text-[#2b1d16]/70">Quyền sử dụng</span>
-                          <span className="text-[#2b1d16] font-black">Đăng tin & AI Chat</span>
+                        <div className="mt-4 pt-3 border-t border-[#24263e]/10 flex items-center justify-between text-xs font-semibold">
+                          <span className="text-[#24263e]/70">Quyền sử dụng</span>
+                          <span className="text-[#24263e] font-black">Đăng tin & AI Chat</span>
                         </div>
                       </div>
                     );
@@ -283,10 +285,10 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                 <button
                   disabled={!selectedPkg || loading}
                   onClick={() => setStep('PAYMENT')}
-                  className="w-full sm:w-auto px-8 py-3.5 rounded-2xl font-black text-sm text-[#2b1d16] bg-[#cea981] hover:brightness-105 active:scale-[0.99] transition-all shadow-md shadow-[#2b1d16]/10 border border-[#2b1d16]/20 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full sm:w-auto px-8 py-3.5 rounded-2xl font-black text-sm text-[#24263e] bg-[#c34c36] hover:brightness-105 active:scale-[0.99] transition-all shadow-md shadow-[#24263e]/10 border border-[#24263e]/20 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <span>Tiếp theo: Chọn phương thức thanh toán</span>
-                  <ArrowRight className="w-4 h-4 text-[#2b1d16]" />
+                  <ArrowRight className="w-4 h-4 text-[#24263e]" />
                 </button>
               </div>
             </>
@@ -295,17 +297,17 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
           {step === 'PAYMENT' && selectedPkg && (
             <div className="space-y-6">
               {/* Summary card */}
-              <div className="p-4 rounded-2xl bg-white border border-[#2b1d16]/15 flex items-center justify-between shadow-sm">
+              <div className="p-4 rounded-2xl bg-white border border-[#24263e]/15 flex items-center justify-between shadow-sm">
                 <div>
-                  <span className="text-xs text-[#2b1d16]/70 font-semibold">Gói đã chọn:</span>
-                  <h4 className="text-base font-black text-[#2b1d16]">{getPkgName(selectedPkg)}</h4>
-                  <p className="text-xs text-[#2b1d16]/80 font-bold font-mono">
+                  <span className="text-xs text-[#24263e]/70 font-semibold">Gói đã chọn:</span>
+                  <h4 className="text-base font-black text-[#24263e]">{getPkgName(selectedPkg)}</h4>
+                  <p className="text-xs text-[#24263e]/80 font-bold font-mono">
                     Nhận tổng cộng: {getPkgTotalCredits(selectedPkg)} Xu
                   </p>
                 </div>
                 <div className="text-right">
-                  <span className="text-xs text-[#2b1d16]/70 font-semibold">Tổng tiền:</span>
-                  <p className="text-xl font-black text-[#2b1d16] font-mono">
+                  <span className="text-xs text-[#24263e]/70 font-semibold">Tổng tiền:</span>
+                  <p className="text-xl font-black text-[#24263e] font-mono">
                     {getPkgPrice(selectedPkg).toLocaleString('vi-VN')} VNĐ
                   </p>
                 </div>
@@ -313,7 +315,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
               {/* Payment selector */}
               <div>
-                <label className="block text-xs font-black text-[#2b1d16] mb-2 uppercase tracking-wider">
+                <label className="block text-xs font-black text-[#24263e] mb-2 uppercase tracking-wider">
                   Phương thức thanh toán
                 </label>
                 <div className="grid grid-cols-2 gap-3">
@@ -322,16 +324,16 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                     onClick={() => setPaymentMethod('QR')}
                     className={`p-3.5 rounded-2xl border flex items-center gap-3 transition-all cursor-pointer ${
                       paymentMethod === 'QR'
-                        ? 'bg-white border-2 border-[#cea981] text-[#2b1d16] shadow-md ring-2 ring-[#cea981]/30'
-                        : 'bg-white/80 border-[#2b1d16]/15 text-[#2b1d16]/70 hover:bg-white hover:text-[#2b1d16]'
+                        ? 'bg-white border-2 border-[#c34c36] text-[#24263e] shadow-md ring-2 ring-[#c34c36]/30'
+                        : 'bg-white/80 border-[#24263e]/15 text-[#24263e]/70 hover:bg-white hover:text-[#24263e]'
                     }`}
                   >
-                    <div className="w-9 h-9 rounded-xl bg-[#cea981]/20 flex items-center justify-center shrink-0">
-                      <QrCode className="w-5 h-5 text-[#2b1d16]" />
+                    <div className="w-9 h-9 rounded-xl bg-[#c34c36]/20 flex items-center justify-center shrink-0">
+                      <QrCode className="w-5 h-5 text-[#24263e]" />
                     </div>
                     <div className="text-left">
-                      <p className="text-xs font-black text-[#2b1d16]">Mã QR VietQR / MoMo</p>
-                      <p className="text-[10px] text-[#2b1d16]/70 font-medium">Quét mã thanh toán tức thì</p>
+                      <p className="text-xs font-black text-[#24263e]">Mã QR VietQR / MoMo</p>
+                      <p className="text-[10px] text-[#24263e]/70 font-medium">Quét mã thanh toán tức thì</p>
                     </div>
                   </button>
 
@@ -340,24 +342,24 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                     onClick={() => setPaymentMethod('BANK')}
                     className={`p-3.5 rounded-2xl border flex items-center gap-3 transition-all cursor-pointer ${
                       paymentMethod === 'BANK'
-                        ? 'bg-white border-2 border-[#cea981] text-[#2b1d16] shadow-md ring-2 ring-[#cea981]/30'
-                        : 'bg-white/80 border-[#2b1d16]/15 text-[#2b1d16]/70 hover:bg-white hover:text-[#2b1d16]'
+                        ? 'bg-white border-2 border-[#c34c36] text-[#24263e] shadow-md ring-2 ring-[#c34c36]/30'
+                        : 'bg-white/80 border-[#24263e]/15 text-[#24263e]/70 hover:bg-white hover:text-[#24263e]'
                     }`}
                   >
-                    <div className="w-9 h-9 rounded-xl bg-[#cea981]/20 flex items-center justify-center shrink-0">
-                      <CreditCard className="w-5 h-5 text-[#2b1d16]" />
+                    <div className="w-9 h-9 rounded-xl bg-[#c34c36]/20 flex items-center justify-center shrink-0">
+                      <CreditCard className="w-5 h-5 text-[#24263e]" />
                     </div>
                     <div className="text-left">
-                      <p className="text-xs font-black text-[#2b1d16]">Chuyển khoản Ngân hàng</p>
-                      <p className="text-[10px] text-[#2b1d16]/70 font-medium">Vietcombank / MBBank</p>
+                      <p className="text-xs font-black text-[#24263e]">Chuyển khoản Ngân hàng</p>
+                      <p className="text-[10px] text-[#24263e]/70 font-medium">Vietcombank / MBBank</p>
                     </div>
                   </button>
                 </div>
               </div>
 
               {/* QR Mock code view */}
-              <div className="p-5 rounded-2xl bg-white border border-[#2b1d16]/15 flex flex-col items-center justify-center space-y-3 shadow-sm">
-                <div className="relative p-3 bg-white rounded-2xl shadow-sm border border-[#2b1d16]/15">
+              <div className="p-5 rounded-2xl bg-white border border-[#24263e]/15 flex flex-col items-center justify-center space-y-3 shadow-sm">
+                <div className="relative p-3 bg-white rounded-2xl shadow-sm border border-[#24263e]/15">
                   {/* Generated QR Placeholder */}
                   <img
                     src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=SECOND_LIFE_TOPUP_${selectedPkg.id}_${getPkgPrice(selectedPkg)}`}
@@ -366,8 +368,8 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   />
                 </div>
                 <div className="text-center space-y-1.5">
-                  <p className="text-xs text-[#2b1d16] font-black">Nội dung chuyển khoản:</p>
-                  <code className="text-xs font-mono px-3.5 py-1.5 rounded-xl bg-[#f6f5eb] text-[#2b1d16] font-black border border-[#2b1d16]/15 inline-block">
+                  <p className="text-xs text-[#24263e] font-black">Nội dung chuyển khoản:</p>
+                  <code className="text-xs font-mono px-3.5 py-1.5 rounded-xl bg-[#faf8f5] text-[#24263e] font-black border border-[#24263e]/15 inline-block">
                     SECONDLIFE TOPUP {getPkgTotalCredits(selectedPkg)}XU
                   </code>
                 </div>
@@ -378,23 +380,23 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setStep('SELECT')}
-                  className="px-5 py-3 rounded-2xl text-xs font-black text-[#2b1d16] hover:bg-black/5 transition cursor-pointer border border-[#2b1d16]/20"
+                  className="px-5 py-3 rounded-2xl text-xs font-black text-[#24263e] hover:bg-black/5 transition cursor-pointer border border-[#24263e]/20"
                 >
                   Quay lại
                 </button>
                 <button
                   disabled={purchasing}
                   onClick={handleConfirmPurchase}
-                  className="px-6 py-3.5 rounded-2xl font-black text-sm text-[#2b1d16] bg-[#cea981] hover:brightness-105 active:scale-[0.99] transition-all shadow-md shadow-[#2b1d16]/10 border border-[#2b1d16]/20 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                  className="px-6 py-3.5 rounded-2xl font-black text-sm text-[#24263e] bg-[#c34c36] hover:brightness-105 active:scale-[0.99] transition-all shadow-md shadow-[#24263e]/10 border border-[#24263e]/20 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
                 >
                   {purchasing ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin text-[#2b1d16]" />
+                      <Loader2 className="w-4 h-4 animate-spin text-[#24263e]" />
                       <span>Đang xử lý nạp xu...</span>
                     </>
                   ) : (
                     <>
-                      <CheckCircle2 className="w-4 h-4 text-[#2b1d16]" />
+                      <CheckCircle2 className="w-4 h-4 text-[#24263e]" />
                       <span>Xác nhận đã chuyển khoản / Nạp ngay</span>
                     </>
                   )}
@@ -405,45 +407,45 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
           {step === 'SUCCESS' && selectedPkg && (
             <div className="py-8 text-center space-y-4 animate-fade-in">
-              <div className="w-16 h-16 mx-auto rounded-full bg-[#cea981]/20 text-[#2b1d16] border border-[#cea981]/40 flex items-center justify-center shadow-lg shadow-[#cea981]/20">
-                <CheckCircle2 className="w-10 h-10 text-[#2b1d16]" />
+              <div className="w-16 h-16 mx-auto rounded-full bg-[#c34c36]/20 text-[#24263e] border border-[#c34c36]/40 flex items-center justify-center shadow-lg shadow-[#c34c36]/20">
+                <CheckCircle2 className="w-10 h-10 text-[#24263e]" />
               </div>
 
               <div className="space-y-1">
-                <h3 className="text-xl font-black text-[#2b1d16]">Nạp Quyền Sử Dụng Thành Công!</h3>
-                <p className="text-xs text-[#2b1d16]/80 font-medium">
+                <h3 className="text-xl font-black text-[#24263e]">Nạp Quyền Sử Dụng Thành Công!</h3>
+                <p className="text-xs text-[#24263e]/80 font-medium">
                   Tài khoản của bạn đã được cộng thêm{' '}
-                  <span className="font-black text-[#2b1d16] font-mono">
+                  <span className="font-black text-[#24263e] font-mono">
                     +{selectedPkg.postCredits || 0} lượt đăng tin
                   </span>{' '}
                   &amp;{' '}
-                  <span className="font-black text-[#2b1d16] font-mono">
+                  <span className="font-black text-[#24263e] font-mono">
                     +{selectedPkg.chatCredits || 0} lượt tư vấn AI
                   </span>
                 </p>
               </div>
 
-              <div className="max-w-xs mx-auto p-4 rounded-2xl bg-white border border-[#2b1d16]/15 text-left text-xs space-y-2 shadow-sm">
+              <div className="max-w-xs mx-auto p-4 rounded-2xl bg-white border border-[#24263e]/15 text-left text-xs space-y-2 shadow-sm">
                 <div className="flex justify-between">
-                  <span className="text-[#2b1d16]/70 font-semibold">Quyền sử dụng mới:</span>
-                  <span className="font-black text-[#2b1d16] font-mono">
+                  <span className="text-[#24263e]/70 font-semibold">Quyền sử dụng mới:</span>
+                  <span className="font-black text-[#24263e] font-mono">
                     {userCredit.postCredits ?? 0} tin • {userCredit.chatCredits ?? 0} AI
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#2b1d16]/70 font-semibold">Gói đăng ký:</span>
-                  <span className="text-[#2b1d16] font-bold">{getPkgName(selectedPkg)}</span>
+                  <span className="text-[#24263e]/70 font-semibold">Gói đăng ký:</span>
+                  <span className="text-[#24263e] font-bold">{getPkgName(selectedPkg)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#2b1d16]/70 font-semibold">Số tiền:</span>
-                  <span className="text-[#2b1d16] font-bold font-mono">{getPkgPrice(selectedPkg).toLocaleString('vi-VN')} đ</span>
+                  <span className="text-[#24263e]/70 font-semibold">Số tiền:</span>
+                  <span className="text-[#24263e] font-bold font-mono">{getPkgPrice(selectedPkg).toLocaleString('vi-VN')} đ</span>
                 </div>
               </div>
 
               <div className="pt-4">
                 <button
                   onClick={onClose}
-                  className="px-8 py-3.5 rounded-2xl font-black text-sm text-[#2b1d16] bg-[#cea981] hover:brightness-105 active:scale-[0.99] transition-all shadow-md shadow-[#2b1d16]/10 border border-[#2b1d16]/20 cursor-pointer"
+                  className="px-8 py-3.5 rounded-2xl font-black text-sm text-[#24263e] bg-[#c34c36] hover:brightness-105 active:scale-[0.99] transition-all shadow-md shadow-[#24263e]/10 border border-[#24263e]/20 cursor-pointer"
                 >
                   Hoàn thành & Đóng
                 </button>

@@ -15,10 +15,15 @@ import {
   Sparkles,
   Phone,
   MapPin,
-  Building
+  Building,
+  UploadCloud,
+  Loader2,
+  RefreshCw,
+  XCircle
 } from 'lucide-react';
 import { UserProfile, UserRole, Language } from '../../types';
 import { sellerService, mediaService } from '../../services';
+import { LiveFaceScannerModal } from './LiveFaceScannerModal';
 
 interface SellerRegistrationModalProps {
   isOpen: boolean;
@@ -67,15 +72,22 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   );
   const [sellerTermsAgreed, setSellerTermsAgreed] = useState(true);
 
-  // Upload States
+  // Photo States & Files for Batch Upload (media/upload-multiple)
   const [docFrontUrl, setDocFrontUrl] = useState<string>('');
   const [docBackUrl, setDocBackUrl] = useState<string>('');
   const [selfieUrl, setSelfieUrl] = useState<string>('');
-  const [uploadingField, setUploadingField] = useState<'front' | 'back' | 'selfie' | null>(null);
+  const [frontFile, setFrontFile] = useState<File | null>(null);
+  const [backFile, setBackFile] = useState<File | null>(null);
+  const [selfieFile, setSelfieFile] = useState<File | null>(null);
+  const [frontPreview, setFrontPreview] = useState<string>('');
+  const [backPreview, setBackPreview] = useState<string>('');
+  const [selfiePreview, setSelfiePreview] = useState<string>('');
+  const [uploadProgressMsg, setUploadProgressMsg] = useState<string | null>(null);
 
   // UI state
   const [showForm, setShowForm] = useState(!isRegistered);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isFaceScannerOpen, setIsFaceScannerOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -92,30 +104,65 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     }
   }, [currentUser, isOpen]);
 
-  const handleFileUpload = async (
+  const handleFileSelect = (
     e: React.ChangeEvent<HTMLInputElement>,
     field: 'front' | 'back' | 'selfie'
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setUploadingField(field);
-    try {
-      const uploaded = await mediaService.uploadImage(file, 'seller-verifications');
-      if (field === 'front') setDocFrontUrl(uploaded.url);
-      if (field === 'back') setDocBackUrl(uploaded.url);
-      if (field === 'selfie') setSelfieUrl(uploaded.url);
-    } catch (err: any) {
-      alert(err.message || (lang === 'vi' ? 'Tải ảnh lên không thành công' : 'Upload failed'));
-    } finally {
-      setUploadingField(null);
+    const previewUrl = URL.createObjectURL(file);
+    if (field === 'front') {
+      setFrontFile(file);
+      setFrontPreview(previewUrl);
+      setDocFrontUrl(''); // Reset remote url so batch upload will process this new file
+    } else if (field === 'back') {
+      setBackFile(file);
+      setBackPreview(previewUrl);
+      setDocBackUrl('');
+    } else if (field === 'selfie') {
+      setSelfieFile(file);
+      setSelfiePreview(previewUrl);
+      setSelfieUrl('');
     }
+    setErrorMsg(null);
+  };
+
+  const handleFaceCapturedFromCamera = (url: string, file?: File, previewUrl?: string) => {
+    setSelfieUrl(url);
+    if (file) setSelfieFile(file);
+    if (previewUrl) setSelfiePreview(previewUrl);
+    setErrorMsg(null);
+  };
+
+  const handleMultipleFilesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    const files: File[] = Array.from(fileList);
+
+    if (files[0]) {
+      setFrontFile(files[0]);
+      setFrontPreview(URL.createObjectURL(files[0]));
+      setDocFrontUrl('');
+    }
+    if (files[1]) {
+      setBackFile(files[1]);
+      setBackPreview(URL.createObjectURL(files[1]));
+      setDocBackUrl('');
+    }
+    if (files[2]) {
+      setSelfieFile(files[2]);
+      setSelfiePreview(URL.createObjectURL(files[2]));
+      setSelfieUrl('');
+    }
+    setErrorMsg(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
+    setUploadProgressMsg(null);
 
     if (!shopName.trim()) {
       setErrorMsg(lang === 'vi' ? 'Vui lòng nhập tên gian hàng / cửa hàng.' : 'Please enter store name.');
@@ -133,11 +180,13 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
       setErrorMsg(lang === 'vi' ? 'Vui lòng nhập số CCCD để xác minh danh tính người bán.' : 'Please enter citizen ID.');
       return;
     }
-    if (!docFrontUrl || !docBackUrl) {
+    const hasFront = Boolean(frontFile || docFrontUrl);
+    const hasBack = Boolean(backFile || docBackUrl);
+    if (!hasFront || !hasBack) {
       setErrorMsg(
         lang === 'vi'
-          ? 'Vui lòng tải lên đầy đủ ảnh CCCD mặt trước và mặt sau.'
-          : 'Please upload both front and back Citizen ID photos.'
+          ? 'Vui lòng chọn đầy đủ ảnh CCCD mặt trước và mặt sau.'
+          : 'Please select both front and back Citizen ID photos.'
       );
       return;
     }
@@ -152,36 +201,190 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
     setIsSubmitting(true);
     try {
-      await sellerService.submitVerification({
+      // 1. Tối ưu: Tải lên nhiều ảnh cùng lúc bằng POST /media/upload-multiple thay vì 3 request rời rạc
+      const filesToUpload: { field: 'front' | 'back' | 'selfie'; file: File }[] = [];
+      if (frontFile && !docFrontUrl) filesToUpload.push({ field: 'front', file: frontFile });
+      if (backFile && !docBackUrl) filesToUpload.push({ field: 'back', file: backFile });
+      if (selfieFile && !selfieUrl) filesToUpload.push({ field: 'selfie', file: selfieFile });
+
+      let finalFrontUrl = docFrontUrl;
+      let finalBackUrl = docBackUrl;
+      let finalSelfieUrl = selfieUrl;
+
+      if (filesToUpload.length > 0) {
+        setUploadProgressMsg(
+          lang === 'vi'
+            ? `Đang tải ${filesToUpload.length} ảnh eKYC lên hệ thống lưu trữ...`
+            : `Uploading ${filesToUpload.length} verification photos...`
+        );
+        const uploadedList = await mediaService.uploadMultipleImages(
+          filesToUpload.map((item) => item.file),
+          'seller-verifications'
+        );
+
+        filesToUpload.forEach((item, index) => {
+          const uploaded = uploadedList[index];
+          if (uploaded?.url) {
+            if (item.field === 'front') {
+              finalFrontUrl = uploaded.url;
+              setDocFrontUrl(uploaded.url);
+            } else if (item.field === 'back') {
+              finalBackUrl = uploaded.url;
+              setDocBackUrl(uploaded.url);
+            } else if (item.field === 'selfie') {
+              finalSelfieUrl = uploaded.url;
+              setSelfieUrl(uploaded.url);
+            }
+          }
+        });
+      }
+
+      if (!finalFrontUrl || !finalBackUrl) {
+        throw new Error(
+          lang === 'vi'
+            ? 'Không thể tải lên ảnh CCCD mặt trước hoặc mặt sau. Vui lòng thử lại.'
+            : 'Failed to upload ID photos.'
+        );
+      }
+
+      // 2. Gửi hồ sơ xác minh eKYC tới Backend
+      setUploadProgressMsg(
+        lang === 'vi' ? 'Đang gửi hồ sơ và đối soát eKYC với hệ thống...' : 'Submitting verification...'
+      );
+
+      const verificationResponse = await sellerService.submitVerification({
         verificationType: 'CITIZEN_ID',
         documentNumber: idCardNumber.trim(),
-        documentFrontUrl: docFrontUrl,
-        documentBackUrl: docBackUrl,
-        selfieUrl: selfieUrl || undefined,
+        documentFrontUrl: finalFrontUrl,
+        documentBackUrl: finalBackUrl,
+        selfieUrl: finalSelfieUrl || undefined,
       });
 
-      const updated: UserProfile = {
-        ...currentUser,
-        isSellerRegistered: true,
-        kycStatus: 'pending',
-        shopName: shopName.trim(),
-        pickupAddress: pickupAddress.trim(),
-        phone: sellerPhone.trim(),
-        idCardNumber: idCardNumber.trim(),
-        bankAccount: {
-          bankName: sellerBankName.trim() || currentUser.bankAccount?.bankName || 'Vietcombank',
-          accountNumber: sellerAccountNumber.trim() || currentUser.bankAccount?.accountNumber || '',
-          accountHolder: sellerAccountHolder.trim() || currentUser.bankAccount?.accountHolder || '',
-        },
-      };
+      // 3. Phân nhánh xử lý chính xác theo mã trạng thái status trả về từ Backend
+      const status = verificationResponse?.status;
 
-      onUpdateProfile(updated);
-      setShowForm(false);
-      setSuccessMsg(
-        lang === 'vi'
-          ? 'Hồ sơ định danh eKYC đã được gửi thành công! Hồ sơ đang ở trạng thái Chờ duyệt (Pending) bởi Quản trị viên. Quyền Người Bán sẽ được kích hoạt sau khi được phê duyệt.'
-          : 'eKYC verification submitted successfully! It is pending review by the Administrator.'
-      );
+      if (status === 'APPROVED') {
+        // Tự động kích hoạt quyền Seller ngay lập tức
+        const updated: UserProfile = {
+          ...currentUser,
+          isSellerRegistered: true,
+          role: 'seller',
+          kycStatus: 'verified',
+          shopName: shopName.trim(),
+          pickupAddress: pickupAddress.trim(),
+          phone: sellerPhone.trim(),
+          idCardNumber: idCardNumber.trim(),
+          bankAccount: {
+            bankName: sellerBankName.trim() || currentUser.bankAccount?.bankName || 'Vietcombank',
+            accountNumber: sellerAccountNumber.trim() || currentUser.bankAccount?.accountNumber || '',
+            accountHolder: sellerAccountHolder.trim() || currentUser.bankAccount?.accountHolder || '',
+          },
+        };
+
+        const faceScoreMsg = (verificationResponse as any)?.faceMatchScore
+          ? ` (Độ khớp khuôn mặt: ${Math.round((verificationResponse as any).faceMatchScore * 100)}%)`
+          : '';
+
+        onRoleChange('seller');
+        onUpdateProfile(updated);
+        setShowForm(false);
+        setSuccessMsg(
+          lang === 'vi'
+            ? `🎉 Xác thực eKYC thành công${faceScoreMsg}! Quyền Người Bán của bạn đã được kích hoạt. Đang chuyển hướng...`
+            : `🎉 eKYC verified successfully${faceScoreMsg}! Your seller role is now active.`
+        );
+        setTimeout(() => {
+          onClose();
+          onNavigateToCreateListing?.();
+        }, 1600);
+      } else if (status === 'NEEDS_REVIEW') {
+        const updated: UserProfile = {
+          ...currentUser,
+          isSellerRegistered: true,
+          kycStatus: 'pending',
+          shopName: shopName.trim(),
+          pickupAddress: pickupAddress.trim(),
+          phone: sellerPhone.trim(),
+          idCardNumber: idCardNumber.trim(),
+          bankAccount: {
+            bankName: sellerBankName.trim() || currentUser.bankAccount?.bankName || 'Vietcombank',
+            accountNumber: sellerAccountNumber.trim() || currentUser.bankAccount?.accountNumber || '',
+            accountHolder: sellerAccountHolder.trim() || currentUser.bankAccount?.accountHolder || '',
+          },
+        };
+
+        onUpdateProfile(updated);
+        setShowForm(false);
+        setSuccessMsg(
+          lang === 'vi'
+            ? '📋 Hồ sơ đã được tiếp nhận thành công. Hồ sơ đang được chuyên viên thẩm định thủ công trong vòng 24h.'
+            : 'Application received. Pending manual review by an administrator within 24 hours.'
+        );
+      } else if (status === 'EKYC_PENDING' || status === 'SUBMITTED' || status === 'PENDING') {
+        const updated: UserProfile = {
+          ...currentUser,
+          isSellerRegistered: true,
+          kycStatus: 'pending',
+          shopName: shopName.trim(),
+          pickupAddress: pickupAddress.trim(),
+          phone: sellerPhone.trim(),
+          idCardNumber: idCardNumber.trim(),
+          bankAccount: {
+            bankName: sellerBankName.trim() || currentUser.bankAccount?.bankName || 'Vietcombank',
+            accountNumber: sellerAccountNumber.trim() || currentUser.bankAccount?.accountNumber || '',
+            accountHolder: sellerAccountHolder.trim() || currentUser.bankAccount?.accountHolder || '',
+          },
+        };
+
+        onUpdateProfile(updated);
+        setShowForm(false);
+        setSuccessMsg(
+          lang === 'vi'
+            ? '⏳ Hồ sơ đã gửi thành công! Hệ thống đang kết nối đối soát dữ liệu eKYC tự động...'
+            : 'Verification submitted! eKYC automated matching is in progress...'
+        );
+      } else if (status === 'RESUBMIT_REQUIRED') {
+        const reason =
+          verificationResponse?.rejectionReason ||
+          (lang === 'vi'
+            ? 'Ảnh mờ, bị chói sáng hoặc không nhận diện được thông tin.'
+            : 'Photos are blurry or glare.');
+        setShowForm(true);
+        setErrorMsg(
+          lang === 'vi'
+            ? `⚠️ Cần chụp lại ảnh: ${reason}. Vui lòng chọn lại ảnh chụp rõ nét hơn rồi bấm nộp lại.`
+            : `⚠️ Resubmission required: ${reason}. Please upload clearer photos and submit again.`
+        );
+      } else if (status === 'REJECTED') {
+        const reason =
+          verificationResponse?.rejectionReason ||
+          (lang === 'vi'
+            ? 'Thông tin giấy tờ không hợp lệ hoặc không trùng khớp dữ liệu.'
+            : 'Invalid documents or mismatched data.');
+        setShowForm(true);
+        setErrorMsg(
+          lang === 'vi'
+            ? `❌ Hồ sơ xác thực bị từ chối: ${reason}. Vui lòng kiểm tra lại thông tin và nộp lại hồ sơ mới.`
+            : `❌ Verification rejected: ${reason}. Please verify your details and resubmit.`
+        );
+      } else {
+        const updated: UserProfile = {
+          ...currentUser,
+          isSellerRegistered: true,
+          kycStatus: 'pending',
+          shopName: shopName.trim(),
+          pickupAddress: pickupAddress.trim(),
+          phone: sellerPhone.trim(),
+          idCardNumber: idCardNumber.trim(),
+        };
+        onUpdateProfile(updated);
+        setShowForm(false);
+        setSuccessMsg(
+          lang === 'vi'
+            ? 'Hồ sơ đã được gửi thành công! Hệ thống đang xử lý.'
+            : 'Verification submitted successfully! Pending review.'
+        );
+      }
     } catch (err: any) {
       setErrorMsg(
         err.message ||
@@ -191,6 +394,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
       );
     } finally {
       setIsSubmitting(false);
+      setUploadProgressMsg(null);
     }
   };
 
@@ -223,14 +427,14 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
       <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-gray-100 overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-[#2b1d16]/15 flex items-center justify-between bg-[#cea981] text-[#2b1d16]">
+        <div className="px-6 py-4 border-b border-[#24263e]/15 flex items-center justify-between bg-[#fce5da] text-[#24263e]">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-[#2b1d16] text-white shadow-md">
+            <div className="p-2.5 rounded-2xl bg-[#24263e] text-white shadow-md">
               <Store className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-sm sm:text-base font-black text-[#2b1d16]">
+                <h3 className="text-sm sm:text-base font-black text-[#24263e]">
                   {lang === 'vi' ? 'Đăng Ký Thành Người Bán' : 'Seller Hub Onboarding'}
                 </h3>
                 <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
@@ -247,7 +451,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     : (lang === 'vi' ? 'Chưa Kích Hoạt' : 'Not Registered')}
                 </span>
               </div>
-              <p className="text-[11px] text-[#2b1d16]/80 font-bold mt-0.5">
+              <p className="text-[11px] text-[#24263e]/80 font-bold mt-0.5">
                 {lang === 'vi'
                   ? 'Đăng ký gian hàng & địa chỉ kho để bắt đầu đăng bán thiết bị gia dụng trên SecondLife'
                   : 'Register store profile & warehouse to post appliances on SecondLife'}
@@ -257,7 +461,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl text-[#2b1d16] hover:bg-white/40 transition cursor-pointer"
+            className="p-1.5 rounded-xl text-[#24263e] hover:bg-white/40 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -268,7 +472,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
           {/* Highlights Banner */}
           <div className="grid grid-cols-3 gap-2.5 py-1 text-xs">
             <div className="flex items-center gap-2 p-2.5 rounded-2xl bg-rose-50/70 border border-rose-100 text-slate-700">
-              <ShieldCheck className="w-4 h-4 text-[#2b1d16] shrink-0" />
+              <ShieldCheck className="w-4 h-4 text-[#24263e] shrink-0" />
               <div>
                 <span className="font-bold block text-[11px] text-slate-900">{lang === 'vi' ? 'Xác minh CCCD' : 'National ID'}</span>
                 <span className="text-[10px] text-slate-500 hidden sm:block">{lang === 'vi' ? 'Định danh eKYC 48h' : 'eKYC Verified'}</span>
@@ -311,7 +515,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
             <div className="p-5 rounded-3xl bg-slate-50 border border-gray-200 space-y-4 animate-in fade-in">
               <div className="flex items-center justify-between border-b border-gray-200/80 pb-3">
                 <div className="flex items-center gap-2.5">
-                  <Store className="w-4 h-4 text-[#2b1d16]" />
+                  <Store className="w-4 h-4 text-[#24263e]" />
                   <span className="text-xs font-bold text-slate-900">
                     {lang === 'vi' ? 'Hồ Sơ Gian Hàng Của Bạn' : 'Your Seller Store Profile'}
                   </span>
@@ -333,7 +537,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                 <button
                   type="button"
                   onClick={() => setShowForm(true)}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[#2b1d16] hover:underline cursor-pointer"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[#24263e] hover:underline cursor-pointer"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
                   <span>{lang === 'vi' ? 'Chỉnh sửa thông tin' : 'Edit Info'}</span>
@@ -377,7 +581,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                           onClose();
                           onNavigateToCreateListing();
                         }}
-                        className="px-4 py-2 bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-95 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                        className="px-4 py-2 bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                       >
                         <Sparkles className="w-3.5 h-3.5" />
                         <span>{lang === 'vi' ? 'Đến Trang Đăng Bán' : 'Post Listing'}</span>
@@ -411,11 +615,11 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
           {(showForm || !isRegistered) && (
             <form
               onSubmit={handleSubmit}
-              className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-white to-slate-50 border-2 border-[#cea981]/30 shadow-md space-y-4 animate-in fade-in"
+              className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-white to-slate-50 border-2 border-[#c34c36]/30 shadow-md space-y-4 animate-in fade-in"
             >
               <div className="flex items-center justify-between border-b border-gray-100 pb-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white">
+                  <div className="p-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white">
                     <Store className="w-4 h-4" />
                   </div>
                   <div>
@@ -456,7 +660,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       value={shopName}
                       onChange={(e) => setShopName(e.target.value)}
                       placeholder={lang === 'vi' ? 'VD: Điện Máy Cũ Hoàng Khang' : 'e.g., Hoang Khang Pre-owned Tech'}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs bg-white text-slate-900"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
                     />
                   </div>
 
@@ -470,7 +674,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       value={sellerPhone}
                       onChange={(e) => setSellerPhone(e.target.value)}
                       placeholder="0912 345 678"
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs bg-white text-slate-900"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
                     />
                   </div>
                 </div>
@@ -485,7 +689,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     value={pickupAddress}
                     onChange={(e) => setPickupAddress(e.target.value)}
                     placeholder={lang === 'vi' ? 'Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành phố' : 'Street address, ward, district, city'}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs bg-white text-slate-900"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
                   />
                   <span className="text-[10px] text-slate-400 block mt-1">
                     {lang === 'vi'
@@ -505,7 +709,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       value={idCardNumber}
                       onChange={(e) => setIdCardNumber(e.target.value)}
                       placeholder="048299102941"
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs bg-white text-slate-900"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
                     />
                   </div>
 
@@ -518,38 +722,72 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       value={sellerProductTypes}
                       onChange={(e) => setSellerProductTypes(e.target.value)}
                       placeholder={lang === 'vi' ? 'VD: Tủ lạnh, Máy giặt, Máy pha cafe...' : 'e.g., Refrigerators, Washers...'}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs bg-white text-slate-900"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
                     />
                   </div>
                 </div>
 
                 {/* eKYC Document Photo Upload Section */}
-                <div className="p-3.5 rounded-2xl bg-[#f6f5eb] border border-slate-200 space-y-3">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                    <FileCheck className="w-4 h-4 text-[#2b1d16]" />
-                    <span>{lang === 'vi' ? 'Ảnh Tải Lên Xác Thực eKYC (Mặt Trước, Mặt Sau, Chân Dung)' : 'eKYC Verification Photo Uploads'}</span>
-                    <span className="text-red-500">*</span>
+                <div className="p-3.5 rounded-2xl bg-[#faf8f5] border border-slate-200 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold text-slate-800">
+                    <div className="flex items-center gap-1.5">
+                      <FileCheck className="w-4 h-4 text-[#24263e]" />
+                      <span>{lang === 'vi' ? 'Ảnh Tải Lên Xác Thực eKYC (Mặt Trước, Mặt Sau, Chân Dung)' : 'eKYC Verification Photo Uploads'}</span>
+                      <span className="text-red-500">*</span>
+                    </div>
+
+                    {/* Batch Multi-File Upload Button */}
+                    <label className="inline-flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-slate-50 border border-[#c34c36]/40 text-[#c34c36] text-[11px] font-bold rounded-xl shadow-2xs transition cursor-pointer self-start sm:self-auto">
+                      <UploadCloud className="w-3.5 h-3.5" />
+                      <span>{lang === 'vi' ? 'Chọn nhiều ảnh cùng lúc' : 'Batch select photos'}</span>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleMultipleFilesSelect}
+                      />
+                    </label>
                   </div>
+
+                  {uploadProgressMsg && (
+                    <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-[11px] font-bold flex items-center gap-2 animate-pulse">
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-600 shrink-0" />
+                      <span>{uploadProgressMsg}</span>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {/* Front ID */}
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '1. Ảnh CCCD Mặt Trước' : '1. Front ID Card'} *</label>
-                      <div className="relative border border-dashed border-slate-300 hover:border-[#cea981] rounded-xl p-2 bg-white text-center transition">
-                        {docFrontUrl ? (
+                      <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-xl p-2 bg-white text-center transition">
+                        {(frontPreview || docFrontUrl) ? (
                           <div className="space-y-1">
-                            <img src={docFrontUrl} alt="Front ID" className="w-full h-20 object-cover rounded-lg" />
-                            <span className="text-[10px] text-emerald-600 font-bold block flex items-center justify-center gap-1">
-                              <CheckCircle2 className="w-3 h-3" /> {lang === 'vi' ? 'Đã tải lên' : 'Uploaded'}
-                            </span>
+                            <img
+                              src={frontPreview || docFrontUrl}
+                              alt="Front ID"
+                              className="w-full h-24 object-cover rounded-lg border border-slate-100"
+                            />
+                            <div className="flex items-center justify-between px-1">
+                              <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" />
+                                {frontFile ? (lang === 'vi' ? 'Sẵn sàng nộp' : 'Selected') : (lang === 'vi' ? 'Đã tải lên' : 'Uploaded')}
+                              </span>
+                              <label className="text-[10px] text-[#24263e] underline font-bold cursor-pointer hover:text-[#c34c36]">
+                                {lang === 'vi' ? 'Đổi ảnh' : 'Change'}
+                                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileSelect(e, 'front')} />
+                              </label>
+                            </div>
                           </div>
                         ) : (
-                          <label className="cursor-pointer block py-3 space-y-1">
-                            <Camera className="w-5 h-5 text-slate-400 mx-auto" />
-                            <span className="text-[10px] font-bold text-slate-600 block">
-                              {uploadingField === 'front' ? (lang === 'vi' ? 'Đang tải lên...' : 'Uploading...') : (lang === 'vi' ? 'Chọn ảnh mặt trước' : 'Select Front Photo')}
+                          <label className="cursor-pointer block py-4 space-y-1.5 hover:bg-slate-50/60 rounded-lg transition">
+                            <Camera className="w-6 h-6 text-slate-400 mx-auto" />
+                            <span className="text-[11px] font-bold text-slate-700 block">
+                              {lang === 'vi' ? 'Chọn ảnh mặt trước' : 'Select Front Photo'}
                             </span>
-                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'front')} />
+                            <span className="text-[9px] text-slate-400 block">{lang === 'vi' ? 'Hỗ trợ JPG, PNG, WEBP' : 'JPG, PNG, WEBP'}</span>
+                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileSelect(e, 'front')} />
                           </label>
                         )}
                       </div>
@@ -558,21 +796,33 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     {/* Back ID */}
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '2. Ảnh CCCD Mặt Sau' : '2. Back ID Card'} *</label>
-                      <div className="relative border border-dashed border-slate-300 hover:border-[#cea981] rounded-xl p-2 bg-white text-center transition">
-                        {docBackUrl ? (
+                      <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-xl p-2 bg-white text-center transition">
+                        {(backPreview || docBackUrl) ? (
                           <div className="space-y-1">
-                            <img src={docBackUrl} alt="Back ID" className="w-full h-20 object-cover rounded-lg" />
-                            <span className="text-[10px] text-emerald-600 font-bold block flex items-center justify-center gap-1">
-                              <CheckCircle2 className="w-3 h-3" /> {lang === 'vi' ? 'Đã tải lên' : 'Uploaded'}
-                            </span>
+                            <img
+                              src={backPreview || docBackUrl}
+                              alt="Back ID"
+                              className="w-full h-24 object-cover rounded-lg border border-slate-100"
+                            />
+                            <div className="flex items-center justify-between px-1">
+                              <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" />
+                                {backFile ? (lang === 'vi' ? 'Sẵn sàng nộp' : 'Selected') : (lang === 'vi' ? 'Đã tải lên' : 'Uploaded')}
+                              </span>
+                              <label className="text-[10px] text-[#24263e] underline font-bold cursor-pointer hover:text-[#c34c36]">
+                                {lang === 'vi' ? 'Đổi ảnh' : 'Change'}
+                                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileSelect(e, 'back')} />
+                              </label>
+                            </div>
                           </div>
                         ) : (
-                          <label className="cursor-pointer block py-3 space-y-1">
-                            <Camera className="w-5 h-5 text-slate-400 mx-auto" />
-                            <span className="text-[10px] font-bold text-slate-600 block">
-                              {uploadingField === 'back' ? (lang === 'vi' ? 'Đang tải lên...' : 'Uploading...') : (lang === 'vi' ? 'Chọn ảnh mặt sau' : 'Select Back Photo')}
+                          <label className="cursor-pointer block py-4 space-y-1.5 hover:bg-slate-50/60 rounded-lg transition">
+                            <Camera className="w-6 h-6 text-slate-400 mx-auto" />
+                            <span className="text-[11px] font-bold text-slate-700 block">
+                              {lang === 'vi' ? 'Chọn ảnh mặt sau' : 'Select Back Photo'}
                             </span>
-                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'back')} />
+                            <span className="text-[9px] text-slate-400 block">{lang === 'vi' ? 'Hỗ trợ JPG, PNG, WEBP' : 'JPG, PNG, WEBP'}</span>
+                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileSelect(e, 'back')} />
                           </label>
                         )}
                       </div>
@@ -580,23 +830,58 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
                     {/* Selfie */}
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '3. Ảnh Chân Dung Selfie' : '3. Selfie Photo'}</label>
-                      <div className="relative border border-dashed border-slate-300 hover:border-[#cea981] rounded-xl p-2 bg-white text-center transition">
-                        {selfieUrl ? (
-                          <div className="space-y-1">
-                            <img src={selfieUrl} alt="Selfie" className="w-full h-20 object-cover rounded-lg" />
-                            <span className="text-[10px] text-emerald-600 font-bold block flex items-center justify-center gap-1">
-                              <CheckCircle2 className="w-3 h-3" /> {lang === 'vi' ? 'Đã tải lên' : 'Uploaded'}
-                            </span>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-slate-600 block">
+                          {lang === 'vi' ? '3. Ảnh Chân Dung Selfie' : '3. Selfie Photo'}
+                        </label>
+                        <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                          {lang === 'vi' ? 'AI So Khớp' : 'AI Face Match'}
+                        </span>
+                      </div>
+                      <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-xl p-2 bg-white text-center transition min-h-[105px] flex flex-col justify-center">
+                        {(selfiePreview || selfieUrl) ? (
+                          <div className="space-y-1.5">
+                            <div className="relative w-full h-20 rounded-lg overflow-hidden border border-emerald-400/80 shadow-xs">
+                              <img
+                                src={selfiePreview || selfieUrl}
+                                alt="Selfie eKYC"
+                                className="w-full h-full object-cover"
+                              />
+                              <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-emerald-600/90 text-white rounded text-[9px] font-bold flex items-center gap-0.5 shadow-xs">
+                                <CheckCircle2 className="w-2.5 h-2.5" />
+                                <span>{lang === 'vi' ? 'Đã chụp' : 'OK'}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between px-1 text-[10px]">
+                              <button
+                                type="button"
+                                onClick={() => setIsFaceScannerOpen(true)}
+                                className="text-[#c34c36] font-bold hover:underline cursor-pointer flex items-center gap-0.5"
+                              >
+                                <Camera className="w-3 h-3" />
+                                <span>{lang === 'vi' ? 'Quét lại' : 'Rescan'}</span>
+                              </button>
+                              <label className="text-slate-500 hover:text-slate-800 font-bold underline cursor-pointer">
+                                {lang === 'vi' ? 'Đổi tệp' : 'Upload'}
+                                <input type="file" accept="image/*" capture="user" className="hidden" onChange={(e) => handleFileSelect(e, 'selfie')} />
+                              </label>
+                            </div>
                           </div>
                         ) : (
-                          <label className="cursor-pointer block py-3 space-y-1">
-                            <Camera className="w-5 h-5 text-slate-400 mx-auto" />
-                            <span className="text-[10px] font-bold text-slate-600 block">
-                              {uploadingField === 'selfie' ? (lang === 'vi' ? 'Đang tải lên...' : 'Uploading...') : (lang === 'vi' ? 'Chọn ảnh selfie' : 'Select Selfie')}
-                            </span>
-                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'selfie')} />
-                          </label>
+                          <div className="py-2 px-1 flex flex-col items-center justify-center space-y-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setIsFaceScannerOpen(true)}
+                              className="w-full py-2 px-2 bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-slate-900 rounded-lg text-[10px] font-black shadow-xs hover:opacity-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <Camera className="w-3.5 h-3.5 text-slate-900 shrink-0" />
+                              <span className="truncate">{lang === 'vi' ? 'Mở Camera Quét Mặt' : 'Live Camera Scan'}</span>
+                            </button>
+                            <label className="text-[9px] text-slate-500 hover:text-[#24263e] underline font-bold cursor-pointer block text-center">
+                              {lang === 'vi' ? 'Hoặc chọn ảnh từ máy' : 'Or select photo'}
+                              <input type="file" accept="image/*" capture="user" className="hidden" onChange={(e) => handleFileSelect(e, 'selfie')} />
+                            </label>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -606,7 +891,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                 {/* Bank Information for Payout */}
                 <div className="p-3 rounded-2xl bg-white border border-gray-200 space-y-2.5">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                    <CreditCard className="w-3.5 h-3.5 text-[#2b1d16]" />
+                    <CreditCard className="w-3.5 h-3.5 text-[#24263e]" />
                     <span>{lang === 'vi' ? 'Tài Khoản Ngân Hàng Nhận Tiền Bán (Giải Ngân Escrow)' : 'Bank Account for Escrow Payout'}</span>
                   </div>
 
@@ -618,7 +903,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                         value={sellerBankName}
                         onChange={(e) => setSellerBankName(e.target.value)}
                         placeholder="Vietcombank"
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#cea981]"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
                       />
                     </div>
                     <div>
@@ -628,7 +913,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                         value={sellerAccountNumber}
                         onChange={(e) => setSellerAccountNumber(e.target.value)}
                         placeholder="991204882910"
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#cea981]"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
                       />
                     </div>
                     <div>
@@ -638,7 +923,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                         value={sellerAccountHolder}
                         onChange={(e) => setSellerAccountHolder(e.target.value)}
                         placeholder="HOANG QUOC KHANG"
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#cea981]"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
                       />
                     </div>
                   </div>
@@ -650,7 +935,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     type="checkbox"
                     checked={sellerTermsAgreed}
                     onChange={(e) => setSellerTermsAgreed(e.target.checked)}
-                    className="mt-0.5 rounded text-[#2b1d16] focus:ring-[#cea981] w-4 h-4 cursor-pointer"
+                    className="mt-0.5 rounded text-[#24263e] focus:ring-[#c34c36] w-4 h-4 cursor-pointer"
                   />
                   <span className="text-[11px] text-slate-600 leading-relaxed">
                     {lang === 'vi'
@@ -684,7 +969,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="px-5 py-2.5 rounded-xl bg-[#2b1d16] hover:bg-black disabled:opacity-50 text-white text-xs font-black shadow-sm transition flex items-center gap-2 cursor-pointer"
+                    className="px-5 py-2.5 rounded-xl bg-[#24263e] hover:bg-black disabled:opacity-50 text-white text-xs font-black shadow-sm transition flex items-center gap-2 cursor-pointer"
                   >
                     <CheckCircle2 className="w-4 h-4" />
                     <span>
@@ -712,6 +997,14 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
           </button>
         </div>
       </div>
+
+      {/* Modal WebRTC Live Face Scanner eKYC */}
+      <LiveFaceScannerModal
+        isOpen={isFaceScannerOpen}
+        onClose={() => setIsFaceScannerOpen(false)}
+        onFaceCaptured={handleFaceCapturedFromCamera}
+        lang={lang}
+      />
     </div>
   );
 };

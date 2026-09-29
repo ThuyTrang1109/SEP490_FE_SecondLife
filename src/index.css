@@ -3,14 +3,14 @@
 @theme {
   --font-sans: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-heading: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --color-brand-primary: #cea981;
-  --color-brand-secondary: #ccbb9e;
-  --color-brand-light: #f6f5eb;
+  --color-brand-primary: #c34c36;
+  --color-brand-secondary: #fce5da;
+  --color-brand-light: #faf8f5;
 }
 
 :root {
   font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, sans-serif !important;
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
 *,
@@ -30,88 +30,51 @@ p, span, a, label {
 
 body {
   font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-  background-color: #f6f5eb;
-  color: #2b1d16;
+  background-color: #faf8f5;
+  color: #24263e;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
-/* ================= DARK MODE OVERRIDES ================= */
-body.dark {
-  background-color: #2b1a11 !important;
-  color: #f6f5eb !important;
-}
-
-body.dark .bg-\[\#FFFFFF\],
-body.dark .bg-white {
-  background-color: #3d2619 !important;
-  color: #f6f5eb !important;
-  border-color: rgba(204, 187, 158, 0.2) !important;
-}
-
-body.dark .bg-\[\#f6f5eb\],
-body.dark .bg-slate-50,
-body.dark .bg-slate-50\/50 {
-  background-color: #24150d !important;
-  color: #f6f5eb !important;
-  border-color: rgba(204, 187, 158, 0.15) !important;
-}
-
-body.dark .text-\[\#2b1d16\] {
-  color: #f6f5eb !important;
-}
-
-body.dark .text-\[\#2b1d16\]\/70,
-body.dark .text-\[\#2b1d16\]\/60 {
-  color: #ccbb9e !important;
-}
-
-body.dark .border-slate-200,
-body.dark .border-gray-200,
-body.dark .border-gray-100 {
-  border-color: rgba(204, 187, 158, 0.2) !important;
-}
-
-body.dark input,
-body.dark textarea,
-body.dark select {
-  background-color: #24150d !important;
-  color: #f6f5eb !important;
-  border-color: rgba(204, 187, 158, 0.3) !important;
+/* SecondLife Brand Logo Badge: pristine white background so logo graphics pop out clearly */
+.logo-badge {
+  background-color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.9) !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.08) !important;
 }
 
 /* New Palette Design System Tokens */
-.bg-brand-primary { background-color: #2b1d16; }
-.text-brand-primary { color: #2b1d16; }
-.border-brand-primary { border-color: #2b1d16; }
+.bg-brand-primary { background-color: #c34c36; }
+.text-brand-primary { color: #c34c36; }
+.border-brand-primary { border-color: #c34c36; }
 
-.bg-brand-secondary { background-color: #ccbb9e; }
-.text-brand-secondary { color: #ccbb9e; }
-.border-brand-secondary { border-color: #ccbb9e; }
+.bg-brand-secondary { background-color: #fce5da; }
+.text-brand-secondary { color: #fce5da; }
+.border-brand-secondary { border-color: #fce5da; }
 
-.bg-brand-light { background-color: #f6f5eb; }
-.text-brand-light { color: #f6f5eb; }
+.bg-brand-light { background-color: #faf8f5; }
+.text-brand-light { color: #faf8f5; }
 
 /* Backward-compatible utility classes */
-.bg-brand-navy { background-color: #2b1d16; }
-.text-brand-navy { color: #2b1d16; }
-.border-brand-navy { border-color: #2b1d16; }
+.bg-brand-navy { background-color: #24263e; }
+.text-brand-navy { color: #24263e; }
+.border-brand-navy { border-color: #24263e; }
 
-.bg-brand-pink { background-color: #2b1d16; }
-.text-brand-pink { color: #2b1d16; }
-.border-brand-pink { border-color: #2b1d16; }
+.bg-brand-pink { background-color: #c34c36; }
+.text-brand-pink { color: #c34c36; }
+.border-brand-pink { border-color: #c34c36; }
 
-.bg-brand-orange { background-color: #ccbb9e; }
-.text-brand-orange { color: #ccbb9e; }
-.border-brand-orange { border-color: #ccbb9e; }
+.bg-brand-orange { background-color: #c34c36; }
+.text-brand-orange { color: #c34c36; }
+.border-brand-orange { border-color: #c34c36; }
 
 .bg-brand-gradient {
-  background-image: linear-gradient(to right, #cea981, #ccbb9e);
+  background-image: linear-gradient(to right, #c34c36, #e2634d);
 }
 
 .text-gradient {
-  background: linear-gradient(to right, #2b1d16, #cea981);
+  background: linear-gradient(to right, #24263e, #c34c36);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -127,16 +90,12 @@ body.dark select {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #ccbb9e;
+  background: #fce5da;
   border-radius: 9999px;
 }
 
-body.dark ::-webkit-scrollbar-thumb {
-  background: #cea981;
-}
-
 ::-webkit-scrollbar-thumb:hover {
-  background: #cea981;
+  background: #c34c36;
 }
 
 .no-scrollbar::-webkit-scrollbar {

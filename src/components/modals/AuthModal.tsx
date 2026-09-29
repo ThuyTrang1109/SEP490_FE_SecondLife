@@ -353,7 +353,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             size: 'large',
             type: 'standard',
             shape: 'rectangular',
-            text: mode === 'register' ? 'signup_with' : 'signin_with',
+            text: 'signin_with',
             logo_alignment: 'left',
             width: 340,
             locale: lang === 'vi' ? 'vi' : 'en',
@@ -604,54 +604,56 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/60 backdrop-blur-lg overflow-y-auto animate-fadeIn">
-      <div className="bg-[#FFFFFF] rounded-3xl max-w-[1020px] w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-gray-200 grid grid-cols-1 md:grid-cols-12 my-auto relative overflow-hidden text-[#2b1d16]">
+      <div className="bg-[#FFFFFF] rounded-3xl max-w-[1020px] w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-gray-200 grid grid-cols-1 md:grid-cols-12 my-auto relative overflow-hidden text-[#24263e]">
 
         {/* ================= LEFT HERO BRAND & TRUST SIDEBAR ================= */}
-        <div className="hidden md:flex md:col-span-5 bg-[#cea981] p-8 flex-col justify-between text-[#2b1d16] relative overflow-hidden select-none border-r border-[#2b1d16]/15">
-          <div className="absolute top-0 right-0 -mt-16 -mr-16 w-80 h-80 rounded-full bg-white/10 blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-0 -mb-16 -ml-16 w-80 h-80 rounded-full bg-white/10 blur-3xl pointer-events-none" />
+        <div className="hidden md:flex md:col-span-5 bg-[#24263e] p-8 flex-col justify-between text-white relative overflow-hidden select-none border-r border-white/10">
+          <div className="absolute top-0 right-0 -mt-16 -mr-16 w-80 h-80 rounded-full bg-white/5 blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 left-0 -mb-16 -ml-16 w-80 h-80 rounded-full bg-white/5 blur-3xl pointer-events-none" />
 
           {/* Top Brand Identity Header */}
           <div className="relative z-10 space-y-6">
             <div className="flex items-center gap-3">
-              <img
-                src={logoImg}
-                alt="SecondLife Logo"
-                className="h-14 w-auto object-contain drop-shadow-md"
-              />
+              <div className="logo-badge bg-white p-2 rounded-2xl shadow-sm border border-white/80 flex items-center justify-center shrink-0">
+                <img
+                  src={logoImg}
+                  alt="SecondLife Logo"
+                  className="h-11 sm:h-12 w-auto object-contain"
+                />
+              </div>
               <div>
-                <h2 className="text-xl font-black tracking-tight text-[#2b1d16] flex items-center gap-2">
-                  SecondLife
-                  <span className="text-[10px] font-black tracking-widest uppercase bg-white/40 text-[#2b1d16] px-2.5 py-0.5 rounded-full border border-[#2b1d16]/20">
+                <h2 className="text-xl font-black tracking-tight text-white flex items-center gap-2">
+                  Second<span className="text-[#c34c36]">Life</span>
+                  <span className="text-[10px] font-black tracking-widest uppercase bg-[#c34c36] text-white px-2.5 py-0.5 rounded-full shadow-xs">
                     VERIFIED
                   </span>
                 </h2>
-                <p className="text-xs text-[#2b1d16]/80 font-bold">Safe Recommerce Ecosystem</p>
+                <p className="text-xs text-[#fce5da] font-bold">Safe Recommerce Ecosystem</p>
               </div>
             </div>
 
             <div className="space-y-2 pt-1">
-              <h3 className="text-xl font-black leading-snug text-[#2b1d16] tracking-tight">
+              <h3 className="text-xl font-black leading-snug text-white tracking-tight">
                 {lang === 'vi'
                   ? 'Sàn Đồ Cũ An Toàn & Định Giá Minh Bạch'
                   : 'Certified Recommerce & Transparent AI Pricing'}
               </h3>
-              <p className="text-xs text-[#2b1d16]/85 leading-relaxed font-semibold">
+              <p className="text-xs text-white/80 leading-relaxed font-medium">
                 {lang === 'vi'
                   ? 'Bảo vệ tài chính qua Quỹ Tín Thác Escrow. Đã kiểm định hơn 10,000+ thiết bị điện máy gia dụng.'
                   : 'Financial protection guaranteed via Escrow trust fund & certified hardware inspection.'}
               </p>
             </div>
 
-            <div className="bg-white/45 p-3.5 rounded-2xl border border-white/60 space-y-2 shadow-xs">
+            <div className="bg-white/10 p-3.5 rounded-2xl border border-white/15 space-y-2 shadow-xs">
               <div className="flex items-center justify-between text-[11px]">
-                <span className="inline-flex items-center gap-1.5 font-black text-[#2b1d16]">
-                  <span className="w-2 h-2 rounded-full bg-[#2b1d16] animate-pulse" />
+                <span className="inline-flex items-center gap-1.5 font-black text-white">
+                  <span className="w-2 h-2 rounded-full bg-[#c34c36] animate-pulse" />
                   {lang === 'vi' ? 'Bảo Vệ Tài Chính Escrow' : 'Escrow Money Guarantee'}
                 </span>
-                <span className="text-[10px] text-white bg-[#2b1d16] px-2 py-0.5 rounded-md font-bold">100% Active</span>
+                <span className="text-[10px] text-white bg-[#c34c36] px-2 py-0.5 rounded-md font-bold">100% Active</span>
               </div>
-              <p className="text-[11px] text-[#2b1d16]/80 leading-normal font-medium">
+              <p className="text-[11px] text-white/70 leading-normal font-medium">
                 {lang === 'vi'
                   ? 'Tiền mua hàng được phong tỏa an toàn trong quỹ tín thác. Người bán chỉ nhận thanh toán khi kỹ sư Hub duyệt ĐẠT và bạn hài lòng.'
                   : 'Funds locked in escrow until Hub engineers certify condition and buyer confirms satisfaction.'}
@@ -661,31 +663,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           {/* Center Trust Micro-Badges */}
           <div className="relative z-10 space-y-2.5 my-6">
-            <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white/40 border border-white/60 text-xs shadow-xs">
-              <div className="w-8 h-8 rounded-lg bg-white/60 flex items-center justify-center text-[#2b1d16] shrink-0 font-black">
+            <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white/10 border border-white/15 text-xs shadow-xs">
+              <div className="w-8 h-8 rounded-lg bg-[#c34c36] flex items-center justify-center text-white shrink-0 font-black">
                 ✓
               </div>
               <div>
-                <div className="font-black text-[#2b1d16]">{lang === 'vi' ? 'Kiểm định 48 bước' : '48-point Hub Testing'}</div>
-                <div className="text-[11px] text-[#2b1d16]/75 font-semibold">{lang === 'vi' ? 'Kỹ sư chuyên trách dán tem NFC' : 'Engineers seal tamper-proof NFC'}</div>
+                <div className="font-black text-white">{lang === 'vi' ? 'Kiểm định 48 bước' : '48-point Hub Testing'}</div>
+                <div className="text-[11px] text-white/70 font-semibold">{lang === 'vi' ? 'Kỹ sư chuyên trách dán tem NFC' : 'Engineers seal tamper-proof NFC'}</div>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white/40 border border-white/60 text-xs shadow-xs">
-              <div className="w-8 h-8 rounded-lg bg-white/60 flex items-center justify-center text-[#2b1d16] shrink-0 font-black">
+            <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white/10 border border-white/15 text-xs shadow-xs">
+              <div className="w-8 h-8 rounded-lg bg-[#c34c36] flex items-center justify-center text-white shrink-0 font-black">
                 ★
               </div>
               <div>
-                <div className="font-black text-[#2b1d16]">{lang === 'vi' ? 'AI Định Giá Chuẩn Xác' : 'Machine Learning Valuation'}</div>
-                <div className="text-[11px] text-[#2b1d16]/75 font-semibold">{lang === 'vi' ? 'Đối chiếu dữ liệu thị trường thực' : 'Calibrated on actual sales data'}</div>
+                <div className="font-black text-white">{lang === 'vi' ? 'AI Định Giá Chuẩn Xác' : 'Machine Learning Valuation'}</div>
+                <div className="text-[11px] text-white/70 font-semibold">{lang === 'vi' ? 'Đối chiếu dữ liệu thị trường thực' : 'Calibrated on actual sales data'}</div>
               </div>
             </div>
           </div>
 
           {/* Bottom Security Footer */}
-          <div className="relative z-10 pt-4 border-t border-[#2b1d16]/15 flex items-center justify-between text-[11px] text-[#2b1d16]/80 font-bold">
+          <div className="relative z-10 pt-4 border-t border-white/10 flex items-center justify-between text-[11px] text-white/70 font-bold">
             <div className="flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-800" />
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
               <span>{lang === 'vi' ? 'Bảo mật 256-bit SSL' : '256-bit SSL Secured'}</span>
             </div>
             <span>v1.0.0</span>
@@ -698,13 +700,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {/* Top Close & Mode Switcher */}
             <div className="flex items-center justify-between gap-3 pb-1 border-b border-gray-100">
               <div>
-                <h3 className="text-xl font-extrabold text-[#2b1d16] tracking-tight">
+                <h3 className="text-xl font-extrabold text-[#24263e] tracking-tight">
                   {mode === 'login' && (lang === 'vi' ? 'Đăng Nhập Tài Khoản' : 'Welcome Back')}
                   {mode === 'register' && (lang === 'vi' ? 'Đăng Ký Tài Khoản Mới' : 'Create New Account')}
                   {mode === 'forgot' && (lang === 'vi' ? 'Quên Mật Khẩu' : 'Forgot Password')}
                   {mode === 'verify-email' && (lang === 'vi' ? 'Xác Thực Địa Chỉ Email' : 'Verify Email Address')}
                 </h3>
-                <p className="text-xs text-[#2b1d16]/70 mt-0.5">
+                <p className="text-xs text-[#24263e]/70 mt-0.5">
                   {mode === 'login' && (lang === 'vi' ? 'Đăng nhập để giao dịch, định giá AI và xem đơn hàng' : 'Log in to trade, get AI valuation & manage orders')}
                   {mode === 'register' && (lang === 'vi' ? 'Trở thành thành viên bảo đảm trên sàn đồ cũ SecondLife' : 'Join verified second-hand recommerce community')}
                   {mode === 'forgot' && (lang === 'vi' ? 'Nhập email hoặc số điện thoại để nhận mã OTP khôi phục mật khẩu' : 'Enter email or phone to reset your password via OTP')}
@@ -714,7 +716,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               <button
                 onClick={onClose}
-                className="p-2 rounded-full text-gray-400 hover:text-[#2b1d16] hover:bg-gray-100 transition cursor-pointer"
+                className="p-2 rounded-full text-gray-400 hover:text-[#24263e] hover:bg-gray-100 transition cursor-pointer"
                 title="Đóng modal"
               >
                 <X className="w-5 h-5" />
@@ -723,7 +725,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
             {/* 2-Tab Mode Switcher: Đăng Nhập | Đăng Ký (Bỏ tab đổi mật khẩu tại trang đăng nhập) */}
             {mode === 'login' || mode === 'register' ? (
-              <div className="grid grid-cols-2 p-1 bg-[#f6f5eb] rounded-2xl text-xs font-semibold text-[#2b1d16]/70 border border-gray-200">
+              <div className="grid grid-cols-2 p-1 bg-[#faf8f5] rounded-2xl text-xs font-semibold text-[#24263e]/70 border border-gray-200">
                 <button
                   type="button"
                   onClick={() => {
@@ -735,8 +737,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   }}
                   className={`py-2 rounded-xl transition-all cursor-pointer text-center font-bold ${
                     mode === 'login'
-                      ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white shadow-sm font-extrabold'
-                      : 'text-[#2b1d16]/70 hover:text-[#2b1d16]'
+                      ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white shadow-sm font-extrabold'
+                      : 'text-[#24263e]/70 hover:text-[#24263e]'
                   }`}
                 >
                   {lang === 'vi' ? 'Đăng Nhập' : 'Log In'}
@@ -752,16 +754,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   }}
                   className={`py-2 rounded-xl transition-all cursor-pointer text-center font-bold ${
                     mode === 'register'
-                      ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white shadow-sm font-extrabold'
-                      : 'text-[#2b1d16]/70 hover:text-[#2b1d16]'
+                      ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white shadow-sm font-extrabold'
+                      : 'text-[#24263e]/70 hover:text-[#24263e]'
                   }`}
                 >
                   {lang === 'vi' ? 'Đăng Ký' : 'Register'}
                 </button>
               </div>
             ) : mode === 'forgot' ? (
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-orange-50 border border-[#ccbb9e]/30 text-xs">
-                <span className="font-bold text-[#ccbb9e] flex items-center gap-1.5">
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-orange-50 border border-[#fce5da]/30 text-xs">
+                <span className="font-bold text-[#fce5da] flex items-center gap-1.5">
                   <KeyRound className="w-4 h-4" />
                   <span>{lang === 'vi' ? 'Khôi Phục Mật Khẩu' : 'Reset Password'}</span>
                 </span>
@@ -772,21 +774,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     setSuccessMsg(null);
                     setMode('login');
                   }}
-                  className="text-[11px] text-[#2b1d16] hover:underline font-bold cursor-pointer"
+                  className="text-[11px] text-[#24263e] hover:underline font-bold cursor-pointer"
                 >
                   {lang === 'vi' ? '← Quay lại Đăng Nhập' : '← Back to Login'}
                 </button>
               </div>
             ) : (
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-pink-50 border border-[#cea981]/30 text-xs">
-                <span className="font-bold text-[#2b1d16] flex items-center gap-1.5">
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-pink-50 border border-[#c34c36]/30 text-xs">
+                <span className="font-bold text-[#24263e] flex items-center gap-1.5">
                   <BadgeCheck className="w-4 h-4" />
                   <span>{lang === 'vi' ? 'Bước 2: Xác thực tài khoản qua Email' : 'Step 2: Verify Email'}</span>
                 </span>
                 <button
                   type="button"
                   onClick={() => setMode('register')}
-                  className="text-[11px] text-gray-500 hover:text-[#2b1d16] underline cursor-pointer"
+                  className="text-[11px] text-gray-500 hover:text-[#24263e] underline cursor-pointer"
                 >
                   {lang === 'vi' ? 'Sửa email đăng ký' : 'Edit Email'}
                 </button>
@@ -814,7 +816,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <form onSubmit={handleLoginSubmit} noValidate className="space-y-3">
                 {/* Email Field */}
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#2b1d16] flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#24263e] flex items-center justify-between">
                     <span>{lang === 'vi' ? 'Địa chỉ Email' : 'Email Address'} <strong className="text-rose-500">*</strong></span>
                   </label>
                   <div className="relative">
@@ -836,7 +838,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                           : touched.emailOrPhone && !getLoginEmailError()
                           ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                          : 'bg-[#f6f5eb] border-gray-200 text-[#2b1d16] focus:outline-none focus:border-[#cea981]'
+                          : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
                       }`}
                     />
                     {touched.emailOrPhone && !getLoginEmailError() && (
@@ -854,7 +856,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {/* Password Field */}
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-[#2b1d16]">
+                    <label className="text-xs font-bold text-[#24263e]">
                       {lang === 'vi' ? 'Mật khẩu' : 'Password'} <strong className="text-rose-500">*</strong>
                     </label>
                     <button
@@ -867,7 +869,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         setResetEmail(emailOrPhone);
                         setMode('forgot');
                       }}
-                      className="text-[11px] font-bold text-[#2b1d16] hover:underline cursor-pointer flex items-center gap-1"
+                      className="text-[11px] font-bold text-[#24263e] hover:underline cursor-pointer flex items-center gap-1"
                     >
                       <RotateCcw className="w-3 h-3" />
                       <span>{lang === 'vi' ? 'Quên mật khẩu?' : 'Forgot password?'}</span>
@@ -888,13 +890,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                           : touched.password && !getLoginPasswordError()
                           ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                          : 'bg-[#f6f5eb] border-gray-200 text-[#2b1d16] focus:outline-none focus:border-[#cea981]'
+                          : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
                       }`}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#2b1d16] cursor-pointer p-1"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#24263e] cursor-pointer p-1"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -910,7 +912,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full py-2.5 px-4 bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-95 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 group mt-1"
+                  className="w-full py-2.5 px-4 bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 group mt-1"
                 >
                   <span>
                     {isLoading
@@ -925,7 +927,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <div className="relative flex items-center justify-center mb-2">
                     <div className="border-t border-gray-200 w-full" />
                     <span className="bg-white px-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">
-                      {lang === 'vi' ? 'Hoặc đăng nhập với' : 'Or continue with'}
+                      {lang === 'vi' ? 'Hoặc đăng nhập nhanh với' : 'Or quick sign in with'}
                     </span>
                     <div className="border-t border-gray-200 w-full" />
                   </div>
@@ -953,7 +955,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <form onSubmit={handleRegisterSubmit} noValidate className="space-y-2.5">
                 {/* Full Name */}
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#2b1d16]">
+                  <label className="text-xs font-bold text-[#24263e]">
                     {lang === 'vi' ? 'Họ và tên của bạn' : 'Full Name'} <strong className="text-rose-500">*</strong>
                   </label>
                   <div className="relative">
@@ -971,7 +973,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                           : touched.fullName && !getRegisterFullNameError()
                           ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                          : 'bg-[#f6f5eb] border-gray-200 text-[#2b1d16] focus:outline-none focus:border-[#cea981]'
+                          : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
                       }`}
                     />
                     {touched.fullName && !getRegisterFullNameError() && (
@@ -989,7 +991,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {/* Email & Phone Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#2b1d16]">Email <strong className="text-rose-500">*</strong></label>
+                    <label className="text-xs font-bold text-[#24263e]">Email <strong className="text-rose-500">*</strong></label>
                     <div className="relative">
                       <Mail className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
                         (touched.registerEmail || submitted) && getRegisterEmailError() ? 'text-rose-500' : 'text-gray-400'
@@ -1005,7 +1007,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                             : touched.registerEmail && !getRegisterEmailError()
                             ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                            : 'bg-[#f6f5eb] border-gray-200 text-[#2b1d16] focus:outline-none focus:border-[#cea981]'
+                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
                         }`}
                       />
                     </div>
@@ -1018,7 +1020,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#2b1d16]">
+                    <label className="text-xs font-bold text-[#24263e]">
                       {lang === 'vi' ? 'Số điện thoại' : 'Phone'} <strong className="text-rose-500">*</strong>
                     </label>
                     <div className="relative">
@@ -1036,7 +1038,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                             : touched.phoneNumber && !getRegisterPhoneError()
                             ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                            : 'bg-[#f6f5eb] border-gray-200 text-[#2b1d16] focus:outline-none focus:border-[#cea981]'
+                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
                         }`}
                       />
                     </div>
@@ -1052,7 +1054,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {/* Password & Confirm Password Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#2b1d16]">
+                    <label className="text-xs font-bold text-[#24263e]">
                       {lang === 'vi' ? 'Mật khẩu' : 'Password'} <strong className="text-rose-500">*</strong>
                     </label>
                     <div className="relative">
@@ -1070,22 +1072,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                             : touched.registerPassword && !getRegisterPasswordError()
                             ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                            : 'bg-[#f6f5eb] border-gray-200 text-[#2b1d16] focus:outline-none focus:border-[#cea981]'
+                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
                         }`}
                       />
                       <button
                         type="button"
                         onClick={() => setShowRegisterPassword(!showRegisterPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#2b1d16] cursor-pointer p-1"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#24263e] cursor-pointer p-1"
                       >
                         {showRegisterPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
                     {registerPassword && (
                       <div className="grid grid-cols-3 gap-1 pt-0.5">
-                        <div className={`h-1 rounded-full ${passStrength >= 1 ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e]' : 'bg-gray-200'}`} />
-                        <div className={`h-1 rounded-full ${passStrength >= 2 ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e]' : 'bg-gray-200'}`} />
-                        <div className={`h-1 rounded-full ${passStrength >= 3 ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e]' : 'bg-gray-200'}`} />
+                        <div className={`h-1 rounded-full ${passStrength >= 1 ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da]' : 'bg-gray-200'}`} />
+                        <div className={`h-1 rounded-full ${passStrength >= 2 ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da]' : 'bg-gray-200'}`} />
+                        <div className={`h-1 rounded-full ${passStrength >= 3 ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da]' : 'bg-gray-200'}`} />
                       </div>
                     )}
                     {(touched.registerPassword || submitted) && getRegisterPasswordError() && (
@@ -1097,7 +1099,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#2b1d16]">
+                    <label className="text-xs font-bold text-[#24263e]">
                       {lang === 'vi' ? 'Xác nhận mật khẩu' : 'Confirm Password'} <strong className="text-rose-500">*</strong>
                     </label>
                     <div className="relative">
@@ -1115,13 +1117,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                             : touched.confirmPassword && !getConfirmPasswordError()
                             ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                            : 'bg-[#f6f5eb] border-gray-200 text-[#2b1d16] focus:outline-none focus:border-[#cea981]'
+                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
                         }`}
                       />
                       <button
                         type="button"
                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#2b1d16] cursor-pointer p-1"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#24263e] cursor-pointer p-1"
                       >
                         {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
@@ -1137,12 +1139,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                 {/* Agreed terms */}
                 <div>
-                  <label className="flex items-start gap-2 text-[11px] text-[#2b1d16]/70 cursor-pointer select-none">
+                  <label className="flex items-start gap-2 text-[11px] text-[#24263e]/70 cursor-pointer select-none">
                     <input
                       type="checkbox"
                       checked={agreedTerms}
                       onChange={(e) => setAgreedTerms(e.target.checked)}
-                      className="mt-0.5 rounded border-gray-300 bg-[#f6f5eb] text-[#2b1d16] focus:ring-[#cea981] cursor-pointer shrink-0"
+                      className="mt-0.5 rounded border-gray-300 bg-[#faf8f5] text-[#24263e] focus:ring-[#c34c36] cursor-pointer shrink-0"
                     />
                     <span className="leading-tight">
                       {lang === 'vi'
@@ -1161,7 +1163,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full py-2.5 px-4 bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-95 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 group mt-1"
+                  className="w-full py-2.5 px-4 bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 group mt-1"
                 >
                   <span>
                     {isLoading
@@ -1176,7 +1178,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <div className="relative flex items-center justify-center mb-1.5">
                     <div className="border-t border-gray-200 w-full" />
                     <span className="bg-white px-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">
-                      {lang === 'vi' ? 'Hoặc đăng ký nhanh với' : 'Or sign up with'}
+                      {lang === 'vi' ? 'Hoặc đăng nhập nhanh với' : 'Or quick sign in with'}
                     </span>
                     <div className="border-t border-gray-200 w-full" />
                   </div>
@@ -1203,25 +1205,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {mode === 'verify-email' && (
               <form onSubmit={handleVerifyEmailSubmit} noValidate className="space-y-4">
                 <div className="p-4 rounded-2xl bg-gradient-to-br from-pink-50 via-orange-50/40 to-pink-50 border border-pink-200 text-center space-y-2">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#cea981] to-[#ccbb9e] text-white flex items-center justify-center mx-auto shadow-md shadow-pink-500/20">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center mx-auto shadow-md shadow-pink-500/20">
                     <Mail className="w-6 h-6 animate-pulse" />
                   </div>
-                  <h4 className="font-extrabold text-[#2b1d16] text-sm">
+                  <h4 className="font-extrabold text-[#24263e] text-sm">
                     {lang === 'vi' ? 'Xác Thực Email Bằng Mã OTP' : 'Verify Email with 6-Digit OTP'}
                   </h4>
-                  <p className="text-xs text-[#2b1d16]/70 max-w-sm mx-auto leading-relaxed">
+                  <p className="text-xs text-[#24263e]/70 max-w-sm mx-auto leading-relaxed">
                     {lang === 'vi'
                       ? 'Hệ thống đã gửi mã OTP 6 chữ số đến địa chỉ email:'
                       : 'A 6-digit OTP verification code has been sent to:'}
                   </p>
-                  <div className="inline-block px-3 py-1 rounded-full bg-white border border-pink-200 text-xs font-bold text-[#2b1d16] shadow-xs">
+                  <div className="inline-block px-3 py-1 rounded-full bg-white border border-pink-200 text-xs font-bold text-[#24263e] shadow-xs">
                     {verifyEmailAddress}
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-[#2b1d16]">
+                    <label className="text-xs font-bold text-[#24263e]">
                       {lang === 'vi' ? 'Nhập mã OTP 6 chữ số' : '6-digit OTP Code'} <strong className="text-rose-500">*</strong>
                     </label>
                   </div>
@@ -1287,8 +1289,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           (touched.verifyOtp || submitted) && getVerifyOtpError()
                             ? 'border-rose-400 bg-rose-50/50 text-rose-900 focus:border-rose-600 focus:ring-2 focus:ring-rose-200'
                             : digit
-                            ? 'border-[#cea981] bg-white text-[#2b1d16] shadow-md shadow-pink-500/10'
-                            : 'border-gray-200 bg-gray-50/80 text-[#2b1d16] hover:border-gray-300 focus:border-[#cea981] focus:bg-white focus:ring-2 focus:ring-pink-200'
+                            ? 'border-[#c34c36] bg-white text-[#24263e] shadow-md shadow-pink-500/10'
+                            : 'border-gray-200 bg-gray-50/80 text-[#24263e] hover:border-gray-300 focus:border-[#c34c36] focus:bg-white focus:ring-2 focus:ring-pink-200'
                         }`}
                       />
                     ))}
@@ -1306,7 +1308,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <button
                     type="submit"
                     disabled={isLoading || verifyDigits.join('').length !== 6}
-                    className="w-full py-3 px-4 bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-95 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 group"
+                    className="w-full py-3 px-4 bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 group"
                   >
                     <span>
                       {isLoading
@@ -1317,14 +1319,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </button>
 
                   <div className="flex items-center justify-between text-xs pt-1">
-                    <span className="text-[#2b1d16]/60">
+                    <span className="text-[#24263e]/60">
                       {lang === 'vi' ? 'Chưa nhận được mã?' : 'Did not receive code?'}
                     </span>
                     <button
                       type="button"
                       onClick={handleResendEmailOtp}
                       disabled={isLoading || resendCountdown > 0}
-                      className="font-bold text-[#2b1d16] hover:underline disabled:opacity-50 disabled:no-underline cursor-pointer flex items-center gap-1"
+                      className="font-bold text-[#24263e] hover:underline disabled:opacity-50 disabled:no-underline cursor-pointer flex items-center gap-1"
                     >
                       <Send className="w-3 h-3" />
                       <span>
@@ -1343,7 +1345,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <form onSubmit={handleChangePasswordSubmit} noValidate className="space-y-3">
                 {/* Email input with Send OTP button */}
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#2b1d16] flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#24263e] flex items-center justify-between">
                     <span>{lang === 'vi' ? 'Địa chỉ Email tài khoản' : 'Registered Email Address'} <strong className="text-rose-500">*</strong></span>
                   </label>
                   <div className="flex gap-2">
@@ -1362,7 +1364,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                             : touched.resetEmail && !getResetEmailError()
                             ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                            : 'bg-[#f6f5eb] border-gray-200 text-[#2b1d16] focus:outline-none focus:border-[#cea981]'
+                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
                         }`}
                       />
                     </div>
@@ -1370,9 +1372,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       type="button"
                       onClick={handleSendOtp}
                       disabled={isLoading || resetOtpCountdown > 0}
-                      className="px-3.5 py-2.5 bg-[#cea981] hover:bg-black disabled:opacity-50 text-white rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition flex items-center gap-1.5 shrink-0"
+                      className="px-3.5 py-2.5 bg-[#c34c36] hover:bg-black disabled:opacity-50 text-white rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition flex items-center gap-1.5 shrink-0"
                     >
-                      <KeyRound className="w-3.5 h-3.5 text-[#2b1d16]" />
+                      <KeyRound className="w-3.5 h-3.5 text-[#24263e]" />
                       <span>
                         {resetOtpCountdown > 0 ? `${resetOtpCountdown}s` : (lang === 'vi' ? 'Gửi mã OTP' : 'Send OTP')}
                       </span>
@@ -1389,7 +1391,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {/* OTP Code with Quick-fill helper */}
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-[#2b1d16]">
+                    <label className="text-xs font-bold text-[#24263e]">
                       {lang === 'vi' ? 'Mã xác thực OTP (6 chữ số)' : '6-digit OTP Code'} <strong className="text-rose-500">*</strong>
                     </label>
                     {generatedResetOtp && (
@@ -1399,7 +1401,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           setOtpCode(generatedResetOtp);
                           markTouched('otpCode');
                         }}
-                        className="text-[11px] font-bold text-[#2b1d16] hover:underline cursor-pointer"
+                        className="text-[11px] font-bold text-[#24263e] hover:underline cursor-pointer"
                       >
                         ⚡ Nhập nhanh: {generatedResetOtp}
                       </button>
@@ -1421,7 +1423,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                           : touched.otpCode && !getOtpCodeError()
                           ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                          : 'bg-[#f6f5eb] border-gray-200 text-[#2b1d16] focus:outline-none focus:border-[#cea981]'
+                          : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
                       }`}
                     />
                     {touched.otpCode && !getOtpCodeError() && (
@@ -1439,7 +1441,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {/* New Password & Confirm New Password Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#2b1d16]">
+                    <label className="text-xs font-bold text-[#24263e]">
                       {lang === 'vi' ? 'Mật khẩu mới' : 'New Password'} <strong className="text-rose-500">*</strong>
                     </label>
                     <div className="relative">
@@ -1457,22 +1459,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                             : touched.newPassword && !getNewPasswordError()
                             ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                            : 'bg-[#f6f5eb] border-gray-200 text-[#2b1d16] focus:outline-none focus:border-[#cea981]'
+                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
                         }`}
                       />
                       <button
                         type="button"
                         onClick={() => setShowNewPassword(!showNewPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#2b1d16] cursor-pointer p-1"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#24263e] cursor-pointer p-1"
                       >
                         {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
                     {newPassword && (
                       <div className="grid grid-cols-3 gap-1 pt-0.5">
-                        <div className={`h-1 rounded-full ${newPassStrength >= 1 ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e]' : 'bg-gray-200'}`} />
-                        <div className={`h-1 rounded-full ${newPassStrength >= 2 ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e]' : 'bg-gray-200'}`} />
-                        <div className={`h-1 rounded-full ${newPassStrength >= 3 ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e]' : 'bg-gray-200'}`} />
+                        <div className={`h-1 rounded-full ${newPassStrength >= 1 ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da]' : 'bg-gray-200'}`} />
+                        <div className={`h-1 rounded-full ${newPassStrength >= 2 ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da]' : 'bg-gray-200'}`} />
+                        <div className={`h-1 rounded-full ${newPassStrength >= 3 ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da]' : 'bg-gray-200'}`} />
                       </div>
                     )}
                     {(touched.newPassword || submitted) && getNewPasswordError() && (
@@ -1484,7 +1486,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#2b1d16]">
+                    <label className="text-xs font-bold text-[#24263e]">
                       {lang === 'vi' ? 'Nhập lại mật khẩu mới' : 'Confirm New Password'} <strong className="text-rose-500">*</strong>
                     </label>
                     <div className="relative">
@@ -1502,13 +1504,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             ? 'bg-rose-50/40 border-rose-500 text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500'
                             : touched.confirmNewPassword && !getConfirmNewPasswordError()
                             ? 'bg-[#FFFFFF] border-emerald-500/70 focus:outline-none focus:border-emerald-600'
-                            : 'bg-[#f6f5eb] border-gray-200 text-[#2b1d16] focus:outline-none focus:border-[#cea981]'
+                            : 'bg-[#faf8f5] border-gray-200 text-[#24263e] focus:outline-none focus:border-[#c34c36]'
                         }`}
                       />
                       <button
                         type="button"
                         onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#2b1d16] cursor-pointer p-1"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#24263e] cursor-pointer p-1"
                       >
                         {showConfirmNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
@@ -1527,7 +1529,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="w-full py-2.5 px-4 bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-95 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 group"
+                    className="w-full py-2.5 px-4 bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 group"
                   >
                     <span>
                       {isLoading
@@ -1544,7 +1546,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       setSuccessMsg(null);
                       setMode('login');
                     }}
-                    className="w-full py-1.5 rounded-xl text-xs font-semibold text-gray-500 hover:text-[#2b1d16] hover:bg-gray-100 transition cursor-pointer text-center"
+                    className="w-full py-1.5 rounded-xl text-xs font-semibold text-gray-500 hover:text-[#24263e] hover:bg-gray-100 transition cursor-pointer text-center"
                   >
                     {lang === 'vi' ? '← Quay lại màn hình đăng nhập' : '← Return to Log In'}
                   </button>

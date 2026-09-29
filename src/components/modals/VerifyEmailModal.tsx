@@ -195,9 +195,9 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fadeIn select-none font-sans">
-      <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden transform transition-all text-[#2b1d16]">
+      <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden transform transition-all text-[#24263e]">
         {/* Header Ribbon Glow */}
-        <div className="h-2 w-full bg-gradient-to-r from-[#cea981] via-[#ccbb9e] to-[#cea981]" />
+        <div className="h-2 w-full bg-gradient-to-r from-[#c34c36] via-[#fce5da] to-[#c34c36]" />
 
         {/* Close Button */}
         <button
@@ -212,7 +212,7 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
           {/* Animated Mail Icon Badge */}
           <div className="text-center space-y-3">
             <div className="relative inline-block">
-              <div className="w-16 h-16 rounded-2xl bg-[#2b1d16] text-white flex items-center justify-center mx-auto shadow-lg shadow-black/10 transform hover:scale-105 transition-transform">
+              <div className="w-16 h-16 rounded-2xl bg-[#24263e] text-white flex items-center justify-center mx-auto shadow-lg shadow-black/10 transform hover:scale-105 transition-transform">
                 <Mail className="w-8 h-8 animate-pulse text-white" />
               </div>
               <div className="absolute -bottom-1 -right-1 bg-emerald-500 text-white p-1 rounded-full shadow-md">
@@ -221,7 +221,7 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
             </div>
 
             <div className="space-y-1">
-              <h3 className="text-xl sm:text-2xl font-black text-[#2b1d16] tracking-tight">
+              <h3 className="text-xl sm:text-2xl font-black text-[#24263e] tracking-tight">
                 {lang === 'vi' ? 'Xác Thực Email 6 Chữ Số' : '6-Digit Email Verification'}
               </h3>
               <p className="text-xs sm:text-sm text-gray-500 leading-relaxed max-w-sm mx-auto">
@@ -230,14 +230,14 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
                   : 'Please enter the 6-digit OTP code sent to your email address:'}
               </p>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gray-100 border border-gray-200 mt-1">
-                <span className="font-bold text-xs text-[#2b1d16] truncate max-w-[220px]">
+                <span className="font-bold text-xs text-[#24263e] truncate max-w-[220px]">
                   {email || 'user@secondlife.vn'}
                 </span>
                 {onChangeEmail && (
                   <button
                     type="button"
                     onClick={onChangeEmail}
-                    className="text-[11px] font-bold text-[#2b1d16] hover:underline cursor-pointer"
+                    className="text-[11px] font-bold text-[#24263e] hover:underline cursor-pointer"
                   >
                     ({lang === 'vi' ? 'Đổi' : 'Change'})
                   </button>
@@ -272,8 +272,8 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
                     errorMsg
                       ? 'border-rose-400 bg-rose-50/50 text-rose-900 focus:border-rose-600 focus:ring-2 focus:ring-rose-200'
                       : digit
-                      ? 'border-[#cea981] bg-white text-[#2b1d16] shadow-md shadow-pink-500/10'
-                      : 'border-gray-200 bg-gray-50/80 text-[#2b1d16] hover:border-gray-300 focus:border-[#cea981] focus:bg-white focus:ring-2 focus:ring-pink-200'
+                      ? 'border-[#c34c36] bg-white text-[#24263e] shadow-md shadow-pink-500/10'
+                      : 'border-gray-200 bg-gray-50/80 text-[#24263e] hover:border-gray-300 focus:border-[#c34c36] focus:bg-white focus:ring-2 focus:ring-pink-200'
                   }`}
                 />
               ))}
@@ -302,7 +302,7 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
               type="button"
               onClick={() => handleVerifyCode()}
               disabled={isLoading || digits.join('').length !== 6}
-              className="w-full py-3.5 px-4 bg-[#2b1d16] hover:bg-black disabled:opacity-50 text-white rounded-2xl text-sm font-black shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 group"
+              className="w-full py-3.5 px-4 bg-[#24263e] hover:bg-black disabled:opacity-50 text-white rounded-2xl text-sm font-black shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 group"
             >
               <span>
                 {isLoading
@@ -323,7 +323,7 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
                 type="button"
                 onClick={handleResend}
                 disabled={countdown > 0 || isLoading}
-                className="font-bold text-[#2b1d16] hover:underline disabled:opacity-40 disabled:no-underline cursor-pointer inline-flex items-center gap-1 transition"
+                className="font-bold text-[#24263e] hover:underline disabled:opacity-40 disabled:no-underline cursor-pointer inline-flex items-center gap-1 transition"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
                 <span>

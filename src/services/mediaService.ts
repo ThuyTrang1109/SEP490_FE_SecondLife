@@ -36,24 +36,12 @@ export const mediaService = {
 
       const resData = await response.json();
       if (!response.ok) {
-        throw new Error(resData?.message || 'Tải ảnh lên backend thất bại');
+        throw new Error(resData?.message || 'Tải ảnh lên máy chủ thất bại');
       }
       return resData.data;
-    } catch (err) {
-      console.warn('Backend media upload error, falling back to local base64 DataURL:', err);
-      return new Promise<CloudinaryUploadResponseDto>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          resolve({
-            url: reader.result as string,
-            publicId: 'local_' + Date.now(),
-            format: file.type.split('/')[1] || 'png',
-            bytes: file.size,
-            originalFilename: file.name
-          });
-        };
-        reader.readAsDataURL(file);
-      });
+    } catch (err: any) {
+      console.error('Backend media upload error:', err);
+      throw new Error(err.message || 'Không thể tải ảnh lên máy chủ lưu trữ (Cloudinary). Vui lòng kiểm tra lại kết nối mạng và thử lại.');
     }
   },
 
@@ -62,6 +50,8 @@ export const mediaService = {
    * Swagger: POST /api/v1/media/upload-multiple
    */
   async uploadMultipleImages(files: File[], folder?: string): Promise<CloudinaryUploadResponseDto[]> {
+    if (!files || files.length === 0) return [];
+
     const formData = new FormData();
     files.forEach((file) => formData.append('files', file));
 
@@ -73,16 +63,21 @@ export const mediaService = {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${BASE_URL}/media/upload-multiple${query}`, {
-      method: 'POST',
-      headers,
-      body: formData,
-    });
+    try {
+      const response = await fetch(`${BASE_URL}/media/upload-multiple${query}`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
 
-    const resData = await response.json();
-    if (!response.ok) {
-      throw new Error(resData?.message || 'Tải danh sách ảnh thất bại');
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData?.message || 'Tải danh sách ảnh thất bại');
+      }
+      return resData.data;
+    } catch (err: any) {
+      console.error('Backend multiple media upload error:', err);
+      throw new Error(err.message || 'Không thể tải danh sách ảnh lên máy chủ. Vui lòng kiểm tra lại kết nối mạng và thử lại.');
     }
-    return resData.data;
   },
 };

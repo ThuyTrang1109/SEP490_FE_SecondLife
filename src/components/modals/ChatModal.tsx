@@ -129,20 +129,20 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-md animate-fadeIn">
-      <div className="bg-[#FFFFFF] rounded-3xl max-w-2xl w-full h-[85vh] shadow-2xl border border-gray-200 flex flex-col overflow-hidden text-[#2b1d16]">
+      <div className="bg-[#FFFFFF] rounded-3xl max-w-2xl w-full h-[85vh] shadow-2xl border border-gray-200 flex flex-col overflow-hidden text-[#24263e]">
         {/* Header */}
-        <div className="px-5 py-3.5 bg-[#cea981] border-b border-[#2b1d16]/15 flex items-center justify-between text-[#2b1d16]">
+        <div className="px-5 py-3.5 bg-[#fce5da] border-b border-[#24263e]/15 flex items-center justify-between text-[#24263e]">
           <div className="flex items-center gap-3">
             <img
               src={listing.photos.front}
               alt={listing.title}
-              className="w-10 h-10 rounded-xl object-cover border border-[#2b1d16]/20"
+              className="w-10 h-10 rounded-xl object-cover border border-[#24263e]/20"
             />
             <div className="overflow-hidden">
-              <h3 className="font-bold text-xs sm:text-sm text-[#2b1d16] truncate max-w-xs sm:max-w-md">
+              <h3 className="font-bold text-xs sm:text-sm text-[#24263e] truncate max-w-xs sm:max-w-md">
                 {listing.title}
               </h3>
-              <div className="text-xs text-[#2b1d16] font-black">
+              <div className="text-xs text-[#24263e] font-black">
                 {formatVND(listing.priceVnd)}
               </div>
             </div>
@@ -157,13 +157,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     : `Purchase agreement confirmed for "${listing.title}"! Please proceed with payment or deposit via Escrow.`
                 );
               }}
-              className="px-3 py-1.5 bg-[#2b1d16] hover:bg-black text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1 cursor-pointer transition-all"
+              className="px-3 py-1.5 bg-[#24263e] hover:bg-black text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1 cursor-pointer transition-all"
             >
               <span>⚡ {lang === 'vi' ? 'Chốt giao dịch' : 'Finalize Deal'}</span>
             </button>
             <button
               onClick={onClose}
-              className="text-[#2b1d16] hover:bg-white/40 p-1.5 rounded-lg text-xs font-bold cursor-pointer transition"
+              className="text-[#24263e] hover:bg-white/40 p-1.5 rounded-lg text-xs font-bold cursor-pointer transition"
             >
               {lang === 'vi' ? '✕ Đóng' : '✕ Close'}
             </button>
@@ -171,11 +171,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         </div>
 
         {/* AI Smart Negotiation Advisor Pill */}
-        <div className="bg-[#f6f5eb] border-b border-gray-200 px-4 py-2.5 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2 text-[#2b1d16]">
-            <Sparkles className="w-4 h-4 text-[#2b1d16] shrink-0" />
+        <div className="bg-[#faf8f5] border-b border-gray-200 px-4 py-2.5 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2 text-[#24263e]">
+            <Sparkles className="w-4 h-4 text-[#24263e] shrink-0" />
             <span className="text-[11px] font-medium leading-snug">
-              <span className="font-bold text-[#2b1d16]">
+              <span className="font-bold text-[#24263e]">
                 {lang === 'vi' ? 'AI Tư vấn đàm phán: ' : 'AI Negotiation Advisor: '}
               </span>
               {aiAdvice.adviceText}
@@ -190,7 +190,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   : `I propose a deal at ${formatVND(aiAdvice.counterOfferVnd)} through Hub inspection!`
               )
             }
-            className="shrink-0 ml-2 px-2.5 py-1 bg-[#2b1d16] hover:bg-black text-white rounded-lg text-[10px] font-bold cursor-pointer transition"
+            className="shrink-0 ml-2 px-2.5 py-1 bg-[#24263e] hover:bg-black text-white rounded-lg text-[10px] font-bold cursor-pointer transition"
           >
             {lang === 'vi' ? 'Dùng giá gợi ý:' : 'Use suggestion:'} {formatVND(aiAdvice.counterOfferVnd)}
           </button>
@@ -198,14 +198,14 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
         {/* Anti-Scam Banner (If triggered) */}
         {aiAdvice.warningMessage && (
-          <div className="bg-[#cea981]/10 border-b border-[#cea981]/30 p-2.5 flex items-center gap-2 text-[#2b1d16] text-xs font-semibold">
-            <AlertTriangle className="w-4 h-4 text-[#2b1d16] shrink-0" />
+          <div className="bg-[#c34c36]/10 border-b border-[#c34c36]/30 p-2.5 flex items-center gap-2 text-[#24263e] text-xs font-semibold">
+            <AlertTriangle className="w-4 h-4 text-[#24263e] shrink-0" />
             <span>{aiAdvice.warningMessage}</span>
           </div>
         )}
 
         {/* Chat Messages Log */}
-        <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#f6f5eb]">
+        <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#faf8f5]">
           {messages.map((msg) => {
             const isMe = msg.senderRole === currentRole;
             return (
@@ -214,14 +214,14 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 className={`group relative flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
               >
                 <div className="flex items-center gap-1.5 mb-0.5 px-1">
-                  <span className="text-[10px] text-[#2b1d16]/70 font-medium">
+                  <span className="text-[10px] text-[#24263e]/70 font-medium">
                     {msg.senderName} • {msg.timestamp}
                   </span>
 
                   {isMe && !msg.isUnsent && (
                     <button
                       onClick={() => handleUnsendMessage(msg.id)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-gray-400 hover:text-[#2b1d16] font-medium flex items-center gap-0.5 cursor-pointer ml-1"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-gray-400 hover:text-[#24263e] font-medium flex items-center gap-0.5 cursor-pointer ml-1"
                       title={lang === 'vi' ? 'Thu hồi tin nhắn' : 'Unsend message'}
                     >
                       <RotateCcw className="w-2.5 h-2.5" />
@@ -235,8 +235,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     msg.isUnsent
                       ? 'bg-[#FFFFFF] text-gray-400 italic border border-gray-200 shadow-none'
                       : isMe
-                      ? 'bg-[#2b1d16] text-white rounded-br-xs font-medium'
-                      : 'bg-[#FFFFFF] text-[#2b1d16] border border-gray-200 shadow-2xs rounded-bl-xs'
+                      ? 'bg-[#24263e] text-white rounded-br-xs font-medium'
+                      : 'bg-[#FFFFFF] text-[#24263e] border border-gray-200 shadow-2xs rounded-bl-xs'
                   }`}
                 >
                   {msg.isUnsent ? (
@@ -255,13 +255,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                           className={`mt-2.5 p-3 rounded-xl border ${
                             isMe
                               ? 'bg-[#FFFFFF]/10 border-white/20 text-white'
-                              : 'bg-[#f6f5eb] border-gray-200 text-[#2b1d16]'
+                              : 'bg-[#faf8f5] border-gray-200 text-[#24263e]'
                           }`}
                         >
                           <div className="text-[10px] uppercase font-bold tracking-wider opacity-80">
                             {lang === 'vi' ? 'Đề xuất mức giá chính thức:' : 'Official Counter Offer:'}
                           </div>
-                          <div className="text-base font-black mt-0.5 text-[#2b1d16]">
+                          <div className="text-base font-black mt-0.5 text-[#24263e]">
                             {formatVND(msg.offerAmountVnd)}
                           </div>
 
@@ -290,7 +290,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                             ) : (
                               <span
                                 className={`text-[10px] font-bold ${
-                                  msg.offerStatus === 'accepted' ? 'text-[#2b1d16]' : 'text-gray-400'
+                                  msg.offerStatus === 'accepted' ? 'text-[#24263e]' : 'text-gray-400'
                                 }`}
                               >
                                 {msg.offerStatus === 'accepted'
@@ -303,8 +303,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                       )}
 
                       {msg.safetyWarning && (
-                        <div className="mt-1.5 text-[10px] text-[#2b1d16] bg-[#cea981]/10 p-1.5 rounded flex items-center gap-1 border border-[#cea981]/30">
-                          <AlertTriangle className="w-3 h-3 text-[#2b1d16]" />
+                        <div className="mt-1.5 text-[10px] text-[#24263e] bg-[#c34c36]/10 p-1.5 rounded flex items-center gap-1 border border-[#c34c36]/30">
+                          <AlertTriangle className="w-3 h-3 text-[#24263e]" />
                           <span>{msg.safetyWarning}</span>
                         </div>
                       )}
@@ -320,7 +320,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         {showOfferForm && (
           <div className="p-3 bg-[#FFFFFF] border-t border-gray-200 flex items-center gap-3">
             <div className="flex-1">
-              <label className="text-[10px] font-bold text-[#2b1d16]/70">
+              <label className="text-[10px] font-bold text-[#24263e]/70">
                 {lang === 'vi' ? 'Nhập mức giá muốn đề xuất (VNĐ):' : 'Enter offer amount (VND):'}
               </label>
               <input
@@ -328,18 +328,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 step={100000}
                 value={offerInput}
                 onChange={(e) => setOfferInput(Number(e.target.value))}
-                className="w-full px-3 py-1.5 bg-[#f6f5eb] border border-gray-200 rounded-xl text-xs font-bold text-[#2b1d16] focus:outline-none focus:border-[#cea981]"
+                className="w-full px-3 py-1.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
               />
             </div>
             <button
               onClick={handleSendOffer}
-              className="px-4 py-2 bg-[#2b1d16] hover:bg-black text-white rounded-xl text-xs font-bold mt-3 cursor-pointer transition"
+              className="px-4 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl text-xs font-bold mt-3 cursor-pointer transition"
             >
               {lang === 'vi' ? 'Gửi giá' : 'Send Offer'}
             </button>
             <button
               onClick={() => setShowOfferForm(false)}
-              className="px-3 py-2 bg-[#f6f5eb] hover:bg-gray-200 text-[#2b1d16] border border-gray-200 rounded-xl text-xs mt-3 cursor-pointer transition font-medium"
+              className="px-3 py-2 bg-[#faf8f5] hover:bg-gray-200 text-[#24263e] border border-gray-200 rounded-xl text-xs mt-3 cursor-pointer transition font-medium"
             >
               {lang === 'vi' ? 'Hủy' : 'Cancel'}
             </button>
@@ -350,7 +350,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         <div className="p-3 bg-[#FFFFFF] border-t border-gray-200 flex items-center gap-2">
           <button
             onClick={() => setShowOfferForm(!showOfferForm)}
-            className="px-3 py-2 bg-[#2b1d16] hover:bg-black text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer"
+            className="px-3 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer"
           >
             {lang === 'vi' ? '💰 Trả giá' : '💰 Counter Offer'}
           </button>
@@ -365,12 +365,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 ? 'Nhắn tin thương lượng (an toàn qua Escrow)...'
                 : 'Send negotiation message (safe via Escrow)...'
             }
-            className="flex-1 px-3.5 py-2 bg-[#f6f5eb] border border-gray-200 rounded-xl text-xs text-[#2b1d16] focus:outline-none focus:border-[#cea981]"
+            className="flex-1 px-3.5 py-2 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36]"
           />
 
           <button
             onClick={() => handleSendMessage()}
-            className="p-2.5 bg-[#2b1d16] hover:bg-black text-white rounded-xl cursor-pointer transition"
+            className="p-2.5 bg-[#24263e] hover:bg-black text-white rounded-xl cursor-pointer transition"
           >
             <Send className="w-4 h-4" />
           </button>

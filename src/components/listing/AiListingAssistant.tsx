@@ -120,19 +120,19 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
   return (
     <div className="bg-white rounded-3xl border border-gray-200 shadow-xl overflow-hidden flex flex-col h-[700px] max-w-4xl mx-auto">
       {/* Header */}
-      <div className="px-6 py-4 bg-[#cea981] text-[#2b1d16] flex items-center justify-between border-b border-[#2b1d16]/15">
+      <div className="px-6 py-4 bg-[#fce5da] text-[#24263e] flex items-center justify-between border-b border-[#24263e]/15">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-[#2b1d16] text-white flex items-center justify-center shadow-md">
+          <div className="w-10 h-10 rounded-2xl bg-[#24263e] text-white flex items-center justify-center shadow-md">
             <Sparkles className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h3 className="font-black text-base flex items-center gap-2 text-[#2b1d16]">
+            <h3 className="font-black text-base flex items-center gap-2 text-[#24263e]">
               <span>{lang === 'vi' ? 'Trợ Lý AI Soạn Thảo Bài Đăng' : 'AI Listing Description Assistant'}</span>
               <span className="text-[10px] uppercase font-black tracking-wider px-2 py-0.5 rounded-full bg-white text-emerald-900 border border-emerald-500/40">
                 Ollama LLM
               </span>
             </h3>
-            <p className="text-xs text-[#2b1d16]/80 font-bold">
+            <p className="text-xs text-[#24263e]/80 font-bold">
               {lang === 'vi'
                 ? 'Hội thoại với AI để làm rõ tình trạng, ngoại quan và để AI tạo mô tả hoàn chỉnh'
                 : 'Chat with AI to clarify condition, specs and automatically generate description'}
@@ -143,7 +143,7 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
         {onCancel && !isFinalized && (
           <button
             onClick={onCancel}
-            className="text-xs text-[#2b1d16] hover:bg-white/40 px-3 py-1.5 rounded-lg border border-[#2b1d16]/20 transition cursor-pointer font-bold"
+            className="text-xs text-[#24263e] hover:bg-white/40 px-3 py-1.5 rounded-lg border border-[#24263e]/20 transition cursor-pointer font-bold"
           >
             {lang === 'vi' ? 'Quay lại' : 'Back'}
           </button>
@@ -194,7 +194,7 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
               className={`flex items-start gap-3 ${isAi ? 'justify-start' : 'justify-end'}`}
             >
               {isAi && (
-                <div className="w-8 h-8 rounded-xl bg-[#cea981] text-[#2b1d16] flex items-center justify-center shrink-0 shadow-sm mt-0.5 font-bold">
+                <div className="w-8 h-8 rounded-xl bg-[#c34c36] text-[#24263e] flex items-center justify-center shrink-0 shadow-sm mt-0.5 font-bold">
                   <Bot className="w-4 h-4" />
                 </div>
               )}
@@ -202,7 +202,7 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
                 className={`max-w-xl rounded-2xl px-4 py-3 text-xs leading-relaxed shadow-xs ${
                   isAi
                     ? 'bg-white border border-gray-200 text-slate-800 font-medium'
-                    : 'bg-[#2b1d16] text-white font-medium'
+                    : 'bg-[#24263e] text-white font-medium'
                 }`}
               >
                 <div className="whitespace-pre-wrap">{m.content}</div>
@@ -225,11 +225,11 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
 
         {isSending && (
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#cea981] to-[#ccbb9e] text-white flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center shrink-0">
               <Bot className="w-4 h-4" />
             </div>
             <div className="bg-white border border-gray-200 rounded-2xl px-4 py-3 text-xs text-slate-500 flex items-center gap-2 shadow-xs">
-              <Loader2 className="w-4 h-4 text-[#2b1d16] animate-spin" />
+              <Loader2 className="w-4 h-4 text-[#24263e] animate-spin" />
               <span>{lang === 'vi' ? 'AI đang suy nghĩ và phản hồi...' : 'AI is processing your response...'}</span>
             </div>
           </div>
@@ -242,7 +242,7 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
         {/* Quick finalize toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-[11px] text-slate-500 flex items-center gap-1.5">
-            <FileText className="w-3.5 h-3.5 text-[#2b1d16]" />
+            <FileText className="w-3.5 h-3.5 text-[#24263e]" />
             {lang === 'vi'
               ? 'Sau khi cung cấp đủ chi tiết, hãy nhấn Hoàn tất mô tả để AI tạo mô tả chính thức:'
               : 'When you are done sharing item details, finalize to generate official description:'}
@@ -254,7 +254,7 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
                 type="button"
                 onClick={handleFinalizeChat}
                 disabled={isFinalizing || isSending}
-                className="px-4 py-2 rounded-xl bg-[#2b1d16] hover:bg-black text-white text-xs font-black shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition"
+                className="px-4 py-2 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-black shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition"
               >
                 {isFinalizing ? (
                   <>
@@ -304,7 +304,7 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
                 ? 'Nhập thông tin thêm cho AI (ví dụ: máy mua năm nào, phụ kiện còn gì, có vết trầy nào không...)'
                 : 'Type additional details for AI (e.g. purchase date, accessories, blemishes...)'
             }
-            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-slate-50 text-xs text-slate-900 focus:bg-white focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none transition"
+            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-slate-50 text-xs text-slate-900 focus:bg-white focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none transition"
           />
           <button
             type="submit"

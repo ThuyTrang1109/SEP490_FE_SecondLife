@@ -1,7 +1,14 @@
 import { request } from './apiClient';
 
 export type VerificationType = 'CITIZEN_ID' | 'PASSPORT';
-export type SellerVerificationStatus = 'PENDING' | 'NEEDS_REVIEW' | 'APPROVED' | 'REJECTED' | 'RESUBMIT_REQUIRED';
+export type SellerVerificationStatus =
+  | 'SUBMITTED'
+  | 'EKYC_PENDING'
+  | 'NEEDS_REVIEW'
+  | 'APPROVED'
+  | 'RESUBMIT_REQUIRED'
+  | 'REJECTED'
+  | 'PENDING';
 
 export interface SellerVerificationRequestDto {
   verificationType: VerificationType;

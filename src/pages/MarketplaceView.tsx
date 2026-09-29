@@ -57,7 +57,7 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
   }, [listings, searchQuery, selectedCategory, selectedGrade, verifiedOnly, sortBy]);
 
   return (
-    <div className="space-y-6 pb-16 text-[#2b1d16]">
+    <div className="space-y-6 pb-16 text-[#24263e]">
       {/* 3D Motion Showroom Studio */}
       <ShowroomLobby3D lang={lang} />
 
@@ -83,12 +83,12 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={lang === 'vi' ? 'Tìm kiếm Tủ lạnh Hitachi, Máy giặt LG AI, Điều hòa Daikin, Robot Ecovacs, Nồi cơm Cuckoo...' : 'Search for Hitachi Refrigerator, LG Washer, Daikin AC, Ecovacs Robot...'}
-            className="w-full pl-10 pr-10 py-2.5 bg-[#f6f5eb] rounded-xl border border-slate-200 text-xs sm:text-sm text-[#2b1d16] placeholder-slate-400 focus:outline-none focus:border-[#cea981] transition"
+            className="w-full pl-10 pr-10 py-2.5 bg-[#faf8f5] rounded-xl border border-slate-200 text-xs sm:text-sm text-[#24263e] placeholder-slate-400 focus:outline-none focus:border-[#c34c36] transition"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-medium text-slate-400 hover:text-[#2b1d16] bg-[#FFFFFF] px-2 py-0.5 rounded-md cursor-pointer border border-slate-200"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-medium text-slate-400 hover:text-[#24263e] bg-[#FFFFFF] px-2 py-0.5 rounded-md cursor-pointer border border-slate-200"
             >
               {lang === 'vi' ? 'Xóa' : 'Clear'}
             </button>
@@ -104,8 +104,8 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
                 onClick={() => setSelectedCategory(cat.id)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap transition text-xs font-bold cursor-pointer border ${
                   isSelected
-                    ? 'bg-[#2b1d16] text-white border-[#2b1d16] shadow-xs'
-                    : 'bg-[#f6f5eb] text-[#2b1d16]/75 border-slate-200 hover:bg-[#FFFFFF] hover:text-[#2b1d16]'
+                    ? 'bg-[#24263e] text-white border-[#24263e] shadow-xs'
+                    : 'bg-[#faf8f5] text-[#24263e]/75 border-slate-200 hover:bg-[#FFFFFF] hover:text-[#24263e]'
                 }`}
               >
                 <span>{cat.icon}</span>
@@ -119,10 +119,10 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
       {/* Filter & Sort Bar above grid */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
         <div>
-          <h2 className="text-base sm:text-lg font-bold text-[#2b1d16] tracking-tight">
+          <h2 className="text-base sm:text-lg font-bold text-[#24263e] tracking-tight">
             {lang === 'vi' ? 'Danh Sách Sản Phẩm Niêm Yết' : 'Active Listings'}
           </h2>
-          <p className="text-[11px] text-[#2b1d16]/70 font-normal">
+          <p className="text-[11px] text-[#24263e]/70 font-normal">
             {lang === 'vi'
               ? `${filteredListings.length} sản phẩm sẵn sàng giao dịch & kiểm định bảo lãnh Escrow`
               : `${filteredListings.length} verified items with Escrow protection`}
@@ -137,8 +137,8 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
                 onClick={() => setSelectedGrade(grade)}
                 className={`px-2.5 py-1 rounded-md text-[11px] transition-all cursor-pointer ${
                   selectedGrade === grade
-                    ? 'bg-[#2b1d16] text-white font-black'
-                    : 'text-[#2b1d16]/75 hover:text-[#2b1d16] font-medium'
+                    ? 'bg-[#24263e] text-white font-black'
+                    : 'text-[#24263e]/75 hover:text-[#24263e] font-medium'
                 }`}
               >
                 {grade === 'ALL'
@@ -156,24 +156,24 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
             onClick={() => setVerifiedOnly(!verifiedOnly)}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition border cursor-pointer ${
               verifiedOnly
-                ? 'bg-[#2b1d16] text-white border-[#2b1d16]'
-                : 'bg-[#FFFFFF] text-[#2b1d16]/75 border-slate-200 hover:bg-[#f6f5eb]'
+                ? 'bg-[#24263e] text-white border-[#24263e]'
+                : 'bg-[#FFFFFF] text-[#24263e]/75 border-slate-200 hover:bg-[#faf8f5]'
             }`}
           >
-            <ShieldCheck className={`w-3.5 h-3.5 ${verifiedOnly ? 'text-white' : 'text-[#2b1d16]'}`} />
+            <ShieldCheck className={`w-3.5 h-3.5 ${verifiedOnly ? 'text-white' : 'text-[#24263e]'}`} />
             <span>{lang === 'vi' ? 'Có Kiểm Định Hub' : 'Inspected Hub'}</span>
           </button>
 
-          <div className="flex items-center gap-1 bg-[#FFFFFF] border border-slate-200 rounded-lg px-2.5 py-1 text-[#2b1d16] text-[11px]">
+          <div className="flex items-center gap-1 bg-[#FFFFFF] border border-slate-200 rounded-lg px-2.5 py-1 text-[#24263e] text-[11px]">
             <ArrowUpDown className="w-3 h-3 text-slate-400" />
             <select
               value={sortBy}
               onChange={(e: any) => setSortBy(e.target.value)}
-              className="bg-transparent text-[#2b1d16] text-[11px] font-medium focus:outline-none cursor-pointer"
+              className="bg-transparent text-[#24263e] text-[11px] font-medium focus:outline-none cursor-pointer"
             >
-              <option value="newest" className="bg-[#FFFFFF] text-[#2b1d16]">{lang === 'vi' ? 'Mới đăng nhất' : 'Newest'}</option>
-              <option value="priceAsc" className="bg-[#FFFFFF] text-[#2b1d16]">{lang === 'vi' ? 'Giá thấp đến cao' : 'Price: Low to High'}</option>
-              <option value="priceDesc" className="bg-[#FFFFFF] text-[#2b1d16]">{lang === 'vi' ? 'Giá cao đến thấp' : 'Price: High to Low'}</option>
+              <option value="newest" className="bg-[#FFFFFF] text-[#24263e]">{lang === 'vi' ? 'Mới đăng nhất' : 'Newest'}</option>
+              <option value="priceAsc" className="bg-[#FFFFFF] text-[#24263e]">{lang === 'vi' ? 'Giá thấp đến cao' : 'Price: Low to High'}</option>
+              <option value="priceDesc" className="bg-[#FFFFFF] text-[#24263e]">{lang === 'vi' ? 'Giá cao đến thấp' : 'Price: High to Low'}</option>
             </select>
           </div>
         </div>
@@ -182,13 +182,13 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
       {/* Listings Grid */}
       {filteredListings.length === 0 ? (
         <div className="bg-[#FFFFFF] rounded-2xl p-12 text-center border border-slate-200 space-y-3">
-          <div className="w-10 h-10 rounded-full bg-[#f6f5eb] text-slate-400 flex items-center justify-center mx-auto">
+          <div className="w-10 h-10 rounded-full bg-[#faf8f5] text-slate-400 flex items-center justify-center mx-auto">
             <Search className="w-5 h-5" />
           </div>
-          <h3 className="font-semibold text-[#2b1d16] text-sm">
+          <h3 className="font-semibold text-[#24263e] text-sm">
             {lang === 'vi' ? 'Không tìm thấy sản phẩm phù hợp' : 'No listings found'}
           </h3>
-          <p className="text-xs text-[#2b1d16]/70 max-w-sm mx-auto">
+          <p className="text-xs text-[#24263e]/70 max-w-sm mx-auto">
             {lang === 'vi'
               ? 'Hãy thử điều chỉnh bộ lọc hoặc tìm kiếm tên thiết bị khác.'
               : 'Try clearing some filters or searching for another keyword.'}
@@ -200,7 +200,7 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
               setSelectedGrade('ALL');
               setVerifiedOnly(false);
             }}
-            className="text-xs font-semibold text-[#2b1d16] underline cursor-pointer"
+            className="text-xs font-semibold text-[#24263e] underline cursor-pointer"
           >
             {lang === 'vi' ? 'Đặt lại bộ lọc' : 'Reset all filters'}
           </button>

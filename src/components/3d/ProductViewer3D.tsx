@@ -478,11 +478,11 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
   };
 
   return (
-    <div className="bg-[#cea981] rounded-3xl overflow-hidden border border-white/10 text-white shadow-2xl flex flex-col h-full relative">
+    <div className="bg-[#c34c36] rounded-3xl overflow-hidden border border-white/10 text-white shadow-2xl flex flex-col h-full relative">
       {/* Top Controls Bar */}
-      <div className="px-5 py-3.5 bg-[#cea981] border-b border-white/10 flex flex-wrap items-center justify-between gap-3 z-10">
+      <div className="px-5 py-3.5 bg-[#c34c36] border-b border-white/10 flex flex-wrap items-center justify-between gap-3 z-10">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white flex items-center justify-center shadow-md">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center shadow-md">
             <Compass className="w-4 h-4" />
           </div>
           <div>
@@ -508,7 +508,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
             onClick={toggleExplodedView}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer ${
               explodedView
-                ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white shadow-md'
+                ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white shadow-md'
                 : 'bg-white/10 text-white hover:bg-white/20 border border-white/20'
             }`}
           >
@@ -527,7 +527,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
             }}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition border cursor-pointer ${
               autoRotate
-                ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white border-transparent'
+                ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white border-transparent'
                 : 'bg-white/10 text-slate-400 border-white/20 hover:text-white'
             }`}
           >
@@ -544,7 +544,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
 
           <button
             onClick={handleSnapshot}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-95 text-white text-xs font-bold transition cursor-pointer shadow-md"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white text-xs font-bold transition cursor-pointer shadow-md"
             title="Chụp ảnh 3D & Lưu"
           >
             <Download className="w-3.5 h-3.5 text-white" />
@@ -563,7 +563,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
       </div>
 
       {/* Main 3D Canvas Area */}
-      <div className="relative flex-1 min-h-[440px] sm:min-h-[500px] w-full bg-[#cea981] overflow-hidden flex items-center justify-center">
+      <div className="relative flex-1 min-h-[440px] sm:min-h-[500px] w-full bg-[#c34c36] overflow-hidden flex items-center justify-center">
         <canvas ref={canvasRef} className="w-full h-full block cursor-grab active:cursor-grabbing" />
 
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:30px_30px] pointer-events-none" />
@@ -571,7 +571,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
         {/* Left Floating Hotspot Inspection Points */}
         <div className="absolute left-4 top-4 z-10 flex flex-col gap-2 max-w-[240px]">
           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-            <Eye className="w-3 h-3 text-[#2b1d16]" />
+            <Eye className="w-3 h-3 text-[#24263e]" />
             <span>{lang === 'vi' ? 'Điểm Kiểm Tra Vi Mô' : 'Inspection Pins'}</span>
           </div>
 
@@ -583,8 +583,8 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
                 onClick={() => handleHotspotClick(spot)}
                 className={`text-left p-2 rounded-xl text-xs transition border backdrop-blur-md cursor-pointer flex items-center justify-between gap-2 ${
                   isActive
-                    ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white border-transparent shadow-lg'
-                    : 'bg-[#FFFFFF]/90 text-[#2b1d16] border-slate-200 hover:bg-[#f6f5eb]'
+                    ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white border-transparent shadow-lg'
+                    : 'bg-[#FFFFFF]/90 text-[#24263e] border-slate-200 hover:bg-[#faf8f5]'
                 }`}
               >
                 <div className="truncate">
@@ -598,7 +598,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
                     spot.status === 'passed'
                       ? 'bg-white'
                       : spot.status === 'verified'
-                      ? 'bg-[#cea981]'
+                      ? 'bg-[#c34c36]'
                       : 'bg-slate-400'
                   }`}
                 />
@@ -609,45 +609,45 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
 
         {/* Active Hotspot Detail Card Overlay */}
         {activeHotspot && (
-          <div className="absolute right-4 top-4 z-10 max-w-sm bg-[#FFFFFF] backdrop-blur-xl border border-slate-200 rounded-2xl p-4 shadow-2xl space-y-2 animate-fadeIn text-[#2b1d16]">
+          <div className="absolute right-4 top-4 z-10 max-w-sm bg-[#FFFFFF] backdrop-blur-xl border border-slate-200 rounded-2xl p-4 shadow-2xl space-y-2 animate-fadeIn text-[#24263e]">
             <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-white uppercase bg-gradient-to-r from-[#cea981] to-[#ccbb9e] px-2 py-0.5 rounded shadow-sm">
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-white uppercase bg-gradient-to-r from-[#c34c36] to-[#fce5da] px-2 py-0.5 rounded shadow-sm">
                 <ShieldCheck className="w-3 h-3" />
                 <span>SecondLife Hub Verified</span>
               </span>
               <button
                 onClick={() => setActiveHotspot(null)}
-                className="text-slate-400 hover:text-[#2b1d16] text-xs px-1"
+                className="text-slate-400 hover:text-[#24263e] text-xs px-1"
               >
                 ✕
               </button>
             </div>
 
-            <h3 className="font-bold text-[#2b1d16] text-sm">
+            <h3 className="font-bold text-[#24263e] text-sm">
               {lang === 'vi' ? activeHotspot.titleVi : activeHotspot.titleEn}
             </h3>
 
-            <p className="text-xs text-[#2b1d16]/80 leading-relaxed">
+            <p className="text-xs text-[#24263e]/80 leading-relaxed">
               {lang === 'vi' ? activeHotspot.descVi : activeHotspot.descEn}
             </p>
 
             <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500 font-mono">
               <span>Độ phân giải siêu âm: 0.05mm</span>
-              <span className="text-[#2b1d16] font-bold">KẾT QUẢ: ĐẠT CHUẨN</span>
+              <span className="text-[#24263e] font-bold">KẾT QUẢ: ĐẠT CHUẨN</span>
             </div>
           </div>
         )}
 
         {/* Exploded Mode HUD Indicator */}
         {explodedView && (
-          <div className="absolute top-4 inset-x-0 mx-auto w-fit z-10 bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-lg">
+          <div className="absolute top-4 inset-x-0 mx-auto w-fit z-10 bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-lg">
             <Layers className="w-3.5 h-3.5 text-white" />
             <span>{lang === 'vi' ? 'ĐANG BÓC TÁCH LINH KIỆN & PIN (X-RAY)' : 'EXPLODED HARDWARE VIEW ACTIVE'}</span>
           </div>
         )}
 
         {/* Floating Zoom Controls */}
-        <div className="absolute right-4 bottom-4 z-10 flex flex-col gap-1.5 bg-[#cea981]/90 backdrop-blur-md p-1.5 rounded-2xl border border-white/10">
+        <div className="absolute right-4 bottom-4 z-10 flex flex-col gap-1.5 bg-[#c34c36]/90 backdrop-blur-md p-1.5 rounded-2xl border border-white/10">
           <button
             onClick={() => handleZoom(0.5)}
             className="p-2 rounded-xl text-white hover:bg-white/10 transition"
@@ -669,11 +669,11 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
       </div>
 
       {/* Bottom Colorway & Lighting Customizer Toolbar */}
-      <div className="px-5 py-3 bg-[#cea981] border-t border-white/10 flex flex-wrap items-center justify-between gap-4 z-10 text-xs">
+      <div className="px-5 py-3 bg-[#c34c36] border-t border-white/10 flex flex-wrap items-center justify-between gap-4 z-10 text-xs">
         {/* Color Switcher */}
         <div className="flex items-center gap-2.5">
           <div className="flex items-center gap-1 text-slate-400 font-semibold">
-            <Palette className="w-3.5 h-3.5 text-[#2b1d16]" />
+            <Palette className="w-3.5 h-3.5 text-[#24263e]" />
             <span>{lang === 'vi' ? 'Màu Hoàn Thiện:' : 'Colorway:'}</span>
           </div>
           <div className="flex items-center gap-2">
@@ -686,7 +686,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
                 }}
                 className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-xl border transition cursor-pointer ${
                   selectedColor.id === c.id
-                    ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e] border-transparent text-white font-bold'
+                    ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] border-transparent text-white font-bold'
                     : 'bg-white/10 border-white/20 text-slate-400 hover:text-white'
                 }`}
               >
@@ -703,7 +703,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
         {/* Lighting Atmosphere Preset */}
         <div className="flex items-center gap-2.5">
           <div className="flex items-center gap-1 text-slate-400 font-semibold">
-            <Sun className="w-3.5 h-3.5 text-[#2b1d16]" />
+            <Sun className="w-3.5 h-3.5 text-[#24263e]" />
             <span>{lang === 'vi' ? 'Ánh Sáng Studio:' : 'Lighting:'}</span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -714,7 +714,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
               }}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
                 lightingPreset === 'studio'
-                  ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white font-bold shadow-sm'
+                  ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white font-bold shadow-sm'
                   : 'bg-white/10 text-slate-400 hover:text-white border border-white/20'
               }`}
             >
@@ -727,7 +727,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
               }}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
                 lightingPreset === 'cyber'
-                  ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white font-bold shadow-sm'
+                  ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white font-bold shadow-sm'
                   : 'bg-white/10 text-slate-400 hover:text-white border border-white/20'
               }`}
             >
@@ -740,7 +740,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
               }}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
                 lightingPreset === 'sun'
-                  ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white font-bold shadow-sm'
+                  ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white font-bold shadow-sm'
                   : 'bg-white/10 text-slate-400 hover:text-white border border-white/20'
               }`}
             >

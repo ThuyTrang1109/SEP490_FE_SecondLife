@@ -33,6 +33,7 @@ import {
 import { UserProfile, UserRole, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
 import { userService, sellerService, mediaService } from '../../services';
+import { LiveFaceScannerModal } from './LiveFaceScannerModal';
 
 export type ProfileTab = 'info' | 'wallet' | 'kyc' | 'settings';
 
@@ -123,6 +124,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [docBackUrl, setDocBackUrl] = useState<string>('');
   const [selfieUrl, setSelfieUrl] = useState<string>('');
   const [uploadingField, setUploadingField] = useState<'avatar' | 'front' | 'back' | 'selfie' | null>(null);
+  const [isFaceScannerOpen, setIsFaceScannerOpen] = useState(false);
 
   // Change password modal state
   const [isChangePassModalOpen, setIsChangePassModalOpen] = useState(false);
@@ -209,7 +211,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
     setIsSubmittingSeller(true);
     try {
-      await sellerService.submitVerification({
+      const verificationResponse = await sellerService.submitVerification({
         verificationType: 'CITIZEN_ID',
         documentNumber: idCardNumber.trim(),
         documentFrontUrl: docFrontUrl,
@@ -217,29 +219,60 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         selfieUrl: selfieUrl || undefined,
       });
 
-      const updated: UserProfile = {
-        ...currentUser,
-        isSellerRegistered: true,
-        kycStatus: 'pending',
-        shopName: shopName.trim(),
-        pickupAddress: pickupAddress.trim(),
-        phone: sellerPhone.trim(),
-        idCardNumber: idCardNumber.trim(),
-        bankAccount: {
-          bankName: sellerBankName.trim() || bankName,
-          accountNumber: sellerAccountNumber.trim() || accountNumber,
-          accountHolder: sellerAccountHolder.trim() || accountHolder,
-        },
-      };
+      const status = verificationResponse?.status;
 
-      setIsSellerRegistered(true);
-      setShowSellerRegistrationForm(false);
-      onUpdateProfile(updated);
-      setSellerFormSuccess(
-        lang === 'vi'
-          ? 'Hồ sơ định danh eKYC đã được gửi thành công! Hồ sơ đang ở trạng thái Chờ duyệt (Pending) bởi Quản trị viên. Quyền Người Bán sẽ được kích hoạt sau khi được phê duyệt.'
-          : 'eKYC verification submitted successfully! It is pending review by the Administrator.'
-      );
+      if (status === 'APPROVED') {
+        const updated: UserProfile = {
+          ...currentUser,
+          isSellerRegistered: true,
+          role: 'seller',
+          kycStatus: 'verified',
+          shopName: shopName.trim(),
+          pickupAddress: pickupAddress.trim(),
+          phone: sellerPhone.trim(),
+          idCardNumber: idCardNumber.trim(),
+          bankAccount: {
+            bankName: sellerBankName.trim() || bankName,
+            accountNumber: sellerAccountNumber.trim() || accountNumber,
+            accountHolder: sellerAccountHolder.trim() || accountHolder,
+          },
+        };
+
+        setIsSellerRegistered(true);
+        setShowSellerRegistrationForm(false);
+        onUpdateProfile(updated);
+        setSellerFormSuccess(
+          lang === 'vi'
+            ? '🎉 Xác thực eKYC thành công! Quyền Người Bán của bạn đã được kích hoạt tự động.'
+            : '🎉 eKYC verified successfully! Your seller role is now active.'
+        );
+      } else {
+        const updated: UserProfile = {
+          ...currentUser,
+          isSellerRegistered: true,
+          kycStatus: 'pending',
+          shopName: shopName.trim(),
+          pickupAddress: pickupAddress.trim(),
+          phone: sellerPhone.trim(),
+          idCardNumber: idCardNumber.trim(),
+          bankAccount: {
+            bankName: sellerBankName.trim() || bankName,
+            accountNumber: sellerAccountNumber.trim() || accountNumber,
+            accountHolder: sellerAccountHolder.trim() || accountHolder,
+          },
+        };
+
+        setIsSellerRegistered(true);
+        setShowSellerRegistrationForm(false);
+        onUpdateProfile(updated);
+        setSellerFormSuccess(
+          lang === 'vi'
+            ? status === 'NEEDS_REVIEW'
+              ? '📋 Hồ sơ đã được tiếp nhận. Đang chờ Quản trị viên duyệt thủ công trong vòng 24h.'
+              : 'Hồ sơ định danh eKYC đã được gửi thành công! Hồ sơ đang ở trạng thái Chờ duyệt bởi Quản trị viên.'
+            : 'eKYC verification submitted successfully! It is pending review.'
+        );
+      }
       setTimeout(() => setSellerFormSuccess(null), 5000);
     } catch (err: any) {
       setSellerFormError(
@@ -400,7 +433,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-3xl bg-[#FFFFFF] border border-gray-200 shadow-2xl text-[#2b1d16] subtle-scrollbar"
+        className="relative w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-3xl bg-[#FFFFFF] border border-gray-200 shadow-2xl text-[#24263e] subtle-scrollbar"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
@@ -414,10 +447,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         {/* Header Profile Cover & Avatar */}
         <div className="relative">
           {/* Cover gradient banner */}
-          <div className="h-28 sm:h-32 bg-gradient-to-r from-[#cea981] via-[#cea981] to-[#cea981] rounded-t-3xl relative overflow-hidden">
-            <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-gradient-to-br from-[#cea981]/30 to-[#ccbb9e]/30 rounded-full blur-2xl pointer-events-none" />
+          <div className="h-28 sm:h-32 bg-gradient-to-r from-[#c34c36] via-[#c34c36] to-[#c34c36] rounded-t-3xl relative overflow-hidden">
+            <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-gradient-to-br from-[#c34c36]/30 to-[#fce5da]/30 rounded-full blur-2xl pointer-events-none" />
             <div className="absolute top-3 left-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-white text-[11px] font-semibold border border-white/20">
-              <ShieldCheck className="w-3.5 h-3.5 text-[#2b1d16]" />
+              <ShieldCheck className="w-3.5 h-3.5 text-[#24263e]" />
               <span>SecondLife Member ID: {currentUser.id}</span>
             </div>
           </div>
@@ -426,7 +459,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           <div className="px-6 sm:px-8 -mt-12 sm:-mt-14 relative z-10 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
             <div className="flex items-end gap-3.5">
               <div className="relative group">
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-tr from-[#cea981] to-[#ccbb9e] text-white flex items-center justify-center font-black text-2xl sm:text-3xl shadow-xl ring-4 ring-white">
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-tr from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center font-black text-2xl sm:text-3xl shadow-xl ring-4 ring-white">
                   {currentUser.avatar ? (
                     <img
                       src={currentUser.avatar}
@@ -440,7 +473,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 <button
                   type="button"
                   title={lang === 'vi' ? 'Thay đổi ảnh đại diện' : 'Change avatar'}
-                  className="absolute bottom-1 right-1 p-1.5 rounded-lg bg-white shadow-md border border-gray-200 text-gray-700 hover:text-[#2b1d16] transition cursor-pointer"
+                  className="absolute bottom-1 right-1 p-1.5 rounded-lg bg-white shadow-md border border-gray-200 text-gray-700 hover:text-[#24263e] transition cursor-pointer"
                 >
                   <Camera className="w-3.5 h-3.5" />
                 </button>
@@ -482,49 +515,49 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           <button
             onClick={() => setActiveTab('info')}
             className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'info'
-                ? 'text-[#2b1d16]'
+                ? 'text-[#24263e]'
                 : 'text-slate-500 hover:text-slate-800'
               }`}
           >
             <User className="w-4 h-4" />
             <span>{lang === 'vi' ? 'Thông Tin Cá Nhân' : 'Personal Profile'}</span>
             {activeTab === 'info' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#cea981] to-[#ccbb9e] rounded-t-full" />
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#c34c36] to-[#fce5da] rounded-t-full" />
             )}
           </button>
 
           <button
             onClick={() => setActiveTab('wallet')}
             className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'wallet'
-                ? 'text-[#2b1d16]'
+                ? 'text-[#24263e]'
                 : 'text-slate-500 hover:text-slate-800'
               }`}
           >
             <Wallet className="w-4 h-4" />
             <span>{lang === 'vi' ? 'Ví Escrow & Ngân Hàng' : 'Escrow Wallet & Bank'}</span>
             {activeTab === 'wallet' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#cea981] to-[#ccbb9e] rounded-t-full" />
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#c34c36] to-[#fce5da] rounded-t-full" />
             )}
           </button>
 
           <button
             onClick={() => setActiveTab('kyc')}
             className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'kyc'
-                ? 'text-[#2b1d16]'
+                ? 'text-[#24263e]'
                 : 'text-slate-500 hover:text-slate-800'
               }`}
           >
             <Shield className="w-4 h-4" />
             <span>{lang === 'vi' ? 'Định Danh & Bảo Mật' : 'Identity & Security'}</span>
             {activeTab === 'kyc' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#cea981] to-[#ccbb9e] rounded-t-full" />
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#c34c36] to-[#fce5da] rounded-t-full" />
             )}
           </button>
 
           <button
             onClick={() => setActiveTab('settings')}
             className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'settings'
-                ? 'text-[#2b1d16]'
+                ? 'text-[#24263e]'
                 : 'text-slate-500 hover:text-slate-800'
               }`}
           >
@@ -535,7 +568,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 : (lang === 'vi' ? 'Đăng Ký Thành Người Bán' : 'Register as Seller')}
             </span>
             {activeTab === 'settings' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#cea981] to-[#ccbb9e] rounded-t-full" />
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#c34c36] to-[#fce5da] rounded-t-full" />
             )}
           </button>
         </div>
@@ -557,7 +590,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       required
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] transition"
+                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] transition"
                     />
                   </div>
                 </div>
@@ -575,7 +608,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <button
                         type="button"
                         onClick={() => onOpenVerifyEmail?.(email || currentUser.email)}
-                        className="text-[10px] font-bold text-[#2b1d16] bg-pink-50 hover:bg-pink-100 px-2 py-0.5 rounded-md border border-pink-200 inline-flex items-center gap-1 cursor-pointer transition shadow-xs"
+                        className="text-[10px] font-bold text-[#24263e] bg-pink-50 hover:bg-pink-100 px-2 py-0.5 rounded-md border border-pink-200 inline-flex items-center gap-1 cursor-pointer transition shadow-xs"
                       >
                         <Mail className="w-3 h-3" /> {lang === 'vi' ? 'Xác thực OTP ngay' : 'Verify OTP now'}
                       </button>
@@ -588,7 +621,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] transition"
+                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] transition"
                     />
                   </div>
                 </div>
@@ -604,7 +637,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       required
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] transition"
+                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] transition"
                     />
                   </div>
                 </div>
@@ -619,7 +652,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       type="date"
                       value={birthday}
                       onChange={(e) => setBirthday(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] transition"
+                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] transition"
                     />
                   </div>
                 </div>
@@ -637,7 +670,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       value="male"
                       checked={gender === 'male'}
                       onChange={() => setGender('male')}
-                      className="accent-[#cea981]"
+                      className="accent-[#c34c36]"
                     />
                     <span>{lang === 'vi' ? 'Nam' : 'Male'}</span>
                   </label>
@@ -648,7 +681,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       value="female"
                       checked={gender === 'female'}
                       onChange={() => setGender('female')}
-                      className="accent-[#cea981]"
+                      className="accent-[#c34c36]"
                     />
                     <span>{lang === 'vi' ? 'Nữ' : 'Female'}</span>
                   </label>
@@ -659,7 +692,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       value="other"
                       checked={gender === 'other'}
                       onChange={() => setGender('other')}
-                      className="accent-[#cea981]"
+                      className="accent-[#c34c36]"
                     />
                     <span>{lang === 'vi' ? 'Khác' : 'Other'}</span>
                   </label>
@@ -677,7 +710,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     placeholder={lang === 'vi' ? 'Nhập địa chỉ' : 'Enter address'}
-                    className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] transition"
+                    className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] transition"
                   />
                 </div>
               </div>
@@ -702,7 +735,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white font-bold text-xs sm:text-sm shadow-md hover:opacity-95 disabled:opacity-50 transition flex items-center gap-2 cursor-pointer"
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white font-bold text-xs sm:text-sm shadow-md hover:opacity-95 disabled:opacity-50 transition flex items-center gap-2 cursor-pointer"
                 >
                   <Save className="w-4 h-4" />
                   <span>{isSaving ? (lang === 'vi' ? 'Đang lưu...' : 'Saving...') : (lang === 'vi' ? 'Lưu Thay Đổi' : 'Save Changes')}</span>
@@ -716,37 +749,37 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             <div className="space-y-5">
               {/* Financial Balance Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-4 sm:p-5 rounded-2xl bg-[#cea981] text-[#2b1d16] space-y-2 relative overflow-hidden shadow-md border border-[#2b1d16]/15">
-                  <div className="flex items-center justify-between text-xs text-[#2b1d16]/80 font-bold">
-                    <span className="font-bold flex items-center gap-1.5 text-[#2b1d16]">
-                      <Wallet className="w-4 h-4 text-[#2b1d16]" />
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#fce5da] text-[#24263e] space-y-2 relative overflow-hidden shadow-md border border-[#24263e]/15">
+                  <div className="flex items-center justify-between text-xs text-[#24263e]/80 font-bold">
+                    <span className="font-bold flex items-center gap-1.5 text-[#24263e]">
+                      <Wallet className="w-4 h-4 text-[#c34c36]" />
                       {lang === 'vi' ? 'Số Dư Khả Dụng Trong Ví' : 'Available Wallet Balance'}
                     </span>
                     <span className="text-[10px] bg-white text-emerald-900 border border-emerald-500/30 px-2 py-0.5 rounded font-black">
                       {lang === 'vi' ? 'Sẵn Sàng Rút' : 'Ready to Withdraw'}
                     </span>
                   </div>
-                  <div className="text-2xl font-black text-[#2b1d16] tracking-tight">
+                  <div className="text-2xl font-black text-[#24263e] tracking-tight">
                     {formatVND(currentUser.walletBalanceVnd || 24500000)}
                   </div>
-                  <p className="text-[11px] text-[#2b1d16]/80 font-medium">
+                  <p className="text-[11px] text-[#24263e]/80 font-medium">
                     {lang === 'vi'
                       ? 'Tiền bán hàng đã hoàn tất giải ngân từ người mua qua quỹ Escrow.'
                       : 'Sales proceeds released from buyers via the Escrow trust fund.'}
                   </p>
                 </div>
 
-                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-[#f6f5eb] to-[#f6f5eb] border border-[#cea981]/30 text-[#2b1d16] space-y-2 relative overflow-hidden shadow-xs">
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-[#faf8f5] to-[#faf8f5] border border-[#c34c36]/30 text-[#24263e] space-y-2 relative overflow-hidden shadow-xs">
                   <div className="flex items-center justify-between text-xs text-slate-600">
                     <span className="font-semibold flex items-center gap-1.5">
-                      <Lock className="w-4 h-4 text-[#2b1d16]" />
+                      <Lock className="w-4 h-4 text-[#24263e]" />
                       {lang === 'vi' ? 'Tiền Đang Phong Tỏa Escrow' : 'Funds in Escrow Hold'}
                     </span>
-                    <span className="text-[10px] bg-[#cea981]/10 text-[#2b1d16] px-2 py-0.5 rounded font-bold">
+                    <span className="text-[10px] bg-[#c34c36]/10 text-[#24263e] px-2 py-0.5 rounded font-bold">
                       {lang === 'vi' ? 'Đang Bảo Lãnh' : 'Under Escrow Protection'}
                     </span>
                   </div>
-                  <div className="text-2xl font-black text-[#2b1d16] tracking-tight">
+                  <div className="text-2xl font-black text-[#24263e] tracking-tight">
                     {formatVND(currentUser.escrowLockedVnd || 19562500)}
                   </div>
                   <p className="text-[11px] text-slate-500">
@@ -886,7 +919,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       setPassSuccess(null);
                       setIsChangePassModalOpen(true);
                     }}
-                    className="text-xs font-bold text-[#2b1d16] hover:underline cursor-pointer"
+                    className="text-xs font-bold text-[#24263e] hover:underline cursor-pointer"
                   >
                     {lang === 'vi' ? 'Đổi Mật Khẩu' : 'Change Password'}
                   </button>
@@ -903,7 +936,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                     {lang === 'vi' ? 'Đăng Ký Thành Người Bán (Seller Center)' : 'Seller Registration & Hub Onboarding'}
                   </h4>
-                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-50 text-[#2b1d16] border border-rose-200">
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-50 text-[#24263e] border border-rose-200">
                     {currentUser.role === 'seller' || isSellerRegistered
                       ? (lang === 'vi' ? 'Đã Kích Hoạt Người Bán' : 'Seller Active')
                       : (lang === 'vi' ? 'Chưa Kích Hoạt' : 'Not Registered')}
@@ -929,7 +962,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 <div className="p-4 rounded-2xl bg-slate-50 border border-gray-200 space-y-3 animate-in fade-in">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Store className="w-4 h-4 text-[#2b1d16]" />
+                      <Store className="w-4 h-4 text-[#24263e]" />
                       <span className="text-xs font-bold text-slate-900">
                         {lang === 'vi' ? 'Hồ Sơ Gian Hàng Người Bán Của Bạn' : 'Your Seller Store Profile'}
                       </span>
@@ -969,7 +1002,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowSellerRegistrationForm(true)}
-                        className="inline-flex items-center gap-1 text-xs font-bold text-[#2b1d16] hover:underline cursor-pointer"
+                        className="inline-flex items-center gap-1 text-xs font-bold text-[#24263e] hover:underline cursor-pointer"
                       >
                         <Edit3 className="w-3.5 h-3.5" />
                         <span>{lang === 'vi' ? 'Chỉnh sửa thông tin' : 'Edit Information'}</span>
@@ -1006,11 +1039,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               {(showSellerRegistrationForm || (!isSellerRegistered && currentUser.role !== 'seller')) && (
                 <form
                   onSubmit={handleRegisterSeller}
-                  className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-white to-slate-50 border-2 border-[#cea981]/30 shadow-md space-y-4 animate-in fade-in"
+                  className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-white to-slate-50 border-2 border-[#c34c36]/30 shadow-md space-y-4 animate-in fade-in"
                 >
                   <div className="flex items-center justify-between border-b border-gray-100 pb-3">
                     <div className="flex items-center gap-2.5">
-                      <div className="p-2 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white">
+                      <div className="p-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white">
                         <Store className="w-4 h-4" />
                       </div>
                       <div>
@@ -1040,7 +1073,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   {/* Highlights Banner */}
                   <div className="grid grid-cols-3 gap-2 py-1 text-[11px]">
                     <div className="flex items-center gap-1.5 p-2 rounded-xl bg-rose-50/60 border border-rose-100 text-slate-700">
-                      <ShieldCheck className="w-3.5 h-3.5 text-[#2b1d16] shrink-0" />
+                      <ShieldCheck className="w-3.5 h-3.5 text-[#24263e] shrink-0" />
                       <span>{lang === 'vi' ? 'Xác minh CCCD' : 'National ID'}</span>
                     </div>
                     <div className="flex items-center gap-1.5 p-2 rounded-xl bg-amber-50/60 border border-amber-100 text-slate-700">
@@ -1073,7 +1106,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           value={shopName}
                           onChange={(e) => setShopName(e.target.value)}
                           placeholder={lang === 'vi' ? 'VD: Điện Máy Cũ Hoàng Khang' : 'e.g., Hoang Khang Pre-owned Tech'}
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs bg-white text-slate-900"
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
                         />
                       </div>
 
@@ -1087,7 +1120,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           value={sellerPhone}
                           onChange={(e) => setSellerPhone(e.target.value)}
                           placeholder="0912 345 678"
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs bg-white text-slate-900"
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
                         />
                       </div>
                     </div>
@@ -1102,7 +1135,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         value={pickupAddress}
                         onChange={(e) => setPickupAddress(e.target.value)}
                         placeholder={lang === 'vi' ? 'Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành phố' : 'Street address, ward, district, city'}
-                        className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs bg-white text-slate-900"
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
                       />
                       <span className="text-[10px] text-slate-400 block mt-1">
                         {lang === 'vi'
@@ -1122,7 +1155,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           value={idCardNumber}
                           onChange={(e) => setIdCardNumber(e.target.value)}
                           placeholder="048299102941"
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs bg-white text-slate-900"
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
                         />
                       </div>
 
@@ -1135,15 +1168,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           value={sellerProductTypes}
                           onChange={(e) => setSellerProductTypes(e.target.value)}
                           placeholder={lang === 'vi' ? 'VD: Tủ lạnh, Máy giặt, Máy pha cafe...' : 'e.g., Refrigerators, Washers, Coffee machines...'}
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs bg-white text-slate-900"
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
                         />
                       </div>
                     </div>
 
                     {/* eKYC Document Photo Upload Section */}
-                    <div className="p-3.5 rounded-2xl bg-[#f6f5eb] border border-slate-200 space-y-3">
+                    <div className="p-3.5 rounded-2xl bg-[#faf8f5] border border-slate-200 space-y-3">
                       <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                        <FileCheck className="w-4 h-4 text-[#2b1d16]" />
+                        <FileCheck className="w-4 h-4 text-[#24263e]" />
                         <span>{lang === 'vi' ? 'Ảnh Tải Lên Xác Thực eKYC (Mặt Trước, Mặt Sau, Chân Dung)' : 'eKYC Verification Photo Uploads'}</span>
                         <span className="text-red-500">*</span>
                       </div>
@@ -1152,7 +1185,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         {/* Front ID */}
                         <div className="space-y-1">
                           <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '1. Ảnh CCCD Mặt Trước' : '1. Front ID Card'}</label>
-                          <div className="relative border border-dashed border-slate-300 hover:border-[#cea981] rounded-xl p-2 bg-white text-center transition">
+                          <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-xl p-2 bg-white text-center transition">
                             {docFrontUrl ? (
                               <div className="space-y-1">
                                 <img src={docFrontUrl} alt="Front ID" className="w-full h-20 object-cover rounded-lg" />
@@ -1175,7 +1208,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         {/* Back ID */}
                         <div className="space-y-1">
                           <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '2. Ảnh CCCD Mặt Sau' : '2. Back ID Card'}</label>
-                          <div className="relative border border-dashed border-slate-300 hover:border-[#cea981] rounded-xl p-2 bg-white text-center transition">
+                          <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-xl p-2 bg-white text-center transition">
                             {docBackUrl ? (
                               <div className="space-y-1">
                                 <img src={docBackUrl} alt="Back ID" className="w-full h-20 object-cover rounded-lg" />
@@ -1197,23 +1230,55 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                         {/* Selfie */}
                         <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '3. Ảnh Chân Dung Selfie' : '3. Selfie Photo'}</label>
-                          <div className="relative border border-dashed border-slate-300 hover:border-[#cea981] rounded-xl p-2 bg-white text-center transition">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-bold text-slate-600 block">
+                              {lang === 'vi' ? '3. Ảnh Chân Dung Selfie' : '3. Selfie Photo'}
+                            </label>
+                            <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                              {lang === 'vi' ? 'AI So Khớp' : 'AI Match'}
+                            </span>
+                          </div>
+                          <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-xl p-2 bg-white text-center transition min-h-[96px] flex flex-col justify-center">
                             {selfieUrl ? (
                               <div className="space-y-1">
-                                <img src={selfieUrl} alt="Selfie" className="w-full h-20 object-cover rounded-lg" />
-                                <span className="text-[10px] text-emerald-600 font-bold block flex items-center justify-center gap-1">
-                                  <CheckCircle2 className="w-3 h-3" /> {lang === 'vi' ? 'Đã tải lên' : 'Uploaded'}
-                                </span>
+                                <div className="relative w-full h-16 rounded-lg overflow-hidden border border-emerald-400">
+                                  <img src={selfieUrl} alt="Selfie" className="w-full h-full object-cover" />
+                                  <div className="absolute bottom-1 right-1 px-1.5 py-0.2 bg-emerald-600/90 text-white rounded text-[8px] font-bold">
+                                    OK
+                                  </div>
+                                </div>
+                                <div className="flex items-center justify-between px-1 text-[10px]">
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsFaceScannerOpen(true)}
+                                    className="text-[#c34c36] font-bold hover:underline cursor-pointer flex items-center gap-0.5"
+                                  >
+                                    <Camera className="w-3 h-3" />
+                                    <span>{lang === 'vi' ? 'Quét lại' : 'Rescan'}</span>
+                                  </button>
+                                  <label className="text-slate-500 hover:text-slate-800 font-bold underline cursor-pointer">
+                                    {lang === 'vi' ? 'Đổi tệp' : 'Upload'}
+                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'selfie')} />
+                                  </label>
+                                </div>
                               </div>
                             ) : (
-                              <label className="cursor-pointer block py-3 space-y-1">
-                                <Camera className="w-5 h-5 text-slate-400 mx-auto" />
-                                <span className="text-[10px] font-bold text-slate-600 block">
-                                  {uploadingField === 'selfie' ? (lang === 'vi' ? 'Đang tải lên...' : 'Uploading...') : (lang === 'vi' ? 'Chọn ảnh chân dung' : 'Select Selfie Photo')}
-                                </span>
-                                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'selfie')} />
-                              </label>
+                              <div className="py-1 px-1 flex flex-col items-center justify-center space-y-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setIsFaceScannerOpen(true)}
+                                  className="w-full py-1.5 px-2 bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-slate-900 rounded-lg text-[10px] font-bold shadow-xs hover:opacity-95 transition flex items-center justify-center gap-1 cursor-pointer"
+                                >
+                                  <Camera className="w-3 h-3 text-slate-900" />
+                                  <span>{lang === 'vi' ? 'Mở Camera Quét Mặt' : 'Scan Face'}</span>
+                                </button>
+                                <label className="text-[9px] text-slate-500 hover:text-[#24263e] underline font-bold cursor-pointer block text-center">
+                                  {uploadingField === 'selfie'
+                                    ? (lang === 'vi' ? 'Đang tải lên...' : 'Uploading...')
+                                    : (lang === 'vi' ? 'Hoặc chọn ảnh từ máy' : 'Or select photo')}
+                                  <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'selfie')} />
+                                </label>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -1223,7 +1288,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     {/* Bank Information for Payout */}
                     <div className="p-3 rounded-2xl bg-white border border-gray-200 space-y-2.5">
                       <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                        <CreditCard className="w-3.5 h-3.5 text-[#2b1d16]" />
+                        <CreditCard className="w-3.5 h-3.5 text-[#24263e]" />
                         <span>{lang === 'vi' ? 'Tài Khoản Ngân Hàng Nhận Tiền Bán (Giải Ngân Escrow)' : 'Bank Account for Escrow Payout'}</span>
                       </div>
 
@@ -1235,7 +1300,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             value={sellerBankName}
                             onChange={(e) => setSellerBankName(e.target.value)}
                             placeholder="Vietcombank"
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#cea981]"
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
                           />
                         </div>
                         <div>
@@ -1245,7 +1310,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             value={sellerAccountNumber}
                             onChange={(e) => setSellerAccountNumber(e.target.value)}
                             placeholder="991204882910"
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#cea981]"
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
                           />
                         </div>
                         <div>
@@ -1255,7 +1320,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             value={sellerAccountHolder}
                             onChange={(e) => setSellerAccountHolder(e.target.value)}
                             placeholder="HOANG QUOC KHANG"
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#cea981]"
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
                           />
                         </div>
                       </div>
@@ -1267,7 +1332,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         type="checkbox"
                         checked={sellerTermsAgreed}
                         onChange={(e) => setSellerTermsAgreed(e.target.checked)}
-                        className="mt-0.5 rounded text-[#2b1d16] focus:ring-[#cea981] w-4 h-4 cursor-pointer"
+                        className="mt-0.5 rounded text-[#24263e] focus:ring-[#c34c36] w-4 h-4 cursor-pointer"
                       />
                       <span className="text-[11px] text-slate-600 leading-relaxed">
                         {lang === 'vi'
@@ -1291,7 +1356,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <button
                       type="submit"
                       disabled={isSubmittingSeller}
-                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-95 disabled:opacity-50 text-white text-xs font-bold shadow-sm transition flex items-center gap-2 cursor-pointer"
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 disabled:opacity-50 text-white text-xs font-bold shadow-sm transition flex items-center gap-2 cursor-pointer"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       <span>
@@ -1331,7 +1396,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             </button>
             <button
               onClick={handleSave}
-              className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-95 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+              className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
             >
               <Save className="w-3.5 h-3.5" />
               <span>{lang === 'vi' ? 'Lưu Hồ Sơ' : 'Save Profile'}</span>
@@ -1345,7 +1410,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-100 space-y-5">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2 text-slate-900 font-bold text-base">
-                  <Lock className="w-5 h-5 text-[#2b1d16]" />
+                  <Lock className="w-5 h-5 text-[#24263e]" />
                   <span>{lang === 'vi' ? 'Đổi Mật Khẩu Đăng Nhập' : 'Change Account Password'}</span>
                 </div>
                 <button
@@ -1391,7 +1456,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       if (passError) setPassError(null);
                     }}
                     placeholder="••••••••"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs text-slate-900"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs text-slate-900"
                   />
                 </div>
 
@@ -1412,7 +1477,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         ? 'Tối thiểu 8 ký tự, chữ hoa, thường, số, ký tự đặc biệt'
                         : 'Min 8 chars, uppercase, lowercase, number, symbol'
                     }
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs text-slate-900"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs text-slate-900"
                   />
                 </div>
 
@@ -1429,7 +1494,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       if (passError) setPassError(null);
                     }}
                     placeholder={lang === 'vi' ? 'Nhập lại mật khẩu mới' : 'Re-enter new password'}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:border-[#cea981] focus:ring-1 focus:ring-[#cea981] outline-none text-xs text-slate-900"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs text-slate-900"
                   />
                 </div>
 
@@ -1451,7 +1516,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <button
                     type="submit"
                     disabled={isSubmittingPass}
-                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white text-xs font-bold hover:opacity-90 transition disabled:opacity-50 cursor-pointer"
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-xs font-bold hover:opacity-90 transition disabled:opacity-50 cursor-pointer"
                   >
                     {isSubmittingPass ? (lang === 'vi' ? 'Đang xử lý...' : 'Processing...') : (lang === 'vi' ? 'Cập Nhật Mật Khẩu' : 'Update Password')}
                   </button>
@@ -1461,6 +1526,17 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           </div>
         )}
       </div>
+
+      {/* Modal WebRTC Live Face Scanner eKYC */}
+      <LiveFaceScannerModal
+        isOpen={isFaceScannerOpen}
+        onClose={() => setIsFaceScannerOpen(false)}
+        onFaceCaptured={(url) => {
+          setSelfieUrl(url);
+          setSellerFormError(null);
+        }}
+        lang={lang}
+      />
     </div>
   );
 };

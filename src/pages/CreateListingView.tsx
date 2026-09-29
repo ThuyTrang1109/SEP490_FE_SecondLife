@@ -330,25 +330,25 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-16 text-[#2b1d16]">
+    <div className="max-w-4xl mx-auto space-y-8 pb-16 text-[#24263e]">
       {/* Title & Quick demo helper */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFFFFF] border border-gray-200 text-[#2b1d16] text-xs font-bold shadow-xs">
-            <Sparkles className="w-3.5 h-3.5 text-[#2b1d16]" />
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFFFFF] border border-gray-200 text-[#24263e] text-xs font-bold shadow-xs">
+            <Sparkles className="w-3.5 h-3.5 text-[#24263e]" />
             <span>AI Price Estimation & Verification Engine</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#2b1d16] mt-2">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#24263e] mt-2">
             {t.createListingTitle}
           </h1>
-          <p className="text-xs sm:text-sm text-[#2b1d16]/70">
+          <p className="text-xs sm:text-sm text-[#24263e]/70">
             {t.createListingSubtitle}
           </p>
         </div>
 
         <button
           onClick={handleAutofillDemo}
-          className="self-start sm:self-auto px-3 py-1.5 bg-[#FFFFFF] hover:bg-[#f6f5eb] text-[#2b1d16] rounded-xl text-xs font-semibold border border-gray-200 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+          className="self-start sm:self-auto px-3 py-1.5 bg-[#FFFFFF] hover:bg-[#faf8f5] text-[#24263e] rounded-xl text-xs font-semibold border border-gray-200 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
         >
           <span>⚡ Điền nhanh mẫu thử nghiệm</span>
         </button>
@@ -359,8 +359,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         <div
           className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${
             currentStep === 1
-              ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e] border-[#cea981] text-white font-semibold'
-              : 'bg-[#FFFFFF] border-gray-200 text-[#2b1d16]/60'
+              ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] border-[#c34c36] text-white font-semibold'
+              : 'bg-[#FFFFFF] border-gray-200 text-[#24263e]/60'
           }`}
         >
           <div className="text-[11px] uppercase tracking-wider font-semibold">1. {t.stepInfo}</div>
@@ -369,8 +369,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         <div
           className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${
             currentStep === 2
-              ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e] border-[#cea981] text-white font-semibold'
-              : 'bg-[#FFFFFF] border-gray-200 text-[#2b1d16]/60'
+              ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] border-[#c34c36] text-white font-semibold'
+              : 'bg-[#FFFFFF] border-gray-200 text-[#24263e]/60'
           }`}
         >
           <div className="text-[11px] uppercase tracking-wider font-semibold">2. {t.stepPhotos}</div>
@@ -379,8 +379,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         <div
           className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${
             currentStep === 3
-              ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e] border-[#cea981] text-white font-semibold'
-              : 'bg-[#FFFFFF] border-gray-200 text-[#2b1d16]/60'
+              ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] border-[#c34c36] text-white font-semibold'
+              : 'bg-[#FFFFFF] border-gray-200 text-[#24263e]/60'
           }`}
         >
           <div className="text-[11px] uppercase tracking-wider font-semibold">3. {t.stepValuation}</div>
@@ -389,8 +389,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         <div
           className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${
             currentStep === 4
-              ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e] border-[#cea981] text-white font-semibold'
-              : 'bg-[#FFFFFF] border-gray-200 text-[#2b1d16]/60'
+              ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] border-[#c34c36] text-white font-semibold'
+              : 'bg-[#FFFFFF] border-gray-200 text-[#24263e]/60'
           }`}
         >
           <div className="text-[11px] uppercase tracking-wider font-semibold">4. {lang === 'vi' ? 'Trợ lý AI' : 'AI Assistant'}</div>
@@ -400,13 +400,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       {/* Step 1: Basic Information */}
       {currentStep === 1 && (
         <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
-          <h2 className="text-lg font-bold text-[#2b1d16] flex items-center gap-2">
+          <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
             <span>Thông tin sản phẩm</span>
           </h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#2b1d16] flex items-center justify-between">
+              <label className="text-xs font-semibold text-[#24263e] flex items-center justify-between">
                 <span>{t.filterCategory} *</span>
                 {isLoadingCategories && (
                   <span className="text-[10px] text-amber-600 flex items-center gap-1 font-normal">
@@ -423,18 +423,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   const matched = backendCategories.find(c => c.id === val);
                   if (matched) setCategory(matched.name as any);
                 }}
-                className={`w-full px-3.5 py-2.5 bg-[#f6f5eb] border rounded-xl text-sm text-[#2b1d16] focus:outline-none transition ${
-                  isRealCategoryId ? 'border-gray-200 focus:border-[#cea981]' : 'border-amber-400 bg-amber-50/30'
+                className={`w-full px-3.5 py-2.5 bg-[#faf8f5] border rounded-xl text-sm text-[#24263e] focus:outline-none transition ${
+                  isRealCategoryId ? 'border-gray-200 focus:border-[#c34c36]' : 'border-amber-400 bg-amber-50/30'
                 }`}
               >
                 {backendCategories.length > 0 ? (
                   backendCategories.map((cat) => (
-                    <option key={cat.id} value={cat.id} className="bg-[#FFFFFF] text-[#2b1d16]">
+                    <option key={cat.id} value={cat.id} className="bg-[#FFFFFF] text-[#24263e]">
                       {cat.name}
                     </option>
                   ))
                 ) : (
-                  <option value="" disabled className="bg-[#FFFFFF] text-[#2b1d16]">
+                  <option value="" disabled className="bg-[#FFFFFF] text-[#24263e]">
                     {isLoadingCategories
                       ? (lang === 'vi' ? '-- Đang tải danh mục từ backend... --' : '-- Loading categories... --')
                       : (lang === 'vi' ? '-- Không có danh mục khả dụng --' : '-- No categories available --')}
@@ -449,7 +449,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#2b1d16] flex items-center justify-between">
+              <label className="text-xs font-semibold text-[#24263e] flex items-center justify-between">
                 <span>{lang === 'vi' ? 'Vật phẩm chi tiết (Item)' : 'Item'} *</span>
                 {isLoadingItems && (
                   <span className="text-[10px] text-amber-600 flex items-center gap-1 font-normal">
@@ -461,18 +461,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <select
                 value={selectedItemId}
                 onChange={(e) => setSelectedItemId(e.target.value)}
-                className={`w-full px-3.5 py-2.5 bg-[#f6f5eb] border rounded-xl text-sm text-[#2b1d16] focus:outline-none transition ${
-                  isRealItemId ? 'border-gray-200 focus:border-[#cea981]' : 'border-amber-400 bg-amber-50/30'
+                className={`w-full px-3.5 py-2.5 bg-[#faf8f5] border rounded-xl text-sm text-[#24263e] focus:outline-none transition ${
+                  isRealItemId ? 'border-gray-200 focus:border-[#c34c36]' : 'border-amber-400 bg-amber-50/30'
                 }`}
               >
                 {backendItems.length > 0 ? (
                   backendItems.map((itm) => (
-                    <option key={itm.id} value={itm.id} className="bg-[#FFFFFF] text-[#2b1d16]">
+                    <option key={itm.id} value={itm.id} className="bg-[#FFFFFF] text-[#24263e]">
                       {itm.name}
                     </option>
                   ))
                 ) : (
-                  <option value="" disabled className="bg-[#FFFFFF] text-[#2b1d16]">
+                  <option value="" disabled className="bg-[#FFFFFF] text-[#24263e]">
                     {isLoadingItems
                       ? (lang === 'vi' ? '-- Đang tải vật phẩm... --' : '-- Loading items... --')
                       : (lang === 'vi' ? '-- Chọn danh mục để tải vật phẩm --' : '-- Select category first --')}
@@ -500,52 +500,52 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             )}
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#2b1d16]">{t.itemBrand} *</label>
+              <label className="text-xs font-semibold text-[#24263e]">{t.itemBrand} *</label>
               <input
                 type="text"
                 value={brand}
                 onChange={(e) => setBrand(e.target.value)}
                 placeholder="VD: Hitachi, Toshiba, LG, Panasonic..."
-                className="w-full px-3.5 py-2.5 bg-[#f6f5eb] border border-gray-200 rounded-xl text-sm text-[#2b1d16] focus:outline-none focus:border-[#cea981]"
+                className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
               />
             </div>
 
             <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-semibold text-[#2b1d16]">{t.itemTitle} *</label>
+              <label className="text-xs font-semibold text-[#24263e]">{t.itemTitle} *</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="VD: Tủ Lạnh Hitachi Inverter 540L 4 Cửa R-FW690PGV7X"
-                className="w-full px-3.5 py-2.5 bg-[#f6f5eb] border border-gray-200 rounded-xl text-sm text-[#2b1d16] focus:outline-none focus:border-[#cea981]"
+                className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#2b1d16]">{t.purchaseYear} *</label>
+              <label className="text-xs font-semibold text-[#24263e]">{t.purchaseYear} *</label>
               <input
                 type="number"
                 value={purchaseYear}
                 onChange={(e) => setPurchaseYear(Number(e.target.value))}
                 min={2018}
                 max={2026}
-                className="w-full px-3.5 py-2.5 bg-[#f6f5eb] border border-gray-200 rounded-xl text-sm text-[#2b1d16] focus:outline-none focus:border-[#cea981]"
+                className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#2b1d16]">{t.originalPrice}</label>
+              <label className="text-xs font-semibold text-[#24263e]">{t.originalPrice}</label>
               <input
                 type="number"
                 value={originalPriceVnd}
                 onChange={(e) => setOriginalPriceVnd(Number(e.target.value))}
                 step={500000}
-                className="w-full px-3.5 py-2.5 bg-[#f6f5eb] border border-gray-200 rounded-xl text-sm text-[#2b1d16] focus:outline-none focus:border-[#cea981]"
+                className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
               />
             </div>
 
             <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-semibold text-[#2b1d16]">{t.declaredCondition} *</label>
+              <label className="text-xs font-semibold text-[#24263e]">{t.declaredCondition} *</label>
               <div className="grid grid-cols-3 gap-3">
                 {[
                   {
@@ -570,19 +570,19 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     onClick={() => setDeclaredCondition(item.grade as ConditionGrade)}
                     className={`p-3 rounded-xl border text-left transition cursor-pointer ${
                       declaredCondition === item.grade
-                        ? 'border-[#cea981] bg-[#cea981]/10 text-[#2b1d16] ring-1 ring-[#cea981]'
-                        : 'border-gray-200 bg-[#f6f5eb] text-[#2b1d16]/70 hover:bg-[#FFFFFF]'
+                        ? 'border-[#c34c36] bg-[#c34c36]/10 text-[#24263e] ring-1 ring-[#c34c36]'
+                        : 'border-gray-200 bg-[#faf8f5] text-[#24263e]/70 hover:bg-[#FFFFFF]'
                     }`}
                   >
                     <div className="font-bold text-xs">{item.title}</div>
-                    <div className="text-[10px] text-[#2b1d16]/60 mt-0.5">{item.desc}</div>
+                    <div className="text-[10px] text-[#24263e]/60 mt-0.5">{item.desc}</div>
                   </button>
                 ))}
               </div>
             </div>
 
             <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-semibold text-[#2b1d16]">
+              <label className="text-xs font-semibold text-[#24263e]">
                 {lang === 'vi' ? 'Tóm tắt tình trạng ngoại quan' : 'Condition Summary'}
               </label>
               <input
@@ -590,18 +590,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 value={declaredConditionText}
                 onChange={(e) => setDeclaredConditionText(e.target.value)}
                 placeholder={lang === 'vi' ? 'VD: Dán bảo vệ từ đầu, không trầy xước, chạy êm...' : 'E.g.: Protected from day 1, no scratches, runs smoothly...'}
-                className="w-full px-3.5 py-2.5 bg-[#f6f5eb] border border-gray-200 rounded-xl text-sm text-[#2b1d16] focus:outline-none focus:border-[#cea981]"
+                className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
               />
             </div>
 
             <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-semibold text-[#2b1d16]">{t.description}</label>
+              <label className="text-xs font-semibold text-[#24263e]">{t.description}</label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
                 placeholder={lang === 'vi' ? 'Mô tả nguồn gốc mua hàng, lý do bán, các linh kiện kèm theo...' : 'Describe origin, reason for sale, included accessories...'}
-                className="w-full px-3.5 py-2.5 bg-[#f6f5eb] border border-gray-200 rounded-xl text-sm text-[#2b1d16] focus:outline-none focus:border-[#cea981]"
+                className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
               />
             </div>
           </div>
@@ -609,7 +609,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           <div className="flex justify-between pt-4 border-t border-gray-100">
             <button
               onClick={onCancel}
-              className="px-5 py-2.5 rounded-xl border border-gray-200 text-[#2b1d16] hover:bg-[#f6f5eb] text-sm font-semibold cursor-pointer"
+              className="px-5 py-2.5 rounded-xl border border-gray-200 text-[#24263e] hover:bg-[#faf8f5] text-sm font-semibold cursor-pointer"
             >
               {lang === 'vi' ? 'Hủy' : 'Cancel'}
             </button>
@@ -625,7 +625,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               disabled={!isStep1Valid || isLoadingCategories || isLoadingItems}
               className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold shadow-xs flex items-center gap-2 transition ${
                 isStep1Valid && !isLoadingCategories && !isLoadingItems
-                  ? 'bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-90 text-white cursor-pointer'
+                  ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-90 text-white cursor-pointer'
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
               }`}
               title={!isStep1Valid ? (lang === 'vi' ? 'Cần chọn Danh mục & Vật phẩm có ID thật từ Backend' : 'Valid category and item required') : ''}
@@ -641,11 +641,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       {currentStep === 2 && (
         <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
           <div>
-            <h2 className="text-lg font-bold text-[#2b1d16] flex items-center gap-2">
-              <Camera className="w-5 h-5 text-[#2b1d16]" />
+            <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
+              <Camera className="w-5 h-5 text-[#24263e]" />
               <span>{t.photoChecklistTitle}</span>
             </h2>
-            <p className="text-xs text-[#2b1d16]/70 mt-1">
+            <p className="text-xs text-[#24263e]/70 mt-1">
               {lang === 'vi'
                 ? 'SecondLife yêu cầu chuẩn hóa 5 góc chụp để AI quét vết xước, nhận diện linh kiện và làm bằng chứng pháp lý trong Escrow.'
                 : 'SecondLife mandates 5 standard camera angles for AI defect scanning, parts verification, and Escrow dispute protection.'}
@@ -653,9 +653,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           </div>
 
           {/* Multiple Image Upload Box (Requirement 8) */}
-          <div className="p-4 rounded-2xl border-2 border-dashed border-gray-300 hover:border-[#cea981] bg-slate-50 transition flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="p-4 rounded-2xl border-2 border-dashed border-gray-300 hover:border-[#c34c36] bg-slate-50 transition flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#cea981]/20 to-[#ccbb9e]/20 text-[#2b1d16] flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#c34c36]/20 to-[#fce5da]/20 text-[#24263e] flex items-center justify-center shrink-0">
                 <UploadCloud className="w-5 h-5" />
               </div>
               <div>
@@ -670,7 +670,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
             </div>
 
-            <label className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white text-xs font-bold shadow-xs hover:opacity-95 transition cursor-pointer flex items-center gap-1.5 shrink-0">
+            <label className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-xs font-bold shadow-xs hover:opacity-95 transition cursor-pointer flex items-center gap-1.5 shrink-0">
               {uploadingSlot === 'batch' ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -723,11 +723,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             ].map((slot) => (
               <div
                 key={slot.key}
-                className="border border-gray-200 rounded-2xl p-3 bg-[#f6f5eb] space-y-2 flex flex-col justify-between"
+                className="border border-gray-200 rounded-2xl p-3 bg-[#faf8f5] space-y-2 flex flex-col justify-between"
               >
                 <div>
-                  <div className="text-xs font-bold text-[#2b1d16]">{slot.label}</div>
-                  <div className="text-[11px] text-[#2b1d16]/60">{slot.desc}</div>
+                  <div className="text-xs font-bold text-[#24263e]">{slot.label}</div>
+                  <div className="text-[11px] text-[#24263e]/60">{slot.desc}</div>
                 </div>
 
                 <div className="relative aspect-4/3 rounded-xl overflow-hidden bg-[#FFFFFF] border border-gray-200">
@@ -736,15 +736,15 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     alt={slot.label}
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute top-2 right-2 bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white rounded-full p-1 shadow-xs">
+                  <div className="absolute top-2 right-2 bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white rounded-full p-1 shadow-xs">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                   </div>
                 </div>
 
-                <label className="w-full py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#f6f5eb] rounded-lg text-xs font-medium text-[#2b1d16] border border-gray-200 flex items-center justify-center gap-1.5 cursor-pointer transition">
+                <label className="w-full py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] rounded-lg text-xs font-medium text-[#24263e] border border-gray-200 flex items-center justify-center gap-1.5 cursor-pointer transition">
                   {uploadingSlot === slot.key ? (
                     <>
-                      <Loader2 className="w-3.5 h-3.5 text-[#2b1d16] animate-spin" />
+                      <Loader2 className="w-3.5 h-3.5 text-[#24263e] animate-spin" />
                       <span>{lang === 'vi' ? 'Đang tải ảnh...' : 'Uploading...'}</span>
                     </>
                   ) : (
@@ -767,7 +767,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           <div className="flex justify-between pt-4 border-t border-gray-100">
             <button
               onClick={() => setCurrentStep(1)}
-              className="px-5 py-2.5 rounded-xl border border-gray-200 text-[#2b1d16] hover:bg-[#f6f5eb] text-sm font-semibold flex items-center gap-2 cursor-pointer"
+              className="px-5 py-2.5 rounded-xl border border-gray-200 text-[#24263e] hover:bg-[#faf8f5] text-sm font-semibold flex items-center gap-2 cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>{lang === 'vi' ? 'Quay lại' : 'Back'}</span>
@@ -778,7 +778,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 setCurrentStep(3);
                 runAiValuation();
               }}
-              className="px-5 py-2.5 bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-90 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs flex items-center gap-2 cursor-pointer"
+              className="px-5 py-2.5 bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-90 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs flex items-center gap-2 cursor-pointer"
             >
               <span>{t.runAiEstimation}</span>
               <Sparkles className="w-4 h-4" />
@@ -791,28 +791,28 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       {currentStep === 3 && (
         <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-[#2b1d16] flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-[#2b1d16]" />
+            <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-[#24263e]" />
               <span>{t.aiValuationResult}</span>
             </h2>
 
             <button
               onClick={runAiValuation}
               disabled={isAnalyzing}
-              className="px-3 py-1.5 bg-[#f6f5eb] hover:bg-gray-200 text-[#2b1d16] rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border border-gray-200"
+              className="px-3 py-1.5 bg-[#faf8f5] hover:bg-gray-200 text-[#24263e] rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border border-gray-200"
             >
-              <RefreshCw className={`w-3.5 h-3.5 text-[#2b1d16] ${isAnalyzing ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 text-[#24263e] ${isAnalyzing ? 'animate-spin' : ''}`} />
               <span>{lang === 'vi' ? 'Tính toán lại' : 'Recalculate'}</span>
             </button>
           </div>
 
           {isAnalyzing ? (
             <div className="py-12 text-center space-y-3">
-              <div className="w-12 h-12 rounded-full bg-[#cea981] text-[#2b1d16] flex items-center justify-center mx-auto animate-pulse">
+              <div className="w-12 h-12 rounded-full bg-[#c34c36] text-[#24263e] flex items-center justify-center mx-auto animate-pulse">
                 <Sparkles className="w-6 h-6 animate-spin" />
               </div>
-              <h3 className="font-bold text-[#2b1d16]">{t.analyzingMarket}</h3>
-              <p className="text-xs text-[#2b1d16]/70 max-w-md mx-auto">
+              <h3 className="font-bold text-[#24263e]">{t.analyzingMarket}</h3>
+              <p className="text-xs text-[#24263e]/70 max-w-md mx-auto">
                 {lang === 'vi'
                   ? `Hệ thống đang đối chiếu dữ liệu khấu hao theo năm sản xuất (${purchaseYear}), mức độ hao mòn ngoại quan (${declaredCondition}) và biên độ giao dịch thực tế...`
                   : `Matching tech depreciation for purchase year (${purchaseYear}), declared cosmetic grade (${declaredCondition}) with active liquidity benchmarks...`}
@@ -821,57 +821,57 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           ) : aiEstimation ? (
             <div className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-[#f6f5eb] border border-gray-200 rounded-2xl p-4 space-y-1">
-                  <div className="text-xs font-semibold text-[#2b1d16]/70">{t.suggestedPrice}</div>
-                  <div className="text-2xl font-black text-[#2b1d16]">
+                <div className="bg-[#faf8f5] border border-gray-200 rounded-2xl p-4 space-y-1">
+                  <div className="text-xs font-semibold text-[#24263e]/70">{t.suggestedPrice}</div>
+                  <div className="text-2xl font-black text-[#24263e]">
                     {formatVND(aiEstimation.suggestedVnd)}
                   </div>
-                  <div className="text-[11px] text-[#2b1d16]/60">
+                  <div className="text-[11px] text-[#24263e]/60">
                     {lang === 'vi' ? 'Dự kiến bán trong 7 ngày' : 'Est. 7 days to sell'}
                   </div>
                 </div>
 
-                <div className="bg-[#f6f5eb] border border-gray-200 rounded-2xl p-4 space-y-1">
-                  <div className="text-xs font-semibold text-[#2b1d16]/70">{t.fairRange}</div>
-                  <div className="text-lg font-extrabold text-[#2b1d16]">
+                <div className="bg-[#faf8f5] border border-gray-200 rounded-2xl p-4 space-y-1">
+                  <div className="text-xs font-semibold text-[#24263e]/70">{t.fairRange}</div>
+                  <div className="text-lg font-extrabold text-[#24263e]">
                     {formatVND(aiEstimation.minVnd)} - {formatVND(aiEstimation.maxVnd)}
                   </div>
-                  <div className="text-[11px] text-[#2b1d16]/60">
+                  <div className="text-[11px] text-[#24263e]/60">
                     {lang === 'vi' ? 'Biên độ chuẩn cho máy Grade A' : 'Standard range for Grade A'}
                   </div>
                 </div>
 
-                <div className="bg-[#f6f5eb] border border-gray-200 rounded-2xl p-4 space-y-1">
-                  <div className="text-xs font-semibold text-[#2b1d16]/70">{t.quickSalePrice}</div>
-                  <div className="text-2xl font-black text-[#2b1d16]">
+                <div className="bg-[#faf8f5] border border-gray-200 rounded-2xl p-4 space-y-1">
+                  <div className="text-xs font-semibold text-[#24263e]/70">{t.quickSalePrice}</div>
+                  <div className="text-2xl font-black text-[#24263e]">
                     {formatVND(aiEstimation.quickSaleVnd)}
                   </div>
-                  <div className="text-[11px] text-[#2b1d16]/60">
+                  <div className="text-[11px] text-[#24263e]/60">
                     {lang === 'vi' ? 'Khớp lệnh nhanh trong 3 ngày' : 'Quick match in 3 days'}
                   </div>
                 </div>
               </div>
 
-              <div className="bg-[#f6f5eb] rounded-2xl p-4 border border-gray-200 space-y-2">
-                <div className="text-xs font-bold text-[#2b1d16] uppercase tracking-wider">
+              <div className="bg-[#faf8f5] rounded-2xl p-4 border border-gray-200 space-y-2">
+                <div className="text-xs font-bold text-[#24263e] uppercase tracking-wider">
                   {lang === 'vi' ? 'Các yếu tố tác động tới định giá của AI:' : 'AI Valuation Drivers:'}
                 </div>
-                <ul className="space-y-1 text-xs text-[#2b1d16]/70">
+                <ul className="space-y-1 text-xs text-[#24263e]/70">
                   {aiEstimation.keyFactors.map((factor, i) => (
                     <li key={i} className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#2b1d16] shrink-0" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#24263e] shrink-0" />
                       <span>{factor}</span>
                     </li>
                   ))}
                 </ul>
               </div>
 
-              <div className="bg-[#f6f5eb] p-5 rounded-2xl border border-gray-200 space-y-3">
+              <div className="bg-[#faf8f5] p-5 rounded-2xl border border-gray-200 space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-semibold text-[#2b1d16]">
+                  <label className="text-sm font-semibold text-[#24263e]">
                     {t.finalListingPrice}
                   </label>
-                  <span className="text-xl font-bold text-[#2b1d16]">
+                  <span className="text-xl font-bold text-[#24263e]">
                     {formatVND(finalPriceVnd)}
                   </span>
                 </div>
@@ -883,25 +883,25 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   step={100000}
                   value={finalPriceVnd}
                   onChange={(e) => handlePriceChange(Number(e.target.value))}
-                  className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-[#cea981]"
+                  className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-[#c34c36]"
                 />
 
-                <div className="flex justify-between text-[11px] text-[#2b1d16]/60">
+                <div className="flex justify-between text-[11px] text-[#24263e]/60">
                   <span>{lang === 'vi' ? 'Giá bán gấp:' : 'Quick sale:'} {formatVND(aiEstimation.quickSaleVnd)}</span>
                   <span>{lang === 'vi' ? 'Đề xuất:' : 'Suggested:'} {formatVND(aiEstimation.suggestedVnd)}</span>
                   <span>{lang === 'vi' ? 'Giá cao:' : 'Higher limit:'} {formatVND(aiEstimation.maxVnd * 1.1)}</span>
                 </div>
 
                 {fraudWarning && (
-                  <div className="p-3 rounded-xl bg-[#cea981]/20 border border-[#cea981] text-[#2b1d16] text-xs flex items-start gap-2 font-bold">
-                    <AlertTriangle className="w-4 h-4 text-[#2b1d16] shrink-0 mt-0.5" />
+                  <div className="p-3 rounded-xl bg-[#c34c36]/20 border border-[#c34c36] text-[#24263e] text-xs flex items-start gap-2 font-bold">
+                    <AlertTriangle className="w-4 h-4 text-[#24263e] shrink-0 mt-0.5" />
                     <span>{fraudWarning}</span>
                   </div>
                 )}
               </div>
 
-              <div className="text-xs text-[#2b1d16]/70 bg-[#f6f5eb] p-3 rounded-xl border border-gray-200 flex items-start gap-2 font-medium">
-                <Info className="w-4 h-4 text-[#2b1d16] shrink-0 mt-0.5" />
+              <div className="text-xs text-[#24263e]/70 bg-[#faf8f5] p-3 rounded-xl border border-gray-200 flex items-start gap-2 font-medium">
+                <Info className="w-4 h-4 text-[#24263e] shrink-0 mt-0.5" />
                 <span>{t.disclaimer}</span>
               </div>
             </div>
@@ -910,7 +910,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           <div className="flex justify-between pt-4 border-t border-gray-100">
             <button
               onClick={() => setCurrentStep(2)}
-              className="px-4 py-2.5 rounded-xl border border-gray-200 text-[#2b1d16] hover:bg-[#f6f5eb] text-xs sm:text-sm font-medium flex items-center gap-2 cursor-pointer"
+              className="px-4 py-2.5 rounded-xl border border-gray-200 text-[#24263e] hover:bg-[#faf8f5] text-xs sm:text-sm font-medium flex items-center gap-2 cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>{lang === 'vi' ? 'Quay lại chỉnh sửa' : 'Back to Edit'}</span>
@@ -921,7 +921,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               disabled={isInitializingPost || !isRealCategoryId || !isRealItemId}
               className={`px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold shadow-xs flex items-center gap-2 transition ${
                 !isInitializingPost && isRealCategoryId && isRealItemId
-                  ? 'bg-[#2b1d16] hover:bg-black text-white cursor-pointer font-black'
+                  ? 'bg-[#24263e] hover:bg-black text-white cursor-pointer font-black'
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
               }`}
               title={(!isRealCategoryId || !isRealItemId) ? (lang === 'vi' ? 'Danh mục hoặc Vật phẩm chưa có ID thật từ Backend' : 'Invalid category or item ID') : ''}

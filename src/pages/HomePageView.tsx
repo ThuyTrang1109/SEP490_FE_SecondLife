@@ -37,28 +37,30 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
   const [autoRotate, setAutoRotate] = useState(true);
 
   return (
-    <div className="space-y-16 sm:space-y-24 pb-20 text-[#2b1d16]">
+    <div className="space-y-16 sm:space-y-24 pb-20 text-[#24263e]">
       {/* 1. HERO SECTION */}
-      <section className="relative overflow-hidden rounded-3xl bg-[#cea981] text-[#2b1d16] p-6 sm:p-8 lg:p-10 border border-white/20 shadow-2xl">
-        <div className="absolute top-0 right-1/4 w-[500px] h-[500px] bg-white/15 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-1/4 w-[400px] h-[400px] bg-white/10 rounded-full blur-3xl pointer-events-none" />
+      <section className="relative overflow-hidden rounded-3xl bg-[#fce5da] text-[#24263e] p-6 sm:p-8 lg:p-10 border border-[#24263e]/15 shadow-xl">
+        <div className="absolute top-0 right-1/4 w-[500px] h-[500px] bg-white/40 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-1/4 w-[400px] h-[400px] bg-[#c34c36]/10 rounded-full blur-3xl pointer-events-none" />
 
         {/* Top Header & Model Controls */}
-        <div className="relative z-20 flex flex-wrap items-center justify-between gap-3 pb-6 border-b border-[#2b1d16]/15">
+        <div className="relative z-20 flex flex-wrap items-center justify-between gap-3 pb-6 border-b border-[#24263e]/15">
           <div className="flex items-center gap-3">
-            <img
-              src={logoImg}
-              alt="SecondLife Logo"
-              className="h-10 sm:h-12 w-auto object-contain drop-shadow-sm"
-            />
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/40 border border-[#2b1d16]/15 text-[#2b1d16] text-xs font-bold backdrop-blur-md shadow-xs">
-              <ShieldCheck className="w-4 h-4 text-[#2b1d16]" />
-              <span className="text-[#2b1d16] font-bold">{lang === 'vi' ? 'Sàn Thương Mại Đồ Cũ Thế Hệ Mới • Đạt Chuẩn Kiểm Định' : 'Next-Gen Certified Recommerce Platform'}</span>
+            <div className="logo-badge bg-white p-1.5 rounded-xl shadow-xs border border-[#24263e]/10 flex items-center justify-center shrink-0">
+              <img
+                src={logoImg}
+                alt="SecondLife Logo"
+                className="h-8 sm:h-9 w-auto object-contain"
+              />
+            </div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/80 border border-[#24263e]/15 text-[#24263e] text-xs font-bold backdrop-blur-md shadow-xs">
+              <ShieldCheck className="w-4 h-4 text-[#c34c36]" />
+              <span className="text-[#24263e] font-bold">{lang === 'vi' ? 'Sàn Thương Mại Đồ Cũ Thế Hệ Mới • Đạt Chuẩn Kiểm Định' : 'Next-Gen Certified Recommerce Platform'}</span>
             </div>
           </div>
 
           {/* Model Switcher & 360 Auto-Rotate Toggle */}
-          <div className="flex items-center gap-1.5 bg-white/35 backdrop-blur-md p-1 rounded-xl border border-[#2b1d16]/15 text-xs shadow-xs">
+          <div className="flex items-center gap-1.5 bg-[#24263e]/10 backdrop-blur-md p-1 rounded-xl border border-[#24263e]/10 text-xs shadow-xs">
             <button
               onClick={() => {
                 soundFx.playChime();
@@ -66,8 +68,8 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
               }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                 heroAppliance === 'fridge'
-                  ? 'bg-[#2b1d16] text-white shadow-md'
-                  : 'text-[#2b1d16]/80 hover:text-[#2b1d16] hover:bg-white/40'
+                  ? 'bg-[#24263e] text-white shadow-md font-black'
+                  : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/60'
               }`}
             >
               {lang === 'vi' ? 'Tủ Lạnh Hitachi' : 'Hitachi Fridge'}
@@ -79,8 +81,8 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
               }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                 heroAppliance === 'washer'
-                  ? 'bg-[#2b1d16] text-white shadow-md'
-                  : 'text-[#2b1d16]/80 hover:text-[#2b1d16] hover:bg-white/40'
+                  ? 'bg-[#24263e] text-white shadow-md font-black'
+                  : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/60'
               }`}
             >
               {lang === 'vi' ? 'Máy Giặt Electrolux' : 'Electrolux Washer'}
@@ -91,7 +93,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 setAutoRotate((prev) => !prev);
               }}
               className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                autoRotate ? 'text-[#2b1d16] bg-white/60 shadow-xs' : 'text-[#2b1d16]/70 hover:text-[#2b1d16]'
+                autoRotate ? 'text-[#24263e] bg-white/80 shadow-xs' : 'text-[#24263e]/70 hover:text-[#24263e]'
               }`}
               title="Bật / tắt tự động xoay 360°"
             >
@@ -105,25 +107,25 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
         <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-6 pt-4">
           {/* 1. Cột chữ bên trái */}
           <div className="w-full lg:w-[420px] xl:w-[450px] shrink-0 space-y-3.5">
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight leading-[1.15] text-[#2b1d16]">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight leading-[1.15] text-[#24263e]">
               {lang === 'vi' ? (
                 <>
                   Mua Bán Đồ Cũ <br />
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#2b1d16] via-[#4a2e1b] to-[#6e3f22] font-black drop-shadow-xs">
+                  <span className="text-[#c34c36] font-black drop-shadow-xs">
                     AI Định Giá & Kiểm Định Thật.
                   </span>
                 </>
               ) : (
                 <>
                   Trade Second-Hand <br />
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#2b1d16] via-[#4a2e1b] to-[#6e3f22] font-black drop-shadow-xs">
+                  <span className="text-[#c34c36] font-black drop-shadow-xs">
                     With AI Valuation & Certified Hardware.
                   </span>
                 </>
               )}
             </h1>
 
-            <p className="text-[#2b1d16]/85 text-xs sm:text-sm leading-relaxed font-semibold">
+            <p className="text-[#24263e]/85 text-xs sm:text-sm leading-relaxed font-medium">
               {lang === 'vi'
                 ? 'Xóa bỏ hoàn toàn nỗi lo mua phải hàng dựng, hàng nhái, tráo linh kiện hoặc lừa cọc. SecondLife bảo vệ người mua & người bán bằng mô hình AI định giá chuẩn, kiểm định trực tiếp tại Hub và giữ tiền an toàn qua Quỹ tín thác Escrow.'
                 : 'Eliminate counterfeit and scam risks with calibrated AI valuation, physical hardware inspection hubs, and buyer-seller protection via Escrow.'}
@@ -135,9 +137,9 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                   soundFx.playChime();
                   onExploreMarketplace();
                 }}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#2b1d16] hover:bg-[#3d2a20] text-white font-black text-xs sm:text-sm shadow-xl shadow-[#2b1d16]/20 transition-all cursor-pointer"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#24263e] hover:bg-[#1a1b2d] text-white font-black text-xs sm:text-sm shadow-xl shadow-black/10 transition-all cursor-pointer"
               >
-                <ShoppingBag className="w-4 h-4" />
+                <ShoppingBag className="w-4 h-4 text-[#fce5da]" />
                 <span>{lang === 'vi' ? 'Khám Phá Sàn Sản Phẩm' : 'Explore Marketplace'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
@@ -147,43 +149,43 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                   soundFx.playChime();
                   onCreateListing();
                 }}
-                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/45 hover:bg-white/70 text-[#2b1d16] font-extrabold text-xs sm:text-sm border border-[#2b1d16]/20 backdrop-blur-md transition cursor-pointer shadow-xs"
+                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white hover:bg-[#faf8f5] text-[#24263e] font-extrabold text-xs sm:text-sm border border-[#24263e]/15 transition cursor-pointer shadow-md"
               >
-                <Sparkles className="w-4 h-4 text-[#2b1d16]" />
+                <Sparkles className="w-4 h-4 text-[#c34c36]" />
                 <span>{lang === 'vi' ? 'Thử Định Giá & Đăng Bán' : 'AI Valuation & Sell'}</span>
               </button>
             </div>
 
-            <div className="pt-4 border-t border-[#2b1d16]/15 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="pt-4 border-t border-[#24263e]/15 grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
-                <div className="text-lg sm:text-xl font-black text-[#2b1d16]">
+                <div className="text-lg sm:text-xl font-black text-[#24263e]">
                   {lang === 'vi' ? 'Bảo Đảm' : 'Protected'}
                 </div>
-                <div className="text-[11px] text-[#2b1d16]/75 font-bold mt-0.5">
+                <div className="text-[11px] text-[#24263e]/70 font-semibold mt-0.5">
                   {lang === 'vi' ? 'Cơ chế Escrow' : 'Escrow Protection'}
                 </div>
               </div>
               <div>
-                <div className="text-lg sm:text-xl font-black text-[#2b1d16]">
+                <div className="text-lg sm:text-xl font-black text-[#24263e]">
                   <CountUp to={3} duration={1} />
                 </div>
-                <div className="text-[11px] text-[#2b1d16]/75 font-bold mt-0.5">
+                <div className="text-[11px] text-[#24263e]/70 font-semibold mt-0.5">
                   {lang === 'vi' ? 'Trung tâm Hub' : 'Flagship Hubs'}
                 </div>
               </div>
               <div>
-                <div className="text-lg sm:text-xl font-black text-[#2b1d16]">
+                <div className="text-lg sm:text-xl font-black text-[#24263e]">
                   &lt; <CountUp to={3} duration={1.5} />%
                 </div>
-                <div className="text-[11px] text-[#2b1d16]/75 font-bold mt-0.5">
+                <div className="text-[11px] text-[#24263e]/70 font-semibold mt-0.5">
                   {lang === 'vi' ? 'Sai số giá AI' : 'AI Deviation'}
                 </div>
               </div>
               <div>
-                <div className="text-lg sm:text-xl font-black text-[#2b1d16]">
+                <div className="text-lg sm:text-xl font-black text-[#24263e]">
                   <CountUp to={24} duration={1.2} />h
                 </div>
-                <div className="text-[11px] text-[#2b1d16]/75 font-bold mt-0.5">
+                <div className="text-[11px] text-[#24263e]/70 font-semibold mt-0.5">
                   {lang === 'vi' ? 'Kiểm định Hub' : 'Inspection Time'}
                 </div>
               </div>
@@ -197,54 +199,54 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
 
           {/* 3. Thẻ thông tin SecondLife Hub bên phải */}
           <div className="w-full sm:w-auto lg:w-[260px] shrink-0 z-10 flex flex-col gap-3">
-            <div className="bg-white/45 backdrop-blur-xl border border-white/60 rounded-2xl p-4 space-y-2.5 w-full text-xs shadow-xl">
+            <div className="bg-white/95 backdrop-blur-xl border border-white/80 rounded-2xl p-4 space-y-2.5 w-full text-xs shadow-2xl text-[#24263e]">
               <div className="flex items-center justify-between text-[11px]">
-                <span className="font-bold text-[#2b1d16] flex items-center gap-1.5">
-                  <Cpu className="w-3.5 h-3.5 text-[#2b1d16]" />
+                <span className="font-extrabold text-[#24263e] flex items-center gap-1.5">
+                  <Cpu className="w-3.5 h-3.5 text-[#c34c36]" />
                   <span>SecondLife Hub</span>
                 </span>
-                <span className="text-[10px] bg-[#2b1d16] text-white px-1.5 py-0.5 rounded font-black tracking-wider">VERIFIED</span>
+                <span className="text-[10px] bg-[#c34c36] text-white px-2 py-0.5 rounded-full font-black tracking-wider shadow-xs">VERIFIED</span>
               </div>
               <div className="space-y-1.5 text-[11px]">
                 <div className="flex justify-between">
-                  <span className="text-[#2b1d16]/75 font-semibold">{lang === 'vi' ? 'Thiết bị:' : 'Appliance:'}</span>
-                  <span className="text-[#2b1d16] font-bold">
+                  <span className="text-[#24263e]/70 font-semibold">{lang === 'vi' ? 'Thiết bị:' : 'Appliance:'}</span>
+                  <span className="text-[#24263e] font-bold">
                     {heroAppliance === 'fridge'
                       ? (lang === 'vi' ? 'Tủ Lạnh Hitachi 540L' : 'Hitachi Refrigerator 540L')
                       : (lang === 'vi' ? 'Máy Giặt Electrolux 10kg' : 'Electrolux Washer 10kg')}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#2b1d16]/75 font-semibold">{lang === 'vi' ? 'Tình trạng:' : 'Condition:'}</span>
-                  <span className="text-[#2b1d16] font-bold">
+                  <span className="text-[#24263e]/70 font-semibold">{lang === 'vi' ? 'Tình trạng:' : 'Condition:'}</span>
+                  <span className="text-[#24263e] font-bold">
                     {heroAppliance === 'fridge'
                       ? (lang === 'vi' ? 'Như mới (99%)' : 'Like New (99%)')
                       : (lang === 'vi' ? 'Nguyên bản (98%)' : 'Original (98%)')}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#2b1d16]/75 font-semibold">{heroAppliance === 'fridge' ? (lang === 'vi' ? 'Máy nén/Gas:' : 'Compressor/Gas:') : (lang === 'vi' ? 'Động cơ/Lồng:' : 'Motor/Drum:')}</span>
-                  <span className="text-[#2b1d16] font-bold">
+                  <span className="text-[#24263e]/70 font-semibold">{heroAppliance === 'fridge' ? (lang === 'vi' ? 'Máy nén/Gas:' : 'Compressor/Gas:') : (lang === 'vi' ? 'Động cơ/Lồng:' : 'Motor/Drum:')}</span>
+                  <span className="text-[#24263e] font-bold">
                     {heroAppliance === 'fridge' ? 'Gas R600a (-19°C)' : 'EcoInverter (1400 RPM)'}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#2b1d16]/75 font-semibold">{lang === 'vi' ? 'Tem niêm phong:' : 'Tamper Seal:'}</span>
-                  <span className="text-[#2b1d16] font-bold">
+                  <span className="text-[#24263e]/70 font-semibold">{lang === 'vi' ? 'Tem niêm phong:' : 'Tamper Seal:'}</span>
+                  <span className="text-[#24263e] font-bold">
                     {heroAppliance === 'fridge' ? '#SL-HOME-8839' : '#SL-WASH-9912'}
                   </span>
                 </div>
               </div>
-              <div className="pt-2 border-t border-[#2b1d16]/15 flex items-center justify-between">
-                <span className="text-[#2b1d16]/75 font-bold">{lang === 'vi' ? 'AI Định Giá:' : 'AI Valuation:'}</span>
-                <span className="text-[#2b1d16] font-black font-mono text-sm">
+              <div className="pt-2 border-t border-[#24263e]/10 flex items-center justify-between">
+                <span className="text-[#24263e]/70 font-bold">{lang === 'vi' ? 'AI Định Giá:' : 'AI Valuation:'}</span>
+                <span className="text-[#c34c36] font-black font-mono text-sm">
                   {heroAppliance === 'fridge' ? '14.800.000đ' : '7.950.000đ'}
                 </span>
               </div>
             </div>
 
-            <div className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white/40 border border-white/60 text-[#2b1d16] font-bold text-xs shadow-xs">
-              <Move3d className="w-3.5 h-3.5 text-[#2b1d16]" />
+            <div className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-black/20 border border-white/20 text-white font-bold text-xs shadow-xs">
+              <Move3d className="w-3.5 h-3.5 text-[#fce5da]" />
               <span>{lang === 'vi' ? 'Kéo chuột xoay 360° • Cuộn zoom' : 'Drag 360° • Scroll to zoom'}</span>
             </div>
           </div>
@@ -254,14 +256,14 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
       {/* 2. THREE CORE PILLARS OF SECONDLIFE */}
       <section className="space-y-8">
         <div className="text-center max-w-2xl mx-auto space-y-2">
-          <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#FFFFFF] text-[#2b1d16] text-xs font-semibold border border-slate-200 shadow-xs">
-            <Award className="w-3.5 h-3.5 text-[#2b1d16]" />
+          <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#FFFFFF] text-[#24263e] text-xs font-semibold border border-slate-200 shadow-xs">
+            <Award className="w-3.5 h-3.5 text-[#24263e]" />
             <span>{lang === 'vi' ? 'Nền Tảng Công Nghệ Đột Phá' : 'Breakthrough Architecture'}</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-[#2b1d16] tracking-tight">
+          <h2 className="text-2xl sm:text-3xl font-bold text-[#24263e] tracking-tight">
             {lang === 'vi' ? '3 Trụ Cột Xây Dựng Niềm Tin Tuyệt Đối' : '3 Pillars of Absolute Trust'}
           </h2>
-          <p className="text-xs sm:text-sm text-[#2b1d16]/70">
+          <p className="text-xs sm:text-sm text-[#24263e]/70">
             {lang === 'vi'
               ? 'Giải quyết triệt để 3 vấn đề lớn nhất của thị trường đồ cũ: Mù mờ về giá, gian lận linh kiện và rủi ro chuyển khoản bùng cọc.'
               : 'Solving price ambiguity, component swapping, and fraudulent non-delivery.'}
@@ -270,13 +272,13 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-[#FFFFFF] rounded-2xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-all space-y-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white flex items-center justify-center shadow-md">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center shadow-md">
               <Cpu className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-[#2b1d16] text-base">
+            <h3 className="font-bold text-[#24263e] text-base">
               {lang === 'vi' ? '1. AI Price Estimation' : 'AI Price Valuation'}
             </h3>
-            <p className="text-xs text-[#2b1d16]/70 leading-relaxed">
+            <p className="text-xs text-[#24263e]/70 leading-relaxed">
               {lang === 'vi'
                 ? 'Mô hình Machine Learning (LightGBM) đối chiếu hàng ngàn giao dịch thực tế trên thị trường Việt Nam kết hợp số năm sử dụng và tình trạng hao mòn để đưa ra mức giá công bằng nhất.'
                 : 'Machine Learning algorithms calibrate with verified transactions to provide an objective, real-time market fair price.'}
@@ -284,13 +286,13 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
           </div>
 
           <div className="bg-[#FFFFFF] rounded-2xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-all space-y-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white flex items-center justify-center shadow-md">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center shadow-md">
               <Building2 className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-[#2b1d16] text-base">
+            <h3 className="font-bold text-[#24263e] text-base">
               {lang === 'vi' ? '2. Verify Then Ship Hub' : 'Physical Inspection Hubs'}
             </h3>
-            <p className="text-xs text-[#2b1d16]/70 leading-relaxed">
+            <p className="text-xs text-[#24263e]/70 leading-relaxed">
               {lang === 'vi'
                 ? 'Hàng hóa gửi qua Trung tâm giám định SecondLife Home Hub tại Hà Nội, Đà Nẵng, TP.HCM. Kỹ sư chuyên môn đo áp suất gas, kiểm tra máy nén/bơm xả, kiểm thử lồng giặt/bo mạch và dán tem niêm phong NFC chống tráo.'
                 : 'Hardware engineers thoroughly inspect compressor, gas pressure, washer drum, and control circuit before sealing with tamper-proof NFC tags.'}
@@ -298,13 +300,13 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
           </div>
 
           <div className="bg-[#FFFFFF] rounded-2xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-all space-y-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white flex items-center justify-center shadow-md">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center shadow-md">
               <Lock className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-[#2b1d16] text-base">
+            <h3 className="font-bold text-[#24263e] text-base">
               {lang === 'vi' ? '3. Quỹ Tín Thác Escrow' : 'Escrow Fund Protection'}
             </h3>
-            <p className="text-xs text-[#2b1d16]/70 leading-relaxed">
+            <p className="text-xs text-[#24263e]/70 leading-relaxed">
               {lang === 'vi'
                 ? 'Tiền mua hàng được giữ an toàn trong quỹ tín thác của hệ thống. Người bán không nhận tiền trước; chỉ giải ngân sau khi kiểm định viên duyệt ĐẠT và người mua đồng ý nhận hàng.'
                 : 'Buyer payment is locked safely in Escrow. Funds are released only after inspection passes and buyer confirms satisfaction.'}
@@ -316,68 +318,68 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
       {/* 3. HOW IT WORKS */}
       <section className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-sm space-y-8">
         <div className="text-center max-w-xl mx-auto space-y-2">
-          <div className="text-xs uppercase font-bold text-[#2b1d16] tracking-wider">
+          <div className="text-xs uppercase font-bold text-[#24263e] tracking-wider">
             {lang === 'vi' ? 'Quy Trình Chuẩn Hóa' : 'Standard Workflow'}
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-[#2b1d16]">
+          <h2 className="text-2xl sm:text-3xl font-bold text-[#24263e]">
             {lang === 'vi' ? 'Cách Thức Giao Dịch Tại SecondLife' : 'How SecondLife Works'}
           </h2>
-          <p className="text-xs sm:text-sm text-[#2b1d16]/70">
+          <p className="text-xs sm:text-sm text-[#24263e]/70">
             {lang === 'vi' ? 'Minh bạch, bảo vệ tối đa lợi ích của cả người mua và người bán.' : 'Transparent and safe for both buyers and sellers.'}
           </p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-[#f6f5eb] rounded-2xl p-5 border border-slate-200 space-y-3">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white font-bold text-xs flex items-center justify-center shadow-md">
+          <div className="bg-[#faf8f5] rounded-2xl p-5 border border-slate-200 space-y-3">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white font-bold text-xs flex items-center justify-center shadow-md">
               1
             </div>
-            <h4 className="font-bold text-[#2b1d16] text-sm">
+            <h4 className="font-bold text-[#24263e] text-sm">
               {lang === 'vi' ? 'Người Bán Đăng Tin + AI' : 'Seller Posts with AI'}
             </h4>
-            <p className="text-xs text-[#2b1d16]/70 leading-relaxed">
+            <p className="text-xs text-[#24263e]/70 leading-relaxed">
               {lang === 'vi'
                 ? 'Tải lên bộ ảnh 5 góc chuẩn. AI phân tích dòng máy, độ hao mòn và gợi ý mức giá thanh khoản tốt nhất.'
                 : 'Upload standard 5-angle photos. AI analyzes device condition and suggests fair market valuation.'}
             </p>
           </div>
 
-          <div className="bg-[#f6f5eb] rounded-2xl p-5 border border-slate-200 space-y-3">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white font-bold text-xs flex items-center justify-center shadow-md">
+          <div className="bg-[#faf8f5] rounded-2xl p-5 border border-slate-200 space-y-3">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white font-bold text-xs flex items-center justify-center shadow-md">
               2
             </div>
-            <h4 className="font-bold text-[#2b1d16] text-sm">
+            <h4 className="font-bold text-[#24263e] text-sm">
               {lang === 'vi' ? 'Người Mua Đặt Cọc Escrow' : 'Buyer Funds Escrow'}
             </h4>
-            <p className="text-xs text-[#2b1d16]/70 leading-relaxed">
+            <p className="text-xs text-[#24263e]/70 leading-relaxed">
               {lang === 'vi'
                 ? 'Người mua thanh toán tiền vào Quỹ tín thác. Tiền được đóng băng an toàn, người bán yên tâm đóng gói gửi hàng.'
                 : 'Buyer places funds into protected Escrow. Money is held securely; seller ships with peace of mind.'}
             </p>
           </div>
 
-          <div className="bg-[#f6f5eb] rounded-2xl p-5 border border-slate-200 space-y-3">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white font-bold text-xs flex items-center justify-center shadow-md">
+          <div className="bg-[#faf8f5] rounded-2xl p-5 border border-slate-200 space-y-3">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white font-bold text-xs flex items-center justify-center shadow-md">
               3
             </div>
-            <h4 className="font-bold text-[#2b1d16] text-sm">
+            <h4 className="font-bold text-[#24263e] text-sm">
               {lang === 'vi' ? 'Kiểm Định Tại SecondLife Hub' : 'Hub Hardware Inspection'}
             </h4>
-            <p className="text-xs text-[#2b1d16]/70 leading-relaxed">
+            <p className="text-xs text-[#24263e]/70 leading-relaxed">
               {lang === 'vi'
                 ? 'Kỹ sư Hub mở hộp, kiểm tra tính năng, test pin và màn hình. Đạt chuẩn sẽ dán tem niêm phong NFC trước khi giao tới người mua.'
                 : 'Hub technicians verify hardware integrity, screen, and battery health, sealing with anti-tamper NFC tags.'}
             </p>
           </div>
 
-          <div className="bg-[#f6f5eb] rounded-2xl p-5 border border-slate-200 space-y-3">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white font-bold text-xs flex items-center justify-center shadow-md">
+          <div className="bg-[#faf8f5] rounded-2xl p-5 border border-slate-200 space-y-3">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white font-bold text-xs flex items-center justify-center shadow-md">
               4
             </div>
-            <h4 className="font-bold text-[#2b1d16] text-sm">
+            <h4 className="font-bold text-[#24263e] text-sm">
               {lang === 'vi' ? 'Nhận Hàng & Giải Ngân' : 'Delivery & Escrow Release'}
             </h4>
-            <p className="text-xs text-[#2b1d16]/70 leading-relaxed">
+            <p className="text-xs text-[#24263e]/70 leading-relaxed">
               {lang === 'vi'
                 ? 'Người mua có 48 giờ đối soát sản phẩm. Khi xác nhận hài lòng, Escrow lập tức giải ngân 100% tiền cho người bán.'
                 : 'Buyer inspects delivered item with 48h protection window. Escrow releases funds to seller upon approval.'}
@@ -389,41 +391,41 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
       {/* 4. COMPARISON TABLE */}
       <section className="space-y-6">
         <div className="text-center max-w-xl mx-auto space-y-2">
-          <h2 className="text-2xl sm:text-3xl font-bold text-[#2b1d16]">
+          <h2 className="text-2xl sm:text-3xl font-bold text-[#24263e]">
             {lang === 'vi' ? 'Tại Sao Nên Chọn SecondLife?' : 'Why Choose SecondLife?'}
           </h2>
-          <p className="text-xs sm:text-sm text-[#2b1d16]/70">
+          <p className="text-xs sm:text-sm text-[#24263e]/70">
             {lang === 'vi' ? 'Bảng so sánh trải nghiệm giao dịch thực tế' : 'Comparison against traditional second-hand classifieds'}
           </p>
         </div>
 
         <div className="bg-[#FFFFFF] rounded-3xl border border-slate-200 shadow-xl overflow-hidden relative">
-          <div className="h-1 w-full bg-gradient-to-r from-[#cea981] via-[#ccbb9e] to-[#cea981]" />
+          <div className="h-1 w-full bg-gradient-to-r from-[#c34c36] via-[#fce5da] to-[#c34c36]" />
           <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="border-b border-[#2b1d16]/20 bg-[#cea981] text-[#2b1d16]">
-                <th className="p-4 sm:p-5 font-black text-[#2b1d16] text-xs sm:text-sm bg-[#cea981] border-r border-[#2b1d16]/15 w-1/4">
+              <tr className="border-b border-[#24263e]/15 bg-[#fce5da] text-[#24263e]">
+                <th className="p-4 sm:p-5 font-black text-[#24263e] text-xs sm:text-sm bg-[#fce5da] border-r border-[#24263e]/15 w-1/4">
                   {lang === 'vi' ? 'Tiêu chí so sánh' : 'Comparison Criteria'}
                 </th>
-                <th className="p-4 sm:p-5 font-black text-[#2b1d16] text-xs sm:text-sm bg-[#cea981] border-r border-[#2b1d16]/15 text-center w-1/4">
+                <th className="p-4 sm:p-5 font-black text-[#24263e] text-xs sm:text-sm bg-[#fce5da] border-r border-[#24263e]/15 text-center w-1/4">
                   ✨ SecondLife Verified
                 </th>
-                <th className="p-4 sm:p-5 font-extrabold text-[#2b1d16]/90 text-xs sm:text-sm bg-[#cea981] border-r border-[#2b1d16]/15 text-center w-1/4">
+                <th className="p-4 sm:p-5 font-extrabold text-[#24263e]/90 text-xs sm:text-sm bg-[#fce5da] border-r border-[#24263e]/15 text-center w-1/4">
                   {lang === 'vi' ? 'Hội nhóm Facebook / Diễn đàn' : 'Facebook Groups / Forums'}
                 </th>
-                <th className="p-4 sm:p-5 font-extrabold text-[#2b1d16]/90 text-xs sm:text-sm bg-[#cea981] text-center w-1/4">
+                <th className="p-4 sm:p-5 font-extrabold text-[#24263e]/90 text-xs sm:text-sm bg-[#fce5da] text-center w-1/4">
                   {lang === 'vi' ? 'Sàn rao vặt tự do thông thường' : 'Unverified Classifieds'}
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200 text-[#2b1d16]">
+            <tbody className="divide-y divide-slate-200 text-[#24263e]">
               <tr className="hover:bg-slate-50 transition-colors">
-                <td className="p-4 sm:p-5 font-bold text-[#2b1d16] bg-slate-50/50">
+                <td className="p-4 sm:p-5 font-bold text-[#24263e] bg-slate-50/50">
                   {lang === 'vi' ? 'Bảo vệ tiền thanh toán' : 'Payment Protection'}
                 </td>
-                <td className="p-4 sm:p-5 font-extrabold text-[#2b1d16] bg-gradient-to-r from-[#cea981]/10 to-[#ccbb9e]/10 border-x border-[#cea981]/30 text-center">
-                  <div className="inline-flex items-center justify-center gap-1.5 bg-[#FFFFFF] px-3 py-1.5 rounded-full shadow-xs border border-[#cea981]/40 text-[#2b1d16] font-extrabold">
-                    <CheckCircle2 className="w-4 h-4 text-[#2b1d16] shrink-0" />
+                <td className="p-4 sm:p-5 font-extrabold text-[#24263e] bg-gradient-to-r from-[#c34c36]/10 to-[#fce5da]/10 border-x border-[#c34c36]/30 text-center">
+                  <div className="inline-flex items-center justify-center gap-1.5 bg-[#FFFFFF] px-3 py-1.5 rounded-full shadow-xs border border-[#c34c36]/40 text-[#24263e] font-extrabold">
+                    <CheckCircle2 className="w-4 h-4 text-[#24263e] shrink-0" />
                     <span>{lang === 'vi' ? 'Quỹ tín thác Escrow bảo đảm' : 'Protected Escrow Trust Fund'}</span>
                   </div>
                 </td>
@@ -439,12 +441,12 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 </td>
               </tr>
               <tr className="hover:bg-slate-50 transition-colors">
-                <td className="p-4 sm:p-5 font-bold text-[#2b1d16] bg-slate-50/50">
+                <td className="p-4 sm:p-5 font-bold text-[#24263e] bg-slate-50/50">
                   {lang === 'vi' ? 'Kiểm định chất lượng phần cứng' : 'Hardware Inspection'}
                 </td>
-                <td className="p-4 sm:p-5 font-extrabold text-[#2b1d16] bg-gradient-to-r from-[#cea981]/10 to-[#ccbb9e]/10 border-x border-[#cea981]/30 text-center">
-                  <div className="inline-flex items-center justify-center gap-1.5 bg-[#FFFFFF] px-3 py-1.5 rounded-full shadow-xs border border-[#cea981]/40 text-[#2b1d16] font-extrabold">
-                    <CheckCircle2 className="w-4 h-4 text-[#2b1d16] shrink-0" />
+                <td className="p-4 sm:p-5 font-extrabold text-[#24263e] bg-gradient-to-r from-[#c34c36]/10 to-[#fce5da]/10 border-x border-[#c34c36]/30 text-center">
+                  <div className="inline-flex items-center justify-center gap-1.5 bg-[#FFFFFF] px-3 py-1.5 rounded-full shadow-xs border border-[#c34c36]/40 text-[#24263e] font-extrabold">
+                    <CheckCircle2 className="w-4 h-4 text-[#24263e] shrink-0" />
                     <span>{lang === 'vi' ? 'Kỹ sư Hub dán tem niêm phong NFC' : 'Hub engineers seal NFC tag'}</span>
                   </div>
                 </td>
@@ -460,12 +462,12 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 </td>
               </tr>
               <tr className="hover:bg-slate-50 transition-colors">
-                <td className="p-4 sm:p-5 font-bold text-[#2b1d16] bg-slate-50/50">
+                <td className="p-4 sm:p-5 font-bold text-[#24263e] bg-slate-50/50">
                   {lang === 'vi' ? 'Độ chính xác về giá bán' : 'Pricing Accuracy'}
                 </td>
-                <td className="p-4 sm:p-5 font-extrabold text-[#2b1d16] bg-gradient-to-r from-[#cea981]/10 to-[#ccbb9e]/10 border-x border-[#cea981]/30 text-center">
-                  <div className="inline-flex items-center justify-center gap-1.5 bg-[#FFFFFF] px-3 py-1.5 rounded-full shadow-xs border border-[#cea981]/40 text-[#2b1d16] font-extrabold">
-                    <CheckCircle2 className="w-4 h-4 text-[#2b1d16] shrink-0" />
+                <td className="p-4 sm:p-5 font-extrabold text-[#24263e] bg-gradient-to-r from-[#c34c36]/10 to-[#fce5da]/10 border-x border-[#c34c36]/30 text-center">
+                  <div className="inline-flex items-center justify-center gap-1.5 bg-[#FFFFFF] px-3 py-1.5 rounded-full shadow-xs border border-[#c34c36]/40 text-[#24263e] font-extrabold">
+                    <CheckCircle2 className="w-4 h-4 text-[#24263e] shrink-0" />
                     <span>{lang === 'vi' ? 'AI định giá khách quan dựa trên ML' : 'Objective ML price valuation'}</span>
                   </div>
                 </td>
@@ -481,12 +483,12 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 </td>
               </tr>
               <tr className="hover:bg-slate-50 transition-colors">
-                <td className="p-4 sm:p-5 font-bold text-[#2b1d16] bg-slate-50/50">
+                <td className="p-4 sm:p-5 font-bold text-[#24263e] bg-slate-50/50">
                   {lang === 'vi' ? 'Trực quan hóa sản phẩm' : 'Product Visualization'}
                 </td>
-                <td className="p-4 sm:p-5 font-extrabold text-[#2b1d16] bg-gradient-to-r from-[#cea981]/10 to-[#ccbb9e]/10 border-x border-[#cea981]/30 text-center">
-                  <div className="inline-flex items-center justify-center gap-1.5 bg-[#FFFFFF] px-3 py-1.5 rounded-full shadow-xs border border-[#cea981]/40 text-[#2b1d16] font-extrabold">
-                    <CheckCircle2 className="w-4 h-4 text-[#2b1d16] shrink-0" />
+                <td className="p-4 sm:p-5 font-extrabold text-[#24263e] bg-gradient-to-r from-[#c34c36]/10 to-[#fce5da]/10 border-x border-[#c34c36]/30 text-center">
+                  <div className="inline-flex items-center justify-center gap-1.5 bg-[#FFFFFF] px-3 py-1.5 rounded-full shadow-xs border border-[#c34c36]/40 text-[#24263e] font-extrabold">
+                    <CheckCircle2 className="w-4 h-4 text-[#24263e] shrink-0" />
                     <span>{lang === 'vi' ? 'Mô phỏng 3D 360° xoay lật đa chiều' : 'Interactive 3D 360° rotation'}</span>
                   </div>
                 </td>
@@ -508,13 +510,13 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
 
       {/* 5. CALL TO ACTION BANNER */}
       {!currentUser && (
-        <section className="rounded-3xl bg-[#cea981] text-[#2b1d16] p-8 sm:p-12 text-center space-y-5 border border-white/20 shadow-xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-white/10 rounded-full blur-3xl pointer-events-none" />
+        <section className="rounded-3xl bg-[#fce5da] text-[#24263e] p-8 sm:p-12 text-center space-y-5 border border-[#24263e]/15 shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-white/40 rounded-full blur-3xl pointer-events-none" />
           <div className="max-w-2xl mx-auto space-y-3 relative z-10">
-            <h2 className="text-2xl sm:text-3xl font-black text-[#2b1d16]">
+            <h2 className="text-2xl sm:text-3xl font-black text-[#24263e]">
               {lang === 'vi' ? 'Sẵn Sàng Mua Bán Đồ Cũ Không Rủi Ro?' : 'Ready for Risk-Free Recommerce?'}
             </h2>
-            <p className="text-[#2b1d16]/80 text-xs sm:text-sm leading-relaxed max-w-lg mx-auto font-medium">
+            <p className="text-[#24263e]/80 text-xs sm:text-sm leading-relaxed max-w-lg mx-auto font-medium">
               {lang === 'vi'
                 ? 'Tham gia cùng hàng ngàn người dùng thông minh tại Việt Nam. Khám phá các thiết bị đồ gia dụng chính hãng đã qua kiểm định với giá hợp lý nhất.'
                 : 'Join smart second-hand shoppers across Vietnam. Explore certified home appliances with guaranteed escrow protection.'}
@@ -525,13 +527,13 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                   soundFx.playChime();
                   onExploreMarketplace();
                 }}
-                className="px-6 py-3 rounded-xl bg-[#2b1d16] hover:bg-[#3d2a20] text-white font-black text-xs sm:text-sm shadow-md transition cursor-pointer"
+                className="px-6 py-3 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white font-black text-xs sm:text-sm shadow-md transition cursor-pointer"
               >
                 {lang === 'vi' ? 'Vào Sàn Mua Sắm Ngay' : 'Browse Marketplace'}
               </button>
               <button
                 onClick={() => onOpenAuth('register')}
-                className="px-6 py-3 rounded-xl bg-white/40 text-[#2b1d16] border border-[#2b1d16]/20 hover:bg-white/60 font-bold text-xs sm:text-sm transition cursor-pointer shadow-xs"
+                className="px-6 py-3 rounded-xl bg-white text-[#24263e] border border-[#24263e]/20 hover:bg-[#faf8f5] font-bold text-xs sm:text-sm transition cursor-pointer shadow-xs"
               >
                 {lang === 'vi' ? 'Đăng Ký Tài Khoản Miễn Phí' : 'Create Free Account'}
               </button>

@@ -57,7 +57,8 @@ import {
   UserCheck,
   AlertCircle,
   XCircle,
-  Loader2
+  Loader2,
+  History
 } from 'lucide-react';
 
 interface AdminDashboardViewProps {
@@ -224,7 +225,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     setTimeout(() => setActionNotice(null), 4000);
   };
 
-  const handleApproveSellerVerification = async (id: string) => {
+  const handleApproveSellerVerification = async (id: string, currentStatus?: string) => {
+    if (currentStatus && currentStatus !== 'NEEDS_REVIEW') {
+      triggerNotice(`Chỉ hồ sơ ở trạng thái NEEDS_REVIEW mới có thể phê duyệt bởi Quản trị viên (Trạng thái hiện tại: ${currentStatus}).`);
+      return;
+    }
     try {
       await adminService.approveSellerVerification(id);
       triggerNotice('Đã phê duyệt hồ sơ người bán thành công! Vai trò SELLER đã được gán.');
@@ -232,7 +237,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       if (res?.items) setBackendVerifications(res.items);
       if (selectedVerificationDetail?.id === id) setSelectedVerificationDetail(null);
     } catch (err: any) {
-      alert(err.message || 'Phê duyệt hồ sơ thất bại');
+      triggerNotice(err.message || 'Phê duyệt hồ sơ thất bại');
     }
   };
 
@@ -581,14 +586,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       label: lang === 'vi' ? 'QUẢN LÝ BÁN HÀNG' : 'SALES ORDERS',
       icon: Package,
       badge: localOrders.length || 1,
-      badgeColor: 'bg-[#ccbb9e]'
+      badgeColor: 'bg-[#fce5da]'
     },
     {
       id: 'disputes' as AdminTab,
       label: lang === 'vi' ? 'PHÂN XỬ TRANH CHẤP' : 'DISPUTE RESOLUTION',
       icon: Gavel,
       badge: disputes.length || 0,
-      badgeColor: 'bg-[#cea981]'
+      badgeColor: 'bg-[#c34c36]'
     },
     {
       id: 'seller-kyc' as AdminTab,
@@ -624,23 +629,25 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   ];
 
   return (
-    <div className="min-h-screen bg-[#f6f5eb] text-[#2b1d16] flex flex-col font-sans">
+    <div className="min-h-screen bg-[#faf8f5] text-[#24263e] flex flex-col font-sans">
       {/* 1. TOP NAVIGATION BAR */}
       {/* 1. TOP NAVIGATION BAR */}
-      <header className="bg-[#cea981] text-[#2b1d16] h-13 sm:h-14 flex items-center justify-between px-3 sm:px-4 border-b border-[#2b1d16]/15 shrink-0 sticky top-0 z-40 shadow-sm">
+      <header className="bg-[#24263e] text-white h-13 sm:h-14 flex items-center justify-between px-3 sm:px-4 border-b border-white/10 shrink-0 sticky top-0 z-40 shadow-sm">
         {/* Left: Brand + Toggle + Xem website */}
         <div className="flex items-center gap-2 sm:gap-4">
           {/* Logo Brand */}
           <div
             onClick={() => setActiveTab('overview')}
-            className="flex items-center gap-2.5 font-black tracking-tight text-[#2b1d16] cursor-pointer select-none pr-3 sm:pr-4 border-r border-[#2b1d16]/20"
+            className="flex items-center gap-2.5 font-black tracking-tight text-white cursor-pointer select-none pr-3 sm:pr-4 border-r border-white/15"
           >
-            <img
-              src={logoImg}
-              alt="SecondLife Logo"
-              className="h-9 sm:h-10 w-auto object-contain"
-            />
-            <span className="font-black text-sm sm:text-base tracking-wider uppercase text-[#2b1d16] hidden xs:inline">
+            <div className="logo-badge bg-white p-1 rounded-lg shadow-xs border border-white/80 flex items-center justify-center shrink-0">
+              <img
+                src={logoImg}
+                alt="SecondLife Logo"
+                className="h-7 sm:h-8 w-auto object-contain"
+              />
+            </div>
+            <span className="font-black text-sm sm:text-base tracking-wider uppercase text-white hidden xs:inline">
               WEB ADMIN
             </span>
           </div>
@@ -651,7 +658,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               setIsSidebarCollapsed(!isSidebarCollapsed);
               setIsMobileSidebarOpen(!isMobileSidebarOpen);
             }}
-            className="p-1.5 rounded-lg text-[#2b1d16] hover:bg-white/40 transition cursor-pointer"
+            className="p-1.5 rounded-lg text-white hover:bg-white/10 transition cursor-pointer"
             title={lang === 'vi' ? 'Đóng / Mở menu' : 'Toggle menu'}
           >
             <Menu className="w-5 h-5" />
@@ -660,9 +667,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* Xem Website Button */}
           <button
             onClick={() => onViewWebsite?.()}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold text-[#2b1d16] hover:bg-white/40 transition cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold text-white/80 hover:text-white hover:bg-white/10 transition cursor-pointer"
           >
-            <ExternalLink className="w-3.5 h-3.5 text-[#2b1d16]" />
+            <ExternalLink className="w-3.5 h-3.5 text-white/80" />
             <span className="font-bold">{lang === 'vi' ? 'Xem website' : 'View Website'}</span>
           </button>
         </div>
@@ -671,24 +678,24 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         <div className="relative">
           <button
             onClick={() => setShowUserDropdown(!showUserDropdown)}
-            className="flex items-center gap-2.5 px-2 py-1 rounded-lg hover:bg-white/40 transition cursor-pointer"
+            className="flex items-center gap-2.5 px-2 py-1 rounded-lg hover:bg-white/10 transition cursor-pointer"
           >
-            <div className="w-7 h-7 rounded-full bg-white p-0.5 flex items-center justify-center shadow-xs border border-[#2b1d16]/20">
+            <div className="w-7 h-7 rounded-full bg-white p-0.5 flex items-center justify-center shadow-xs border border-white/20">
               <img
                 src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"
                 alt="Admin"
                 className="w-full h-full rounded-full object-cover"
               />
             </div>
-            <span className="text-xs font-black text-[#2b1d16] hidden sm:inline">Admin</span>
-            <ChevronDown className="w-3.5 h-3.5 text-[#2b1d16] hidden sm:inline" />
+            <span className="text-xs font-black text-white hidden sm:inline">Admin</span>
+            <ChevronDown className="w-3.5 h-3.5 text-white hidden sm:inline" />
           </button>
 
           {/* User Dropdown */}
           {showUserDropdown && (
-            <div className="absolute right-0 mt-2 w-48 bg-white text-[#2b1d16] rounded-xl shadow-2xl border border-gray-200 py-1 z-50 text-xs">
+            <div className="absolute right-0 mt-2 w-48 bg-white text-[#24263e] rounded-xl shadow-2xl border border-gray-200 py-1 z-50 text-xs">
               <div className="px-3 py-2 border-b border-gray-100">
-                <p className="font-black text-[#2b1d16]">
+                <p className="font-black text-[#24263e]">
                   {lang === 'vi' ? 'Quản Trị Viên Hệ Thống' : 'System Administrator'}
                 </p>
                 <p className="text-[11px] text-gray-500 font-medium">admin@secondlife.vn</p>
@@ -698,9 +705,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   setShowUserDropdown(false);
                   onViewWebsite?.();
                 }}
-                className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-2 text-[#2b1d16] font-semibold cursor-pointer"
+                className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-2 text-[#24263e] font-semibold cursor-pointer"
               >
-                <ExternalLink className="w-3.5 h-3.5 text-[#2b1d16]" />
+                <ExternalLink className="w-3.5 h-3.5 text-[#24263e]" />
                 <span>{lang === 'vi' ? 'Về trang mua bán' : 'Back to Marketplace'}</span>
               </button>
               <button
@@ -708,9 +715,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   setShowUserDropdown(false);
                   setActiveTab('ai-settings');
                 }}
-                className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-2 text-[#2b1d16] font-semibold cursor-pointer"
+                className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-2 text-[#24263e] font-semibold cursor-pointer"
               >
-                <Sliders className="w-3.5 h-3.5 text-[#2b1d16]" />
+                <Sliders className="w-3.5 h-3.5 text-[#24263e]" />
                 <span>{lang === 'vi' ? 'Cấu hình thuật toán' : 'AI Algorithm Config'}</span>
               </button>
               <div className="border-t border-gray-100 my-1"></div>
@@ -733,27 +740,27 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       <div className="flex-1 flex relative">
         {/* LEFT SIDEBAR */}
         <aside
-          className={`bg-[#cea981] text-[#2b1d16] border-r border-[#2b1d16]/15 transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] ${isSidebarCollapsed ? 'w-16' : 'w-60 sm:w-64'
+          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] ${isSidebarCollapsed ? 'w-16' : 'w-60 sm:w-64'
             } ${isMobileSidebarOpen
               ? 'fixed inset-y-13 left-0 shadow-2xl block'
               : 'hidden md:flex'
             }`}
         >
           {/* User Block */}
-          <div className="p-3.5 sm:p-4 border-b border-[#2b1d16]/15 flex items-center gap-3">
+          <div className="p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3">
             <div className="relative shrink-0">
-              <div className="w-10 h-10 rounded-full bg-white p-0.5 border border-[#2b1d16]/20 overflow-hidden">
+              <div className="w-10 h-10 rounded-full bg-white p-0.5 border border-[#24263e]/20 overflow-hidden">
                 <img
                   src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"
                   alt="Admin"
                   className="w-full h-full object-cover rounded-full"
                 />
               </div>
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#cea981] absolute bottom-0 right-0"></span>
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#fce5da] absolute bottom-0 right-0"></span>
             </div>
             {!isSidebarCollapsed && (
               <div className="overflow-hidden">
-                <h4 className="font-black text-xs sm:text-sm text-[#2b1d16] truncate">Admin</h4>
+                <h4 className="font-black text-xs sm:text-sm text-[#24263e] truncate">Admin</h4>
                 <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 font-bold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
                   <span>Online</span>
@@ -763,7 +770,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </div>
 
           {/* Section: MAIN NAVIGATION */}
-          <div className="px-4 pt-4 pb-2 text-[10px] font-black text-[#2b1d16]/80 uppercase tracking-wider">
+          <div className="px-4 pt-4 pb-2 text-[10px] font-black text-[#24263e]/80 uppercase tracking-wider">
             {!isSidebarCollapsed ? 'MAIN NAVIGATION' : '•••'}
           </div>
 
@@ -780,14 +787,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     setIsMobileSidebarOpen(false);
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs transition cursor-pointer group ${isActive
-                      ? 'bg-white text-[#2b1d16] shadow-sm font-black'
-                      : 'text-[#2b1d16]/80 hover:text-[#2b1d16] hover:bg-white/40 font-bold'
+                      ? 'bg-white text-[#24263e] shadow-sm font-black'
+                      : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/40 font-bold'
                     }`}
                   title={item.label}
                 >
                   <div className="flex items-center gap-3 truncate">
                     <Icon
-                      className={`w-4 h-4 shrink-0 transition ${isActive ? 'text-[#2b1d16]' : 'text-[#2b1d16]/75 group-hover:text-[#2b1d16]'
+                      className={`w-4 h-4 shrink-0 transition ${isActive ? 'text-[#24263e]' : 'text-[#24263e]/75 group-hover:text-[#24263e]'
                         }`}
                     />
                     {!isSidebarCollapsed && (
@@ -806,7 +813,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         </span>
                       )}
                       <ChevronRight
-                        className={`w-3.5 h-3.5 transition-transform ${isActive ? 'text-[#2b1d16] translate-x-0.5' : 'text-[#2b1d16]/50 group-hover:text-[#2b1d16]'
+                        className={`w-3.5 h-3.5 transition-transform ${isActive ? 'text-[#24263e] translate-x-0.5' : 'text-[#24263e]/50 group-hover:text-[#24263e]'
                           }`}
                       />
                     </div>
@@ -818,8 +825,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
           {/* Sidebar Footer info */}
           {!isSidebarCollapsed && (
-            <div className="p-3 border-t border-[#2b1d16]/10 text-[10px] text-[#2b1d16]/70 text-center">
-              <span className="font-semibold text-[#2b1d16]">SecondLife Platform</span> v2.4
+            <div className="p-3 border-t border-[#24263e]/10 text-[10px] text-[#24263e]/70 text-center">
+              <span className="font-semibold text-[#24263e]">SecondLife Platform</span> v2.4
             </div>
           )}
         </aside>
@@ -850,7 +857,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <Home className="w-3.5 h-3.5 text-slate-400" />
               <button
                 onClick={() => setActiveTab('overview')}
-                className="hover:text-[#2b1d16] transition cursor-pointer"
+                className="hover:text-[#24263e] transition cursor-pointer"
               >
                 Home
               </button>
@@ -863,12 +870,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
           {/* Notification Alert Banner */}
           {actionNotice && (
-            <div className="p-3.5 rounded-xl bg-[#cea981] text-[#2b1d16] border border-[#2b1d16]/20 shadow-lg flex items-center gap-3 animate-in fade-in font-bold">
-              <CheckCircle2 className="w-4 h-4 text-[#2b1d16] shrink-0" />
+            <div className="p-3.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-md flex items-center gap-3 animate-in fade-in font-bold">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span className="text-xs">{actionNotice}</span>
               <button
                 onClick={() => setActionNotice(null)}
-                className="ml-auto text-[#2b1d16]/60 hover:text-[#2b1d16] text-xs cursor-pointer p-1"
+                className="ml-auto text-emerald-600 hover:text-emerald-800 text-xs cursor-pointer p-1"
               >
                 ✕
               </button>
@@ -882,88 +889,88 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             <div className="space-y-5">
               {/* ROW 1: 4 SMALL STAT BOXES (AdminLTE Small-Boxes) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Box 1: ĐƠN HÀNG (SecondLife Brand Gradient) */}
-                <div className="bg-[#cea981] text-[#2b1d16] border border-[#2b1d16]/15 rounded-xl shadow-xs overflow-hidden relative group">
+                {/* Box 1: ĐƠN HÀNG (SecondLife Brand Beige) */}
+                <div className="bg-[#fce5da] text-[#24263e] border border-[#24263e]/15 rounded-xl shadow-xs overflow-hidden relative group">
                   <div className="p-4 sm:p-5 pr-14 relative z-10">
-                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#2b1d16]">
+                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#24263e]">
                       {localOrders.length || 1}
                     </div>
-                    <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#2b1d16]/80">
+                    <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#24263e]/80">
                       ĐƠN HÀNG
                     </div>
                   </div>
                   {/* Watermark Icon */}
-                  <ShoppingBag className="w-18 h-18 text-[#2b1d16]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
+                  <ShoppingBag className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
                   {/* Footer link */}
                   <button
                     onClick={() => setActiveTab('orders')}
-                    className="w-full bg-[#2b1d16]/10 hover:bg-[#2b1d16]/20 text-[#2b1d16] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
+                    className="w-full bg-[#24263e]/10 hover:bg-[#24263e]/20 text-[#24263e] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
                   >
                     <span>Xem chi tiết</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
-                {/* Box 2: SẢN PHẨM (SecondLife Brand Gradient) */}
-                <div className="bg-[#cea981] text-[#2b1d16] border border-[#2b1d16]/15 rounded-xl shadow-xs overflow-hidden relative group">
+                {/* Box 2: SẢN PHẨM (SecondLife Brand Beige) */}
+                <div className="bg-[#fce5da] text-[#24263e] border border-[#24263e]/15 rounded-xl shadow-xs overflow-hidden relative group">
                   <div className="p-4 sm:p-5 pr-14 relative z-10">
-                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#2b1d16]">
+                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#24263e]">
                       {localListings.length || 65}
                     </div>
-                    <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#2b1d16]/80">
+                    <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#24263e]/80">
                       SẢN PHẨM
                     </div>
                   </div>
                   {/* Watermark Icon */}
-                  <BarChart3 className="w-18 h-18 text-[#2b1d16]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
+                  <BarChart3 className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
                   {/* Footer link */}
                   <button
                     onClick={() => setActiveTab('listings')}
-                    className="w-full bg-[#2b1d16]/10 hover:bg-[#2b1d16]/20 text-[#2b1d16] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
+                    className="w-full bg-[#24263e]/10 hover:bg-[#24263e]/20 text-[#24263e] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
                   >
                     <span>Xem chi tiết</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
-                {/* Box 3: KHÁCH HÀNG (SecondLife Brand Gradient) */}
-                <div className="bg-[#cea981] text-[#2b1d16] border border-[#2b1d16]/15 rounded-xl shadow-xs overflow-hidden relative group">
+                {/* Box 3: KHÁCH HÀNG (SecondLife Brand Beige) */}
+                <div className="bg-[#fce5da] text-[#24263e] border border-[#24263e]/15 rounded-xl shadow-xs overflow-hidden relative group">
                   <div className="p-4 sm:p-5 pr-14 relative z-10">
-                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#2b1d16]">
+                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#24263e]">
                       44
                     </div>
-                    <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#2b1d16]/80">
+                    <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#24263e]/80">
                       KHÁCH HÀNG
                     </div>
                   </div>
                   {/* Watermark Icon */}
-                  <UserPlus className="w-18 h-18 text-[#2b1d16]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
+                  <UserPlus className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
                   {/* Footer link */}
                   <button
                     onClick={() => setActiveTab('customers')}
-                    className="w-full bg-[#2b1d16]/10 hover:bg-[#2b1d16]/20 text-[#2b1d16] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
+                    className="w-full bg-[#24263e]/10 hover:bg-[#24263e]/20 text-[#24263e] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
                   >
                     <span>Xem chi tiết</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
-                {/* Box 4: BÀI VIẾT / TRANH CHẤP (SecondLife Brand Gradient) */}
-                <div className="bg-[#cea981] text-[#2b1d16] border border-[#2b1d16]/15 rounded-xl shadow-xs overflow-hidden relative group">
+                {/* Box 4: BÀI VIẾT / TRANH CHẤP (SecondLife Brand Beige) */}
+                <div className="bg-[#fce5da] text-[#24263e] border border-[#24263e]/15 rounded-xl shadow-xs overflow-hidden relative group">
                   <div className="p-4 sm:p-5 pr-14 relative z-10">
-                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#2b1d16]">
+                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#24263e]">
                       {disputes.length || 12}
                     </div>
-                    <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#2b1d16]/80">
+                    <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#24263e]/80">
                       BÀI VIẾT & TRANH CHẤP
                     </div>
                   </div>
                   {/* Watermark Icon */}
-                  <PieChart className="w-18 h-18 text-[#2b1d16]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
+                  <PieChart className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
                   {/* Footer link */}
                   <button
                     onClick={() => setActiveTab('disputes')}
-                    className="w-full bg-[#2b1d16]/10 hover:bg-[#2b1d16]/20 text-[#2b1d16] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
+                    className="w-full bg-[#24263e]/10 hover:bg-[#24263e]/20 text-[#24263e] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
                   >
                     <span>Xem chi tiết</span>
                     <ArrowRight className="w-3.5 h-3.5" />
@@ -972,7 +979,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </div>
 
               {/* ROW 2: FULL-WIDTH TABLE: KHÁCH HÀNG ĐẶT LỊCH (Orange top-border) */}
-              <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#ccbb9e] overflow-hidden">
+              <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#fce5da] overflow-hidden">
                 {/* Header */}
                 <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
                   <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
@@ -1031,7 +1038,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                               <td className="py-3 px-4 text-center">
                                 <button
                                   onClick={() => setSelectedBookingModal(item)}
-                                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-[#ccbb9e] hover:text-white text-slate-700 text-[11px] font-medium transition cursor-pointer"
+                                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-[#fce5da] hover:text-white text-slate-700 text-[11px] font-medium transition cursor-pointer"
                                 >
                                   Xem
                                 </button>
@@ -1046,7 +1053,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <div className="p-3 border-t border-slate-100 flex justify-end">
                       <button
                         onClick={() => triggerNotice('Đang tải danh sách toàn bộ 85 lịch hẹn khách hàng đặt kiểm định & bưu tá...')}
-                        className="px-3.5 py-1.5 rounded-lg border border-slate-300 hover:border-[#ccbb9e] hover:text-[#ccbb9e] text-xs font-semibold text-slate-700 transition cursor-pointer"
+                        className="px-3.5 py-1.5 rounded-lg border border-slate-300 hover:border-[#fce5da] hover:text-[#fce5da] text-xs font-semibold text-slate-700 transition cursor-pointer"
                       >
                         Xem tất cả
                       </button>
@@ -1058,7 +1065,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               {/* ROW 3: TWO 50% WIDTH CARDS */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 {/* Left Card: ĐƠN ĐẶT HÀNG MỚI (SecondLife Dark Navy / Pink accent) */}
-                <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#cea981] overflow-hidden flex flex-col justify-between">
+                <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] overflow-hidden flex flex-col justify-between">
                   <div>
                     {/* Header */}
                     <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
@@ -1100,7 +1107,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                   {idx === 0 ? 'kt05' : ord.buyerName}
                                 </td>
                                 <td className="py-3 px-4 whitespace-nowrap">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#cea981]/15 text-[#2b1d16] border border-[#cea981]/30">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#c34c36]/15 text-[#24263e] border border-[#c34c36]/30">
                                     Đơn hàng mới
                                   </span>
                                 </td>
@@ -1110,7 +1117,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                 <td className="py-3 px-4 text-center">
                                   <button
                                     onClick={() => setSelectedOrderModal(ord)}
-                                    className="px-2.5 py-1 rounded bg-gradient-to-r from-[#cea981] to-[#ccbb9e] hover:opacity-90 text-white text-[11px] font-semibold transition cursor-pointer flex items-center justify-center gap-1 mx-auto shadow-xs"
+                                    className="px-2.5 py-1 rounded bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-90 text-white text-[11px] font-semibold transition cursor-pointer flex items-center justify-center gap-1 mx-auto shadow-xs"
                                   >
                                     <ExternalLink className="w-3 h-3" />
                                     <span>Chi tiết</span>
@@ -1129,7 +1136,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <div className="p-3 border-t border-slate-100 flex justify-end">
                       <button
                         onClick={() => setActiveTab('orders')}
-                        className="px-3.5 py-1.5 rounded-lg border border-slate-300 hover:border-[#cea981] hover:text-[#2b1d16] text-xs font-semibold text-slate-700 transition cursor-pointer"
+                        className="px-3.5 py-1.5 rounded-lg border border-slate-300 hover:border-[#c34c36] hover:text-[#24263e] text-xs font-semibold text-slate-700 transition cursor-pointer"
                       >
                         Xem tất cả đơn hàng
                       </button>
@@ -1138,7 +1145,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 </div>
 
                 {/* Right Card: KHÁCH HÀNG LIÊN HỆ (Pink top-border) */}
-                <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#cea981] overflow-hidden flex flex-col justify-between">
+                <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] overflow-hidden flex flex-col justify-between">
                   <div>
                     {/* Header */}
                     <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
@@ -1188,7 +1195,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                 <td className="py-3 px-4 text-center">
                                   <button
                                     onClick={() => setSelectedContactModal(c)}
-                                    className="px-2.5 py-1 rounded bg-slate-100 hover:bg-[#cea981] hover:text-white text-slate-700 text-[11px] font-medium transition cursor-pointer"
+                                    className="px-2.5 py-1 rounded bg-slate-100 hover:bg-[#c34c36] hover:text-white text-slate-700 text-[11px] font-medium transition cursor-pointer"
                                   >
                                     Xem
                                   </button>
@@ -1206,7 +1213,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <div className="p-3 border-t border-slate-100 flex justify-end">
                       <button
                         onClick={() => triggerNotice('Đang tải toàn bộ hòm thư hỗ trợ khách hàng...')}
-                        className="px-3.5 py-1.5 rounded-lg border border-slate-300 hover:border-[#cea981] hover:text-[#2b1d16] text-xs font-semibold text-slate-700 transition cursor-pointer"
+                        className="px-3.5 py-1.5 rounded-lg border border-slate-300 hover:border-[#c34c36] hover:text-[#24263e] text-xs font-semibold text-slate-700 transition cursor-pointer"
                       >
                         Xem tất cả liên hệ
                       </button>
@@ -1221,7 +1228,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* TAB: ORDERS (QUẢN LÝ BÁN HÀNG & KÝ QUỸ ESCROW)           */}
           {/* ======================================================== */}
           {activeTab === 'orders' && (
-            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#cea981] p-5 space-y-4">
+            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] p-5 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 uppercase">
@@ -1240,7 +1247,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       placeholder="Tìm mã đơn, tên khách..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-[#cea981]"
+                      className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-[#c34c36]"
                     />
                   </div>
 
@@ -1336,7 +1343,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* TAB: LISTINGS (QUẢN TRỊ DANH MỤC & SẢN PHẨM)             */}
           {/* ======================================================== */}
           {activeTab === 'listings' && (
-            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#ccbb9e] p-5 space-y-4">
+            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#fce5da] p-5 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 uppercase">
@@ -1355,7 +1362,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       placeholder="Tìm tên sản phẩm, thương hiệu..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-[#cea981]"
+                      className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-[#c34c36]"
                     />
                   </div>
 
@@ -1419,7 +1426,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             {formatVND(item.priceVnd)}
                           </td>
                           <td className="py-3 text-right">
-                            <span className="font-bold text-[#2b1d16]">
+                            <span className="font-bold text-[#24263e]">
                               {formatVND(item.suggestedAiPriceVnd)}
                             </span>
                           </td>
@@ -1471,10 +1478,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="lg:col-span-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <Gavel className="w-4 h-4 text-[#2b1d16]" />
+                    <Gavel className="w-4 h-4 text-[#24263e]" />
                     <span>Hồ Sơ Cần Phán Quyết ({disputes.length})</span>
                   </h3>
-                  <span className="text-[11px] bg-[#cea981]/15 text-[#2b1d16] font-bold px-2 py-0.5 rounded border border-[#cea981]/30">
+                  <span className="text-[11px] bg-[#c34c36]/15 text-[#24263e] font-bold px-2 py-0.5 rounded border border-[#c34c36]/30">
                     Chờ Quyết Định
                   </span>
                 </div>
@@ -1487,8 +1494,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         key={disp.id}
                         onClick={() => setSelectedDisputeId(disp.id)}
                         className={`p-3.5 rounded-xl border transition cursor-pointer ${isSelected
-                            ? 'bg-[#cea981] text-white border-[#cea981] shadow-sm'
-                            : 'bg-white border-slate-200 hover:border-[#cea981] text-slate-800'
+                            ? 'bg-[#c34c36] text-white border-[#c34c36] shadow-sm'
+                            : 'bg-white border-slate-200 hover:border-[#c34c36] text-slate-800'
                           }`}
                       >
                         <div className="flex items-center justify-between text-[11px] opacity-80">
@@ -1501,7 +1508,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         <p className="text-xs opacity-75 mt-1 line-clamp-2">"{disp.description}"</p>
                         <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[11px]">
                           <span className="opacity-70">Người mua: {disp.buyerName}</span>
-                          <span className="font-bold text-[#2b1d16]">Xem chứng cứ &rarr;</span>
+                          <span className="font-bold text-[#24263e]">Xem chứng cứ &rarr;</span>
                         </div>
                       </div>
                     );
@@ -1512,7 +1519,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               {/* Right: Dispute Evidence Review */}
               <div className="lg:col-span-8">
                 {activeDispute ? (
-                  <div className="bg-white rounded-xl p-5 border border-slate-200 border-t-4 border-t-[#cea981] shadow-xs space-y-4">
+                  <div className="bg-white rounded-xl p-5 border border-slate-200 border-t-4 border-t-[#c34c36] shadow-xs space-y-4">
                     <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                       <div>
                         <h4 className="text-sm font-bold text-slate-900">
@@ -1522,28 +1529,28 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           Người mua: <strong className="text-slate-800">{activeDispute.buyerName}</strong> vs Người bán: <strong className="text-slate-800">{activeDispute.sellerName}</strong>
                         </div>
                       </div>
-                      <span className="bg-[#cea981]/15 text-[#2b1d16] text-xs font-bold px-2 py-0.5 rounded">
+                      <span className="bg-[#c34c36]/15 text-[#24263e] text-xs font-bold px-2 py-0.5 rounded">
                         Chờ Phán Quyết
                       </span>
                     </div>
 
                     {/* AI Engine Box */}
-                    <div className="bg-[#cea981] text-[#2b1d16] rounded-xl p-4 border border-[#2b1d16]/20 space-y-3">
-                      <div className="flex items-center justify-between pb-2 border-b border-[#2b1d16]/15">
+                    <div className="bg-[#fce5da] text-[#24263e] rounded-xl p-4 border border-[#24263e]/15 space-y-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-[#24263e]/15">
                         <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded bg-[#2b1d16] text-white flex items-center justify-center">
+                          <div className="w-6 h-6 rounded bg-[#24263e] text-white flex items-center justify-center">
                             <Sparkles className="w-3.5 h-3.5" />
                           </div>
-                          <h5 className="font-bold text-xs text-[#2b1d16]">
+                          <h5 className="font-bold text-xs text-[#24263e]">
                             AI Evidence Engine - Phân Tích Bằng Chứng Hình Ảnh
                           </h5>
                         </div>
                         <span className="text-[10px] font-black text-emerald-950 bg-emerald-100 px-2 py-0.5 rounded">94.8% Match</span>
                       </div>
 
-                      <div className="text-xs space-y-1.5 text-[#2b1d16]/90 font-medium">
+                      <div className="text-xs space-y-1.5 text-[#24263e]/90 font-medium">
                         <p>• Đối chiếu ảnh Hub vs Ảnh người mua: Phát hiện xước móp 4.2mm phát sinh trong quá trình vận chuyển bưu tá.</p>
-                        <p>• Khuyến nghị: <strong className="text-[#2b1d16] font-black underline">HOÀN TIỀN 100% CHO NGƯỜI MUA</strong> từ quỹ bảo hiểm Escrow.</p>
+                        <p>• Khuyến nghị: <strong className="text-[#24263e] font-black underline">HOÀN TIỀN 100% CHO NGƯỜI MUA</strong> từ quỹ bảo hiểm Escrow.</p>
                       </div>
 
                       <div className="pt-2 flex flex-wrap gap-2 justify-end">
@@ -1552,7 +1559,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             onResolveDispute(activeDispute.id, 'REFUND_BUYER');
                             triggerNotice(`Admin đã phán quyết HOÀN TIỀN 100% cho người mua #${activeDispute.buyerName}.`);
                           }}
-                          className="px-3 py-1.5 bg-[#2b1d16] hover:bg-black text-white rounded-lg text-xs font-bold transition cursor-pointer"
+                          className="px-3 py-1.5 bg-[#24263e] hover:bg-black text-white rounded-lg text-xs font-bold transition cursor-pointer"
                         >
                           Duyệt Hoàn Tiền Buyer
                         </button>
@@ -1561,7 +1568,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             onResolveDispute(activeDispute.id, 'RELEASE_SELLER');
                             triggerNotice('Admin đã phán quyết Bác khiếu nại, giải ngân cho người bán.');
                           }}
-                          className="px-3 py-1.5 bg-white/60 hover:bg-white/80 text-[#2b1d16] rounded-lg text-xs font-bold transition cursor-pointer border border-[#2b1d16]/20"
+                          className="px-3 py-1.5 bg-white/60 hover:bg-white/80 text-[#24263e] rounded-lg text-xs font-bold transition cursor-pointer border border-[#24263e]/20"
                         >
                           Bác Khiếu Nại (Giải Ngân Seller)
                         </button>
@@ -1570,7 +1577,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   </div>
                 ) : (
                   <div className="bg-white rounded-xl p-8 text-center border border-slate-200">
-                    <CheckCircle2 className="w-8 h-8 text-[#2b1d16] mx-auto mb-2" />
+                    <CheckCircle2 className="w-8 h-8 text-[#24263e] mx-auto mb-2" />
                     <p className="font-bold text-slate-800 text-xs">Không có tranh chấp nào cần giải quyết</p>
                   </div>
                 )}
@@ -1641,7 +1648,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
                               v.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
                               v.status === 'REJECTED' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
-                              'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse'
+                              v.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-100 text-orange-800 border border-orange-300' :
+                              v.status === 'NEEDS_REVIEW' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                              'bg-blue-100 text-blue-800 border border-blue-300 animate-pulse'
                             }`}>
                               {v.status}
                             </span>
@@ -1655,11 +1664,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                 <Eye className="w-3.5 h-3.5 text-slate-500" />
                                 <span>Xem Chi Tiết</span>
                               </button>
-                              {(v.status !== 'APPROVED' && v.status !== 'REJECTED') && (
+                              {v.status === 'NEEDS_REVIEW' ? (
                                 <>
                                   <button
-                                    onClick={() => handleApproveSellerVerification(v.id)}
+                                    onClick={() => handleApproveSellerVerification(v.id, v.status)}
                                     className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
+                                    title="Phê duyệt hồ sơ người bán (Cấp vai trò SELLER)"
                                   >
                                     <CheckCircle2 className="w-3.5 h-3.5" />
                                     <span>Phê Duyệt</span>
@@ -1670,12 +1680,22 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                       setRejectionReasonText('');
                                     }}
                                     className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
+                                    title="Từ chối hồ sơ người bán"
                                   >
                                     <XCircle className="w-3.5 h-3.5" />
                                     <span>Từ Chối</span>
                                   </button>
                                 </>
-                              )}
+                              ) : v.status === 'EKYC_PENDING' ? (
+                                <button
+                                  onClick={() => triggerNotice('Hồ sơ đang ở trạng thái EKYC_PENDING. Chỉ hồ sơ ở trạng thái NEEDS_REVIEW mới có thể phê duyệt bởi Quản trị viên.')}
+                                  className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-[11px] font-bold border border-slate-200 cursor-not-allowed flex items-center gap-1"
+                                  title="Chỉ hồ sơ ở trạng thái NEEDS_REVIEW mới có thể phê duyệt"
+                                >
+                                  <Clock className="w-3.5 h-3.5 text-amber-500" />
+                                  <span>Chờ eKYC</span>
+                                </button>
+                              ) : null}
                             </div>
                           </td>
                         </tr>
@@ -1697,7 +1717,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* TAB: CUSTOMERS (QUẢN LÝ KHÁCH HÀNG & NGƯỜI DÙNG)        */}
           {/* ======================================================== */}
           {activeTab === 'customers' && (
-            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#ccbb9e] p-5 space-y-4">
+            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#fce5da] p-5 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 uppercase">
@@ -1714,7 +1734,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     value={userSearchTerm}
                     onChange={(e) => setUserSearchTerm(e.target.value)}
                     placeholder="Tìm tên, SĐT, email..."
-                    className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-[#ccbb9e]"
+                    className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-[#fce5da]"
                   />
                 </div>
               </div>
@@ -1837,7 +1857,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 uppercase flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-[#ccbb9e]" />
+                    <Building2 className="w-4 h-4 text-[#fce5da]" />
                     <span>Danh Sách Trạm Kiểm Định Hub & Quản Lý Kỹ Thuật Viên</span>
                   </h3>
                   <p className="text-xs text-slate-500">
@@ -1846,7 +1866,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 </div>
                 <button
                   onClick={() => setShowAddHubModal(true)}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white text-xs font-bold shadow-sm hover:opacity-95 transition cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-xs font-bold shadow-sm hover:opacity-95 transition cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Tạo Tài Khoản Hub Mới</span>
@@ -1857,10 +1877,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 {hubCenters.map((hub) => (
                   <div
                     key={hub.id}
-                    className="bg-white rounded-xl p-5 border border-slate-200 border-t-4 border-t-[#ccbb9e] shadow-xs space-y-3"
+                    className="bg-white rounded-xl p-5 border border-slate-200 border-t-4 border-t-[#fce5da] shadow-xs space-y-3"
                   >
                     <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                      <div className="p-2 rounded-lg bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white">
+                      <div className="p-2 rounded-lg bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white">
                         <Building2 className="w-4 h-4" />
                       </div>
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -1884,7 +1904,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       </div>
                       <div className="p-2 rounded bg-slate-50">
                         <span className="text-[10px] text-slate-400 block">Đang test</span>
-                        <span className="font-bold text-[#2b1d16]">{hub.currentInTesting} máy</span>
+                        <span className="font-bold text-[#24263e]">{hub.currentInTesting} máy</span>
                       </div>
                       <div className="p-2 rounded bg-slate-50">
                         <span className="text-[10px] text-slate-400 block">Tỷ lệ Đạt (Pass)</span>
@@ -1906,9 +1926,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* TAB: AI-SETTINGS (CẤU HÌNH THUẬT TOÁN AI & RỦI RO)        */}
           {/* ======================================================== */}
           {activeTab === 'ai-settings' && (
-            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#cea981] p-5 sm:p-6 space-y-5">
+            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] p-5 sm:p-6 space-y-5">
               <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
-                <div className="w-9 h-9 rounded-lg bg-[#cea981] text-[#2b1d16] flex items-center justify-center">
+                <div className="w-9 h-9 rounded-lg bg-[#c34c36] text-[#24263e] flex items-center justify-center">
                   <Sliders className="w-5 h-5" />
                 </div>
                 <div>
@@ -1916,7 +1936,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     Tham Số Thuật Toán AI & Ngưỡng Kiểm Soát Rủi Ro Sàn
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Phiên bản mô hình: <span className="font-mono font-bold text-[#2b1d16]">{modelVersion}</span>
+                    Phiên bản mô hình: <span className="font-mono font-bold text-[#24263e]">{modelVersion}</span>
                   </p>
                 </div>
               </div>
@@ -1928,7 +1948,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <label className="font-bold text-slate-800">
                       Ngưỡng Phát Hiện Ảnh Trùng Lặp:
                     </label>
-                    <span className="font-bold text-sm text-[#2b1d16] font-mono">{duplicateThreshold}%</span>
+                    <span className="font-bold text-sm text-[#24263e] font-mono">{duplicateThreshold}%</span>
                   </div>
                   <input
                     type="range"
@@ -1936,7 +1956,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     max={98}
                     value={duplicateThreshold}
                     onChange={(e) => setDuplicateThreshold(Number(e.target.value))}
-                    className="w-full accent-[#cea981] cursor-pointer"
+                    className="w-full accent-[#c34c36] cursor-pointer"
                   />
                   <p className="text-[11px] text-slate-500">
                     Từ chối tin nếu ảnh trùng lặp &gt; {duplicateThreshold}% so với thư viện tin cũ.
@@ -1949,7 +1969,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <label className="font-bold text-slate-800">
                       Cảnh Báo Giá Bất Thường:
                     </label>
-                    <span className="font-bold text-sm text-[#2b1d16] font-mono">&lt; {priceAnomalyThreshold}%</span>
+                    <span className="font-bold text-sm text-[#24263e] font-mono">&lt; {priceAnomalyThreshold}%</span>
                   </div>
                   <input
                     type="range"
@@ -1957,7 +1977,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     max={60}
                     value={priceAnomalyThreshold}
                     onChange={(e) => setPriceAnomalyThreshold(Number(e.target.value))}
-                    className="w-full accent-[#cea981] cursor-pointer"
+                    className="w-full accent-[#c34c36] cursor-pointer"
                   />
                   <p className="text-[11px] text-slate-500">
                     Cảnh báo kiểm tra nếu giá người bán thấp hơn {priceAnomalyThreshold}% so với AI định giá.
@@ -1979,7 +1999,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     step={0.1}
                     value={commissionRate}
                     onChange={(e) => setCommissionRate(Number(e.target.value))}
-                    className="w-full accent-[#cea981] cursor-pointer"
+                    className="w-full accent-[#c34c36] cursor-pointer"
                   />
                   <p className="text-[11px] text-slate-500">
                     Tỷ lệ tính trên giá trị giao dịch mỗi đơn hàng thành công.
@@ -2000,7 +2020,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     max={99}
                     value={autoApproveAiConfidence}
                     onChange={(e) => setAutoApproveAiConfidence(Number(e.target.value))}
-                    className="w-full accent-[#cea981] cursor-pointer"
+                    className="w-full accent-[#c34c36] cursor-pointer"
                   />
                   <p className="text-[11px] text-slate-500">
                     Độ tin cậy của mô hình vision để đưa ra đề xuất cho trọng tài Admin.
@@ -2011,7 +2031,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   onClick={() => triggerNotice('Đã lưu thành công cấu hình tham số thuật toán AI.')}
-                  className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white text-xs font-bold transition cursor-pointer shadow-xs"
+                  className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-xs font-bold transition cursor-pointer shadow-xs"
                 >
                   Lưu Cấu Hình
                 </button>
@@ -2023,7 +2043,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* TAB: PERMISSIONS (PHÂN QUYỀN HỆ THỐNG)                   */}
           {/* ======================================================== */}
           {activeTab === 'permissions' && (
-            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#cea981] p-5 space-y-4">
+            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] p-5 space-y-4">
               <div className="pb-3 border-b border-slate-100">
                 <h3 className="text-sm font-bold text-slate-900 uppercase">
                   Ma Trận Phân Quyền Vai Trò & Bảo Mật Hệ Thống (RBAC)
@@ -2066,7 +2086,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <Package className="w-5 h-5 text-[#2b1d16]" />
+                <Package className="w-5 h-5 text-[#24263e]" />
                 <h3 className="font-bold text-sm text-slate-900">
                   Chi Tiết Đơn Hàng #{selectedOrderModal.id}
                 </h3>
@@ -2083,7 +2103,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
                 <div className="font-bold text-slate-800">{selectedOrderModal.listing.title}</div>
                 <div className="text-slate-500">Mã thiết bị: {selectedOrderModal.listing.modelCode || 'STD-DEVICE'}</div>
-                <div className="text-base font-extrabold text-[#2b1d16]">
+                <div className="text-base font-extrabold text-[#24263e]">
                   {formatVND(selectedOrderModal.totalPaidVnd || selectedOrderModal.itemPriceVnd)}
                 </div>
               </div>
@@ -2135,7 +2155,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-[#ccbb9e]" />
+                <Calendar className="w-5 h-5 text-[#fce5da]" />
                 <h3 className="font-bold text-sm text-slate-900">
                   Thông Tin Lịch Hẹn #{selectedBookingModal.id}
                 </h3>
@@ -2176,7 +2196,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             <div className="pt-2 flex justify-end">
               <button
                 onClick={() => setSelectedBookingModal(null)}
-                className="px-4 py-1.5 rounded-lg bg-[#cea981] text-white text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
+                className="px-4 py-1.5 rounded-lg bg-[#c34c36] text-white text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
               >
                 Đã xem
               </button>
@@ -2193,7 +2213,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <Mail className="w-5 h-5 text-[#2b1d16]" />
+                <Mail className="w-5 h-5 text-[#24263e]" />
                 <h3 className="font-bold text-sm text-slate-900">
                   Nội Dung Khách Hàng Liên Hệ
                 </h3>
@@ -2233,7 +2253,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   triggerNotice(`Đã gửi phản hồi qua email cho khách hàng ${selectedContactModal.customerName}.`);
                   setSelectedContactModal(null);
                 }}
-                className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white text-xs font-semibold transition cursor-pointer"
+                className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-xs font-semibold transition cursor-pointer"
               >
                 Gửi Phản Hồi
               </button>
@@ -2283,20 +2303,67 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-[11px]">
                 <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
                   <span className="text-slate-400 text-[10px] block">Trạng Thái Hồ Sơ</span>
                   <span className="font-bold text-slate-800">{selectedVerificationDetail.status}</span>
                 </div>
                 <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
-                  <span className="text-slate-400 text-[10px] block">eKYC Score</span>
-                  <span className="font-bold text-emerald-600">{selectedVerificationDetail.ekycScore || '100'} / 100</span>
+                  <span className="text-slate-400 text-[10px] block">eKYC Provider</span>
+                  <span className="font-bold text-blue-600 truncate block" title={selectedVerificationDetail.providerName || 'N/A'}>
+                    {selectedVerificationDetail.providerName || 'FPT / VNPT'}
+                  </span>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                  <span className="text-slate-400 text-[10px] block">eKYC Status</span>
+                  <span className={`font-bold ${
+                    selectedVerificationDetail.ekycStatus === 'PASSED' ? 'text-emerald-600' :
+                    selectedVerificationDetail.ekycStatus === 'PROVIDER_ERROR' ? 'text-amber-600' :
+                    'text-slate-700'
+                  }`}>
+                    {selectedVerificationDetail.ekycStatus || 'PENDING'}
+                  </span>
                 </div>
                 <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
                   <span className="text-slate-400 text-[10px] block">Risk Rating</span>
-                  <span className="font-bold text-purple-600">{selectedVerificationDetail.riskStatus || 'LOW_RISK'}</span>
+                  <span className="font-bold text-purple-600">{selectedVerificationDetail.riskStatus || 'NOT_EVALUATED'}</span>
                 </div>
               </div>
+
+              {selectedVerificationDetail.reasonCode && selectedVerificationDetail.reasonCode !== 'NONE' && (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between">
+                  <div>
+                    <span className="font-bold block text-[11px] text-amber-800">Mã nguyên nhân từ bên thứ 3 (Reason Code):</span>
+                    <span className="font-mono font-bold text-xs">{selectedVerificationDetail.reasonCode}</span>
+                  </div>
+                  {selectedVerificationDetail.providerReferenceId && (
+                    <span className="text-[10px] text-slate-500 font-mono">Ref: #{selectedVerificationDetail.providerReferenceId}</span>
+                  )}
+                </div>
+              )}
+
+              {/* Event History / Audit Trail from eKYC Provider */}
+              {selectedVerificationDetail.eventHistory && selectedVerificationDetail.eventHistory.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                    <History className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Lịch sử xử lý từ eKYC Provider (Audit Trail):</span>
+                  </h4>
+                  <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                    {selectedVerificationDetail.eventHistory.map((ev: any, idx: number) => (
+                      <div key={ev.id || idx} className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-[11px] flex items-start justify-between gap-2">
+                        <div>
+                          <span className="font-bold text-slate-800">{ev.eventType}</span>
+                          {ev.notes && <p className="text-slate-600 text-[10px] mt-0.5">{ev.notes}</p>}
+                        </div>
+                        <span className="text-[10px] text-slate-400 shrink-0 font-mono">
+                          {ev.createdAt ? new Date(ev.createdAt).toLocaleTimeString('vi-VN') : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <h4 className="font-bold text-slate-800 text-xs">Ảnh Giấy Tờ & Chân Dung Xác Minh:</h4>
@@ -2350,7 +2417,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 <span>Đóng Cửa Sổ</span>
               </button>
 
-              {(selectedVerificationDetail.status !== 'APPROVED' && selectedVerificationDetail.status !== 'REJECTED') && (
+              {selectedVerificationDetail.status === 'NEEDS_REVIEW' ? (
                 <div className="w-full sm:w-auto flex items-center gap-2.5 justify-end">
                   <button
                     onClick={() => {
@@ -2363,14 +2430,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <span>Từ Chối Hồ Sơ</span>
                   </button>
                   <button
-                    onClick={() => handleApproveSellerVerification(selectedVerificationDetail.id)}
+                    onClick={() => handleApproveSellerVerification(selectedVerificationDetail.id, selectedVerificationDetail.status)}
                     className="flex-1 sm:flex-initial px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold shadow-md hover:shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
                   >
                     <CheckCircle2 className="w-4 h-4" />
                     <span>Phê Duyệt Ngay</span>
                   </button>
                 </div>
-              )}
+              ) : selectedVerificationDetail.status === 'EKYC_PENDING' ? (
+                <div className="text-xs text-amber-800 bg-amber-50 px-3.5 py-2 rounded-xl border border-amber-200 flex items-center gap-2 font-bold">
+                  <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Hồ sơ đang ở trạng thái EKYC_PENDING. Quản trị viên chỉ có thể duyệt sau khi hệ thống chuyển sang NEEDS_REVIEW.</span>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -2449,7 +2521,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200 my-8">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-[#ccbb9e]" />
+                <Building2 className="w-5 h-5 text-[#fce5da]" />
                 <h3 className="font-bold text-sm text-slate-900">
                   Tạo Tài Khoản Trạm Kiểm Định (Hub) Mới
                 </h3>
@@ -2471,7 +2543,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   value={newHubData.hubCenterName}
                   onChange={(e) => setNewHubData({ ...newHubData, hubCenterName: e.target.value })}
                   placeholder="Ví dụ: Trạm Kiểm Định Hub Tân Bình"
-                  className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#ccbb9e]"
+                  className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#fce5da]"
                 />
               </div>
 
@@ -2483,7 +2555,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   value={newHubData.email}
                   onChange={(e) => setNewHubData({ ...newHubData, email: e.target.value })}
                   placeholder="hub.tanbinh@secondlife.vn"
-                  className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#ccbb9e]"
+                  className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#fce5da]"
                 />
               </div>
 
@@ -2495,7 +2567,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   value={newHubData.password}
                   onChange={(e) => setNewHubData({ ...newHubData, password: e.target.value })}
                   placeholder="Tối thiểu 6 ký tự"
-                  className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#ccbb9e]"
+                  className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#fce5da]"
                 />
               </div>
 
@@ -2508,7 +2580,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     value={newHubData.city}
                     onChange={(e) => setNewHubData({ ...newHubData, city: e.target.value })}
                     placeholder="TP. Hồ Chí Minh"
-                    className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#ccbb9e]"
+                    className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#fce5da]"
                   />
                 </div>
                 <div>
@@ -2519,7 +2591,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     value={newHubData.phone}
                     onChange={(e) => setNewHubData({ ...newHubData, phone: e.target.value })}
                     placeholder="0909123456"
-                    className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#ccbb9e]"
+                    className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#fce5da]"
                   />
                 </div>
               </div>
@@ -2532,7 +2604,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   value={newHubData.address}
                   onChange={(e) => setNewHubData({ ...newHubData, address: e.target.value })}
                   placeholder="123 Cộng Hòa, Phường 13, Q. Tân Bình"
-                  className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#ccbb9e]"
+                  className="w-full p-2.5 rounded-xl border border-slate-300 outline-none focus:border-[#fce5da]"
                 />
               </div>
 
@@ -2546,7 +2618,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#cea981] to-[#ccbb9e] text-white text-xs font-bold transition cursor-pointer shadow-sm hover:opacity-95"
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-xs font-bold transition cursor-pointer shadow-sm hover:opacity-95"
                 >
                   Tạo Tài Khoản Hub
                 </button>
@@ -2562,7 +2634,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-xl w-full shadow-2xl border border-slate-100 space-y-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#cea981]/20 to-[#ccbb9e]/20 flex items-center justify-center text-[#2b1d16]">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#c34c36]/20 to-[#fce5da]/20 flex items-center justify-center text-[#24263e]">
                   <Users className="w-5 h-5" />
                 </div>
                 <div>
@@ -2580,7 +2652,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
             {isLoadingUserDetail ? (
               <div className="py-12 flex flex-col items-center justify-center space-y-3">
-                <Loader2 className="w-8 h-8 text-[#2b1d16] animate-spin" />
+                <Loader2 className="w-8 h-8 text-[#24263e] animate-spin" />
                 <p className="text-xs text-slate-500">Đang tải dữ liệu từ máy chủ (GET /admin/users/{selectedUserDetailId})...</p>
               </div>
             ) : userDetailError ? (
@@ -2601,7 +2673,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="space-y-4 text-xs">
                 {/* User Header Info Card */}
                 <div className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-100">
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#cea981] to-[#ccbb9e] text-white flex items-center justify-center text-xl font-black shadow-md overflow-hidden shrink-0">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center text-xl font-black shadow-md overflow-hidden shrink-0">
                     {userDetailModalData.avatarUrl ? (
                       <img src={userDetailModalData.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
                     ) : (

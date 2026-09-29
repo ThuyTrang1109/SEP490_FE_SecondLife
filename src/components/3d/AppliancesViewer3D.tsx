@@ -14,20 +14,20 @@ export const AppliancesViewer3D: React.FC<AppliancesViewer3DProps> = ({ lang }) 
   return (
     <div className="relative group select-none w-full max-w-xl mx-auto">
       {/* Dynamic Background Glow */}
-      <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-[#cea981]/30 to-[#ccbb9e]/30 blur-2xl group-hover:opacity-100 opacity-60 transition duration-700" />
+      <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-[#c34c36]/30 to-[#fce5da]/30 blur-2xl group-hover:opacity-100 opacity-60 transition duration-700" />
 
       {/* Main Container Card (Dark Frame) */}
-      <div className="relative bg-[#cea981] text-[#2b1d16] rounded-3xl p-4 sm:p-6 border border-white/20 shadow-2xl space-y-4">
+      <div className="relative bg-[#c34c36] text-[#24263e] rounded-3xl p-4 sm:p-6 border border-white/20 shadow-2xl space-y-4">
         {/* Top Header Pills */}
         <div className="flex items-center justify-between gap-2">
           {/* Left Pill */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/40 border border-[#2b1d16]/15 text-[#2b1d16] text-xs font-bold backdrop-blur-md shadow-xs">
-            <Sparkles className="w-3.5 h-3.5 text-[#2b1d16]" />
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/40 border border-[#24263e]/15 text-[#24263e] text-xs font-bold backdrop-blur-md shadow-xs">
+            <Sparkles className="w-3.5 h-3.5 text-[#24263e]" />
             <span>3D Spatial Appliances Scan</span>
           </div>
 
           {/* Model Switcher & AutoRotate */}
-          <div className="flex items-center gap-1.5 bg-white/35 p-1 rounded-full border border-[#2b1d16]/15 text-xs shadow-xs">
+          <div className="flex items-center gap-1.5 bg-white/35 p-1 rounded-full border border-[#24263e]/15 text-xs shadow-xs">
             <button
               onClick={() => {
                 soundFx.playChime();
@@ -35,8 +35,8 @@ export const AppliancesViewer3D: React.FC<AppliancesViewer3DProps> = ({ lang }) 
               }}
               className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold transition cursor-pointer ${
                 applianceType === 'fridge'
-                  ? 'bg-[#2b1d16] text-white shadow'
-                  : 'text-[#2b1d16]/80 hover:text-[#2b1d16]'
+                  ? 'bg-[#24263e] text-white shadow'
+                  : 'text-[#24263e]/80 hover:text-[#24263e]'
               }`}
             >
               {lang === 'vi' ? 'Tủ Lạnh' : 'Fridge'}
@@ -48,8 +48,8 @@ export const AppliancesViewer3D: React.FC<AppliancesViewer3DProps> = ({ lang }) 
               }}
               className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold transition cursor-pointer ${
                 applianceType === 'washer'
-                  ? 'bg-[#2b1d16] text-white shadow'
-                  : 'text-[#2b1d16]/80 hover:text-[#2b1d16]'
+                  ? 'bg-[#24263e] text-white shadow'
+                  : 'text-[#24263e]/80 hover:text-[#24263e]'
               }`}
             >
               {lang === 'vi' ? 'Máy Giặt' : 'Washer'}
@@ -60,7 +60,7 @@ export const AppliancesViewer3D: React.FC<AppliancesViewer3DProps> = ({ lang }) 
                 setAutoRotate((prev) => !prev);
               }}
               className={`p-1 px-2 rounded-full text-[11px] font-bold transition cursor-pointer ${
-                autoRotate ? 'text-[#2b1d16] bg-white/60' : 'text-[#2b1d16]/70 hover:text-[#2b1d16]'
+                autoRotate ? 'text-[#24263e] bg-white/60' : 'text-[#24263e]/70 hover:text-[#24263e]'
               }`}
               title="Bật/tắt xoay 360°"
             >
@@ -70,11 +70,11 @@ export const AppliancesViewer3D: React.FC<AppliancesViewer3DProps> = ({ lang }) 
         </div>
 
         {/* Center Display Card with Studio 3D Canvas */}
-        <div className="relative bg-[#cea981] rounded-2xl h-[320px] sm:h-[350px] flex items-center justify-center overflow-hidden border border-white/20 shadow-inner">
+        <div className="relative bg-[#c34c36] rounded-2xl h-[320px] sm:h-[350px] flex items-center justify-center overflow-hidden border border-white/20 shadow-inner">
           {/* Top Left Badge inside Card */}
           <div className="absolute top-3 left-3 z-20 pointer-events-none">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/50 text-[#2b1d16] text-xs font-bold border border-white/60 backdrop-blur-md shadow-md">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#2b1d16] animate-pulse" />
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/50 text-[#24263e] text-xs font-bold border border-white/60 backdrop-blur-md shadow-md">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#24263e] animate-pulse" />
               <span>
                 {applianceType === 'fridge'
                   ? (lang === 'vi' ? 'Tủ Lạnh • Grade A+ (99%)' : 'Refrigerator • Grade A+ (99%)')
@@ -85,7 +85,7 @@ export const AppliancesViewer3D: React.FC<AppliancesViewer3DProps> = ({ lang }) 
 
           {/* Top Right Badge: Hub NFC Verified */}
           <div className="absolute top-3 right-3 z-20 pointer-events-none">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/50 text-[#2b1d16] text-xs font-bold border border-white/60 shadow-xl backdrop-blur-md">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/50 text-[#24263e] text-xs font-bold border border-white/60 shadow-xl backdrop-blur-md">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-800" />
               <span>Hub NFC Verified</span>
             </div>
@@ -93,8 +93,8 @@ export const AppliancesViewer3D: React.FC<AppliancesViewer3DProps> = ({ lang }) 
 
           {/* Bottom Right Badge: AI Định Giá */}
           <div className="absolute bottom-3 right-3 z-20 pointer-events-none">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/50 text-[#2b1d16] text-xs font-bold border border-white/60 shadow-lg backdrop-blur-md">
-              <Sparkles className="w-3.5 h-3.5 text-[#2b1d16]" />
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/50 text-[#24263e] text-xs font-bold border border-white/60 shadow-lg backdrop-blur-md">
+              <Sparkles className="w-3.5 h-3.5 text-[#24263e]" />
               <span>
                 {applianceType === 'fridge'
                   ? (lang === 'vi' ? 'AI Định Giá: 14.800.000đ' : 'AI Valuation: 14,800,000đ')
@@ -105,8 +105,8 @@ export const AppliancesViewer3D: React.FC<AppliancesViewer3DProps> = ({ lang }) 
 
           {/* Bottom Left Drag Indicator */}
           <div className="absolute bottom-3 left-3 z-20 opacity-90 hover:opacity-100 transition pointer-events-none">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/40 text-[#2b1d16] text-[11px] font-bold backdrop-blur-sm border border-white/50 shadow-xs">
-              <Move3d className="w-3 h-3 text-[#2b1d16]" />
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/40 text-[#24263e] text-[11px] font-bold backdrop-blur-sm border border-white/50 shadow-xs">
+              <Move3d className="w-3 h-3 text-[#24263e]" />
               <span>{lang === 'vi' ? 'Kéo để xoay • Cuộn zoom' : 'Drag to rotate • Scroll zoom'}</span>
             </div>
           </div>
@@ -118,13 +118,13 @@ export const AppliancesViewer3D: React.FC<AppliancesViewer3DProps> = ({ lang }) 
         </div>
 
         {/* Outer Bottom Footer Bar */}
-        <div className="flex items-center justify-between text-xs text-[#2b1d16] pt-1 font-semibold">
+        <div className="flex items-center justify-between text-xs text-[#24263e] pt-1 font-semibold">
           <div className="flex items-center gap-2 font-bold">
-            <Box className="w-4 h-4 text-[#2b1d16]" />
+            <Box className="w-4 h-4 text-[#24263e]" />
             <span>{lang === 'vi' ? 'Mô hình 3D đa chiều & Soi phần cứng' : 'Multi-dimensional 3D Model & Hardware Scan'}</span>
           </div>
 
-          <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/40 text-[#2b1d16] font-mono text-[11px] font-black border border-[#2b1d16]/20">
+          <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/40 text-[#24263e] font-mono text-[11px] font-black border border-[#24263e]/20">
             SL-3D-APPLIANCES
           </div>
         </div>

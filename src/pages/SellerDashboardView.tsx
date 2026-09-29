@@ -13,7 +13,9 @@ import {
   AlertCircle,
   Upload,
   RefreshCw,
-  X
+  X,
+  Loader2,
+  XCircle
 } from 'lucide-react';
 import { Listing, Language } from '../types';
 import { formatVND } from '../utils/translations';
@@ -127,45 +129,73 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   };
 
   return (
-    <div className="space-y-8 pb-16 text-[#2b1d16]">
+    <div className="space-y-8 pb-16 text-[#24263e]">
       {/* eKYC Verification Status Banner */}
       {myVerification && (
         <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs ${
           myVerification.status === 'APPROVED' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' :
-          myVerification.status === 'REJECTED' || myVerification.status === 'RESUBMIT_REQUIRED' ? 'bg-rose-50 border-rose-200 text-rose-900' :
-          'bg-amber-50 border-amber-200 text-amber-900'
+          myVerification.status === 'NEEDS_REVIEW' ? 'bg-amber-50 border-amber-200 text-amber-900' :
+          myVerification.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-50 border-orange-200 text-orange-950' :
+          myVerification.status === 'REJECTED' ? 'bg-rose-50 border-rose-200 text-rose-900' :
+          'bg-blue-50 border-blue-200 text-blue-900'
         }`}>
           <div className="flex items-center gap-3">
             {myVerification.status === 'APPROVED' ? (
               <ShieldCheck className="w-6 h-6 text-emerald-600 shrink-0" />
-            ) : myVerification.status === 'REJECTED' || myVerification.status === 'RESUBMIT_REQUIRED' ? (
-              <AlertCircle className="w-6 h-6 text-rose-600 shrink-0" />
-            ) : (
+            ) : myVerification.status === 'NEEDS_REVIEW' ? (
               <Clock className="w-6 h-6 text-amber-600 shrink-0" />
+            ) : myVerification.status === 'RESUBMIT_REQUIRED' ? (
+              <AlertCircle className="w-6 h-6 text-orange-600 shrink-0" />
+            ) : myVerification.status === 'REJECTED' ? (
+              <XCircle className="w-6 h-6 text-rose-600 shrink-0" />
+            ) : (
+              <Loader2 className="w-6 h-6 text-blue-600 shrink-0 animate-spin" />
             )}
             <div>
               <div className="font-bold text-sm">
-                {myVerification.status === 'APPROVED' && 'Tài khoản người bán đã được xác minh eKYC!'}
-                {(myVerification.status === 'PENDING' || myVerification.status === 'NEEDS_REVIEW') && 'Hồ sơ xác minh eKYC đang được xem xét (Pending Review)'}
-                {(myVerification.status === 'REJECTED' || myVerification.status === 'RESUBMIT_REQUIRED') && 'Hồ sơ xác minh eKYC bị từ chối / Cần bổ sung'}
+                {myVerification.status === 'APPROVED' && (lang === 'vi' ? 'Xác thực thành công! Tài khoản người bán đã kích hoạt.' : 'eKYC Verified! Seller account active.')}
+                {myVerification.status === 'NEEDS_REVIEW' && (lang === 'vi' ? 'Đang chờ Quản trị viên duyệt' : 'Pending Admin Review')}
+                {(myVerification.status === 'EKYC_PENDING' || myVerification.status === 'SUBMITTED' || myVerification.status === 'PENDING') && (lang === 'vi' ? 'Đang đối soát eKYC' : 'eKYC Verification In Progress')}
+                {myVerification.status === 'RESUBMIT_REQUIRED' && (lang === 'vi' ? 'Cần chụp lại ảnh' : 'Resubmission Required')}
+                {myVerification.status === 'REJECTED' && (lang === 'vi' ? 'Hồ sơ bị từ chối' : 'Verification Rejected')}
               </div>
-              <p className="mt-0.5">
-                {myVerification.status === 'APPROVED' && 'Tất cả các tin đăng của bạn sẽ hiển thị huy hiệu Người Bán Uy Tín & Đã Kiểm Định.'}
-                {(myVerification.status === 'PENDING' || myVerification.status === 'NEEDS_REVIEW') && 'Đã nhận hồ sơ CCCD ' + myVerification.documentNumber + '. Ban quản trị đang rà soát điểm rủi ro & ảnh đối chiếu.'}
-                {(myVerification.status === 'REJECTED' || myVerification.status === 'RESUBMIT_REQUIRED') && (
-                  <span>Lý do từ chối: <strong>{myVerification.rejectionReason || 'Giấy tờ mờ hoặc không trùng khớp với thông tin cá nhân.'}</strong></span>
+              <div className="mt-0.5 text-[11px] leading-relaxed">
+                {myVerification.status === 'APPROVED' && (
+                  <span>{lang === 'vi' ? 'Tất cả các tin đăng của bạn sẽ hiển thị huy hiệu Người Bán Uy Tín & Đã Kiểm Định.' : 'All your listings will display the Verified Seller badge.'}</span>
                 )}
-              </p>
+                {myVerification.status === 'NEEDS_REVIEW' && (
+                  <span>{lang === 'vi' ? `Hồ sơ đang được chuyên viên thẩm định thủ công trong 24h. Mã CCCD: ${myVerification.documentNumber}` : `Application is under manual review within 24h. ID: ${myVerification.documentNumber}`}</span>
+                )}
+                {(myVerification.status === 'EKYC_PENDING' || myVerification.status === 'SUBMITTED' || myVerification.status === 'PENDING') && (
+                  <span>{lang === 'vi' ? 'Hệ thống đang kết nối đối soát dữ liệu eKYC tự động. Vui lòng đợi trong giây lát...' : 'Connecting to automated eKYC system...'}</span>
+                )}
+                {myVerification.status === 'RESUBMIT_REQUIRED' && (
+                  <span>{lang === 'vi' ? 'Lý do từ chối tạm thời: ' : 'Reason: '}<strong>{myVerification.rejectionReason || (lang === 'vi' ? 'Ảnh mờ hoặc bị chói sáng.' : 'Photos are blurry or glare.')}</strong></span>
+                )}
+                {myVerification.status === 'REJECTED' && (
+                  <span>{lang === 'vi' ? 'Lý do từ chối: ' : 'Reason: '}<strong>{myVerification.rejectionReason || (lang === 'vi' ? 'Thông tin không hợp lệ.' : 'Information is invalid.')}</strong></span>
+                )}
+              </div>
             </div>
           </div>
 
-          {(myVerification.status === 'REJECTED' || myVerification.status === 'RESUBMIT_REQUIRED') && (
+          {myVerification.status === 'RESUBMIT_REQUIRED' && (
             <button
               onClick={() => setIsResubmitModalOpen(true)}
-              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition cursor-pointer shrink-0 flex items-center gap-1.5"
+              className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs transition cursor-pointer shrink-0 flex items-center gap-1.5 shadow-xs"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>Nộp Lại Hồ Sơ eKYC</span>
+              <span>{lang === 'vi' ? 'Chụp / Nộp Lại Ảnh' : 'Resubmit Photos'}</span>
+            </button>
+          )}
+
+          {myVerification.status === 'REJECTED' && (
+            <button
+              onClick={() => setIsResubmitModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition cursor-pointer shrink-0 flex items-center gap-1.5 shadow-xs"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>{lang === 'vi' ? 'Tạo Hồ Sơ Xác Thực Mới' : 'Create New Verification'}</span>
             </button>
           )}
         </div>
@@ -179,17 +209,17 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       )}
 
       {/* Top Banner */}
-      <div className="bg-[#cea981] text-[#2b1d16] rounded-3xl p-6 sm:p-8 shadow-2xl border border-white/20 space-y-6">
+      <div className="bg-[#fce5da] text-[#24263e] rounded-3xl p-6 sm:p-8 shadow-xl border border-[#24263e]/15 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
             <div className="relative">
               <img
                 src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80"
                 alt="Seller Avatar"
-                className="w-16 h-16 rounded-2xl object-cover border-2 border-white/40 shadow-md"
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-[#24263e]/20 shadow-md"
               />
               <div
-                className="absolute -bottom-1 -right-1 bg-[#2b1d16] text-white p-1 rounded-full text-xs shadow-xs"
+                className="absolute -bottom-1 -right-1 bg-[#24263e] text-white p-1 rounded-full text-xs shadow-xs"
                 title={lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified'}
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
@@ -198,17 +228,17 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-black text-[#2b1d16]">
+                <h1 className="text-xl sm:text-2xl font-black text-[#24263e]">
                   Nguyễn Minh Tuấn
                 </h1>
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/40 border border-[#2b1d16]/20 text-[#2b1d16] text-[11px] font-bold shadow-xs">
-                  <CheckCircle2 className="w-3 h-3 text-[#2b1d16]" />
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/80 border border-[#24263e]/15 text-[#24263e] text-[11px] font-bold shadow-xs">
+                  <CheckCircle2 className="w-3 h-3 text-[#c34c36]" />
                   {lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified'}
                 </span>
               </div>
-              <p className="text-xs text-[#2b1d16]/80 mt-1 flex items-center gap-3 font-semibold">
-                <span className="flex items-center gap-1 text-[#2b1d16] font-bold">
-                  <Star className="w-3.5 h-3.5 fill-[#2b1d16] text-[#2b1d16]" />
+              <p className="text-xs text-[#24263e]/80 mt-1 flex items-center gap-3 font-semibold">
+                <span className="flex items-center gap-1 text-[#24263e] font-bold">
+                  <Star className="w-3.5 h-3.5 fill-[#c34c36] text-[#c34c36]" />
                   {lang === 'vi' ? '4.9 / 5.0 (32 đánh giá)' : '4.9 / 5.0 (32 reviews)'}
                 </span>
                 <span>•</span>
@@ -222,7 +252,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={onCreateListing}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#2b1d16] hover:bg-[#3d2a20] text-white font-black text-xs shadow-md transition cursor-pointer"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white font-black text-xs shadow-md transition cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
               <span>{lang === 'vi' ? 'Đăng Bán Đồ Gia Dụng Mới (AI)' : 'Post New Appliance (AI)'}</span>
@@ -230,7 +260,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             {onViewOrders && (
               <button
                 onClick={onViewOrders}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/40 hover:bg-white/60 text-[#2b1d16] border border-[#2b1d16]/20 font-bold text-xs transition cursor-pointer shadow-xs"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
               >
                 <Clock className="w-4 h-4 text-emerald-800" />
                 <span>{lang === 'vi' ? 'Quản Lý Đơn Bán Hàng' : 'Manage Sales Orders'}</span>
@@ -238,51 +268,51 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             )}
             <button
               onClick={() => setIsPayoutModalOpen(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/40 hover:bg-white/60 text-[#2b1d16] border border-[#2b1d16]/20 font-bold text-xs transition cursor-pointer shadow-xs"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
             >
-              <Wallet className="w-4 h-4 text-[#2b1d16]" />
+              <Wallet className="w-4 h-4 text-[#24263e]" />
               <span>{lang === 'vi' ? 'Rút Tiền Ví Doanh Thu' : 'Withdraw Revenue'}</span>
             </button>
           </div>
         </div>
 
         {/* Financial Metrics Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-white/10">
-          <div className="bg-[#FFFFFF] text-[#2b1d16] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
-            <div className="text-xs text-[#2b1d16]/70 flex items-center justify-between">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-[#24263e]/15">
+          <div className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
+            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
               <span>{lang === 'vi' ? 'Số dư ví khả dụng' : 'Available wallet balance'}</span>
-              <Wallet className="w-4 h-4 text-[#2b1d16]" />
+              <Wallet className="w-4 h-4 text-[#24263e]" />
             </div>
-            <div className="text-2xl font-black text-[#2b1d16]">
+            <div className="text-2xl font-black text-[#24263e]">
               {formatVND(totalEarnings)}
             </div>
-            <div className="text-[11px] text-[#2b1d16]/60">
+            <div className="text-[11px] text-[#24263e]/60">
               {lang === 'vi' ? 'Có thể rút về Ngân hàng ngay' : 'Can withdraw to bank immediately'}
             </div>
           </div>
 
-          <div className="bg-[#FFFFFF] text-[#2b1d16] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
-            <div className="text-xs text-[#2b1d16]/70 flex items-center justify-between">
+          <div className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
+            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
               <span>{lang === 'vi' ? 'Đang đóng băng Escrow' : 'Held in Escrow'}</span>
               <Clock className="w-4 h-4 text-gray-400" />
             </div>
-            <div className="text-2xl font-black text-[#2b1d16]">
+            <div className="text-2xl font-black text-[#24263e]">
               {formatVND(pendingEscrow)}
             </div>
-            <div className="text-[11px] text-[#2b1d16]/60">
+            <div className="text-[11px] text-[#24263e]/60">
               {lang === 'vi' ? 'Giải ngân sau khi Buyer nhận hàng' : 'Released after buyer confirms delivery'}
             </div>
           </div>
 
-          <div className="bg-[#FFFFFF] text-[#2b1d16] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
-            <div className="text-xs text-[#2b1d16]/70 flex items-center justify-between">
+          <div className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
+            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
               <span>{lang === 'vi' ? 'Tỷ lệ Pass Kiểm Định Hub' : 'Hub Inspection Pass Rate'}</span>
-              <TrendingUp className="w-4 h-4 text-[#ccbb9e]" />
+              <TrendingUp className="w-4 h-4 text-[#c34c36]" />
             </div>
-            <div className="text-2xl font-black text-[#2b1d16]">
+            <div className="text-2xl font-black text-[#24263e]">
               96.8%
             </div>
-            <div className="text-[11px] text-[#2b1d16]/60">
+            <div className="text-[11px] text-[#24263e]/60">
               {lang === 'vi' ? 'Chỉ số uy tín tin đăng cao' : 'High listing trust score'}
             </div>
           </div>
@@ -290,8 +320,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       </div>
 
       {payoutSuccessMsg && (
-        <div className="bg-[#cea981] text-[#2b1d16] p-4 rounded-2xl border border-[#2b1d16]/20 shadow-lg flex items-center gap-3 animate-fadeIn font-bold">
-          <CheckCircle2 className="w-5 h-5 text-[#2b1d16] shrink-0" />
+        <div className="bg-emerald-50 text-emerald-800 p-4 rounded-2xl border border-emerald-200 shadow-md flex items-center gap-3 animate-fadeIn font-bold">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
           <span className="text-xs">{payoutSuccessMsg}</span>
         </div>
       )}
@@ -300,28 +330,28 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-xs space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
           <div>
-            <h2 className="text-lg font-bold text-[#2b1d16] flex items-center gap-2">
-              <Tag className="w-5 h-5 text-[#2b1d16]" />
+            <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
+              <Tag className="w-5 h-5 text-[#24263e]" />
               <span>
                 {lang === 'vi'
                   ? `Quản Lý Tin Đăng Cá Nhân (${filteredListings.length})`
                   : `My Listings Management (${filteredListings.length})`}
               </span>
             </h2>
-            <p className="text-xs text-[#2b1d16]/70 mt-0.5">
+            <p className="text-xs text-[#24263e]/70 mt-0.5">
               {lang === 'vi'
                 ? 'Quản lý trạng thái niêm yết, theo dõi phản hồi đề xuất giá từ người mua và cập nhật thông tin.'
                 : 'Manage listing status, monitor buyer price offers, and update item details.'}
             </p>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-[#f6f5eb] p-1 rounded-xl border border-gray-200 self-start sm:self-auto">
+          <div className="flex items-center gap-1.5 bg-[#faf8f5] p-1 rounded-xl border border-gray-200 self-start sm:self-auto">
             {(['ALL', 'active', 'reserved', 'sold'] as const).map((st) => (
               <button
                 key={st}
                 onClick={() => setFilterStatus(st)}
                 className={`px-3 py-1 rounded-lg text-xs transition cursor-pointer ${
-                  filterStatus === st ? 'bg-[#2b1d16] text-white font-bold' : 'text-[#2b1d16]/70 hover:text-[#2b1d16] font-medium'
+                  filterStatus === st ? 'bg-[#24263e] text-white font-bold' : 'text-[#24263e]/70 hover:text-[#24263e] font-medium'
                 }`}
               >
                 {st === 'ALL'
@@ -340,7 +370,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           {filteredListings.map((item) => (
             <div
               key={item.id}
-              className="bg-[#f6f5eb] rounded-2xl p-4 border border-gray-200 hover:border-[#cea981] transition shadow-2xs flex flex-col justify-between space-y-3"
+              className="bg-[#faf8f5] rounded-2xl p-4 border border-gray-200 hover:border-[#c34c36] transition shadow-2xs flex flex-col justify-between space-y-3"
             >
               <div className="flex gap-3">
                 <img
@@ -350,21 +380,21 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 />
                 <div className="space-y-1 overflow-hidden">
                   <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    item.status === 'active' ? 'bg-[#2b1d16] text-white' : 'bg-[#cea981] text-[#2b1d16] font-bold'
+                    item.status === 'active' ? 'bg-[#24263e] text-white' : 'bg-[#c34c36] text-[#24263e] font-bold'
                   }`}>
                     {item.status === 'active'
                       ? (lang === 'vi' ? '● Đang Niêm Yết' : '● Active')
                       : (lang === 'vi' ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited')}
                   </span>
-                  <h3 className="font-bold text-xs text-[#2b1d16] truncate" title={item.title}>
+                  <h3 className="font-bold text-xs text-[#24263e] truncate" title={item.title}>
                     {item.title}
                   </h3>
-                  <div className="text-sm font-extrabold text-[#2b1d16]">
+                  <div className="text-sm font-extrabold text-[#24263e]">
                     {formatVND(item.priceVnd)}
                   </div>
-                  <div className="text-[11px] text-[#2b1d16]/70">
+                  <div className="text-[11px] text-[#24263e]/70">
                     {lang === 'vi' ? 'Độ mới: ' : 'Grade: '}
-                    <span className="font-semibold text-[#2b1d16]">{item.conditionGrade}</span>
+                    <span className="font-semibold text-[#24263e]">{item.conditionGrade}</span>
                   </div>
                 </div>
               </div>
@@ -372,17 +402,17 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               <div className="pt-2 border-t border-gray-200 flex items-center justify-between gap-2">
                 <button
                   onClick={() => onSelectListing(item)}
-                  className="flex-1 py-1.5 px-2 bg-[#2b1d16] hover:bg-black border border-[#2b1d16] rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1 cursor-pointer transition"
+                  className="flex-1 py-1.5 px-2 bg-[#24263e] hover:bg-black border border-[#24263e] rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1 cursor-pointer transition"
                 >
                   <Eye className="w-3.5 h-3.5" />
                   <span>{lang === 'vi' ? 'Xem Chi Tiết' : 'View Details'}</span>
                 </button>
                 <button
                   onClick={onCreateListing}
-                  className="py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#f6f5eb] border border-gray-200 text-[#2b1d16] rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
+                  className="py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] border border-gray-200 text-[#24263e] rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
                   title={lang === 'vi' ? 'Sửa tin đăng' : 'Edit listing'}
                 >
-                  <Edit3 className="w-3.5 h-3.5 text-[#2b1d16]" />
+                  <Edit3 className="w-3.5 h-3.5 text-[#24263e]" />
                 </button>
               </div>
             </div>
@@ -393,38 +423,38 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       {/* Payout Modal */}
       {isPayoutModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fadeIn">
-          <div className="bg-[#FFFFFF] rounded-3xl max-w-md w-full p-6 space-y-5 border border-gray-200 shadow-2xl text-[#2b1d16]">
+          <div className="bg-[#FFFFFF] rounded-3xl max-w-md w-full p-6 space-y-5 border border-gray-200 shadow-2xl text-[#24263e]">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <div className="flex items-center gap-2 font-bold text-base text-[#2b1d16]">
-                <Wallet className="w-5 h-5 text-[#2b1d16]" />
+              <div className="flex items-center gap-2 font-bold text-base text-[#24263e]">
+                <Wallet className="w-5 h-5 text-[#24263e]" />
                 <span>{lang === 'vi' ? 'Rút Tiền Ví Doanh Thu Ngay' : 'Instant Revenue Withdrawal'}</span>
               </div>
               <button
                 onClick={() => setIsPayoutModalOpen(false)}
-                className="text-gray-400 hover:text-[#2b1d16] text-sm font-bold cursor-pointer"
+                className="text-gray-400 hover:text-[#24263e] text-sm font-bold cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
             <div className="space-y-4 text-xs">
-              <div className="bg-[#f6f5eb] p-3 rounded-2xl border border-gray-200">
-                <div className="text-[#2b1d16]/70">
+              <div className="bg-[#faf8f5] p-3 rounded-2xl border border-gray-200">
+                <div className="text-[#24263e]/70">
                   {lang === 'vi' ? 'Số dư ví khả dụng có thể rút:' : 'Available balance eligible for withdrawal:'}
                 </div>
-                <div className="text-xl font-extrabold text-[#2b1d16] mt-0.5">
+                <div className="text-xl font-extrabold text-[#24263e] mt-0.5">
                   {formatVND(totalEarnings)}
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="font-semibold text-[#2b1d16]">
+                <label className="font-semibold text-[#24263e]">
                   {lang === 'vi' ? 'Ngân hàng thụ hưởng *' : 'Beneficiary Bank *'}
                 </label>
                 <select
                   value={bankName}
                   onChange={(e) => setBankName(e.target.value)}
-                  className="w-full p-2.5 bg-[#f6f5eb] border border-gray-200 rounded-xl text-xs font-medium text-[#2b1d16]"
+                  className="w-full p-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs font-medium text-[#24263e]"
                 >
                   <option value="Vietcombank - Ngân hàng TMCP Ngoại Thương Việt Nam">Vietcombank - Ngân hàng VCB</option>
                   <option value="MBBank - Ngân hàng Quân Đội">MBBank - Ngân hàng Quân Đội</option>
@@ -434,38 +464,38 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               </div>
 
               <div className="space-y-1.5">
-                <label className="font-semibold text-[#2b1d16]">
+                <label className="font-semibold text-[#24263e]">
                   {lang === 'vi' ? 'Số tài khoản *' : 'Account Number *'}
                 </label>
                 <input
                   type="text"
                   value={accountNumber}
                   onChange={(e) => setAccountNumber(e.target.value)}
-                  className="w-full p-2.5 bg-[#f6f5eb] border border-gray-200 rounded-xl text-xs font-semibold text-[#2b1d16]"
+                  className="w-full p-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs font-semibold text-[#24263e]"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="font-semibold text-[#2b1d16]">
+                <label className="font-semibold text-[#24263e]">
                   {lang === 'vi' ? 'Tên chủ tài khoản (Viết hoa không dấu) *' : 'Account Holder Name (Uppercase) *'}
                 </label>
                 <input
                   type="text"
                   value={accountHolder}
                   onChange={(e) => setAccountHolder(e.target.value.toUpperCase())}
-                  className="w-full p-2.5 bg-[#f6f5eb] border border-gray-200 rounded-xl text-xs font-bold text-[#2b1d16]"
+                  className="w-full p-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs font-bold text-[#24263e]"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="font-semibold text-[#2b1d16]">
+                <label className="font-semibold text-[#24263e]">
                   {lang === 'vi' ? 'Số tiền cần rút (VND) *' : 'Amount to withdraw (VND) *'}
                 </label>
                 <input
                   type="number"
                   value={payoutAmount}
                   onChange={(e) => setPayoutAmount(Number(e.target.value))}
-                  className="w-full p-2.5 bg-[#f6f5eb] border border-gray-200 rounded-xl text-xs font-bold text-[#2b1d16]"
+                  className="w-full p-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs font-bold text-[#24263e]"
                 />
               </div>
             </div>
@@ -473,13 +503,13 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             <div className="pt-2 flex items-center justify-end gap-2">
               <button
                 onClick={() => setIsPayoutModalOpen(false)}
-                className="px-4 py-2 bg-[#f6f5eb] hover:bg-gray-200 text-[#2b1d16] rounded-xl text-xs font-semibold transition cursor-pointer border border-gray-200"
+                className="px-4 py-2 bg-[#faf8f5] hover:bg-gray-200 text-[#24263e] rounded-xl text-xs font-semibold transition cursor-pointer border border-gray-200"
               >
                 {lang === 'vi' ? 'Hủy bỏ' : 'Cancel'}
               </button>
               <button
                 onClick={handleRequestPayout}
-                className="px-5 py-2 bg-[#2b1d16] hover:bg-black text-white rounded-xl text-xs font-black shadow-md transition cursor-pointer"
+                className="px-5 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl text-xs font-black shadow-md transition cursor-pointer"
               >
                 {lang === 'vi' ? 'Xác Nhận Rút Tiền Ngay' : 'Confirm Instant Withdrawal'}
               </button>
@@ -632,7 +662,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 <button
                   type="submit"
                   disabled={isUploading || !resubmitDocNum || !resubmitFrontUrl || !resubmitBackUrl}
-                  className="px-5 py-2 rounded-xl bg-[#2b1d16] hover:bg-black disabled:opacity-50 text-white font-bold text-xs shadow-md transition cursor-pointer"
+                  className="px-5 py-2 rounded-xl bg-[#24263e] hover:bg-black disabled:opacity-50 text-white font-bold text-xs shadow-md transition cursor-pointer"
                 >
                   {isUploading ? 'Đang Tải / Đang Xử Lý...' : 'Cập Nhật & Nộp Lại'}
                 </button>

@@ -173,7 +173,7 @@ export default function App() {
   };
 
   // Auth Guard Helper
-  const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'admin-dashboard', 'chat'];
+  const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'admin-dashboard', 'staff-workspace', 'chat'];
 
   const requireAuth = (onSuccessAction?: () => void, customMsg?: string): boolean => {
     if (!currentUser) {
@@ -371,7 +371,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col font-sans bg-[#faf8f5] text-[#24263e] selection:bg-[#c34c36] selection:text-white">
       {/* Navigation */}
-      {activeTab !== 'admin-dashboard' && (
+      {activeTab !== 'admin-dashboard' && activeTab !== 'staff-workspace' && (
         <Navbar
           currentRole={currentRole}
           onRoleChange={handleRoleChange}
@@ -428,7 +428,7 @@ export default function App() {
       )}
 
       {/* Main Content Area */}
-      <main className={activeTab === 'admin-dashboard' ? 'flex-1 w-full' : 'flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6'}>
+      <main className={activeTab === 'admin-dashboard' || activeTab === 'staff-workspace' ? 'flex-1 w-full' : 'flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6'}>
         {activeTab === 'home' && (
           <HomePageView
             lang={lang}
@@ -534,6 +534,7 @@ export default function App() {
             listings={listings}
             orders={orders}
             lang={lang}
+            onViewWebsite={() => setActiveTab('marketplace')}
           />
         )}
 

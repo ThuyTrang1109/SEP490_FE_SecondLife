@@ -473,10 +473,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   // Filtered Listings
   const filteredListings = useMemo(() => {
     return localListings.filter((item) => {
+      const title = item?.title || '';
+      const sellerName = item?.sellerName || '';
+      const itemId = item?.id || '';
       const matchSearch =
-        item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.sellerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.id.toLowerCase().includes(searchQuery.toLowerCase());
+        title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        sellerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        itemId.toLowerCase().includes(searchQuery.toLowerCase());
       const matchCat = listingCategoryFilter === 'ALL' || item.category === listingCategoryFilter;
       return matchSearch && matchCat;
     });
@@ -1403,10 +1406,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             <div className="flex items-center gap-2.5">
                               <img
                                 src={
-                                  item.images[0] ||
+                                  item.images?.[0] ||
+                                  (item as any)?.imageUrl ||
                                   'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=150&q=80'
                                 }
-                                alt={item.title}
+                                alt={item.title || 'Product'}
                                 className="w-10 h-10 rounded-lg object-cover border border-slate-200"
                               />
                               <div>

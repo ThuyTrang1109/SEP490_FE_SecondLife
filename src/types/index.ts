@@ -1,4 +1,4 @@
-export type UserRole = 'buyer' | 'seller' | 'inspector' | 'admin';
+export type UserRole = 'buyer' | 'seller' | 'inspector' | 'staff' | 'admin';
 
 export type Language = 'vi' | 'en';
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Phone, Coins } from 'lucide-react';
+import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Phone, Coins, FileCheck } from 'lucide-react';
 import { UserRole, Language, UserCredit } from '../../types';
 import { translations } from '../../utils/translations';
 import logoImg from '../../assets/logo.png';
@@ -79,6 +79,56 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </div>
 
+            {/* Demo Role Switcher Bar */}
+            <div className="flex items-center gap-1 bg-white/10 p-0.5 rounded-xl border border-white/20 text-[11px] font-bold">
+              <span className="px-1.5 text-amber-300 font-black hidden xl:inline">Role:</span>
+              <button
+                onClick={() => onRoleChange('buyer')}
+                className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
+                  currentRole === 'buyer' ? 'bg-[#c34c36] text-white font-black shadow-xs' : 'text-white/80 hover:text-white'
+                }`}
+                title="Chuyển vai trò Người Mua"
+              >
+                🛒 Buyer
+              </button>
+              <button
+                onClick={() => onRoleChange('seller')}
+                className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
+                  currentRole === 'seller' ? 'bg-[#c34c36] text-white font-black shadow-xs' : 'text-white/80 hover:text-white'
+                }`}
+                title="Chuyển vai trò Người Bán"
+              >
+                🏪 Seller
+              </button>
+              <button
+                onClick={() => onRoleChange('staff')}
+                className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
+                  currentRole === 'staff' ? 'bg-[#2b1d16] text-white font-black shadow-xs' : 'text-white/80 hover:text-white'
+                }`}
+                title="Chuyển vai trò Nhân Viên Staff"
+              >
+                🛠️ Staff
+              </button>
+              <button
+                onClick={() => onRoleChange('inspector')}
+                className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
+                  currentRole === 'inspector' ? 'bg-emerald-700 text-white font-black shadow-xs' : 'text-white/80 hover:text-white'
+                }`}
+                title="Chuyển vai trò Kỹ Sư Kiểm Định"
+              >
+                🔍 Inspector
+              </button>
+              <button
+                onClick={() => onRoleChange('admin')}
+                className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
+                  currentRole === 'admin' ? 'bg-purple-700 text-white font-black shadow-xs' : 'text-white/80 hover:text-white'
+                }`}
+                title="Chuyển vai trò Quản Trị Viên"
+              >
+                🛡️ Admin
+              </button>
+            </div>
+
             {/* Language Toggle */}
             <button
               onClick={() => onLangChange(lang === 'vi' ? 'en' : 'vi')}
@@ -122,7 +172,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Navigation Tabs */}
-        <nav className="hidden lg:flex items-center gap-1">
+        <nav className="hidden lg:flex items-center gap-1.5 max-w-full overflow-x-auto scrollbar-none py-1">
           <button
             onClick={() => onTabChange('home')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
@@ -175,7 +225,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          {currentUser && (currentRole === 'buyer' || currentRole === 'seller' || currentRole === 'admin') && (
+          {currentUser && (
             <button
               onClick={() => onTabChange('orders')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${
@@ -194,7 +244,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          {currentUser && (currentRole === 'inspector' || currentRole === 'admin') && (
+          {currentUser && currentRole === 'staff' && (
+            <button
+              onClick={() => onTabChange('staff-workspace')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                activeTab === 'staff-workspace'
+                  ? 'bg-[#2b1d16] text-white shadow-sm font-black'
+                  : 'text-white/80 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <FileCheck className="w-3.5 h-3.5 text-[#cea981]" />
+              <span>{lang === 'vi' ? 'Nghiệp Vụ Staff' : 'Staff Portal'}</span>
+            </button>
+          )}
+
+          {currentUser && currentRole === 'inspector' && (
             <button
               onClick={() => onTabChange('inspection-hub')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
@@ -297,6 +361,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     {currentRole === 'buyer' && 'Buyer'}
                     {currentRole === 'seller' && 'Seller'}
                     {currentRole === 'inspector' && 'Inspector'}
+                    {currentRole === 'staff' && 'Staff'}
                     {currentRole === 'admin' && 'Admin'}
                   </div>
                 </div>

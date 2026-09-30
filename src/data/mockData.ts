@@ -1,4 +1,4 @@
-import { Listing, EscrowOrder, InspectionCenter, DisputeCase, ChatMessage, InspectionChecklistItem } from '../types';
+import { Listing, EscrowOrder, InspectionCenter, DisputeCase, ChatMessage, InspectionChecklistItem, UserProfile, UserRole } from '../types';
 
 export const mockInspectionCenters: InspectionCenter[] = [
   {
@@ -660,3 +660,90 @@ export const mockDisputes: DisputeCase[] = [
     status: 'PENDING_ARBITRATION'
   }
 ];
+
+export const mockUsersByRole: Record<UserRole, UserProfile> = {
+  buyer: {
+    id: 'mock-buyer-01',
+    name: 'Nguyễn Văn An (Khách Mua Demo)',
+    email: 'buyer.demo@secondlife.vn',
+    role: 'buyer',
+    phone: '0901234567',
+    address: '123 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh',
+    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=256',
+    accountStatus: 'ACTIVE',
+    kycStatus: 'unverified',
+    emailVerified: true,
+    walletBalanceVnd: 15000000,
+    escrowLockedVnd: 0,
+    trustScore: 98,
+    completedOrdersCount: 5,
+  },
+  seller: {
+    id: 'mock-seller-01',
+    name: 'Hoàng Quốc Khang (Chủ Shop Seller)',
+    email: 'seller.demo@secondlife.vn',
+    role: 'seller',
+    phone: '0987654321',
+    address: 'Số 1059 Nguyễn Văn Linh, Quận 7, TP. Hồ Chí Minh',
+    avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=256',
+    accountStatus: 'ACTIVE',
+    kycStatus: 'verified',
+    emailVerified: true,
+    walletBalanceVnd: 45000000,
+    escrowLockedVnd: 12500000,
+    trustScore: 99,
+    completedOrdersCount: 42,
+    sellerRating: 4.9,
+    isSellerRegistered: true,
+    shopName: 'Điện Máy Cũ Khang Hoàng (Showroom 3D)',
+    pickupAddress: 'Kho Khang Hoàng, 1059 Nguyễn Văn Linh, Quận 7, TP. Hồ Chí Minh',
+    idCardNumber: '079095012345',
+    bankAccount: {
+      bankName: 'MBBank (Ngân Hàng Quân Đội)',
+      accountNumber: '999988887777',
+      accountHolder: 'HOANG QUOC KHANG'
+    }
+  },
+  staff: {
+    id: 'mock-staff-01',
+    name: 'Phạm Minh Đức (Nhân Viên Staff Thẩm Định)',
+    email: 'staff.demo@secondlife.vn',
+    role: 'staff',
+    phone: '0912345678',
+    address: 'Văn phòng SecondLife Hub HCMC, Quận 7',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
+    accountStatus: 'ACTIVE',
+    kycStatus: 'verified',
+    emailVerified: true,
+    walletBalanceVnd: 0,
+    trustScore: 100,
+  },
+  inspector: {
+    id: 'mock-inspector-01',
+    name: 'Lê Hoàng Khang (Kỹ Sư Hub Inspector)',
+    email: 'inspector.demo@secondlife.vn',
+    role: 'inspector',
+    phone: '0933445566',
+    address: 'Khu Kỹ Thuật Hub Cầu Giấy, Hà Nội',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=256',
+    accountStatus: 'ACTIVE',
+    kycStatus: 'verified',
+    emailVerified: true,
+    walletBalanceVnd: 0,
+    trustScore: 100,
+  },
+  admin: {
+    id: 'mock-admin-01',
+    name: 'System Administrator (Quản Trị Hệ Thống)',
+    email: 'admin.demo@secondlife.vn',
+    role: 'admin',
+    phone: '0999888777',
+    address: 'Trụ Sở SecondLife Vietnam',
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=256',
+    accountStatus: 'ACTIVE',
+    kycStatus: 'verified',
+    emailVerified: true,
+    walletBalanceVnd: 0,
+    trustScore: 100,
+  }
+};

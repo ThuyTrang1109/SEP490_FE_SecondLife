@@ -1394,18 +1394,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <label className="text-xs font-bold text-[#24263e]">
                       {lang === 'vi' ? 'Mã xác thực OTP (6 chữ số)' : '6-digit OTP Code'} <strong className="text-rose-500">*</strong>
                     </label>
-                    {generatedResetOtp && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setOtpCode(generatedResetOtp);
-                          markTouched('otpCode');
-                        }}
-                        className="text-[11px] font-bold text-[#24263e] hover:underline cursor-pointer"
-                      >
-                        ⚡ Nhập nhanh: {generatedResetOtp}
-                      </button>
-                    )}
                   </div>
                   <div className="relative">
                     <KeyRound className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${

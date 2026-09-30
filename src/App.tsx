@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit } from './types';
-import { mockListings, mockOrders, mockDisputes } from './data/mockData';
+import { mockListings, mockOrders, mockDisputes, mockUsersByRole } from './data/mockData';
 import { formatVND } from './utils/translations';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
@@ -10,6 +10,7 @@ import { CreateListingView } from './pages/CreateListingView';
 import { SellerDashboardView } from './pages/SellerDashboardView';
 import { EscrowOrdersView } from './pages/EscrowOrdersView';
 import { InspectorPortalView } from './pages/InspectorPortalView';
+import { StaffWorkspaceView } from './pages/StaffWorkspaceView';
 import { AdminDashboardView } from './pages/AdminDashboardView';
 import { ChatModal } from './components/modals/ChatModal';
 import { CheckoutModal } from './components/modals/CheckoutModal';
@@ -236,11 +237,23 @@ export default function App() {
   // Handlers
   const handleRoleChange = (newRole: UserRole) => {
     setCurrentRole(newRole);
-    if (currentUser) {
-      setCurrentUser((prev) => prev ? { ...prev, role: newRole } : null);
+    const mockUser = mockUsersByRole[newRole];
+    if (mockUser) {
+      setCurrentUser(mockUser);
     }
+    const roleLabels: Record<UserRole, string> = {
+      buyer: 'Người Mua (Buyer)',
+      seller: 'Người Bán (Seller)',
+      staff: 'Nhân Viên (Staff)',
+      inspector: 'Kỹ Sư Hub (Inspector)',
+      admin: 'Quản Trị Viên (Admin)'
+    };
+    showToast(`Đã chuyển sang vai trò ${roleLabels[newRole]} & kích hoạt tài khoản thử nghiệm giao diện!`);
+
     if (newRole === 'inspector') {
       handleTabChange('inspection-hub');
+    } else if (newRole === 'staff') {
+      handleTabChange('staff-workspace');
     } else if (newRole === 'admin') {
       handleTabChange('admin-dashboard');
     } else if (newRole === 'seller') {
@@ -397,16 +410,16 @@ export default function App() {
 
       {/* Floating Top Welcome Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-4 sm:top-6 left-1/2 -translate-x-1/2 z-[100] w-[92%] sm:w-auto min-w-[340px] max-w-xl bg-[#c34c36] backdrop-blur-2xl text-[#24263e] px-5 py-3.5 rounded-2xl shadow-2xl border-2 border-[#24263e]/20 flex items-center gap-3.5 transition-all duration-300 transform scale-100 animate-fadeIn">
-          <div className="w-9 h-9 rounded-xl bg-[#24263e] flex items-center justify-center shrink-0 shadow-md ring-2 ring-white/40">
+        <div className="fixed top-4 sm:top-6 left-1/2 -translate-x-1/2 z-[100] w-[92%] sm:w-auto min-w-[340px] max-w-xl bg-gradient-to-r from-[#fbf8f3] via-[#f5ede3] to-[#ebdccb] backdrop-blur-2xl text-[#2b1d16] px-5 py-3.5 rounded-2xl shadow-2xl border-2 border-[#cea981]/60 flex items-center gap-3.5 transition-all duration-300 transform scale-100 animate-fadeIn">
+          <div className="w-9 h-9 rounded-xl bg-[#2b1d16] flex items-center justify-center shrink-0 shadow-md ring-2 ring-[#cea981]/40">
             <Sparkles className="w-5 h-5 text-white animate-pulse" />
           </div>
           <div className="flex-1 pr-2">
-            <span className="text-xs sm:text-sm font-bold tracking-wide text-[#24263e] leading-tight block">{toastMessage}</span>
+            <span className="text-xs sm:text-sm font-extrabold tracking-wide text-[#2b1d16] leading-tight block">{toastMessage}</span>
           </div>
           <button
             onClick={() => setToastMessage(null)}
-            className="w-7 h-7 rounded-full bg-white/40 hover:bg-white/60 text-[#24263e] flex items-center justify-center text-xs transition-colors shrink-0 cursor-pointer border border-[#24263e]/20 font-bold"
+            className="w-7 h-7 rounded-full bg-[#2b1d16]/10 hover:bg-[#2b1d16]/20 text-[#2b1d16] flex items-center justify-center text-xs transition-colors shrink-0 cursor-pointer border border-[#2b1d16]/20 font-bold"
             title="Đóng"
           >
             ✕
@@ -512,6 +525,14 @@ export default function App() {
           <InspectorPortalView
             orders={orders}
             onCompleteInspection={handleCompleteInspection}
+            lang={lang}
+          />
+        )}
+
+        {activeTab === 'staff-workspace' && (
+          <StaffWorkspaceView
+            listings={listings}
+            orders={orders}
             lang={lang}
           />
         )}

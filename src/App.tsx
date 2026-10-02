@@ -22,13 +22,14 @@ import { VerifyEmailModal } from './components/modals/VerifyEmailModal';
 import { LogoutConfirmModal } from './components/modals/LogoutConfirmModal';
 import { TopUpModal } from './components/modals/TopUpModal';
 import { PolicyModal, PolicyTabKey } from './components/modals/PolicyModal';
+import { SellerReviewsModal } from './components/modals/SellerReviewsModal';
 import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
 import { authService, userService, topupService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
 
 export default function App() {
-  // Global State
+  // Global State - Default to 'marketplace' so visitors enter directly into the marketplace
   const [lang, setLang] = useState<Language>('vi');
-  const [activeTab, setActiveTab] = useState<string>('home');
+  const [activeTab, setActiveTab] = useState<string>('marketplace');
 
   React.useEffect(() => {
     document.body.classList.remove('dark');
@@ -150,7 +151,7 @@ export default function App() {
     clearAuthTokens();
     setCurrentUser(null);
     setCurrentRole('buyer');
-    setActiveTab('home');
+    setActiveTab('marketplace');
     setIsProfileDialogOpen(false);
     showToast(
       lang === 'vi'
@@ -167,7 +168,9 @@ export default function App() {
   // Modals
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [checkoutListing, setCheckoutListing] = useState<Listing | null>(null);
+  const [checkoutAgreedPrice, setCheckoutAgreedPrice] = useState<number | undefined>(undefined);
   const [chatListing, setChatListing] = useState<Listing | null>(null);
+  const [sellerReviewsModalData, setSellerReviewsModalData] = useState<{ sellerId: string; sellerName: string } | null>(null);
 
   // Flash Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -234,7 +237,7 @@ export default function App() {
   // Guard activeTab if logged out
   React.useEffect(() => {
     if (!currentUser && protectedTabs.includes(activeTab)) {
-      setActiveTab('home');
+      setActiveTab('marketplace');
     }
   }, [currentUser, activeTab]);
 
@@ -276,6 +279,7 @@ export default function App() {
   const handleOrderPlaced = (newOrder: EscrowOrder) => {
     setOrders((prev) => [newOrder, ...prev]);
     setCheckoutListing(null);
+    setCheckoutAgreedPrice(undefined);
     setSelectedListing(null);
     setActiveTab('orders');
     showToast(`Đã phong tỏa Escrow ${formatVND(newOrder.totalPaidVnd)} cho đơn hàng #${newOrder.id}! Bưu tá đang chuẩn bị lấy hàng.`);
@@ -598,6 +602,7 @@ export default function App() {
               return;
             }
             setSelectedListing(null);
+            setCheckoutAgreedPrice(undefined);
             setCheckoutListing(item);
           }}
           onChatClick={(item) => {
@@ -609,6 +614,9 @@ export default function App() {
             }
             setChatListing(item);
           }}
+          onOpenSellerReviews={(sellerId, sellerName) => {
+            setSellerReviewsModalData({ sellerId, sellerName });
+          }}
           lang={lang}
         />
       )}
@@ -618,7 +626,11 @@ export default function App() {
         <CheckoutModal
           listing={checkoutListing}
           currentUser={currentUser}
-          onClose={() => setCheckoutListing(null)}
+          agreedPrice={checkoutAgreedPrice}
+          onClose={() => {
+            setCheckoutListing(null);
+            setCheckoutAgreedPrice(undefined);
+          }}
           onOrderPlaced={handleOrderPlaced}
           lang={lang}
         />
@@ -630,6 +642,32 @@ export default function App() {
           listing={chatListing}
           currentRole={currentRole}
           onClose={() => setChatListing(null)}
+          onBuyClick={(item, agreedPrice) => {
+            if (!currentUser) {
+              setPendingCheckoutItem(item);
+              requireAuth(undefined, lang === 'vi'
+                ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
+                : 'Please log in to purchase with Escrow protection.');
+              return;
+            }
+            setChatListing(null);
+            setCheckoutAgreedPrice(agreedPrice);
+            setCheckoutListing(item);
+          }}
+          onOpenSellerReviews={(sellerId, sellerName) => {
+            setSellerReviewsModalData({ sellerId, sellerName });
+          }}
+          lang={lang}
+        />
+      )}
+
+      {/* Seller Reviews & Trust Modal Popup */}
+      {sellerReviewsModalData && (
+        <SellerReviewsModal
+          sellerId={sellerReviewsModalData.sellerId}
+          sellerName={sellerReviewsModalData.sellerName}
+          isOpen={!!sellerReviewsModalData}
+          onClose={() => setSellerReviewsModalData(null)}
           lang={lang}
         />
       )}
@@ -775,6 +813,8 @@ export default function App() {
       {activeTab !== 'admin-dashboard' && (
         <Footer
           lang={lang}
+          currentRole={currentRole}
+          activeTab={activeTab}
           onTabChange={handleTabChange}
           onOpenProfile={() => {
             if (!currentUser) {

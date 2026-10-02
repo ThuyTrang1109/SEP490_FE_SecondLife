@@ -398,30 +398,6 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     }
   };
 
-  const handleInstantActivateDemo = () => {
-    const updated: UserProfile = {
-      ...currentUser,
-      isSellerRegistered: true,
-      role: 'seller',
-      kycStatus: 'verified',
-      shopName: shopName.trim() || currentUser.shopName || `Gian Hàng ${currentUser.name}`,
-      pickupAddress: pickupAddress.trim() || currentUser.pickupAddress || currentUser.address || 'Hà Nội',
-      phone: sellerPhone.trim() || currentUser.phone || '0912345678',
-      idCardNumber: idCardNumber.trim() || '048299102941',
-    };
-    onRoleChange('seller');
-    onUpdateProfile(updated);
-    setSuccessMsg(
-      lang === 'vi'
-        ? 'Đã kích hoạt quyền Người Bán (Chế độ Thử Nghiệm)! Bây giờ bạn có thể đăng tin bán sản phẩm ngay.'
-        : 'Seller role activated (Demo mode)! You can now post listings.'
-    );
-    setShowForm(false);
-    setTimeout(() => {
-      onClose();
-      onNavigateToCreateListing?.();
-    }, 1200);
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
@@ -589,22 +565,12 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     )}
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     <p className="text-[11px] leading-relaxed">
                       {lang === 'vi'
-                        ? 'Hồ sơ của bạn đang được Ban Quản trị SecondLife đối soát CCCD và địa chỉ kho. Để trải nghiệm đăng tin ngay trong môi trường thử nghiệm, bạn có thể nhấn kích hoạt nhanh bên dưới.'
-                        : 'Your profile is awaiting review by SecondLife administrators. You can use the quick demo activation below to test posting.'}
+                        ? 'Hồ sơ của bạn đang được Ban Quản trị SecondLife đối soát CCCD và địa chỉ kho. Vui lòng chờ phê duyệt trong 24 giờ làm việc.'
+                        : 'Your profile is awaiting review by SecondLife administrators. Please wait for approval within 24 working hours.'}
                     </p>
-                    <div className="flex items-center gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={handleInstantActivateDemo}
-                        className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{lang === 'vi' ? 'Kích Hoạt Quyền Người Bán Ngay (Thử Nghiệm)' : 'Instant Activate Seller (Demo)'}</span>
-                      </button>
-                    </div>
                   </div>
                 )}
               </div>
@@ -764,11 +730,26 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-xl p-2 bg-white text-center transition">
                         {(frontPreview || docFrontUrl) ? (
                           <div className="space-y-1">
-                            <img
-                              src={frontPreview || docFrontUrl}
-                              alt="Front ID"
-                              className="w-full h-24 object-cover rounded-lg border border-slate-100"
-                            />
+                            <div className="relative">
+                              <img
+                                src={frontPreview || docFrontUrl}
+                                alt="Front ID"
+                                className="w-full h-24 object-cover rounded-lg border border-slate-100"
+                              />
+                              {/* X button to clear image */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFrontFile(null);
+                                  setFrontPreview('');
+                                  setDocFrontUrl('');
+                                }}
+                                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-md transition z-10"
+                                title="Xóa ảnh và tải lại"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
                             <div className="flex items-center justify-between px-1">
                               <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
                                 <CheckCircle2 className="w-3 h-3" />
@@ -799,11 +780,26 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-xl p-2 bg-white text-center transition">
                         {(backPreview || docBackUrl) ? (
                           <div className="space-y-1">
-                            <img
-                              src={backPreview || docBackUrl}
-                              alt="Back ID"
-                              className="w-full h-24 object-cover rounded-lg border border-slate-100"
-                            />
+                            <div className="relative">
+                              <img
+                                src={backPreview || docBackUrl}
+                                alt="Back ID"
+                                className="w-full h-24 object-cover rounded-lg border border-slate-100"
+                              />
+                              {/* X button to clear image */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBackFile(null);
+                                  setBackPreview('');
+                                  setDocBackUrl('');
+                                }}
+                                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-md transition z-10"
+                                title="Xóa ảnh và tải lại"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
                             <div className="flex items-center justify-between px-1">
                               <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
                                 <CheckCircle2 className="w-3 h-3" />
@@ -841,12 +837,25 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-xl p-2 bg-white text-center transition min-h-[105px] flex flex-col justify-center">
                         {(selfiePreview || selfieUrl) ? (
                           <div className="space-y-1.5">
-                            <div className="relative w-full h-20 rounded-lg overflow-hidden border border-emerald-400/80 shadow-xs">
+                            <div className="relative w-full h-20 rounded-lg overflow-visible border border-emerald-400/80 shadow-xs">
                               <img
                                 src={selfiePreview || selfieUrl}
                                 alt="Selfie eKYC"
-                                className="w-full h-full object-cover"
+                                className="w-full h-full object-cover rounded-lg"
                               />
+                              {/* X button to clear selfie */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelfieFile(null);
+                                  setSelfiePreview('');
+                                  setSelfieUrl('');
+                                }}
+                                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-md transition z-10"
+                                title="Xóa ảnh và chụp lại"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
                               <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-emerald-600/90 text-white rounded text-[9px] font-bold flex items-center gap-0.5 shadow-xs">
                                 <CheckCircle2 className="w-2.5 h-2.5" />
                                 <span>{lang === 'vi' ? 'Đã chụp' : 'OK'}</span>
@@ -946,17 +955,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
               </div>
 
               {/* Form Action Buttons */}
-              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={handleInstantActivateDemo}
-                  className="text-xs font-bold text-emerald-700 hover:text-emerald-800 hover:underline cursor-pointer flex items-center gap-1"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>{lang === 'vi' ? 'Kích hoạt nhanh (Demo)' : 'Quick Demo Activation'}</span>
-                </button>
-
-                <div className="flex items-center gap-2">
+              <div className="flex items-center justify-end pt-3 border-t border-gray-100 gap-2">
                   {isRegistered && (
                     <button
                       type="button"
@@ -981,7 +980,6 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     </span>
                   </button>
                 </div>
-              </div>
             </form>
           )}
         </div>

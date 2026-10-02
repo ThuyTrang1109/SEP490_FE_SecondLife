@@ -102,6 +102,74 @@ export const mockStandardChecklist: Record<string, InspectionChecklistItem[]> = 
       status: 'pass',
       testedValue: 'Gioăng hít chắc chắn 100%, khay kính lực không vết nứt'
     }
+  ],
+  'Robot & Máy hút bụi': [
+    {
+      id: 'chk-rb-1',
+      category: 'Pin & Nguồn điện',
+      title: 'Kiểm tra pin Lithium & Dung lượng sạc',
+      description: 'Đo dung lượng pin, kiểm tra thời gian sạc và thời lượng hoạt động',
+      status: 'pass',
+      testedValue: 'Pin còn 98% dung lượng, thời gian sạc chuẩn 2.5h'
+    },
+    {
+      id: 'chk-rb-2',
+      category: 'Module hút bụi & Lực hút',
+      title: 'Lực hút & Cảm biến chướng ngại vật',
+      description: 'Kiểm tra lực hút 5000Pa, LiDAR TrueMapping 2.0 quét bản đồ chính xác',
+      status: 'pass',
+      testedValue: 'Lực hút 4980Pa đạt chuẩn, bản đồ 3D mô phỏng chính xác'
+    },
+    {
+      id: 'chk-rb-3',
+      category: 'Trạm sạc & Hệ thống giặt giẻ',
+      title: 'Trạm Omni tự giặt & sấy giẻ',
+      description: 'Kiểm tra chức năng tự giặt giẻ bằng nước nóng 75°C và sấy khô bằng khí nóng',
+      status: 'pass',
+      testedValue: 'Trạm Omni hoạt động chuẩn: giặt 75°C, sấy khí nóng 45°C'
+    },
+    {
+      id: 'chk-rb-4',
+      category: 'Kết nối & Phần mềm',
+      title: 'Wifi & App điều khiển từ xa',
+      description: 'Kết nối Wifi 2.4GHz/5GHz, cài đặt ứng dụng và điều khiển từ xa',
+      status: 'pass',
+      testedValue: 'Kết nối Wifi ổn định, app phản hồi nhanh < 1 giây'
+    }
+  ],
+  'Nồi cơm & Bếp từ': [
+    {
+      id: 'chk-nc-1',
+      category: 'Lòng nồi & Phủ chống dính',
+      title: 'Lòng nồi Eco Stainless & Lớp phủ chống dính',
+      description: 'Kiểm tra lòng nồi không xước, lớp phủ chống dính nguyên vẹn hoàn toàn',
+      status: 'pass',
+      testedValue: 'Lòng nồi không vết xước, chống dính hoàn hảo'
+    },
+    {
+      id: 'chk-nc-2',
+      category: 'Hệ thống áp suất',
+      title: 'Van áp suất 2.0 Bar & Gioăng cao su',
+      description: 'Kiểm tra van áp suất an toàn, gioăng nắp kín, nhiệt độ nấu đạt 121°C',
+      status: 'pass',
+      testedValue: 'Áp suất 2.0 bar ổn định, nhiệt độ nấu 121°C đạt chuẩn'
+    },
+    {
+      id: 'chk-nc-3',
+      category: 'Bo mạch & Cảm biến nhiệt',
+      title: 'Bo mạch điều khiển & Cảm biến nhiệt độ IH',
+      description: 'Kiểm tra cảm biến nhiệt IH, chương trình nấu cơm Fuzzy Logic',
+      status: 'pass',
+      testedValue: 'Cảm biến nhiệt IH phản hồi chính xác ±0.5°C'
+    },
+    {
+      id: 'chk-nc-4',
+      category: 'Nắp & Bộ lọc hơi',
+      title: 'Nắp nồi & Bộ lọc hơi nước',
+      description: 'Kiểm tra cơ chế khóa nắp tự động, bộ lọc hơi dễ tháo lắp vệ sinh',
+      status: 'pass',
+      testedValue: 'Khóa nắp cơ học an toàn, bộ lọc hơi sạch nguyên bản'
+    }
   ]
 };
 
@@ -611,6 +679,14 @@ export const mockOrders: EscrowOrder[] = [
     updatedAt: '2026-09-03T19:00:00Z',
     multiStagePhotos: {
       listingPhotos: [
+        'https://images.unsplash.com/photo-1544233726-9f1d2b27be8b?auto=format&fit=crop&w=1000&q=80',
+        'https://images.unsplash.com/photo-1585515320310-259814833e62?auto=format&fit=crop&w=1000&q=80'
+      ],
+      inspectorPhotos: [
+        'https://images.unsplash.com/photo-1544233726-9f1d2b27be8b?auto=format&fit=crop&w=1000&q=80',
+        'https://images.unsplash.com/photo-1585515320310-259814833e62?auto=format&fit=crop&w=1000&q=80'
+      ],
+      handoverPhotos: [
         'https://images.unsplash.com/photo-1544233726-9f1d2b27be8b?auto=format&fit=crop&w=1000&q=80'
       ]
     }

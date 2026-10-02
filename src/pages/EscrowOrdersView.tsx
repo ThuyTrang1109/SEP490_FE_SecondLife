@@ -27,8 +27,13 @@ import {
   MessageSquare,
   Wallet,
   Receipt,
-  Check
+  Check,
+  Star,
+  Award
 } from 'lucide-react';
+import { ProductReviewModal } from '../components/modals/ProductReviewModal';
+import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
+import { reviewService } from '../data/mockReviews';
 
 interface EscrowOrdersViewProps {
   orders: EscrowOrder[];
@@ -63,6 +68,44 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [detailModalOrder, setDetailModalOrder] = useState<EscrowOrder | null>(null);
   const [activePhotoStage, setActivePhotoStage] = useState<'listing' | 'inspector' | 'handover'>('inspector');
+
+  // Review & Seller Trust Modal state
+  const [reviewModalOrder, setReviewModalOrder] = useState<EscrowOrder | null>(null);
+  const [sellerReviewsModalData, setSellerReviewsModalData] = useState<{ sellerId: string; sellerName: string } | null>(null);
+  const [reviewedOrderIds, setReviewedOrderIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('secondlife_reviewed_order_ids');
+      return saved ? JSON.parse(saved) : ['ORD-2026-8804'];
+    } catch {
+      return ['ORD-2026-8804'];
+    }
+  });
+
+  const handleReviewSubmit = (reviewData: { rating: number; comment: string; tags: string[]; photos: string[] }) => {
+    if (!reviewModalOrder) return;
+    reviewService.addReview({
+      orderId: reviewModalOrder.id,
+      listingId: reviewModalOrder.listingId,
+      productName: reviewModalOrder.listing.title,
+      sellerId: reviewModalOrder.sellerId,
+      sellerName: reviewModalOrder.sellerName,
+      buyerId: reviewModalOrder.buyerId,
+      buyerName: reviewModalOrder.buyerName,
+      rating: reviewData.rating,
+      comment: reviewData.comment,
+      tags: reviewData.tags,
+      photos: reviewData.photos,
+      isVerifiedPurchase: true,
+      conditionGrade: reviewModalOrder.listing.conditionGrade
+    });
+
+    const nextReviewed = Array.from(new Set([...reviewedOrderIds, reviewModalOrder.id]));
+    setReviewedOrderIds(nextReviewed);
+    try {
+      localStorage.setItem('secondlife_reviewed_order_ids', JSON.stringify(nextReviewed));
+    } catch {}
+    setReviewModalOrder(null);
+  };
 
   // Seller specific state
   const [pickupConfirmedNotice, setPickupConfirmedNotice] = useState<string | null>(null);
@@ -449,6 +492,21 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                       <>
                         <Store className="w-4 h-4 text-slate-500" />
                         <span className="text-xs font-bold text-slate-900">{ord.sellerName}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSellerReviewsModalData({
+                              sellerId: ord.sellerId,
+                              sellerName: ord.sellerName
+                            });
+                          }}
+                          className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 hover:bg-amber-100 transition cursor-pointer shadow-2xs"
+                          title={lang === 'vi' ? 'Xem điểm uy tín & đánh giá người bán' : 'View seller trust & reviews'}
+                        >
+                          <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
+                          <span>98đ uy tín</span>
+                        </button>
                       </>
                     )}
                     <span className="text-[11px] font-mono text-slate-400">#{ord.id}</span>
@@ -641,15 +699,41 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                         )}
 
                         {ord.escrowStatus === 'COMPLETED_RELEASED' && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDetailModalOrder(ord);
-                            }}
-                            className="px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold hover:bg-emerald-100 transition cursor-pointer"
-                          >
-                            <span>{lang === 'vi' ? 'Xem Biên Bản Hub' : 'Hub Report'}</span>
-                          </button>
+                          <>
+                            {reviewedOrderIds.includes(ord.id) ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setReviewModalOrder(ord);
+                                }}
+                                className="px-3.5 py-2 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold hover:bg-amber-100 transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                              >
+                                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                                <span>{lang === 'vi' ? 'Đã Đánh Giá • Xem lại' : 'Reviewed • View'}</span>
+                              </button>
+                            ) : (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setReviewModalOrder(ord);
+                                }}
+                                className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-[#c34c36] text-white text-xs font-black hover:opacity-90 transition cursor-pointer flex items-center gap-1.5 shadow-md animate-pulse"
+                              >
+                                <Star className="w-3.5 h-3.5 fill-white text-white" />
+                                <span>{lang === 'vi' ? '⭐ Đánh Giá Sản Phẩm' : 'Rate & Review'}</span>
+                              </button>
+                            )}
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDetailModalOrder(ord);
+                              }}
+                              className="px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold hover:bg-emerald-100 transition cursor-pointer"
+                            >
+                              <span>{lang === 'vi' ? 'Xem Biên Bản Hub' : 'Hub Report'}</span>
+                            </button>
+                          </>
                         )}
                       </>
                     )}
@@ -813,7 +897,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   </p>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    {detailModalOrder.inspectionReport.checklistResults.slice(0, 4).map((chk) => (
+                    {(detailModalOrder.inspectionReport.checklistResults || []).slice(0, 4).map((chk) => (
                       <div key={chk.id} className="flex items-center gap-2 bg-[#FFFFFF] p-2 rounded-lg border border-gray-200">
                         <CheckCircle2 className="w-3.5 h-3.5 text-[#24263e] shrink-0" />
                         <div className="truncate">
@@ -1056,7 +1140,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               </button>
               <button
                 onClick={() => {
-                  window.print();
+                  // Simulate print action without triggering browser's print dialog
+                  // which causes the page to appear blank/white
+                  const btn = document.activeElement as HTMLElement;
+                  if (btn) btn.blur();
+                  setTimeout(() => window.print(), 100);
                 }}
                 className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5 cursor-pointer"
               >
@@ -1066,6 +1154,28 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Product Review Modal for Customer (Requirement 1) */}
+      {reviewModalOrder && (
+        <ProductReviewModal
+          order={reviewModalOrder}
+          isOpen={!!reviewModalOrder}
+          onClose={() => setReviewModalOrder(null)}
+          onSubmitReview={handleReviewSubmit}
+          lang={lang}
+        />
+      )}
+
+      {/* Seller Reviews & Trust Modal for Buyer (Requirements 2 & 3) */}
+      {sellerReviewsModalData && (
+        <SellerReviewsModal
+          sellerId={sellerReviewsModalData.sellerId}
+          sellerName={sellerReviewsModalData.sellerName}
+          isOpen={!!sellerReviewsModalData}
+          onClose={() => setSellerReviewsModalData(null)}
+          lang={lang}
+        />
       )}
     </div>
   );

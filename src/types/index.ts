@@ -58,6 +58,7 @@ export interface Listing {
   sellerRating: number;
   sellerCompletedOrders: number;
   sellerVerified: boolean;
+  sellerTrustScore?: number;
   status: ListingStatus;
   createdAt: string;
   isInspectionGuaranteed: boolean;
@@ -145,8 +146,49 @@ export interface EscrowOrder {
   shippingLegs: ShippingLeg[];
   inspectionWindowEndsAt?: string;
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
   multiStagePhotos: MultiStagePhotos;
+  isReviewed?: boolean;
+  userReview?: ProductReview;
+}
+
+export interface ProductReview {
+  id: string;
+  orderId?: string;
+  listingId: string;
+  productName: string;
+  sellerId: string;
+  sellerName: string;
+  buyerId: string;
+  buyerName: string;
+  buyerAvatar?: string;
+  rating: number; // 1-5
+  comment: string;
+  tags?: string[];
+  photos?: string[];
+  createdAt: string;
+  isVerifiedPurchase: boolean;
+  conditionGrade?: ConditionGrade;
+  sellerResponse?: {
+    comment: string;
+    respondedAt: string;
+  };
+}
+
+export interface SellerTrustProfile {
+  sellerId: string;
+  sellerName: string;
+  trustScore: number; // 0 - 100
+  tier: 'Kim Cương' | 'Bạch Kim' | 'Vàng' | 'Bạc';
+  rating: number;
+  reviewCount: number;
+  successfulOrders: number;
+  completionRate: number;
+  responseRate: number;
+  responseTime: string;
+  hubPassRate: number;
+  cancellationRate: number;
+  badges: string[];
 }
 
 export interface DisputeCase {

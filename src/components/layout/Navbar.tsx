@@ -147,7 +147,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Logo */}
         <div
           className="flex items-center gap-2.5 cursor-pointer select-none group shrink-0"
-          onClick={() => onTabChange('home')}
+          onClick={() => onTabChange('marketplace')}
         >
           <div className="logo-badge bg-white p-1.5 rounded-xl shadow-xs border border-white/80 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
             <img

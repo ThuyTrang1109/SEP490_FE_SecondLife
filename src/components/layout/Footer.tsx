@@ -9,32 +9,151 @@ import {
   MapPin,
   Building,
   CheckCircle2,
-  Copy
+  Copy,
+  Home,
+  ShoppingBag,
+  Store,
+  PlusCircle,
+  Clock,
+  MessageSquare,
+  Wrench,
+  ShieldAlert,
+  ArrowRight
 } from 'lucide-react';
-import { Language } from '../../types';
+import { Language, UserRole } from '../../types';
 import { PolicyTabKey } from '../modals/PolicyModal';
 import logoImg from '../../assets/logo.png';
 
 interface FooterProps {
   lang?: Language;
+  currentRole?: UserRole | string;
+  activeTab?: string;
   onTabChange?: (tab: string) => void;
   onOpenProfile?: () => void;
   onOpenPolicy?: (policyKey: PolicyTabKey) => void;
 }
 
+interface NavItemConfig {
+  id: string;
+  labelVi: string;
+  labelEn: string;
+  titleVi: string;
+  titleEn: string;
+  icon: React.ComponentType<{ className?: string }>;
+  roles: UserRole[];
+}
+
+const getNavItems = (role: UserRole | string = 'buyer'): NavItemConfig[] => {
+  const normalizedRole = (role || 'buyer') as UserRole;
+  const allItems: NavItemConfig[] = [
+    {
+      id: 'home',
+      labelVi: 'Trang Chủ Giới Thiệu',
+      labelEn: 'Showcase Home',
+      titleVi: 'Xem trang giới thiệu hệ sinh thái SecondLife',
+      titleEn: 'View SecondLife platform showcase',
+      icon: Home,
+      roles: ['buyer', 'seller', 'inspector', 'staff', 'admin'],
+    },
+    {
+      id: 'marketplace',
+      labelVi: 'Sàn Bán Hàng (Chính)',
+      labelEn: 'Marketplace (Main)',
+      titleVi: 'Mua sắm trực tiếp trên sàn đồ cũ kiểm định',
+      titleEn: 'Shop certified second-hand appliances',
+      icon: ShoppingBag,
+      roles: ['buyer', 'seller', 'inspector', 'staff', 'admin'],
+    },
+    {
+      id: 'orders',
+      labelVi: normalizedRole === 'seller' ? 'Quản Lý Đơn Bán' : 'Đơn Ký Quỹ Escrow',
+      labelEn: normalizedRole === 'seller' ? 'Sales Orders' : 'Escrow Orders',
+      titleVi: normalizedRole === 'seller' ? 'Quản lý đơn bán hàng và bảo lãnh thanh toán' : 'Theo dõi đơn hàng và tiền ký quỹ an toàn',
+      titleEn: 'Track orders and escrow payment status',
+      icon: Clock,
+      roles: ['buyer', 'seller', 'inspector', 'staff', 'admin'],
+    },
+    {
+      id: 'chat',
+      labelVi: 'Chat & Đàm Phán AI',
+      labelEn: 'AI Negotiation',
+      titleVi: 'Chat trực tiếp & thương lượng giá thông minh',
+      titleEn: 'Live chat & AI smart price negotiation',
+      icon: MessageSquare,
+      roles: ['buyer', 'seller', 'inspector', 'staff', 'admin'],
+    },
+    {
+      id: 'seller-dashboard',
+      labelVi: 'Kênh Người Bán',
+      labelEn: 'Seller Hub',
+      titleVi: 'Bảng điều khiển dành riêng cho người bán',
+      titleEn: 'Dedicated seller management dashboard',
+      icon: Store,
+      roles: ['seller', 'admin'],
+    },
+    {
+      id: 'create-listing',
+      labelVi: 'Đăng Bán AI',
+      labelEn: 'Post Listing',
+      titleVi: 'Đăng tải sản phẩm mới với AI hỗ trợ',
+      titleEn: 'Post new appliance listing with AI support',
+      icon: PlusCircle,
+      roles: ['seller', 'admin'],
+    },
+    {
+      id: 'inspection-hub',
+      labelVi: 'Kiểm Định Hub',
+      labelEn: 'Inspection Hub',
+      titleVi: 'Cổng kiểm định kỹ thuật 48 bước phòng Lab',
+      titleEn: '48-point technical inspection portal',
+      icon: Building,
+      roles: ['inspector', 'staff', 'admin'],
+    },
+    {
+      id: 'staff-workspace',
+      labelVi: 'Nghiệp Vụ Staff',
+      labelEn: 'Staff Portal',
+      titleVi: 'Không gian xử lý nghiệp vụ nhân viên sàn',
+      titleEn: 'Staff operational management portal',
+      icon: Wrench,
+      roles: ['staff', 'admin'],
+    },
+    {
+      id: 'admin-dashboard',
+      labelVi: 'Quản Trị Admin',
+      labelEn: 'Admin Hub',
+      titleVi: 'Quản trị toàn diện hệ thống SecondLife',
+      titleEn: 'System administration & analytics hub',
+      icon: ShieldAlert,
+      roles: ['admin'],
+    },
+  ];
+
+  return allItems.filter((item) => item.roles.includes(normalizedRole));
+};
+
 export const Footer: React.FC<FooterProps> = ({
   lang = 'vi',
+  currentRole = 'buyer',
+  activeTab = 'marketplace',
   onTabChange,
   onOpenProfile,
   onOpenPolicy
 }) => {
   const [copiedEmail, setCopiedEmail] = React.useState(false);
 
+  const navItems = React.useMemo(() => getNavItems(currentRole), [currentRole]);
+
   const handleCopyEmail = (e: React.MouseEvent) => {
     e.preventDefault();
     navigator.clipboard.writeText('noreply.homeappliance@gmail.com');
     setCopiedEmail(true);
     setTimeout(() => setCopiedEmail(false), 2000);
+  };
+
+  const handleNavigate = (tab: string) => {
+    onTabChange?.(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
@@ -104,6 +223,31 @@ export const Footer: React.FC<FooterProps> = ({
         </div>
       </div>
 
+      {/* QUICK SYSTEM NAVIGATION STRIP (Role-based Navigation) */}
+      <div className="bg-[#171826] border-b border-white/10 py-3 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto flex items-center justify-center gap-2 overflow-x-auto scrollbar-none flex-wrap">
+          {navItems.map((item) => {
+            const isActive = activeTab === item.id;
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleNavigate(item.id)}
+                className={`px-3.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0 ${
+                  isActive
+                    ? 'bg-[#c34c36] text-white font-black shadow-md ring-1 ring-white/25 hover:opacity-90'
+                    : 'bg-white/10 hover:bg-[#c34c36] text-white/90 hover:text-white'
+                }`}
+                title={lang === 'vi' ? item.titleVi : item.titleEn}
+              >
+                <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-white' : 'text-white/80'}`} />
+                <span>{lang === 'vi' ? item.labelVi : item.labelEn}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* 2. Main Footer Directory Links (5 Columns) */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8">
@@ -148,6 +292,7 @@ export const Footer: React.FC<FooterProps> = ({
                   <strong className="text-white font-black text-sm">1900 8899</strong> <span className="text-white/70 font-medium">(8:00 - 21:00)</span>
                 </span>
               </div>
+
               <div className="flex items-center gap-2 text-white/90">
                 <Mail className="w-4 h-4 text-[#fce5da] shrink-0" />
                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -169,6 +314,7 @@ export const Footer: React.FC<FooterProps> = ({
                   </button>
                 </div>
               </div>
+
               <div className="flex items-start gap-2 text-white/80">
                 <MapPin className="w-4 h-4 text-[#fce5da] shrink-0 mt-0.5" />
                 <span>
@@ -177,20 +323,36 @@ export const Footer: React.FC<FooterProps> = ({
                     : 'Address: Lot E2a-7, D1 Street, High-Tech Park, Tang Nhon Phu Ward, Ho Chi Minh City.'}
                 </span>
               </div>
-              <div className="flex items-start gap-2 text-white/70 text-[11px]">
-                <Building className="w-4 h-4 text-white/60 shrink-0 mt-0.5" />
-                <span>
-                  {lang === 'vi' ? (
-                    <>Mạng lưới Hub kiểm định: <strong className="text-white font-bold">Hà Nội</strong> (Cầu Giấy) &bull; <strong className="text-white font-bold">Đà Nẵng</strong> (Hải Châu) &bull; <strong className="text-white font-bold">TP. Hồ Chí Minh</strong> (Khu CNC Tăng Nhơn Phú)</>
-                  ) : (
-                    <>Inspection Hub Network: <strong className="text-white font-bold">Hanoi</strong> (Cau Giay) &bull; <strong className="text-white font-bold">Da Nang</strong> (Hai Chau) &bull; <strong className="text-white font-bold">Ho Chi Minh City</strong> (High-Tech Park)</>
-                  )}
-                </span>
-              </div>
             </div>
           </div>
 
-          {/* Cột 2: Chăm sóc khách hàng */}
+          {/* Cột 2: Các Trang Hệ Thống (Phù hợp theo role) */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-black text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>{lang === 'vi' ? 'Các Trang Hệ Thống' : 'System Pages'}</span>
+            </h4>
+            <ul className="space-y-2 text-xs text-white/85 font-medium">
+              {navItems.map((item) => {
+                const isActive = activeTab === item.id;
+                return (
+                  <li key={item.id}>
+                    <button
+                      onClick={() => handleNavigate(item.id)}
+                      className={`hover:text-[#fce5da] hover:underline transition flex items-center gap-1.5 text-left cursor-pointer ${
+                        isActive ? 'font-bold text-white' : 'text-white/85'
+                      }`}
+                    >
+                      <ArrowRight className={`w-3 h-3 ${isActive ? 'text-[#c34c36]' : 'text-white/40'}`} />
+                      <span>{lang === 'vi' ? item.labelVi : item.labelEn}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          {/* Cột 3: Chăm Sóc Khách Hàng & Quy Chuẩn */}
           <div className="space-y-3">
             <h4 className="text-xs font-black text-white uppercase tracking-wider">
               {lang === 'vi' ? 'Chăm Sóc Khách Hàng' : 'Customer Service'}
@@ -234,93 +396,51 @@ export const Footer: React.FC<FooterProps> = ({
             </ul>
           </div>
 
-          {/* Cột 3: Về SecondLife */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-black text-white uppercase tracking-wider">
-              {lang === 'vi' ? 'Về SecondLife' : 'About SecondLife'}
-            </h4>
-            <ul className="space-y-2 text-xs text-white/75 font-medium">
-              <li>
-                <button onClick={() => onOpenPolicy?.('about')} className="hover:text-[#fce5da] hover:underline transition text-left cursor-pointer">
-                  {lang === 'vi' ? 'Giới thiệu về SecondLife' : 'About SecondLife Platform'}
-                </button>
-              </li>
-              <li>
-                <button onClick={() => onOpenPolicy?.('lab')} className="hover:text-[#fce5da] hover:underline transition text-left cursor-pointer">
-                  {lang === 'vi' ? 'Hệ thống phòng Lab Hub' : 'Inspection Hub Labs System'}
-                </button>
-              </li>
-              <li>
-                <button onClick={() => onOpenPolicy?.('lab')} className="hover:text-[#fce5da] hover:underline transition text-left cursor-pointer">
-                  {lang === 'vi' ? 'Quy chuẩn phân hạng Grade S/A/B' : 'Grade S/A/B Quality Standards'}
-                </button>
-              </li>
-              <li>
-                <button onClick={() => onOpenPolicy?.('rules')} className="hover:text-[#fce5da] hover:underline transition text-left cursor-pointer">
-                  {lang === 'vi' ? 'Quy chế hoạt động sàn' : 'Operating Rules'}
-                </button>
-              </li>
-              <li>
-                <button onClick={() => onOpenPolicy?.('terms')} className="hover:text-[#fce5da] hover:underline transition text-left cursor-pointer">
-                  {lang === 'vi' ? 'Điều khoản dịch vụ' : 'Terms of Service'}
-                </button>
-              </li>
-              <li>
-                <button onClick={() => onOpenPolicy?.('privacy')} className="hover:text-[#fce5da] hover:underline transition text-left cursor-pointer">
-                  {lang === 'vi' ? 'Chính sách bảo mật dữ liệu' : 'Data Privacy Policy'}
-                </button>
-              </li>
-            </ul>
-          </div>
-
-          {/* Cột 4: Phương Thức Thanh Toán & Vận Chuyển */}
+          {/* Cột 4: Về SecondLife & Thanh Toán */}
           <div className="space-y-4">
             <div>
               <h4 className="text-xs font-black text-white uppercase tracking-wider mb-2.5">
-                {lang === 'vi' ? 'Thanh Toán Qua Escrow' : 'Secure Escrow Payment'}
+                {lang === 'vi' ? 'Về SecondLife' : 'About SecondLife'}
               </h4>
-              <div className="grid grid-cols-3 gap-1.5">
-                {['VietQR', 'Vietcombank', 'Techcombank', 'MB Bank', 'Visa/Master', 'Ví MoMo'].map((pay) => (
-                  <span
-                    key={pay}
-                    className="p-1.5 rounded-lg bg-white/10 border border-white/10 text-[10px] text-center font-bold text-white/90 shadow-2xs"
-                  >
-                    {pay}
-                  </span>
-                ))}
-              </div>
+              <ul className="space-y-2 text-xs text-white/75 font-medium">
+                <li>
+                  <button onClick={() => onOpenPolicy?.('about')} className="hover:text-[#fce5da] hover:underline transition text-left cursor-pointer">
+                    {lang === 'vi' ? 'Giới thiệu về SecondLife' : 'About SecondLife Platform'}
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => onOpenPolicy?.('lab')} className="hover:text-[#fce5da] hover:underline transition text-left cursor-pointer">
+                    {lang === 'vi' ? 'Hệ thống phòng Lab Hub' : 'Inspection Hub Labs System'}
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => onOpenPolicy?.('rules')} className="hover:text-[#fce5da] hover:underline transition text-left cursor-pointer">
+                    {lang === 'vi' ? 'Quy chế hoạt động sàn' : 'Operating Rules'}
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => onOpenPolicy?.('terms')} className="hover:text-[#fce5da] hover:underline transition text-left cursor-pointer">
+                    {lang === 'vi' ? 'Điều khoản dịch vụ' : 'Terms of Service'}
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => onOpenPolicy?.('privacy')} className="hover:text-[#fce5da] hover:underline transition text-left cursor-pointer">
+                    {lang === 'vi' ? 'Chính sách bảo mật dữ liệu' : 'Data Privacy Policy'}
+                  </button>
+                </li>
+              </ul>
             </div>
 
-            <div>
-              <h4 className="text-xs font-black text-white uppercase tracking-wider mb-2.5">
-                {lang === 'vi' ? 'Đối Tác Vận Chuyển Hub' : 'Logistics Partners'}
-              </h4>
-              <div className="grid grid-cols-2 gap-1.5">
-                {['GHTK Express', 'Giao Hàng Nhanh', 'Viettel Post', 'Hub Logistic'].map((ship) => (
-                  <span
-                    key={ship}
-                    className="p-1.5 rounded-lg bg-white/10 border border-white/10 text-[10px] text-center font-bold text-white/90 shadow-2xs"
-                  >
-                    {ship}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {/* Chứng nhận TMĐT & Tem bảo chứng */}
             <div>
               <h4 className="text-xs font-black text-white uppercase tracking-wider mb-2">
-                {lang === 'vi' ? 'Chứng Nhận & Bảo Mật' : 'Certifications & Security'}
+                {lang === 'vi' ? 'Bảo Lãnh & Vận Chuyển' : 'Protection & Logistics'}
               </h4>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/10 border border-white/15 text-white text-[10px] font-bold shadow-2xs">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  {lang === 'vi' ? 'Hệ Thống Bán Đồ Cũ Kiểm Định' : 'Certified Recommerce System'}
-                </span>
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/10 border border-white/15 text-white text-[10px] font-bold shadow-2xs">
-                  <Lock className="w-3.5 h-3.5 text-emerald-400" />
-                  PCI-DSS & SSL 256-bit
-                </span>
+              <div className="flex flex-wrap gap-1">
+                {['VietQR 247', 'Escrow Bank', 'GHTK Express', 'GHN Freight'].map((p) => (
+                  <span key={p} className="p-1 rounded bg-white/10 text-[10px] font-bold text-white/80">
+                    {p}
+                  </span>
+                ))}
               </div>
             </div>
           </div>

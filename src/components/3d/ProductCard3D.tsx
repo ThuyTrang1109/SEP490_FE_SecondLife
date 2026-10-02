@@ -168,18 +168,23 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
             </div>
           </div>
 
-          {/* Seller Profile */}
+          {/* Seller Profile & Trust Score */}
           <div className="text-right">
             <div className="text-[11px] font-bold text-[#24263e] flex items-center justify-end gap-1">
-              <span>{item.sellerName}</span>
+              <span className="truncate max-w-[110px]">{item.sellerName}</span>
               {item.sellerVerified && (
-                <CheckCircle2 className="w-3 h-3 text-[#24263e]" />
+                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
               )}
             </div>
-            <div className="text-[10px] text-[#24263e]/60 flex items-center justify-end gap-1 mt-0.5 font-medium">
-              <Star className="w-2.5 h-2.5 text-[#24263e] fill-[#c34c36]" />
-              <span className="font-bold text-[#24263e]">{item.sellerRating}</span>
-              <span>({item.sellerCompletedOrders})</span>
+            <div className="text-[10px] text-slate-500 flex items-center justify-end gap-1.5 mt-0.5 font-medium">
+              <span className="inline-flex items-center gap-0.5 font-bold text-amber-800 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
+                <span>{item.sellerRating}</span>
+              </span>
+              <span className="inline-flex items-center gap-0.5 font-bold text-[#24263e] bg-slate-100 px-1.5 py-0.2 rounded" title={lang === 'vi' ? 'Điểm uy tín người bán' : 'Seller trust score'}>
+                <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
+                <span>{item.sellerTrustScore || 98}đ uy tín</span>
+              </span>
             </div>
           </div>
         </div>

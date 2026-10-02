@@ -11,16 +11,18 @@ import {
   Star,
   TrendingUp,
   AlertCircle,
-  Upload,
   RefreshCw,
   X,
   Loader2,
-  XCircle
+  XCircle,
+  Award,
+  Upload
 } from 'lucide-react';
 import { Listing, Language } from '../types';
 import { formatVND } from '../utils/translations';
 import { sellerService, SellerVerificationResponseDto } from '../services/sellerService';
 import { mediaService } from '../services/mediaService';
+import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
 
 interface SellerDashboardViewProps {
   listings: Listing[];
@@ -44,6 +46,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [accountHolder, setAccountHolder] = useState('NGUYEN MINH TUAN');
   const [payoutAmount, setPayoutAmount] = useState<number>(42800000);
   const [payoutSuccessMsg, setPayoutSuccessMsg] = useState<string | null>(null);
+  const [isSellerReviewsOpen, setIsSellerReviewsOpen] = useState(false);
 
   // Seller Verification State
   const [myVerification, setMyVerification] = useState<SellerVerificationResponseDto | null>(null);
@@ -227,7 +230,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             </div>
 
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-xl sm:text-2xl font-black text-[#24263e]">
                   Nguyễn Minh Tuấn
                 </h1>
@@ -235,16 +238,20 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   <CheckCircle2 className="w-3 h-3 text-[#c34c36]" />
                   {lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified'}
                 </span>
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#24263e] text-white text-[11px] font-black shadow-xs">
+                  <Award className="w-3 h-3 text-amber-300" />
+                  98 Điểm Uy Tín • Hạng Kim Cương
+                </span>
               </div>
-              <p className="text-xs text-[#24263e]/80 mt-1 flex items-center gap-3 font-semibold">
+              <p className="text-xs text-[#24263e]/80 mt-1 flex items-center gap-3 font-semibold flex-wrap">
                 <span className="flex items-center gap-1 text-[#24263e] font-bold">
                   <Star className="w-3.5 h-3.5 fill-[#c34c36] text-[#c34c36]" />
-                  {lang === 'vi' ? '4.9 / 5.0 (32 đánh giá)' : '4.9 / 5.0 (32 reviews)'}
+                  {lang === 'vi' ? '4.9 / 5.0 (48 đánh giá)' : '4.9 / 5.0 (48 reviews)'}
                 </span>
                 <span>•</span>
                 <span>{lang === 'vi' ? '32 đơn thành công' : '32 successful orders'}</span>
                 <span>•</span>
-                <span>{lang === 'vi' ? 'Tỷ lệ phản hồi 99%' : '99% response rate'}</span>
+                <span>{lang === 'vi' ? 'Tỷ lệ phản hồi 100%' : '100% response rate'}</span>
               </p>
             </div>
           </div>
@@ -256,6 +263,13 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             >
               <PlusCircle className="w-4 h-4" />
               <span>{lang === 'vi' ? 'Đăng Bán Đồ Gia Dụng Mới (AI)' : 'Post New Appliance (AI)'}</span>
+            </button>
+            <button
+              onClick={() => setIsSellerReviewsOpen(true)}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
+            >
+              <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
+              <span>{lang === 'vi' ? 'Xem Đánh Giá Của Khách Hàng (48)' : 'Customer Reviews (48)'}</span>
             </button>
             {onViewOrders && (
               <button
@@ -670,6 +684,17 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Seller Reviews Modal */}
+      {isSellerReviewsOpen && (
+        <SellerReviewsModal
+          sellerId="user-tuan-hcm"
+          sellerName="Nguyễn Minh Tuấn"
+          isOpen={isSellerReviewsOpen}
+          onClose={() => setIsSellerReviewsOpen(false)}
+          lang={lang}
+        />
       )}
     </div>
   );

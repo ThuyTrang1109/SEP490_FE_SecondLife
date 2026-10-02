@@ -38,7 +38,11 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     const token = getAccessToken();
     const stored = getStoredUser();
-    return token && stored ? (stored as UserProfile) : null;
+    if (!token || !stored) {
+      clearAuthTokens();
+      return null;
+    }
+    return stored as UserProfile;
   });
 
   const [currentRole, setCurrentRole] = useState<UserRole>(() => {
@@ -126,7 +130,7 @@ export default function App() {
 
   // Fetch credit balance on load if user is logged in
   React.useEffect(() => {
-    if (currentUser) {
+    if (currentUser && getAccessToken()) {
       topupService.getMyCredit()
         .then((res) => {
           if (res) {

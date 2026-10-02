@@ -29,7 +29,7 @@ export interface ChangePasswordDto {
 
 export const userService = {
   async getMyProfile(): Promise<UserProfileDto> {
-    const res = await request<UserProfileDto>('/me', {
+    const res = await request<UserProfileDto>('/users/me', {
       method: 'GET',
       requiresAuth: true,
     });
@@ -37,7 +37,7 @@ export const userService = {
   },
 
   async updateMyProfile(data: UpdateProfileDto): Promise<UserProfileDto> {
-    const res = await request<UserProfileDto>('/me', {
+    const res = await request<UserProfileDto>('/users/me', {
       method: 'PATCH',
       body: JSON.stringify(data),
       requiresAuth: true,
@@ -46,7 +46,7 @@ export const userService = {
   },
 
   async changeMyPassword(data: ChangePasswordDto): Promise<void> {
-    await request<void>('/me/change-password', {
+    await request<void>('/auth/change-password', {
       method: 'POST',
       body: JSON.stringify(data),
       requiresAuth: true,

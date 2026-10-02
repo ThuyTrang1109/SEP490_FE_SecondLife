@@ -119,7 +119,7 @@ export const authService = {
       email: data.email,
       otp: data.otp || data.code || '',
     };
-    await request<void>('/auth/verify-email', {
+    await request<void>('/auth/email-verification/confirm', {
       method: 'POST',
       body: JSON.stringify(payload),
       requiresAuth: false,
@@ -127,7 +127,7 @@ export const authService = {
   },
 
   async resendVerification(email: string): Promise<void> {
-    await request<void>('/auth/resend-verification', {
+    await request<void>('/auth/email-verification/send', {
       method: 'POST',
       body: JSON.stringify({ email }),
       requiresAuth: false,

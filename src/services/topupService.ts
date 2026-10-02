@@ -6,7 +6,7 @@ export const topupService = {
    * Lấy danh sách các gói nạp xu / điểm uy tín
    */
   async getTopupPackages(): Promise<TopupPackage[]> {
-    const response = await request<TopupPackage[]>('/topup/packages', {
+    const response = await request<TopupPackage[]>('/v1/topup/packages', {
       method: 'GET',
       requiresAuth: false,
     });
@@ -17,7 +17,7 @@ export const topupService = {
    * Lấy số dư xu của người dùng hiện tại
    */
   async getMyCredit(): Promise<UserCredit> {
-    const response = await request<UserCredit>('/topup/my-credit', {
+    const response = await request<UserCredit>('/v1/topup/my-credit', {
       method: 'GET',
       requiresAuth: true,
     });
@@ -28,7 +28,7 @@ export const topupService = {
    * Thực hiện thanh toán / mua gói nạp xu
    */
   async purchasePackage(packageId: string): Promise<UserCredit> {
-    const response = await request<UserCredit>(`/topup/purchase/${packageId}`, {
+    const response = await request<UserCredit>(`/v1/topup/purchase/${packageId}`, {
       method: 'POST',
       requiresAuth: true,
     });

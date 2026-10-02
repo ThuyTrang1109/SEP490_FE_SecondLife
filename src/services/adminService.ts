@@ -53,7 +53,7 @@ export const adminService = {
     if (params.size !== undefined) queryParams.append('size', params.size.toString());
 
     const queryString = queryParams.toString();
-    const endpoint = `/admin/users${queryString ? `?${queryString}` : ''}`;
+    const endpoint = `/v1/admin/users${queryString ? `?${queryString}` : ''}`;
 
     const res = await request<PageResponse<UserAdminResponseDto>>(endpoint, {
       method: 'GET',
@@ -63,7 +63,7 @@ export const adminService = {
   },
 
   async getAdminUserById(userId: string): Promise<UserAdminResponseDto> {
-    const res = await request<UserAdminResponseDto>(`/admin/users/${userId}`, {
+    const res = await request<UserAdminResponseDto>(`/v1/admin/users/${userId}`, {
       method: 'GET',
       requiresAuth: true,
     });
@@ -74,7 +74,7 @@ export const adminService = {
     userId: string,
     data: AdminStatusUpdateRequestDto
   ): Promise<UserAdminResponseDto> {
-    const res = await request<UserAdminResponseDto>(`/admin/users/${userId}/status`, {
+    const res = await request<UserAdminResponseDto>(`/v1/admin/users/${userId}/status`, {
       method: 'PATCH',
       body: JSON.stringify(data),
       requiresAuth: true,

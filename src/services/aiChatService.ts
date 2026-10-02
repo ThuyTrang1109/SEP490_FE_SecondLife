@@ -36,7 +36,7 @@ export const aiChatService = {
       };
     }
 
-    const response = await request<AiChatResponseDto>('/ai/chat', {
+    const response = await request<AiChatResponseDto>('/v1/ai/chat', {
       method: 'POST',
       body: JSON.stringify(payload),
       requiresAuth: true,

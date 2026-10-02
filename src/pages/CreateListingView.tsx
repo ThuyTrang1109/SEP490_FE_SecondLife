@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Camera, CheckCircle2, AlertTriangle, ShieldCheck, ArrowRight, ArrowLeft, UploadCloud, Info, RefreshCw, Loader2, Plus, Bot } from 'lucide-react';
+import { Sparkles, Camera, CheckCircle2, AlertTriangle, ShieldCheck, ArrowRight, ArrowLeft, UploadCloud, Info, RefreshCw, Loader2, Plus, Bot, X } from 'lucide-react';
 import { ItemCategory, ConditionGrade, Listing, PhotoChecklist, Language, CategoryBackend, ItemBackend } from '../types';
 import { translations, formatVND } from '../utils/translations';
 import { mediaService, postService, categoryService, itemService } from '../services';
@@ -75,13 +75,15 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [aiSessionId, setAiSessionId] = useState<string | null>(null);
   const [aiInitialMessage, setAiInitialMessage] = useState<string>('');
   const [isInitializingPost, setIsInitializingPost] = useState(false);
+  const [showSelfFillForm, setShowSelfFillForm] = useState(false);
 
   const [photos, setPhotos] = useState<PhotoChecklist>({
     front: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=1000&q=80',
     back: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=1000&q=80',
     screenOrDetails: 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?auto=format&fit=crop&w=1000&q=80',
     accessoriesOrBox: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=1000&q=80',
-    serialOrReceipt: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=1000&q=80'
+    serialOrReceipt: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=1000&q=80',
+    extraDetail: 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?auto=format&fit=crop&w=1000&q=80'
   });
   const [uploadingSlot, setUploadingSlot] = useState<string | null>(null);
 
@@ -149,6 +151,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       alert('Tải ảnh sản phẩm thất bại: ' + (err.message || 'Lỗi kết nối server'));
     } finally {
       setUploadingSlot(null);
+    }
+  };
+
+  const handleRemovePhoto = (key: keyof PhotoChecklist) => {
+    setPhotos(prev => ({ ...prev, [key]: '' }));
+    if (key === 'front') {
+      setPrimaryBase64('');
     }
   };
 
@@ -329,6 +338,76 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
   };
 
+  const handleDirectSubmitPost = async () => {
+    if (!isRealCategoryId || !isRealItemId) {
+      alert(
+        lang === 'vi'
+          ? 'Danh mục hoặc Vật phẩm chưa phải ID hợp lệ từ hệ thống Backend. Vui lòng kiểm tra chọn Danh mục & Vật phẩm.'
+          : 'Category or Item is not a valid ID from the backend.'
+      );
+      return;
+    }
+
+    setIsInitializingPost(true);
+    try {
+      const base64Image = await getEnsureBase64();
+
+      // 1. Khởi tạo bài đăng trên Backend (POST /api/v1/posts/init)
+      const initRes = await postService.initPost({
+        categoryId: selectedCategoryId,
+        itemId: selectedItemId,
+        base64Image,
+      });
+
+      if (initRes && initRes.postId) {
+        setPostId(initRes.postId);
+
+        // 2. Gửi duyệt bài đăng đến Backend (POST /api/v1/posts/submit/{postId})
+        await postService.submitPost(initRes.postId, {
+          title: title.trim() || `${brand} ${category}`,
+          description: description.trim() || declaredConditionText || 'Bài đăng thiết bị điện tử trên SecondLife Platform',
+          price: originalPriceVnd || 1000000,
+        });
+
+        // 3. Tạo DTO hiển thị trên UI Frontend
+        const newListing: Listing = {
+          id: initRes.postId,
+          title: title.trim() || `${brand} ${category}`,
+          category,
+          brand,
+          model: model || 'Standard Model',
+          purchaseYear: purchaseYear || 2024,
+          priceVnd: originalPriceVnd || 1000000,
+          originalPriceVnd,
+          conditionGrade: declaredCondition,
+          declaredConditionText: declaredConditionText || 'Như mới',
+          description: description.trim() || 'Đã đăng thành công lên Backend',
+          location: 'Hà Nội',
+          sellerId: 'me',
+          sellerName: 'Tôi',
+          sellerRating: 5.0,
+          sellerCompletedOrders: 1,
+          sellerVerified: true,
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          isInspectionGuaranteed: true,
+          requiresInspection: true,
+          photos,
+          photoGallery: Object.values(photos).filter(Boolean) as string[],
+        };
+
+        onListingCreated(newListing);
+        alert(lang === 'vi' ? '🎉 Đã gửi duyệt bài đăng thành công tới hệ thống Backend API (POST /api/v1/posts/submit)!' : '🎉 Post submitted successfully to Backend API!');
+      } else {
+        throw new Error('Hệ thống Backend không trả về postId');
+      }
+    } catch (err: any) {
+      alert('Lỗi đăng bài lên Backend: ' + (err?.message || 'Lỗi kết nối máy chủ'));
+    } finally {
+      setIsInitializingPost(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-16 text-[#24263e]">
       {/* Title & Quick demo helper */}
@@ -399,241 +478,473 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
       {/* Step 1: Basic Information */}
       {currentStep === 1 && (
-        <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
-          <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
-            <span>Thông tin sản phẩm</span>
-          </h2>
+        <div className="space-y-6">
+          {/* Top Section: Thông tin sản phẩm (Khung xanh trong thiết kế) */}
+          <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border-2 border-amber-400/80 shadow-md space-y-4">
+            <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
+              <span className="bg-[#c34c36]/10 text-[#c34c36] p-1.5 rounded-lg text-xs font-black">01</span>
+              <span>Thông tin sản phẩm</span>
+            </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#24263e] flex items-center justify-between">
-                <span>{t.filterCategory} *</span>
-                {isLoadingCategories && (
-                  <span className="text-[10px] text-amber-600 flex items-center gap-1 font-normal">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    Đang tải...
-                  </span>
-                )}
-              </label>
-              <select
-                value={selectedCategoryId}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setSelectedCategoryId(val);
-                  const matched = backendCategories.find(c => c.id === val);
-                  if (matched) setCategory(matched.name as any);
-                }}
-                className={`w-full px-3.5 py-2.5 bg-[#faf8f5] border rounded-xl text-sm text-[#24263e] focus:outline-none transition ${
-                  isRealCategoryId ? 'border-gray-200 focus:border-[#c34c36]' : 'border-amber-400 bg-amber-50/30'
-                }`}
-              >
-                {backendCategories.length > 0 ? (
-                  backendCategories.map((cat) => (
-                    <option key={cat.id} value={cat.id} className="bg-[#FFFFFF] text-[#24263e]">
-                      {cat.name}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-[#24263e] flex items-center justify-between">
+                  <span>{t.filterCategory} *</span>
+                  {isLoadingCategories && (
+                    <span className="text-[10px] text-amber-600 flex items-center gap-1 font-normal">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Đang tải...
+                    </span>
+                  )}
+                </label>
+                <select
+                  value={selectedCategoryId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedCategoryId(val);
+                    const matched = backendCategories.find(c => c.id === val);
+                    if (matched) setCategory(matched.name as any);
+                  }}
+                  className={`w-full px-3.5 py-2.5 bg-[#faf8f5] border rounded-xl text-sm text-[#24263e] focus:outline-none transition ${
+                    isRealCategoryId ? 'border-gray-200 focus:border-[#c34c36]' : 'border-amber-400 bg-amber-50/30'
+                  }`}
+                >
+                  {backendCategories.length > 0 ? (
+                    backendCategories.map((cat) => (
+                      <option key={cat.id} value={cat.id} className="bg-[#FFFFFF] text-[#24263e]">
+                        {cat.name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled className="bg-[#FFFFFF] text-[#24263e]">
+                      {isLoadingCategories
+                        ? (lang === 'vi' ? '-- Đang tải danh mục từ backend... --' : '-- Loading categories... --')
+                        : (lang === 'vi' ? '-- Không có danh mục khả dụng --' : '-- No categories available --')}
                     </option>
-                  ))
-                ) : (
-                  <option value="" disabled className="bg-[#FFFFFF] text-[#24263e]">
-                    {isLoadingCategories
-                      ? (lang === 'vi' ? '-- Đang tải danh mục từ backend... --' : '-- Loading categories... --')
-                      : (lang === 'vi' ? '-- Không có danh mục khả dụng --' : '-- No categories available --')}
-                  </option>
+                  )}
+                </select>
+                {!isRealCategoryId && !isLoadingCategories && (
+                  <p className="text-[10px] text-amber-600 font-medium">
+                    {lang === 'vi' ? '⚠️ Yêu cầu chọn danh mục có ID thật từ hệ thống.' : '⚠️ Valid backend category ID required.'}
+                  </p>
                 )}
-              </select>
-              {!isRealCategoryId && !isLoadingCategories && (
-                <p className="text-[10px] text-amber-600 font-medium">
-                  {lang === 'vi' ? '⚠️ Yêu cầu chọn danh mục có ID thật từ hệ thống.' : '⚠️ Valid backend category ID required.'}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#24263e] flex items-center justify-between">
-                <span>{lang === 'vi' ? 'Vật phẩm chi tiết (Item)' : 'Item'} *</span>
-                {isLoadingItems && (
-                  <span className="text-[10px] text-amber-600 flex items-center gap-1 font-normal">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    Đang tải...
-                  </span>
-                )}
-              </label>
-              <select
-                value={selectedItemId}
-                onChange={(e) => setSelectedItemId(e.target.value)}
-                className={`w-full px-3.5 py-2.5 bg-[#faf8f5] border rounded-xl text-sm text-[#24263e] focus:outline-none transition ${
-                  isRealItemId ? 'border-gray-200 focus:border-[#c34c36]' : 'border-amber-400 bg-amber-50/30'
-                }`}
-              >
-                {backendItems.length > 0 ? (
-                  backendItems.map((itm) => (
-                    <option key={itm.id} value={itm.id} className="bg-[#FFFFFF] text-[#24263e]">
-                      {itm.name}
-                    </option>
-                  ))
-                ) : (
-                  <option value="" disabled className="bg-[#FFFFFF] text-[#24263e]">
-                    {isLoadingItems
-                      ? (lang === 'vi' ? '-- Đang tải vật phẩm... --' : '-- Loading items... --')
-                      : (lang === 'vi' ? '-- Chọn danh mục để tải vật phẩm --' : '-- Select category first --')}
-                  </option>
-                )}
-              </select>
-              {!isRealItemId && !isLoadingItems && (
-                <p className="text-[10px] text-amber-600 font-medium">
-                  {lang === 'vi' ? '⚠️ Yêu cầu chọn vật phẩm có ID thật từ hệ thống.' : '⚠️ Valid backend item ID required.'}
-                </p>
-              )}
-            </div>
-
-            {(!isRealCategoryId || !isRealItemId) && (
-              <div className="sm:col-span-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 text-xs flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>
-                  {isLoadingCategories || isLoadingItems
-                    ? (lang === 'vi' ? 'Đang tải dữ liệu Danh mục & Vật phẩm từ máy chủ backend...' : 'Loading categories and items from backend...')
-                    : (lang === 'vi'
-                        ? 'Chưa chọn được Danh mục hoặc Vật phẩm có ID thật từ Backend. Nút "Tiếp tục" sẽ được mở khi có đủ ID hệ thống.'
-                        : 'Please select a valid Category and Item with real backend IDs to proceed.')}
-                </span>
               </div>
-            )}
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#24263e]">{t.itemBrand} *</label>
-              <input
-                type="text"
-                value={brand}
-                onChange={(e) => setBrand(e.target.value)}
-                placeholder="VD: Hitachi, Toshiba, LG, Panasonic..."
-                className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
-              />
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-[#24263e] flex items-center justify-between">
+                  <span>{lang === 'vi' ? 'Vật phẩm chi tiết (Item)' : 'Item'} *</span>
+                  {isLoadingItems && (
+                    <span className="text-[10px] text-amber-600 flex items-center gap-1 font-normal">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Đang tải...
+                    </span>
+                  )}
+                </label>
+                <select
+                  value={selectedItemId}
+                  onChange={(e) => setSelectedItemId(e.target.value)}
+                  className={`w-full px-3.5 py-2.5 bg-[#faf8f5] border rounded-xl text-sm text-[#24263e] focus:outline-none transition ${
+                    isRealItemId ? 'border-gray-200 focus:border-[#c34c36]' : 'border-amber-400 bg-amber-50/30'
+                  }`}
+                >
+                  {backendItems.length > 0 ? (
+                    backendItems.map((itm) => (
+                      <option key={itm.id} value={itm.id} className="bg-[#FFFFFF] text-[#24263e]">
+                        {itm.name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled className="bg-[#FFFFFF] text-[#24263e]">
+                      {isLoadingItems
+                        ? (lang === 'vi' ? '-- Đang tải vật phẩm... --' : '-- Loading items... --')
+                        : (lang === 'vi' ? '-- Chọn danh mục để tải vật phẩm --' : '-- Select category first --')}
+                    </option>
+                  )}
+                </select>
+                {!isRealItemId && !isLoadingItems && (
+                  <p className="text-[10px] text-amber-600 font-medium">
+                    {lang === 'vi' ? '⚠️ Yêu cầu chọn vật phẩm có ID thật từ hệ thống.' : '⚠️ Valid backend item ID required.'}
+                  </p>
+                )}
+              </div>
+
+              {(!isRealCategoryId || !isRealItemId) && (
+                <div className="sm:col-span-2 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 text-xs flex items-center gap-2 font-medium">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>
+                    {isLoadingCategories || isLoadingItems
+                      ? (lang === 'vi' ? 'Đang tải dữ liệu Danh mục & Vật phẩm từ máy chủ backend...' : 'Loading categories and items from backend...')
+                      : (lang === 'vi'
+                          ? 'Chưa chọn được Danh mục hoặc Vật phẩm có ID thật từ Backend. Nút "Tiếp tục" sẽ được mở khi có đủ ID hệ thống.'
+                          : 'Please select a valid Category and Item with real backend IDs to proceed.')}
+                  </span>
+                </div>
+              )}
             </div>
+          </div>
 
-            <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-semibold text-[#24263e]">{t.itemTitle} *</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="VD: Tủ Lạnh Hitachi Inverter 540L 4 Cửa R-FW690PGV7X"
-                className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
-              />
-            </div>
+          {/* Bottom Section: Thêm hình ảnh sản phẩm + Cảnh báo + 2 Nút thao tác */}
+          {/* Bottom Section: Thêm hình ảnh sản phẩm + Cảnh báo + 2 Nút thao tác */}
+          <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
+            {/* 1. Thêm 6 khung hình ảnh sản phẩm */}
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-3">
+                <div>
+                  <h3 className="text-base font-bold text-[#24263e] flex items-center gap-2">
+                    <Camera className="w-5 h-5 text-[#c34c36]" />
+                    <span>Thêm 6 khung hình ảnh sản phẩm *</span>
+                  </h3>
+                  <p className="text-xs text-[#24263e]/70 mt-0.5">
+                    Tải lên 6 góc ảnh của thiết bị để AI quét trích xuất thông tin tự động hoặc làm căn cứ thẩm định sản phẩm.
+                  </p>
+                </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#24263e]">{t.purchaseYear} *</label>
-              <input
-                type="number"
-                value={purchaseYear}
-                onChange={(e) => setPurchaseYear(Number(e.target.value))}
-                min={2018}
-                max={2026}
-                className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
-              />
-            </div>
+                <label className="px-4 py-2 rounded-xl bg-[#24263e] hover:bg-[#1a1c2e] text-white text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
+                  {uploadingSlot === 'batch' ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Đang tải nhiều ảnh...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UploadCloud className="w-4 h-4" />
+                      <span>⚡ Chọn nhanh nhiều ảnh</span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    className="hidden"
+                    disabled={uploadingSlot !== null}
+                    onChange={handleMultiplePhotosUpload}
+                  />
+                </label>
+              </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#24263e]">{t.originalPrice}</label>
-              <input
-                type="number"
-                value={originalPriceVnd}
-                onChange={(e) => setOriginalPriceVnd(Number(e.target.value))}
-                step={500000}
-                className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
-              />
-            </div>
-
-            <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-semibold text-[#24263e]">{t.declaredCondition} *</label>
-              <div className="grid grid-cols-3 gap-3">
+              {/* Grid 6 khung hình */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
                 {[
-                  {
-                    grade: 'Like New',
-                    title: lang === 'vi' ? 'Như mới (99%)' : 'Like New (99%)',
-                    desc: lang === 'vi' ? 'Không xước, máy nén êm, đủ phụ kiện' : 'No scratches, silent compressor, full accessories'
-                  },
-                  {
-                    grade: 'Good',
-                    title: lang === 'vi' ? 'Tốt (95%)' : 'Good (95%)',
-                    desc: lang === 'vi' ? 'Xước dăm rất nhẹ, máy zin' : 'Minor micro-scratches, original parts'
-                  },
-                  {
-                    grade: 'Fair',
-                    title: lang === 'vi' ? 'Khá (90%)' : 'Fair (90%)',
-                    desc: lang === 'vi' ? 'Có cấn viền hoặc trầy xước' : 'Visible scuffs or cosmetic wear'
-                  }
-                ].map((item) => (
-                  <button
-                    key={item.grade}
-                    type="button"
-                    onClick={() => setDeclaredCondition(item.grade as ConditionGrade)}
-                    className={`p-3 rounded-xl border text-left transition cursor-pointer ${
-                      declaredCondition === item.grade
-                        ? 'border-[#c34c36] bg-[#c34c36]/10 text-[#24263e] ring-1 ring-[#c34c36]'
-                        : 'border-gray-200 bg-[#faf8f5] text-[#24263e]/70 hover:bg-[#FFFFFF]'
-                    }`}
-                  >
-                    <div className="font-bold text-xs">{item.title}</div>
-                    <div className="text-[10px] text-[#24263e]/60 mt-0.5">{item.desc}</div>
-                  </button>
-                ))}
+                  { key: 'front' as const, label: 'Khung 1: Mặt trước (Chính)', desc: 'Ảnh chụp mặt trước' },
+                  { key: 'back' as const, label: 'Khung 2: Mặt sau & Tem mác', desc: 'Mặt lưng, tem thông số' },
+                  { key: 'screenOrDetails' as const, label: 'Khung 3: Màn hình / Góc nghiêng', desc: 'Chi tiết hiển thị' },
+                  { key: 'accessoriesOrBox' as const, label: 'Khung 4: Phụ kiện & Dây cáp', desc: 'Sạc, hộp, phụ kiện' },
+                  { key: 'serialOrReceipt' as const, label: 'Khung 5: Số Seri & Hóa đơn', desc: 'Mã sê-ri, phiếu BH' },
+                  { key: 'extraDetail' as const, label: 'Khung 6: Ảnh bổ sung', desc: 'Góc chụp thực tế khác' },
+                ].map((slot) => {
+                  const imgUrl = photos[slot.key];
+                  const isUploadingThis = uploadingSlot === slot.key;
+
+                  return (
+                    <div
+                      key={slot.key}
+                      className="border-2 border-dashed border-gray-200 hover:border-[#c34c36] rounded-2xl p-3 bg-[#faf8f5] space-y-2 flex flex-col justify-between transition group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-extrabold text-[#24263e] truncate">
+                          {slot.label}
+                        </span>
+                        {imgUrl && (
+                          <span className="bg-emerald-50 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-emerald-200 shrink-0">
+                            Đã chọn
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="relative aspect-4/3 rounded-xl overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center group/img">
+                        {imgUrl ? (
+                          <>
+                            <img src={imgUrl} alt={slot.label} className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemovePhoto(slot.key);
+                              }}
+                              className="absolute top-1.5 right-1.5 bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-full shadow-md transition cursor-pointer z-10 flex items-center justify-center hover:scale-110"
+                              title="Bỏ ảnh này"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <div className="text-center p-2">
+                            <Camera className="w-6 h-6 text-gray-400 mx-auto mb-1" />
+                            <span className="text-[10px] text-gray-400 font-medium block">{slot.desc}</span>
+                          </div>
+                        )}
+
+                        {isUploadingThis && (
+                          <div className="absolute inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center text-white text-xs font-semibold gap-1.5 z-20">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Đang tải...</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {imgUrl ? (
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <label className="py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] rounded-xl text-[11px] font-bold text-[#24263e] border border-gray-200 flex items-center justify-center gap-1 cursor-pointer transition shadow-xs">
+                            <UploadCloud className="w-3.5 h-3.5 text-gray-500" />
+                            <span>Đổi ảnh</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => e.target.files?.[0] && handlePhotoUpload(slot.key, e.target.files[0])}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePhoto(slot.key)}
+                            className="py-1.5 px-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-[11px] font-bold border border-rose-200 flex items-center justify-center gap-1 transition cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Bỏ ảnh</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <label className="w-full py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] rounded-xl text-xs font-bold text-[#24263e] border border-gray-200 flex items-center justify-center gap-1.5 cursor-pointer transition shadow-xs">
+                          <UploadCloud className="w-3.5 h-3.5 text-gray-500" />
+                          <span>Tải ảnh lên</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => e.target.files?.[0] && handlePhotoUpload(slot.key, e.target.files[0])}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-semibold text-[#24263e]">
-                {lang === 'vi' ? 'Tóm tắt tình trạng ngoại quan' : 'Condition Summary'}
-              </label>
-              <input
-                type="text"
-                value={declaredConditionText}
-                onChange={(e) => setDeclaredConditionText(e.target.value)}
-                placeholder={lang === 'vi' ? 'VD: Dán bảo vệ từ đầu, không trầy xước, chạy êm...' : 'E.g.: Protected from day 1, no scratches, runs smoothly...'}
-                className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
-              />
+            {/* 2. Cảnh báo 1 */}
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs sm:text-sm font-bold flex items-start gap-3 shadow-xs">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-black text-amber-800 uppercase tracking-wide text-xs block mb-0.5">⚠️ CẢNH BÁO TRÁCH NHIỆM:</span>
+                <span>"Nếu đăng bài thì phải chịu trách nhiệm với những thông tin trên"</span>
+              </div>
             </div>
 
-            <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-semibold text-[#24263e]">{t.description}</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={3}
-                placeholder={lang === 'vi' ? 'Mô tả nguồn gốc mua hàng, lý do bán, các linh kiện kèm theo...' : 'Describe origin, reason for sale, included accessories...'}
-                className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
-              />
+            {/* 3. Cảnh báo 2 (đối với tự điền thông tin) */}
+            <div className="p-4 rounded-2xl bg-blue-50 border border-blue-300 text-blue-950 text-xs sm:text-sm font-bold flex items-start gap-3 shadow-xs">
+              <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-black text-blue-800 uppercase tracking-wide text-xs block mb-0.5">ℹ️ LƯU Ý TỰ ĐIỀN THÔNG TIN:</span>
+                <span>"Nếu tự điền thông tin thì phải mô tả chi tiết"</span>
+              </div>
+            </div>
+
+            {/* 4. 2 Nút Thao Tác: "Chat với AI" và "Tự đăng bài" */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={handleInitPostAndChat}
+                disabled={!isStep1Valid || isInitializingPost}
+                className={`py-3.5 px-6 rounded-2xl font-extrabold text-sm shadow-md flex items-center justify-center gap-2.5 transition cursor-pointer ${
+                  isStep1Valid && !isInitializingPost
+                    ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white hover:opacity-95 transform hover:-translate-y-0.5'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
+                }`}
+              >
+                {isInitializingPost ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Đang kết nối Trợ lý AI...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-5 h-5" />
+                    <span>Chat với AI</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDirectSubmitPost}
+                disabled={!isStep1Valid || isInitializingPost}
+                className={`py-3.5 px-6 rounded-2xl bg-[#24263e] hover:bg-[#1a1c2e] text-white font-extrabold text-sm shadow-md flex items-center justify-center gap-2.5 transition cursor-pointer transform hover:-translate-y-0.5 ${
+                  !isStep1Valid || isInitializingPost ? 'opacity-60 cursor-not-allowed' : ''
+                }`}
+              >
+                {isInitializingPost ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Đang gửi bài lên Backend...</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-5 h-5" />
+                    <span>+ Tự đăng bài</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
 
-          <div className="flex justify-between pt-4 border-t border-gray-100">
+          {/* Form tự điền chi tiết khi cần chỉnh sửa thêm */}
+          <div className="flex justify-end">
             <button
-              onClick={onCancel}
-              className="px-5 py-2.5 rounded-xl border border-gray-200 text-[#24263e] hover:bg-[#faf8f5] text-sm font-semibold cursor-pointer"
+              type="button"
+              onClick={() => setShowSelfFillForm(!showSelfFillForm)}
+              className="text-xs text-[#c34c36] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
             >
-              {lang === 'vi' ? 'Hủy' : 'Cancel'}
-            </button>
-
-            <button
-              onClick={() => {
-                if (!isRealCategoryId || !isRealItemId) {
-                  alert(lang === 'vi' ? 'Vui lòng chọn danh mục và vật phẩm hợp lệ từ hệ thống.' : 'Please select valid category and item IDs.');
-                  return;
-                }
-                setCurrentStep(2);
-              }}
-              disabled={!isStep1Valid || isLoadingCategories || isLoadingItems}
-              className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold shadow-xs flex items-center gap-2 transition ${
-                isStep1Valid && !isLoadingCategories && !isLoadingItems
-                  ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-90 text-white cursor-pointer'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
-              }`}
-              title={!isStep1Valid ? (lang === 'vi' ? 'Cần chọn Danh mục & Vật phẩm có ID thật từ Backend' : 'Valid category and item required') : ''}
-            >
-              <span>{lang === 'vi' ? 'Tiếp tục: Tải bộ ảnh 5 góc' : 'Next: Upload 5 Photos'}</span>
-              <ArrowRight className="w-4 h-4" />
+              <span>{showSelfFillForm ? '▲ Ẩn chi tiết tự điền' : '▼ Mở rộng chi tiết tự điền thông tin bài đăng'}</span>
             </button>
           </div>
+
+          {/* Expanded Form khi người dùng chọn mở rộng chi tiết tự điền */}
+          {showSelfFillForm && (
+            <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6 animate-fadeIn">
+              <h3 className="text-base font-bold text-[#24263e] flex items-center gap-2 border-b border-gray-100 pb-3">
+                <span>Chi tiết thông tin tự đăng bài</span>
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-[#24263e]">{t.itemBrand} *</label>
+                  <input
+                    type="text"
+                    value={brand}
+                    onChange={(e) => setBrand(e.target.value)}
+                    placeholder="VD: Hitachi, Toshiba, LG, Panasonic..."
+                    className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 space-y-1.5">
+                  <label className="text-xs font-semibold text-[#24263e]">{t.itemTitle} *</label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="VD: Tủ Lạnh Hitachi Inverter 540L 4 Cửa R-FW690PGV7X"
+                    className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-[#24263e]">{t.purchaseYear} *</label>
+                  <input
+                    type="number"
+                    value={purchaseYear}
+                    onChange={(e) => setPurchaseYear(Number(e.target.value))}
+                    min={2018}
+                    max={2026}
+                    className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-[#24263e]">{t.originalPrice}</label>
+                  <input
+                    type="number"
+                    value={originalPriceVnd}
+                    onChange={(e) => setOriginalPriceVnd(Number(e.target.value))}
+                    step={500000}
+                    className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 space-y-1.5">
+                  <label className="text-xs font-semibold text-[#24263e]">{t.declaredCondition} *</label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      {
+                        grade: 'Like New',
+                        title: lang === 'vi' ? 'Như mới (99%)' : 'Like New (99%)',
+                        desc: lang === 'vi' ? 'Không xước, máy nén êm, đủ phụ kiện' : 'No scratches, silent compressor, full accessories'
+                      },
+                      {
+                        grade: 'Good',
+                        title: lang === 'vi' ? 'Tốt (95%)' : 'Good (95%)',
+                        desc: lang === 'vi' ? 'Xước dăm rất nhẹ, máy zin' : 'Minor micro-scratches, original parts'
+                      },
+                      {
+                        grade: 'Fair',
+                        title: lang === 'vi' ? 'Khá (90%)' : 'Fair (90%)',
+                        desc: lang === 'vi' ? 'Có cấn viền hoặc trầy xước' : 'Visible scuffs or cosmetic wear'
+                      }
+                    ].map((item) => (
+                      <button
+                        key={item.grade}
+                        type="button"
+                        onClick={() => setDeclaredCondition(item.grade as ConditionGrade)}
+                        className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                          declaredCondition === item.grade
+                            ? 'border-[#c34c36] bg-[#c34c36]/10 text-[#24263e] ring-1 ring-[#c34c36]'
+                            : 'border-gray-200 bg-[#faf8f5] text-[#24263e]/70 hover:bg-[#FFFFFF]'
+                        }`}
+                      >
+                        <div className="font-bold text-xs">{item.title}</div>
+                        <div className="text-[10px] text-[#24263e]/60 mt-0.5">{item.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="sm:col-span-2 space-y-1.5">
+                  <label className="text-xs font-semibold text-[#24263e]">
+                    {lang === 'vi' ? 'Tóm tắt tình trạng ngoại quan' : 'Condition Summary'}
+                  </label>
+                  <input
+                    type="text"
+                    value={declaredConditionText}
+                    onChange={(e) => setDeclaredConditionText(e.target.value)}
+                    placeholder={lang === 'vi' ? 'VD: Dán bảo vệ từ đầu, không trầy xước, chạy êm...' : 'E.g.: Protected from day 1, no scratches, runs smoothly...'}
+                    className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 space-y-1.5">
+                  <label className="text-xs font-semibold text-[#24263e]">{t.description}</label>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={3}
+                    placeholder={lang === 'vi' ? 'Mô tả nguồn gốc mua hàng, lý do bán, các linh kiện kèm theo...' : 'Describe origin, reason for sale, included accessories...'}
+                    className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-between pt-4 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-[#24263e] hover:bg-[#faf8f5] text-sm font-semibold cursor-pointer"
+                >
+                  {lang === 'vi' ? 'Hủy' : 'Cancel'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isRealCategoryId || !isRealItemId) {
+                      alert(lang === 'vi' ? 'Vui lòng chọn danh mục và vật phẩm hợp lệ từ hệ thống.' : 'Please select valid category and item IDs.');
+                      return;
+                    }
+                    setCurrentStep(2);
+                  }}
+                  disabled={!isStep1Valid || isLoadingCategories || isLoadingItems}
+                  className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold shadow-xs flex items-center gap-2 transition ${
+                    isStep1Valid && !isLoadingCategories && !isLoadingItems
+                      ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-90 text-white cursor-pointer'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
+                  }`}
+                  title={!isStep1Valid ? (lang === 'vi' ? 'Cần chọn Danh mục & Vật phẩm có ID thật từ Backend' : 'Valid category and item required') : ''}
+                >
+                  <span>{lang === 'vi' ? 'Tiếp tục: Tải bộ ảnh 5 góc' : 'Next: Upload 5 Photos'}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -730,36 +1041,67 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <div className="text-[11px] text-[#24263e]/60">{slot.desc}</div>
                 </div>
 
-                <div className="relative aspect-4/3 rounded-xl overflow-hidden bg-[#FFFFFF] border border-gray-200">
-                  <img
-                    src={photos[slot.key]}
-                    alt={slot.label}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute top-2 right-2 bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white rounded-full p-1 shadow-xs">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                  </div>
-                </div>
-
-                <label className="w-full py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] rounded-lg text-xs font-medium text-[#24263e] border border-gray-200 flex items-center justify-center gap-1.5 cursor-pointer transition">
-                  {uploadingSlot === slot.key ? (
+                <div className="relative aspect-4/3 rounded-xl overflow-hidden bg-[#FFFFFF] border border-gray-200 group/img">
+                  {photos[slot.key] ? (
                     <>
-                      <Loader2 className="w-3.5 h-3.5 text-[#24263e] animate-spin" />
-                      <span>{lang === 'vi' ? 'Đang tải ảnh...' : 'Uploading...'}</span>
+                      <img
+                        src={photos[slot.key]}
+                        alt={slot.label}
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemovePhoto(slot.key);
+                        }}
+                        className="absolute top-1.5 right-1.5 bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-full shadow-md transition cursor-pointer z-10 flex items-center justify-center hover:scale-110"
+                        title={lang === 'vi' ? 'Bỏ ảnh này' : 'Remove photo'}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </>
                   ) : (
-                    <>
-                      <UploadCloud className="w-3.5 h-3.5 text-gray-400" />
-                      <span>{lang === 'vi' ? 'Đổi ảnh góc này' : 'Replace Photo'}</span>
-                    </>
+                    <div className="text-center p-2 flex flex-col items-center justify-center h-full">
+                      <Camera className="w-6 h-6 text-gray-400 mb-1" />
+                      <span className="text-[10px] text-gray-400 font-medium block">{slot.desc}</span>
+                    </div>
                   )}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => e.target.files?.[0] && handlePhotoUpload(slot.key, e.target.files[0])}
-                  />
-                </label>
+                </div>
+
+                {photos[slot.key] ? (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <label className="py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] rounded-xl text-[11px] font-bold text-[#24263e] border border-gray-200 flex items-center justify-center gap-1 cursor-pointer transition shadow-xs">
+                      <UploadCloud className="w-3.5 h-3.5 text-gray-500" />
+                      <span>{lang === 'vi' ? 'Đổi ảnh' : 'Change'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => e.target.files?.[0] && handlePhotoUpload(slot.key, e.target.files[0])}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePhoto(slot.key)}
+                      className="py-1.5 px-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-[11px] font-bold border border-rose-200 flex items-center justify-center gap-1 transition cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5 text-rose-600" />
+                      <span>{lang === 'vi' ? 'Bỏ ảnh' : 'Remove'}</span>
+                    </button>
+                  </div>
+                ) : (
+                  <label className="w-full py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] rounded-xl text-xs font-bold text-[#24263e] border border-gray-200 flex items-center justify-center gap-1.5 cursor-pointer transition shadow-xs">
+                    <UploadCloud className="w-3.5 h-3.5 text-gray-500" />
+                    <span>{lang === 'vi' ? 'Tải ảnh lên' : 'Upload'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => e.target.files?.[0] && handlePhotoUpload(slot.key, e.target.files[0])}
+                    />
+                  </label>
+                )}
               </div>
             ))}
           </div>

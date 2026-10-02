@@ -22,6 +22,7 @@ export interface PhotoChecklist {
   screenOrDetails: string;
   accessoriesOrBox: string;
   serialOrReceipt: string;
+  extraDetail?: string;
 }
 
 export interface InspectionChecklistItem {

@@ -14,7 +14,8 @@ export interface PageResponse<T> {
   isLast: boolean;
 }
 
-const BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
+const rawBaseUrl = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080/api';
+const BASE_URL = rawBaseUrl.replace(/\/v1\/?$/, '').replace(/\/$/, '');
 
 export const ACCESS_TOKEN_KEY = 'secondlife_access_token';
 export const REFRESH_TOKEN_KEY = 'secondlife_refresh_token';
@@ -215,8 +216,8 @@ export async function request<T>(
     }
 
     if (!response.ok) {
-      // If 401 or 403, try silent refresh once
-      if ((response.status === 401 || response.status === 403) && !_retry && !endpoint.includes('/auth/')) {
+      // If 401 Unauthorized on an authenticated endpoint, try silent token refresh once
+      if (response.status === 401 && !_retry && requiresAuth && !endpoint.includes('/auth/')) {
         const refreshedToken = await refreshAccessToken();
         if (refreshedToken) {
           return request<T>(endpoint, {
@@ -226,7 +227,8 @@ export async function request<T>(
         }
       }
 
-      if (response.status === 401 || response.status === 403) {
+      // Only clear auth tokens and revoke session if 401 occurs on an authenticated route after retry
+      if (response.status === 401 && requiresAuth && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
         clearAuthTokens();
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new Event('unauthorized_session'));
@@ -236,7 +238,7 @@ export async function request<T>(
       const errorMessage =
         resData?.message ||
         resData?.error ||
-        `HTTP Error ${response.status}: ${response.statusText}`;
+        (response.status === 403 ? 'Bạn không có quyền thực hiện hành động này.' : `HTTP Error ${response.status}: ${response.statusText}`);
       throw new Error(errorMessage);
     }
 

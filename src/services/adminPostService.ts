@@ -11,7 +11,7 @@ export const adminPostService = {
     if (itemId) params.append('itemId', itemId);
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
-    const response = await request<any>(`/admin/posts${queryString}`, {
+    const response = await request<any>(`/v1/admin/posts${queryString}`, {
       method: 'GET',
       requiresAuth: true,
     });
@@ -22,7 +22,7 @@ export const adminPostService = {
    * Admin duyệt bài đăng
    */
   async approvePost(postId: string): Promise<string> {
-    const response = await request<string>(`/admin/posts/${postId}/approve`, {
+    const response = await request<string>(`/v1/admin/posts/${postId}/approve`, {
       method: 'POST',
       requiresAuth: true,
     });
@@ -37,7 +37,7 @@ export const adminPostService = {
     if (reason) params.append('reason', reason);
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
-    const response = await request<string>(`/admin/posts/${postId}/reject${queryString}`, {
+    const response = await request<string>(`/v1/admin/posts/${postId}/reject${queryString}`, {
       method: 'POST',
       requiresAuth: true,
     });

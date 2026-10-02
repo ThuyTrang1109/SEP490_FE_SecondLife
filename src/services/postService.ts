@@ -12,6 +12,12 @@ export interface PostInitResponse {
   aiInitialMessage: string;
 }
 
+export interface PostSubmitRequest {
+  title: string;
+  description: string;
+  price: number;
+}
+
 export const postService = {
   /**
    * Lấy danh sách tin đăng bài công khai từ Backend
@@ -22,7 +28,7 @@ export const postService = {
     if (itemId) params.append('itemId', itemId);
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
-    const response = await request<any>(`/posts${queryString}`, {
+    const response = await request<any>(`/v1/posts${queryString}`, {
       method: 'GET',
       requiresAuth: false,
     });
@@ -34,7 +40,7 @@ export const postService = {
    * Trả về postId, sessionId, aiInitialMessage
    */
   async initPost(payload: PostInitRequest): Promise<PostInitResponse> {
-    const response = await request<PostInitResponse>('/posts/init', {
+    const response = await request<PostInitResponse>('/v1/posts/init', {
       method: 'POST',
       body: JSON.stringify(payload),
       requiresAuth: true,
@@ -45,19 +51,25 @@ export const postService = {
   /**
    * Gửi bài đăng để Admin duyệt
    */
-  async submitPost(postId: string): Promise<string> {
-    const response = await request<string>(`/posts/submit/${postId}`, {
+  async submitPost(postId: string, data?: PostSubmitRequest): Promise<string> {
+    const payload = data || {
+      title: 'Bài đăng mới',
+      description: 'Mô tả bài đăng sản phẩm',
+      price: 1000000,
+    };
+    const response = await request<string>(`/v1/posts/submit/${postId}`, {
       method: 'POST',
+      body: JSON.stringify(payload),
       requiresAuth: true,
     });
-    return (response as any)?.data || response?.message || 'Submit successfully';
+    return (response as any)?.data || response?.message || 'Gửi bài đăng thành công';
   },
 
   /**
    * AI tổng hợp cuộc hội thoại và cập nhật mô tả vào bài đăng (POST /api/v1/posts/finalize-chat/{sessionId})
    */
   async finalizeChat(sessionId: string): Promise<string> {
-    const response = await request<string>(`/posts/finalize-chat/${sessionId}`, {
+    const response = await request<string>(`/v1/posts/finalize-chat/${sessionId}`, {
       method: 'POST',
       requiresAuth: true,
     });

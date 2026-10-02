@@ -6,7 +6,7 @@ export const itemService = {
    * Lấy danh sách vật phẩm theo ID danh mục từ Backend
    */
   async getItemsByCategory(categoryId: string): Promise<ItemBackend[]> {
-    const response = await request<ItemBackend[]>(`/items/category/${categoryId}`, {
+    const response = await request<ItemBackend[]>(`/v1/items/category/${categoryId}`, {
       method: 'GET',
       requiresAuth: false,
     });

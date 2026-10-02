@@ -14,8 +14,89 @@ export interface PageResponse<T> {
   isLast: boolean;
 }
 
-const rawBaseUrl = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080/api';
-const BASE_URL = rawBaseUrl.replace(/\/v1\/?$/, '').replace(/\/$/, '');
+function isNoV1Path(path: string): boolean {
+  if (
+    path.startsWith('/auth') ||
+    path.startsWith('/users') ||
+    path.startsWith('/seller-verifications') ||
+    path.startsWith('/seller') ||
+    path.startsWith('/staff') ||
+    path.startsWith('/payment-callbacks') ||
+    path.startsWith('/health')
+  ) {
+    return true;
+  }
+  if (path.startsWith('/admin')) {
+    if (path.startsWith('/admin/users') || path.startsWith('/admin/posts')) {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+export function resolveApiUrl(endpoint: string): string {
+  if (!endpoint) return '';
+  if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+    return endpoint;
+  }
+
+  const rawEnv = (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_ORIGIN || 'http://localhost:8080';
+  const origin = rawEnv.replace(/\/api(\/v1)?\/?$/, '').replace(/\/+$/, '');
+
+  let path = endpoint.trim();
+  if (!path.startsWith('/')) {
+    path = `/${path}`;
+  }
+
+  // Already prefixed with /api/v1/
+  if (path.startsWith('/api/v1/')) {
+    const sub = path.substring(7);
+    if (isNoV1Path(sub)) {
+      return `${origin}/api${sub}`;
+    }
+    return `${origin}${path}`;
+  }
+
+  // Already prefixed with /api/
+  if (path.startsWith('/api/')) {
+    const sub = path.substring(4);
+    if (!isNoV1Path(sub) && !sub.startsWith('/v1/')) {
+      return `${origin}/api/v1${sub}`;
+    }
+    return `${origin}${path}`;
+  }
+
+  // Prefixed with /v1/
+  if (path.startsWith('/v1/')) {
+    const sub = path.substring(3);
+    if (isNoV1Path(sub)) {
+      return `${origin}/api${sub}`;
+    }
+    return `${origin}/api/v1${sub}`;
+  }
+
+  // Path aliases
+  if (path === '/me') {
+    return `${origin}/api/users/me`;
+  }
+  if (path === '/me/change-password') {
+    return `${origin}/api/auth/change-password`;
+  }
+  if (path.startsWith('/me/')) {
+    return `${origin}/api/users${path.substring(3)}`;
+  }
+
+  // Check if path belongs to a NO-V1 controller
+  if (isNoV1Path(path)) {
+    return `${origin}/api${path}`;
+  }
+
+  // Default to /api/v1/
+  return `${origin}/api/v1${path}`;
+}
+
+export const BASE_URL = resolveApiUrl('/v1');
 
 export const ACCESS_TOKEN_KEY = 'secondlife_access_token';
 export const REFRESH_TOKEN_KEY = 'secondlife_refresh_token';
@@ -113,7 +194,7 @@ async function refreshAccessToken(): Promise<string | null> {
 
   refreshPromise = (async () => {
     try {
-      const response = await fetch(`${BASE_URL}/auth/refresh`, {
+      const response = await fetch(resolveApiUrl('/auth/refresh'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -163,30 +244,29 @@ export async function request<T>(
 ): Promise<ApiResponse<T>> {
   const { requiresAuth = true, _retry = false, headers: customHeaders, ...restOptions } = options;
 
+  const isFormData = typeof FormData !== 'undefined' && restOptions.body instanceof FormData;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(customHeaders as Record<string, string>),
   };
 
-  if (requiresAuth) {
-    let token = getAccessToken();
-    if (!token) {
-      // If access token is missing, attempt to refresh if we have a refresh token
-      const rToken = getRefreshToken();
-      if (rToken && !_retry && !endpoint.includes('/auth/')) {
-        token = await refreshAccessToken();
-      }
-    }
-
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    } else {
-      clearAuthTokens();
-      throw new Error('Chưa đăng nhập hoặc phiên làm việc đã kết thúc.');
+  let token = getAccessToken();
+  if (requiresAuth && !token) {
+    // If access token is missing, attempt to refresh if we have a refresh token
+    const rToken = getRefreshToken();
+    if (rToken && !_retry && !endpoint.includes('/auth/')) {
+      token = await refreshAccessToken();
     }
   }
 
-  const url = `${BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  } else if (requiresAuth) {
+    clearAuthTokens();
+    throw new Error('Chưa đăng nhập hoặc phiên làm việc đã kết thúc.');
+  }
+
+  const url = resolveApiUrl(endpoint);
 
   try {
     const response = await fetch(url, {

@@ -1,4 +1,4 @@
-import { getAccessToken, getRefreshToken, setAuthTokens, clearAuthTokens } from './apiClient';
+import { getAccessToken, getRefreshToken, setAuthTokens, clearAuthTokens, resolveApiUrl } from './apiClient';
 
 export interface CloudinaryUploadResponseDto {
   url: string;
@@ -8,15 +8,12 @@ export interface CloudinaryUploadResponseDto {
   originalFilename: string;
 }
 
-const rawBaseUrl = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080/api';
-const BASE_URL = rawBaseUrl.replace(/\/v1\/?$/, '').replace(/\/$/, '');
-
 /** Attempt to refresh access token once, returns new token or null */
 async function tryRefreshToken(): Promise<string | null> {
   const rToken = getRefreshToken();
   if (!rToken) return null;
   try {
-    const res = await fetch(`${BASE_URL}/auth/refresh`, {
+    const res = await fetch(resolveApiUrl('/auth/refresh'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken: rToken }),
@@ -65,7 +62,7 @@ export const mediaService = {
     const formData = new FormData();
     formData.append('file', file);
     const query = folder ? `?folder=${encodeURIComponent(folder)}` : '';
-    const url = `${BASE_URL}/v1/media/upload${query}`;
+    const url = resolveApiUrl(`/media/upload${query}`);
 
     const doUpload = async (headers: Record<string, string>) => {
       return fetch(url, { method: 'POST', headers, body: formData });
@@ -117,7 +114,7 @@ export const mediaService = {
     const formData = new FormData();
     files.forEach((file) => formData.append('files', file));
     const query = folder ? `?folder=${encodeURIComponent(folder)}` : '';
-    const url = `${BASE_URL}/v1/media/upload-multiple${query}`;
+    const url = resolveApiUrl(`/media/upload-multiple${query}`);
 
     const doUpload = async (headers: Record<string, string>) => {
       return fetch(url, { method: 'POST', headers, body: formData });

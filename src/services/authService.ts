@@ -105,7 +105,7 @@ export const authService = {
         await request<void>('/auth/logout', {
           method: 'POST',
           body: JSON.stringify({ refreshToken }),
-          requiresAuth: true,
+          requiresAuth: false,
         });
       } catch (e) {
         // Suppress errors during logout

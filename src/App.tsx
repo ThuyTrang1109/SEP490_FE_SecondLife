@@ -694,7 +694,7 @@ export default function App() {
           setStoredUser(profileUser);
           showToast(
             lang === 'vi'
-              ? `Chào mừng ${user.name} (${user.role === 'buyer' ? 'Người Mua' : user.role === 'seller' ? 'Người Bán' : user.role === 'inspector' ? 'Kỹ Sư Hub' : 'Quản Trị'}) đã đăng nhập!`
+              ? `Chào mừng ${user.name} (${user.role === 'buyer' ? 'Người Mua' : user.role === 'seller' ? 'Người Bán' : user.role === 'inspector' ? 'Kỹ Sư Hub' : user.role === 'staff' ? 'Nhân Viên Vận Hành' : 'Quản Trị'}) đã đăng nhập!`
               : `Welcome ${user.name}! Logged in successfully as ${user.role.toUpperCase()}.`
           );
           if (pendingCheckoutItem) {

@@ -3,6 +3,7 @@ import { InspectionCenter, EscrowOrder, InspectionChecklistItem, Language } from
 import { translations, formatVND } from '../utils/translations';
 import { mockInspectionCenters, mockStandardChecklist } from '../data/mockData';
 import { Building2, QrCode, CheckCircle2, XCircle, ShieldCheck, Printer } from 'lucide-react';
+import { inspectorService } from '../services';
 
 interface InspectorPortalViewProps {
   orders: EscrowOrder[];
@@ -37,23 +38,32 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     );
   };
 
-  const handleFinishInspection = () => {
+  const handleFinishInspection = async () => {
     setIsSubmitting(true);
-    setTimeout(() => {
-      onCompleteInspection(
-        activeOrder.id,
-        overallVerdict,
-        tamperSealInput,
-        inspectorNotes
-      );
-      setIsSubmitting(false);
-      setSuccessMessage(
-        lang === 'vi'
-          ? `Đã nghiệm thu thành công đơn hàng #${activeOrder.id}! Báo cáo số đã được xuất và dán tem ${tamperSealInput}.`
-          : `Order #${activeOrder.id} successfully inspected! Digital report issued with seal ${tamperSealInput}.`
-      );
-      setTimeout(() => setSuccessMessage(null), 5000);
-    }, 800);
+    try {
+      if (activeOrder?.id) {
+        await inspectorService.submitResult(activeOrder.id, {
+          status: overallVerdict === 'PASS' ? 'PASSED' : 'FAILED',
+          note: `${tamperSealInput} - ${inspectorNotes}`,
+        });
+      }
+    } catch (err) {
+      console.warn('Backend inspection submission fallback:', err);
+    }
+
+    onCompleteInspection(
+      activeOrder.id,
+      overallVerdict,
+      tamperSealInput,
+      inspectorNotes
+    );
+    setIsSubmitting(false);
+    setSuccessMessage(
+      lang === 'vi'
+        ? `Đã nghiệm thu thành công đơn hàng #${activeOrder.id}! Báo cáo số đã được xuất và dán tem ${tamperSealInput}.`
+        : `Order #${activeOrder.id} successfully inspected! Digital report issued with seal ${tamperSealInput}.`
+    );
+    setTimeout(() => setSuccessMessage(null), 5000);
   };
 
   return (

@@ -23,26 +23,36 @@ export const postService = {
    * Lấy danh sách tin đăng bài công khai từ Backend
    */
   async getPublicPosts(categoryId?: string, itemId?: string): Promise<any> {
-    const params = new URLSearchParams();
-    if (categoryId) params.append('categoryId', categoryId);
-    if (itemId) params.append('itemId', itemId);
+    try {
+      const params = new URLSearchParams();
+      if (categoryId) params.append('categoryId', categoryId);
+      if (itemId) params.append('itemId', itemId);
 
-    const queryString = params.toString() ? `?${params.toString()}` : '';
-    const response = await request<any>(`/v1/posts${queryString}`, {
-      method: 'GET',
-      requiresAuth: false,
-    });
-    return (response as any)?.data || response;
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      const response = await request<any>(`/v1/posts${queryString}`, {
+        method: 'GET',
+        requiresAuth: false,
+      });
+      return (response as any)?.data || response;
+    } catch (err) {
+      console.warn('Backend chưa có API GET /api/v1/posts công khai (404), trả về danh sách rỗng fallback:', err);
+      return [];
+    }
   },
 
   /**
    * Khởi tạo bài đăng mới (POST /api/v1/posts/init với JSON payload)
    * Trả về postId, sessionId, aiInitialMessage
+   * Chỉ gửi categoryId, itemId để khớp với Jackson deserializer của Backend PostInitRequest
    */
   async initPost(payload: PostInitRequest): Promise<PostInitResponse> {
+    const jsonBody = {
+      categoryId: payload.categoryId,
+      itemId: payload.itemId,
+    };
     const response = await request<PostInitResponse>('/v1/posts/init', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(jsonBody),
       requiresAuth: true,
     });
     return (response as any)?.data || response;

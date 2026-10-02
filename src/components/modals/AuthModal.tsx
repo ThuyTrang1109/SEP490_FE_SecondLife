@@ -263,6 +263,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (!roles || roles.length === 0) return 'buyer';
     if (roles.includes('ROLE_ADMIN') || roles.includes('ADMIN')) return 'admin';
     if (roles.includes('ROLE_INSPECTOR') || roles.includes('INSPECTOR') || roles.includes('HUB_INSPECTOR')) return 'inspector';
+    if (roles.includes('ROLE_STAFF') || roles.includes('STAFF')) return 'staff';
     if (roles.includes('ROLE_SELLER') || roles.includes('SELLER')) return 'seller';
     return 'buyer';
   };

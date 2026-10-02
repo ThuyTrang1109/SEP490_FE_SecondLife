@@ -26,6 +26,20 @@ export interface SellerVerificationReviewRequestDto {
   allowResubmission?: boolean;
 }
 
+export interface UserRolesResponseDto {
+  userId: string;
+  roleCodes: string[];
+  permissionCodes: string[];
+}
+
+export interface UserRoleAuditResponseDto {
+  id: string;
+  roleCode: string;
+  action: string;
+  changedBy: string;
+  changedAt: string;
+}
+
 export interface GetAdminUsersParams {
   email?: string;
   status?: string;
@@ -131,6 +145,14 @@ export const adminService = {
     return res.data;
   },
 
+  async retrySellerVerification(id: string): Promise<SellerVerificationResponseDto> {
+    const res = await request<SellerVerificationResponseDto>(`/admin/seller-verifications/${id}/retry-ekyc`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return res.data;
+  },
+
   async createInspectionCenterAccount(data: {
     email: string;
     password: string;
@@ -141,11 +163,58 @@ export const adminService = {
     city?: string;
     address?: string;
   }): Promise<any> {
+    const payload = {
+      email: data.email,
+      password: data.password,
+      fullName: data.fullName || data.hubCenterName || data.inspectionCenterName || 'Inspection Center',
+      phone: data.phone,
+    };
     const res = await request<any>('/admin/inspection-center-accounts', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
       requiresAuth: true,
     });
+    return res.data;
+  },
+
+  /**
+   * Xem danh sách vai trò và quyền hiệu lực của người dùng
+   */
+  async getUserRoles(userId: string): Promise<UserRolesResponseDto> {
+    const res = await request<UserRolesResponseDto>(`/v1/admin/users/${userId}/roles`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return res.data;
+  },
+
+  /**
+   * Cập nhật / gán danh sách vai trò cho người dùng
+   */
+  async replaceUserRoles(userId: string, roleCodes: string[]): Promise<UserRolesResponseDto> {
+    const res = await request<UserRolesResponseDto>(`/v1/admin/users/${userId}/roles`, {
+      method: 'PUT',
+      body: JSON.stringify({ roleCodes }),
+      requiresAuth: true,
+    });
+    return res.data;
+  },
+
+  /**
+   * Xem nhật ký kiểm toán thay đổi vai trò của người dùng
+   */
+  async getUserRoleAudit(
+    userId: string,
+    page: number = 0,
+    size: number = 20
+  ): Promise<PageResponse<UserRoleAuditResponseDto>> {
+    const res = await request<PageResponse<UserRoleAuditResponseDto>>(
+      `/v1/admin/users/${userId}/role-changes?page=${page}&size=${size}`,
+      {
+        method: 'GET',
+        requiresAuth: true,
+      }
+    );
     return res.data;
   },
 };

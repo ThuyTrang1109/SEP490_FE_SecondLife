@@ -260,6 +260,21 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   };
 
+  const handleRetrySellerVerification = async (id: string) => {
+    try {
+      await adminService.retrySellerVerification(id);
+      triggerNotice('Đã kích hoạt thử lại eKYC qua hệ thống thành công!');
+      const res = await adminService.getSellerVerifications({ page: 0, size: 20 });
+      if (res?.items) setBackendVerifications(res.items);
+      if (selectedVerificationDetail?.id === id) {
+        const updated = await adminService.getSellerVerificationById(id).catch(() => null);
+        if (updated) setSelectedVerificationDetail(updated);
+      }
+    } catch (err: any) {
+      triggerNotice(err.message || 'Thử lại eKYC thất bại');
+    }
+  };
+
   const handleToggleUserStatus = async (userId: string, currentStatus: string) => {
     const nextStatus = currentStatus === 'ACTIVE' ? 'LOCKED' : 'ACTIVE';
     try {
@@ -1690,14 +1705,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                     <span>Từ Chối</span>
                                   </button>
                                 </>
-                              ) : v.status === 'EKYC_PENDING' ? (
+                              ) : v.status === 'EKYC_PENDING' || v.ekycStatus === 'PROVIDER_ERROR' ? (
                                 <button
-                                  onClick={() => triggerNotice('Hồ sơ đang ở trạng thái EKYC_PENDING. Chỉ hồ sơ ở trạng thái NEEDS_REVIEW mới có thể phê duyệt bởi Quản trị viên.')}
-                                  className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-[11px] font-bold border border-slate-200 cursor-not-allowed flex items-center gap-1"
-                                  title="Chỉ hồ sơ ở trạng thái NEEDS_REVIEW mới có thể phê duyệt"
+                                  onClick={() => handleRetrySellerVerification(v.id)}
+                                  className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
+                                  title="Thử lại quy trình eKYC"
                                 >
-                                  <Clock className="w-3.5 h-3.5 text-amber-500" />
-                                  <span>Chờ eKYC</span>
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                  <span>Thử Lại eKYC</span>
                                 </button>
                               ) : null}
                             </div>
@@ -2441,10 +2456,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <span>Phê Duyệt Ngay</span>
                   </button>
                 </div>
-              ) : selectedVerificationDetail.status === 'EKYC_PENDING' ? (
-                <div className="text-xs text-amber-800 bg-amber-50 px-3.5 py-2 rounded-xl border border-amber-200 flex items-center gap-2 font-bold">
-                  <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>Hồ sơ đang ở trạng thái EKYC_PENDING. Quản trị viên chỉ có thể duyệt sau khi hệ thống chuyển sang NEEDS_REVIEW.</span>
+              ) : selectedVerificationDetail.status === 'EKYC_PENDING' || selectedVerificationDetail.ekycStatus === 'PROVIDER_ERROR' ? (
+                <div className="w-full flex items-center justify-between gap-3 bg-amber-50 px-4 py-2.5 rounded-xl border border-amber-200">
+                  <div className="text-xs text-amber-800 flex items-center gap-2 font-medium">
+                    <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Hồ sơ đang chờ eKYC hoặc gặp lỗi nhà cung cấp ({selectedVerificationDetail.ekycStatus || 'EKYC_PENDING'}).</span>
+                  </div>
+                  <button
+                    onClick={() => handleRetrySellerVerification(selectedVerificationDetail.id)}
+                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-md transition cursor-pointer flex items-center gap-1.5 shrink-0"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Thử Lại eKYC</span>
+                  </button>
                 </div>
               ) : null}
             </div>

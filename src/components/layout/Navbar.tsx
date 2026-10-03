@@ -6,7 +6,7 @@ import logoImg from '../../assets/logo.png';
 
 interface NavbarProps {
   currentRole: UserRole;
-  onRoleChange: (role: UserRole) => void;
+  onRoleChange?: (role: UserRole) => void;
   lang: Language;
   onLangChange: (lang: Language) => void;
   activeTab: string;
@@ -25,7 +25,7 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentRole,
-  onRoleChange,
+  onRoleChange: _onRoleChange,
   lang,
   onLangChange,
   activeTab,
@@ -79,55 +79,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </div>
 
-            {/* Demo Role Switcher Bar */}
-            <div className="flex items-center gap-1 bg-white/10 p-0.5 rounded-xl border border-white/20 text-[11px] font-bold">
-              <span className="px-1.5 text-amber-300 font-black hidden xl:inline">Role:</span>
-              <button
-                onClick={() => onRoleChange('buyer')}
-                className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
-                  currentRole === 'buyer' ? 'bg-[#c34c36] text-white font-black shadow-xs' : 'text-white/80 hover:text-white'
-                }`}
-                title="Chuyển vai trò Người Mua"
-              >
-                🛒 Buyer
-              </button>
-              <button
-                onClick={() => onRoleChange('seller')}
-                className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
-                  currentRole === 'seller' ? 'bg-[#c34c36] text-white font-black shadow-xs' : 'text-white/80 hover:text-white'
-                }`}
-                title="Chuyển vai trò Người Bán"
-              >
-                🏪 Seller
-              </button>
-              <button
-                onClick={() => onRoleChange('staff')}
-                className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
-                  currentRole === 'staff' ? 'bg-[#2b1d16] text-white font-black shadow-xs' : 'text-white/80 hover:text-white'
-                }`}
-                title="Chuyển vai trò Nhân Viên Staff"
-              >
-                🛠️ Staff
-              </button>
-              <button
-                onClick={() => onRoleChange('inspector')}
-                className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
-                  currentRole === 'inspector' ? 'bg-emerald-700 text-white font-black shadow-xs' : 'text-white/80 hover:text-white'
-                }`}
-                title="Chuyển vai trò Kỹ Sư Kiểm Định"
-              >
-                🔍 Inspector
-              </button>
-              <button
-                onClick={() => onRoleChange('admin')}
-                className={`px-2 py-0.5 rounded-lg transition cursor-pointer ${
-                  currentRole === 'admin' ? 'bg-purple-700 text-white font-black shadow-xs' : 'text-white/80 hover:text-white'
-                }`}
-                title="Chuyển vai trò Quản Trị Viên"
-              >
-                🛡️ Admin
-              </button>
-            </div>
 
             {/* Language Toggle */}
             <button
@@ -143,7 +94,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       {/* Main Navbar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
+      <div className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         {/* Logo */}
         <div
           className="flex items-center gap-2.5 cursor-pointer select-none group shrink-0"
@@ -171,8 +122,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <nav className="hidden lg:flex items-center gap-1.5 max-w-full overflow-x-auto scrollbar-none py-1">
+        {/* Navigation Tabs - Clean, distinct pills */}
+        <nav className="hidden lg:flex items-center gap-1 p-1 bg-white/5 rounded-2xl border border-white/10 shadow-inner">
           <button
             onClick={() => onTabChange('home')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
@@ -208,20 +159,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Building2 className="w-3.5 h-3.5" />
               <span>{lang === 'vi' ? 'Kênh Người Bán' : 'Seller Hub'}</span>
-            </button>
-          )}
-
-          {currentUser && currentRole === 'seller' && (
-            <button
-              onClick={() => onTabChange('create-listing')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'create-listing'
-                  ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                  : 'text-white/80 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <PlusCircle className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? 'Đăng Bán AI' : 'Post Listing'}</span>
             </button>
           )}
 
@@ -288,15 +225,15 @@ export const Navbar: React.FC<NavbarProps> = ({
         </nav>
 
         {/* Action buttons & Profile */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0">
           {/* TopUp Credits Badge Button */}
           {currentUser && (
             <button
               onClick={onOpenTopUp}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/15 text-white border border-white/20 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
               title={lang === 'vi' ? 'Click để nạp thêm lượt đăng tin & lượt tư vấn AI' : 'Click to top up post & AI credits'}
             >
-              <Sparkles className="w-3.5 h-3.5 text-[#fce5da] shrink-0" />
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
               <div className="flex items-center gap-1 text-[11px]">
                 <span className="text-white font-extrabold">{userCredit?.postCredits ?? (userCreditBalance ?? 0)} {lang === 'vi' ? 'tin' : 'posts'}</span>
                 <span className="text-white/40">•</span>
@@ -310,7 +247,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={() => onTabChange('chat')}
             className={`p-2 rounded-xl text-white/80 hover:text-white hover:bg-white/10 relative transition cursor-pointer ${
-              activeTab === 'chat' ? 'bg-[#c34c36] text-white shadow-sm' : ''
+              activeTab === 'chat' ? 'bg-white/20 text-white shadow-sm' : ''
             }`}
             title="Chat & Smart Negotiation"
           >
@@ -320,7 +257,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
 
-          {/* Post Listing Button */}
+          {/* Post Listing CTA Button */}
           <button
             onClick={() => {
               if (!currentUser) {
@@ -335,10 +272,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onTabChange('create-listing');
               }
             }}
-            className="hidden sm:inline-flex items-center gap-1.5 bg-[#c34c36] hover:bg-[#b0402b] text-white px-3.5 py-1.5 rounded-xl font-black text-xs shadow-md transition cursor-pointer"
+            className="hidden sm:inline-flex items-center gap-1.5 bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 text-white px-4 py-2 rounded-xl font-black text-xs shadow-md hover:shadow-lg transition cursor-pointer"
           >
             <Sparkles className="w-3.5 h-3.5 fill-white" />
-            <span>{lang === 'vi' ? 'Đăng Bán' : 'Post Listing'}</span>
+            <span>{lang === 'vi' ? 'Đăng Bán AI' : 'Post Listing'}</span>
           </button>
 
           {/* Profile User Badge */}

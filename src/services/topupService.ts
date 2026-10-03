@@ -8,7 +8,7 @@ export const topupService = {
   async getTopupPackages(): Promise<TopupPackage[]> {
     const response = await request<TopupPackage[]>('/v1/topup/packages', {
       method: 'GET',
-      requiresAuth: false,
+      requiresAuth: true,
     });
     return (response as any)?.data || response;
   },

@@ -211,13 +211,27 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
     setIsSubmittingSeller(true);
     try {
-      const verificationResponse = await sellerService.submitVerification({
-        verificationType: 'CITIZEN_ID',
-        documentNumber: idCardNumber.trim(),
-        documentFrontUrl: docFrontUrl,
-        documentBackUrl: docBackUrl,
-        selfieUrl: selfieUrl || undefined,
-      });
+      let verificationResponse;
+      try {
+        const checkVerif = await sellerService.getMyVerification();
+        if (checkVerif?.status === 'RESUBMIT_REQUIRED') {
+          verificationResponse = await sellerService.resubmitVerification(checkVerif.id, {
+            documentFrontUrl: docFrontUrl,
+            documentBackUrl: docBackUrl,
+            selfieUrl: selfieUrl || undefined,
+          });
+        }
+      } catch (_) {}
+
+      if (!verificationResponse) {
+        verificationResponse = await sellerService.submitVerification({
+          verificationType: 'CITIZEN_ID',
+          documentNumber: idCardNumber.trim(),
+          documentFrontUrl: docFrontUrl,
+          documentBackUrl: docBackUrl,
+          selfieUrl: selfieUrl || undefined,
+        });
+      }
 
       const status = verificationResponse?.status;
 

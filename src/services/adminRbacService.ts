@@ -4,41 +4,40 @@ export interface PermissionResponseDto {
   code: string;
   name: string;
   description?: string;
-  module?: string;
-  system: boolean;
-  assignableRoleCodes: string[];
+  assignableRoles: string[];
+  systemPermission: boolean;
 }
 
 export interface CreatePermissionRequestDto {
   code: string;
   name: string;
   description?: string;
-  module?: string;
-  assignableRoleCodes?: string[];
+  assignableRoles: string[];
 }
 
 export interface UpdatePermissionRequestDto {
-  name?: string;
+  name: string;
   description?: string;
-  assignableRoleCodes?: string[];
+  assignableRoles?: string[];
 }
 
 export interface RolePermissionsResponseDto {
-  roleCode: string;
-  roleName: string;
+  code: string;
+  name: string;
   description?: string;
+  editable: boolean;
   permissionCodes: string[];
 }
 
 export interface ReplaceRolePermissionsRequestDto {
+  expectedPermissionCodes: string[];
   permissionCodes: string[];
 }
 
 export interface RolePermissionAuditResponseDto {
   id: string;
-  roleCode: string;
   permissionCode: string;
-  action: 'GRANTED' | 'REVOKED' | string;
+  action: 'GRANT' | 'REVOKE' | string;
   changedBy: string;
   changedAt: string;
 }
@@ -67,7 +66,7 @@ export const adminRbacService = {
   },
 
   /**
-   * Tạo Permission mới (Custom Permission)
+   * Khởi tạo permission đã có trong backend catalog nếu thiếu trong DB
    */
   async createPermission(data: CreatePermissionRequestDto): Promise<PermissionResponseDto> {
     const res = await request<PermissionResponseDto>('/admin/permissions', {
@@ -126,15 +125,15 @@ export const adminRbacService = {
   },
 
   /**
-   * Cập nhật / thay thế ma trận quyền của một Role
+   * Cập nhật / thay thế ma trận quyền của một Role bằng snapshot expectedPermissionCodes
    */
   async replaceRolePermissions(
     roleCode: string,
-    permissionCodes: string[]
+    data: ReplaceRolePermissionsRequestDto
   ): Promise<RolePermissionsResponseDto> {
     const res = await request<RolePermissionsResponseDto>(`/admin/roles/${roleCode}/permissions`, {
       method: 'PUT',
-      body: JSON.stringify({ permissionCodes }),
+      body: JSON.stringify(data),
       requiresAuth: true,
     });
     return (res as any)?.data || res;

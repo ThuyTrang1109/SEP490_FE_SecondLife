@@ -32,6 +32,11 @@ export interface UserRolesResponseDto {
   permissionCodes: string[];
 }
 
+export interface ReplaceUserRolesRequestDto {
+  expectedRoleCodes: string[];
+  roleCodes: string[];
+}
+
 export interface UserRoleAuditResponseDto {
   id: string;
   roleCode: string;
@@ -176,7 +181,6 @@ export const adminService = {
     });
     return res.data;
   },
-
   /**
    * Xem danh sách vai trò và quyền hiệu lực của người dùng
    */
@@ -189,12 +193,12 @@ export const adminService = {
   },
 
   /**
-   * Cập nhật / gán danh sách vai trò cho người dùng
+   * Cập nhật / gán danh sách vai trò cho người dùng kèm snapshot expectedRoleCodes
    */
-  async replaceUserRoles(userId: string, roleCodes: string[]): Promise<UserRolesResponseDto> {
+  async replaceUserRoles(userId: string, data: ReplaceUserRolesRequestDto): Promise<UserRolesResponseDto> {
     const res = await request<UserRolesResponseDto>(`/v1/admin/users/${userId}/roles`, {
       method: 'PUT',
-      body: JSON.stringify({ roleCodes }),
+      body: JSON.stringify(data),
       requiresAuth: true,
     });
     return res.data;

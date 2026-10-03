@@ -16,11 +16,14 @@ import {
   Loader2,
   XCircle,
   Award,
-  Upload
+  Upload,
+  Coins,
+  History
 } from 'lucide-react';
 import { Listing, Language } from '../types';
 import { formatVND } from '../utils/translations';
 import { sellerService, SellerVerificationResponseDto } from '../services/sellerService';
+import { sellerCreditService, CreditBalanceResponseDto, CreditLedgerResponseDto } from '../services/sellerCreditService';
 import { mediaService } from '../services/mediaService';
 import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
 
@@ -58,6 +61,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [resubmitMsg, setResubmitMsg] = useState<string | null>(null);
 
+  // Credit Balance & Ledger State
+  const [creditBalance, setCreditBalance] = useState<CreditBalanceResponseDto | null>(null);
+  const [isCreditLedgerOpen, setIsCreditLedgerOpen] = useState(false);
+  const [creditLedgerItems, setCreditLedgerItems] = useState<CreditLedgerResponseDto[]>([]);
+  const [isLoadingLedger, setIsLoadingLedger] = useState(false);
+
   useEffect(() => {
     sellerService.getMyVerification()
       .then((ver) => {
@@ -73,12 +82,33 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         // Ignored if not verified yet
       });
 
+    // Fetch Credit Balance
+    sellerCreditService.getCredits()
+      .then((bal) => {
+        if (bal) setCreditBalance(bal);
+      })
+      .catch(() => {});
+
     // Fetch backend categories & public posts
     import('../services').then(({ categoryService, postService }) => {
       categoryService.getCategories().catch(() => []);
       postService.getPublicPosts().catch(() => []);
     });
   }, []);
+
+  const handleOpenCreditLedger = async () => {
+    setIsCreditLedgerOpen(true);
+    setIsLoadingLedger(true);
+    try {
+      const res = await sellerCreditService.getLedger(0, 30);
+      const items = (res as any)?.content || (res as any)?.data || (Array.isArray(res) ? res : []);
+      setCreditLedgerItems(items);
+    } catch (err) {
+      console.warn('Lỗi lấy sổ cái credit:', err);
+    } finally {
+      setIsLoadingLedger(false);
+    }
+  };
 
   const handleFileUpload = async (file: File, type: 'front' | 'back' | 'selfie') => {
     try {
@@ -100,7 +130,6 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     try {
       setIsUploading(true);
       const updated = await sellerService.resubmitVerification(myVerification.id, {
-        documentNumber: resubmitDocNum,
         documentFrontUrl: resubmitFrontUrl,
         documentBackUrl: resubmitBackUrl,
         selfieUrl: resubmitSelfieUrl,
@@ -291,7 +320,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         </div>
 
         {/* Financial Metrics Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-[#24263e]/15">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-[#24263e]/15">
           <div className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
             <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
               <span>{lang === 'vi' ? 'Số dư ví khả dụng' : 'Available wallet balance'}</span>
@@ -315,6 +344,34 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             </div>
             <div className="text-[11px] text-[#24263e]/60">
               {lang === 'vi' ? 'Giải ngân sau khi Buyer nhận hàng' : 'Released after buyer confirms delivery'}
+            </div>
+          </div>
+
+          <div className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
+            <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
+              <span>{lang === 'vi' ? 'Điểm Tín Dụng (Credits)' : 'Active Credits'}</span>
+              <Coins className="w-4 h-4 text-amber-500" />
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-black text-[#24263e]">
+                {creditBalance ? creditBalance.listing : 12}
+              </span>
+              <span className="text-xs font-bold text-slate-500">Đăng tin</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-lg font-black text-emerald-600">
+                {creditBalance ? creditBalance.valuation : 5}
+              </span>
+              <span className="text-xs font-bold text-slate-500">Định giá</span>
+            </div>
+            <div className="pt-1 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={handleOpenCreditLedger}
+                className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition cursor-pointer"
+              >
+                <History className="w-3 h-3" />
+                <span>Xem sổ cái điểm</span>
+              </button>
             </div>
           </div>
 
@@ -695,6 +752,99 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           onClose={() => setIsSellerReviewsOpen(false)}
           lang={lang}
         />
+      )}
+
+      {/* Credit Ledger Modal */}
+      {isCreditLedgerOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Coins className="w-5 h-5 text-amber-500" />
+                <h3 className="font-bold text-sm text-slate-900">
+                  Lịch Sử Biến Động Điểm Tín Dụng (Credit Ledger)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreditLedgerOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {isLoadingLedger ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
+                <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
+                <span className="text-xs">Đang tải lịch sử giao dịch credit...</span>
+              </div>
+            ) : (
+              <div className="overflow-x-auto max-h-96">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50 text-slate-600 text-[11px] font-bold">
+                      <th className="py-2.5 px-3">Thời gian</th>
+                      <th className="py-2.5 px-3">Loại Credit</th>
+                      <th className="py-2.5 px-3">Nghiệp vụ</th>
+                      <th className="py-2.5 px-3 text-right">Biến động</th>
+                      <th className="py-2.5 px-3 text-right">Số dư sau</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {creditLedgerItems.length > 0 ? (
+                      creditLedgerItems.map((item, idx) => (
+                        <tr key={item.id || idx} className="hover:bg-slate-50/60 transition">
+                          <td className="py-2.5 px-3 font-mono text-slate-500 text-[11px]">
+                            {item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : '—'}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              item.creditType === 'LISTING'
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            }`}>
+                              {item.creditType}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 font-semibold text-slate-800">
+                            {item.entryType === 'PURCHASE' ? 'Nạp gói Credit' :
+                             item.entryType === 'CONSUMPTION' ? 'Tiêu trừ dịch vụ' :
+                             item.entryType === 'REFUND' ? 'Hoàn trả điểm' : item.entryType}
+                          </td>
+                          <td className={`py-2.5 px-3 text-right font-mono font-bold ${
+                            item.quantityDelta > 0 ? 'text-emerald-600' : 'text-rose-600'
+                          }`}>
+                            {item.quantityDelta > 0 ? `+${item.quantityDelta}` : item.quantityDelta}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
+                            {item.balanceAfter}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-slate-400">
+                          Chưa có lịch sử giao dịch credit nào.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="pt-2 flex justify-end border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsCreditLedgerOpen(false)}
+                className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

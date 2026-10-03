@@ -22,7 +22,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { UserProfile, UserRole, Language } from '../../types';
-import { sellerService, mediaService } from '../../services';
+import { sellerService, mediaService, SellerVerificationResponseDto } from '../../services';
 import { LiveFaceScannerModal } from './LiveFaceScannerModal';
 
 interface SellerRegistrationModalProps {
@@ -91,6 +91,8 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  const [existingVerification, setExistingVerification] = useState<SellerVerificationResponseDto | null>(null);
+
   useEffect(() => {
     if (currentUser) {
       setShopName(currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop'));
@@ -101,6 +103,34 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
       if (currentUser.bankAccount?.accountNumber) setSellerAccountNumber(currentUser.bankAccount.accountNumber);
       if (currentUser.bankAccount?.accountHolder) setSellerAccountHolder(currentUser.bankAccount.accountHolder);
       setShowForm(!Boolean(currentUser.isSellerRegistered || currentUser.role === 'seller'));
+    }
+
+    if (isOpen) {
+      sellerService.getMyVerification()
+        .then((verif) => {
+          if (verif) {
+            setExistingVerification(verif);
+            if (verif.documentNumber) setIdCardNumber(verif.documentNumber);
+            if (verif.documentFrontUrl) {
+              setDocFrontUrl(verif.documentFrontUrl);
+              setFrontPreview(verif.documentFrontUrl);
+            }
+            if (verif.documentBackUrl) {
+              setDocBackUrl(verif.documentBackUrl);
+              setBackPreview(verif.documentBackUrl);
+            }
+            if (verif.selfieUrl) {
+              setSelfieUrl(verif.selfieUrl);
+              setSelfiePreview(verif.selfieUrl);
+            }
+            if (verif.status === 'RESUBMIT_REQUIRED') {
+              setShowForm(true);
+            }
+          }
+        })
+        .catch(() => {
+          setExistingVerification(null);
+        });
     }
   }, [currentUser, isOpen]);
 
@@ -248,17 +278,44 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
       }
 
       // 2. Gửi hồ sơ xác minh eKYC tới Backend
-      setUploadProgressMsg(
-        lang === 'vi' ? 'Đang gửi hồ sơ và đối soát eKYC với hệ thống...' : 'Submitting verification...'
-      );
+      let verificationResponse: SellerVerificationResponseDto;
 
-      const verificationResponse = await sellerService.submitVerification({
-        verificationType: 'CITIZEN_ID',
-        documentNumber: idCardNumber.trim(),
-        documentFrontUrl: finalFrontUrl,
-        documentBackUrl: finalBackUrl,
-        selfieUrl: finalSelfieUrl || undefined,
-      });
+      // Kiểm tra nếu hồ sơ trước đó đang ở trạng thái RESUBMIT_REQUIRED
+      let isResubmit = existingVerification?.status === 'RESUBMIT_REQUIRED';
+      let activeVerifId = existingVerification?.id;
+
+      if (!isResubmit) {
+        try {
+          const checkVerif = await sellerService.getMyVerification();
+          if (checkVerif?.status === 'RESUBMIT_REQUIRED') {
+            isResubmit = true;
+            activeVerifId = checkVerif.id;
+            setExistingVerification(checkVerif);
+          }
+        } catch (_) {}
+      }
+
+      if (isResubmit && activeVerifId) {
+        setUploadProgressMsg(
+          lang === 'vi' ? 'Đang nộp lại ảnh chứng từ eKYC...' : 'Resubmitting verification documents...'
+        );
+        verificationResponse = await sellerService.resubmitVerification(activeVerifId, {
+          documentFrontUrl: finalFrontUrl,
+          documentBackUrl: finalBackUrl,
+          selfieUrl: finalSelfieUrl || undefined,
+        });
+      } else {
+        setUploadProgressMsg(
+          lang === 'vi' ? 'Đang gửi hồ sơ và đối soát eKYC với hệ thống...' : 'Submitting verification...'
+        );
+        verificationResponse = await sellerService.submitVerification({
+          verificationType: 'CITIZEN_ID',
+          documentNumber: idCardNumber.trim(),
+          documentFrontUrl: finalFrontUrl,
+          documentBackUrl: finalBackUrl,
+          selfieUrl: finalSelfieUrl || undefined,
+        });
+      }
 
       // 3. Phân nhánh xử lý chính xác theo mã trạng thái status trả về từ Backend
       const status = verificationResponse?.status;
@@ -386,8 +443,23 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         );
       }
     } catch (err: any) {
+      const msg = err.message || '';
+      if (msg.includes('đang được xử lý')) {
+        try {
+          const currentVerif = await sellerService.getMyVerification();
+          if (currentVerif?.status === 'RESUBMIT_REQUIRED') {
+            setExistingVerification(currentVerif);
+            setErrorMsg(
+              lang === 'vi'
+                ? `⚠️ Hồ sơ của bạn đang yêu cầu chụp lại ảnh (Lý do: ${currentVerif.rejectionReason || 'ảnh mờ/lóa'}). Vui lòng chọn ảnh rõ nét hơn rồi bấm Nộp Lại Hồ Sơ eKYC!`
+                : `⚠️ Resubmission required: ${currentVerif.rejectionReason || 'blurry photos'}. Please re-upload clearer photos and click Resubmit eKYC!`
+            );
+            return;
+          }
+        } catch (_) {}
+      }
       setErrorMsg(
-        err.message ||
+        msg ||
         (lang === 'vi'
           ? 'Gửi hồ sơ định danh không thành công. Vui lòng kiểm tra lại thông tin.'
           : 'Failed to submit verification. Please try again.')
@@ -416,12 +488,16 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                 <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
                   currentUser.role === 'seller'
                     ? 'bg-white text-emerald-900 border-emerald-500'
+                    : existingVerification?.status === 'RESUBMIT_REQUIRED'
+                    ? 'bg-amber-100 text-amber-900 border-amber-500 animate-pulse'
                     : currentUser.kycStatus === 'pending' || currentUser.isSellerRegistered
                     ? 'bg-white text-amber-900 border-amber-500'
                     : 'bg-white text-rose-900 border-rose-500'
                 }`}>
                   {currentUser.role === 'seller'
                     ? (lang === 'vi' ? 'Đã Kích Hoạt Người Bán' : 'Seller Active')
+                    : existingVerification?.status === 'RESUBMIT_REQUIRED'
+                    ? (lang === 'vi' ? 'Cần Chụp Lại Ảnh eKYC' : 'Resubmission Required')
                     : (currentUser.kycStatus === 'pending' || currentUser.isSellerRegistered)
                     ? (lang === 'vi' ? 'Đang Chờ Duyệt eKYC' : 'Pending Review')
                     : (lang === 'vi' ? 'Chưa Kích Hoạt' : 'Not Registered')}
@@ -615,6 +691,27 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
               {/* Form Inputs */}
               <div className="space-y-3">
+                {/* Resubmission Alert if status is RESUBMIT_REQUIRED */}
+                {existingVerification?.status === 'RESUBMIT_REQUIRED' && (
+                  <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-start gap-3 shadow-xs animate-in fade-in">
+                    <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-amber-950">
+                          {lang === 'vi' ? 'HỒ SƠ CẦN BỔ SUNG / CHỤP LẠI ẢNH eKYC' : 'RESUBMISSION REQUIRED'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-300">
+                          {lang === 'vi' ? `Lần nộp lại: ${existingVerification.resubmissionCount || 0}/3` : `Attempt: ${existingVerification.resubmissionCount || 0}/3`}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 leading-relaxed">
+                        {lang === 'vi'
+                          ? `Lý do từ bên thứ 3: "${existingVerification.rejectionReason || 'Ảnh chụp CCCD bị mờ, lóa ánh sáng hoặc không nhận diện rõ'}". Vui lòng tải lên ảnh chụp mới rõ nét và bấm "Nộp Lại Chứng Từ eKYC" ở cuối form.`
+                          : `Provider reason: "${existingVerification.rejectionReason || 'Blurry photos or glare'}". Please upload clear photos and submit again.`}
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-[11px] font-bold text-slate-700 block mb-1">
@@ -974,6 +1071,8 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     <span>
                       {isSubmitting
                         ? (lang === 'vi' ? 'Đang Gửi Hồ Sơ...' : 'Submitting...')
+                        : existingVerification?.status === 'RESUBMIT_REQUIRED'
+                        ? (lang === 'vi' ? 'Nộp Lại Chứng Từ eKYC' : 'Resubmit eKYC Documents')
                         : isRegistered
                         ? (lang === 'vi' ? 'Cập Nhật Hồ Sơ Gian Hàng' : 'Update Store Profile')
                         : (lang === 'vi' ? 'Xác Nhận Đăng Ký & Gửi Duyệt eKYC' : 'Confirm Registration & Submit eKYC')}

@@ -7,7 +7,21 @@ import {
   EscrowStatus
 } from '../types';
 import { translations, formatVND } from '../utils/translations';
-import { adminService, adminPostService, UserAdminResponseDto, SellerVerificationResponseDto } from '../services';
+import {
+  adminService,
+  adminPostService,
+  adminRbacService,
+  adminCreditPricingService,
+  UserAdminResponseDto,
+  SellerVerificationResponseDto,
+  PermissionResponseDto,
+  RolePermissionsResponseDto,
+  RolePermissionAuditResponseDto,
+  UserRolesResponseDto,
+  UserRoleAuditResponseDto,
+  CreditPricingRuleResponseDto,
+  CreditDiscountTierResponseDto
+} from '../services';
 import logoImg from '../assets/logo.png';
 import {
   ShieldAlert,
@@ -79,7 +93,8 @@ type AdminTab =
   | 'ai-settings'
   | 'customers'
   | 'seller-kyc'
-  | 'permissions';
+  | 'permissions'
+  | 'credit-pricing';
 
 interface BookingAppointment {
   id: string;
@@ -209,6 +224,269 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       setIsLoadingUserDetail(false);
     }
   };
+
+  // =========================================================================
+  // RBAC STATE & HANDLERS (Permissions, Roles, Audit)
+  // =========================================================================
+  const [rbacSubTab, setRbacSubTab] = useState<'roles' | 'permissions'>('roles');
+  const [permissionsList, setPermissionsList] = useState<PermissionResponseDto[]>([]);
+  const [rolesList, setRolesList] = useState<RolePermissionsResponseDto[]>([]);
+  const [selectedRoleCode, setSelectedRoleCode] = useState<string>('STAFF');
+  const [expectedPermissionCodes, setExpectedPermissionCodes] = useState<string[]>([]);
+  const [selectedPermissionCodes, setSelectedPermissionCodes] = useState<string[]>([]);
+  const [permSearchTerm, setPermSearchTerm] = useState<string>('');
+  const [editingPerm, setEditingPerm] = useState<PermissionResponseDto | null>(null);
+  const [roleAuditModalData, setRoleAuditModalData] = useState<{ roleCode: string; items: RolePermissionAuditResponseDto[] } | null>(null);
+  const [isLoadingRbac, setIsLoadingRbac] = useState<boolean>(false);
+  const [isSavingRbac, setIsSavingRbac] = useState<boolean>(false);
+
+  const loadRbacData = async () => {
+    setIsLoadingRbac(true);
+    try {
+      const [perms, roles] = await Promise.all([
+        adminRbacService.getPermissions(),
+        adminRbacService.getRoles()
+      ]);
+      setPermissionsList(perms || []);
+      setRolesList(roles || []);
+
+      const curRole = (roles || []).find(r => r.code === selectedRoleCode) || (roles || [])[0];
+      if (curRole) {
+        setSelectedRoleCode(curRole.code);
+        setExpectedPermissionCodes([...curRole.permissionCodes]);
+        setSelectedPermissionCodes([...curRole.permissionCodes]);
+      }
+    } catch (err: any) {
+      triggerNotice('Không thể tải dữ liệu RBAC: ' + (err.message || 'Lỗi kết nối'));
+    } finally {
+      setIsLoadingRbac(false);
+    }
+  };
+
+  const handleSelectRole = (role: RolePermissionsResponseDto) => {
+    setSelectedRoleCode(role.code);
+    setExpectedPermissionCodes([...role.permissionCodes]);
+    setSelectedPermissionCodes([...role.permissionCodes]);
+  };
+
+  const handleTogglePermissionForRole = (permCode: string) => {
+    const curRole = rolesList.find(r => r.code === selectedRoleCode);
+    if (!curRole || !curRole.editable) {
+      triggerNotice('Vai trò ADMIN được quản lý bảo mật cố định, không thể chỉnh sửa.');
+      return;
+    }
+    const perm = permissionsList.find(p => p.code === permCode);
+    if (!perm || !perm.assignableRoles?.includes(selectedRoleCode)) {
+      triggerNotice(`Quyền ${permCode} không thuộc chính sách cho phép gán của vai trò ${selectedRoleCode}`);
+      return;
+    }
+    setSelectedPermissionCodes(prev =>
+      prev.includes(permCode) ? prev.filter(c => c !== permCode) : [...prev, permCode]
+    );
+  };
+
+  const handleSaveRolePermissions = async () => {
+    const curRole = rolesList.find(r => r.code === selectedRoleCode);
+    if (!curRole || !curRole.editable) {
+      triggerNotice('Không thể sửa đổi bộ quyền của vai trò này.');
+      return;
+    }
+    setIsSavingRbac(true);
+    try {
+      await adminRbacService.replaceRolePermissions(selectedRoleCode, {
+        expectedPermissionCodes,
+        permissionCodes: selectedPermissionCodes
+      });
+      triggerNotice(`Đã cập nhật ma trận quyền cho vai trò ${selectedRoleCode} thành công!`);
+      await loadRbacData();
+    } catch (err: any) {
+      if (err?.message?.includes('409') || err?.status === 409) {
+        triggerNotice('⚠️ Xung đột dữ liệu (HTTP 409): Ma trận quyền vừa bị thay đổi bởi quản trị viên khác. Hệ thống đang tải lại...');
+        await loadRbacData();
+      } else {
+        triggerNotice(err?.message || 'Lưu ma trận quyền thất bại');
+      }
+    } finally {
+      setIsSavingRbac(false);
+    }
+  };
+
+  const handleViewRoleAudit = async (roleCode: string) => {
+    try {
+      const res = await adminRbacService.getRolePermissionAudit(roleCode);
+      setRoleAuditModalData({ roleCode, items: res?.items || [] });
+    } catch (err: any) {
+      triggerNotice('Không thể tải nhật ký phân quyền: ' + (err.message || ''));
+    }
+  };
+
+  const handleSaveEditPermission = async () => {
+    if (!editingPerm) return;
+    try {
+      await adminRbacService.updatePermission(editingPerm.code, {
+        name: editingPerm.name,
+        description: editingPerm.description
+      });
+      triggerNotice(`Đã cập nhật thông tin quyền ${editingPerm.code} thành công.`);
+      setEditingPerm(null);
+      await loadRbacData();
+    } catch (err: any) {
+      triggerNotice(err?.message || 'Cập nhật quyền thất bại');
+    }
+  };
+
+  // =========================================================================
+  // USER ROLES MODAL STATE & HANDLERS (Screen 3)
+  // =========================================================================
+  const [userRoleModalUserId, setUserRoleModalUserId] = useState<string | null>(null);
+  const [userRoleModalUserName, setUserRoleModalUserName] = useState<string>('');
+  const [userRoleSnapshot, setUserRoleSnapshot] = useState<string[]>([]);
+  const [userRoleSelected, setUserRoleSelected] = useState<string[]>([]);
+  const [userRoleEffectivePerms, setUserRoleEffectivePerms] = useState<string[]>([]);
+  const [userRoleAuditTrail, setUserRoleAuditTrail] = useState<UserRoleAuditResponseDto[] | null>(null);
+  const [isLoadingUserRoles, setIsLoadingUserRoles] = useState<boolean>(false);
+  const [isSavingUserRoles, setIsSavingUserRoles] = useState<boolean>(false);
+
+  const handleOpenUserRolesModal = async (userId: string, name: string) => {
+    setUserRoleModalUserId(userId);
+    setUserRoleModalUserName(name);
+    setUserRoleAuditTrail(null);
+    setIsLoadingUserRoles(true);
+    try {
+      const res = await adminService.getUserRoles(userId);
+      const roles = res?.roleCodes || [];
+      setUserRoleSnapshot([...roles]);
+      setUserRoleSelected([...roles]);
+      setUserRoleEffectivePerms(res?.permissionCodes || []);
+    } catch (err: any) {
+      triggerNotice('Không thể tải danh sách vai trò người dùng: ' + (err.message || ''));
+    } finally {
+      setIsLoadingUserRoles(false);
+    }
+  };
+
+  const handleToggleUserRole = (roleCode: string) => {
+    setUserRoleSelected(prev =>
+      prev.includes(roleCode) ? prev.filter(r => r !== roleCode) : [...prev, roleCode]
+    );
+  };
+
+  const handleSaveUserRoles = async () => {
+    if (!userRoleModalUserId) return;
+    setIsSavingUserRoles(true);
+    try {
+      const res = await adminService.replaceUserRoles(userRoleModalUserId, {
+        expectedRoleCodes: userRoleSnapshot,
+        roleCodes: userRoleSelected
+      });
+      triggerNotice(`Đã gán vai trò cho người dùng ${userRoleModalUserName} thành công! Phiên đăng nhập cũ của người dùng này đã được thu hồi.`);
+      setUserRoleSnapshot([...(res?.roleCodes || userRoleSelected)]);
+      setUserRoleSelected([...(res?.roleCodes || userRoleSelected)]);
+      setUserRoleEffectivePerms(res?.permissionCodes || []);
+      // Cập nhật lại danh sách users hiển thị
+      adminService.getAdminUsers({ page: 0, size: 20 })
+        .then(u => { if (u?.items) setBackendUsers(u.items); })
+        .catch(() => {});
+    } catch (err: any) {
+      if (err?.message?.includes('409') || err?.status === 409) {
+        triggerNotice('⚠️ Xung đột dữ liệu (HTTP 409): Vai trò của người dùng đã thay đổi trước đó. Đang tải lại...');
+        handleOpenUserRolesModal(userRoleModalUserId, userRoleModalUserName);
+      } else {
+        triggerNotice(err?.message || 'Cập nhật vai trò thất bại');
+      }
+    } finally {
+      setIsSavingUserRoles(false);
+    }
+  };
+
+  const handleViewUserRoleAudit = async (userId: string) => {
+    try {
+      const res = await adminService.getUserRoleAudit(userId);
+      setUserRoleAuditTrail(res?.items || []);
+    } catch (err: any) {
+      triggerNotice('Không thể tải lịch sử kiểm toán vai trò: ' + (err.message || ''));
+    }
+  };
+
+  // =========================================================================
+  // CREDIT PRICING & DISCOUNT TIERS STATE & HANDLERS
+  // =========================================================================
+  const [creditPrices, setCreditPrices] = useState<CreditPricingRuleResponseDto[]>([]);
+  const [discountTiers, setDiscountTiers] = useState<CreditDiscountTierResponseDto[]>([]);
+  const [isLoadingPricing, setIsLoadingPricing] = useState<boolean>(false);
+  const [editingPriceType, setEditingPriceType] = useState<string | null>(null);
+  const [editPriceValue, setEditPriceValue] = useState<number>(0);
+  const [showAddTierModal, setShowAddTierModal] = useState<boolean>(false);
+  const [newTierData, setNewTierData] = useState({ minQuantity: 10, maxQuantity: 50, discountRate: 0.1, active: true });
+
+  const loadCreditPricingData = async () => {
+    setIsLoadingPricing(true);
+    try {
+      const [prices, tiers] = await Promise.all([
+        adminCreditPricingService.getCreditPrices(),
+        adminCreditPricingService.getDiscountTiers()
+      ]);
+      setCreditPrices(prices || []);
+      setDiscountTiers(tiers || []);
+    } catch (err: any) {
+      triggerNotice('Không thể tải bảng giá credit: ' + (err.message || ''));
+    } finally {
+      setIsLoadingPricing(false);
+    }
+  };
+
+  const handleUpdateCreditPrice = async (creditType: 'LISTING' | 'VALUATION', newPrice: number) => {
+    try {
+      await adminCreditPricingService.updateCreditPrice(creditType, newPrice);
+      triggerNotice(`Đã cập nhật đơn giá ${creditType} thành ${formatVND(newPrice)}`);
+      setEditingPriceType(null);
+      await loadCreditPricingData();
+    } catch (err: any) {
+      triggerNotice(err?.message || 'Cập nhật giá thất bại');
+    }
+  };
+
+  const handleCreateDiscountTier = async () => {
+    try {
+      await adminCreditPricingService.createDiscountTier({
+        minQuantity: Number(newTierData.minQuantity),
+        maxQuantity: newTierData.maxQuantity ? Number(newTierData.maxQuantity) : null,
+        discountRate: Number(newTierData.discountRate),
+        active: newTierData.active
+      });
+      triggerNotice('Đã tạo mới bậc chiết khấu thành công!');
+      setShowAddTierModal(false);
+      await loadCreditPricingData();
+    } catch (err: any) {
+      triggerNotice(err?.message || 'Tạo bậc chiết khấu thất bại');
+    }
+  };
+
+  const handleToggleTierActive = async (tierId: string, newActive: boolean) => {
+    const tier = discountTiers.find((t) => t.id === tierId);
+    if (!tier) return;
+    try {
+      await adminCreditPricingService.updateDiscountTier(tierId, {
+        minQuantity: tier.minQuantity,
+        maxQuantity: tier.maxQuantity,
+        discountRate: tier.discountRate,
+        active: newActive
+      });
+      triggerNotice(`Đã ${newActive ? 'kích hoạt' : 'tạm dừng'} bậc chiết khấu.`);
+      await loadCreditPricingData();
+    } catch (err: any) {
+      triggerNotice(err?.message || 'Cập nhật trạng thái bậc chiết khấu thất bại');
+    }
+  };
+
+  // Tự động load dữ liệu khi chuyển sang tab permissions hoặc credit-pricing
+  useEffect(() => {
+    if (activeTab === 'permissions') {
+      loadRbacData();
+    } else if (activeTab === 'credit-pricing') {
+      loadCreditPricingData();
+    }
+  }, [activeTab]);
 
   // AI & Platform Configurations
   const [duplicateThreshold, setDuplicateThreshold] = useState(85);
@@ -640,8 +918,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     },
     {
       id: 'permissions' as AdminTab,
-      label: lang === 'vi' ? 'PHÂN QUYỀN & USER' : 'ROLES & PERMISSIONS',
+      label: lang === 'vi' ? 'PHÂN QUYỀN HỆ THỐNG' : 'ROLES & PERMISSIONS',
       icon: ShieldCheck,
+      badge: null
+    },
+    {
+      id: 'credit-pricing' as AdminTab,
+      label: lang === 'vi' ? 'BẢNG GIÁ & CHIẾT KHẤU' : 'CREDIT & PRICING',
+      icon: Tag,
       badge: null
     }
   ];
@@ -1811,6 +2095,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             <td className="py-3 px-4 text-right">
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
+                                  onClick={() => handleOpenUserRolesModal(user.id, user.fullName || user.email)}
+                                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 flex items-center gap-1 transition cursor-pointer"
+                                  title="Phân vai trò tài khoản"
+                                >
+                                  <ShieldCheck className="w-3.5 h-3.5" />
+                                  <span>Vai trò</span>
+                                </button>
+                                <button
                                   onClick={() => handleViewUserDetail(user.id)}
                                   className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center gap-1 transition cursor-pointer"
                                   title="Xem chi tiết tài khoản"
@@ -2059,39 +2351,523 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           )}
 
           {/* ======================================================== */}
-          {/* TAB: PERMISSIONS (PHÂN QUYỀN HỆ THỐNG)                   */}
+          {/* TAB: PERMISSIONS (PHÂN QUYỀN HỆ THỐNG - RBAC)            */}
           {/* ======================================================== */}
           {activeTab === 'permissions' && (
-            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] p-5 space-y-4">
-              <div className="pb-3 border-b border-slate-100">
-                <h3 className="text-sm font-bold text-slate-900 uppercase">
-                  Ma Trận Phân Quyền Vai Trò & Bảo Mật Hệ Thống (RBAC)
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Quy định quyền truy cập giữa Người mua, Người bán, Kỹ sư Hub và Quản trị viên
-                </p>
+            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] p-5 space-y-5">
+              {/* Header & Sub-tab switcher */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 uppercase">
+                    Hệ Thống Phân Quyền Vai Trò & Bảo Mật (RBAC Matrix)
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Quản trị danh mục quyền hạn, chính sách gán quyền và ma trận phân quyền giữa các vai trò
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setRbacSubTab('roles')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        rbacSubTab === 'roles'
+                          ? 'bg-white text-slate-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Ma Trận Quyền Vai Trò
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRbacSubTab('permissions')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        rbacSubTab === 'permissions'
+                          ? 'bg-white text-slate-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Danh Mục Quyền Hệ Thống
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={loadRbacData}
+                    disabled={isLoadingRbac}
+                    className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition cursor-pointer"
+                    title="Tải lại dữ liệu"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isLoadingRbac ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-                {[
-                  { role: 'BUYER (Người Mua)', color: 'border-sky-400', perms: ['Duyệt & tìm kiếm tin', 'Đặt cọc phong tỏa Escrow', 'Yêu cầu mở tranh chấp', 'Xem báo cáo kiểm định Hub'] },
-                  { role: 'SELLER (Người Bán)', color: 'border-orange-400', perms: ['Đăng tin bán máy cũ', 'Nhận đề xuất giá AI', 'Xác nhận đơn hàng', 'Rút tiền ký quỹ Escrow'] },
-                  { role: 'HUB INSPECTOR', color: 'border-purple-400', perms: ['Tiếp nhận máy tại Hub', 'Chạy 18 bài test kỹ thuật', 'Lập biên bản nghiệm thu', 'Dán & kích hoạt tem NFC'] },
-                  { role: 'SYSTEM ADMIN', color: 'border-pink-500', perms: ['Toàn quyền phán quyết tranh chấp', 'Can thiệp mở khóa Escrow', 'Cấu hình thuật toán AI', 'Quản trị danh mục sàn'] }
-                ].map((item, i) => (
-                  <div key={i} className={`p-4 rounded-xl bg-slate-50 border ${item.color} space-y-2`}>
-                    <h4 className="font-bold text-slate-900">{item.role}</h4>
-                    <ul className="space-y-1 text-slate-600 text-[11px]">
-                      {item.perms.map((p, j) => (
-                        <li key={j} className="flex items-center gap-1.5">
-                          <Check className="w-3 h-3 text-emerald-500 shrink-0" />
-                          <span>{p}</span>
-                        </li>
-                      ))}
-                    </ul>
+              {isLoadingRbac ? (
+                <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
+                  <Loader2 className="w-6 h-6 animate-spin text-[#c34c36]" />
+                  <span className="text-xs">Đang tải ma trận phân quyền RBAC...</span>
+                </div>
+              ) : rbacSubTab === 'roles' ? (
+                /* SCREEN 2: ROLE MATRIX VIEW */
+                <div className="space-y-4">
+                  {/* Role Selector Tabs */}
+                  <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-slate-100">
+                    <span className="text-xs font-bold text-slate-500 mr-1">Vai trò:</span>
+                    {rolesList.map((role) => (
+                      <button
+                        key={role.code}
+                        type="button"
+                        onClick={() => handleSelectRole(role)}
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                          selectedRoleCode === role.code
+                            ? 'bg-[#24263e] text-white shadow-xs'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <span>{role.name || role.code}</span>
+                        {!role.editable && (
+                          <Lock className="w-3 h-3 text-amber-300" title="Vai trò bảo mật cố định" />
+                        )}
+                      </button>
+                    ))}
                   </div>
-                ))}
+
+                  {/* Role Detail Banner */}
+                  {(() => {
+                    const curRole = rolesList.find((r) => r.code === selectedRoleCode);
+                    const isEditable = curRole?.editable ?? false;
+                    return (
+                      <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm font-extrabold text-[#24263e]">
+                              {curRole?.code}
+                            </span>
+                            <span className="text-xs text-slate-600 font-medium">— {curRole?.name}</span>
+                            {isEditable ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                Cho phép tùy biến quyền
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 flex items-center gap-1">
+                                <Lock className="w-3 h-3" /> Cố định (Không thể chỉnh sửa)
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            Đang gán {selectedPermissionCodes.length}/{permissionsList.length} quyền hệ thống
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleViewRoleAudit(selectedRoleCode)}
+                            className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-white text-xs font-bold text-slate-700 flex items-center gap-1.5 transition cursor-pointer"
+                          >
+                            <History className="w-3.5 h-3.5" />
+                            <span>Nhật ký thay đổi</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveRolePermissions}
+                            disabled={!isEditable || isSavingRbac}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                              !isEditable
+                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                : 'bg-[#c34c36] hover:bg-[#a63f2d] text-white shadow-xs'
+                            }`}
+                          >
+                            {isSavingRbac && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                            <span>Lưu Ma Trận Quyền</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Search Permissions */}
+                  <div className="relative max-w-sm">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
+                    <input
+                      type="text"
+                      value={permSearchTerm}
+                      onChange={(e) => setPermSearchTerm(e.target.value)}
+                      placeholder="Tìm kiếm mã quyền, chức năng..."
+                      className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-[#c34c36]"
+                    />
+                  </div>
+
+                  {/* Permissions Checklist Table */}
+                  <div className="overflow-x-auto border border-slate-100 rounded-xl">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
+                          <th className="py-2.5 px-4 w-12 text-center">Gán</th>
+                          <th className="py-2.5 px-4">Mã quyền (Code)</th>
+                          <th className="py-2.5 px-4">Tên chức năng</th>
+                          <th className="py-2.5 px-4">Mô tả chi tiết</th>
+                          <th className="py-2.5 px-4">Chính sách gán</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {permissionsList
+                          .filter(
+                            (p) =>
+                              !permSearchTerm ||
+                              p.code.toLowerCase().includes(permSearchTerm.toLowerCase()) ||
+                              p.name.toLowerCase().includes(permSearchTerm.toLowerCase()) ||
+                              (p.description && p.description.toLowerCase().includes(permSearchTerm.toLowerCase()))
+                          )
+                          .map((perm) => {
+                            const isChecked = selectedPermissionCodes.includes(perm.code);
+                            const curRole = rolesList.find((r) => r.code === selectedRoleCode);
+                            const isRoleEditable = curRole?.editable ?? false;
+                            const isAssignable = perm.assignableRoles?.includes(selectedRoleCode) ?? false;
+                            const canToggle = isRoleEditable && isAssignable;
+
+                            return (
+                              <tr
+                                key={perm.code}
+                                className={`transition ${
+                                  isChecked ? 'bg-amber-50/20' : 'hover:bg-slate-50/50'
+                                }`}
+                              >
+                                <td className="py-2.5 px-4 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    disabled={!canToggle}
+                                    onChange={() => handleTogglePermissionForRole(perm.code)}
+                                    className={`w-4 h-4 rounded border-slate-300 text-[#c34c36] focus:ring-[#c34c36] ${
+                                      !canToggle ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                                    }`}
+                                  />
+                                </td>
+                                <td className="py-2.5 px-4 font-mono font-bold text-slate-900">
+                                  <div className="flex items-center gap-1.5">
+                                    <span>{perm.code}</span>
+                                    {perm.systemPermission && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                        SYSTEM
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-2.5 px-4 font-semibold text-slate-800">{perm.name}</td>
+                                <td className="py-2.5 px-4 text-slate-500 text-[11px] max-w-xs">
+                                  {perm.description || '—'}
+                                </td>
+                                <td className="py-2.5 px-4">
+                                  {perm.assignableRoles && perm.assignableRoles.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {perm.assignableRoles.map((r) => (
+                                        <span
+                                          key={r}
+                                          className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                                            r === selectedRoleCode
+                                              ? 'bg-emerald-100 text-emerald-800'
+                                              : 'bg-slate-100 text-slate-600'
+                                          }`}
+                                        >
+                                          {r}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400">Tất cả</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                /* SCREEN 1: PERMISSION CATALOG VIEW */
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="relative max-w-sm">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
+                      <input
+                        type="text"
+                        value={permSearchTerm}
+                        onChange={(e) => setPermSearchTerm(e.target.value)}
+                        placeholder="Tìm kiếm mã quyền, tên..."
+                        className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-[#c34c36]"
+                      />
+                    </div>
+                    <span className="text-xs text-slate-500">
+                      Tổng số: <strong>{permissionsList.length}</strong> quyền chức năng hệ thống
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto border border-slate-100 rounded-xl">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
+                          <th className="py-2.5 px-4">Mã Quyền (Code)</th>
+                          <th className="py-2.5 px-4">Tên Hiển Thị</th>
+                          <th className="py-2.5 px-4">Mô Tả Chức Năng</th>
+                          <th className="py-2.5 px-4">Loại Quyền</th>
+                          <th className="py-2.5 px-4">Vai Trò Được Phép Gán</th>
+                          <th className="py-2.5 px-4 text-right">Thao Tác</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {permissionsList
+                          .filter(
+                            (p) =>
+                              !permSearchTerm ||
+                              p.code.toLowerCase().includes(permSearchTerm.toLowerCase()) ||
+                              p.name.toLowerCase().includes(permSearchTerm.toLowerCase()) ||
+                              (p.description && p.description.toLowerCase().includes(permSearchTerm.toLowerCase()))
+                          )
+                          .map((perm) => (
+                            <tr key={perm.code} className="hover:bg-slate-50/50 transition">
+                              <td className="py-3 px-4 font-mono font-bold text-slate-900">{perm.code}</td>
+                              <td className="py-3 px-4 font-semibold text-slate-800">{perm.name}</td>
+                              <td className="py-3 px-4 text-slate-500 text-[11px] max-w-sm">
+                                {perm.description || '—'}
+                              </td>
+                              <td className="py-3 px-4">
+                                {perm.systemPermission ? (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                    Cốt lõi (System)
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">
+                                    Tiêu chuẩn
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4">
+                                <div className="flex flex-wrap gap-1">
+                                  {(perm.assignableRoles || []).map((r) => (
+                                    <span
+                                      key={r}
+                                      className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-700"
+                                    >
+                                      {r}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingPerm(perm)}
+                                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                                >
+                                  Sửa tên / mô tả
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB: CREDIT PRICING & TIERS (QUẢN TRỊ ĐƠN GIÁ CREDIT)    */}
+          {/* ======================================================== */}
+          {activeTab === 'credit-pricing' && (
+            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-emerald-600 p-5 space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 uppercase">
+                    Quản Trị Bảng Giá Credit & Chính Sách Chiết Khấu Gói Nạp
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Cấu hình đơn giá Credit cho đăng tin (LISTING), thẩm định (VALUATION) và các bậc ưu đãi số lượng
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={loadCreditPricingData}
+                  disabled={isLoadingPricing}
+                  className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition cursor-pointer self-start sm:self-auto"
+                  title="Tải lại dữ liệu"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isLoadingPricing ? 'animate-spin' : ''}`} />
+                </button>
               </div>
+
+              {isLoadingPricing ? (
+                <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
+                  <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
+                  <span className="text-xs">Đang tải bảng giá dịch vụ credit...</span>
+                </div>
+              ) : (
+                <>
+                  {/* Section 1: Base Credit Pricing */}
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
+                      <Tag className="w-4 h-4 text-emerald-600" />
+                      1. Đơn Giá Dịch Vụ Cơ Bản Theo Loại Credit
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {creditPrices.map((rule) => {
+                        const isEditing = editingPriceType === rule.creditType;
+                        return (
+                          <div
+                            key={rule.creditType}
+                            className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="px-2.5 py-0.5 rounded text-xs font-bold font-mono bg-emerald-100 text-emerald-800">
+                                {rule.creditType}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                {(rule as any).updatedAt ? `Cập nhật: ${new Date((rule as any).updatedAt).toLocaleDateString('vi-VN')}` : 'Hệ thống'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-600">
+                              {(rule as any).description || (rule.creditType === 'LISTING' ? 'Phí nạp lượt đăng tin sản phẩm trên sàn' : 'Phí lượt kiểm định và thẩm định chất lượng')}
+                            </p>
+
+                            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                              <div>
+                                <span className="text-[10px] text-slate-400 block font-semibold">Đơn giá / 1 Credit:</span>
+                                {isEditing ? (
+                                  <input
+                                    type="number"
+                                    value={editPriceValue}
+                                    onChange={(e) => setEditPriceValue(Number(e.target.value))}
+                                    className="w-32 px-2 py-1 rounded border border-emerald-400 text-sm font-bold font-mono outline-none"
+                                  />
+                                ) : (
+                                  <span className="text-lg font-extrabold text-[#24263e]">
+                                    {formatVND(rule.unitPrice || (rule as any).unitPriceVnd || 0)}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div>
+                                {isEditing ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateCreditPrice(rule.creditType, editPriceValue)}
+                                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer"
+                                    >
+                                      Lưu
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingPriceType(null)}
+                                      className="px-2.5 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold transition cursor-pointer"
+                                    >
+                                      Hủy
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingPriceType(rule.creditType);
+                                      setEditPriceValue(rule.unitPrice || (rule as any).unitPriceVnd || 0);
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-white text-slate-700 text-xs font-bold transition cursor-pointer"
+                                  >
+                                    Đổi giá
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Section 2: Discount Tiers */}
+                  <div className="space-y-3 pt-4 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
+                        <TrendingUp className="w-4 h-4 text-emerald-600" />
+                        2. Các Bậc Chiết Khấu Ưu Đãi Nạp Số Lượng Lớn (Discount Tiers)
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddTierModal(true)}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Thêm bậc mới</span>
+                      </button>
+                    </div>
+
+                    <div className="overflow-x-auto border border-slate-100 rounded-xl">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
+                            <th className="py-2.5 px-4">Số lượng tối thiểu</th>
+                            <th className="py-2.5 px-4">Số lượng tối đa</th>
+                            <th className="py-2.5 px-4">Mức giảm giá (%)</th>
+                            <th className="py-2.5 px-4">Trạng thái áp dụng</th>
+                            <th className="py-2.5 px-4 text-right">Thao tác</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {discountTiers.length > 0 ? (
+                            discountTiers.map((tier) => (
+                              <tr key={tier.id} className="hover:bg-slate-50/50 transition">
+                                <td className="py-3 px-4 font-mono font-bold text-slate-900">
+                                  {tier.minQuantity} credits
+                                </td>
+                                <td className="py-3 px-4 font-mono text-slate-600">
+                                  {tier.maxQuantity ? `${tier.maxQuantity} credits` : 'Không giới hạn (∞)'}
+                                </td>
+                                <td className="py-3 px-4 font-bold text-emerald-700">
+                                  {(tier.discountRate * 100).toFixed(0)}%
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                      tier.active
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                        : 'bg-slate-100 text-slate-500'
+                                    }`}
+                                  >
+                                    {tier.active ? 'Đang hoạt động' : 'Tạm dừng'}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleTierActive(tier.id, !tier.active)}
+                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                                      tier.active
+                                        ? 'bg-rose-50 hover:bg-rose-100 text-rose-700'
+                                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
+                                    }`}
+                                  >
+                                    {tier.active ? 'Tắt' : 'Kích hoạt'}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={5} className="py-8 text-center text-slate-400">
+                                Chưa có bậc chiết khấu nào được cấu hình.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -2470,6 +3246,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <span>Thử Lại eKYC</span>
                   </button>
                 </div>
+              ) : selectedVerificationDetail.status === 'RESUBMIT_REQUIRED' ? (
+                <div className="w-full flex items-center justify-between gap-3 bg-orange-50 px-4 py-2.5 rounded-xl border border-orange-200">
+                  <div className="text-xs text-orange-900 flex items-center gap-2 font-medium">
+                    <AlertCircle className="w-4 h-4 text-orange-600 shrink-0" />
+                    <span>Hồ sơ đang ở trạng thái <strong>Cần Nộp Lại Ảnh (RESUBMIT_REQUIRED)</strong>. Người bán được phép chụp lại tối đa 3 lần. Hệ thống sẽ tự động chuyển sang <strong>NEEDS_REVIEW</strong> để Quản trị viên duyệt tay khi người bán nộp lại hoặc vượt quá số lần quy định.</span>
+                  </div>
+                </div>
               ) : null}
             </div>
           </div>
@@ -2790,6 +3573,457 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
               >
                 Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: EDIT PERMISSION INFO (MÀN HÌNH 1)                 */}
+      {/* ======================================================== */}
+      {editingPerm && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-[#c34c36]" />
+                <h3 className="font-bold text-sm text-slate-900">
+                  Chỉnh Sửa Thông Tin Quyền
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingPerm(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-slate-500 font-bold block mb-1">Mã Quyền (Code - Không thể sửa):</label>
+                <input
+                  type="text"
+                  disabled
+                  value={editingPerm.code}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-100 font-mono text-slate-600 border border-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-700 font-bold block mb-1">Tên Hiển Thị Chức Năng:</label>
+                <input
+                  type="text"
+                  value={editingPerm.name}
+                  onChange={(e) => setEditingPerm({ ...editingPerm, name: e.target.value })}
+                  placeholder="Ví dụ: Thẩm định hồ sơ bán hàng..."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:border-[#c34c36]"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-700 font-bold block mb-1">Mô Tả Chi Tiết:</label>
+                <textarea
+                  rows={3}
+                  value={editingPerm.description || ''}
+                  onChange={(e) => setEditingPerm({ ...editingPerm, description: e.target.value })}
+                  placeholder="Nhập mô tả nghiệp vụ của quyền hạn..."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:border-[#c34c36]"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingPerm(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditPermission}
+                className="px-5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] text-white text-xs font-bold transition cursor-pointer"
+              >
+                Lưu Thay Đổi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: ROLE AUDIT LOGS (MÀN HÌNH 2)                      */}
+      {/* ======================================================== */}
+      {roleAuditModalData && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <History className="w-5 h-5 text-[#24263e]" />
+                <h3 className="font-bold text-sm text-slate-900">
+                  Nhật Ký Thay Đổi Quyền Của Vai Trò: <span className="font-mono text-[#c34c36]">{roleAuditModalData.roleCode}</span>
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRoleAuditModalData(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto space-y-3 text-xs pr-1">
+              {roleAuditModalData.items && roleAuditModalData.items.length > 0 ? (
+                roleAuditModalData.items.map((item, idx) => (
+                  <div key={idx} className="p-3 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-slate-800">
+                        Hành động: <span className="text-[#c34c36] font-mono">{item.action}</span>
+                      </span>
+                      <span className="text-slate-500 font-mono">
+                        {new Date(item.changedAt).toLocaleString('vi-VN')}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[10px]">
+                      <div className="p-2 rounded bg-rose-50/60 border border-rose-100">
+                        <span className="font-bold text-rose-800 block mb-1">Quyền bị thu hồi (Revoked):</span>
+                        <div className="flex flex-wrap gap-1">
+                          {item.revokedPermissions && item.revokedPermissions.length > 0 ? (
+                            item.revokedPermissions.map((p, i) => (
+                              <span key={i} className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-mono">
+                                {p}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-slate-400 italic">Không có</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="p-2 rounded bg-emerald-50/60 border border-emerald-100">
+                        <span className="font-bold text-emerald-800 block mb-1">Quyền được bổ sung (Granted):</span>
+                        <div className="flex flex-wrap gap-1">
+                          {item.grantedPermissions && item.grantedPermissions.length > 0 ? (
+                            item.grantedPermissions.map((p, i) => (
+                              <span key={i} className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono">
+                                {p}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-slate-400 italic">Không có</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-8 text-center text-slate-400">
+                  Chưa có nhật ký thay đổi nào cho vai trò này.
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 flex justify-end border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setRoleAuditModalData(null)}
+                className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: USER ROLES MANAGEMENT (MÀN HÌNH 3)                */}
+      {/* ======================================================== */}
+      {userRoleModalUserId && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-indigo-600" />
+                <h3 className="font-bold text-sm text-slate-900">
+                  Phân Quyền Vai Trò Người Dùng
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUserRoleModalUserId(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {isLoadingUserRoles ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
+                <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+                <span className="text-xs">Đang tải vai trò và quyền hạn của người dùng...</span>
+              </div>
+            ) : (
+              <div className="space-y-4 text-xs">
+                {/* User info */}
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                  <div>
+                    <span className="font-bold text-slate-900 text-sm block">{userRoleModalUserName}</span>
+                    <span className="text-slate-400 font-mono text-[10px]">ID: {userRoleModalUserId}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleViewUserRoleAudit(userRoleModalUserId)}
+                    className="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-white text-[11px] font-bold text-slate-600 flex items-center gap-1 transition cursor-pointer"
+                  >
+                    <History className="w-3.5 h-3.5" />
+                    <span>Lịch sử vai trò</span>
+                  </button>
+                </div>
+
+                {/* Important Alert */}
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="text-[11px] leading-relaxed">
+                    <strong className="block font-bold">Lưu ý quan trọng về phiên làm việc:</strong>
+                    Khi cập nhật vai trò, hệ thống sẽ tự động tăng <code>tokenVersion</code> và thu hồi toàn bộ Refresh Token của tài khoản. Người dùng sẽ cần đăng nhập lại để nhận quyền mới.
+                  </div>
+                </div>
+
+                {/* Role Checkboxes */}
+                <div className="space-y-2">
+                  <label className="font-bold text-slate-700 block">Các vai trò áp dụng cho tài khoản:</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {rolesList.map((r) => {
+                      const isSelected = userRoleSelected.includes(r.code);
+                      return (
+                        <label
+                          key={r.code}
+                          className={`p-2.5 rounded-xl border flex items-center gap-2 cursor-pointer transition ${
+                            isSelected
+                              ? 'border-indigo-500 bg-indigo-50/40 text-indigo-900 font-bold'
+                              : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {
+                              setUserRoleSelected((prev) =>
+                                prev.includes(r.code)
+                                  ? prev.filter((c) => c !== r.code)
+                                  : [...prev, r.code]
+                              );
+                            }}
+                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <span className="text-xs">{r.name || r.code}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Effective Permissions preview */}
+                <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                  <span className="text-[11px] text-slate-500 font-bold block">
+                    Quyền thực tế hiện hành (Effective Permissions: {userRoleEffectivePerms.length} quyền):
+                  </span>
+                  <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-2 rounded-lg bg-slate-50 border border-slate-100">
+                    {userRoleEffectivePerms.length > 0 ? (
+                      userRoleEffectivePerms.map((p, idx) => (
+                        <span
+                          key={idx}
+                          className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 text-[9px] font-mono"
+                        >
+                          {p}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-slate-400 italic text-[11px]">Chưa có quyền hạn nào được gán</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setUserRoleModalUserId(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveUserRoles}
+                disabled={isSavingUserRoles || isLoadingUserRoles}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+              >
+                {isSavingUserRoles && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Lưu Phân Vai Trò</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: USER ROLE AUDIT TRAIL LOGS                        */}
+      {/* ======================================================== */}
+      {userRoleAuditTrail && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <History className="w-5 h-5 text-indigo-600" />
+                <h3 className="font-bold text-sm text-slate-900">
+                  Lịch Sử Thay Đổi Vai Trò Của Tài Khoản
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUserRoleAuditTrail(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto space-y-3 text-xs pr-1">
+              {userRoleAuditTrail.length > 0 ? (
+                userRoleAuditTrail.map((item, idx) => (
+                  <div key={idx} className="p-3 rounded-xl border border-slate-200 bg-slate-50/50 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-slate-800">
+                        Thao tác: <span className="text-indigo-600 font-mono">{item.action}</span>
+                      </span>
+                      <span className="text-slate-500 font-mono">
+                        {new Date(item.changedAt).toLocaleString('vi-VN')}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <span className="text-slate-500">Vai trò cũ:</span>
+                      <span className="font-mono font-bold text-rose-700">
+                        {item.oldRoles && item.oldRoles.length > 0 ? item.oldRoles.join(', ') : 'Trống'}
+                      </span>
+                      <ArrowRight className="w-3 h-3 text-slate-400" />
+                      <span className="text-slate-500">Vai trò mới:</span>
+                      <span className="font-mono font-bold text-emerald-700">
+                        {item.newRoles && item.newRoles.length > 0 ? item.newRoles.join(', ') : 'Trống'}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-8 text-center text-slate-400">
+                  Chưa có lịch sử thay đổi vai trò nào được ghi nhận.
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 flex justify-end border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setUserRoleAuditTrail(null)}
+                className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: ADD DISCOUNT TIER                                 */}
+      {/* ======================================================== */}
+      {showAddTierModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Plus className="w-5 h-5 text-emerald-600" />
+                <h3 className="font-bold text-sm text-slate-900">
+                  Thêm Bậc Chiết Khấu Mới (Discount Tier)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddTierModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-slate-700 font-bold block mb-1">Số Lượng Credit Tối Thiểu (Min):</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={newTierData.minQuantity}
+                  onChange={(e) => setNewTierData({ ...newTierData, minQuantity: Number(e.target.value) })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:border-emerald-600 font-mono font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-700 font-bold block mb-1">Số Lượng Credit Tối Đa (Max - để trống nếu ∞):</label>
+                <input
+                  type="number"
+                  min={newTierData.minQuantity}
+                  value={newTierData.maxQuantity || ''}
+                  onChange={(e) =>
+                    setNewTierData({
+                      ...newTierData,
+                      maxQuantity: e.target.value ? Number(e.target.value) : (undefined as any)
+                    })
+                  }
+                  placeholder="Ví dụ: 100 (Bỏ trống nếu không giới hạn)"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:border-emerald-600 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-700 font-bold block mb-1">Tỷ Lệ Giảm Giá (%):</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  value={(newTierData.discountRate * 100).toFixed(0)}
+                  onChange={(e) =>
+                    setNewTierData({ ...newTierData, discountRate: Number(e.target.value) / 100 })
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:border-emerald-600 font-mono font-bold text-emerald-700"
+                />
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Ví dụ: Nhập 15 tương đương giảm 15%</span>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowAddTierModal(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateDiscountTier}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer shadow-xs"
+              >
+                Tạo Bậc Chiết Khấu
               </button>
             </div>
           </div>

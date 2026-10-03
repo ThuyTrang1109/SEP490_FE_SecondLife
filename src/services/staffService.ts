@@ -11,6 +11,11 @@ export interface GetStaffSellerVerificationsParams {
   sort?: string[];
 }
 
+export interface ReviewSellerVerificationRequestDto {
+  decision: 'APPROVE' | 'REJECT';
+  rejectionReason?: string;
+}
+
 export const staffService = {
   /**
    * Staff xem hàng đợi hồ sơ ngoại lệ cần kiểm duyệt
@@ -48,5 +53,20 @@ export const staffService = {
       requiresAuth: true,
     });
     return res.data;
+  },
+
+  /**
+   * Staff duyệt hoặc từ chối hồ sơ ngoại lệ eKYC
+   */
+  async reviewVerification(
+    id: string,
+    data: ReviewSellerVerificationRequestDto
+  ): Promise<SellerVerificationResponseDto> {
+    const res = await request<SellerVerificationResponseDto>(`/staff/seller-verifications/${id}/review`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
   },
 };

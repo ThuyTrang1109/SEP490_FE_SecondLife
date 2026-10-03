@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { InspectionCenter, EscrowOrder, InspectionChecklistItem, Language } from '../types';
 import { translations, formatVND } from '../utils/translations';
 import { mockInspectionCenters, mockStandardChecklist } from '../data/mockData';
-import { Building2, QrCode, CheckCircle2, XCircle, ShieldCheck, Printer } from 'lucide-react';
-import { inspectorService } from '../services';
+import { Building2, QrCode, CheckCircle2, XCircle, ShieldCheck, Printer, RefreshCw, Loader2 } from 'lucide-react';
+import { inspectorService, InspectionOrderDto } from '../services';
 
 interface InspectorPortalViewProps {
   orders: EscrowOrder[];
@@ -19,6 +19,24 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   const [activeCenter, setActiveCenter] = useState<InspectionCenter>(mockInspectionCenters[0]);
   const [selectedOrderId, setSelectedOrderId] = useState<string>(orders[0]?.id || '');
   const [qrCodeInput, setQrCodeInput] = useState('');
+  const [backendOrders, setBackendOrders] = useState<InspectionOrderDto[]>([]);
+  const [isLoadingBackendOrders, setIsLoadingBackendOrders] = useState(false);
+
+  useEffect(() => {
+    setIsLoadingBackendOrders(true);
+    inspectorService.getMyOrders()
+      .then((data) => {
+        if (data && Array.isArray(data)) {
+          setBackendOrders(data);
+        }
+      })
+      .catch((err) => {
+        console.warn('Chưa có đơn kiểm định gán riêng cho tài khoản:', err);
+      })
+      .finally(() => {
+        setIsLoadingBackendOrders(false);
+      });
+  }, []);
 
   const activeOrder = orders.find((o) => o.id === selectedOrderId) || orders[0];
   const [checklist, setChecklist] = useState<InspectionChecklistItem[]>(

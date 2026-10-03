@@ -16,13 +16,16 @@ export interface SellerVerificationRequestDto {
   documentFrontUrl: string;
   documentBackUrl: string;
   selfieUrl?: string;
+  clientSession?: string;
+  token?: string;
 }
 
 export interface SellerVerificationResubmitRequestDto {
-  documentNumber?: string;
-  documentFrontUrl?: string;
-  documentBackUrl?: string;
+  documentFrontUrl: string;
+  documentBackUrl: string;
   selfieUrl?: string;
+  clientSession?: string;
+  token?: string;
 }
 
 export interface SellerVerificationResponseDto {

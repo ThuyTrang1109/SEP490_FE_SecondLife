@@ -17,9 +17,9 @@ export const orderService = {
       body: JSON.stringify(payload),
       requiresAuth: true,
     });
-    return (response as any)?.data !== undefined && (response as any)?.data !== null
+    return ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
-      : response;
+      : response) as OrderBackend;
   },
 
   /**
@@ -73,9 +73,9 @@ export const orderService = {
       method: 'PUT',
       requiresAuth: true,
     });
-    return (response as any)?.data !== undefined && (response as any)?.data !== null
+    return ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
-      : response;
+      : response) as OrderBackend;
   },
 
   /**
@@ -87,9 +87,9 @@ export const orderService = {
       method: 'PUT',
       requiresAuth: true,
     });
-    return (response as any)?.data !== undefined && (response as any)?.data !== null
+    return ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
-      : response;
+      : response) as OrderBackend;
   },
 
   /**
@@ -101,8 +101,8 @@ export const orderService = {
       method: 'PUT',
       requiresAuth: true,
     });
-    return (response as any)?.data !== undefined && (response as any)?.data !== null
+    return ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
-      : response;
+      : response) as OrderBackend;
   },
 };

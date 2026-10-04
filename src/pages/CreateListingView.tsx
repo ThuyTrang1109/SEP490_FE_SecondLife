@@ -1,9 +1,48 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Camera, CheckCircle2, AlertTriangle, ShieldCheck, ArrowRight, ArrowLeft, UploadCloud, Info, RefreshCw, Loader2, Plus, Bot, X } from 'lucide-react';
-import { ItemCategory, ConditionGrade, Listing, PhotoChecklist, Language, CategoryBackend, ItemBackend } from '../types';
+import {
+  Sparkles,
+  Camera,
+  CheckCircle2,
+  AlertTriangle,
+  ShieldCheck,
+  ArrowRight,
+  ArrowLeft,
+  UploadCloud,
+  Info,
+  RefreshCw,
+  Loader2,
+  Plus,
+  Bot,
+  X,
+  Send,
+  History,
+  Coins,
+  Check,
+  ExternalLink,
+  Tag,
+  DollarSign
+} from 'lucide-react';
+import {
+  ItemCategory,
+  ConditionGrade,
+  Listing,
+  Language,
+  CategoryBackend,
+  ItemBackend
+} from '../types';
 import { translations, formatVND } from '../utils/translations';
-import { mediaService, postService, categoryService, itemService } from '../services';
-import { AiListingAssistant } from '../components/listing/AiListingAssistant';
+import {
+  mediaService,
+  postService,
+  categoryService,
+  itemService,
+  aiChatService,
+  sellerCreditService,
+  CreditBalanceResponseDto,
+  ListingDraftResponse,
+  AiPriceEstimationResponse,
+  PostSubmitResponse
+} from '../services';
 
 interface CreateListingViewProps {
   onListingCreated: (newListing: Listing) => void;
@@ -18,9 +57,20 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 }) => {
   const t = translations[lang];
 
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+  // 5 Linear Steps matching Main Flow 1 Guide
+  // Step 1: Chọn Category, Item & Tải 3-6 ảnh
+  // Step 2: Mô tả AI & Chỉnh sửa / Chat
+  // Step 3: Lưu Draft & Xác nhận mô tả
+  // Step 4: Định giá AI (1 credit VALUATION) & Chọn giá bán
+  // Step 5: Xem lại & Gửi đăng (1 credit LISTING khi ACTIVE)
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
-  // Backend Category & Item
+  // Credit Balance State
+  const [credits, setCredits] = useState<CreditBalanceResponseDto | null>(null);
+  const [isLoadingCredits, setIsLoadingCredits] = useState(false);
+  const [isPurchasingCredits, setIsPurchasingCredits] = useState(false);
+
+  // Category & Item from Backend
   const [backendCategories, setBackendCategories] = useState<CategoryBackend[]>([]);
   const [backendItems, setBackendItems] = useState<ItemBackend[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
@@ -28,66 +78,86 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
   const [isLoadingItems, setIsLoadingItems] = useState(false);
 
-  // Helper validation: strictly require real backend IDs (not dummy UUIDs with all 0s, not Vietnamese text)
-  const isValidBackendId = (id?: string | null): boolean => {
-    if (!id || typeof id !== 'string') return false;
-    const trimmed = id.trim();
-    if (trimmed.length < 3) return false;
-    if (/^0{8}-?0{4}-?0{4}-?0{4}-?0{11}[01]?$/i.test(trimmed)) return false;
-    if (/[ àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(trimmed)) return false;
-    return true;
-  };
-
-  const isRealCategoryId = Boolean(
-    selectedCategoryId &&
-    isValidBackendId(selectedCategoryId) &&
-    backendCategories.some(c => c.id === selectedCategoryId)
-  );
-
-  const isRealItemId = Boolean(
-    selectedItemId &&
-    isValidBackendId(selectedItemId) &&
-    backendItems.some(i => i.id === selectedItemId)
-  );
-
-  // Form State
+  // Basic Form State
   const [title, setTitle] = useState('');
-  const [category, setCategory] = useState<ItemCategory>('Tủ lạnh & Tủ đông');
-  const [brand, setBrand] = useState('Hitachi');
+  const [brand, setBrand] = useState('Panasonic');
   const [model, setModel] = useState('');
   const [purchaseYear, setPurchaseYear] = useState<number>(2024);
-  const [originalPriceVnd, setOriginalPriceVnd] = useState<number>(29990000);
-  const [declaredCondition, setDeclaredCondition] = useState<ConditionGrade>('Like New');
-  const [declaredConditionText, setDeclaredConditionText] = useState('');
+  const [itemCondition, setItemCondition] = useState<string>('USED_GOOD');
   const [description, setDescription] = useState('');
-  const [selectedAccessories] = useState<string[]>(['Sách HDSD', 'Khay đá & Khay trứng zin', 'Phiếu bảo hành hãng']);
+  const [finalPriceVnd, setFinalPriceVnd] = useState<number>(2200000);
 
-  const isStep1Valid = Boolean(
-    isRealCategoryId &&
-    isRealItemId &&
-    title.trim() &&
-    brand.trim()
-  );
+  // Images state: Raw files for FormData & previews
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([
+    'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80',
+    'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=600&q=80',
+    'https://images.unsplash.com/photo-1585338107529-13afc5f02586?auto=format&fit=crop&w=600&q=80'
+  ]);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
-  // Primary image base64 & AI Session / Post states
-  const [primaryBase64, setPrimaryBase64] = useState<string>('');
+  // Post & AI Session IDs from Backend
   const [postId, setPostId] = useState<string | null>(null);
-  const [aiSessionId, setAiSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [aiInitialMessage, setAiInitialMessage] = useState<string>('');
+  const [draftPost, setDraftPost] = useState<ListingDraftResponse | null>(null);
+
+  // Step Loading States
   const [isInitializingPost, setIsInitializingPost] = useState(false);
-  const [showSelfFillForm, setShowSelfFillForm] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [isAcceptingDescription, setIsAcceptingDescription] = useState(false);
+  const [descriptionAccepted, setDescriptionAccepted] = useState(false);
 
-  const [photos, setPhotos] = useState<PhotoChecklist>({
-    front: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=1000&q=80',
-    back: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=1000&q=80',
-    screenOrDetails: 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?auto=format&fit=crop&w=1000&q=80',
-    accessoriesOrBox: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=1000&q=80',
-    serialOrReceipt: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=1000&q=80',
-    extraDetail: 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?auto=format&fit=crop&w=1000&q=80'
-  });
-  const [uploadingSlot, setUploadingSlot] = useState<string | null>(null);
+  // AI Chat & Finalize states in Step 2
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'ai' | 'user'; text: string; time: string }>>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isSendingChat, setIsSendingChat] = useState(false);
+  const [isFinalizingChat, setIsFinalizingChat] = useState(false);
 
-  // Fetch backend categories
+  // AI Valuation in Step 4
+  const [isEstimatingPrice, setIsEstimatingPrice] = useState(false);
+  const [valuationResult, setValuationResult] = useState<AiPriceEstimationResponse | null>(null);
+  const [valuationHistory, setValuationHistory] = useState<any[]>([]);
+  const [showValuationHistory, setShowValuationHistory] = useState(false);
+  const [valuationRequestId, setValuationRequestId] = useState<string>('');
+
+  // Submit in Step 5
+  const [isSubmittingPost, setIsSubmittingPost] = useState(false);
+  const [submitResult, setSubmitResult] = useState<PostSubmitResponse | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Load Seller Credits
+  const loadCredits = async () => {
+    setIsLoadingCredits(true);
+    try {
+      const res = await sellerCreditService.getCredits();
+      if (res) setCredits(res);
+    } catch (err) {
+      console.warn('Không tải được số dư credit:', err);
+    } finally {
+      setIsLoadingCredits(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCredits();
+  }, []);
+
+  // Quick Purchase Credit for testing
+  const handleQuickBuyCredit = async () => {
+    setIsPurchasingCredits(true);
+    try {
+      await sellerCreditService.createPurchase({ listingQuantity: 2, valuationQuantity: 2 });
+      alert(lang === 'vi' ? 'Đã tạo yêu cầu mua 2 LISTING & 2 VALUATION thành công!' : 'Created purchase request for 2 LISTING & 2 VALUATION!');
+      await loadCredits();
+    } catch (err: any) {
+      alert('Mua credit thất bại: ' + (err?.message || 'Lỗi server'));
+    } finally {
+      setIsPurchasingCredits(false);
+    }
+  };
+
+  // Load Categories on mount
   useEffect(() => {
     setIsLoadingCategories(true);
     categoryService.getCategories()
@@ -95,23 +165,15 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         if (Array.isArray(catList) && catList.length > 0) {
           setBackendCategories(catList);
           setSelectedCategoryId(catList[0].id);
-          setCategory(catList[0].name as any);
-        } else {
-          setBackendCategories([]);
-          setSelectedCategoryId('');
         }
       })
-      .catch((err) => {
-        console.error('Lỗi tải danh mục từ backend:', err);
-        setBackendCategories([]);
-        setSelectedCategoryId('');
-      })
+      .catch((err) => console.error('Lỗi tải danh mục:', err))
       .finally(() => setIsLoadingCategories(false));
   }, []);
 
-  // Fetch backend items when category changes
+  // Load Items when category changes
   useEffect(() => {
-    if (selectedCategoryId && isValidBackendId(selectedCategoryId)) {
+    if (selectedCategoryId) {
       setIsLoadingItems(true);
       itemService.getItemsByCategory(selectedCategoryId)
         .then((itemList) => {
@@ -123,1213 +185,1177 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             setSelectedItemId('');
           }
         })
-        .catch((err) => {
-          console.error('Lỗi tải vật phẩm theo danh mục:', err);
-          setBackendItems([]);
-          setSelectedItemId('');
-        })
+        .catch((err) => console.error('Lỗi tải items:', err))
         .finally(() => setIsLoadingItems(false));
-    } else {
-      setBackendItems([]);
-      setSelectedItemId('');
     }
   }, [selectedCategoryId]);
 
-  const handlePhotoUpload = async (key: keyof PhotoChecklist, file: File) => {
-    try {
-      setUploadingSlot(key);
-      const res = await mediaService.uploadImage(file, 'product-listings');
-      setPhotos(prev => ({ ...prev, [key]: res.url }));
-      if (key === 'front') {
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (typeof reader.result === 'string') setPrimaryBase64(reader.result);
-        };
-        reader.readAsDataURL(file);
-      }
-    } catch (err: any) {
-      alert('Tải ảnh sản phẩm thất bại: ' + (err.message || 'Lỗi kết nối server'));
-    } finally {
-      setUploadingSlot(null);
-    }
-  };
-
-  const handleRemovePhoto = (key: keyof PhotoChecklist) => {
-    setPhotos(prev => ({ ...prev, [key]: '' }));
-    if (key === 'front') {
-      setPrimaryBase64('');
-    }
-  };
-
-  const handleMultiplePhotosUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files: File[] = e.target.files ? Array.from(e.target.files) : [];
+  // Handle Photo File selection (multi-file or single-file)
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files: File[] = e.target.files ? (Array.from(e.target.files) as File[]) : [];
     if (files.length === 0) return;
 
-    try {
-      setUploadingSlot('batch');
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          setPrimaryBase64(reader.result);
+    const remainingSlots = 6 - photoPreviews.length;
+    const toAdd: File[] = files.slice(0, remainingSlots > 0 ? remainingSlots : 0);
+
+    const newPreviews = toAdd.map((f: File) => URL.createObjectURL(f));
+    setPhotoFiles((prev) => [...prev, ...toAdd]);
+    setPhotoPreviews((prev) => [...prev, ...newPreviews]);
+  };
+
+  const handleRemovePhoto = (idx: number) => {
+    setPhotoPreviews((prev) => prev.filter((_, i) => i !== idx));
+    setPhotoFiles((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  // Convert URLs or files into Blob array for postService.initPost
+  const prepareImageBlobs = async (): Promise<(File | Blob)[]> => {
+    if (photoFiles.length >= 3) {
+      return photoFiles.slice(0, 6);
+    }
+    // If user kept preview URLs (e.g. demo placeholders), fetch them as Blobs
+    const blobs: (File | Blob)[] = [...photoFiles];
+    for (const url of photoPreviews) {
+      if (blobs.length >= 6) break;
+      if (typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
+        try {
+          const res = await fetch(url);
+          const b = await res.blob();
+          blobs.push(b);
+        } catch {
+          // ignore fetch fail
         }
-      };
-      reader.readAsDataURL(files[0]);
-
-      // Call batch upload endpoint
-      const uploadedList = await mediaService.uploadMultipleImages(files, 'product-listings');
-      if (uploadedList && uploadedList.length > 0) {
-        setPhotos(prev => ({
-          ...prev,
-          front: uploadedList[0]?.url || prev.front,
-          back: uploadedList[1]?.url || prev.back,
-          screenOrDetails: uploadedList[2]?.url || prev.screenOrDetails,
-          accessoriesOrBox: uploadedList[3]?.url || prev.accessoriesOrBox,
-          serialOrReceipt: uploadedList[4]?.url || prev.serialOrReceipt,
-        }));
-      }
-    } catch (err: any) {
-      alert('Tải nhiều ảnh thất bại: ' + (err.message || 'Lỗi server'));
-    } finally {
-      setUploadingSlot(null);
-    }
-  };
-
-  const getEnsureBase64 = async (): Promise<string> => {
-    if (primaryBase64) return primaryBase64;
-    return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-  };
-
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiEstimation, setAiEstimation] = useState<{
-    minVnd: number;
-    maxVnd: number;
-    suggestedVnd: number;
-    quickSaleVnd: number;
-    confidence: number;
-    daysToSell: number;
-    keyFactors: string[];
-  } | null>(null);
-
-  const [fraudWarning, setFraudWarning] = useState<string | null>(null);
-  const [finalPriceVnd, setFinalPriceVnd] = useState<number>(18500000);
-
-  const handleAutofillDemo = () => {
-    setTitle('Tủ Lạnh Hitachi Inverter 540L 4 Cửa R-FW690PGV7X Mặt Kính Đen');
-    setBrand('Hitachi');
-    setModel('R-FW690PGV7X');
-    setPurchaseYear(2024);
-    setOriginalPriceVnd(29990000);
-    setDeclaredCondition('Like New');
-    setDeclaredConditionText('Tủ lạnh dùng 10 tháng giữ gìn cẩn thận, mặt kính bóng đẹp không vết xước. Máy nén êm ru, làm đá tự động cực nhanh.');
-    setDescription('Gia đình chuyển nhà cần nhượng lại tủ lạnh Hitachi 540L 4 cửa cao cấp. Đầy đủ hóa đơn mua hàng tại Điện Máy Xanh, còn bảo hành máy nén 8 năm.');
-    setFinalPriceVnd(18500000);
-
-    if (backendCategories.length > 0) {
-      setSelectedCategoryId(backendCategories[0].id);
-      setCategory(backendCategories[0].name as any);
-      if (backendItems.length > 0) {
-        setSelectedItemId(backendItems[0].id);
       }
     }
+    return blobs;
   };
 
-  const runAiValuation = async () => {
-    setIsAnalyzing(true);
-    setFraudWarning(null);
-
-    try {
-      const res = await fetch('/api/ai/estimate-price', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title,
-          category,
-          brand,
-          model,
-          purchaseYear,
-          declaredCondition,
-          accessories: selectedAccessories,
-          description,
-          originalPriceVnd
-        })
-      });
-
-      const data = await res.json();
-      if (data.success && data.data) {
-        const est = data.data;
-        setAiEstimation({
-          minVnd: est.fairPriceRange.minVnd,
-          maxVnd: est.fairPriceRange.maxVnd,
-          suggestedVnd: est.suggestedListingPriceVnd,
-          quickSaleVnd: est.quickSalePriceVnd,
-          confidence: est.confidenceScore || 95,
-          daysToSell: est.expectedDaysToSell?.fairPrice || 7,
-          keyFactors: est.keyValuationFactors || [
-            'Khấu hao chu kỳ công nghệ theo niên hạn',
-            'Tình trạng ngoại quan khai báo đạt chuẩn Grade A'
-          ]
-        });
-        setFinalPriceVnd(est.suggestedListingPriceVnd);
-      }
-    } catch {
-      setAiEstimation({
-        minVnd: 19500000,
-        maxVnd: 21800000,
-        suggestedVnd: 20800000,
-        quickSaleVnd: 19000000,
-        confidence: 94,
-        daysToSell: 5,
-        keyFactors: [
-          'Dữ liệu đối chiếu 142 giao dịch tương tự tại TP.HCM & Hà Nội',
-          'Tình trạng linh kiện và phụ kiện đầy đủ giúp bán nhanh hơn 35%'
-        ]
-      });
-      setFinalPriceVnd(20800000);
-    } finally {
-      setIsAnalyzing(false);
+  // =========================================================================
+  // STEP 1: Init Post (POST /api/v1/posts/init with multipart/form-data)
+  // =========================================================================
+  const handleInitPost = async () => {
+    if (!selectedCategoryId) {
+      alert(lang === 'vi' ? 'Vui lòng chọn Danh mục sản phẩm' : 'Please select a Category');
+      return;
     }
-  };
-
-  const handlePriceChange = (val: number) => {
-    setFinalPriceVnd(val);
-    if (aiEstimation) {
-      if (val < aiEstimation.minVnd * 0.6) {
-        setFraudWarning('Cảnh báo giá bất thường: Mức giá quá thấp so với thị trường có thể bị hệ thống AI nghi ngờ là hàng giả hoặc lừa đảo.');
-      } else if (val > aiEstimation.maxVnd * 1.5) {
-        setFraudWarning('Lưu ý: Mức giá cao hơn 50% so với thị trường sẽ khiến thời gian bán kéo dài (> 30 ngày).');
-      } else {
-        setFraudWarning(null);
-      }
-    }
-  };
-
-  const handleInitPostAndChat = async () => {
-    if (!isRealCategoryId || !isRealItemId) {
-      alert(
-        lang === 'vi'
-          ? 'Danh mục hoặc Vật phẩm chưa phải ID hợp lệ từ hệ thống Backend. Vui lòng quay lại Bước 1 kiểm tra.'
-          : 'Category or Item is not a valid ID from the backend. Please check Step 1.'
-      );
+    if (photoPreviews.length < 3 || photoPreviews.length > 6) {
+      alert(lang === 'vi' ? 'Vui lòng tải lên từ 3 đến 6 ảnh sản phẩm hợp lệ' : 'Please upload 3 to 6 product images');
       return;
     }
 
     setIsInitializingPost(true);
     try {
-      const base64Image = await getEnsureBase64();
+      const imageBlobs = await prepareImageBlobs();
 
       const initRes = await postService.initPost({
         categoryId: selectedCategoryId,
-        itemId: selectedItemId,
-        base64Image,
-      });
-
-      if (initRes && initRes.postId && initRes.sessionId) {
-        setPostId(initRes.postId);
-        setAiSessionId(initRes.sessionId);
-        setAiInitialMessage(initRes.aiInitialMessage || '');
-        setCurrentStep(4);
-      } else {
-        throw new Error('Hệ thống không trả về postId hoặc sessionId');
-      }
-    } catch (err: any) {
-      alert('Khởi tạo bài đăng thất bại: ' + (err?.message || 'Lỗi kết nối server'));
-    } finally {
-      setIsInitializingPost(false);
-    }
-  };
-
-  const handleDirectSubmitPost = async () => {
-    if (!isRealCategoryId || !isRealItemId) {
-      alert(
-        lang === 'vi'
-          ? 'Danh mục hoặc Vật phẩm chưa phải ID hợp lệ từ hệ thống Backend. Vui lòng kiểm tra chọn Danh mục & Vật phẩm.'
-          : 'Category or Item is not a valid ID from the backend.'
-      );
-      return;
-    }
-
-    setIsInitializingPost(true);
-    try {
-      const base64Image = await getEnsureBase64();
-
-      // 1. Khởi tạo bài đăng trên Backend (POST /api/v1/posts/init)
-      const initRes = await postService.initPost({
-        categoryId: selectedCategoryId,
-        itemId: selectedItemId,
-        base64Image,
+        itemId: selectedItemId || undefined,
+        images: imageBlobs
       });
 
       if (initRes && initRes.postId) {
         setPostId(initRes.postId);
+        setSessionId(initRes.sessionId);
+        setAiInitialMessage(initRes.aiInitialMessage || initRes.aiDescription || '');
 
-        // 2. Gửi duyệt bài đăng đến Backend (POST /api/v1/posts/submit/{postId})
-        await postService.submitPost(initRes.postId, {
-          title: title.trim() || `${brand} ${category}`,
-          description: description.trim() || declaredConditionText || 'Bài đăng thiết bị điện tử trên SecondLife Platform',
-          price: originalPriceVnd || 1000000,
-        });
+        // Fetch draft details from server (GET /api/v1/posts/{postId})
+        try {
+          const draftRes = await postService.getPost(initRes.postId);
+          setDraftPost(draftRes);
+          if (draftRes.title) setTitle(draftRes.title);
+          if (draftRes.description) setDescription(draftRes.description);
+          if (draftRes.aiDescription && !description) setDescription(draftRes.aiDescription);
+          if (draftRes.itemCondition) setItemCondition(draftRes.itemCondition);
+          if (draftRes.descriptionAccepted) setDescriptionAccepted(true);
+        } catch (fetchErr) {
+          console.warn('GET /posts/{postId} chưa sẵn sàng, dùng dữ liệu ban đầu:', fetchErr);
+        }
 
-        // 3. Tạo DTO hiển thị trên UI Frontend
-        const newListing: Listing = {
-          id: initRes.postId,
-          title: title.trim() || `${brand} ${category}`,
-          category,
-          brand,
-          model: model || 'Standard Model',
-          purchaseYear: purchaseYear || 2024,
-          priceVnd: originalPriceVnd || 1000000,
-          originalPriceVnd,
-          conditionGrade: declaredCondition,
-          declaredConditionText: declaredConditionText || 'Như mới',
-          description: description.trim() || 'Đã đăng thành công lên Backend',
-          location: 'Hà Nội',
-          sellerId: 'me',
-          sellerName: 'Tôi',
-          sellerRating: 5.0,
-          sellerCompletedOrders: 1,
-          sellerVerified: true,
-          status: 'active',
-          createdAt: new Date().toISOString(),
-          isInspectionGuaranteed: true,
-          requiresInspection: true,
-          photos,
-          photoGallery: Object.values(photos).filter(Boolean) as string[],
-        };
+        // Initialize Chat messages
+        setChatMessages([
+          {
+            role: 'ai',
+            text: initRes.aiInitialMessage || (lang === 'vi'
+              ? 'Chào bạn! Tôi là Trợ lý AI SecondLife. Sau khi phân tích ảnh sản phẩm, tôi đã chuẩn bị sẵn mô tả ban đầu. Hãy trò chuyện với tôi nếu muốn bổ sung chi tiết bảo hành, phụ kiện hoặc tình trạng máy nhé!'
+              : 'Hello! I am SecondLife AI Assistant. I have analyzed your product photos and prepared a draft description. Chat with me to add accessories or warranty details!'),
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }
+        ]);
 
-        onListingCreated(newListing);
-        alert(lang === 'vi' ? '🎉 Đã gửi duyệt bài đăng thành công tới hệ thống Backend API (POST /api/v1/posts/submit)!' : '🎉 Post submitted successfully to Backend API!');
+        setCurrentStep(2);
       } else {
-        throw new Error('Hệ thống Backend không trả về postId');
+        throw new Error('Hệ thống không trả về postId từ init');
       }
     } catch (err: any) {
-      alert('Lỗi đăng bài lên Backend: ' + (err?.message || 'Lỗi kết nối máy chủ'));
+      alert('Khởi tạo bài đăng thất bại: ' + (err?.message || 'Lỗi server'));
     } finally {
       setIsInitializingPost(false);
     }
   };
 
+  // =========================================================================
+  // STEP 2: Chat with AI & Finalize (POST /api/v1/ai/chat & /finalize-chat)
+  // =========================================================================
+  const handleSendChatMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!chatInput.trim() || isSendingChat || !sessionId || !postId) return;
+
+    const userText = chatInput.trim();
+    setChatInput('');
+    setChatMessages((prev) => [
+      ...prev,
+      { role: 'user', text: userText, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+    ]);
+    setIsSendingChat(true);
+
+    try {
+      const res = await aiChatService.chat(userText, sessionId, postId);
+      const reply = res?.reply || (res as any)?.message || (lang === 'vi' ? 'Đã ghi nhận thông tin sản phẩm của bạn.' : 'Noted your item details.');
+      setChatMessages((prev) => [
+        ...prev,
+        { role: 'ai', text: reply, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+      ]);
+    } catch (err: any) {
+      setChatMessages((prev) => [
+        ...prev,
+        { role: 'ai', text: 'Lỗi phản hồi AI: ' + (err?.message || 'Vui lòng thử lại.'), time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+      ]);
+    } finally {
+      setIsSendingChat(false);
+    }
+  };
+
+  const handleFinalizeChatAndSync = async () => {
+    if (!sessionId || !postId) return;
+    setIsFinalizingChat(true);
+    try {
+      await postService.finalizeChat(sessionId);
+      // Re-fetch draft from backend to populate latest generated description
+      const updatedDraft = await postService.getPost(postId);
+      setDraftPost(updatedDraft);
+      if (updatedDraft.description) {
+        setDescription(updatedDraft.description);
+      }
+      alert(lang === 'vi' ? 'AI đã tổng hợp cuộc hội thoại và cập nhật mô tả thành công!' : 'AI summarized the chat into your description!');
+    } catch (err: any) {
+      alert('Hoàn tất chat thất bại: ' + (err?.message || 'Lỗi kết nối'));
+    } finally {
+      setIsFinalizingChat(false);
+    }
+  };
+
+  // =========================================================================
+  // STEP 3: Save Draft & Accept Description (PUT /draft & POST /accept-description)
+  // =========================================================================
+  const handleSaveAndAcceptDescription = async () => {
+    if (!postId) return;
+    if (!title.trim()) {
+      alert(lang === 'vi' ? 'Vui lòng nhập Tiêu đề bài đăng' : 'Please enter Title');
+      return;
+    }
+    if (!description.trim()) {
+      alert(lang === 'vi' ? 'Vui lòng nhập hoặc áp dụng Mô tả sản phẩm' : 'Please enter Description');
+      return;
+    }
+
+    setIsAcceptingDescription(true);
+    try {
+      // 1. PUT /api/v1/posts/{postId}/draft
+      await postService.updateDraft(postId, {
+        title: title.trim(),
+        description: description.trim(),
+        itemCondition: itemCondition || 'USED',
+        price: null
+      });
+
+      // 2. POST /api/v1/posts/{postId}/accept-description
+      const acceptRes = await postService.acceptDescription(postId, description.trim());
+      setDescriptionAccepted(true);
+      setDraftPost(acceptRes);
+
+      // Successfully confirmed description -> Advance to Step 4
+      setCurrentStep(4);
+    } catch (err: any) {
+      alert('Xác nhận mô tả thất bại: ' + (err?.message || 'Lỗi server'));
+    } finally {
+      setIsAcceptingDescription(false);
+    }
+  };
+
+  // =========================================================================
+  // STEP 4: AI Price Estimation (POST /ai-price-estimation - Trừ 1 VALUATION)
+  // =========================================================================
+  const handleRunAiValuation = async () => {
+    if (!postId) return;
+    setIsEstimatingPrice(true);
+    const reqId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `req-${Date.now()}`;
+    setValuationRequestId(reqId);
+
+    try {
+      const res = await postService.estimatePrice(postId, reqId);
+      setValuationResult(res);
+      if (res.suggestedPrice) {
+        setFinalPriceVnd(res.suggestedPrice);
+      }
+      // Re-fetch credits to reflect deduction of 1 VALUATION
+      await loadCredits();
+    } catch (err: any) {
+      alert('Định giá AI thất bại: ' + (err?.message || 'Lỗi kết nối tới dịch vụ AI'));
+    } finally {
+      setIsEstimatingPrice(false);
+    }
+  };
+
+  const handleLoadValuationHistory = async () => {
+    if (!postId) return;
+    try {
+      const hist = await postService.getPriceEstimateHistory(postId, 0, 10);
+      const items = hist?.items || hist?.content || (Array.isArray(hist) ? hist : []);
+      setValuationHistory(items);
+      setShowValuationHistory(true);
+    } catch (err: any) {
+      alert('Không thể tải lịch sử định giá: ' + (err?.message || ''));
+    }
+  };
+
+  // =========================================================================
+  // STEP 5: Final Submit (POST /api/v1/posts/submit/{postId})
+  // =========================================================================
+  const handleSubmitPostFinal = async () => {
+    if (!postId) return;
+    if (!finalPriceVnd || finalPriceVnd < 1000) {
+      alert(lang === 'vi' ? 'Vui lòng nhập giá bán hợp lệ (tối thiểu 1.000 đ)' : 'Please enter valid price');
+      return;
+    }
+
+    setIsSubmittingPost(true);
+    setSubmitError(null);
+    try {
+      const submitRes = await postService.submitPost(postId, {
+        title: title.trim(),
+        description: description.trim(),
+        price: finalPriceVnd
+      });
+
+      setSubmitResult(submitRes);
+      // Reload credits (if ACTIVE, minus 1 LISTING)
+      await loadCredits();
+    } catch (err: any) {
+      setSubmitError(err?.message || 'Gửi bài đăng thất bại');
+    } finally {
+      setIsSubmittingPost(false);
+    }
+  };
+
+  const handleFinishAndExit = () => {
+    if (!postId) return;
+    const catName = backendCategories.find((c) => c.id === selectedCategoryId)?.name || 'Thiết bị điện tử';
+    const newListing: Listing = {
+      id: postId,
+      title: title || 'Sản phẩm SecondLife',
+      category: catName as ItemCategory,
+      brand: brand || 'Hãng',
+      model: model || 'Model',
+      purchaseYear,
+      priceVnd: finalPriceVnd,
+      originalPriceVnd: finalPriceVnd * 1.3,
+      conditionGrade: 'Like New',
+      declaredConditionText: itemCondition,
+      description: description || 'Mô tả bài đăng đã qua kiểm duyệt AI',
+      location: 'Hà Nội / TP.HCM',
+      sellerId: 'current-user',
+      sellerName: 'Người bán SecondLife',
+      sellerRating: 5.0,
+      sellerCompletedOrders: 1,
+      sellerVerified: true,
+      status: (submitResult?.status === 'ACTIVE' ? 'active' : 'pending') as any,
+      createdAt: new Date().toISOString(),
+      isInspectionGuaranteed: finalPriceVnd > 5000000,
+      requiresInspection: finalPriceVnd > 5000000,
+      photos: {
+        front: photoPreviews[0] || '',
+        back: photoPreviews[1] || '',
+        screenOrDetails: photoPreviews[2] || '',
+        accessoriesOrBox: photoPreviews[3] || '',
+        serialOrReceipt: photoPreviews[4] || '',
+        extraDetail: photoPreviews[5] || ''
+      },
+      photoGallery: photoPreviews
+    };
+    onListingCreated(newListing);
+  };
+
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-16 text-[#24263e]">
-      {/* Title & Quick demo helper */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFFFFF] border border-gray-200 text-[#24263e] text-xs font-bold shadow-xs">
-            <Sparkles className="w-3.5 h-3.5 text-[#24263e]" />
-            <span>AI Price Estimation & Verification Engine</span>
+    <div className="max-w-5xl mx-auto space-y-6 pb-20 px-4 sm:px-6">
+      {/* Top Banner: Credit Status Bar & Navigation */}
+      <div className="bg-[#24263e] text-white rounded-3xl p-5 shadow-lg border border-slate-700 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-[#c34c36] text-white flex items-center justify-center shadow-md shrink-0">
+            <Coins className="w-6 h-6" />
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#24263e] mt-2">
-            {t.createListingTitle}
-          </h1>
-          <p className="text-xs sm:text-sm text-[#24263e]/70">
-            {t.createListingSubtitle}
-          </p>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-black tracking-wide">
+                {lang === 'vi' ? 'Hệ Thống Đăng Tin & Định Giá AI (Main Flow 1)' : 'AI Listing & Valuation Pipeline'}
+              </h2>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 uppercase">
+                Backend Live
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300 mt-1">
+              <span>Số dư Credit của bạn:</span>
+              <span className="px-2.5 py-0.5 rounded-lg bg-white/10 font-mono font-bold text-amber-300 flex items-center gap-1 border border-white/10">
+                <span>🎯 {credits?.listing ?? 0}</span>
+                <span className="text-[10px] text-slate-400">LISTING</span>
+              </span>
+              <span className="px-2.5 py-0.5 rounded-lg bg-white/10 font-mono font-bold text-cyan-300 flex items-center gap-1 border border-white/10">
+                <span>💡 {credits?.valuation ?? 0}</span>
+                <span className="text-[10px] text-slate-400">VALUATION</span>
+              </span>
+            </div>
+          </div>
         </div>
 
-        <button
-          onClick={handleAutofillDemo}
-          className="self-start sm:self-auto px-3 py-1.5 bg-[#FFFFFF] hover:bg-[#faf8f5] text-[#24263e] rounded-xl text-xs font-semibold border border-gray-200 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-        >
-          <span>⚡ Điền nhanh mẫu thử nghiệm</span>
-        </button>
-      </div>
-
-      {/* 4-Step Progress Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
-        <div
-          className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${
-            currentStep === 1
-              ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] border-[#c34c36] text-white font-semibold'
-              : 'bg-[#FFFFFF] border-gray-200 text-[#24263e]/60'
-          }`}
-        >
-          <div className="text-[11px] uppercase tracking-wider font-semibold">1. {t.stepInfo}</div>
-        </div>
-
-        <div
-          className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${
-            currentStep === 2
-              ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] border-[#c34c36] text-white font-semibold'
-              : 'bg-[#FFFFFF] border-gray-200 text-[#24263e]/60'
-          }`}
-        >
-          <div className="text-[11px] uppercase tracking-wider font-semibold">2. {t.stepPhotos}</div>
-        </div>
-
-        <div
-          className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${
-            currentStep === 3
-              ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] border-[#c34c36] text-white font-semibold'
-              : 'bg-[#FFFFFF] border-gray-200 text-[#24263e]/60'
-          }`}
-        >
-          <div className="text-[11px] uppercase tracking-wider font-semibold">3. {t.stepValuation}</div>
-        </div>
-
-        <div
-          className={`p-2.5 sm:p-3 rounded-xl border text-center transition-all ${
-            currentStep === 4
-              ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] border-[#c34c36] text-white font-semibold'
-              : 'bg-[#FFFFFF] border-gray-200 text-[#24263e]/60'
-          }`}
-        >
-          <div className="text-[11px] uppercase tracking-wider font-semibold">4. {lang === 'vi' ? 'Trợ lý AI' : 'AI Assistant'}</div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleQuickBuyCredit}
+            disabled={isPurchasingCredits}
+            className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white border border-white/20 transition cursor-pointer flex items-center gap-1.5"
+            title="Tạo đơn mua 2 LISTING + 2 VALUATION"
+          >
+            {isPurchasingCredits ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5 text-amber-300" />}
+            <span>{lang === 'vi' ? 'Nạp thêm Credit' : 'Buy Credits'}</span>
+          </button>
+          <button
+            onClick={onCancel}
+            className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-300 hover:text-white border border-white/10 transition cursor-pointer"
+          >
+            {lang === 'vi' ? 'Hủy bỏ' : 'Cancel'}
+          </button>
         </div>
       </div>
 
-      {/* Step 1: Basic Information */}
-      {currentStep === 1 && (
-        <div className="space-y-6">
-          {/* Top Section: Thông tin sản phẩm (Khung xanh trong thiết kế) */}
-          <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border-2 border-amber-400/80 shadow-md space-y-4">
-            <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
-              <span className="bg-[#c34c36]/10 text-[#c34c36] p-1.5 rounded-lg text-xs font-black">01</span>
-              <span>Thông tin sản phẩm</span>
-            </h2>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-[#24263e] flex items-center justify-between">
-                  <span>{t.filterCategory} *</span>
-                  {isLoadingCategories && (
-                    <span className="text-[10px] text-amber-600 flex items-center gap-1 font-normal">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Đang tải...
-                    </span>
-                  )}
-                </label>
-                <select
-                  value={selectedCategoryId}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setSelectedCategoryId(val);
-                    const matched = backendCategories.find(c => c.id === val);
-                    if (matched) setCategory(matched.name as any);
-                  }}
-                  className={`w-full px-3.5 py-2.5 bg-[#faf8f5] border rounded-xl text-sm text-[#24263e] focus:outline-none transition ${
-                    isRealCategoryId ? 'border-gray-200 focus:border-[#c34c36]' : 'border-amber-400 bg-amber-50/30'
+      {/* Pipeline Step Progress Bar (5 Steps) */}
+      <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs font-bold">
+          {[
+            { step: 1, label: '1. Sản Phẩm & 3-6 Ảnh' },
+            { step: 2, label: '2. Mô Tả AI & Chat' },
+            { step: 3, label: '3. Xác Nhận Mô Tả' },
+            { step: 4, label: '4. Định Giá AI' },
+            { step: 5, label: '5. Gửi Đăng Bài' }
+          ].map((s) => {
+            const isActive = currentStep === s.step;
+            const isDone = currentStep > s.step;
+            return (
+              <div
+                key={s.step}
+                className={`py-2 px-3 rounded-xl flex items-center gap-2 border transition ${isActive
+                    ? 'bg-[#24263e] text-white border-[#24263e] shadow-xs'
+                    : isDone
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      : 'bg-slate-50 text-slate-400 border-slate-100'
                   }`}
+              >
+                <div
+                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${isActive
+                      ? 'bg-[#c34c36] text-white'
+                      : isDone
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-200 text-slate-600'
+                    }`}
                 >
-                  {backendCategories.length > 0 ? (
-                    backendCategories.map((cat) => (
-                      <option key={cat.id} value={cat.id} className="bg-[#FFFFFF] text-[#24263e]">
-                        {cat.name}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="" disabled className="bg-[#FFFFFF] text-[#24263e]">
-                      {isLoadingCategories
-                        ? (lang === 'vi' ? '-- Đang tải danh mục từ backend... --' : '-- Loading categories... --')
-                        : (lang === 'vi' ? '-- Không có danh mục khả dụng --' : '-- No categories available --')}
-                    </option>
-                  )}
-                </select>
-                {!isRealCategoryId && !isLoadingCategories && (
-                  <p className="text-[10px] text-amber-600 font-medium">
-                    {lang === 'vi' ? '⚠️ Yêu cầu chọn danh mục có ID thật từ hệ thống.' : '⚠️ Valid backend category ID required.'}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-[#24263e] flex items-center justify-between">
-                  <span>{lang === 'vi' ? 'Vật phẩm chi tiết (Item)' : 'Item'} *</span>
-                  {isLoadingItems && (
-                    <span className="text-[10px] text-amber-600 flex items-center gap-1 font-normal">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Đang tải...
-                    </span>
-                  )}
-                </label>
-                <select
-                  value={selectedItemId}
-                  onChange={(e) => setSelectedItemId(e.target.value)}
-                  className={`w-full px-3.5 py-2.5 bg-[#faf8f5] border rounded-xl text-sm text-[#24263e] focus:outline-none transition ${
-                    isRealItemId ? 'border-gray-200 focus:border-[#c34c36]' : 'border-amber-400 bg-amber-50/30'
-                  }`}
-                >
-                  {backendItems.length > 0 ? (
-                    backendItems.map((itm) => (
-                      <option key={itm.id} value={itm.id} className="bg-[#FFFFFF] text-[#24263e]">
-                        {itm.name}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="" disabled className="bg-[#FFFFFF] text-[#24263e]">
-                      {isLoadingItems
-                        ? (lang === 'vi' ? '-- Đang tải vật phẩm... --' : '-- Loading items... --')
-                        : (lang === 'vi' ? '-- Chọn danh mục để tải vật phẩm --' : '-- Select category first --')}
-                    </option>
-                  )}
-                </select>
-                {!isRealItemId && !isLoadingItems && (
-                  <p className="text-[10px] text-amber-600 font-medium">
-                    {lang === 'vi' ? '⚠️ Yêu cầu chọn vật phẩm có ID thật từ hệ thống.' : '⚠️ Valid backend item ID required.'}
-                  </p>
-                )}
-              </div>
-
-              {(!isRealCategoryId || !isRealItemId) && (
-                <div className="sm:col-span-2 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 text-xs flex items-center gap-2 font-medium">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>
-                    {isLoadingCategories || isLoadingItems
-                      ? (lang === 'vi' ? 'Đang tải dữ liệu Danh mục & Vật phẩm từ máy chủ backend...' : 'Loading categories and items from backend...')
-                      : (lang === 'vi'
-                          ? 'Chưa chọn được Danh mục hoặc Vật phẩm có ID thật từ Backend. Nút "Tiếp tục" sẽ được mở khi có đủ ID hệ thống.'
-                          : 'Please select a valid Category and Item with real backend IDs to proceed.')}
-                  </span>
+                  {isDone ? <Check className="w-3 h-3" /> : s.step}
                 </div>
+                <span className="truncate">{s.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* STEP 1: CHỌN DANH MỤC, VẬT PHẨM & TẢI 3-6 ẢNH SẢN PHẨM                   */}
+      {/* ========================================================================= */}
+      {currentStep === 1 && (
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
+          <div>
+            <h3 className="text-lg font-black text-[#24263e] flex items-center gap-2">
+              <Camera className="w-5 h-5 text-[#c34c36]" />
+              <span>{lang === 'vi' ? 'Bước 1: Chọn Danh Mục Sản Phẩm & Tải 3-6 Ảnh' : 'Step 1: Select Category & Upload 3-6 Photos'}</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              AI sẽ phân tích toàn bộ ảnh cùng danh mục sản phẩm để tạo mô tả và gợi ý định giá chuẩn xác.
+            </p>
+          </div>
+
+          {/* Category & Item Dropdowns */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-[#24263e]">
+                {lang === 'vi' ? 'Danh Mục Sản Phẩm (Category) *' : 'Product Category *'}
+              </label>
+              <select
+                value={selectedCategoryId}
+                onChange={(e) => setSelectedCategoryId(e.target.value)}
+                disabled={isLoadingCategories}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+              >
+                {backendCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-[#24263e]">
+                {lang === 'vi' ? 'Loại Thiết Bị (Item/Model thuộc Category)' : 'Item Type'}
+              </label>
+              <select
+                value={selectedItemId}
+                onChange={(e) => setSelectedItemId(e.target.value)}
+                disabled={isLoadingItems || backendItems.length === 0}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+              >
+                {backendItems.length > 0 ? (
+                  backendItems.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">{isLoadingItems ? 'Đang tải vật phẩm...' : 'Chung theo danh mục'}</option>
+                )}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-[#24263e]">Thương hiệu (Brand) *</label>
+              <input
+                type="text"
+                value={brand}
+                onChange={(e) => setBrand(e.target.value)}
+                placeholder="VD: Panasonic, Toshiba, LG, Sony, Apple..."
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-[#24263e]">Năm sản xuất / Mua</label>
+              <input
+                type="number"
+                value={purchaseYear}
+                onChange={(e) => setPurchaseYear(Number(e.target.value))}
+                min={2018}
+                max={2026}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+              />
+            </div>
+          </div>
+
+          {/* Photo Checklist 3-6 Photos */}
+          <div className="space-y-3 pt-2 border-t border-gray-100">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <label className="text-xs font-bold text-[#24263e] flex items-center gap-2">
+                  <span>Ảnh chụp sản phẩm thực tế (Yêu cầu 3 - 6 ảnh) *</span>
+                  <span
+                    className={`text-[10px] font-black px-2 py-0.5 rounded-full ${photoPreviews.length >= 3 && photoPreviews.length <= 6
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-rose-100 text-rose-800'
+                      }`}
+                  >
+                    Đã có: {photoPreviews.length}/6 ảnh
+                  </span>
+                </label>
+                <p className="text-[11px] text-slate-500">
+                  Tải lên mặt trước, mặt sau, góc cạnh, tem nhãn/seri và phụ kiện để AI định giá tối ưu.
+                </p>
+              </div>
+
+              {photoPreviews.length < 6 && (
+                <label className="px-4 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 transition">
+                  <UploadCloud className="w-4 h-4 text-amber-300" />
+                  <span>+ Chọn thêm ảnh từ máy</span>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                </label>
+              )}
+            </div>
+
+            {/* Photos Preview Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+              {photoPreviews.map((previewUrl, idx) => (
+                <div key={idx} className="relative group rounded-2xl overflow-hidden border border-gray-200 aspect-square bg-slate-100 shadow-xs">
+                  <img src={previewUrl} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-cover" />
+                  <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded-md bg-black/60 text-white text-[10px] font-bold">
+                    #{idx + 1}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemovePhoto(idx)}
+                    className="absolute top-1 right-1 w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center opacity-80 hover:opacity-100 transition shadow-sm cursor-pointer"
+                    title="Xóa ảnh"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+
+              {photoPreviews.length < 6 && (
+                <label className="border-2 border-dashed border-gray-300 hover:border-[#c34c36] rounded-2xl flex flex-col items-center justify-center gap-1 aspect-square bg-slate-50 hover:bg-slate-100 transition cursor-pointer text-slate-500 text-center p-2">
+                  <Camera className="w-5 h-5 text-slate-400" />
+                  <span className="text-[10px] font-bold">+ Thêm ảnh</span>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                </label>
               )}
             </div>
           </div>
 
-          {/* Bottom Section: Thêm hình ảnh sản phẩm + Cảnh báo + 2 Nút thao tác */}
-          {/* Bottom Section: Thêm hình ảnh sản phẩm + Cảnh báo + 2 Nút thao tác */}
-          <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
-            {/* 1. Thêm 6 khung hình ảnh sản phẩm */}
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-3">
-                <div>
-                  <h3 className="text-base font-bold text-[#24263e] flex items-center gap-2">
-                    <Camera className="w-5 h-5 text-[#c34c36]" />
-                    <span>Thêm 6 khung hình ảnh sản phẩm *</span>
-                  </h3>
-                  <p className="text-xs text-[#24263e]/70 mt-0.5">
-                    Tải lên 6 góc ảnh của thiết bị để AI quét trích xuất thông tin tự động hoặc làm căn cứ thẩm định sản phẩm.
-                  </p>
-                </div>
+          {/* Action Button: Khởi tạo bài đăng */}
+          <div className="flex justify-end pt-4 border-t border-gray-100">
+            <button
+              onClick={handleInitPost}
+              disabled={isInitializingPost || photoPreviews.length < 3 || photoPreviews.length > 6}
+              className={`px-8 py-3.5 rounded-2xl font-black text-sm shadow-md flex items-center gap-2.5 transition ${!isInitializingPost && photoPreviews.length >= 3 && photoPreviews.length <= 6
+                  ? 'bg-gradient-to-r from-[#c34c36] to-[#24263e] text-white hover:opacity-95 cursor-pointer transform hover:-translate-y-0.5'
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
+                }`}
+            >
+              {isInitializingPost ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>AI đang phân tích ảnh & khởi tạo draft...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5 text-amber-300" />
+                  <span>Khởi Tạo Bài Đăng & Phân Tích AI</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
 
-                <label className="px-4 py-2 rounded-xl bg-[#24263e] hover:bg-[#1a1c2e] text-white text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
-                  {uploadingSlot === 'batch' ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Đang tải nhiều ảnh...</span>
-                    </>
-                  ) : (
-                    <>
-                      <UploadCloud className="w-4 h-4" />
-                      <span>⚡ Chọn nhanh nhiều ảnh</span>
-                    </>
-                  )}
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    className="hidden"
-                    disabled={uploadingSlot !== null}
-                    onChange={handleMultiplePhotosUpload}
-                  />
-                </label>
+      {/* ========================================================================= */}
+      {/* STEP 2: MÔ TẢ AI, CHỈNH SỬA & TRỢ LÝ CHAT BỔ SUNG                         */}
+      {/* ========================================================================= */}
+      {currentStep === 2 && (
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
+          <div>
+            <h3 className="text-lg font-black text-[#24263e] flex items-center gap-2">
+              <Bot className="w-5 h-5 text-[#c34c36]" />
+              <span>{lang === 'vi' ? 'Bước 2: Mô Tả Do AI Đề Xuất & Chỉnh Sửa Trực Tiếp' : 'Step 2: AI Description & Editing'}</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Bạn có thể sử dụng trực tiếp mô tả do AI tạo ra từ ảnh hoặc trò chuyện với Trợ lý để bổ sung thêm chi tiết.
+            </p>
+          </div>
+
+          {/* AI Initial Description Suggestion Box */}
+          {aiInitialMessage && (
+            <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 text-slate-800 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-black text-[#24263e] flex items-center gap-1.5 uppercase text-[11px]">
+                  <Sparkles className="w-4 h-4 text-amber-600" />
+                  Gợi ý mô tả từ Gemini / Ollama AI:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setDescription(aiInitialMessage)}
+                  className="px-3 py-1 rounded-lg bg-[#24263e] hover:bg-black text-white text-[11px] font-bold transition cursor-pointer"
+                >
+                  Dùng mô tả này
+                </button>
               </div>
+              <p className="whitespace-pre-wrap leading-relaxed text-slate-700 italic">
+                "{aiInitialMessage}"
+              </p>
+            </div>
+          )}
 
-              {/* Grid 6 khung hình */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
-                {[
-                  { key: 'front' as const, label: 'Khung 1: Mặt trước (Chính)', desc: 'Ảnh chụp mặt trước' },
-                  { key: 'back' as const, label: 'Khung 2: Mặt sau & Tem mác', desc: 'Mặt lưng, tem thông số' },
-                  { key: 'screenOrDetails' as const, label: 'Khung 3: Màn hình / Góc nghiêng', desc: 'Chi tiết hiển thị' },
-                  { key: 'accessoriesOrBox' as const, label: 'Khung 4: Phụ kiện & Dây cáp', desc: 'Sạc, hộp, phụ kiện' },
-                  { key: 'serialOrReceipt' as const, label: 'Khung 5: Số Seri & Hóa đơn', desc: 'Mã sê-ri, phiếu BH' },
-                  { key: 'extraDetail' as const, label: 'Khung 6: Ảnh bổ sung', desc: 'Góc chụp thực tế khác' },
-                ].map((slot) => {
-                  const imgUrl = photos[slot.key];
-                  const isUploadingThis = uploadingSlot === slot.key;
-
-                  return (
-                    <div
-                      key={slot.key}
-                      className="border-2 border-dashed border-gray-200 hover:border-[#c34c36] rounded-2xl p-3 bg-[#faf8f5] space-y-2 flex flex-col justify-between transition group"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-extrabold text-[#24263e] truncate">
-                          {slot.label}
-                        </span>
-                        {imgUrl && (
-                          <span className="bg-emerald-50 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-emerald-200 shrink-0">
-                            Đã chọn
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="relative aspect-4/3 rounded-xl overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center group/img">
-                        {imgUrl ? (
-                          <>
-                            <img src={imgUrl} alt={slot.label} className="w-full h-full object-cover" />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRemovePhoto(slot.key);
-                              }}
-                              className="absolute top-1.5 right-1.5 bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-full shadow-md transition cursor-pointer z-10 flex items-center justify-center hover:scale-110"
-                              title="Bỏ ảnh này"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        ) : (
-                          <div className="text-center p-2">
-                            <Camera className="w-6 h-6 text-gray-400 mx-auto mb-1" />
-                            <span className="text-[10px] text-gray-400 font-medium block">{slot.desc}</span>
-                          </div>
-                        )}
-
-                        {isUploadingThis && (
-                          <div className="absolute inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center text-white text-xs font-semibold gap-1.5 z-20">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>Đang tải...</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {imgUrl ? (
-                        <div className="grid grid-cols-2 gap-1.5">
-                          <label className="py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] rounded-xl text-[11px] font-bold text-[#24263e] border border-gray-200 flex items-center justify-center gap-1 cursor-pointer transition shadow-xs">
-                            <UploadCloud className="w-3.5 h-3.5 text-gray-500" />
-                            <span>Đổi ảnh</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={(e) => e.target.files?.[0] && handlePhotoUpload(slot.key, e.target.files[0])}
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => handleRemovePhoto(slot.key)}
-                            className="py-1.5 px-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-[11px] font-bold border border-rose-200 flex items-center justify-center gap-1 transition cursor-pointer"
-                          >
-                            <X className="w-3.5 h-3.5 text-rose-600" />
-                            <span>Bỏ ảnh</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <label className="w-full py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] rounded-xl text-xs font-bold text-[#24263e] border border-gray-200 flex items-center justify-center gap-1.5 cursor-pointer transition shadow-xs">
-                          <UploadCloud className="w-3.5 h-3.5 text-gray-500" />
-                          <span>Tải ảnh lên</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) => e.target.files?.[0] && handlePhotoUpload(slot.key, e.target.files[0])}
-                          />
-                        </label>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+          {/* Main Editing Fields */}
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-[#24263e]">Tiêu đề bài đăng *</label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="VD: Tủ Lạnh Panasonic 250L Inverter Tiết Kiệm Điện"
+                className="w-full px-4 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+              />
             </div>
 
-            {/* 2. Cảnh báo 1 */}
-            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs sm:text-sm font-bold flex items-start gap-3 shadow-xs">
-              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-black text-amber-800 uppercase tracking-wide text-xs block mb-0.5">⚠️ CẢNH BÁO TRÁCH NHIỆM:</span>
-                <span>"Nếu đăng bài thì phải chịu trách nhiệm với những thông tin trên"</span>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-[#24263e]">Mô tả chi tiết sản phẩm *</label>
+                <span className="text-[10px] text-slate-400">{description.length}/10.000 ký tự</span>
               </div>
+              <textarea
+                rows={6}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Mô tả chi tiết tình trạng máy móc, thời gian sử dụng, phụ kiện kèm theo..."
+                className="w-full px-4 py-3 bg-slate-50 border border-gray-200 rounded-xl text-xs text-slate-800 leading-relaxed focus:outline-none focus:border-[#c34c36]"
+              />
             </div>
 
-            {/* 3. Cảnh báo 2 (đối với tự điền thông tin) */}
-            <div className="p-4 rounded-2xl bg-blue-50 border border-blue-300 text-blue-950 text-xs sm:text-sm font-bold flex items-start gap-3 shadow-xs">
-              <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-black text-blue-800 uppercase tracking-wide text-xs block mb-0.5">ℹ️ LƯU Ý TỰ ĐIỀN THÔNG TIN:</span>
-                <span>"Nếu tự điền thông tin thì phải mô tả chi tiết"</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[#24263e]">Tình trạng phân loại (Item Condition)</label>
+                <select
+                  value={itemCondition}
+                  onChange={(e) => setItemCondition(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                >
+                  <option value="NEW">Mới 100% (Nguyên hộp / Chưa qua sử dụng)</option>
+                  <option value="LIKE_NEW">Như mới (Grade A+ 99%, hoạt động hoàn hảo)</option>
+                  <option value="USED_GOOD">Đã qua sử dụng - Hoạt động tốt (Grade A)</option>
+                  <option value="USED_FAIR">Đã qua sử dụng - Có xước nhẹ (Grade B)</option>
+                  <option value="USED">Cũ bình thường (Grade C)</option>
+                </select>
               </div>
             </div>
+          </div>
 
-            {/* 4. 2 Nút Thao Tác: "Chat với AI" và "Tự đăng bài" */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
+          {/* AI Chat Drawer / Accordion */}
+          <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50">
+            <div className="px-4 py-3 bg-slate-100/70 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold text-[#24263e]">
+                <Bot className="w-4 h-4 text-[#c34c36]" />
+                <span>Trợ lý AI Hỗ trợ hoàn thiện mô tả (Chat & Tổng hợp)</span>
+              </div>
               <button
                 type="button"
-                onClick={handleInitPostAndChat}
-                disabled={!isStep1Valid || isInitializingPost}
-                className={`py-3.5 px-6 rounded-2xl font-extrabold text-sm shadow-md flex items-center justify-center gap-2.5 transition cursor-pointer ${
-                  isStep1Valid && !isInitializingPost
-                    ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white hover:opacity-95 transform hover:-translate-y-0.5'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
-                }`}
+                onClick={handleFinalizeChatAndSync}
+                disabled={isFinalizingChat}
+                className="px-3 py-1.5 rounded-xl bg-[#c34c36] hover:bg-[#b0402c] text-white text-[11px] font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
               >
-                {isInitializingPost ? (
+                {isFinalizingChat ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                <span>AI Tổng Hợp Lại Mô Tả</span>
+              </button>
+            </div>
+
+            {/* Chat Messages */}
+            <div className="p-4 max-h-52 overflow-y-auto space-y-3">
+              {chatMessages.map((m, idx) => (
+                <div key={idx} className={`flex items-start gap-2.5 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  {m.role === 'ai' && (
+                    <div className="w-7 h-7 rounded-lg bg-[#24263e] text-white flex items-center justify-center shrink-0 text-xs">
+                      <Bot className="w-3.5 h-3.5" />
+                    </div>
+                  )}
+                  <div className={`p-3 rounded-2xl text-xs max-w-lg leading-relaxed ${m.role === 'user' ? 'bg-[#24263e] text-white' : 'bg-white border border-gray-200 text-slate-800'}`}>
+                    <div>{m.text}</div>
+                    <div className={`text-[9px] mt-1 text-right ${m.role === 'user' ? 'text-white/60' : 'text-slate-400'}`}>{m.time}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Chat Input */}
+            <form onSubmit={handleSendChatMessage} className="p-3 bg-white border-t border-slate-200 flex items-center gap-2">
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Nhập chi tiết cần bổ sung cho AI (ví dụ: máy dùng 2 năm, cửa xước dăm nhẹ, đủ dây nguồn...)"
+                className="flex-1 px-3.5 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#c34c36]"
+              />
+              <button
+                type="submit"
+                disabled={!chatInput.trim() || isSendingChat}
+                className="px-4 py-2 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1 disabled:opacity-40 transition cursor-pointer"
+              >
+                {isSendingChat ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">Gửi</span>
+              </button>
+            </form>
+          </div>
+
+          {/* Navigation Buttons */}
+          <div className="flex justify-between pt-4 border-t border-gray-100">
+            <button
+              onClick={() => setCurrentStep(1)}
+              className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Quay lại Bước 1</span>
+            </button>
+
+            <button
+              onClick={() => setCurrentStep(3)}
+              disabled={!title.trim() || !description.trim()}
+              className="px-6 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-black shadow-xs flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+            >
+              <span>Tiếp tục: Xác nhận mô tả</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* STEP 3: LƯU DRAFT & XÁC NHẬN MÔ TẢ (PUT /draft & POST /accept-description)*/}
+      {/* ========================================================================= */}
+      {currentStep === 3 && (
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
+          <div>
+            <h3 className="text-lg font-black text-[#24263e] flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              <span>{lang === 'vi' ? 'Bước 3: Lưu Draft & Xác Nhận Nội Dung Mô Tả' : 'Step 3: Save Draft & Accept Description'}</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Theo quy chuẩn hệ thống, mô tả phải được xác nhận trước khi bước vào quy trình định giá AI và đăng bài.
+            </p>
+          </div>
+
+          {/* Summary Card of Description to Accept */}
+          <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
+              <span className="text-xs font-bold text-slate-500 uppercase">Nội dung sẽ được xác nhận:</span>
+              <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${descriptionAccepted ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                {descriptionAccepted ? '✓ Đã xác nhận trước đó' : 'Chờ xác nhận'}
+              </span>
+            </div>
+
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 block">Tiêu đề:</span>
+              <h4 className="text-sm font-black text-[#24263e]">{title}</h4>
+            </div>
+
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 block">Phân loại tình trạng:</span>
+              <span className="text-xs font-bold text-slate-800">{itemCondition}</span>
+            </div>
+
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 block mb-1">Mô tả sản phẩm:</span>
+              <div className="p-3 bg-white rounded-xl border border-gray-200 text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
+                {description}
+              </div>
+            </div>
+          </div>
+
+          {/* Responsibility Warning */}
+          <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 text-blue-900 text-xs flex items-start gap-3">
+            <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold block mb-0.5">Quy định thẩm định nội dung:</span>
+              <span>Khi bạn xác nhận mô tả, hệ thống sẽ lưu snapshot và khóa dữ liệu để AI tính toán khoảng giá hợp lý. Nếu sau này bạn sửa mô tả, trạng thái sẽ tự động đặt lại và cần xác nhận lại.</span>
+            </div>
+          </div>
+
+          {/* Navigation Buttons */}
+          <div className="flex justify-between pt-4 border-t border-gray-100">
+            <button
+              onClick={() => setCurrentStep(2)}
+              className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Sửa lại mô tả</span>
+            </button>
+
+            <button
+              onClick={handleSaveAndAcceptDescription}
+              disabled={isAcceptingDescription}
+              className="px-8 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+            >
+              {isAcceptingDescription ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Đang lưu và xác nhận mô tả...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>Xác Nhận Mô Tả & Tiếp Tục Định Giá AI</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* STEP 4: ĐỊNH GIÁ AI & CHỌN GIÁ BÁN                                        */}
+      {/* ========================================================================= */}
+      {currentStep === 4 && (
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-black text-[#24263e] flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-amber-500" />
+                <span>{lang === 'vi' ? 'Bước 4: Định Giá Bằng AI & Chọn Giá Bán' : 'Step 4: AI Valuation & Set Price'}</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Sử dụng 1 lượt VALUATION để AI phân tích khoảng giá thị trường và đề xuất mức giá thanh khoản tốt nhất.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleLoadValuationHistory}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>Xem lịch sử định giá</span>
+            </button>
+          </div>
+
+          {/* Credit VALUATION Box & Trigger Button */}
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 to-[#24263e] text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-md">
+            <div>
+              <span className="text-[11px] font-bold text-slate-400 block uppercase tracking-wider">Tín dụng Định Giá AI</span>
+              <div className="text-base font-black flex items-center gap-2 mt-0.5">
+                <span>Bạn đang có:</span>
+                <span className="px-2.5 py-0.5 rounded-lg bg-amber-400 text-slate-950 font-mono font-black text-sm">
+                  {credits?.valuation ?? 0} VALUATION
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-300 block mt-1">
+                * Mỗi lần định giá thành công trừ 1 VALUATION. Retry do lỗi mạng không bị trừ lại.
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleRunAiValuation}
+                disabled={isEstimatingPrice || (credits?.valuation ?? 0) < 1}
+                className="px-5 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs shadow-md flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+              >
+                {isEstimatingPrice ? (
                   <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    <span>Đang kết nối Trợ lý AI...</span>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>AI đang phân tích thị trường...</span>
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-5 h-5" />
-                    <span>Chat với AI</span>
+                    <Sparkles className="w-4 h-4" />
+                    <span>Định Giá Bằng AI (1 Credit)</span>
                   </>
                 )}
               </button>
+            </div>
+          </div>
+
+          {/* AI Valuation Result Card */}
+          {valuationResult && (
+            <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-4 animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-emerald-900 flex items-center gap-1.5 uppercase">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  Kết quả định giá thành công từ mô hình {valuationResult.modelVersion || 'AI'}
+                </span>
+                <span className="text-[11px] text-emerald-700 font-bold font-mono">
+                  Mã Y/c: {valuationRequestId ? valuationRequestId.slice(0, 8) : 'Live'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3.5 bg-white rounded-xl border border-emerald-100 shadow-xs">
+                  <span className="text-[11px] text-slate-500 font-bold block">Khoảng giá hợp lý:</span>
+                  <div className="text-sm font-black text-slate-800 mt-1">
+                    {formatVND(valuationResult.fairPriceMin)} - {formatVND(valuationResult.fairPriceMax)}
+                  </div>
+                </div>
+
+                <div className="p-3.5 bg-white rounded-xl border border-emerald-300 shadow-xs ring-2 ring-emerald-500/20">
+                  <span className="text-[11px] text-emerald-700 font-bold block">Giá đề xuất bán tốt nhất:</span>
+                  <div className="text-base font-black text-[#c34c36] mt-1">
+                    {formatVND(valuationResult.suggestedPrice)}
+                  </div>
+                </div>
+
+                <div className="p-3.5 bg-white rounded-xl border border-emerald-100 shadow-xs">
+                  <span className="text-[11px] text-slate-500 font-bold block">Thời gian bán dự kiến:</span>
+                  <div className="text-sm font-black text-slate-800 mt-1">
+                    {valuationResult.expectedSellTime || '1 - 2 tuần'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setFinalPriceVnd(valuationResult.suggestedPrice)}
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Áp dụng giá AI đề xuất ({formatVND(valuationResult.suggestedPrice)})</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* History Modal / Drawer */}
+          {showValuationHistory && (
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-[#24263e]">Lịch sử các lần định giá cho bài đăng này:</span>
+                <button
+                  onClick={() => setShowValuationHistory(false)}
+                  className="text-xs text-slate-400 hover:text-slate-600"
+                >
+                  ✕ Đóng
+                </button>
+              </div>
+              {valuationHistory.length > 0 ? (
+                <div className="space-y-2">
+                  {valuationHistory.map((h, i) => (
+                    <div key={i} className="p-2.5 bg-white rounded-xl border border-gray-200 text-xs flex items-center justify-between">
+                      <div>
+                        <span className="font-bold text-slate-800">{formatVND(h.suggestedPrice)}</span>
+                        <span className="text-[10px] text-slate-400 ml-2">Khoảng: {formatVND(h.fairPriceMin)} - {formatVND(h.fairPriceMax)}</span>
+                      </div>
+                      <span className="text-[10px] text-slate-500">{h.createdAt ? new Date(h.createdAt).toLocaleDateString() : 'Vừa xong'}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">Chưa có lịch sử định giá trước đó.</p>
+              )}
+            </div>
+          )}
+
+          {/* Price Input Form */}
+          <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <label className="text-xs font-bold text-[#24263e] uppercase">
+                Giá bán của bạn (VND) *
+              </label>
+              <span className="text-lg font-black text-[#c34c36]">
+                {formatVND(finalPriceVnd)}
+              </span>
+            </div>
+
+            <div className="relative">
+              <DollarSign className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="number"
+                value={finalPriceVnd}
+                onChange={(e) => setFinalPriceVnd(Number(e.target.value))}
+                step={50000}
+                min={1000}
+                className="w-full pl-9 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:border-[#c34c36]"
+              />
+            </div>
+
+            {/* High-value threshold notice (> 5,000,000 VND) */}
+            {finalPriceVnd > 5000000 && (
+              <div className="p-3.5 rounded-xl bg-cyan-50 border border-cyan-200 text-cyan-900 text-xs flex items-start gap-2.5">
+                <ShieldCheck className="w-4 h-4 text-cyan-700 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block">Sản phẩm giá trị cao (trên 5.000.000 VND):</span>
+                  <span>Bài đăng sẽ tự động chuyển sang quy trình Kiểm định chất lượng của Kỹ thuật viên (PENDING_INSPECTION) trước khi hiển thị công khai trên Sàn. Chưa trừ credit LISTING cho tới khi kiểm định đạt chuẩn.</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Navigation Buttons */}
+          <div className="flex justify-between pt-4 border-t border-gray-100">
+            <button
+              onClick={() => setCurrentStep(3)}
+              className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Quay lại Xác nhận mô tả</span>
+            </button>
+
+            <button
+              onClick={() => setCurrentStep(5)}
+              disabled={!finalPriceVnd || finalPriceVnd < 1000}
+              className="px-6 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-black shadow-xs flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+            >
+              <span>Tiếp tục: Xem lại & Gửi đăng</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* STEP 5: XEM LẠI & GỬI ĐĂNG BÀI (POST /api/v1/posts/submit/{postId})       */}
+      {/* ========================================================================= */}
+      {currentStep === 5 && (
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
+          <div>
+            <h3 className="text-lg font-black text-[#24263e] flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-[#c34c36]" />
+              <span>{lang === 'vi' ? 'Bước 5: Xem Lại Thông Tin & Gửi Đăng Bài' : 'Step 5: Review & Submit Listing'}</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Kiểm tra toàn bộ thông tin lần cuối trước khi nộp duyệt bài đăng lên hệ thống SecondLife.
+            </p>
+          </div>
+
+          {/* Final Summary Card */}
+          <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tiêu đề bài đăng</span>
+                <h4 className="text-base font-black text-[#24263e]">{title}</h4>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Giá niêm yết</span>
+                <span className="text-xl font-black text-[#c34c36]">{formatVND(finalPriceVnd)}</span>
+              </div>
+            </div>
+
+            {/* Photos Preview */}
+            <div>
+              <span className="text-xs font-bold text-slate-600 block mb-2">Bộ ảnh sản phẩm đã tải:</span>
+              <div className="flex flex-wrap gap-2">
+                {photoPreviews.map((p, i) => (
+                  <img key={i} src={p} alt="" className="w-16 h-16 rounded-xl object-cover border border-gray-200 shadow-xs" />
+                ))}
+              </div>
+            </div>
+
+            {/* Description Preview */}
+            <div>
+              <span className="text-xs font-bold text-slate-600 block mb-1">Mô tả sản phẩm:</span>
+              <div className="p-3.5 bg-white rounded-xl border border-gray-200 text-xs text-slate-800 whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">
+                {description}
+              </div>
+            </div>
+
+            {/* Credit Notice */}
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
+              <span>Credit LISTING cần dùng: <strong>1 lượt</strong> (Chỉ trừ khi bài đăng chính thức chuyển sang <strong>ACTIVE</strong>).</span>
+              <span className="font-bold">Số dư hiện tại: {credits?.listing ?? 0} lượt</span>
+            </div>
+          </div>
+
+          {/* Submission Result Banner */}
+          {submitResult && (
+            <div
+              className={`p-5 rounded-2xl border space-y-3 animate-fadeIn ${submitResult.status === 'ACTIVE'
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                  : submitResult.status === 'PENDING'
+                    ? 'bg-amber-50 border-amber-300 text-amber-950'
+                    : submitResult.status === 'PENDING_INSPECTION'
+                      ? 'bg-cyan-50 border-cyan-300 text-cyan-950'
+                      : 'bg-rose-50 border-rose-300 text-rose-950'
+                }`}
+            >
+              <div className="flex items-center gap-2.5">
+                {submitResult.status === 'ACTIVE' ? (
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
+                ) : submitResult.status === 'PENDING' ? (
+                  <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0" />
+                ) : submitResult.status === 'PENDING_INSPECTION' ? (
+                  <ShieldCheck className="w-6 h-6 text-cyan-600 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-6 h-6 text-rose-600 shrink-0" />
+                )}
+                <div>
+                  <h4 className="font-black text-sm uppercase">
+                    {submitResult.status === 'ACTIVE'
+                      ? 'Đăng bài thành công! (ACTIVE)'
+                      : submitResult.status === 'PENDING'
+                        ? 'Nghi ngờ trùng lặp - Chờ STAFF kiểm duyệt (PENDING)'
+                        : submitResult.status === 'PENDING_INSPECTION'
+                          ? 'Chờ kiểm định chất lượng (PENDING_INSPECTION)'
+                          : 'Bài đăng bị từ chối (REJECTED)'}
+                  </h4>
+                  <p className="text-xs mt-0.5">
+                    {submitResult.status === 'ACTIVE'
+                      ? 'Bài đăng của bạn đã được xuất bản công khai. Đã trừ 1 lượt LISTING.'
+                      : submitResult.status === 'PENDING'
+                        ? 'Phát hiện hình ảnh hoặc nội dung trùng với bài đăng khác trên sàn. Nhân viên Staff sẽ đối soát thủ công. Chưa trừ credit.'
+                        : submitResult.status === 'PENDING_INSPECTION'
+                          ? 'Sản phẩm có giá trị > 5 triệu đồng đang chờ Kỹ thuật viên trung tâm kiểm định tiếp nhận. Chưa trừ credit.'
+                          : (submitResult.reviewReason || 'Bài đăng không đạt tiêu chuẩn nội dung của sàn. Không trừ credit.')}
+                  </p>
+                </div>
+              </div>
+
+              {submitResult.duplicateMatches && submitResult.duplicateMatches.length > 0 && (
+                <div className="p-3 bg-white/80 rounded-xl text-xs space-y-1">
+                  <span className="font-bold text-slate-700 block">Danh sách bài đối chiếu trùng khớp:</span>
+                  <div className="font-mono text-[11px] text-slate-600">
+                    {submitResult.duplicateMatches.join(', ')}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={loadCredits}
+                  className="px-3.5 py-1.5 rounded-xl bg-white border border-gray-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                >
+                  Kiểm tra lại số dư credit
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFinishAndExit}
+                  className="px-4 py-1.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold transition cursor-pointer"
+                >
+                  Hoàn tất & Về Bàn làm việc
+                </button>
+              </div>
+            </div>
+          )}
+
+          {submitError && (
+            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{submitError}</span>
+            </div>
+          )}
+
+          {/* Navigation & Submit Button */}
+          {!submitResult && (
+            <div className="flex justify-between pt-4 border-t border-gray-100">
+              <button
+                onClick={() => setCurrentStep(4)}
+                className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Quay lại Định giá</span>
+              </button>
 
               <button
-                type="button"
-                onClick={handleDirectSubmitPost}
-                disabled={!isStep1Valid || isInitializingPost}
-                className={`py-3.5 px-6 rounded-2xl bg-[#24263e] hover:bg-[#1a1c2e] text-white font-extrabold text-sm shadow-md flex items-center justify-center gap-2.5 transition cursor-pointer transform hover:-translate-y-0.5 ${
-                  !isStep1Valid || isInitializingPost ? 'opacity-60 cursor-not-allowed' : ''
-                }`}
+                onClick={handleSubmitPostFinal}
+                disabled={isSubmittingPost || (credits?.listing ?? 0) < 1}
+                className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white font-black text-sm shadow-md flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
               >
-                {isInitializingPost ? (
+                {isSubmittingPost ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
                     <span>Đang gửi bài lên Backend...</span>
                   </>
                 ) : (
                   <>
-                    <Plus className="w-5 h-5" />
-                    <span>+ Tự đăng bài</span>
+                    <ShieldCheck className="w-5 h-5 text-amber-300" />
+                    <span>Gửi Đăng Bài Ngay (Trừ 1 LISTING khi ACTIVE)</span>
                   </>
                 )}
               </button>
             </div>
-          </div>
-
-          {/* Form tự điền chi tiết khi cần chỉnh sửa thêm */}
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => setShowSelfFillForm(!showSelfFillForm)}
-              className="text-xs text-[#c34c36] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
-            >
-              <span>{showSelfFillForm ? '▲ Ẩn chi tiết tự điền' : '▼ Mở rộng chi tiết tự điền thông tin bài đăng'}</span>
-            </button>
-          </div>
-
-          {/* Expanded Form khi người dùng chọn mở rộng chi tiết tự điền */}
-          {showSelfFillForm && (
-            <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6 animate-fadeIn">
-              <h3 className="text-base font-bold text-[#24263e] flex items-center gap-2 border-b border-gray-100 pb-3">
-                <span>Chi tiết thông tin tự đăng bài</span>
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-[#24263e]">{t.itemBrand} *</label>
-                  <input
-                    type="text"
-                    value={brand}
-                    onChange={(e) => setBrand(e.target.value)}
-                    placeholder="VD: Hitachi, Toshiba, LG, Panasonic..."
-                    className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
-                  />
-                </div>
-
-                <div className="sm:col-span-2 space-y-1.5">
-                  <label className="text-xs font-semibold text-[#24263e]">{t.itemTitle} *</label>
-                  <input
-                    type="text"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="VD: Tủ Lạnh Hitachi Inverter 540L 4 Cửa R-FW690PGV7X"
-                    className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-[#24263e]">{t.purchaseYear} *</label>
-                  <input
-                    type="number"
-                    value={purchaseYear}
-                    onChange={(e) => setPurchaseYear(Number(e.target.value))}
-                    min={2018}
-                    max={2026}
-                    className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-[#24263e]">{t.originalPrice}</label>
-                  <input
-                    type="number"
-                    value={originalPriceVnd}
-                    onChange={(e) => setOriginalPriceVnd(Number(e.target.value))}
-                    step={500000}
-                    className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
-                  />
-                </div>
-
-                <div className="sm:col-span-2 space-y-1.5">
-                  <label className="text-xs font-semibold text-[#24263e]">{t.declaredCondition} *</label>
-                  <div className="grid grid-cols-3 gap-3">
-                    {[
-                      {
-                        grade: 'Like New',
-                        title: lang === 'vi' ? 'Như mới (99%)' : 'Like New (99%)',
-                        desc: lang === 'vi' ? 'Không xước, máy nén êm, đủ phụ kiện' : 'No scratches, silent compressor, full accessories'
-                      },
-                      {
-                        grade: 'Good',
-                        title: lang === 'vi' ? 'Tốt (95%)' : 'Good (95%)',
-                        desc: lang === 'vi' ? 'Xước dăm rất nhẹ, máy zin' : 'Minor micro-scratches, original parts'
-                      },
-                      {
-                        grade: 'Fair',
-                        title: lang === 'vi' ? 'Khá (90%)' : 'Fair (90%)',
-                        desc: lang === 'vi' ? 'Có cấn viền hoặc trầy xước' : 'Visible scuffs or cosmetic wear'
-                      }
-                    ].map((item) => (
-                      <button
-                        key={item.grade}
-                        type="button"
-                        onClick={() => setDeclaredCondition(item.grade as ConditionGrade)}
-                        className={`p-3 rounded-xl border text-left transition cursor-pointer ${
-                          declaredCondition === item.grade
-                            ? 'border-[#c34c36] bg-[#c34c36]/10 text-[#24263e] ring-1 ring-[#c34c36]'
-                            : 'border-gray-200 bg-[#faf8f5] text-[#24263e]/70 hover:bg-[#FFFFFF]'
-                        }`}
-                      >
-                        <div className="font-bold text-xs">{item.title}</div>
-                        <div className="text-[10px] text-[#24263e]/60 mt-0.5">{item.desc}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="sm:col-span-2 space-y-1.5">
-                  <label className="text-xs font-semibold text-[#24263e]">
-                    {lang === 'vi' ? 'Tóm tắt tình trạng ngoại quan' : 'Condition Summary'}
-                  </label>
-                  <input
-                    type="text"
-                    value={declaredConditionText}
-                    onChange={(e) => setDeclaredConditionText(e.target.value)}
-                    placeholder={lang === 'vi' ? 'VD: Dán bảo vệ từ đầu, không trầy xước, chạy êm...' : 'E.g.: Protected from day 1, no scratches, runs smoothly...'}
-                    className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
-                  />
-                </div>
-
-                <div className="sm:col-span-2 space-y-1.5">
-                  <label className="text-xs font-semibold text-[#24263e]">{t.description}</label>
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={3}
-                    placeholder={lang === 'vi' ? 'Mô tả nguồn gốc mua hàng, lý do bán, các linh kiện kèm theo...' : 'Describe origin, reason for sale, included accessories...'}
-                    className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-sm text-[#24263e] focus:outline-none focus:border-[#c34c36]"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-between pt-4 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="px-5 py-2.5 rounded-xl border border-gray-200 text-[#24263e] hover:bg-[#faf8f5] text-sm font-semibold cursor-pointer"
-                >
-                  {lang === 'vi' ? 'Hủy' : 'Cancel'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!isRealCategoryId || !isRealItemId) {
-                      alert(lang === 'vi' ? 'Vui lòng chọn danh mục và vật phẩm hợp lệ từ hệ thống.' : 'Please select valid category and item IDs.');
-                      return;
-                    }
-                    setCurrentStep(2);
-                  }}
-                  disabled={!isStep1Valid || isLoadingCategories || isLoadingItems}
-                  className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold shadow-xs flex items-center gap-2 transition ${
-                    isStep1Valid && !isLoadingCategories && !isLoadingItems
-                      ? 'bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-90 text-white cursor-pointer'
-                      : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
-                  }`}
-                  title={!isStep1Valid ? (lang === 'vi' ? 'Cần chọn Danh mục & Vật phẩm có ID thật từ Backend' : 'Valid category and item required') : ''}
-                >
-                  <span>{lang === 'vi' ? 'Tiếp tục: Tải bộ ảnh 5 góc' : 'Next: Upload 5 Photos'}</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
           )}
         </div>
-      )}
-
-      {/* Step 2: 5-Photo Checklist Upload */}
-      {currentStep === 2 && (
-        <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
-          <div>
-            <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
-              <Camera className="w-5 h-5 text-[#24263e]" />
-              <span>{t.photoChecklistTitle}</span>
-            </h2>
-            <p className="text-xs text-[#24263e]/70 mt-1">
-              {lang === 'vi'
-                ? 'SecondLife yêu cầu chuẩn hóa 5 góc chụp để AI quét vết xước, nhận diện linh kiện và làm bằng chứng pháp lý trong Escrow.'
-                : 'SecondLife mandates 5 standard camera angles for AI defect scanning, parts verification, and Escrow dispute protection.'}
-            </p>
-          </div>
-
-          {/* Multiple Image Upload Box (Requirement 8) */}
-          <div className="p-4 rounded-2xl border-2 border-dashed border-gray-300 hover:border-[#c34c36] bg-slate-50 transition flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#c34c36]/20 to-[#fce5da]/20 text-[#24263e] flex items-center justify-center shrink-0">
-                <UploadCloud className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-slate-800">
-                  {lang === 'vi' ? 'Tải lên nhiều ảnh cùng lúc' : 'Upload multiple photos at once'}
-                </div>
-                <div className="text-[11px] text-slate-500">
-                  {lang === 'vi'
-                    ? 'Chọn đồng thời nhiều ảnh để tải lên nhanh bằng hệ thống Media Cloudinary (tự động phân bổ vào các góc)'
-                    : 'Select multiple photos to upload at once via Media Cloudinary (auto-assigned to angle slots)'}
-                </div>
-              </div>
-            </div>
-
-            <label className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-xs font-bold shadow-xs hover:opacity-95 transition cursor-pointer flex items-center gap-1.5 shrink-0">
-              {uploadingSlot === 'batch' ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>{lang === 'vi' ? 'Đang tải nhiều ảnh...' : 'Uploading batch...'}</span>
-                </>
-              ) : (
-                <>
-                  <Plus className="w-4 h-4" />
-                  <span>{lang === 'vi' ? 'Chọn nhiều ảnh' : 'Select Multiple Photos'}</span>
-                </>
-              )}
-              <input
-                type="file"
-                multiple
-                accept="image/*"
-                className="hidden"
-                disabled={uploadingSlot !== null}
-                onChange={handleMultiplePhotosUpload}
-              />
-            </label>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {[
-              {
-                key: 'front' as const,
-                label: t.photoFront,
-                desc: lang === 'vi' ? 'Mặt trước hiển thị tổng quan' : 'Front overall display'
-              },
-              {
-                key: 'back' as const,
-                label: t.photoBack,
-                desc: lang === 'vi' ? 'Mặt sau và 4 góc viền máy' : 'Back side & 4 chassis corners'
-              },
-              {
-                key: 'screenOrDetails' as const,
-                label: t.photoScreenOrDetails,
-                desc: lang === 'vi' ? 'Chụp cận cảnh vết xước (nếu có)' : 'Close-up of blemishes/screen'
-              },
-              {
-                key: 'accessoriesOrBox' as const,
-                label: t.photoAccessories,
-                desc: lang === 'vi' ? 'Hộp máy, cáp sạc, hóa đơn' : 'Box, cords, warranty bill'
-              },
-              {
-                key: 'serialOrReceipt' as const,
-                label: t.photoSerialOrReceipt,
-                desc: lang === 'vi' ? 'Ảnh chụp tem Serial / Mã máy' : 'Serial number / model sticker'
-              }
-            ].map((slot) => (
-              <div
-                key={slot.key}
-                className="border border-gray-200 rounded-2xl p-3 bg-[#faf8f5] space-y-2 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="text-xs font-bold text-[#24263e]">{slot.label}</div>
-                  <div className="text-[11px] text-[#24263e]/60">{slot.desc}</div>
-                </div>
-
-                <div className="relative aspect-4/3 rounded-xl overflow-hidden bg-[#FFFFFF] border border-gray-200 group/img">
-                  {photos[slot.key] ? (
-                    <>
-                      <img
-                        src={photos[slot.key]}
-                        alt={slot.label}
-                        className="w-full h-full object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemovePhoto(slot.key);
-                        }}
-                        className="absolute top-1.5 right-1.5 bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-full shadow-md transition cursor-pointer z-10 flex items-center justify-center hover:scale-110"
-                        title={lang === 'vi' ? 'Bỏ ảnh này' : 'Remove photo'}
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </>
-                  ) : (
-                    <div className="text-center p-2 flex flex-col items-center justify-center h-full">
-                      <Camera className="w-6 h-6 text-gray-400 mb-1" />
-                      <span className="text-[10px] text-gray-400 font-medium block">{slot.desc}</span>
-                    </div>
-                  )}
-                </div>
-
-                {photos[slot.key] ? (
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <label className="py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] rounded-xl text-[11px] font-bold text-[#24263e] border border-gray-200 flex items-center justify-center gap-1 cursor-pointer transition shadow-xs">
-                      <UploadCloud className="w-3.5 h-3.5 text-gray-500" />
-                      <span>{lang === 'vi' ? 'Đổi ảnh' : 'Change'}</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => e.target.files?.[0] && handlePhotoUpload(slot.key, e.target.files[0])}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => handleRemovePhoto(slot.key)}
-                      className="py-1.5 px-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-[11px] font-bold border border-rose-200 flex items-center justify-center gap-1 transition cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5 text-rose-600" />
-                      <span>{lang === 'vi' ? 'Bỏ ảnh' : 'Remove'}</span>
-                    </button>
-                  </div>
-                ) : (
-                  <label className="w-full py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] rounded-xl text-xs font-bold text-[#24263e] border border-gray-200 flex items-center justify-center gap-1.5 cursor-pointer transition shadow-xs">
-                    <UploadCloud className="w-3.5 h-3.5 text-gray-500" />
-                    <span>{lang === 'vi' ? 'Tải ảnh lên' : 'Upload'}</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => e.target.files?.[0] && handlePhotoUpload(slot.key, e.target.files[0])}
-                    />
-                  </label>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <div className="flex justify-between pt-4 border-t border-gray-100">
-            <button
-              onClick={() => setCurrentStep(1)}
-              className="px-5 py-2.5 rounded-xl border border-gray-200 text-[#24263e] hover:bg-[#faf8f5] text-sm font-semibold flex items-center gap-2 cursor-pointer"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>{lang === 'vi' ? 'Quay lại' : 'Back'}</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setCurrentStep(3);
-                runAiValuation();
-              }}
-              className="px-5 py-2.5 bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-90 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs flex items-center gap-2 cursor-pointer"
-            >
-              <span>{t.runAiEstimation}</span>
-              <Sparkles className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 3: AI Price Estimation & Final Publishing */}
-      {currentStep === 3 && (
-        <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-[#24263e]" />
-              <span>{t.aiValuationResult}</span>
-            </h2>
-
-            <button
-              onClick={runAiValuation}
-              disabled={isAnalyzing}
-              className="px-3 py-1.5 bg-[#faf8f5] hover:bg-gray-200 text-[#24263e] rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border border-gray-200"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 text-[#24263e] ${isAnalyzing ? 'animate-spin' : ''}`} />
-              <span>{lang === 'vi' ? 'Tính toán lại' : 'Recalculate'}</span>
-            </button>
-          </div>
-
-          {isAnalyzing ? (
-            <div className="py-12 text-center space-y-3">
-              <div className="w-12 h-12 rounded-full bg-[#c34c36] text-[#24263e] flex items-center justify-center mx-auto animate-pulse">
-                <Sparkles className="w-6 h-6 animate-spin" />
-              </div>
-              <h3 className="font-bold text-[#24263e]">{t.analyzingMarket}</h3>
-              <p className="text-xs text-[#24263e]/70 max-w-md mx-auto">
-                {lang === 'vi'
-                  ? `Hệ thống đang đối chiếu dữ liệu khấu hao theo năm sản xuất (${purchaseYear}), mức độ hao mòn ngoại quan (${declaredCondition}) và biên độ giao dịch thực tế...`
-                  : `Matching tech depreciation for purchase year (${purchaseYear}), declared cosmetic grade (${declaredCondition}) with active liquidity benchmarks...`}
-              </p>
-            </div>
-          ) : aiEstimation ? (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-[#faf8f5] border border-gray-200 rounded-2xl p-4 space-y-1">
-                  <div className="text-xs font-semibold text-[#24263e]/70">{t.suggestedPrice}</div>
-                  <div className="text-2xl font-black text-[#24263e]">
-                    {formatVND(aiEstimation.suggestedVnd)}
-                  </div>
-                  <div className="text-[11px] text-[#24263e]/60">
-                    {lang === 'vi' ? 'Dự kiến bán trong 7 ngày' : 'Est. 7 days to sell'}
-                  </div>
-                </div>
-
-                <div className="bg-[#faf8f5] border border-gray-200 rounded-2xl p-4 space-y-1">
-                  <div className="text-xs font-semibold text-[#24263e]/70">{t.fairRange}</div>
-                  <div className="text-lg font-extrabold text-[#24263e]">
-                    {formatVND(aiEstimation.minVnd)} - {formatVND(aiEstimation.maxVnd)}
-                  </div>
-                  <div className="text-[11px] text-[#24263e]/60">
-                    {lang === 'vi' ? 'Biên độ chuẩn cho máy Grade A' : 'Standard range for Grade A'}
-                  </div>
-                </div>
-
-                <div className="bg-[#faf8f5] border border-gray-200 rounded-2xl p-4 space-y-1">
-                  <div className="text-xs font-semibold text-[#24263e]/70">{t.quickSalePrice}</div>
-                  <div className="text-2xl font-black text-[#24263e]">
-                    {formatVND(aiEstimation.quickSaleVnd)}
-                  </div>
-                  <div className="text-[11px] text-[#24263e]/60">
-                    {lang === 'vi' ? 'Khớp lệnh nhanh trong 3 ngày' : 'Quick match in 3 days'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-[#faf8f5] rounded-2xl p-4 border border-gray-200 space-y-2">
-                <div className="text-xs font-bold text-[#24263e] uppercase tracking-wider">
-                  {lang === 'vi' ? 'Các yếu tố tác động tới định giá của AI:' : 'AI Valuation Drivers:'}
-                </div>
-                <ul className="space-y-1 text-xs text-[#24263e]/70">
-                  {aiEstimation.keyFactors.map((factor, i) => (
-                    <li key={i} className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#24263e] shrink-0" />
-                      <span>{factor}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="bg-[#faf8f5] p-5 rounded-2xl border border-gray-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-semibold text-[#24263e]">
-                    {t.finalListingPrice}
-                  </label>
-                  <span className="text-xl font-bold text-[#24263e]">
-                    {formatVND(finalPriceVnd)}
-                  </span>
-                </div>
-
-                <input
-                  type="range"
-                  min={Math.round(aiEstimation.minVnd * 0.7)}
-                  max={Math.round(aiEstimation.maxVnd * 1.3)}
-                  step={100000}
-                  value={finalPriceVnd}
-                  onChange={(e) => handlePriceChange(Number(e.target.value))}
-                  className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-[#c34c36]"
-                />
-
-                <div className="flex justify-between text-[11px] text-[#24263e]/60">
-                  <span>{lang === 'vi' ? 'Giá bán gấp:' : 'Quick sale:'} {formatVND(aiEstimation.quickSaleVnd)}</span>
-                  <span>{lang === 'vi' ? 'Đề xuất:' : 'Suggested:'} {formatVND(aiEstimation.suggestedVnd)}</span>
-                  <span>{lang === 'vi' ? 'Giá cao:' : 'Higher limit:'} {formatVND(aiEstimation.maxVnd * 1.1)}</span>
-                </div>
-
-                {fraudWarning && (
-                  <div className="p-3 rounded-xl bg-[#c34c36]/20 border border-[#c34c36] text-[#24263e] text-xs flex items-start gap-2 font-bold">
-                    <AlertTriangle className="w-4 h-4 text-[#24263e] shrink-0 mt-0.5" />
-                    <span>{fraudWarning}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="text-xs text-[#24263e]/70 bg-[#faf8f5] p-3 rounded-xl border border-gray-200 flex items-start gap-2 font-medium">
-                <Info className="w-4 h-4 text-[#24263e] shrink-0 mt-0.5" />
-                <span>{t.disclaimer}</span>
-              </div>
-            </div>
-          ) : null}
-
-          <div className="flex justify-between pt-4 border-t border-gray-100">
-            <button
-              onClick={() => setCurrentStep(2)}
-              className="px-4 py-2.5 rounded-xl border border-gray-200 text-[#24263e] hover:bg-[#faf8f5] text-xs sm:text-sm font-medium flex items-center gap-2 cursor-pointer"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>{lang === 'vi' ? 'Quay lại chỉnh sửa' : 'Back to Edit'}</span>
-            </button>
-
-            <button
-              onClick={handleInitPostAndChat}
-              disabled={isInitializingPost || !isRealCategoryId || !isRealItemId}
-              className={`px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold shadow-xs flex items-center gap-2 transition ${
-                !isInitializingPost && isRealCategoryId && isRealItemId
-                  ? 'bg-[#24263e] hover:bg-black text-white cursor-pointer font-black'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
-              }`}
-              title={(!isRealCategoryId || !isRealItemId) ? (lang === 'vi' ? 'Danh mục hoặc Vật phẩm chưa có ID thật từ Backend' : 'Invalid category or item ID') : ''}
-            >
-              {isInitializingPost ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>{lang === 'vi' ? 'Đang khởi tạo bài đăng...' : 'Initializing...'}</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  <span>{lang === 'vi' ? 'Tiếp tục: AI Trợ lý tạo mô tả' : 'Next: AI Listing Assistant'}</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 4: AI Listing Assistant */}
-      {currentStep === 4 && postId && aiSessionId && (
-        <AiListingAssistant
-          sessionId={aiSessionId}
-          postId={postId}
-          aiInitialMessage={aiInitialMessage}
-          lang={lang}
-          onCancel={() => setCurrentStep(3)}
-          onPostSubmitted={(submittedPostId) => {
-            const newListing: Listing = {
-              id: submittedPostId,
-              title: title || `${brand} ${model}`,
-              category,
-              brand,
-              model: model || 'Standard',
-              purchaseYear,
-              priceVnd: finalPriceVnd,
-              originalPriceVnd,
-              conditionGrade: declaredCondition,
-              declaredConditionText: declaredConditionText || 'Tình trạng thực tế đúng như mô tả và ảnh chụp.',
-              description: description || 'Sản phẩm đã qua sử dụng, cam kết nguyên bản.',
-              location: 'Quận 1, TP. Hồ Chí Minh',
-              sellerId: 'user-current',
-              sellerName: 'Người Bán SecondLife',
-              sellerRating: 5.0,
-              sellerCompletedOrders: 1,
-              sellerVerified: true,
-              status: 'active',
-              createdAt: new Date().toISOString(),
-              isInspectionGuaranteed: true,
-              requiresInspection: true,
-              photos,
-              photoGallery: [photos.front, photos.back, photos.screenOrDetails, photos.accessoriesOrBox],
-              aiPriceEstimation: aiEstimation ? {
-                minVnd: aiEstimation.minVnd,
-                maxVnd: aiEstimation.maxVnd,
-                suggestedVnd: aiEstimation.suggestedVnd,
-                quickSaleVnd: aiEstimation.quickSaleVnd,
-                confidence: aiEstimation.confidence,
-                daysToSell: aiEstimation.daysToSell
-              } : undefined
-            };
-            onListingCreated(newListing);
-          }}
-        />
       )}
     </div>
   );

@@ -118,7 +118,7 @@ export const mockStandardChecklist: Record<string, InspectionChecklistItem[]> = 
       title: 'Lực hút & Cảm biến chướng ngại vật',
       description: 'Kiểm tra lực hút 5000Pa, LiDAR TrueMapping 2.0 quét bản đồ chính xác',
       status: 'pass',
-      testedValue: 'Lực hút 4980Pa đạt chuẩn, bản đồ 3D mô phỏng chính xác'
+      testedValue: 'Lực hút 4980Pa đạt chuẩn, cảm biến laser quét bản đồ chính xác'
     },
     {
       id: 'chk-rb-3',
@@ -326,7 +326,7 @@ export const mockListings: Listing[] = [
     originalPriceVnd: 24900000,
     conditionGrade: 'Like New',
     declaredConditionText: 'Robot flagship full option: tự hút rác, tự giặt giẻ sấy nóng, lau xoay 180 vòng/phút. Pin 100%.',
-    description: 'Pass siêu phẩm robot lau nhà Ecovacs Deebot X1 Omni bản quốc tế chính hãng. Lực hút 5000Pa siêu mạnh, điều hướng Laser TrueMapping 2.0 quét bản đồ 3D cực nhanh. Trạm sạc tự động làm sạch giẻ và sấy khô tránh nấm mốc.',
+    description: 'Pass siêu phẩm robot lau nhà Ecovacs Deebot X1 Omni bản quốc tế chính hãng. Lực hút 5000Pa siêu mạnh, điều hướng Laser TrueMapping 2.0 quét bản đồ cực nhanh. Trạm sạc tự động làm sạch giẻ và sấy khô tránh nấm mốc.',
     location: 'Quận 2, TP. Hồ Chí Minh',
     sellerId: 'user-mai-hcm',
     sellerName: 'Vũ Mai Anh',
@@ -771,7 +771,7 @@ export const mockUsersByRole: Record<UserRole, UserProfile> = {
     completedOrdersCount: 42,
     sellerRating: 4.9,
     isSellerRegistered: true,
-    shopName: 'Điện Máy Cũ Khang Hoàng (Showroom 3D)',
+    shopName: 'Điện Máy Cũ Khang Hoàng (Hub Verified)',
     pickupAddress: 'Kho Khang Hoàng, 1059 Nguyễn Văn Linh, Quận 7, TP. Hồ Chí Minh',
     idCardNumber: '079095012345',
     bankAccount: {

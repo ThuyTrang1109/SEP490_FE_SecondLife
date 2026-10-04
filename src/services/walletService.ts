@@ -11,9 +11,9 @@ export const walletService = {
       method: 'GET',
       requiresAuth: true,
     });
-    return (response as any)?.data !== undefined && (response as any)?.data !== null
+    return ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
-      : response;
+      : response) as UserWallet;
   },
 
   /**
@@ -27,8 +27,8 @@ export const walletService = {
       body: JSON.stringify(payload),
       requiresAuth: true,
     });
-    return (response as any)?.data !== undefined && (response as any)?.data !== null
+    return ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
-      : response;
+      : response) as DepositResponseDTO;
   },
 };

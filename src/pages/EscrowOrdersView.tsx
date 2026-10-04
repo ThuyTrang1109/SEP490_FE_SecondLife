@@ -700,7 +700,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>{lang === 'vi' ? 'Đã Nhận Hàng (Giải Ngân)' : 'Confirm Delivery'}</span>
+                            <span>{lang === 'vi' ? 'Nhận Hàng' : 'Confirm Delivery'}</span>
                           </button>
                         )}
 

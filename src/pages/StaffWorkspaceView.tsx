@@ -44,7 +44,7 @@ import {
 } from 'lucide-react';
 import { Listing, EscrowOrder, Language } from '../types';
 import { formatVND } from '../utils/translations';
-import { staffService, adminPostService, SellerVerificationResponseDto } from '../services';
+import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto } from '../services';
 import logoImg from '../assets/logo.png';
 
 interface StaffWorkspaceViewProps {
@@ -120,6 +120,36 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       .catch((err) => console.warn('Lỗi tải eKYC verifications:', err))
       .finally(() => setIsLoadingVerifications(false));
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'review-listings' || activeTab === 'duplicate-images') {
+      staffListingService.getQueue(0, 20)
+        .then((data: any) => {
+          const items = data?.items || data?.content || (Array.isArray(data) ? data : []);
+          if (items && items.length > 0) {
+            setStaffListings((prev) => {
+              const mapped = items.map((it: any) => ({
+                id: it.postId || it.id,
+                title: it.title || 'Bài đăng nghi trùng cần duyệt',
+                category: it.category || 'Thiết bị điện tử',
+                sellerName: it.sellerName || 'Người bán ' + (it.sellerId?.slice(0, 8) || ''),
+                sellerRating: 4.8,
+                priceVnd: it.price || 1000000,
+                aiEstimatedPrice: it.price || 1000000,
+                aiConfidence: 85,
+                isSuspicious: Boolean(it.duplicateMatches?.length) || it.status === 'PENDING',
+                suspiciousReason: it.reviewReason || (it.duplicateMatches?.length ? `Phát hiện ${it.duplicateMatches.length} bài đối chiếu nghi trùng` : 'Chờ nhân viên duyệt'),
+                status: it.status || 'PENDING',
+                images: it.imageUrls?.length ? it.imageUrls : ['https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=400&q=80'],
+                description: it.description || 'Chưa có mô tả'
+              }));
+              return [...mapped, ...prev.filter((p) => !mapped.some((m: any) => m.id === p.id))];
+            });
+          }
+        })
+        .catch((err) => console.warn('Lỗi tải danh sách staff listings từ backend:', err));
+    }
+  }, [activeTab]);
 
   // Trigger notice helper
   const triggerNotice = (msg: string) => {
@@ -622,7 +652,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   // Actions
   const handleApproveListing = async (id: string) => {
     try {
-      await adminPostService.approvePost(id).catch(() => {});
+      await staffListingService.approve(id).catch(() => adminPostService.approvePost(id));
     } catch (err) {
       console.warn('Backend approve post error:', err);
     }
@@ -635,7 +665,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
 
   const handleRejectListing = async (id: string) => {
     try {
-      await adminPostService.rejectPost(id, rejectReason).catch(() => {});
+      await staffListingService.reject(id, rejectReason).catch(() => adminPostService.rejectPost(id, rejectReason));
     } catch (err) {
       console.warn('Backend reject post error:', err);
     }
@@ -658,6 +688,18 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       setSellerVerifications(updated?.items || (updated as any)?.content || (Array.isArray(updated) ? updated : []));
     } catch (err: any) {
       triggerNotice('Lỗi xét duyệt eKYC: ' + (err.message || ''));
+    }
+  };
+
+  const handleOpenVerificationDetail = async (item: SellerVerificationResponseDto) => {
+    setSelectedVerificationModal(item);
+    try {
+      const fullDetail = await staffService.getVerificationById(item.id);
+      if (fullDetail) {
+        setSelectedVerificationModal((prev) => (prev ? { ...prev, ...fullDetail } : fullDetail));
+      }
+    } catch (err) {
+      console.warn('Backend getVerificationById fallback to list item:', err);
     }
   };
 
@@ -684,17 +726,16 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       prev.map((r) =>
         r.id === selectedRefundModal.id
           ? {
-              ...r,
-              status: refundDecisionType === 'REJECT' ? 'REJECTED' : 'APPROVED'
-            }
+            ...r,
+            status: refundDecisionType === 'REJECT' ? 'REJECTED' : 'APPROVED'
+          }
           : r
       )
     );
     triggerNotice(
-      `Đã xử lý yêu cầu hoàn tiền #${selectedRefundModal.id}: ${
-        refundDecisionType === 'FULL'
-          ? 'Hoàn trả 100% tiền Escrow'
-          : refundDecisionType === 'PARTIAL'
+      `Đã xử lý yêu cầu hoàn tiền #${selectedRefundModal.id}: ${refundDecisionType === 'FULL'
+        ? 'Hoàn trả 100% tiền Escrow'
+        : refundDecisionType === 'PARTIAL'
           ? 'Hoàn trả một phần (khấu trừ cước)'
           : 'Từ chối hoàn tiền'
       }.`
@@ -709,13 +750,13 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       prev.map((p) =>
         p.id === payoutId
           ? {
-              ...p,
-              status: nextStatus,
-              holdReason:
-                nextStatus === 'HOLD'
-                  ? 'Tạm giữ can thiệp bởi Staff do phát sinh khiếu nại mới'
-                  : 'Đã mở khóa tạm giữ & đủ điều kiện giải ngân'
-            }
+            ...p,
+            status: nextStatus,
+            holdReason:
+              nextStatus === 'HOLD'
+                ? 'Tạm giữ can thiệp bởi Staff do phát sinh khiếu nại mới'
+                : 'Đã mở khóa tạm giữ & đủ điều kiện giải ngân'
+          }
           : p
       )
     );
@@ -822,9 +863,8 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       <div className="flex-1 flex relative">
         {/* LEFT SIDEBAR */}
         <aside
-          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] ${
-            isSidebarCollapsed ? 'w-16' : 'w-60 sm:w-64'
-          } ${isMobileSidebarOpen ? 'fixed inset-y-13 left-0 shadow-2xl block' : 'hidden md:flex'}`}
+          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] ${isSidebarCollapsed ? 'w-16' : 'w-60 sm:w-64'
+            } ${isMobileSidebarOpen ? 'fixed inset-y-13 left-0 shadow-2xl block' : 'hidden md:flex'}`}
         >
           {/* User Block */}
           <div className="p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3">
@@ -866,18 +906,16 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                     setActiveTab(item.id);
                     setIsMobileSidebarOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs transition cursor-pointer group ${
-                    isActive
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs transition cursor-pointer group ${isActive
                       ? 'bg-white text-[#24263e] shadow-sm font-black'
                       : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/40 font-bold'
-                  }`}
+                    }`}
                   title={item.label}
                 >
                   <div className="flex items-center gap-3 truncate">
                     <Icon
-                      className={`w-4 h-4 shrink-0 transition ${
-                        isActive ? 'text-[#24263e]' : 'text-[#24263e]/75 group-hover:text-[#24263e]'
-                      }`}
+                      className={`w-4 h-4 shrink-0 transition ${isActive ? 'text-[#24263e]' : 'text-[#24263e]/75 group-hover:text-[#24263e]'
+                        }`}
                     />
                     {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
                   </div>
@@ -886,17 +924,15 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                     <div className="flex items-center gap-1.5 shrink-0">
                       {item.badge !== null && item.badge !== undefined && (
                         <span
-                          className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                            item.badgeColor || 'bg-[#24263e] text-white'
-                          }`}
+                          className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${item.badgeColor || 'bg-[#24263e] text-white'
+                            }`}
                         >
                           {item.badge}
                         </span>
                       )}
                       <ChevronRight
-                        className={`w-3.5 h-3.5 transition-transform ${
-                          isActive ? 'text-[#24263e] translate-x-0.5' : 'text-[#24263e]/50 group-hover:text-[#24263e]'
-                        }`}
+                        className={`w-3.5 h-3.5 transition-transform ${isActive ? 'text-[#24263e] translate-x-0.5' : 'text-[#24263e]/50 group-hover:text-[#24263e]'
+                          }`}
                       />
                     </div>
                   )}
@@ -1143,26 +1179,23 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                   <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-bold">
                     <button
                       onClick={() => setListingFilter('ALL')}
-                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                        listingFilter === 'ALL' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
-                      }`}
+                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${listingFilter === 'ALL' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
+                        }`}
                     >
                       Tất cả ({staffListings.length})
                     </button>
                     <button
                       onClick={() => setListingFilter('SUSPICIOUS')}
-                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1 ${
-                        listingFilter === 'SUSPICIOUS' ? 'bg-rose-700 text-white shadow-xs font-black' : 'text-rose-700'
-                      }`}
+                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1 ${listingFilter === 'SUSPICIOUS' ? 'bg-rose-700 text-white shadow-xs font-black' : 'text-rose-700'
+                        }`}
                     >
                       <AlertTriangle className="w-3.5 h-3.5" />
                       Nghi Vấn ({staffListings.filter((l) => l.isSuspicious).length})
                     </button>
                     <button
                       onClick={() => setListingFilter('NORMAL')}
-                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                        listingFilter === 'NORMAL' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
-                      }`}
+                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${listingFilter === 'NORMAL' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
+                        }`}
                     >
                       Tin Bình Thường
                     </button>
@@ -1411,11 +1444,10 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                           </td>
                           <td className="py-3 px-3">
                             <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                item.status === 'VERIFIED'
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${item.status === 'VERIFIED'
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : 'bg-amber-100 text-amber-800'
-                              }`}
+                                }`}
                             >
                               {item.status === 'VERIFIED' ? 'ĐÃ XÁC MINH' : 'CHỜ THẨM ĐỊNH'}
                             </span>
@@ -1520,19 +1552,18 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                               </td>
                               <td className="py-3 px-3">
                                 <span
-                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                    item.status === 'APPROVED'
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${item.status === 'APPROVED'
                                       ? 'bg-emerald-100 text-emerald-800'
                                       : item.status === 'REJECTED'
-                                      ? 'bg-rose-100 text-rose-800'
-                                      : 'bg-amber-100 text-amber-800'
-                                  }`}
+                                        ? 'bg-rose-100 text-rose-800'
+                                        : 'bg-amber-100 text-amber-800'
+                                    }`}
                                 >
                                   {item.status === 'APPROVED'
                                     ? 'ĐÃ PHÊ DUYỆT'
                                     : item.status === 'REJECTED'
-                                    ? 'TỪ CHỐI'
-                                    : 'CHỜ DUYỆT'}
+                                      ? 'TỪ CHỐI'
+                                      : 'CHỜ DUYỆT'}
                                 </span>
                               </td>
                               <td className="py-3 px-3 font-mono text-slate-500 text-[11px]">
@@ -1541,7 +1572,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                               <td className="py-3 px-3 text-center">
                                 <div className="flex items-center justify-center gap-1.5">
                                   <button
-                                    onClick={() => setSelectedVerificationModal(item)}
+                                    onClick={() => handleOpenVerificationDetail(item)}
                                     className="px-2.5 py-1 rounded bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-bold transition cursor-pointer"
                                   >
                                     Xem & Duyệt
@@ -1584,17 +1615,15 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                   <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-bold">
                     <button
                       onClick={() => setReportSubTab('REPORTS')}
-                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                        reportSubTab === 'REPORTS' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
-                      }`}
+                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${reportSubTab === 'REPORTS' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
+                        }`}
                     >
                       Báo Cáo Vi Phạm ({reports.length})
                     </button>
                     <button
                       onClick={() => setReportSubTab('TICKETS')}
-                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                        reportSubTab === 'TICKETS' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
-                      }`}
+                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${reportSubTab === 'TICKETS' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
+                        }`}
                     >
                       Ticket Hỗ Trợ ({supportTickets.length})
                     </button>
@@ -1884,11 +1913,10 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                           <td className="py-3 px-3 font-mono text-slate-600">{item.bank}</td>
                           <td className="py-3 px-3">
                             <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                                item.status === 'HOLD'
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-black ${item.status === 'HOLD'
                                   ? 'bg-rose-100 text-rose-900 border border-rose-200'
                                   : 'bg-emerald-100 text-emerald-900 border border-emerald-200'
-                              }`}
+                                }`}
                             >
                               {item.status === 'HOLD' ? 'ĐANG TẠM GIỮ (HOLD)' : 'ĐÃ DUYỆT GIẢI NGÂN'}
                             </span>
@@ -1897,11 +1925,10 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                           <td className="py-3 px-3 text-center">
                             <button
                               onClick={() => handleTogglePayoutHold(item.id, item.status)}
-                              className={`px-2.5 py-1 rounded text-[11px] font-bold transition cursor-pointer ${
-                                item.status === 'HOLD'
+                              className={`px-2.5 py-1 rounded text-[11px] font-bold transition cursor-pointer ${item.status === 'HOLD'
                                   ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
                                   : 'bg-rose-700 hover:bg-rose-800 text-white'
-                              }`}
+                                }`}
                             >
                               {item.status === 'HOLD' ? 'Gỡ Tạm Giữ' : 'Tạm Giữ (Hold)'}
                             </button>
@@ -1934,17 +1961,15 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                   <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-bold">
                     <button
                       onClick={() => setInspectionSubTab('COORDINATE')}
-                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                        inspectionSubTab === 'COORDINATE' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
-                      }`}
+                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${inspectionSubTab === 'COORDINATE' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
+                        }`}
                     >
                       Điều Phối Lịch ({inspectionOrders.length})
                     </button>
                     <button
                       onClick={() => setInspectionSubTab('RESULTS')}
-                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                        inspectionSubTab === 'RESULTS' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
-                      }`}
+                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${inspectionSubTab === 'RESULTS' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
+                        }`}
                     >
                       Kết Quả Kiểm Tra ({inspectionResults.length})
                     </button>
@@ -2019,11 +2044,10 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                             <td className="py-3 px-3 font-black text-slate-900">{rpt.score}</td>
                             <td className="py-3 px-3">
                               <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                                  rpt.verdict === 'PASS'
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-black ${rpt.verdict === 'PASS'
                                     ? 'bg-emerald-100 text-emerald-800'
                                     : 'bg-rose-100 text-rose-800'
-                                }`}
+                                  }`}
                               >
                                 {rpt.verdict === 'PASS' ? 'ĐẠT (PASS)' : 'KHÔNG ĐẠT (FAIL)'}
                               </span>
@@ -2103,11 +2127,10 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                           <td className="py-3 px-3 font-black text-slate-900">{formatVND(t.amount)}</td>
                           <td className="py-3 px-3">
                             <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                t.riskLevel === 'SAFE' || t.riskLevel === 'LOW'
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${t.riskLevel === 'SAFE' || t.riskLevel === 'LOW'
                                   ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                                   : 'bg-amber-50 text-amber-800 border border-amber-200'
-                              }`}
+                                }`}
                             >
                               {t.riskLevel === 'SAFE' || t.riskLevel === 'LOW' ? '✓ An Toàn' : '⚠ Cần Lưu Ý'}
                             </span>

@@ -4,7 +4,6 @@ import { Listing, ItemCategory, ConditionGrade, Language } from '../types';
 import { translations } from '../utils/translations';
 import { ShowroomLobby3D } from '../components/3d/ShowroomLobby3D';
 import { ProductCard3D } from '../components/3d/ProductCard3D';
-import { ProductViewer3D } from '../components/3d/ProductViewer3D';
 
 interface MarketplaceViewProps {
   listings: Listing[];
@@ -34,7 +33,6 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
   const [selectedGrade, setSelectedGrade] = useState<ConditionGrade | 'ALL'>('ALL');
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'priceAsc' | 'priceDesc' | 'newest'>('newest');
-  const [viewer3DListing, setViewer3DListing] = useState<Listing | null>(null);
 
   const filteredListings = useMemo(() => {
     return listings.filter(item => {
@@ -61,18 +59,6 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
       {/* 3D Motion Showroom Studio */}
       <ShowroomLobby3D lang={lang} />
 
-      {/* 3D Inspection Viewer Modal Popup */}
-      {viewer3DListing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto animate-fadeIn">
-          <div className="max-w-4xl w-full max-h-[92vh] flex flex-col my-auto relative">
-            <ProductViewer3D
-              listing={viewer3DListing}
-              lang={lang}
-              onClose={() => setViewer3DListing(null)}
-            />
-          </div>
-        </div>
-      )}
 
       {/* Unified Search & Category Bar */}
       <section className="bg-[#FFFFFF] rounded-2xl p-4 sm:p-5 shadow-xs border border-slate-200 space-y-3.5">
@@ -213,7 +199,6 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
               item={item}
               lang={lang}
               onSelectListing={onSelectListing}
-              onOpen3DViewer={(itm) => setViewer3DListing(itm)}
             />
           ))}
         </div>

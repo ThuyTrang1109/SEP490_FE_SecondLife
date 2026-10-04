@@ -160,6 +160,24 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     }
   }, [currentUser, isOpen, initialTab]);
 
+  // Sync fresh profile data directly from Backend GET /api/users/me
+  useEffect(() => {
+    if (isOpen) {
+      userService.getMyProfile()
+        .then((fresh) => {
+          if (fresh) {
+            if (fresh.fullName) setName(fresh.fullName);
+            if (fresh.email) setEmail(fresh.email);
+            if (fresh.phone) setPhone(fresh.phone);
+            if (fresh.avatarUrl) setAvatarUrl(fresh.avatarUrl);
+          }
+        })
+        .catch((err) => {
+          console.warn('Backend getMyProfile fallback to local session:', err);
+        });
+    }
+  }, [isOpen]);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: 'avatar' | 'front' | 'back' | 'selfie') => {
     const file = e.target.files?.[0];
     if (!file) return;

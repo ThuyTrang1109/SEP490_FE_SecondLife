@@ -28,7 +28,7 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
         <div className="flex items-center gap-2 bg-white/70 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-[#2b1d16]/15 text-[#2b1d16] text-[11px] font-bold shadow-xs">
           <span className="w-2 h-2 rounded-full bg-[#2b1d16] animate-pulse" />
           <span className="font-extrabold tracking-wide">
-            {lang === 'vi' ? 'SẢNH KIỂM ĐỊNH 3D SECONDLIFE' : 'SECONDLIFE 3D INSPECTION LOBBY'}
+            {lang === 'vi' ? 'TRUNG TÂM KIỂM ĐỊNH SECONDLIFE' : 'SECONDLIFE INSPECTION CENTER'}
           </span>
         </div>
 
@@ -68,10 +68,10 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
             className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
               autoRotate ? 'text-[#2b1d16] bg-white/80 shadow-xs' : 'text-[#2b1d16]/70 hover:text-[#2b1d16]'
             }`}
-            title="Bật / tắt tự động xoay 360°"
+            title={lang === 'vi' ? 'Bật / tắt tự động xoay' : 'Toggle auto-rotate'}
           >
             <RefreshCw className={`w-3 h-3 ${autoRotate ? 'animate-spin' : ''}`} style={{ animationDuration: '6s' }} />
-            <span>360°</span>
+            <span>{lang === 'vi' ? 'Tự Động' : 'Auto'}</span>
           </button>
         </div>
       </div>
@@ -87,7 +87,7 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
 
           <h1 className="text-xl sm:text-3xl md:text-4xl font-black tracking-tight text-[#2b1d16] leading-tight">
             <BlurText
-              text={lang === 'vi' ? 'Mua Bán Đồ Cũ An Toàn Với Mô Hình 3D & Escrow.' : 'Verified Second-Hand with 3D Models & Escrow.'}
+              text={lang === 'vi' ? 'Mua Bán Đồ Cũ An Toàn Với Kiểm Định & Escrow.' : 'Verified Second-Hand with Inspection & Escrow.'}
               delay={60}
               animateBy="words"
               direction="top"
@@ -97,15 +97,15 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
 
           <p className="text-[#2b1d16]/85 text-xs sm:text-sm leading-relaxed max-w-xl font-bold">
             {lang === 'vi'
-              ? 'Kiểm tra chi tiết thiết bị với mô hình 3D 360°, xoay cuộn zoom đa chiều, tra cứu biên bản kiểm định phần cứng và thanh toán được bảo vệ trọn vẹn qua Quỹ tín thác.'
-              : 'Inspect devices in 360° 3D, verify hardware hub reports, and pay safely via Escrow protection.'}
+              ? 'Kiểm tra chi tiết thiết bị với ảnh thực tế 5 góc chuẩn, tra cứu biên bản kiểm định phần cứng tại Hub và thanh toán được bảo vệ trọn vẹn qua Quỹ tín thác.'
+              : 'Inspect devices with 5 standard real photos, verify hardware hub reports, and pay safely via Escrow protection.'}
           </p>
 
           {/* Quick Actions */}
           <div className="flex flex-wrap items-center gap-2.5 pt-1">
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/70 text-[#2b1d16] text-xs font-bold border border-[#cea981]/40 backdrop-blur-md shadow-xs">
-              <Move3d className="w-3.5 h-3.5 text-[#2b1d16]" />
-              <span>{lang === 'vi' ? 'Kéo để xoay • Cuộn để zoom' : 'Drag to rotate • Scroll to zoom'}</span>
+              <ShieldCheck className="w-3.5 h-3.5 text-[#2b1d16]" />
+              <span>{lang === 'vi' ? 'Kiểm định 100% phần cứng tại Hub' : '100% Hub Hardware Inspected'}</span>
             </div>
           </div>
 
@@ -119,9 +119,9 @@ export const ShowroomLobby3D: React.FC<ShowroomLobby3DProps> = ({
             </div>
             <div className="bg-white/70 backdrop-blur-md rounded-xl p-2 border border-[#cea981]/40 shadow-xs">
               <div className="text-base font-black text-[#2b1d16]">
-                <CountUp to={360} duration={2.5} />° 3D
+                5 Góc
               </div>
-              <div className="text-[11px] text-[#2b1d16]/75 font-bold">Mô phỏng 3D</div>
+              <div className="text-[11px] text-[#2b1d16]/75 font-bold">{lang === 'vi' ? 'Ảnh chuẩn Hub' : 'Verified Photos'}</div>
             </div>
             <div className="bg-white/70 backdrop-blur-md rounded-xl p-2 border border-[#cea981]/40 shadow-xs">
               <div className="text-base font-black text-[#2b1d16]">

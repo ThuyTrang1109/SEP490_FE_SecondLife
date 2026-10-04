@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { ShieldCheck, Sparkles, MapPin, Star, CheckCircle2, Box } from 'lucide-react';
+import { ShieldCheck, Sparkles, MapPin, Star, CheckCircle2 } from 'lucide-react';
 import { Listing, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
 import { soundFx } from '../../utils/soundEffects';
@@ -8,7 +8,7 @@ interface ProductCard3DProps {
   item: Listing;
   lang: Language;
   onSelectListing: (listing: Listing) => void;
-  onOpen3DViewer: (listing: Listing) => void;
+  onOpen3DViewer?: (listing: Listing) => void;
 }
 
 export const ProductCard3D: React.FC<ProductCard3DProps> = ({
@@ -95,22 +95,6 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
               <span>Hub Verified</span>
             </span>
           )}
-        </div>
-
-        {/* 3D Model Trigger Button (Top Right) */}
-        <div className="absolute top-2.5 right-2.5 z-20">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              soundFx.playScanBeep();
-              onOpen3DViewer(item);
-            }}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#24263e]/85 hover:bg-[#24263e] text-white backdrop-blur-md text-[11px] font-bold border border-white/20 shadow-xs transition-all cursor-pointer"
-            title={lang === 'vi' ? 'Mở xem mô hình 3D 360°' : 'Open 3D 360° view'}
-          >
-            <Box className="w-3 h-3 text-white" />
-            <span>3D</span>
-          </button>
         </div>
       </div>
 

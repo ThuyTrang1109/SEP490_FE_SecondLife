@@ -646,21 +646,6 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                 </div>
               ) : (
                 <>
-                  {purchaseError && (
-                    <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 font-medium flex items-center justify-between gap-3 animate-fadeIn">
-                      <div className="flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-                        <span>{purchaseError}</span>
-                      </div>
-                      <button
-                        onClick={() => setActiveTab('wallet')}
-                        className="px-3 py-1 bg-red-600 text-white rounded-lg font-bold text-[11px] shrink-0 hover:bg-red-700 cursor-pointer"
-                      >
-                        Nạp ví ngay &rarr;
-                      </button>
-                    </div>
-                  )}
-
                   {packagesLoading ? (
                     <div className="py-12 flex flex-col items-center justify-center space-y-3">
                       <Loader2 className="w-8 h-8 text-[#24263e] animate-spin" />
@@ -736,6 +721,21 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                           </div>
                         );
                       })}
+                    </div>
+                  )}
+
+                  {purchaseError && (
+                    <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 font-medium flex items-center justify-between gap-3 animate-fadeIn">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                        <span>{purchaseError}</span>
+                      </div>
+                      <button
+                        onClick={() => setActiveTab('wallet')}
+                        className="px-3 py-1 bg-red-600 text-white rounded-lg font-bold text-[11px] shrink-0 hover:bg-red-700 cursor-pointer"
+                      >
+                        Nạp ví ngay &rarr;
+                      </button>
                     </div>
                   )}
 

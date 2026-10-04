@@ -95,10 +95,10 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
               className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                 autoRotate ? 'text-[#24263e] bg-white/80 shadow-xs' : 'text-[#24263e]/70 hover:text-[#24263e]'
               }`}
-              title="Bật / tắt tự động xoay 360°"
+              title={lang === 'vi' ? 'Bật / tắt tự động xoay' : 'Toggle auto-rotate'}
             >
               <RefreshCw className={`w-3 h-3 ${autoRotate ? 'animate-spin' : ''}`} style={{ animationDuration: '6s' }} />
-              <span>360°</span>
+              <span>{lang === 'vi' ? 'Tự Động' : 'Auto'}</span>
             </button>
           </div>
         </div>
@@ -246,8 +246,8 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
             </div>
 
             <div className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-black/20 border border-white/20 text-white font-bold text-xs shadow-xs">
-              <Move3d className="w-3.5 h-3.5 text-[#fce5da]" />
-              <span>{lang === 'vi' ? 'Kéo chuột xoay 360° • Cuộn zoom' : 'Drag 360° • Scroll to zoom'}</span>
+              <ShieldCheck className="w-3.5 h-3.5 text-[#fce5da]" />
+              <span>{lang === 'vi' ? 'Kiểm định phần cứng & niêm phong Hub' : 'Hardware Inspected & Sealed'}</span>
             </div>
           </div>
         </div>
@@ -489,7 +489,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 <td className="p-4 sm:p-5 font-extrabold text-[#24263e] bg-gradient-to-r from-[#c34c36]/10 to-[#fce5da]/10 border-x border-[#c34c36]/30 text-center">
                   <div className="inline-flex items-center justify-center gap-1.5 bg-[#FFFFFF] px-3 py-1.5 rounded-full shadow-xs border border-[#c34c36]/40 text-[#24263e] font-extrabold">
                     <CheckCircle2 className="w-4 h-4 text-[#24263e] shrink-0" />
-                    <span>{lang === 'vi' ? 'Mô phỏng 3D 360° xoay lật đa chiều' : 'Interactive 3D 360° rotation'}</span>
+                    <span>{lang === 'vi' ? 'Ảnh thực tế 5 góc chuẩn & kiểm định Hub' : '5 Verified Angles & Hardware Certified'}</span>
                   </div>
                 </td>
                 <td className="p-4 sm:p-5 text-slate-700 font-medium text-center">

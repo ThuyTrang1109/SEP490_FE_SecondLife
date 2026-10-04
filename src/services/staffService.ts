@@ -56,17 +56,36 @@ export const staffService = {
   },
 
   /**
-   * Staff duyệt hoặc từ chối hồ sơ ngoại lệ eKYC
+   * Staff / Admin duyệt hoặc từ chối hồ sơ ngoại lệ eKYC
+   * Backend chuẩn dùng /api/admin/seller-verifications/{id}/approve hoặc /reject
    */
   async reviewVerification(
     id: string,
     data: ReviewSellerVerificationRequestDto
   ): Promise<SellerVerificationResponseDto> {
-    const res = await request<SellerVerificationResponseDto>(`/staff/seller-verifications/${id}/review`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-      requiresAuth: true,
-    });
-    return (res as any)?.data || res;
+    const adminEndpoint = data.decision === 'APPROVE'
+      ? `/admin/seller-verifications/${id}/approve`
+      : `/admin/seller-verifications/${id}/reject`;
+
+    const adminBody = data.decision === 'REJECT'
+      ? { reasonCode: 'OTHER', rejectionReason: data.rejectionReason || 'Hồ sơ bị từ chối bởi nhân viên kiểm duyệt' }
+      : {};
+
+    try {
+      const res = await request<SellerVerificationResponseDto>(adminEndpoint, {
+        method: 'POST',
+        body: JSON.stringify(adminBody),
+        requiresAuth: true,
+      });
+      return (res as any)?.data || res;
+    } catch {
+      // Fallback: If backend environment adds /staff/seller-verifications/{id}/review
+      const res = await request<SellerVerificationResponseDto>(`/staff/seller-verifications/${id}/review`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+        requiresAuth: true,
+      });
+      return (res as any)?.data || res;
+    }
   },
 };

@@ -19,3 +19,4 @@ export * from './healthService';
 export * from './walletService';
 export * from './negotiationService';
 export * from './orderService';
+export * from './staffListingService';

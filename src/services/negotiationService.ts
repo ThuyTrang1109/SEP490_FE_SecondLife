@@ -21,9 +21,9 @@ export const negotiationService = {
       body: JSON.stringify(payload),
       requiresAuth: true,
     });
-    return (response as any)?.data !== undefined && (response as any)?.data !== null
+    return ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
-      : response;
+      : response) as Negotiation;
   },
 
   /**
@@ -77,9 +77,9 @@ export const negotiationService = {
       method: 'PUT',
       requiresAuth: true,
     });
-    return (response as any)?.data !== undefined && (response as any)?.data !== null
+    return ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
-      : response;
+      : response) as Negotiation;
   },
 
   /**
@@ -91,9 +91,9 @@ export const negotiationService = {
       method: 'PUT',
       requiresAuth: true,
     });
-    return (response as any)?.data !== undefined && (response as any)?.data !== null
+    return ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
-      : response;
+      : response) as Negotiation;
   },
 
   /**
@@ -105,8 +105,8 @@ export const negotiationService = {
       method: 'PUT',
       requiresAuth: true,
     });
-    return (response as any)?.data !== undefined && (response as any)?.data !== null
+    return ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
-      : response;
+      : response) as Negotiation;
   },
 };

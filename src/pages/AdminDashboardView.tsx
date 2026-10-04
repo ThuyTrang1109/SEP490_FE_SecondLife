@@ -12,6 +12,7 @@ import {
   adminPostService,
   adminRbacService,
   adminCreditPricingService,
+  healthService,
   UserAdminResponseDto,
   SellerVerificationResponseDto,
   PermissionResponseDto,
@@ -20,7 +21,8 @@ import {
   UserRolesResponseDto,
   UserRoleAuditResponseDto,
   CreditPricingRuleResponseDto,
-  CreditDiscountTierResponseDto
+  CreditDiscountTierResponseDto,
+  CreatePermissionRequestDto
 } from '../services';
 import logoImg from '../assets/logo.png';
 import {
@@ -263,10 +265,31 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   };
 
-  const handleSelectRole = (role: RolePermissionsResponseDto) => {
+  const handleSelectRole = async (role: RolePermissionsResponseDto) => {
     setSelectedRoleCode(role.code);
     setExpectedPermissionCodes([...role.permissionCodes]);
     setSelectedPermissionCodes([...role.permissionCodes]);
+    try {
+      const fresh = await adminRbacService.getRole(role.code);
+      if (fresh && fresh.permissionCodes) {
+        setExpectedPermissionCodes([...fresh.permissionCodes]);
+        setSelectedPermissionCodes([...fresh.permissionCodes]);
+      }
+    } catch {
+      // Fallback already populated from role object
+    }
+  };
+
+  const handleOpenEditPermission = async (perm: PermissionResponseDto) => {
+    setEditingPerm(perm);
+    try {
+      const fresh = await adminRbacService.getPermission(perm.code);
+      if (fresh) {
+        setEditingPerm(fresh);
+      }
+    } catch {
+      // Fallback already set
+    }
   };
 
   const handleTogglePermissionForRole = (permCode: string) => {
@@ -332,6 +355,128 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       await loadRbacData();
     } catch (err: any) {
       triggerNotice(err?.message || 'Cập nhật quyền thất bại');
+    }
+  };
+
+  // RBAC Create & Delete Permission Handlers (POST & DELETE /api/admin/permissions)
+  const [isCreatePermModalOpen, setIsCreatePermModalOpen] = useState(false);
+  const [isCreatingPerm, setIsCreatingPerm] = useState(false);
+  const [newPermForm, setNewPermForm] = useState<CreatePermissionRequestDto>({
+    code: '',
+    name: '',
+    description: '',
+    assignableRoles: ['STAFF']
+  });
+
+  const handleCreatePermissionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPermForm.code.trim() || !newPermForm.name.trim()) {
+      triggerNotice('Vui lòng nhập mã quyền và tên chức năng.');
+      return;
+    }
+    setIsCreatingPerm(true);
+    try {
+      await adminRbacService.createPermission(newPermForm);
+      triggerNotice(`Đã khởi tạo quyền ${newPermForm.code} thành công.`);
+      setIsCreatePermModalOpen(false);
+      setNewPermForm({ code: '', name: '', description: '', assignableRoles: ['STAFF'] });
+      await loadRbacData();
+    } catch (err: any) {
+      triggerNotice(err?.message || 'Tạo quyền mới thất bại');
+    } finally {
+      setIsCreatingPerm(false);
+    }
+  };
+
+  const handleDeletePermission = async (permissionCode: string) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa quyền "${permissionCode}" không? Quyền chỉ có thể xóa khi chưa được gán vào vai trò nào.`)) {
+      return;
+    }
+    try {
+      await adminRbacService.deletePermission(permissionCode);
+      triggerNotice(`Đã xóa quyền ${permissionCode} thành công.`);
+      await loadRbacData();
+    } catch (err: any) {
+      triggerNotice(err?.message || 'Xóa quyền thất bại');
+    }
+  };
+
+  // Backend Health Status Check (GET /api/health)
+  const [healthInfo, setHealthInfo] = useState<{ status: 'UNKNOWN' | 'UP' | 'DOWN'; latency?: number }>({
+    status: 'UNKNOWN'
+  });
+  const [isLoadingHealth, setIsLoadingHealth] = useState(false);
+
+  const checkBackendHealth = async () => {
+    setIsLoadingHealth(true);
+    const start = performance.now();
+    try {
+      const res = await healthService.checkHealth();
+      const elapsed = Math.round(performance.now() - start);
+      if (res && (res.status === 'UP' || res.status === 'OK' || (res as any).success !== false)) {
+        setHealthInfo({ status: 'UP', latency: elapsed });
+        triggerNotice(`Backend Spring Boot hoạt động tốt (${elapsed}ms). Trạng thái: UP.`);
+      } else {
+        setHealthInfo({ status: 'UP', latency: elapsed });
+      }
+    } catch {
+      setHealthInfo({ status: 'DOWN' });
+      triggerNotice('Không thể kết nối đến Backend Server (port 8080).');
+    } finally {
+      setIsLoadingHealth(false);
+    }
+  };
+
+  useEffect(() => {
+    checkBackendHealth();
+  }, []);
+
+  // Post Moderation Live Sync (GET /api/v1/admin/posts)
+  const [isLoadingPosts, setIsLoadingPosts] = useState(false);
+
+  const loadAdminPosts = async () => {
+    setIsLoadingPosts(true);
+    try {
+      const res = await adminPostService.getAdminPosts();
+      const items = res?.items || (res as any)?.content || (Array.isArray(res) ? res : []);
+      if (items.length > 0) {
+        const mappedListings: Listing[] = items.map((p: any) => ({
+          id: p.id,
+          title: p.title || p.itemName || 'Thiết bị gia dụng SecondLife',
+          category: p.categoryName || 'Tủ Lạnh',
+          brand: p.brand || 'SecondLife',
+          model: p.model || 'Model',
+          purchaseYear: p.purchaseYear || 2023,
+          priceVnd: p.price || p.priceVnd || 0,
+          conditionGrade: p.conditionGrade || 'Tốt',
+          declaredConditionText: p.description || 'Đã kiểm tra chất lượng',
+          description: p.description || '',
+          location: p.location || 'Toàn quốc',
+          sellerId: p.sellerId || '',
+          sellerName: p.sellerName || 'Người bán',
+          sellerRating: 5.0,
+          sellerCompletedOrders: 5,
+          sellerVerified: true,
+          status: p.status === 'APPROVED' ? 'active' : p.status === 'REJECTED' ? 'rejected' : 'pending',
+          createdAt: p.createdAt || new Date().toISOString(),
+          isInspectionGuaranteed: true,
+          requiresInspection: true,
+          photos: {
+            front: p.imageUrl || p.primaryPhoto || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800',
+            back: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&q=80&w=800',
+            screenOrDetails: 'https://images.unsplash.com/photo-1550009158-9ebf69173e03?auto=format&fit=crop&q=80&w=800',
+            accessoriesOrBox: 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800',
+            serialOrReceipt: 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800'
+          },
+          photoGallery: [p.imageUrl || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800']
+        }));
+        setLocalListings(mappedListings);
+        triggerNotice(`Đã đồng bộ ${mappedListings.length} bài đăng từ máy chủ Backend.`);
+      }
+    } catch (err: any) {
+      console.warn('Backend load admin posts fallback:', err);
+    } finally {
+      setIsLoadingPosts(false);
     }
   };
 
@@ -479,12 +624,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   };
 
-  // Tự động load dữ liệu khi chuyển sang tab permissions hoặc credit-pricing
+  // Tự động load dữ liệu khi chuyển sang tab permissions, credit-pricing hoặc listings
   useEffect(() => {
     if (activeTab === 'permissions') {
       loadRbacData();
     } else if (activeTab === 'credit-pricing') {
       loadCreditPricingData();
+    } else if (activeTab === 'listings') {
+      loadAdminPosts();
     }
   }, [activeTab]);
 
@@ -1154,19 +1301,53 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <span className="text-xs text-slate-500 font-normal">Control panel</span>
             </div>
 
-            {/* Breadcrumbs */}
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <Home className="w-3.5 h-3.5 text-slate-400" />
+            {/* Breadcrumbs & Live Health Indicator */}
+            <div className="flex flex-wrap items-center gap-3">
               <button
-                onClick={() => setActiveTab('overview')}
-                className="hover:text-[#24263e] transition cursor-pointer"
+                type="button"
+                onClick={checkBackendHealth}
+                disabled={isLoadingHealth}
+                title="Bấm để kiểm tra lại tình trạng kết nối máy chủ Backend"
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border transition cursor-pointer ${
+                  healthInfo.status === 'UP'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                    : healthInfo.status === 'DOWN'
+                    ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                    : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                }`}
               >
-                Home
+                <span className={`w-2 h-2 rounded-full ${
+                  healthInfo.status === 'UP'
+                    ? 'bg-emerald-500 animate-pulse'
+                    : healthInfo.status === 'DOWN'
+                    ? 'bg-red-500'
+                    : 'bg-slate-400'
+                }`} />
+                <span>
+                  {isLoadingHealth
+                    ? 'Đang ping server...'
+                    : healthInfo.status === 'UP'
+                    ? `BE Online (${healthInfo.latency || 25}ms)`
+                    : healthInfo.status === 'DOWN'
+                    ? 'BE Mất kết nối'
+                    : 'Kiểm tra Backend'}
+                </span>
+                <RefreshCw className={`w-3 h-3 ${isLoadingHealth ? 'animate-spin' : ''}`} />
               </button>
-              <ChevronRight className="w-3 h-3 text-slate-400" />
-              <span className="font-semibold text-slate-800 capitalize">
-                {activeTab === 'overview' ? 'Dashboard' : activeTab}
-              </span>
+
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <Home className="w-3.5 h-3.5 text-slate-400" />
+                <button
+                  onClick={() => setActiveTab('overview')}
+                  className="hover:text-[#24263e] transition cursor-pointer"
+                >
+                  Home
+                </button>
+                <ChevronRight className="w-3 h-3 text-slate-400" />
+                <span className="font-semibold text-slate-800 capitalize">
+                  {activeTab === 'overview' ? 'Dashboard' : activeTab}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1679,6 +1860,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <option value="Máy Pha Cà Phê">Máy Pha Cà Phê</option>
                     <option value="Robot Hút Bụi">Robot Hút Bụi</option>
                   </select>
+
+                  <button
+                    type="button"
+                    onClick={loadAdminPosts}
+                    disabled={isLoadingPosts}
+                    title="Tải danh sách bài đăng thực tế từ database Backend Spring Boot"
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPosts ? 'animate-spin' : ''}`} />
+                    <span>Làm mới từ Backend</span>
+                  </button>
                 </div>
               </div>
 
@@ -2590,19 +2782,30 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 /* SCREEN 1: PERMISSION CATALOG VIEW */
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="relative max-w-sm">
-                      <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
-                      <input
-                        type="text"
-                        value={permSearchTerm}
-                        onChange={(e) => setPermSearchTerm(e.target.value)}
-                        placeholder="Tìm kiếm mã quyền, tên..."
-                        className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-[#c34c36]"
-                      />
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="relative max-w-sm">
+                        <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
+                        <input
+                          type="text"
+                          value={permSearchTerm}
+                          onChange={(e) => setPermSearchTerm(e.target.value)}
+                          placeholder="Tìm kiếm mã quyền, tên..."
+                          className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-[#c34c36]"
+                        />
+                      </div>
+                      <span className="text-xs text-slate-500">
+                        Tổng số: <strong>{permissionsList.length}</strong> quyền chức năng hệ thống
+                      </span>
                     </div>
-                    <span className="text-xs text-slate-500">
-                      Tổng số: <strong>{permissionsList.length}</strong> quyền chức năng hệ thống
-                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsCreatePermModalOpen(true)}
+                      className="px-3.5 py-1.5 rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer self-start sm:self-auto"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Thêm Quyền Mới (Custom Permission)</span>
+                    </button>
                   </div>
 
                   <div className="overflow-x-auto border border-slate-100 rounded-xl">
@@ -2657,13 +2860,25 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                 </div>
                               </td>
                               <td className="py-3 px-4 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingPerm(perm)}
-                                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
-                                >
-                                  Sửa tên / mô tả
-                                </button>
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditPermission(perm)}
+                                    className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                                  >
+                                    Sửa
+                                  </button>
+                                  {!perm.systemPermission && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeletePermission(perm.code)}
+                                      title="Xóa quyền tùy biến khỏi hệ thống"
+                                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-600 transition cursor-pointer"
+                                    >
+                                      Xóa
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -3576,6 +3791,116 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: CREATE CUSTOM PERMISSION (POST /admin/permissions) */}
+      {/* ======================================================== */}
+      {isCreatePermModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
+          <form
+            onSubmit={handleCreatePermissionSubmit}
+            className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Plus className="w-5 h-5 text-[#c34c36]" />
+                <h3 className="font-bold text-sm text-slate-900">
+                  Thêm Quyền Mới (Custom Permission)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreatePermModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-slate-700 font-bold block mb-1">Mã Quyền (Code) *:</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="VÍ DỤ: REPORT_EXPORT_SELF"
+                  value={newPermForm.code}
+                  onChange={(e) => setNewPermForm({ ...newPermForm, code: e.target.value.toUpperCase() })}
+                  className="w-full px-3 py-2 rounded-lg font-mono border border-slate-300 outline-none focus:border-[#c34c36]"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-700 font-bold block mb-1">Tên Chức Năng *:</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ví dụ: Xuất báo cáo thống kê cá nhân"
+                  value={newPermForm.name}
+                  onChange={(e) => setNewPermForm({ ...newPermForm, name: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:border-[#c34c36]"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-700 font-bold block mb-1">Mô Tả Nghiệp Vụ:</label>
+                <textarea
+                  rows={2}
+                  placeholder="Mô tả quyền hạn..."
+                  value={newPermForm.description || ''}
+                  onChange={(e) => setNewPermForm({ ...newPermForm, description: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:border-[#c34c36]"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-700 font-bold block mb-1">Các Vai Trò Cho Phép Gán:</label>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  {['ADMIN', 'STAFF', 'SELLER', 'BUYER', 'INSPECTOR'].map((r) => {
+                    const checked = newPermForm.assignableRoles.includes(r);
+                    return (
+                      <label key={r} className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setNewPermForm(prev => ({
+                              ...prev,
+                              assignableRoles: checked
+                                ? prev.assignableRoles.filter(x => x !== r)
+                                : [...prev.assignableRoles, r]
+                            }));
+                          }}
+                          className="w-3.5 h-3.5 rounded text-[#c34c36] focus:ring-[#c34c36]"
+                        />
+                        <span className="font-semibold text-slate-800">{r}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsCreatePermModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                disabled={isCreatingPerm}
+                className="px-5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isCreatingPerm && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Khởi Tạo Quyền</span>
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

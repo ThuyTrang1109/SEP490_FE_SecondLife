@@ -11,14 +11,12 @@ import {
   Award,
   FileCheck2,
   Camera,
-  Box,
   ThumbsUp,
   ChevronRight,
   UserCheck
 } from 'lucide-react';
 import { Listing, Language, ProductReview } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
-import { ProductViewer3D } from '../3d/ProductViewer3D';
 import { soundFx } from '../../utils/soundEffects';
 import { reviewService } from '../../data/mockReviews';
 
@@ -28,7 +26,6 @@ interface ListingDetailModalProps {
   onBuyClick: (listing: Listing) => void;
   onChatClick: (listing: Listing) => void;
   lang: Language;
-  initialViewMode?: 'photos' | '3d';
   onOpenSellerReviews?: (sellerId: string, sellerName: string) => void;
 }
 
@@ -38,7 +35,6 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   onBuyClick,
   onChatClick,
   lang,
-  initialViewMode = 'photos',
   onOpenSellerReviews
 }) => {
   if (!listing) return null;
@@ -52,7 +48,6 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
     { key: 'serialOrReceipt', labelVi: '5. Serial / Hóa đơn', labelEn: '5. Serial / Proof' }
   ];
 
-  const [viewMode, setViewMode] = useState<'photos' | '3d'>(initialViewMode);
   const [activePhotoKey, setActivePhotoKey] = useState<keyof typeof listing.photos>('front');
   const [reviewsTab, setReviewsTab] = useState<'product' | 'seller'>('product');
 
@@ -91,54 +86,22 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-6 space-y-6">
-          {/* Visual Mode Selector Tabs */}
+          {/* Photos Header */}
           <div className="flex items-center justify-between flex-wrap gap-2 border-b border-gray-100 pb-3">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  soundFx.playChime();
-                  setViewMode('photos');
-                }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                  viewMode === 'photos'
-                    ? 'bg-[#24263e] text-white shadow-sm font-black'
-                    : 'bg-[#faf8f5] text-[#24263e] hover:bg-gray-200 border border-gray-200'
-                }`}
-              >
-                <Camera className="w-3.5 h-3.5" />
-                <span>{lang === 'vi' ? 'Ảnh Thực Tế (5 Góc Chuẩn)' : 'Real Photos (5 Angles)'}</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  soundFx.playScanBeep();
-                  setViewMode('3d');
-                }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                  viewMode === '3d'
-                    ? 'bg-[#24263e] text-white shadow-sm font-black'
-                    : 'bg-[#faf8f5] text-[#24263e] hover:bg-gray-200 border border-gray-200'
-                }`}
-              >
-                <Box className="w-3.5 h-3.5" />
-                <span>{lang === 'vi' ? 'Mô Hình 3D Xoay 360° & Soi Linh Kiện' : 'Interactive 3D 360° & X-Ray'}</span>
-                <span className="bg-white text-[#24263e] text-[10px] px-1.5 py-0.2 rounded-full uppercase font-black">3D</span>
-              </button>
+            <div className="flex items-center gap-2 text-xs font-extrabold text-[#24263e]">
+              <div className="flex items-center gap-2 bg-[#24263e] text-white px-3.5 py-1.5 rounded-xl shadow-xs">
+                <Camera className="w-3.5 h-3.5 text-white" />
+                <span>{lang === 'vi' ? 'Ảnh Thực Tế Sản Phẩm (5 Góc Chuẩn)' : 'Real Photos (5 Standard Angles)'}</span>
+              </div>
             </div>
 
             <div className="text-xs text-[#24263e]/70 hidden sm:flex items-center gap-1.5 font-bold">
               <Sparkles className="w-3.5 h-3.5 text-[#c34c36]" />
-              <span>{lang === 'vi' ? 'Dữ liệu quét 3D tại Hub giám định' : '3D Spatial Scan from Hub'}</span>
+              <span>{lang === 'vi' ? 'Hình ảnh thực tế minh bạch từ người bán' : 'Verified authentic seller photos'}</span>
             </div>
           </div>
 
-          {/* Conditional Display: 3D Full Viewer or 2D Photo Gallery */}
-          {viewMode === '3d' ? (
-            <div className="w-full">
-              <ProductViewer3D listing={listing} lang={lang} />
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
               {/* Gallery Column (7 cols) */}
               <div className="md:col-span-7 space-y-3">
                 <div className="relative aspect-4/3 w-full bg-[#faf8f5] rounded-2xl overflow-hidden border border-gray-200">
@@ -293,7 +256,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                     className="w-full py-3.5 px-4 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white rounded-2xl font-black text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <ShieldCheck className="w-4 h-4 text-white" />
-                    <span>{lang === 'vi' ? 'Mua Bảo Đảm Escrow & Kiểm Định Hub' : 'Buy with Escrow & Inspection'}</span>
+                    <span>{lang === 'vi' ? 'Mua Hàng' : 'Buy Now'}</span>
                   </button>
 
                   <button
@@ -306,7 +269,6 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                 </div>
               </div>
             </div>
-          )}
 
           {/* AI Price Estimation & Valuation Deep-Dive */}
           {listing.aiPriceEstimation && (
@@ -334,7 +296,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="bg-[#FFFFFF] rounded-xl p-3 border border-gray-200 shadow-2xs">
                   <div className="text-[11px] text-[#24263e]/70 font-semibold">{t.fairRange}</div>
                   <div className="text-sm font-black text-[#24263e]">
@@ -349,14 +311,6 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                     {formatVND(listing.aiPriceEstimation.suggestedVnd)}
                   </div>
                   <div className="text-[10px] text-[#24263e]/60 font-medium mt-0.5">{lang === 'vi' ? 'Thời gian bán ~ 7 ngày' : 'Avg. sale time ~ 7 days'}</div>
-                </div>
-
-                <div className="bg-[#FFFFFF] rounded-xl p-3 border border-gray-200 shadow-2xs">
-                  <div className="text-[11px] text-[#24263e]/70 font-semibold">{t.quickSalePrice}</div>
-                  <div className="text-sm font-black text-[#24263e]">
-                    {formatVND(listing.aiPriceEstimation.quickSaleVnd)}
-                  </div>
-                  <div className="text-[10px] text-[#24263e]/60 font-medium mt-0.5">{lang === 'vi' ? 'Bán nhanh trong 3 ngày' : 'Quick sale in 3 days'}</div>
                 </div>
               </div>
 

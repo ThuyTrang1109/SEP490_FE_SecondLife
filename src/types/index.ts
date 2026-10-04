@@ -219,6 +219,7 @@ export interface ChatMessage {
   isOffer?: boolean;
   offerAmountVnd?: number;
   offerStatus?: 'pending' | 'accepted' | 'declined' | 'countered';
+  negotiationId?: string;
   safetyWarning?: string;
   isUnsent?: boolean;
 }
@@ -306,6 +307,77 @@ export interface ItemBackend {
 export interface AiChatResponseDto {
   sessionId: string;
   reply: string;
+}
+
+// ==========================================
+// 1. Wallet & Deposit Types
+// ==========================================
+export interface UserWallet {
+  id: string;
+  userId: string;
+  balance: number;
+  updatedAt?: string;
+}
+
+export interface DepositCreateRequestDTO {
+  amount: number;
+}
+
+export interface DepositResponseDTO {
+  id: string;
+  amount: number;
+  code: string;
+  status: 'PENDING' | 'SUCCESS' | 'CANCELLED' | string;
+  bankAccountName: string;
+  bankAccountNumber: string;
+  bankName: string;
+  createdAt: string;
+}
+
+// ==========================================
+// 2. Negotiation Types
+// ==========================================
+export type NegotiationStatusBackend = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED' | 'COMPLETED' | 'EXPIRED';
+
+export interface NegotiationRequestDTO {
+  postId: string;
+  offeredPrice: number;
+}
+
+export interface Negotiation {
+  id: string;
+  postId: string;
+  postTitle?: string;
+  buyerId?: string;
+  sellerId?: string;
+  offeredPrice: number;
+  status: NegotiationStatusBackend;
+  createdAt?: string;
+  expiredAt?: string;
+}
+
+// ==========================================
+// 3. Order & Escrow Types
+// ==========================================
+export type OrderStatusBackend = 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
+export type EscrowStatusBackend = 'HELD' | 'RELEASED' | 'REFUNDED';
+
+export interface OrderRequestDTO {
+  postId: string;
+  negotiationId?: string;
+}
+
+export interface OrderBackend {
+  id: string;
+  postId: string;
+  postTitle?: string;
+  buyerId: string;
+  sellerId: string;
+  negotiationId?: string;
+  finalPrice: number;
+  status: OrderStatusBackend;
+  escrowStatus: EscrowStatusBackend;
+  createdAt: string;
 }
 
 

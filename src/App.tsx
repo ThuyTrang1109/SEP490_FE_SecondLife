@@ -24,7 +24,7 @@ import { TopUpModal } from './components/modals/TopUpModal';
 import { PolicyModal, PolicyTabKey } from './components/modals/PolicyModal';
 import { SellerReviewsModal } from './components/modals/SellerReviewsModal';
 import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
-import { authService, userService, topupService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
+import { authService, userService, topupService, walletService, orderService, negotiationService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
 
 export default function App() {
   // Global State - Default to 'marketplace' so visitors enter directly into the marketplace
@@ -120,6 +120,8 @@ export default function App() {
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
   const [userCreditBalance, setUserCreditBalance] = useState<number>(500);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
+  const [checkoutNegotiationId, setCheckoutNegotiationId] = useState<string | undefined>(undefined);
   const [userCredit, setUserCredit] = useState<UserCredit>({
     postCredits: 10,
     chatCredits: 20,
@@ -129,9 +131,24 @@ export default function App() {
   const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
   const [policyInitialTab, setPolicyInitialTab] = useState<PolicyTabKey>('about');
 
-  // Fetch credit balance on load if user is logged in
+  // Load wallet balance from Backend
+  const loadUserWallet = React.useCallback(async () => {
+    if (currentUser && getAccessToken()) {
+      try {
+        const w = await walletService.getMyWallet();
+        if (w && typeof w.balance === 'number') {
+          setWalletBalance(w.balance);
+        }
+      } catch (err) {
+        console.warn('Could not load wallet from server:', err);
+      }
+    }
+  }, [currentUser]);
+
+  // Fetch credit balance and wallet on load if user is logged in
   React.useEffect(() => {
     if (currentUser && getAccessToken()) {
+      loadUserWallet();
       topupService.getMyCredit()
         .then((res) => {
           if (res) {
@@ -143,7 +160,7 @@ export default function App() {
         })
         .catch(() => { });
     }
-  }, [currentUser]);
+  }, [currentUser, loadUserWallet]);
 
 
   const handleConfirmLogout = () => {
@@ -276,22 +293,170 @@ export default function App() {
     showToast(`Đăng bán thành công sản phẩm "${newListing.title}"! Giá niêm yết: ${formatVND(newListing.priceVnd)}.`);
   };
 
+  // Synchronize orders with Backend
+  const loadUserOrders = React.useCallback(async () => {
+    if (!currentUser || !getAccessToken()) return;
+    try {
+      const res = currentRole === 'seller'
+        ? await orderService.getSellerOrders(0, 50)
+        : await orderService.getBuyerOrders(0, 50);
+
+      if (res?.content && res.content.length > 0) {
+        const mappedOrders: EscrowOrder[] = res.content.map(bOrd => {
+          const matchedListing = listings.find(l => l.id === bOrd.postId) || {
+            id: bOrd.postId,
+            title: bOrd.postTitle || 'Thiết bị gia dụng SecondLife',
+            category: 'Tủ lạnh & Tủ đông',
+            brand: 'SecondLife',
+            model: 'Verified Model',
+            purchaseYear: 2024,
+            priceVnd: bOrd.finalPrice,
+            conditionGrade: 'Like New',
+            declaredConditionText: 'Sản phẩm đã qua kiểm định cơ bản',
+            description: 'Giao dịch bảo lãnh qua Quỹ Escrow SecondLife.',
+            location: 'Đà Nẵng, Việt Nam',
+            sellerId: bOrd.sellerId,
+            sellerName: 'Người Bán SecondLife',
+            sellerRating: 4.9,
+            sellerCompletedOrders: 10,
+            sellerVerified: true,
+            status: 'sold',
+            createdAt: bOrd.createdAt,
+            isInspectionGuaranteed: true,
+            requiresInspection: true,
+            photos: {
+              front: 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800',
+              back: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&q=80&w=800',
+              screenOrDetails: 'https://images.unsplash.com/photo-1550009158-9ebf69173e03?auto=format&fit=crop&q=80&w=800',
+              accessoriesOrBox: 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800',
+              serialOrReceipt: 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800'
+            },
+            photoGallery: ['https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800'],
+          };
+
+          let mappedEscrowStatus: EscrowOrder['escrowStatus'] = 'HELD_IN_ESCROW';
+          if (bOrd.escrowStatus === 'RELEASED' || bOrd.status === 'DELIVERED') {
+            mappedEscrowStatus = 'COMPLETED_RELEASED';
+          } else if (bOrd.escrowStatus === 'REFUNDED' || bOrd.status === 'CANCELLED') {
+            mappedEscrowStatus = 'REFUNDED_TO_BUYER';
+          } else if (bOrd.status === 'SHIPPED') {
+            mappedEscrowStatus = 'SHIPPED_TO_BUYER';
+          } else if (bOrd.status === 'PROCESSING' || bOrd.status === 'PENDING') {
+            mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
+          }
+
+          return {
+            id: bOrd.id,
+            listingId: bOrd.postId,
+            listing: matchedListing,
+            buyerId: bOrd.buyerId,
+            buyerName: 'Khách Hàng',
+            buyerPhone: '0912 345 678',
+            buyerAddress: 'SecondLife Hub Address',
+            sellerId: bOrd.sellerId,
+            sellerName: 'Người Bán',
+            itemPriceVnd: bOrd.finalPrice,
+            inspectionFeeVnd: 0,
+            shippingFeeVnd: 0,
+            platformFeeVnd: 0,
+            totalPaidVnd: bOrd.finalPrice,
+            escrowStatus: mappedEscrowStatus,
+            hasInspectionService: true,
+            shippingLegs: [
+              {
+                id: 'LEG-1',
+                legType: 'SELLER_TO_CENTER',
+                carrier: 'GHTK',
+                trackingNumber: `SCL-ORD-${bOrd.id.slice(0, 8)}`,
+                status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : 'IN_TRANSIT',
+                origin: 'Địa chỉ người bán',
+                destination: 'SecondLife Hub / Người mua',
+                estimatedDelivery: '1 ngày',
+                timeline: [
+                  {
+                    timestamp: new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                    description: `Khởi tạo đơn hàng qua Escrow. Trạng thái: ${bOrd.status}.`,
+                    location: 'Hệ thống SecondLife Escrow'
+                  }
+                ]
+              }
+            ],
+            createdAt: bOrd.createdAt,
+            multiStagePhotos: {
+              listingPhotos: [matchedListing.photos.front, matchedListing.photos.back]
+            }
+          };
+        });
+
+        setOrders(prev => {
+          const backendIds = new Set(mappedOrders.map(o => o.id));
+          const existingNonBackend = prev.filter(o => !backendIds.has(o.id));
+          return [...mappedOrders, ...existingNonBackend];
+        });
+      }
+    } catch (err) {
+      console.warn('Could not load orders from backend:', err);
+    }
+  }, [currentUser, currentRole, listings]);
+
+  // Load orders on user or role change
+  React.useEffect(() => {
+    loadUserOrders();
+  }, [loadUserOrders]);
+
   const handleOrderPlaced = (newOrder: EscrowOrder) => {
     setOrders((prev) => [newOrder, ...prev]);
     setCheckoutListing(null);
     setCheckoutAgreedPrice(undefined);
+    setCheckoutNegotiationId(undefined);
     setSelectedListing(null);
     setActiveTab('orders');
+    loadUserWallet();
     showToast(`Đã phong tỏa Escrow ${formatVND(newOrder.totalPaidVnd)} cho đơn hàng #${newOrder.id}! Bưu tá đang chuẩn bị lấy hàng.`);
   };
 
-  const handleConfirmReceipt = (orderId: string) => {
+  const handleConfirmReceipt = async (orderId: string) => {
+    try {
+      await orderService.confirmDelivery(orderId);
+    } catch (err: any) {
+      console.warn('Backend confirmDelivery fallback:', err);
+    }
     setOrders((prev) =>
       prev.map((ord) =>
         ord.id === orderId ? { ...ord, escrowStatus: 'COMPLETED_RELEASED' } : ord
       )
     );
-    showToast(`Đã xác nhận nhận hàng! Tiền trong Escrow đã được giải ngân thành công cho người bán.`);
+    loadUserWallet();
+    showToast(lang === 'vi' ? 'Đã xác nhận nhận hàng! Tiền trong Escrow đã được giải ngân thành công cho người bán.' : 'Delivery confirmed! Escrow funds released to seller.');
+  };
+
+  const handleMarkShipped = async (orderId: string) => {
+    try {
+      await orderService.markAsShipped(orderId);
+    } catch (err: any) {
+      console.warn('Backend markAsShipped fallback:', err);
+    }
+    setOrders((prev) =>
+      prev.map((ord) =>
+        ord.id === orderId ? { ...ord, escrowStatus: 'SHIPPED_TO_BUYER' } : ord
+      )
+    );
+    showToast(lang === 'vi' ? 'Đã xác nhận gửi hàng! Bưu tá đang vận chuyển đến người mua.' : 'Marked as shipped!');
+  };
+
+  const handleCancelOrder = async (orderId: string) => {
+    try {
+      await orderService.cancelOrder(orderId);
+    } catch (err: any) {
+      console.warn('Backend cancelOrder fallback:', err);
+    }
+    setOrders((prev) =>
+      prev.map((ord) =>
+        ord.id === orderId ? { ...ord, escrowStatus: 'REFUNDED_TO_BUYER' } : ord
+      )
+    );
+    loadUserWallet();
+    showToast(lang === 'vi' ? 'Đã hủy đơn hàng! Tiền ký quỹ Escrow đã được hoàn lại 100% vào ví người mua.' : 'Order cancelled and refunded to buyer.');
   };
 
   const handleOpenDispute = (order: EscrowOrder) => {
@@ -412,6 +577,7 @@ export default function App() {
           }}
           userCreditBalance={userCreditBalance}
           userCredit={userCredit}
+          walletBalance={walletBalance}
           onOpenSellerRegister={() => setIsSellerRegistrationModalOpen(true)}
         />
       )}
@@ -523,6 +689,8 @@ export default function App() {
             orders={orders}
             onConfirmReceipt={handleConfirmReceipt}
             onOpenDispute={handleOpenDispute}
+            onMarkShipped={handleMarkShipped}
+            onCancelOrder={handleCancelOrder}
             lang={lang}
             userRole={currentRole}
             onOpenChat={(listing) => setChatListing(listing)}
@@ -603,6 +771,7 @@ export default function App() {
             }
             setSelectedListing(null);
             setCheckoutAgreedPrice(undefined);
+            setCheckoutNegotiationId(undefined);
             setCheckoutListing(item);
           }}
           onChatClick={(item) => {
@@ -627,9 +796,12 @@ export default function App() {
           listing={checkoutListing}
           currentUser={currentUser}
           agreedPrice={checkoutAgreedPrice}
+          negotiationId={checkoutNegotiationId}
+          onOpenDeposit={() => setIsTopUpModalOpen(true)}
           onClose={() => {
             setCheckoutListing(null);
             setCheckoutAgreedPrice(undefined);
+            setCheckoutNegotiationId(undefined);
           }}
           onOrderPlaced={handleOrderPlaced}
           lang={lang}
@@ -642,7 +814,7 @@ export default function App() {
           listing={chatListing}
           currentRole={currentRole}
           onClose={() => setChatListing(null)}
-          onBuyClick={(item, agreedPrice) => {
+          onBuyClick={(item, agreedPrice, negotiationId) => {
             if (!currentUser) {
               setPendingCheckoutItem(item);
               requireAuth(undefined, lang === 'vi'
@@ -652,6 +824,7 @@ export default function App() {
             }
             setChatListing(null);
             setCheckoutAgreedPrice(agreedPrice);
+            setCheckoutNegotiationId(negotiationId);
             setCheckoutListing(item);
           }}
           onOpenSellerReviews={(sellerId, sellerName) => {
@@ -790,8 +963,10 @@ export default function App() {
         onClose={() => setIsTopUpModalOpen(false)}
         currentCredit={userCreditBalance}
         userCredit={userCredit}
+        walletBalance={walletBalance}
         onCreditUpdated={(newBal) => setUserCreditBalance(newBal)}
         onUserCreditUpdated={(newCredit) => setUserCredit(newCredit)}
+        onWalletUpdated={(newBal) => setWalletBalance(newBal)}
       />
       {/* Logout Confirmation Modal Popup */}
       <LogoutConfirmModal

@@ -39,6 +39,8 @@ interface EscrowOrdersViewProps {
   orders: EscrowOrder[];
   onConfirmReceipt: (orderId: string) => void;
   onOpenDispute: (order: EscrowOrder) => void;
+  onMarkShipped?: (orderId: string) => void;
+  onCancelOrder?: (orderId: string) => void;
   lang: Language;
   userRole?: UserRole;
   onOpenChat?: (listing: any) => void;
@@ -57,6 +59,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   orders,
   onConfirmReceipt,
   onOpenDispute,
+  onMarkShipped,
+  onCancelOrder,
   lang,
   userRole = 'buyer',
   onOpenChat,
@@ -599,18 +603,19 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                     {/* Seller Actions */}
                     {isSeller ? (
                       <>
-                        {/* Awaiting pickup: Schedule & Print Shipping Voucher */}
-                        {ord.escrowStatus === 'AWAITING_PAYMENT' && (
+                        {/* Awaiting pickup / In progress: Schedule & Print Shipping Voucher */}
+                        {(ord.escrowStatus === 'AWAITING_PAYMENT' || ord.escrowStatus === 'HELD_IN_ESCROW' || ord.escrowStatus === 'INSPECTION_IN_PROGRESS') && (
                           <>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleConfirmCourierPickup(ord.id);
+                                onMarkShipped?.(ord.id);
                               }}
-                              className="px-3 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-90 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                              className="px-3 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-90 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
                             >
-                              <Clock className="w-3.5 h-3.5" />
-                              <span>{lang === 'vi' ? 'Hẹn Bưu Tá Lấy Hàng' : 'Schedule Pickup'}</span>
+                              <Truck className="w-3.5 h-3.5" />
+                              <span>{lang === 'vi' ? 'Xác Nhận Đã Gửi Hàng' : 'Confirm Shipped'}</span>
                             </button>
                             <button
                               onClick={(e) => {
@@ -622,6 +627,19 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               <Printer className="w-3.5 h-3.5" />
                               <span>{lang === 'vi' ? 'In Phiếu Gửi Hub' : 'Print Label'}</span>
                             </button>
+                            {onCancelOrder && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onCancelOrder(ord.id);
+                                }}
+                                className="px-3 py-2 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition cursor-pointer"
+                                title="Hủy đơn hàng"
+                              >
+                                <X className="w-3.5 h-3.5 inline mr-1" />
+                                <span>{lang === 'vi' ? 'Hủy Đơn' : 'Cancel'}</span>
+                              </button>
+                            )}
                           </>
                         )}
 
@@ -673,16 +691,30 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           <span>{lang === 'vi' ? 'Xem Chi Tiết' : 'View Details'}</span>
                         </button>
 
-                        {ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' && (
+                        {(ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.escrowStatus === 'SHIPPED_TO_BUYER') && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               onConfirmReceipt(ord.id);
                             }}
-                            className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                            className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>{lang === 'vi' ? 'Đã Nhận Hàng' : 'Confirm Receipt'}</span>
+                            <span>{lang === 'vi' ? 'Đã Nhận Hàng (Giải Ngân)' : 'Confirm Delivery'}</span>
+                          </button>
+                        )}
+
+                        {onCancelOrder && (ord.escrowStatus === 'AWAITING_PAYMENT' || ord.escrowStatus === 'HELD_IN_ESCROW' || ord.escrowStatus === 'INSPECTION_IN_PROGRESS') && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onCancelOrder(ord.id);
+                            }}
+                            className="px-3 py-2 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition cursor-pointer"
+                            title="Hủy đơn và hoàn 100% tiền Escrow về ví"
+                          >
+                            <X className="w-3.5 h-3.5 inline mr-1" />
+                            <span>{lang === 'vi' ? 'Hủy Đơn (Hoàn Tiền)' : 'Cancel Order'}</span>
                           </button>
                         )}
 

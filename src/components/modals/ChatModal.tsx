@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChatMessage, Listing, Language, UserRole } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import {
@@ -16,13 +16,14 @@ import {
   Award
 } from 'lucide-react';
 import { reviewService } from '../../data/mockReviews';
+import { negotiationService } from '../../services';
 
 interface ChatModalProps {
   listing: Listing;
   currentRole: UserRole;
   onClose: () => void;
   lang: Language;
-  onBuyClick?: (listing: Listing, agreedPrice?: number) => void;
+  onBuyClick?: (listing: Listing, agreedPrice?: number, negotiationId?: string) => void;
   onOpenSellerReviews?: (sellerId: string, sellerName: string) => void;
 }
 
@@ -73,11 +74,53 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     Math.round((listing.priceVnd * 0.92) / 100000) * 100000
   );
   const [showOfferForm, setShowOfferForm] = useState(false);
+  const [negotiationLoading, setNegotiationLoading] = useState(false);
 
-  // Track latest accepted offer price
-  const latestAcceptedOffer = messages
+  // Track latest accepted offer price & negotiationId
+  const latestAcceptedMsg = messages
     .filter((m) => m.isOffer && m.offerStatus === 'accepted' && m.offerAmountVnd)
-    .pop()?.offerAmountVnd;
+    .pop();
+  const latestAcceptedOffer = latestAcceptedMsg?.offerAmountVnd;
+  const latestAcceptedNegotiationId = latestAcceptedMsg?.negotiationId;
+
+  // Load active negotiations for this post from Backend on mount
+  useEffect(() => {
+    let isMounted = true;
+    const loadNegotiations = async () => {
+      if (!listing?.id) return;
+      try {
+        const res = currentRole === 'seller'
+          ? await negotiationService.getSellerNegotiations(0, 50)
+          : await negotiationService.getBuyerNegotiations(0, 50);
+
+        const matching = (res?.content || []).filter(n => n.postId === listing.id);
+        if (matching.length > 0 && isMounted) {
+          const loadedOfferMsgs: ChatMessage[] = matching.map(n => ({
+            id: `nego-${n.id}`,
+            senderId: n.buyerId || 'buyer',
+            senderName: currentRole === 'buyer' ? 'Bạn' : 'Người Mua',
+            senderRole: 'buyer',
+            text: `Đề xuất thương lượng giá chính thức: ${formatVND(n.offeredPrice)}`,
+            timestamp: n.createdAt ? new Date(n.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'Hôm nay',
+            isOffer: true,
+            offerAmountVnd: n.offeredPrice,
+            offerStatus: n.status === 'ACCEPTED' ? 'accepted' : n.status === 'REJECTED' || n.status === 'CANCELLED' ? 'declined' : 'pending',
+            negotiationId: n.id,
+          }));
+
+          setMessages(prev => {
+            const existingNegoIds = new Set(prev.map(m => m.negotiationId).filter(Boolean));
+            const newToAdd = loadedOfferMsgs.filter(m => !existingNegoIds.has(m.negotiationId));
+            return newToAdd.length > 0 ? [...prev, ...newToAdd] : prev;
+          });
+        }
+      } catch (err) {
+        console.warn('Could not load negotiations from BE:', err);
+      }
+    };
+    loadNegotiations();
+    return () => { isMounted = false; };
+  }, [listing.id, currentRole]);
 
   const [aiAdvice, setAiAdvice] = useState<{
     counterOfferVnd: number;
@@ -119,10 +162,24 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
   };
 
-  const handleSendOffer = () => {
+  const handleSendOffer = async () => {
     if (!offerInput || offerInput <= 0) return;
+    setNegotiationLoading(true);
+    let negotiationId: string | undefined = undefined;
+
+    try {
+      const res = await negotiationService.createNegotiation(listing.id, offerInput);
+      if (res?.id) {
+        negotiationId = res.id;
+      }
+    } catch (err: any) {
+      console.warn('Backend negotiation creation fallback to local state:', err);
+    } finally {
+      setNegotiationLoading(false);
+    }
+
     const newOfferMsg: ChatMessage = {
-      id: `offer-${Date.now()}`,
+      id: negotiationId ? `nego-${negotiationId}` : `offer-${Date.now()}`,
       senderId: currentRole,
       senderName: currentRole === 'buyer' ? 'Hoàng Quốc Khang' : listing.sellerName,
       senderRole: currentRole === 'buyer' ? 'buyer' : 'seller',
@@ -130,28 +187,40 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
       isOffer: true,
       offerAmountVnd: offerInput,
-      offerStatus: 'pending'
+      offerStatus: 'pending',
+      negotiationId,
     };
 
     setMessages((prev) => [...prev, newOfferMsg]);
     setShowOfferForm(false);
   };
 
-  const handleRespondOffer = (msgId: string, action: 'accepted' | 'declined') => {
+  const handleRespondOffer = async (msgId: string, action: 'accepted' | 'declined') => {
+    const targetMsg = messages.find((m) => m.id === msgId);
+    if (targetMsg?.negotiationId) {
+      try {
+        if (action === 'accepted') {
+          await negotiationService.acceptNegotiation(targetMsg.negotiationId);
+        } else {
+          await negotiationService.rejectNegotiation(targetMsg.negotiationId);
+        }
+      } catch (err: any) {
+        console.warn('Backend respond negotiation error:', err);
+      }
+    }
+
     setMessages((prev) =>
       prev.map((m) => (m.id === msgId ? { ...m, offerStatus: action } : m))
     );
 
     if (action === 'accepted') {
-      const acceptedMsg = messages.find((m) => m.id === msgId);
-      if (acceptedMsg?.offerAmountVnd) {
-        // Add a notification system message
+      if (targetMsg?.offerAmountVnd) {
         const confirmMsg: ChatMessage = {
           id: `sys-${Date.now()}`,
           senderId: 'system',
           senderName: 'SecondLife Bot',
           senderRole: 'system',
-          text: `🎉 Thỏa thuận thành công! Người bán đã chấp nhận mức giá: ${formatVND(acceptedMsg.offerAmountVnd)}. Bạn có thể tiến hành đặt mua ngay với giá ưu đãi này!`,
+          text: `🎉 Thỏa thuận thành công! Người bán đã chấp nhận mức giá: ${formatVND(targetMsg.offerAmountVnd)}. Bạn có thể tiến hành đặt mua ngay với giá ưu đãi này!`,
           timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
         };
         setTimeout(() => {
@@ -159,6 +228,20 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         }, 300);
       }
     }
+  };
+
+  const handleCancelOffer = async (msgId: string) => {
+    const targetMsg = messages.find((m) => m.id === msgId);
+    if (targetMsg?.negotiationId) {
+      try {
+        await negotiationService.cancelNegotiation(targetMsg.negotiationId);
+      } catch (err: any) {
+        console.warn('Backend cancel negotiation error:', err);
+      }
+    }
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msgId ? { ...m, offerStatus: 'declined', text: 'Đã hủy yêu cầu thương lượng' } : m))
+    );
   };
 
   const handleUnsendMessage = (msgId: string) => {
@@ -171,10 +254,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     );
   };
 
-  const handleBuyNow = (priceToUse?: number) => {
+  const handleBuyNow = (priceToUse?: number, specificNegotiationId?: string) => {
     const finalPrice = priceToUse || latestAcceptedOffer || listing.priceVnd;
+    const finalNegoId = specificNegotiationId || latestAcceptedNegotiationId;
     if (onBuyClick) {
-      onBuyClick(listing, finalPrice);
+      onBuyClick(listing, finalPrice, finalNegoId);
     }
   };
 
@@ -408,13 +492,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                                     <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                                     <span>{lang === 'vi' ? 'Đang chờ người bán phản hồi...' : 'Waiting for seller response...'}</span>
                                   </div>
-                                  {/* Demo simulation shortcut for buyer testing */}
                                   <button
                                     type="button"
-                                    onClick={() => handleRespondOffer(msg.id, 'accepted')}
-                                    className="w-full py-1 px-2 bg-white/20 hover:bg-white/30 text-white rounded-lg text-[10px] font-bold cursor-pointer transition"
+                                    onClick={() => handleCancelOffer(msg.id)}
+                                    className="w-full py-1 px-2 bg-rose-600/80 hover:bg-rose-700 text-white rounded-lg text-[10px] font-bold cursor-pointer transition flex items-center justify-center gap-1"
                                   >
-                                    ⚡ {lang === 'vi' ? 'Mô phỏng: Người bán đồng ý giá này' : 'Simulate: Seller accepts'}
+                                    <X className="w-3 h-3" />
+                                    <span>{lang === 'vi' ? 'Hủy yêu cầu thương lượng' : 'Cancel Offer'}</span>
                                   </button>
                                 </div>
                               )
@@ -428,7 +512,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
                                 <button
                                   type="button"
-                                  onClick={() => handleBuyNow(msg.offerAmountVnd)}
+                                  onClick={() => handleBuyNow(msg.offerAmountVnd, msg.negotiationId)}
                                   className="w-full py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:opacity-95 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-transform hover:scale-102"
                                 >
                                   <ShoppingBag className="w-4 h-4" />

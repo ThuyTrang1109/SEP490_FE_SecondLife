@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Listing, EscrowOrder, Language } from '../../types';
+import React, { useState, useEffect } from 'react';
+import { Listing, EscrowOrder, Language, UserWallet } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import {
   ShieldCheck,
@@ -17,8 +17,12 @@ import {
   FileText,
   Sparkles,
   AlertCircle,
-  HelpCircle
+  HelpCircle,
+  Wallet,
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
+import { orderService, walletService } from '../../services';
 
 interface CheckoutModalProps {
   listing: Listing;
@@ -27,6 +31,8 @@ interface CheckoutModalProps {
   lang: Language;
   currentUser?: { id: string; name: string; email?: string; phone?: string; address?: string } | null;
   agreedPrice?: number;
+  negotiationId?: string;
+  onOpenDeposit?: () => void;
 }
 
 const VIETNAM_CITIES = [
@@ -48,7 +54,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onOrderPlaced,
   lang,
   currentUser,
-  agreedPrice
+  agreedPrice,
+  negotiationId,
+  onOpenDeposit,
 }) => {
   const t = translations[lang];
 
@@ -59,7 +67,31 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const [hasInspection, setHasInspection] = useState(true);
   const [carrier, setCarrier] = useState<'GHTK' | 'GHN'>('GHTK');
-  const [paymentMethod, setPaymentMethod] = useState<'VIETQR' | 'CARD' | 'MOMO'>('VIETQR');
+  const [paymentMethod, setPaymentMethod] = useState<'WALLET' | 'VIETQR' | 'CARD'>('WALLET');
+
+  // Wallet and Order Submission States
+  const [wallet, setWallet] = useState<UserWallet | null>(null);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [submittingOrder, setSubmittingOrder] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
+
+  // Load wallet on mount
+  useEffect(() => {
+    let isMounted = true;
+    const fetchWallet = async () => {
+      setWalletLoading(true);
+      try {
+        const w = await walletService.getMyWallet();
+        if (isMounted && w) setWallet(w);
+      } catch (err) {
+        console.warn('Could not fetch wallet in checkout modal:', err);
+      } finally {
+        if (isMounted) setWalletLoading(false);
+      }
+    };
+    fetchWallet();
+    return () => { isMounted = false; };
+  }, []);
 
   // Buyer Form Information
   const [buyerName, setBuyerName] = useState(currentUser?.name || 'Hoàng Quốc Khang');
@@ -107,95 +139,120 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
-  const handleConfirmOrder = (e: React.FormEvent) => {
+  const handleConfirmOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
 
-    const orderId = `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`;
-    const newOrder: EscrowOrder = {
-      id: orderId,
-      listingId: listing.id,
-      listing: {
-        ...listing,
-        priceVnd: itemPrice
-      },
-      buyerId: currentUser?.id || 'buyer-current',
-      buyerName,
-      buyerPhone,
-      buyerAddress: fullAddress,
-      sellerId: listing.sellerId,
-      sellerName: listing.sellerName,
-      itemPriceVnd: itemPrice,
-      inspectionFeeVnd: inspectionFee,
-      shippingFeeVnd: shippingFee,
-      platformFeeVnd: platformFee,
-      totalPaidVnd: totalAmount,
-      escrowStatus: hasInspection ? 'INSPECTION_IN_PROGRESS' : 'SHIPPED_TO_BUYER',
-      hasInspectionService: hasInspection,
-      shippingLegs: hasInspection
-        ? [
-            {
-              id: 'LEG-1',
-              legType: 'SELLER_TO_CENTER',
-              carrier: 'GHTK',
-              trackingNumber: `GHTK-SG-${Math.floor(100000 + Math.random() * 900000)}`,
-              status: 'PICKED_UP',
-              origin: listing.location,
-              destination: 'SecondLife Inspection Hub',
-              estimatedDelivery: '2026-09-08T15:00:00Z',
-              timeline: [
-                {
-                  timestamp: new Date().toISOString(),
-                  description: 'Đã tạo mã vận đơn lấy hàng từ người bán đưa về phòng Lab Hub',
-                  location: listing.location
-                }
-              ]
-            },
-            {
-              id: 'LEG-2',
-              legType: 'CENTER_TO_BUYER',
-              carrier: 'GHN',
-              trackingNumber: `GHN-EXP-${Math.floor(100000 + Math.random() * 900000)}`,
-              status: 'PICKED_UP',
-              origin: 'SecondLife Hub Lab',
-              destination: fullAddress,
-              estimatedDelivery: '2026-09-10T12:00:00Z',
-              timeline: [
-                {
-                  timestamp: new Date().toISOString(),
-                  description: 'Chờ trung tâm kiểm định 48 bước & dán tem niêm phong trước khi giao',
-                  location: 'Kho trung tâm SecondLife Hub'
-                }
-              ]
-            }
-          ]
-        : [
-            {
-              id: 'LEG-DIRECT',
-              legType: 'DIRECT',
-              carrier,
-              trackingNumber: `${carrier}-DIR-${Math.floor(100000 + Math.random() * 900000)}`,
-              status: 'PICKED_UP',
-              origin: listing.location,
-              destination: fullAddress,
-              estimatedDelivery: '2026-09-09T18:00:00Z',
-              timeline: [
-                {
-                  timestamp: new Date().toISOString(),
-                  description: 'Người bán đang chuẩn bị đóng gói giao cho bưu tá',
-                  location: listing.location
-                }
-              ]
-            }
-          ],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      multiStagePhotos: {
-        listingPhotos: [listing.photos.front, listing.photos.back]
-      }
-    };
+    const currentBal = wallet?.balance ?? 0;
+    if (currentBal < itemPrice) {
+      setOrderError(
+        lang === 'vi'
+          ? `Số dư ví của bạn (${formatVND(currentBal)}) không đủ để ký quỹ đơn hàng (${formatVND(itemPrice)}). Vui lòng nạp thêm tiền vào ví để hoàn tất đặt hàng.`
+          : `Your wallet balance (${formatVND(currentBal)}) is insufficient for escrow custody (${formatVND(itemPrice)}). Please deposit funds to continue.`
+      );
+      return;
+    }
 
-    onOrderPlaced(newOrder);
+    setOrderError(null);
+    setSubmittingOrder(true);
+
+    try {
+      // 1. Call Backend API: POST /api/v1/orders
+      const backendOrder = await orderService.createOrder(listing.id, negotiationId);
+
+      const orderId = backendOrder?.id || `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+      const finalChargedPrice = backendOrder?.finalPrice || itemPrice;
+
+      const newOrder: EscrowOrder = {
+        id: orderId,
+        listingId: listing.id,
+        listing: {
+          ...listing,
+          priceVnd: finalChargedPrice
+        },
+        buyerId: currentUser?.id || 'buyer-current',
+        buyerName,
+        buyerPhone,
+        buyerAddress: fullAddress,
+        sellerId: listing.sellerId,
+        sellerName: listing.sellerName,
+        itemPriceVnd: finalChargedPrice,
+        inspectionFeeVnd: inspectionFee,
+        shippingFeeVnd: shippingFee,
+        platformFeeVnd: platformFee,
+        totalPaidVnd: finalChargedPrice + inspectionFee + shippingFee + platformFee,
+        escrowStatus: hasInspection ? 'INSPECTION_IN_PROGRESS' : 'SHIPPED_TO_BUYER',
+        hasInspectionService: hasInspection,
+        shippingLegs: hasInspection
+          ? [
+              {
+                id: 'LEG-1',
+                legType: 'SELLER_TO_CENTER',
+                carrier: 'GHTK',
+                trackingNumber: `GHTK-SG-${Math.floor(100000 + Math.random() * 900000)}`,
+                status: 'PICKED_UP',
+                origin: listing.location,
+                destination: 'SecondLife Inspection Hub',
+                estimatedDelivery: '2026-10-04T15:00:00Z',
+                timeline: [
+                  {
+                    timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                    description: 'Đã tạo mã vận đơn lấy hàng từ người bán đưa về phòng Lab Hub',
+                    location: listing.location
+                  }
+                ]
+              },
+              {
+                id: 'LEG-2',
+                legType: 'CENTER_TO_BUYER',
+                carrier: 'GHN',
+                trackingNumber: `GHN-EXP-${Math.floor(100000 + Math.random() * 900000)}`,
+                status: 'PICKED_UP',
+                origin: 'SecondLife Hub Lab',
+                destination: fullAddress,
+                estimatedDelivery: '2026-10-06T12:00:00Z',
+                timeline: [
+                  {
+                    timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                    description: 'Chờ trung tâm kiểm định 48 bước & dán tem niêm phong trước khi giao',
+                    location: 'Kho trung tâm SecondLife Hub'
+                  }
+                ]
+              }
+            ]
+          : [
+              {
+                id: 'LEG-DIRECT',
+                legType: 'DIRECT',
+                carrier,
+                trackingNumber: `${carrier}-DIR-${Math.floor(100000 + Math.random() * 900000)}`,
+                status: 'PICKED_UP',
+                origin: listing.location,
+                destination: fullAddress,
+                estimatedDelivery: '2026-10-05T18:00:00Z',
+                timeline: [
+                  {
+                    timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                    description: 'Người bán đang chuẩn bị đóng gói giao cho bưu tá',
+                    location: listing.location
+                  }
+                ]
+              }
+            ],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        multiStagePhotos: {
+          listingPhotos: [listing.photos.front, listing.photos.back]
+        }
+      };
+
+      onOrderPlaced(newOrder);
+    } catch (err: any) {
+      console.error('Order creation error:', err);
+      setOrderError(err?.message || 'Không thể tạo đơn hàng trên hệ thống. Vui lòng kiểm tra lại kết nối backend hoặc số dư ví.');
+    } finally {
+      setSubmittingOrder(false);
+    }
   };
 
   return (
@@ -528,53 +585,64 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
           </div>
 
-          {/* Payment Method Selector */}
+          {/* Payment Method Selector & Wallet Balance */}
           <div className="space-y-2">
-            <label className="font-extrabold text-[#24263e] uppercase tracking-wider text-[11px]">
-              {lang === 'vi' ? 'Phương thức nạp tiền ký quỹ Escrow:' : 'Escrow Deposit Payment Method:'}
+            <label className="font-extrabold text-[#24263e] uppercase tracking-wider text-[11px] flex items-center justify-between">
+              <span>{lang === 'vi' ? 'Phương thức nạp tiền ký quỹ Escrow:' : 'Escrow Custody Payment Method:'}</span>
+              <span className="text-emerald-700 font-bold lowercase">
+                {lang === 'vi' ? 'Trừ trực tiếp số dư ví' : 'Direct wallet debit'}
+              </span>
             </label>
-            <div className="grid grid-cols-3 gap-2.5">
-              <button
-                type="button"
-                onClick={() => setPaymentMethod('VIETQR')}
-                className={`p-3 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
-                  paymentMethod === 'VIETQR'
-                    ? 'bg-[#24263e] text-white border-[#24263e] shadow-xs'
-                    : 'bg-[#faf8f5] text-slate-700 border-slate-200 hover:border-slate-400'
-                }`}
-              >
-                <QrCode className="w-5 h-5" />
-                <span className="text-[11px] font-extrabold">VietQR 247</span>
-                <span className="text-[9px] opacity-80">{lang === 'vi' ? 'Quét mã tức thì' : 'Instant scan'}</span>
-              </button>
 
-              <button
-                type="button"
-                onClick={() => setPaymentMethod('CARD')}
-                className={`p-3 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
-                  paymentMethod === 'CARD'
-                    ? 'bg-[#24263e] text-white border-[#24263e] shadow-xs'
-                    : 'bg-[#faf8f5] text-slate-700 border-slate-200 hover:border-slate-400'
-                }`}
-              >
-                <CreditCard className="w-5 h-5" />
-                <span className="text-[11px] font-extrabold">Visa / Master</span>
-                <span className="text-[9px] opacity-80">{lang === 'vi' ? 'Thẻ quốc tế' : 'Credit / Debit'}</span>
-              </button>
+            {/* Wallet Balance Card */}
+            <div className={`p-4 rounded-2xl border transition-all ${
+              (wallet?.balance ?? 0) >= itemPrice
+                ? 'bg-gradient-to-r from-emerald-50 via-teal-50 to-white border-emerald-300'
+                : 'bg-gradient-to-r from-amber-50 via-orange-50 to-white border-amber-300'
+            }`}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
+                    (wallet?.balance ?? 0) >= itemPrice ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+                  }`}>
+                    <Wallet className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-black text-slate-900 block leading-tight">
+                      {lang === 'vi' ? 'Ví Tiền SecondLife (Ký Quỹ Escrow)' : 'SecondLife Wallet Escrow'}
+                    </span>
+                    <span className="text-xs text-slate-600 font-medium">
+                      {lang === 'vi' ? 'Số dư hiện có: ' : 'Available Balance: '}
+                      <strong className="font-mono text-slate-900 text-sm">{formatVND(wallet?.balance ?? 0)}</strong>
+                    </span>
+                  </div>
+                </div>
 
-              <button
-                type="button"
-                onClick={() => setPaymentMethod('MOMO')}
-                className={`p-3 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
-                  paymentMethod === 'MOMO'
-                    ? 'bg-[#24263e] text-white border-[#24263e] shadow-xs'
-                    : 'bg-[#faf8f5] text-slate-700 border-slate-200 hover:border-slate-400'
-                }`}
-              >
-                <Sparkles className="w-5 h-5" />
-                <span className="text-[11px] font-extrabold">Ví MoMo / Zalo</span>
-                <span className="text-[9px] opacity-80">{lang === 'vi' ? 'Ví điện tử' : 'E-wallet'}</span>
-              </button>
+                {onOpenDeposit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenDeposit();
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#dc4729] text-white text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5 shrink-0"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>{lang === 'vi' ? 'Nạp Tiền Ví' : 'Top Up Wallet'}</span>
+                  </button>
+                )}
+              </div>
+
+              {(wallet?.balance ?? 0) < itemPrice && (
+                <div className="mt-2.5 pt-2 border-t border-amber-200/80 text-[11px] text-amber-800 font-medium flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>
+                    {lang === 'vi'
+                      ? `Số dư ví còn thiếu ${formatVND(itemPrice - (wallet?.balance ?? 0))}. Vui lòng nạp tiền vào ví trước khi xác nhận đặt hàng.`
+                      : `Wallet is short by ${formatVND(itemPrice - (wallet?.balance ?? 0))}. Please top up before ordering.`}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -634,22 +702,40 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <span className="leading-snug">
               <strong>{lang === 'vi' ? 'Cam kết Escrow:' : 'Escrow Custody Guarantee:'}</strong>{' '}
               {lang === 'vi'
-                ? 'Người bán KHÔNG nhận được tiền ngay. Số tiền được bảo lãnh 100% tại tài khoản ủy thác ngân hàng. Tiền chỉ được giải ngân sau khi kiểm định viên đóng dấu ĐẠT và bạn hài lòng nhận hàng sau 48h trải nghiệm.'
-                : 'Seller does NOT receive payment upfront. Funds are 100% secured in bank custody until Hub verification PASS and you approve within 48h.'}
+                ? 'Tiền của người mua sẽ được phong tỏa tại quỹ Escrow ngay khi bấm đặt hàng. Người bán CHƯA nhận được tiền cho đến khi người mua xác nhận đã nhận được hàng.'
+                : 'Funds are securely locked in Escrow custody upon order placement. Seller only receives payment after buyer confirms delivery.'}
             </span>
           </div>
+
+          {/* Order Error Alert */}
+          {orderError && (
+            <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 font-semibold flex items-center gap-2.5 animate-fadeIn">
+              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+              <span>{orderError}</span>
+            </div>
+          )}
 
           {/* Submit */}
           <button
             type="submit"
-            className="w-full py-3.5 px-4 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white rounded-2xl font-black text-xs sm:text-sm shadow-lg transition flex items-center justify-center gap-2 cursor-pointer"
+            disabled={submittingOrder}
+            className="w-full py-3.5 px-4 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white rounded-2xl font-black text-xs sm:text-sm shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Lock className="w-4 h-4 text-white" />
-            <span>
-              {lang === 'vi'
-                ? `Xác Nhận Phong Tỏa Tiền & Đặt Hàng (${formatVND(totalAmount)})`
-                : `Authorize Escrow & Place Order (${formatVND(totalAmount)})`}
-            </span>
+            {submittingOrder ? (
+              <>
+                <Loader2 className="w-4 h-4 text-white animate-spin" />
+                <span>{lang === 'vi' ? 'Đang kết nối Escrow & trừ tiền ví...' : 'Connecting Escrow & deducting wallet...'}</span>
+              </>
+            ) : (
+              <>
+                <Lock className="w-4 h-4 text-white" />
+                <span>
+                  {lang === 'vi'
+                    ? `Xác Nhận Phong Tỏa Tiền & Đặt Hàng (${formatVND(totalAmount)})`
+                    : `Authorize Escrow & Place Order (${formatVND(totalAmount)})`}
+                </span>
+              </>
+            )}
           </button>
         </form>
       </div>

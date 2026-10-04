@@ -1,7 +1,7 @@
 import React from 'react';
-import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Phone, Coins, FileCheck } from 'lucide-react';
+import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Phone, Coins, FileCheck, Wallet } from 'lucide-react';
 import { UserRole, Language, UserCredit } from '../../types';
-import { translations } from '../../utils/translations';
+import { translations, formatVND } from '../../utils/translations';
 import logoImg from '../../assets/logo.png';
 
 interface NavbarProps {
@@ -20,6 +20,7 @@ interface NavbarProps {
   onOpenTopUp?: () => void;
   userCreditBalance?: number;
   userCredit?: UserCredit;
+  walletBalance?: number;
   onOpenSellerRegister?: () => void;
 }
 
@@ -39,6 +40,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenTopUp,
   userCreditBalance = 100,
   userCredit,
+  walletBalance = 0,
   onOpenSellerRegister,
 }) => {
   const t = translations[lang];
@@ -226,18 +228,18 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Action buttons & Profile */}
         <div className="flex items-center gap-2.5 shrink-0">
-          {/* TopUp Credits Badge Button */}
+          {/* TopUp & Wallet Balance Badge Button */}
           {currentUser && (
             <button
               onClick={onOpenTopUp}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/15 text-white border border-white/20 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
-              title={lang === 'vi' ? 'Click để nạp thêm lượt đăng tin & lượt tư vấn AI' : 'Click to top up post & AI credits'}
+              title={lang === 'vi' ? 'Ví tiền & Nạp xu' : 'Wallet & Credits'}
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+              <Wallet className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <div className="flex items-center gap-1 text-[11px]">
-                <span className="text-white font-extrabold">{userCredit?.postCredits ?? (userCreditBalance ?? 0)} {lang === 'vi' ? 'tin' : 'posts'}</span>
+                <span className="text-emerald-300 font-extrabold font-mono">{formatVND(walletBalance)}</span>
                 <span className="text-white/40">•</span>
-                <span className="text-white font-extrabold">{userCredit?.chatCredits ?? 15} AI</span>
+                <span className="text-white font-extrabold">{userCredit?.postCredits ?? (userCreditBalance ?? 0)} {lang === 'vi' ? 'tin' : 'posts'}</span>
               </div>
               <span className="text-[9px] px-1 py-0.2 bg-[#c34c36] text-white rounded font-black leading-none ml-0.5">+</span>
             </button>

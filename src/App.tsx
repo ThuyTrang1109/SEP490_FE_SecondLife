@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit } from './types';
-import { mockListings, mockOrders, mockDisputes, mockUsersByRole } from './data/mockData';
 import { formatVND } from './utils/translations';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
@@ -24,7 +23,7 @@ import { TopUpModal } from './components/modals/TopUpModal';
 import { PolicyModal, PolicyTabKey } from './components/modals/PolicyModal';
 import { SellerReviewsModal } from './components/modals/SellerReviewsModal';
 import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
-import { authService, userService, topupService, walletService, orderService, negotiationService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
+import { authService, userService, topupService, walletService, orderService, negotiationService, postService, adminPostService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
 
 export default function App() {
   // Global State - Default to 'marketplace' so visitors enter directly into the marketplace
@@ -178,9 +177,9 @@ export default function App() {
   };
 
   // Core Data State
-  const [listings, setListings] = useState<Listing[]>(mockListings);
-  const [orders, setOrders] = useState<EscrowOrder[]>(mockOrders);
-  const [disputes, setDisputes] = useState<DisputeCase[]>(mockDisputes);
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [orders, setOrders] = useState<EscrowOrder[]>([]);
+  const [disputes, setDisputes] = useState<DisputeCase[]>([]);
 
   // Modals
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
@@ -261,9 +260,9 @@ export default function App() {
   // Handlers
   const handleRoleChange = (newRole: UserRole) => {
     setCurrentRole(newRole);
-    const mockUser = mockUsersByRole[newRole];
-    if (mockUser) {
-      setCurrentUser(mockUser);
+    const existingUser = getStoredUser();
+    if (existingUser) {
+      setCurrentUser({ ...existingUser, role: newRole });
     }
     const roleLabels: Record<UserRole, string> = {
       buyer: 'Người Mua (Buyer)',
@@ -272,7 +271,7 @@ export default function App() {
       inspector: 'Kỹ Sư Hub (Inspector)',
       admin: 'Quản Trị Viên (Admin)'
     };
-    showToast(`Đã chuyển sang vai trò ${roleLabels[newRole]} & kích hoạt tài khoản thử nghiệm giao diện!`);
+    showToast(`Đã chuyển góc nhìn sang ${roleLabels[newRole]}.`);
 
     if (newRole === 'inspector') {
       handleTabChange('inspection-hub');
@@ -293,16 +292,110 @@ export default function App() {
     showToast(`Đăng bán thành công sản phẩm "${newListing.title}"! Giá niêm yết: ${formatVND(newListing.priceVnd)}.`);
   };
 
-  // Synchronize orders with Backend
+  const mapBackendPostToListing = React.useCallback((post: any): Listing => {
+    const photoUrl = post.imageUrl || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800';
+    return {
+      id: post.id || `post-${Date.now()}`,
+      title: post.title || 'Thiết bị gia dụng SecondLife',
+      category: (post.category || 'Tủ lạnh & Tủ đông') as any,
+      brand: post.brand || 'SecondLife',
+      model: post.model || 'Model',
+      purchaseYear: 2024,
+      priceVnd: Number(post.price || 0),
+      originalPriceVnd: Number(post.aiSuggestedPrice || post.price || 0),
+      conditionGrade: (post.itemCondition || 'Like New') as any,
+      declaredConditionText: post.itemCondition || 'Tình trạng tốt',
+      description: post.description || post.aiDescription || 'Đã qua thẩm định SecondLife.',
+      location: 'Việt Nam',
+      sellerId: post.user?.id || post.userId || 'seller',
+      sellerName: post.user?.fullName || post.sellerName || 'Người bán SecondLife',
+      sellerRating: 5.0,
+      sellerCompletedOrders: 1,
+      sellerVerified: true,
+      status: (post.status === 'ACTIVE' ? 'active' : post.status === 'DRAFT' ? 'draft' : 'reserved') as any,
+      backendStatus: post.status,
+      rejectionReason: post.rejectionReason,
+      createdAt: post.createdAt || new Date().toISOString(),
+      isInspectionGuaranteed: true,
+      requiresInspection: Number(post.price || 0) > 5000000,
+      photos: {
+        front: photoUrl,
+        back: photoUrl,
+        screenOrDetails: photoUrl,
+        accessoriesOrBox: photoUrl,
+        serialOrReceipt: photoUrl,
+      },
+      photoGallery: [photoUrl],
+    };
+  }, []);
+
+  // Synchronize listings directly with Backend
+  const loadListingsFromBackend = React.useCallback(async () => {
+    try {
+      let postsData: any[] = [];
+      try {
+        const publicRes = await postService.getPublicPosts();
+        const items = Array.isArray(publicRes) ? publicRes : (publicRes?.content || publicRes?.items || []);
+        if (items && items.length > 0) {
+          postsData = items;
+        }
+      } catch {}
+
+      // CHỈ gọi adminPostService.getAdminPosts nếu người dùng có vai trò ADMIN (tránh 403 Forbidden)
+      const isAdmin = currentUser?.role === 'admin' || currentRole === 'admin';
+      if (postsData.length === 0 && getAccessToken() && isAdmin) {
+        try {
+          const adminRes = await adminPostService.getAdminPosts();
+          const items = adminRes?.content || adminRes?.items || (Array.isArray(adminRes) ? adminRes : []);
+          if (items && items.length > 0) {
+            postsData = items;
+          }
+        } catch {}
+      }
+
+      // Nếu là người bán (SELLER), lấy thêm các bài đăng cá nhân từ BE
+      const isSeller = currentUser?.role === 'seller' || currentRole === 'seller';
+      if (getAccessToken() && isSeller) {
+        try {
+          const myRes = await postService.getMyPosts(0, 50);
+          const myItems = Array.isArray(myRes) ? myRes : (myRes?.content || myRes?.items || []);
+          if (myItems && myItems.length > 0) {
+            const existingIds = new Set(postsData.map((p: any) => p.id));
+            for (const myItem of myItems) {
+              if (!existingIds.has(myItem.id)) {
+                postsData.push(myItem);
+              }
+            }
+          }
+        } catch {}
+      }
+
+      if (postsData.length > 0) {
+        const mapped = postsData.map(mapBackendPostToListing);
+        setListings(mapped);
+      } else {
+        setListings([]);
+      }
+    } catch (err) {
+      console.warn('Lỗi tải danh sách bài đăng từ Backend:', err);
+      setListings([]);
+    }
+  }, [mapBackendPostToListing, currentUser?.role, currentRole]);
+
+  // Synchronize orders directly with Backend
   const loadUserOrders = React.useCallback(async () => {
-    if (!currentUser || !getAccessToken()) return;
+    if (!currentUser || !getAccessToken()) {
+      setOrders([]);
+      return;
+    }
     try {
       const res = currentRole === 'seller'
         ? await orderService.getSellerOrders(0, 50)
         : await orderService.getBuyerOrders(0, 50);
 
-      if (res?.content && res.content.length > 0) {
-        const mappedOrders: EscrowOrder[] = res.content.map(bOrd => {
+      const items = res?.content || (res as any)?.items || (Array.isArray(res) ? res : []);
+      if (items && items.length > 0) {
+        const mappedOrders: EscrowOrder[] = items.map((bOrd: any) => {
           const matchedListing = listings.find(l => l.id === bOrd.postId) || {
             id: bOrd.postId,
             title: bOrd.postTitle || 'Thiết bị gia dụng SecondLife',
@@ -388,21 +481,21 @@ export default function App() {
           };
         });
 
-        setOrders(prev => {
-          const backendIds = new Set(mappedOrders.map(o => o.id));
-          const existingNonBackend = prev.filter(o => !backendIds.has(o.id));
-          return [...mappedOrders, ...existingNonBackend];
-        });
+        setOrders(mappedOrders);
+      } else {
+        setOrders([]);
       }
     } catch (err) {
       console.warn('Could not load orders from backend:', err);
+      setOrders([]);
     }
   }, [currentUser, currentRole, listings]);
 
-  // Load orders on user or role change
+  // Load orders and listings on user, role, or tab change
   React.useEffect(() => {
+    loadListingsFromBackend();
     loadUserOrders();
-  }, [loadUserOrders]);
+  }, [loadListingsFromBackend, loadUserOrders, activeTab]);
 
   const handleOrderPlaced = (newOrder: EscrowOrder) => {
     setOrders((prev) => [newOrder, ...prev]);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   X,
   Zap,
@@ -12,10 +12,15 @@ import {
   Copy,
   Check,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  Tag,
+  Layers,
+  Flame,
+  Award,
+  ShoppingBag
 } from 'lucide-react';
 import { TopupPackage, UserCredit, UserWallet, DepositResponseDTO } from '../../types';
-import { topupService, walletService } from '../../services';
+import { topupService, walletService, sellerCreditService } from '../../services';
 import logoImg from '../../assets/logo.png';
 import { formatVND } from '../../utils/translations';
 
@@ -31,58 +36,123 @@ interface TopUpModalProps {
   initialTab?: 'wallet' | 'packages';
 }
 
-const DEFAULT_PACKAGES: TopupPackage[] = [
+const COMBO_PACKAGES: TopupPackage[] = [
   {
-    id: 'pkg-1',
-    name: 'Gói Cơ Bản',
-    packageName: 'Gói Cơ Bản',
-    price: 50000,
-    priceVnd: 50000,
-    postCredits: 50,
-    creditPoints: 50,
+    id: 'combo-starter',
+    name: 'Combo Khởi Đầu (Starter)',
+    description: 'Thanh lý nhanh gọn đồ dùng gia đình. Bao gồm 5 bài đăng và 5 lượt AI định giá.',
+    postCredits: 5,
     chatCredits: 5,
-    bonusPoints: 5,
-    description: 'Phù hợp đăng tin thử nghiệm',
+    price: 55000,
+    discountPercentage: 27,
     isPopular: false,
   },
   {
-    id: 'pkg-2',
-    name: 'Gói Phổ Thông',
-    packageName: 'Gói Phổ Thông',
-    price: 100000,
-    priceVnd: 100000,
-    postCredits: 100,
-    creditPoints: 100,
-    chatCredits: 15,
-    bonusPoints: 15,
-    description: 'Được tặng thêm 15% Xu thưởng',
+    id: 'combo-pro',
+    name: 'Combo Nhà Bán Chuyên Nghiệp',
+    description: 'Gói bán chạy nhất! Tối ưu chi phí cho seller đăng bán thường xuyên, hỗ trợ AI không giới hạn.',
+    postCredits: 15,
+    chatCredits: 20,
+    price: 180000,
+    discountPercentage: 28,
     isPopular: true,
   },
   {
-    id: 'pkg-3',
-    name: 'Gói Thương Gia',
-    packageName: 'Gói Thương Gia',
-    price: 200000,
-    priceVnd: 200000,
-    postCredits: 200,
-    creditPoints: 200,
-    chatCredits: 40,
-    bonusPoints: 40,
-    description: 'Tặng 20% Xu thưởng + Ưu tiên hiển thị tin',
+    id: 'combo-vip',
+    name: 'Combo Siêu Thương Nhân (VIP)',
+    description: 'Dành cho cửa hàng đồ gia dụng, đại lý điện máy cũ. Mức chiết khấu cao nhất hệ thống.',
+    postCredits: 50,
+    chatCredits: 60,
+    price: 520000,
+    discountPercentage: 35,
     isPopular: false,
+  }
+];
+
+const SINGLE_PACKAGES: (TopupPackage & { singleType: 'listing' | 'valuation' })[] = [
+  // Gói lẻ Đăng bài (Listing credits only)
+  {
+    id: 'single-listing-1',
+    name: 'Gói Lẻ: 1 Lượt Đăng Bài',
+    description: 'Đăng ngay 1 sản phẩm lên Marketplace với bảo lãnh Escrow an toàn.',
+    postCredits: 1,
+    chatCredits: 0,
+    price: 10000,
+    discountPercentage: 0,
+    singleType: 'listing',
   },
   {
-    id: 'pkg-4',
-    name: 'Gói VIP Pro',
-    packageName: 'Gói VIP Pro',
-    price: 500000,
-    priceVnd: 500000,
-    postCredits: 500,
-    creditPoints: 500,
-    chatCredits: 120,
-    bonusPoints: 120,
-    description: 'Tặng 24% Xu thưởng + Đăng tin không giới hạn',
-    isPopular: false,
+    id: 'single-listing-5',
+    name: 'Gói Lẻ: 5 Lượt Đăng Bài',
+    description: 'Tiết kiệm 10% chi phí đăng bài trên sàn.',
+    postCredits: 5,
+    chatCredits: 0,
+    price: 45000,
+    discountPercentage: 10,
+    singleType: 'listing',
+  },
+  {
+    id: 'single-listing-10',
+    name: 'Gói Lẻ: 10 Lượt Đăng Bài',
+    description: 'Gói đăng tin được nhiều người bán lựa chọn nhất.',
+    postCredits: 10,
+    chatCredits: 0,
+    price: 80000,
+    discountPercentage: 20,
+    singleType: 'listing',
+    isPopular: true,
+  },
+  {
+    id: 'single-listing-25',
+    name: 'Gói Lẻ: 25 Lượt Đăng Bài',
+    description: 'Đăng tin số lượng lớn dành cho người bán chuyên nghiệp.',
+    postCredits: 25,
+    chatCredits: 0,
+    price: 185000,
+    discountPercentage: 26,
+    singleType: 'listing',
+  },
+  // Gói lẻ Định giá AI (Valuation credits only)
+  {
+    id: 'single-valuation-1',
+    name: 'Gói Lẻ: 1 Lượt Định Giá AI',
+    description: 'Định giá 1 sản phẩm chính xác dựa trên Machine Learning.',
+    postCredits: 0,
+    chatCredits: 1,
+    price: 5000,
+    discountPercentage: 0,
+    singleType: 'valuation',
+  },
+  {
+    id: 'single-valuation-5',
+    name: 'Gói Lẻ: 5 Lượt Định Giá AI',
+    description: 'Khảo sát giá thị trường cho 5 thiết bị trước khi đăng bán.',
+    postCredits: 0,
+    chatCredits: 5,
+    price: 20000,
+    discountPercentage: 20,
+    singleType: 'valuation',
+  },
+  {
+    id: 'single-valuation-15',
+    name: 'Gói Lẻ: 15 Lượt Định Giá AI',
+    description: 'Tiết kiệm 33% chi phí thẩm định giá thiết bị.',
+    postCredits: 0,
+    chatCredits: 15,
+    price: 50000,
+    discountPercentage: 33,
+    singleType: 'valuation',
+    isPopular: true,
+  },
+  {
+    id: 'single-valuation-30',
+    name: 'Gói Lẻ: 30 Lượt Định Giá AI',
+    description: 'Gói chuyên sâu dành cho người hay khảo sát định giá thiết bị đồ cũ.',
+    postCredits: 0,
+    chatCredits: 30,
+    price: 90000,
+    discountPercentage: 40,
+    singleType: 'valuation',
   },
 ];
 
@@ -119,12 +189,18 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   // Packages State
-  const [packages, setPackages] = useState<TopupPackage[]>(DEFAULT_PACKAGES);
-  const [selectedPkg, setSelectedPkg] = useState<TopupPackage | null>(DEFAULT_PACKAGES[1]);
+  const [packages, setPackages] = useState<TopupPackage[]>([]);
+  const [selectedPkg, setSelectedPkg] = useState<TopupPackage | null>(null);
   const [packagesLoading, setPackagesLoading] = useState<boolean>(false);
   const [purchasing, setPurchasing] = useState<boolean>(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [packageSuccess, setPackageSuccess] = useState<boolean>(false);
+
+  // Sub-category inside packages: 'combo' (Gói Combo) vs 'single' (Gói Lẻ)
+  const [packageCategory, setPackageCategory] = useState<'combo' | 'single'>('combo');
+
+  // Filter inside Gói Lẻ: 'all' | 'listing' | 'valuation'
+  const [singleFilter, setSingleFilter] = useState<'all' | 'listing' | 'valuation'>('all');
 
   const [userCredit, setUserCredit] = useState<UserCredit>(
     initialUserCredit || { postCredits: currentCredit || 10, chatCredits: 20 }
@@ -199,29 +275,67 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     setPackagesLoading(true);
     try {
       const [pkgsRes, creditObj] = await Promise.all([
-        topupService.getTopupPackages().catch(() => DEFAULT_PACKAGES),
+        topupService.getTopupPackages().catch(() => []),
         topupService.getMyCredit().catch(() => null),
       ]);
 
-      const pkgsList = Array.isArray(pkgsRes) ? pkgsRes : (pkgsRes as any)?.data || DEFAULT_PACKAGES;
-      if (Array.isArray(pkgsList) && pkgsList.length > 0) {
-        setPackages(pkgsList);
-        setSelectedPkg(pkgsList[0]);
-      } else {
-        setPackages(DEFAULT_PACKAGES);
-        setSelectedPkg(DEFAULT_PACKAGES[1]);
+      const pkgsList = Array.isArray(pkgsRes) ? pkgsRes : (pkgsRes as any)?.data || [];
+      const allPkgs: TopupPackage[] = [...pkgsList];
+      const existingNames = new Set(pkgsList.map((p: any) => (p.name || '').toLowerCase()));
+
+      for (const combo of COMBO_PACKAGES) {
+        if (!existingNames.has((combo.name || '').toLowerCase())) {
+          allPkgs.push(combo);
+        }
       }
+
+      for (const single of SINGLE_PACKAGES) {
+        if (!existingNames.has((single.name || '').toLowerCase())) {
+          allPkgs.push(single);
+        }
+      }
+
+      setPackages(allPkgs);
+      setSelectedPkg(allPkgs[0]);
 
       if (creditObj) {
         setUserCredit(creditObj);
       }
     } catch {
-      setPackages(DEFAULT_PACKAGES);
-      setSelectedPkg(DEFAULT_PACKAGES[1]);
+      setPackages([...COMBO_PACKAGES, ...SINGLE_PACKAGES]);
+      setSelectedPkg(COMBO_PACKAGES[0]);
     } finally {
       setPackagesLoading(false);
     }
   };
+
+  const comboPackages = useMemo(() => {
+    return packages.filter((p) => {
+      const posts = Number(p.postCredits || 0);
+      const chats = Number(p.chatCredits || 0);
+      const name = (p.name || '').toLowerCase();
+      return (posts > 0 && chats > 0) || name.includes('combo') || name.includes('trọn gói');
+    });
+  }, [packages]);
+
+  const singlePackages = useMemo(() => {
+    return packages.filter((p) => {
+      const posts = Number(p.postCredits || 0);
+      const chats = Number(p.chatCredits || 0);
+      const name = (p.name || '').toLowerCase();
+      const isCombo = (posts > 0 && chats > 0) || name.includes('combo') || name.includes('trọn gói');
+      if (isCombo) return false;
+
+      const singleType = (p as any).singleType || (posts > 0 ? 'listing' : 'valuation');
+      if (singleFilter === 'listing') {
+        return singleType === 'listing';
+      }
+      if (singleFilter === 'valuation') {
+        return singleType === 'valuation';
+      }
+      return true;
+    });
+  }, [packages, singleFilter]);
 
   // Handle Create Deposit Request
   const handleCreateDeposit = async () => {
@@ -263,7 +377,26 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     setPurchaseError(null);
     setPurchasing(true);
     try {
-      const result = await topupService.purchasePackage(selectedPkg.id);
+      let result: any = null;
+      const isBackendUuid = selectedPkg.id && selectedPkg.id.length >= 32 && selectedPkg.id.includes('-');
+      if (isBackendUuid) {
+        try {
+          result = await topupService.purchasePackage(selectedPkg.id);
+        } catch (err: any) {
+          console.warn('topupService.purchasePackage fallback:', err);
+        }
+      }
+
+      // Sync through sellerCreditService.createPurchase
+      try {
+        await sellerCreditService.createPurchase({
+          listingQuantity: selectedPkg.postCredits || 0,
+          valuationQuantity: selectedPkg.chatCredits || 0,
+        });
+      } catch (err) {
+        console.warn('sellerCreditService.createPurchase notice:', err);
+      }
+
       const updatedCredit: UserCredit = result || {
         postCredits: (userCredit.postCredits || 0) + (selectedPkg.postCredits || 0),
         chatCredits: (userCredit.chatCredits || 0) + (selectedPkg.chatCredits || 0),
@@ -274,7 +407,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         onCreditUpdated(updatedCredit.postCredits);
       }
       // Re-fetch wallet balance after deduction
-      loadWallet();
+      await loadWallet();
       setPackageSuccess(true);
     } catch (err: any) {
       setPurchaseError(err?.message || 'Giao dịch mua gói thất bại. Vui lòng kiểm tra lại số dư ví.');
@@ -360,11 +493,10 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
               setActiveTab('wallet');
               setPurchaseError(null);
             }}
-            className={`pb-2.5 px-4 text-xs font-black transition-all flex items-center gap-2 cursor-pointer border-b-2 ${
-              activeTab === 'wallet'
+            className={`pb-2.5 px-4 text-xs font-black transition-all flex items-center gap-2 cursor-pointer border-b-2 ${activeTab === 'wallet'
                 ? 'border-[#c34c36] text-[#c34c36]'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             <QrCode className="w-4 h-4" />
             <span>1. Nạp Tiền Vào Ví (VietQR)</span>
@@ -374,11 +506,10 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
               setActiveTab('packages');
               setDepositError(null);
             }}
-            className={`pb-2.5 px-4 text-xs font-black transition-all flex items-center gap-2 cursor-pointer border-b-2 ${
-              activeTab === 'packages'
+            className={`pb-2.5 px-4 text-xs font-black transition-all flex items-center gap-2 cursor-pointer border-b-2 ${activeTab === 'packages'
                 ? 'border-[#c34c36] text-[#c34c36]'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             <Sparkles className="w-4 h-4" />
             <span>2. Mua Gói Quyền Sử Dụng (Trừ ví)</span>
@@ -415,11 +546,10 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                             setDepositAmount(amt);
                             setCustomAmount(amt.toString());
                           }}
-                          className={`py-2 px-3 rounded-xl font-mono text-xs font-bold transition-all border cursor-pointer ${
-                            depositAmount === amt
+                          className={`py-2 px-3 rounded-xl font-mono text-xs font-bold transition-all border cursor-pointer ${depositAmount === amt
                               ? 'bg-[#c34c36] text-white border-[#c34c36] shadow-sm'
                               : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-200'
-                          }`}
+                            }`}
                         >
                           {amt.toLocaleString('vi-VN')} đ
                         </button>
@@ -646,121 +776,332 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                 </div>
               ) : (
                 <>
+                  {/* Sub-tab Switcher: COMBO vs GÓI LẺ */}
+                  <div className="flex items-center gap-2 p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPackageCategory('combo');
+                        if (comboPackages.length > 0 && (!selectedPkg || !comboPackages.some((c) => c.id === selectedPkg.id))) {
+                          setSelectedPkg(comboPackages[0]);
+                        }
+                        setPurchaseError(null);
+                      }}
+                      className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${packageCategory === 'combo'
+                          ? 'bg-gradient-to-r from-[#c34c36] to-[#dc4729] text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                        }`}
+                    >
+                      <Sparkles className="w-4 h-4 text-amber-200" />
+                      <span>Mua Gói Combo (Đăng Bài + Định Giá)</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-400 text-slate-950 font-black">
+                        Tiết kiệm tới 35%
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPackageCategory('single');
+                        if (singlePackages.length > 0 && (!selectedPkg || !singlePackages.some((s) => s.id === selectedPkg.id))) {
+                          setSelectedPkg(singlePackages[0]);
+                        }
+                        setPurchaseError(null);
+                      }}
+                      className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${packageCategory === 'single'
+                          ? 'bg-[#24263e] text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                        }`}
+                    >
+                      <Zap className="w-4 h-4 text-amber-300" />
+                      <span>Mua Gói Lẻ (Từng Loại Riêng)</span>
+                    </button>
+                  </div>
+
                   {packagesLoading ? (
                     <div className="py-12 flex flex-col items-center justify-center space-y-3">
                       <Loader2 className="w-8 h-8 text-[#24263e] animate-spin" />
                       <p className="text-sm text-[#24263e]/80 font-bold">Đang tải danh sách gói nạp...</p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {packages.map((pkg) => {
-                        const isSelected = selectedPkg?.id === pkg.id;
-                        const pkgName = getPkgName(pkg);
-                        const pkgPrice = getPkgPrice(pkg);
-                        const postCredits = Number(pkg.postCredits || 0);
-                        const chatCredits = Number(pkg.chatCredits || 0);
-                        const isAffordable = currentWalletBalance >= pkgPrice;
-
-                        return (
-                          <div
-                            key={pkg.id || Math.random().toString()}
-                            onClick={() => {
-                              setSelectedPkg(pkg);
-                              setPurchaseError(null);
-                            }}
-                            className={`relative p-5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
-                              isSelected
-                                ? 'bg-white border-2 border-[#c34c36] shadow-xl ring-2 ring-[#c34c36]/40 transform -translate-y-0.5'
-                                : 'bg-white/90 border-[#24263e]/15 hover:border-[#c34c36] hover:bg-white hover:shadow-md'
-                            }`}
-                          >
-                            {pkg.isPopular && (
-                              <span className="absolute -top-2.5 right-3 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-full bg-[#c34c36] text-white border border-[#24263e]/20 shadow-sm">
-                                Phổ Biến Nhất
+                    <>
+                      {/* COMBO VIEW */}
+                      {packageCategory === 'combo' && (
+                        <div className="space-y-4 animate-fadeIn">
+                          <div className="p-3.5 bg-gradient-to-r from-amber-50 to-orange-50/60 rounded-2xl border border-amber-200/80 flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <Sparkles className="w-4 h-4 text-[#c34c36] shrink-0" />
+                              <span className="text-slate-700">
+                                <strong>Gói Combo Toàn Diện:</strong> Tích hợp cả lượt đăng bài chuẩn sàn và lượt định giá AI giúp bạn tối ưu chi phí bán hàng.
                               </span>
-                            )}
-
-                            <div>
-                              <div className="flex items-center justify-between mb-2">
-                                <h4 className="font-black text-base text-[#24263e]">{pkgName}</h4>
-                                <span className="text-base font-black text-[#24263e] font-mono">
-                                  {pkgPrice.toLocaleString('vi-VN')} đ
-                                </span>
-                              </div>
-
-                              <div className="flex flex-col gap-1.5 my-3">
-                                <div className="flex items-center gap-2 text-xs text-[#24263e] font-bold">
-                                  <Sparkles className="w-3.5 h-3.5 text-[#c34c36] shrink-0" />
-                                  <span>+{postCredits} Lượt đăng tin bài</span>
-                                </div>
-                                <div className="flex items-center gap-2 text-xs text-[#24263e] font-bold">
-                                  <Zap className="w-3.5 h-3.5 text-[#c34c36] shrink-0" />
-                                  <span>+{chatCredits} Lượt AI tư vấn mô tả</span>
-                                </div>
-                              </div>
-
-                              {pkg.description && (
-                                <p className="text-xs text-[#24263e]/80 mt-1 font-medium">{pkg.description}</p>
-                              )}
                             </div>
+                            <span className="text-[11px] font-black text-[#c34c36] shrink-0 ml-2">
+                              {comboPackages.length} Gói Combo
+                            </span>
+                          </div>
 
-                            <div className="mt-4 pt-3 border-t border-[#24263e]/10 flex items-center justify-between text-xs font-semibold">
-                              <span className="text-slate-500">
-                                {isAffordable ? (
-                                  <span className="text-emerald-600 font-bold flex items-center gap-1">
-                                    <CheckCircle2 className="w-3.5 h-3.5" /> Đủ số dư ví
-                                  </span>
-                                ) : (
-                                  <span className="text-amber-600 font-bold flex items-center gap-1">
-                                    <AlertTriangle className="w-3.5 h-3.5" /> Thiếu {formatVND(pkgPrice - currentWalletBalance)}
-                                  </span>
-                                )}
-                              </span>
-                              <span className="text-[#24263e] font-black">Trừ trực tiếp Ví</span>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                            {comboPackages.map((pkg) => {
+                              const isSelected = selectedPkg?.id === pkg.id;
+                              const pkgName = getPkgName(pkg);
+                              const pkgPrice = getPkgPrice(pkg);
+                              const postCredits = Number(pkg.postCredits || 0);
+                              const chatCredits = Number(pkg.chatCredits || 0);
+                              const isAffordable = currentWalletBalance >= pkgPrice;
+
+                              return (
+                                <div
+                                  key={pkg.id}
+                                  onClick={() => {
+                                    setSelectedPkg(pkg);
+                                    setPurchaseError(null);
+                                  }}
+                                  className={`relative p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${isSelected
+                                      ? 'bg-white border-2 border-[#c34c36] shadow-lg ring-2 ring-[#c34c36]/40 transform -translate-y-0.5'
+                                      : 'bg-white border-slate-200/90 hover:border-[#c34c36] hover:shadow-md'
+                                    }`}
+                                >
+                                  {pkg.isPopular && (
+                                    <span className="absolute -top-2.5 right-3 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-full bg-gradient-to-r from-amber-500 to-[#c34c36] text-white shadow-xs">
+                                      🔥 Phổ Biến Nhất
+                                    </span>
+                                  )}
+                                  {pkg.discountPercentage && pkg.discountPercentage > 0 && !pkg.isPopular && (
+                                    <span className="absolute -top-2.5 right-3 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-full bg-emerald-600 text-white shadow-xs">
+                                      Giảm {pkg.discountPercentage}%
+                                    </span>
+                                  )}
+
+                                  <div>
+                                    <h4 className="font-black text-xs sm:text-sm text-[#24263e] line-clamp-1">{pkgName}</h4>
+                                    <div className="mt-1 flex items-baseline gap-1.5">
+                                      <span className="text-base font-black text-[#c34c36] font-mono">
+                                        {formatVND(pkgPrice)}
+                                      </span>
+                                      {pkg.discountPercentage && pkg.discountPercentage > 0 && (
+                                        <span className="text-[10px] text-slate-400 line-through font-mono">
+                                          {formatVND(Math.round(pkgPrice / (1 - pkg.discountPercentage / 100)))}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div className="space-y-1.5 my-3 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                      <div className="flex items-center gap-1.5 text-xs text-slate-800 font-bold">
+                                        <Tag className="w-3.5 h-3.5 text-[#c34c36] shrink-0" />
+                                        <span>+{postCredits} Lượt đăng tin bài</span>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 text-xs text-slate-800 font-bold">
+                                        <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                        <span>+{chatCredits} Lượt định giá AI</span>
+                                      </div>
+                                    </div>
+
+                                    {pkg.description && (
+                                      <p className="text-[11px] text-slate-500 line-clamp-2">{pkg.description}</p>
+                                    )}
+                                  </div>
+
+                                  <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                                    {isAffordable ? (
+                                      <span className="text-emerald-600 font-bold flex items-center gap-1">
+                                        <CheckCircle2 className="w-3.5 h-3.5" /> Đủ số dư ví
+                                      </span>
+                                    ) : (
+                                      <span className="text-amber-600 font-bold">
+                                        Thiếu {formatVND(pkgPrice - currentWalletBalance)}
+                                      </span>
+                                    )}
+                                    <span className="text-[#24263e] font-extrabold text-[10px] bg-slate-100 px-2 py-0.5 rounded-md">
+                                      Combo Trừ Ví
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* SINGLE PACKAGES VIEW */}
+                      {packageCategory === 'single' && (
+                        <div className="space-y-4 animate-fadeIn">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                              <button
+                                type="button"
+                                onClick={() => setSingleFilter('all')}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${singleFilter === 'all'
+                                    ? 'bg-white text-[#24263e] shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                  }`}
+                              >
+                                Tất Cả Gói Lẻ ({packages.filter(p => !((Number(p.postCredits || 0) > 0 && Number(p.chatCredits || 0) > 0) || (p.name || '').toLowerCase().includes('combo'))).length})
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSingleFilter('listing')}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${singleFilter === 'listing'
+                                    ? 'bg-white text-[#c34c36] shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                  }`}
+                              >
+                                <Tag className="w-3 h-3" />
+                                <span>Chỉ Lượt Đăng Bài</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSingleFilter('valuation')}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${singleFilter === 'valuation'
+                                    ? 'bg-white text-indigo-600 shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                  }`}
+                              >
+                                <Sparkles className="w-3 h-3" />
+                                <span>Chỉ Lượt Định Giá AI</span>
+                              </button>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
 
-                  {purchaseError && (
-                    <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 font-medium flex items-center justify-between gap-3 animate-fadeIn">
-                      <div className="flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-                        <span>{purchaseError}</span>
-                      </div>
-                      <button
-                        onClick={() => setActiveTab('wallet')}
-                        className="px-3 py-1 bg-red-600 text-white rounded-lg font-bold text-[11px] shrink-0 hover:bg-red-700 cursor-pointer"
-                      >
-                        Nạp ví ngay &rarr;
-                      </button>
-                    </div>
-                  )}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                            {singlePackages.map((pkg) => {
+                              const isSelected = selectedPkg?.id === pkg.id;
+                              const pkgName = getPkgName(pkg);
+                              const pkgPrice = getPkgPrice(pkg);
+                              const postCredits = Number(pkg.postCredits || 0);
+                              const chatCredits = Number(pkg.chatCredits || 0);
+                              const isListingType = postCredits > 0;
+                              const isAffordable = currentWalletBalance >= pkgPrice;
 
-                  {/* Buy Button */}
-                  <div className="pt-2 flex justify-end">
-                    <button
-                      disabled={!selectedPkg || purchasing || packagesLoading}
-                      onClick={handleConfirmPurchase}
-                      className="w-full sm:w-auto px-8 py-3.5 rounded-2xl font-black text-sm text-white bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 active:scale-[0.99] transition shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      {purchasing ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>Đang xử lý trừ ví &amp; cộng xu...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-4 h-4" />
-                          <span>
-                            Xác Nhận Mua Gói ({selectedPkg ? formatVND(getPkgPrice(selectedPkg)) : ''})
-                          </span>
-                        </>
+                              return (
+                                <div
+                                  key={pkg.id}
+                                  onClick={() => {
+                                    setSelectedPkg(pkg);
+                                    setPurchaseError(null);
+                                  }}
+                                  className={`relative p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${isSelected
+                                      ? 'bg-white border-2 border-[#24263e] shadow-md ring-2 ring-[#24263e]/20 transform -translate-y-0.5'
+                                      : 'bg-white border-slate-200 hover:border-[#24263e]/60 hover:shadow-xs'
+                                    }`}
+                                >
+                                  {pkg.discountPercentage && pkg.discountPercentage > 0 && (
+                                    <span className="absolute -top-2 right-2 px-1.5 py-0.2 text-[9px] font-black rounded-md bg-emerald-600 text-white">
+                                      -{pkg.discountPercentage}%
+                                    </span>
+                                  )}
+
+                                  <div>
+                                    <span
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black ${isListingType
+                                          ? 'bg-orange-100 text-orange-900'
+                                          : 'bg-indigo-100 text-indigo-900'
+                                        }`}
+                                    >
+                                      {isListingType ? <Tag className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
+                                      <span>{isListingType ? 'Đăng Bài' : 'Định Giá AI'}</span>
+                                    </span>
+
+                                    <h4 className="font-black text-xs text-[#24263e] mt-2 line-clamp-1">{pkgName}</h4>
+                                    <div className="text-sm font-black text-[#24263e] font-mono mt-1">
+                                      {formatVND(pkgPrice)}
+                                    </div>
+
+                                    <div className="mt-2 text-xs font-bold text-slate-700 bg-slate-50 p-2 rounded-xl border border-slate-100">
+                                      {isListingType ? (
+                                        <span>+{postCredits} Lượt đăng tin</span>
+                                      ) : (
+                                        <span>+{chatCredits} Lượt định giá AI</span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                                    {isAffordable ? (
+                                      <span className="text-emerald-600 font-bold flex items-center gap-0.5">
+                                        <Check className="w-3 h-3" /> Đủ số dư
+                                      </span>
+                                    ) : (
+                                      <span className="text-amber-600 font-bold">
+                                        Thiếu {formatVND(pkgPrice - currentWalletBalance)}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
                       )}
-                    </button>
-                  </div>
+
+                      {purchaseError && (
+                        <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 font-medium flex items-center justify-between gap-3 animate-fadeIn">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                            <span>{purchaseError}</span>
+                          </div>
+                          <button
+                            onClick={() => setActiveTab('wallet')}
+                            className="px-3 py-1 bg-red-600 text-white rounded-lg font-bold text-[11px] shrink-0 hover:bg-red-700 cursor-pointer"
+                          >
+                            Nạp ví ngay &rarr;
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Summary & Purchase Action Bar */}
+                      <div className="pt-3 border-t border-[#24263e]/10 flex flex-col sm:flex-row items-center justify-between gap-3">
+                        <div className="text-xs text-slate-700 w-full sm:w-auto">
+                          {selectedPkg ? (
+                            <div>
+                              <span className="font-bold text-slate-500">Đang chọn: </span>
+                              <span className="font-black text-[#24263e]">{getPkgName(selectedPkg)}</span>
+                              <span className="mx-1.5">•</span>
+                              <span className="font-mono font-black text-[#c34c36]">
+                                {formatVND(getPkgPrice(selectedPkg))}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 italic">Vui lòng chọn một gói nạp ở trên</span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          {selectedPkg && currentWalletBalance < getPkgPrice(selectedPkg) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDepositAmount(getPkgPrice(selectedPkg) - currentWalletBalance);
+                                setActiveTab('wallet');
+                              }}
+                              className="px-4 py-3 rounded-2xl font-bold text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 transition cursor-pointer"
+                            >
+                              Nạp Thiếu {formatVND(getPkgPrice(selectedPkg) - currentWalletBalance)} &rarr;
+                            </button>
+                          )}
+
+                          <button
+                            disabled={!selectedPkg || purchasing || packagesLoading}
+                            onClick={handleConfirmPurchase}
+                            className="flex-1 sm:flex-none px-7 py-3 rounded-2xl font-black text-xs sm:text-sm text-white bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 active:scale-[0.99] transition shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            {purchasing ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Đang xử lý trừ ví...</span>
+                              </>
+                            ) : (
+                              <>
+                                <ShoppingBag className="w-4 h-4" />
+                                <span>
+                                  Xác Nhận Mua Gói ({selectedPkg ? formatVND(getPkgPrice(selectedPkg)) : ''})
+                                </span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>

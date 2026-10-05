@@ -140,27 +140,13 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
         onClose();
       }, 1200);
     } catch (err: any) {
-      // In offline / mock mode fallback to demo accepted code or handle error
-      if (code === '123456') {
-        soundFx.playChime();
-        setSuccessMsg(
-          lang === 'vi'
-            ? 'Xác thực email thành công! Tài khoản đã được kích hoạt.'
-            : 'Email verified successfully! Account is now activated.'
-        );
-        setTimeout(() => {
-          onSuccess?.();
-          onClose();
-        }, 1200);
-      } else {
-        soundFx.playCancel();
-        setErrorMsg(
-          err?.message ||
-            (lang === 'vi'
-              ? 'Mã OTP không đúng hoặc đã hết hạn. Vui lòng kiểm tra lại hoặc bấm gửi lại mã.'
-              : 'Invalid or expired OTP code. Please check again or request a new code.')
-        );
-      }
+      soundFx.playCancel();
+      setErrorMsg(
+        err?.message ||
+          (lang === 'vi'
+            ? 'Mã OTP không đúng hoặc đã hết hạn. Vui lòng kiểm tra lại hoặc bấm gửi lại mã.'
+            : 'Invalid or expired OTP code. Please check again or request a new code.')
+      );
     } finally {
       setIsLoading(false);
     }

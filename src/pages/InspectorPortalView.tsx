@@ -109,18 +109,8 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       const items = res?.items || (res as any)?.content || (Array.isArray(res) ? res : []);
       setAllOrdersList(items);
     } catch (err: any) {
-      console.warn('Backend load all orders error, using fallback:', err);
-      // Fallback display from props orders
-      const fallback: InspectionOrderDto[] = orders.map((o) => ({
-        id: o.id,
-        postId: o.listingId,
-        postTitle: o.listing.title,
-        postPrice: o.itemPriceVnd,
-        status: o.escrowStatus === 'COMPLETED_RELEASED' ? 'PASSED' : 'PENDING',
-        inspectorName: 'Chưa phân công',
-        createdAt: o.createdAt,
-      }));
-      setAllOrdersList(fallback);
+      console.warn('Backend load all orders error:', err);
+      setAllOrdersList([]);
     } finally {
       setIsLoadingAllOrders(false);
     }
@@ -133,28 +123,12 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       const data = await inspectorService.getStaff();
       if (Array.isArray(data)) {
         setStaffList(data);
+      } else {
+        setStaffList([]);
       }
     } catch (err) {
-      console.warn('Backend load staff error, using fallback:', err);
-      // Mock fallback
-      setStaffList([
-        {
-          id: 'STAFF-01',
-          fullName: 'Kỹ sư Nguyễn Văn Tuấn',
-          email: 'tuan.inspector@secondlife.vn',
-          phone: '0905 123 456',
-          role: 'INSPECTOR',
-          createdAt: '2026-03-01T08:00:00Z',
-        },
-        {
-          id: 'STAFF-02',
-          fullName: 'Kỹ sư Trần Đức Thắng',
-          email: 'thang.inspector@secondlife.vn',
-          phone: '0918 654 321',
-          role: 'INSPECTOR',
-          createdAt: '2026-03-15T09:30:00Z',
-        },
-      ]);
+      console.warn('Backend load staff error:', err);
+      setStaffList([]);
     } finally {
       setIsLoadingStaff(false);
     }

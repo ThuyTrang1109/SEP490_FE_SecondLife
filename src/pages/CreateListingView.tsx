@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Sparkles,
   Camera,
@@ -20,7 +20,13 @@ import {
   Check,
   ExternalLink,
   Tag,
-  DollarSign
+  DollarSign,
+  PenLine,
+  FileEdit,
+  ChevronDown,
+  ChevronUp,
+  HelpCircle,
+  MessageSquare
 } from 'lucide-react';
 import {
   ItemCategory,
@@ -43,6 +49,203 @@ import {
   AiPriceEstimationResponse,
   PostSubmitResponse
 } from '../services';
+
+export interface ParsedQuestionItem {
+  id: number;
+  rawText: string;
+  label: string;
+  hint: string;
+  examples: string[];
+}
+
+export const parseQuestionItem = (q: string, idx: number): ParsedQuestionItem => {
+  const boldMatch = q.match(/\*\*(.*?)\*\*/);
+  let label = '';
+  if (boldMatch && boldMatch[1]) {
+    label = boldMatch[1].replace(/[:]/g, '').trim();
+  }
+
+  const parenMatch = q.match(/\((.*?)\)/);
+  const hint = parenMatch ? parenMatch[1].trim() : '';
+
+  if (!label) {
+    if (parenMatch) {
+      label = q.split('(')[0].replace(/[:?]/g, '').trim();
+    } else {
+      label = q.trim();
+    }
+  }
+
+  const examples: string[] = [];
+  if (hint) {
+    const cleanHint = hint.replace(/^(Ví dụ|VD|ví dụ|vd)[:\s]*/i, '').replace(/\.\.\.$/, '');
+    const tokens = cleanHint.split(/[,;\/]/).map(t => t.trim()).filter(t => t.length > 0 && t.length < 35);
+    examples.push(...tokens.slice(0, 5));
+  }
+
+  return {
+    id: idx,
+    rawText: q,
+    label: label || `Câu hỏi ${idx + 1}`,
+    hint,
+    examples
+  };
+};
+
+interface QuestionGuide {
+  categoryTitle: string;
+  itemTitle: string;
+  photoObservation: string;
+  questions: string[];
+  quickReplies: string[];
+}
+
+const getCategoryQuestionGuide = (
+  categoryName: string,
+  itemName: string,
+  brandName: string,
+  modelName: string,
+  photoCount: number
+): QuestionGuide => {
+  const normCat = (categoryName || '').toLowerCase();
+  const normItem = (itemName || '').toLowerCase();
+
+  const brandModelText = `${brandName ? brandName + ' ' : ''}${modelName || ''}`.trim();
+  const photoNote = photoCount > 0
+    ? `Hệ thống đã nhận diện ${photoCount} ảnh chụp thực tế (mặt trước, tem mác, góc cạnh khung vỏ)`
+    : 'Chưa có ảnh chụp thực tế';
+
+  if (normCat.includes('tủ lạnh') || normCat.includes('tủ đông') || normItem.includes('tủ lạnh')) {
+    return {
+      categoryTitle: 'Tủ lạnh & Tủ đông',
+      itemTitle: itemName || 'Tủ lạnh',
+      photoObservation: photoNote,
+      questions: [
+        'Dung tích thực tế của tủ là bao nhiêu lít (VD: 200L, 250L, 350L, 500L)?',
+        'Khả năng làm đá và nhiệt độ làm lạnh ngăn đông/ngăn mát có sâu và ổn định không?',
+        'Tủ có trang bị công nghệ Inverter tiết kiệm điện không? Máy nén Compressor chạy có êm không?',
+        'Gioăng cao su viền cửa tủ có hít chặt không, có bị hở, rách hoặc mốc ố không?',
+        'Tủ đã từng qua nạp lại gas hay sửa chữa bo mạch lần nào chưa?'
+      ],
+      quickReplies: [
+        'Dung tích 250L Inverter siêu tiết kiệm điện',
+        'Ngăn đông -18°C làm đá cực nhanh, không đóng tuyết',
+        'Gioăng cửa hít chặt 100%, máy chạy êm ru',
+        'Gas R600a nguyên bản, chưa qua sửa chữa',
+        'Dùng 1 năm, còn bảo hành chính hãng 12 tháng'
+      ]
+    };
+  }
+
+  if (normCat.includes('máy giặt') || normCat.includes('máy sấy') || normItem.includes('máy giặt')) {
+    return {
+      categoryTitle: 'Máy giặt & Máy sấy',
+      itemTitle: itemName || 'Máy giặt',
+      photoObservation: photoNote,
+      questions: [
+        'Khối lượng giặt bao nhiêu kg (VD: 8.5kg, 9kg, 10kg)? Kiểu máy cửa ngang hay cửa trên?',
+        'Động cơ Inverter truyền động trực tiếp hay dây curoa? Có rung lắc khi vắt 1400 vòng không?',
+        'Lồng giặt inox có sáng sạch không, gioăng cửa cao su có bị rách mốc không?',
+        'Máy có tích hợp tính năng sấy khô hoặc giặt nước nóng diệt khuẩn không?',
+        'Còn đầy đủ ống cấp nước và ống xả thoát nước nguyên bản không?'
+      ],
+      quickReplies: [
+        'Máy giặt cửa ngang 9kg, truyền động trực tiếp Inverter',
+        'Vắt 1400 vòng cực êm, không rung lắc',
+        'Lồng giặt inox sáng sạch, gioăng cao su nguyên bản',
+        'Đầy đủ dây nguồn, ống cấp & ống xả nước zin',
+        'Máy dùng gia đình 8 tháng, ngoại hình 98%'
+      ]
+    };
+  }
+
+  if (normCat.includes('điều hòa') || normCat.includes('máy lạnh') || normCat.includes('lọc') || normItem.includes('điều hòa')) {
+    return {
+      categoryTitle: 'Điều hòa & Máy lọc không khí',
+      itemTitle: itemName || 'Điều hòa',
+      photoObservation: photoNote,
+      questions: [
+        'Công suất làm lạnh bao nhiêu HP/BTU (VD: 1.0 HP / 9.000 BTU, 1.5 HP, 2.0 HP)?',
+        'Sử dụng loại môi chất làm lạnh gì (Gas R32 hay R410A)? Độ lạnh có sâu và nhanh không?',
+        'Có công nghệ Inverter tiết kiệm điện và màng lọc khử mùi/bụi mịn PM2.5 không?',
+        'Tình trạng cục nóng và cục lạnh: các lá nhôm tản nhiệt có bị móp dập rỉ sét không?',
+        'Còn giữ điều khiển remote chính hãng và phụ kiện giá đỡ ống đồng không?'
+      ],
+      quickReplies: [
+        'Công suất 1.5 HP Inverter, làm lạnh phòng 20m² cực nhanh',
+        'Sử dụng Gas R32 thân thiện môi trường, nguyên áp suất',
+        'Đủ cả cục lạnh, cục nóng và remote chính hãng',
+        'Lá nhôm tản nhiệt thẳng đẹp, máy chạy êm',
+        'Máy dùng 1 mùa hè, còn rất mới 95%'
+      ]
+    };
+  }
+
+  if (normCat.includes('robot') || normCat.includes('hút bụi') || normItem.includes('robot')) {
+    return {
+      categoryTitle: 'Robot & Máy hút bụi',
+      itemTitle: itemName || 'Robot hút bụi',
+      photoObservation: photoNote,
+      questions: [
+        'Lực hút tối đa bao nhiêu Pa (VD: 4000Pa, 5000Pa, 6000Pa)?',
+        'Pin còn hoạt động liên tục được bao nhiêu phút sau mỗi lần sạc đầy?',
+        'Cảm biến laser LiDAR và camera quét bản đồ 3D né vật cản có nhạy không?',
+        'Trạm sạc dock Omni có tự giặt sấy giẻ bằng nước nóng/khí nóng không?',
+        'Phụ kiện kèm theo còn đủ chổi quét cạnh, giẻ lau dự phòng và màng lọc HEPA không?'
+      ],
+      quickReplies: [
+        'Lực hút mạnh 5000Pa, hút sạch bụi mịn và lông thú',
+        'Pin dùng liên tục hơn 2 tiếng, tự động quay về dock sạc',
+        'Điều hướng laser LiDAR quét bản đồ cực chuẩn qua App',
+        'Trạm Omni tự giặt và sấy khô giẻ lau nước nóng',
+        'Fullbox đầy đủ phụ kiện và chổi lau dự phòng'
+      ]
+    };
+  }
+
+  if (normCat.includes('nồi cơm') || normCat.includes('bếp') || normCat.includes('lò') || normItem.includes('bếp') || normItem.includes('nồi')) {
+    return {
+      categoryTitle: 'Nồi cơm & Thiết bị nhà bếp',
+      itemTitle: itemName || 'Thiết bị nhà bếp',
+      photoObservation: photoNote,
+      questions: [
+        'Loại thiết bị: Nồi cao tần IH, bếp từ đơn/đôi hay lò nướng/vi sóng đối lưu?',
+        'Lòng nồi hoặc mặt kính bếp có bị trầy xước lớp chống dính/nứt vỡ không?',
+        'Công suất nấu tối đa bao nhiêu Watt, bảng điều khiển cảm ứng hoạt động tốt không?',
+        'Các cảm biến nhiệt độ tự ngắt chống cháy nổ có nhạy không?',
+        'Dung tích thực tế (L) và phụ kiện (vỉ nướng, khay, muôi, cốc đong) còn đủ không?'
+      ],
+      quickReplies: [
+        'Nồi cơm cao tần IH áp suất 1.8L, nấu cơm dẻo ngon',
+        'Lòng nồi nguyên vẹn 100%, không bong tróc chống dính',
+        'Mặt kính Ceramic chịu nhiệt chịu lực, không vết xước',
+        'Công suất 4000W Inverter tiết kiệm điện, phím cảm ứng nhạy',
+        'Hàng chính hãng fullbox, còn bảo hành 6 tháng'
+      ]
+    };
+  }
+
+  // Default guide
+  return {
+    categoryTitle: categoryName || 'Thiết bị gia dụng',
+    itemTitle: itemName || 'Sản phẩm',
+    photoObservation: photoNote,
+    questions: [
+      'Sản phẩm đã qua sử dụng bao lâu và độ mới thực tế khoảng bao nhiêu %?',
+      'Tình trạng bảo hành: Còn bảo hành chính hãng không, có hóa đơn mua hàng không?',
+      'Phụ kiện đi kèm gồm những gì (hộp, dây cáp nguồn, linh kiện phụ)?',
+      'Máy hoạt động có êm không, có lỗi chức năng hay từng qua sửa chữa chưa?',
+      'Điện áp sử dụng là 220V chuẩn hay dòng máy 110V nội địa?'
+    ],
+    quickReplies: [
+      'Máy dùng được 6 tháng, ngoại hình 95% không cấn móp',
+      'Còn nguyên tem bảo hành chính hãng và hóa đơn',
+      'Đầy đủ hộp fullbox, phụ kiện và dây nguồn zin',
+      'Mọi tính năng hoạt động hoàn hảo 100%, chưa sửa chữa',
+      'Điện áp 220V cắm dùng trực tiếp tiện lợi'
+    ]
+  };
+};
 
 interface CreateListingViewProps {
   onListingCreated: (newListing: Listing) => void;
@@ -101,6 +304,173 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [aiInitialMessage, setAiInitialMessage] = useState<string>('');
   const [draftPost, setDraftPost] = useState<ListingDraftResponse | null>(null);
+
+  // Mode: 'ai' | 'manual'
+  const [initMode, setInitMode] = useState<'ai' | 'manual' | null>(null);
+  const [postMode, setPostMode] = useState<'ai' | 'manual'>('ai');
+  const [showAiChatDrawer, setShowAiChatDrawer] = useState<boolean>(true);
+  const [showQuestionsList, setShowQuestionsList] = useState<boolean>(true);
+
+  // Derived category & item question guide
+  const currentCategory = backendCategories.find(c => c.id === selectedCategoryId);
+  const currentItem = backendItems.find(i => i.id === selectedItemId);
+
+  const currentQuestionGuide = useMemo(() => {
+    return getCategoryQuestionGuide(
+      currentCategory?.name || '',
+      currentItem?.name || '',
+      brand,
+      model,
+      photoPreviews.length
+    );
+  }, [currentCategory, currentItem, brand, model, photoPreviews.length]);
+
+  // Warning from AI Vision (Llava) if uploaded image is detected as catalog / stock photo
+  const isCatalogPhotoWarning = useMemo(() => {
+    if (!aiInitialMessage) return false;
+    const lower = aiInitialMessage.toLowerCase();
+    return (
+      lower.includes('ảnh quảng cáo') ||
+      lower.includes('ảnh catalog') ||
+      lower.includes('không phải ảnh chụp thực tế') ||
+      lower.includes('không có cơ sở để đánh giá ngoại hình')
+    );
+  }, [aiInitialMessage]);
+
+  // Dynamic question parser: Extracts questions generated by Backend AI from aiInitialMessage
+  const parsedAiQuestions = useMemo(() => {
+    if (!aiInitialMessage) return [];
+    const lines = aiInitialMessage.split('\n');
+    const questions: string[] = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      // Match "1. ...", "1) ...", "- 1. ...", "* 1. ..."
+      const numMatch = trimmed.match(/^[-*•]?\s*(\d+)[\.\)]\s*(.+)$/);
+      if (numMatch && numMatch[2]) {
+        questions.push(numMatch[2].trim());
+        continue;
+      }
+      // Match bullet with bold question: "- **Câu hỏi:** ..." or "* **Câu hỏi:** ..."
+      const bulletBoldMatch = trimmed.match(/^[-*•]\s*(\*\*.*?\*\*.*)$/);
+      if (bulletBoldMatch && bulletBoldMatch[1]) {
+        questions.push(bulletBoldMatch[1].trim());
+      }
+    }
+    return questions;
+  }, [aiInitialMessage]);
+
+  // Effective questions to display: Prioritize dynamic questions from Backend AI template
+  const effectiveQuestions = parsedAiQuestions.length > 0
+    ? parsedAiQuestions
+    : currentQuestionGuide.questions;
+
+  // Questionnaire Answers State
+  const [questionAnswers, setQuestionAnswers] = useState<Record<number, string>>({});
+  const [isApplyingAnswers, setIsApplyingAnswers] = useState(false);
+  const [isSubmittingAnswersToAi, setIsSubmittingAnswersToAi] = useState(false);
+  const [applySuccessNotice, setApplySuccessNotice] = useState<string | null>(null);
+
+  const answeredCount = useMemo(() => {
+    return (Object.values(questionAnswers) as string[]).filter((v) => v && typeof v === 'string' && v.trim().length > 0).length;
+  }, [questionAnswers]);
+
+  const handleAnswerChange = (idx: number, val: string) => {
+    setQuestionAnswers((prev) => ({ ...prev, [idx]: val }));
+    const qText = effectiveQuestions[idx] || '';
+    if (qText.toLowerCase().includes('thương hiệu') || qText.toLowerCase().includes('hãng')) {
+      const cleanBrand = val.trim();
+      if (cleanBrand && cleanBrand.length < 30) {
+        setBrand(cleanBrand);
+      }
+    }
+  };
+
+  const handleApplyAnswersToDescription = () => {
+    if (answeredCount === 0) {
+      alert(lang === 'vi' ? 'Vui lòng điền câu trả lời cho ít nhất một câu hỏi trước khi áp dụng.' : 'Please answer at least one question before applying.');
+      return;
+    }
+    setIsApplyingAnswers(true);
+    const formattedAnswers = effectiveQuestions
+      .map((q, idx) => {
+        const ans = questionAnswers[idx]?.trim();
+        if (!ans) return null;
+        const parsed = parseQuestionItem(q, idx);
+        return `• ${parsed.label}: ${ans}`;
+      })
+      .filter(Boolean)
+      .join('\n');
+
+    if (formattedAnswers) {
+      const sectionHeader = '📋 Thông tin chi tiết sản phẩm:';
+      let newDesc = description.trim();
+      if (!newDesc) {
+        newDesc = `${sectionHeader}\n${formattedAnswers}`;
+      } else if (newDesc.includes(sectionHeader)) {
+        const parts = newDesc.split(sectionHeader);
+        newDesc = `${parts[0].trim()}\n\n${sectionHeader}\n${formattedAnswers}`.trim();
+      } else {
+        newDesc = `${newDesc}\n\n${sectionHeader}\n${formattedAnswers}`;
+      }
+      setDescription(newDesc);
+      setApplySuccessNotice(lang === 'vi' ? 'Đã cập nhật câu trả lời vào phần Mô tả sản phẩm bên dưới!' : 'Updated answers into product description below!');
+      setTimeout(() => setApplySuccessNotice(null), 4000);
+    }
+    setIsApplyingAnswers(false);
+  };
+
+  const handleSendAnswersToAi = async () => {
+    if (answeredCount === 0) {
+      alert(lang === 'vi' ? 'Vui lòng điền ít nhất một câu trả lời để gửi cho AI.' : 'Please answer at least one question to send to AI.');
+      return;
+    }
+    if (!sessionId || !postId) {
+      handleApplyAnswersToDescription();
+      return;
+    }
+
+    setIsSubmittingAnswersToAi(true);
+    const formattedAnswers = effectiveQuestions
+      .map((q, idx) => {
+        const ans = questionAnswers[idx]?.trim();
+        if (!ans) return null;
+        const parsed = parseQuestionItem(q, idx);
+        return `${parsed.label}: ${ans}`;
+      })
+      .filter(Boolean)
+      .join(', ');
+
+    const promptMessage = `Tôi đã trả lời các câu hỏi về sản phẩm như sau: ${formattedAnswers}. Nhờ bạn viết lại một đoạn mô tả bán hàng thật chuyên nghiệp, trung thực và thu hút người mua nhé!`;
+
+    setChatMessages((prev) => [
+      ...prev,
+      { role: 'user', text: promptMessage, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+    ]);
+    setUserChatCount((prev) => prev + 1);
+    setShowAiChatDrawer(true);
+
+    try {
+      const res = await aiChatService.chat(promptMessage, sessionId, postId);
+      const reply = res?.reply || (res as any)?.message || '';
+      if (reply) {
+        setChatMessages((prev) => [
+          ...prev,
+          { role: 'ai', text: reply, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+        ]);
+        setDescription(reply);
+        setApplySuccessNotice(lang === 'vi' ? 'Trợ lý AI đã tổng hợp xong bài mô tả bán hàng mới!' : 'AI generated a new sales description!');
+        setTimeout(() => setApplySuccessNotice(null), 4500);
+      }
+    } catch (err: any) {
+      console.warn('Lỗi gửi câu trả lời cho AI chat:', err);
+      handleApplyAnswersToDescription();
+    } finally {
+      setIsSubmittingAnswersToAi(false);
+    }
+  };
+
+  const [userChatCount, setUserChatCount] = useState<number>(0);
+  const [isSessionCompleted, setIsSessionCompleted] = useState<boolean>(false);
 
   // Step Loading States
   const [isInitializingPost, setIsInitializingPost] = useState(false);
@@ -233,7 +603,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // =========================================================================
   // STEP 1: Init Post (POST /api/v1/posts/init with multipart/form-data)
   // =========================================================================
-  const handleInitPost = async () => {
+  const handleInitPost = async (mode: 'ai' | 'manual' = 'ai') => {
     if (!selectedCategoryId) {
       alert(lang === 'vi' ? 'Vui lòng chọn Danh mục sản phẩm' : 'Please select a Category');
       return;
@@ -243,6 +613,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       return;
     }
 
+    setInitMode(mode);
+    setPostMode(mode);
+    setShowAiChatDrawer(mode === 'ai');
     setIsInitializingPost(true);
     try {
       const imageBlobs = await prepareImageBlobs();
@@ -256,28 +629,66 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       if (initRes && initRes.postId) {
         setPostId(initRes.postId);
         setSessionId(initRes.sessionId);
-        setAiInitialMessage(initRes.aiInitialMessage || initRes.aiDescription || '');
+        const initialAiDesc = initRes.aiInitialMessage || initRes.aiDescription || '';
+        setAiInitialMessage(initialAiDesc);
 
-        // Fetch draft details from server (GET /api/v1/posts/{postId})
-        try {
-          const draftRes = await postService.getPost(initRes.postId);
-          setDraftPost(draftRes);
-          if (draftRes.title) setTitle(draftRes.title);
-          if (draftRes.description) setDescription(draftRes.description);
-          if (draftRes.aiDescription && !description) setDescription(draftRes.aiDescription);
-          if (draftRes.itemCondition) setItemCondition(draftRes.itemCondition);
-          if (draftRes.descriptionAccepted) setDescriptionAccepted(true);
-        } catch (fetchErr) {
-          console.warn('GET /posts/{postId} chưa sẵn sàng, dùng dữ liệu ban đầu:', fetchErr);
+        // Auto-generate title from selections if empty
+        const selectedCat = backendCategories.find(c => c.id === selectedCategoryId);
+        const selectedItm = backendItems.find(i => i.id === selectedItemId);
+        const defaultTitle = `${brand ? brand + ' ' : ''}${model ? model + ' ' : ''}${selectedItm?.name || selectedCat?.name || 'Sản phẩm gia dụng'}`.trim();
+        if (!title.trim() && defaultTitle) {
+          setTitle(defaultTitle);
         }
 
-        // Initialize Chat messages
+        // Initialize draft state with data returned directly from BE initPost
+        // Note: Do not overwrite description if initialAiDesc is purely an image warning or questionnaire template
+        const isWarningOrQuestions =
+          initialAiDesc.includes('ảnh quảng cáo') ||
+          initialAiDesc.includes('ảnh catalog') ||
+          initialAiDesc.includes('không phải ảnh chụp thực tế') ||
+          initialAiDesc.includes('Vui lòng cung cấp');
+
+        if (initialAiDesc && !description && mode === 'ai' && !isWarningOrQuestions) {
+          setDescription(initialAiDesc);
+        }
+
+        setDraftPost({
+          postId: initRes.postId,
+          id: initRes.postId,
+          title: defaultTitle,
+          description: isWarningOrQuestions ? '' : initialAiDesc,
+          aiDescription: initialAiDesc,
+          descriptionAccepted: false,
+          imageUrls: photoPreviews,
+          status: 'DRAFT',
+        });
+
+        // Reset chat tracking
+        setUserChatCount(0);
+        setIsSessionCompleted(false);
+        setQuestionAnswers({});
+
+        // Initialize Chat messages with tailored questions
+        const guide = getCategoryQuestionGuide(
+          selectedCat?.name || '',
+          selectedItm?.name || '',
+          brand,
+          model,
+          photoPreviews.length
+        );
+
+        // Use Backend AI's initial combined message directly if present
+        let initialAiText = initRes.aiInitialMessage;
+        if (!initialAiText) {
+          initialAiText = lang === 'vi'
+            ? `Chào bạn! Tôi là Trợ lý AI SecondLife. Đã nhận diện ${photoPreviews.length} ảnh của sản phẩm **${brand ? brand + ' ' : ''}${guide.itemTitle}** thuộc danh mục **${guide.categoryTitle}**.\n\n📋 **Để AI định giá tốt nhất và viết mô tả hấp dẫn, bạn vui lòng chia sẻ thêm:**\n${guide.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`
+            : `Hello! I am SecondLife AI Assistant. Detected ${photoPreviews.length} photos for **${brand ? brand + ' ' : ''}${guide.itemTitle}** in **${guide.categoryTitle}**.\n\n📋 **Please provide more details:**\n${guide.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`;
+        }
+
         setChatMessages([
           {
             role: 'ai',
-            text: initRes.aiInitialMessage || (lang === 'vi'
-              ? 'Chào bạn! Tôi là Trợ lý AI SecondLife. Sau khi phân tích ảnh sản phẩm, tôi đã chuẩn bị sẵn mô tả ban đầu. Hãy trò chuyện với tôi nếu muốn bổ sung chi tiết bảo hành, phụ kiện hoặc tình trạng máy nhé!'
-              : 'Hello! I am SecondLife AI Assistant. I have analyzed your product photos and prepared a draft description. Chat with me to add accessories or warranty details!'),
+            text: initialAiText,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           }
         ]);
@@ -290,6 +701,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       alert('Khởi tạo bài đăng thất bại: ' + (err?.message || 'Lỗi server'));
     } finally {
       setIsInitializingPost(false);
+      setInitMode(null);
     }
   };
 
@@ -298,7 +710,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // =========================================================================
   const handleSendChatMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!chatInput.trim() || isSendingChat || !sessionId || !postId) return;
+    if (!chatInput.trim() || isSendingChat || !sessionId || !postId || isSessionCompleted) return;
 
     const userText = chatInput.trim();
     setChatInput('');
@@ -306,6 +718,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       ...prev,
       { role: 'user', text: userText, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
     ]);
+    setUserChatCount((prev) => prev + 1);
     setIsSendingChat(true);
 
     try {
@@ -315,10 +728,22 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         ...prev,
         { role: 'ai', text: reply, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
       ]);
+      // Tự động gán mô tả nếu người dùng chưa nhập tay
+      if (!description.trim() && reply) {
+        setDescription(reply);
+      }
     } catch (err: any) {
+      const errMsg = String(err?.message || '');
+      let displayError = 'Lỗi phản hồi AI: ' + (errMsg || 'Vui lòng thử lại.');
+      if (errMsg.includes('Chat limit exceeded') || errMsg.includes('credit')) {
+        displayError = '⚠️ Bạn đã sử dụng hết 5 tin nhắn miễn phí của bài đăng này. Vui lòng nạp thêm Chat Credit để tiếp tục hoặc bấm "Tiếp tục: Xác nhận mô tả" để tiến hành đăng bài.';
+      } else if (errMsg.includes('completed') || errMsg.includes('Conflict')) {
+        setIsSessionCompleted(true);
+        displayError = 'ℹ️ Phiên hội thoại này đã được tổng hợp thành mô tả sản phẩm. Bạn có thể chỉnh sửa trực tiếp ở ô mô tả bên trên.';
+      }
       setChatMessages((prev) => [
         ...prev,
-        { role: 'ai', text: 'Lỗi phản hồi AI: ' + (err?.message || 'Vui lòng thử lại.'), time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+        { role: 'ai', text: displayError, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
       ]);
     } finally {
       setIsSendingChat(false);
@@ -329,19 +754,118 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     if (!sessionId || !postId) return;
     setIsFinalizingChat(true);
     try {
-      await postService.finalizeChat(sessionId);
-      // Re-fetch draft from backend to populate latest generated description
-      const updatedDraft = await postService.getPost(postId);
-      setDraftPost(updatedDraft);
-      if (updatedDraft.description) {
-        setDescription(updatedDraft.description);
+      const finalizeRes = await postService.finalizeChat(sessionId);
+      if (finalizeRes?.description) {
+        setDescription(finalizeRes.description);
       }
+      if (finalizeRes?.suggestedPrice) {
+        const pNum = Number(finalizeRes.suggestedPrice);
+        setFinalPriceVnd(pNum);
+        setValuationResult({
+          fairPriceMin: Math.round(pNum * 0.85),
+          fairPriceMax: Math.round(pNum * 1.15),
+          suggestedPrice: pNum,
+          modelVersion: 'SecondLife-AI-v2.1',
+          expectedSellTime: '3-5 ngày',
+          createdAt: new Date().toISOString()
+        });
+      }
+      setIsSessionCompleted(true);
       alert(lang === 'vi' ? 'AI đã tổng hợp cuộc hội thoại và cập nhật mô tả thành công!' : 'AI summarized the chat into your description!');
     } catch (err: any) {
       alert('Hoàn tất chat thất bại: ' + (err?.message || 'Lỗi kết nối'));
     } finally {
       setIsFinalizingChat(false);
     }
+  };
+
+  const handleGoToStep3 = async () => {
+    let currentTitle = title.trim();
+    let currentDesc = description.trim();
+
+    // 1. Tự động sinh tiêu đề nếu người dùng chưa nhập
+    if (!currentTitle) {
+      const selectedCat = backendCategories.find(c => c.id === selectedCategoryId);
+      const selectedItm = backendItems.find(i => i.id === selectedItemId);
+      currentTitle = `${brand ? brand + ' ' : ''}${model ? model + ' ' : ''}${selectedItm?.name || selectedCat?.name || 'Sản phẩm gia dụng'}`.trim();
+      setTitle(currentTitle);
+    }
+
+    // 1.5. Tự động đồng bộ các câu trả lời từ bảng câu hỏi AI vào mô tả
+    const currentAnsweredCount = (Object.values(questionAnswers) as string[]).filter((v) => v && typeof v === 'string' && v.trim().length > 0).length;
+    if (currentAnsweredCount > 0) {
+      const answersText = effectiveQuestions
+        .map((q, idx) => {
+          const ans = questionAnswers[idx]?.trim();
+          if (!ans) return null;
+          const parsed = parseQuestionItem(q, idx);
+          return `• ${parsed.label}: ${ans}`;
+        })
+        .filter(Boolean)
+        .join('\n');
+      if (answersText) {
+        const sectionHeader = '📋 Thông tin chi tiết sản phẩm:';
+        if (!currentDesc) {
+          currentDesc = `${sectionHeader}\n${answersText}`;
+          setDescription(currentDesc);
+        } else if (!currentDesc.includes(sectionHeader)) {
+          currentDesc = `${currentDesc}\n\n${sectionHeader}\n${answersText}`;
+          setDescription(currentDesc);
+        }
+      }
+    }
+
+    // 2. Tự động lấy mô tả từ tin nhắn AI gần nhất hoặc gợi ý ban đầu
+    if (!currentDesc) {
+      const lastAiMsg = [...chatMessages].reverse().find(m => m.role === 'ai' && !m.text.startsWith('Lỗi'));
+      if (lastAiMsg?.text) {
+        currentDesc = lastAiMsg.text;
+        setDescription(currentDesc);
+      } else if (aiInitialMessage) {
+        currentDesc = aiInitialMessage;
+        setDescription(currentDesc);
+      }
+    }
+
+    // 3. Nếu vẫn chưa có và có phiên chat, gọi finalizeChat từ BE để tổng hợp
+    if (!currentDesc && sessionId && postId) {
+      try {
+        setIsFinalizingChat(true);
+        const finalizeRes = await postService.finalizeChat(sessionId);
+        if (finalizeRes?.description) {
+          currentDesc = finalizeRes.description;
+          setDescription(finalizeRes.description);
+        }
+        if (finalizeRes?.suggestedPrice) {
+          const pNum = Number(finalizeRes.suggestedPrice);
+          setFinalPriceVnd(pNum);
+          setValuationResult({
+            fairPriceMin: Math.round(pNum * 0.85),
+            fairPriceMax: Math.round(pNum * 1.15),
+            suggestedPrice: pNum,
+            modelVersion: 'SecondLife-AI-v2.1',
+            expectedSellTime: '3-5 ngày',
+            createdAt: new Date().toISOString()
+          });
+        }
+        setIsSessionCompleted(true);
+      } catch (err) {
+        console.warn('Auto finalize chat warning:', err);
+      } finally {
+        setIsFinalizingChat(false);
+      }
+    }
+
+    if (!currentTitle) {
+      alert(lang === 'vi' ? 'Vui lòng nhập Tiêu đề bài đăng.' : 'Please enter Listing Title.');
+      return;
+    }
+    if (!currentDesc) {
+      alert(lang === 'vi' ? 'Vui lòng nhập Mô tả sản phẩm hoặc trò chuyện với AI để tạo mô tả.' : 'Please provide a Description or chat with AI.');
+      return;
+    }
+
+    setCurrentStep(3);
   };
 
   // =========================================================================
@@ -725,29 +1249,57 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </div>
           </div>
 
-          {/* Action Button: Khởi tạo bài đăng */}
-          <div className="flex justify-end pt-4 border-t border-gray-100">
-            <button
-              onClick={handleInitPost}
-              disabled={isInitializingPost || photoPreviews.length < 3 || photoPreviews.length > 6}
-              className={`px-8 py-3.5 rounded-2xl font-black text-sm shadow-md flex items-center gap-2.5 transition ${!isInitializingPost && photoPreviews.length >= 3 && photoPreviews.length <= 6
-                  ? 'bg-gradient-to-r from-[#c34c36] to-[#24263e] text-white hover:opacity-95 cursor-pointer transform hover:-translate-y-0.5'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
-                }`}
-            >
-              {isInitializingPost ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>AI đang phân tích ảnh & khởi tạo draft...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-5 h-5 text-amber-300" />
-                  <span>Khởi Tạo Bài Đăng & Phân Tích AI</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
+          {/* Action Buttons: Tự Đăng Bài & Chat Với AI */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-gray-100">
+            <div className="text-xs text-slate-500 font-medium">
+              <span>Đã chọn: <strong>{photoPreviews.length}/6 ảnh</strong>. Bạn có thể chọn tự điền thông tin hoặc để AI hỗ trợ.</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {/* Nút 1: Tự đăng bài */}
+              <button
+                type="button"
+                onClick={() => handleInitPost('manual')}
+                disabled={isInitializingPost || photoPreviews.length < 3 || photoPreviews.length > 6}
+                className="px-6 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xs flex items-center justify-center gap-2 transition cursor-pointer border-2 border-[#24263e]/20 bg-white text-[#24263e] hover:bg-slate-50 hover:border-[#24263e] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Tự nhập tiêu đề, mô tả và đăng bài nhanh chóng"
+              >
+                {isInitializingPost && initMode === 'manual' ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-[#c34c36]" />
+                    <span>Đang khởi tạo...</span>
+                  </>
+                ) : (
+                  <>
+                    <PenLine className="w-4 h-4 text-[#c34c36]" />
+                    <span>Tự Đăng Bài</span>
+                    <ArrowRight className="w-3.5 h-3.5 opacity-60" />
+                  </>
+                )}
+              </button>
+
+              {/* Nút 2: Chat với AI */}
+              <button
+                type="button"
+                onClick={() => handleInitPost('ai')}
+                disabled={isInitializingPost || photoPreviews.length < 3 || photoPreviews.length > 6}
+                className="px-7 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-md flex items-center justify-center gap-2.5 transition cursor-pointer bg-gradient-to-r from-[#c34c36] to-[#24263e] text-white hover:opacity-95 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Sử dụng trí tuệ nhân tạo để phân tích ảnh và hoàn thiện mô tả"
+              >
+                {isInitializingPost && initMode === 'ai' ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
+                    <span>AI đang phân tích ảnh...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                    <span>Chat Với AI</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -757,18 +1309,76 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       {/* ========================================================================= */}
       {currentStep === 2 && (
         <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
-          <div>
-            <h3 className="text-lg font-black text-[#24263e] flex items-center gap-2">
-              <Bot className="w-5 h-5 text-[#c34c36]" />
-              <span>{lang === 'vi' ? 'Bước 2: Mô Tả Do AI Đề Xuất & Chỉnh Sửa Trực Tiếp' : 'Step 2: AI Description & Editing'}</span>
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              Bạn có thể sử dụng trực tiếp mô tả do AI tạo ra từ ảnh hoặc trò chuyện với Trợ lý để bổ sung thêm chi tiết.
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-black text-[#24263e] flex items-center gap-2">
+                {postMode === 'ai' ? (
+                  <>
+                    <Bot className="w-5 h-5 text-[#c34c36]" />
+                    <span>{lang === 'vi' ? 'Bước 2: Hoàn Thiện Mô Tả Cùng Trợ Lý AI' : 'Step 2: AI Description & Chat'}</span>
+                  </>
+                ) : (
+                  <>
+                    <PenLine className="w-5 h-5 text-[#c34c36]" />
+                    <span>{lang === 'vi' ? 'Bước 2: Tự Nhập Tiêu Đề & Mô Tả Sản Phẩm' : 'Step 2: Manual Title & Description'}</span>
+                  </>
+                )}
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                {postMode === 'ai'
+                  ? (lang === 'vi' ? 'Trò chuyện với Trợ lý AI để tự động hoàn thiện mô tả hoặc chỉnh sửa trực tiếp bên dưới.' : 'Chat with AI Assistant to refine your description or edit directly below.')
+                  : (lang === 'vi' ? 'Bạn đang ở chế độ tự đăng bài. Nhập tiêu đề, mô tả và tình trạng của sản phẩm để tiếp tục.' : 'Manual mode: Enter title, description, and item condition to proceed.')}
+              </p>
+            </div>
+
+            {/* Mode Switcher Pill */}
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl shrink-0 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setPostMode('manual');
+                  setShowAiChatDrawer(false);
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${postMode === 'manual' ? 'bg-white text-[#24263e] shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                <PenLine className="w-3.5 h-3.5" />
+                <span>Tự đăng bài</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPostMode('ai');
+                  setShowAiChatDrawer(true);
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${postMode === 'ai' ? 'bg-[#c34c36] text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Chat với AI</span>
+              </button>
+            </div>
           </div>
 
-          {/* AI Initial Description Suggestion Box */}
-          {aiInitialMessage && (
+          {/* AI Vision Warning: Catalog / Promotional Photo Detected */}
+          {isCatalogPhotoWarning && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 flex items-start gap-3 shadow-xs animate-fadeIn">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="space-y-1 text-xs">
+                <div className="font-black text-amber-900 uppercase flex items-center gap-1.5 text-[11px]">
+                  <span>Nhận định từ AI Thị Giác (Llava Vision)</span>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 font-bold text-[10px]">Ảnh catalog / quảng cáo</span>
+                </div>
+                <p className="leading-relaxed text-slate-700">
+                  Hình ảnh bạn cung cấp là <strong>ảnh quảng cáo kỹ thuật số (ảnh catalog)</strong>, không phải ảnh chụp thực tế. Hệ thống AI chưa có cơ sở đánh giá độ hao mòn và tình trạng thực tế của sản phẩm.
+                </p>
+                <p className="text-[11px] text-amber-800 font-medium">
+                  💡 <em>Khuyến nghị:</em> Hãy trả lời các câu hỏi bên dưới hoặc gửi ảnh thực tế qua chat để AI định giá chính xác và viết bài chuẩn nhất.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* AI Initial Description Suggestion Box (Only shown if AI produced an actual description and not just warning/questions) */}
+          {aiInitialMessage && !isCatalogPhotoWarning && parsedAiQuestions.length === 0 && (
             <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 text-slate-800 text-xs space-y-2">
               <div className="flex items-center justify-between">
                 <span className="font-black text-[#24263e] flex items-center gap-1.5 uppercase text-[11px]">
@@ -786,6 +1396,164 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <p className="whitespace-pre-wrap leading-relaxed text-slate-700 italic">
                 "{aiInitialMessage}"
               </p>
+            </div>
+          )}
+
+          {/* Interactive AI Questionnaire: Hiện các câu hỏi cần người dùng trả lời và dưới mỗi câu thì hiện chỗ để điền */}
+          {effectiveQuestions.length > 0 && (
+            <div className="bg-gradient-to-br from-amber-50/90 via-orange-50/30 to-white rounded-3xl p-5 sm:p-6 border-2 border-amber-200/90 shadow-xs space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/70 pb-4">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-500 to-[#c34c36] text-white font-black text-xs flex items-center gap-1.5 shadow-xs">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                      <span>{lang === 'vi' ? 'Khảo Sát Chi Tiết Sản Phẩm Cùng AI' : 'AI Product Questionnaire'}</span>
+                    </span>
+                    <span className="text-xs font-extrabold text-[#24263e]">
+                      {currentCategory?.name || currentQuestionGuide.categoryTitle} • {currentItem?.name || currentQuestionGuide.itemTitle}
+                    </span>
+                    {brand && (
+                      <span className="text-xs font-bold text-slate-700 bg-white px-2 py-0.5 rounded-md border border-gray-200">
+                        {brand}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
+                    {lang === 'vi'
+                      ? 'AI đã quét hình ảnh và phân tích danh mục. Hãy điền câu trả lời bên dưới mỗi câu hỏi để hệ thống định giá chính xác và tự động hoàn thiện mô tả.'
+                      : 'AI analyzed your uploaded photos. Please fill in the answers under each question to help AI generate an accurate valuation and description.'}
+                  </p>
+                </div>
+
+                {/* Progress Indicator */}
+                <div className="flex items-center gap-2.5 self-start sm:self-auto bg-white px-3.5 py-2 rounded-2xl border border-amber-200 shadow-2xs shrink-0">
+                  <div className="text-right">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tiến độ điền</div>
+                    <div className="text-xs font-black text-[#c34c36]">
+                      {answeredCount}/{effectiveQuestions.length} câu đã trả lời
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-900 font-black text-xs flex items-center justify-center border border-amber-300">
+                    {Math.round((answeredCount / (effectiveQuestions.length || 1)) * 100)}%
+                  </div>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="w-full bg-amber-100/70 rounded-full h-2 overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-amber-500 via-orange-500 to-[#c34c36] h-full transition-all duration-300 rounded-full"
+                  style={{ width: `${Math.round((answeredCount / (effectiveQuestions.length || 1)) * 100)}%` }}
+                />
+              </div>
+
+              {/* Notice Message */}
+              {applySuccessNotice && (
+                <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-bold rounded-2xl flex items-center gap-2 animate-fadeIn shadow-2xs">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{applySuccessNotice}</span>
+                </div>
+              )}
+
+              {/* List of Questions with Input Fields Underneath */}
+              <div className="grid grid-cols-1 gap-3.5">
+                {effectiveQuestions.map((q, idx) => {
+                  const parsed = parseQuestionItem(q, idx);
+                  const currentVal = questionAnswers[idx] || '';
+                  const hasAnswer = currentVal.trim().length > 0;
+
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-4 rounded-2xl border transition-all ${
+                        hasAnswer
+                          ? 'bg-white border-emerald-300 shadow-xs'
+                          : 'bg-white/85 border-amber-200/90 hover:border-amber-400 shadow-2xs'
+                      }`}
+                    >
+                      {/* Question Header */}
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="flex items-start gap-2.5">
+                          <span
+                            className={`w-6 h-6 rounded-lg font-black text-xs flex items-center justify-center shrink-0 mt-0.5 ${
+                              hasAnswer
+                                ? 'bg-emerald-600 text-white shadow-2xs'
+                                : 'bg-[#24263e] text-white'
+                            }`}
+                          >
+                            {hasAnswer ? <Check className="w-3.5 h-3.5" /> : idx + 1}
+                          </span>
+                          <div>
+                            <h4 className="text-xs font-black text-[#24263e] leading-snug">
+                              {parsed.label}
+                            </h4>
+                            {parsed.hint && (
+                              <p className="text-[11px] text-slate-500 italic mt-0.5">
+                                {parsed.hint}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {hasAnswer && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 shrink-0 flex items-center gap-1">
+                            <Check className="w-3 h-3" /> Đã điền
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Quick click-to-fill pills if examples present */}
+                      {parsed.examples.length > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap mb-2 sm:pl-8">
+                          <span className="text-[10px] text-slate-400 font-bold">Gợi ý nhanh:</span>
+                          {parsed.examples.map((ex, exIdx) => (
+                            <button
+                              key={exIdx}
+                              type="button"
+                              onClick={() => handleAnswerChange(idx, ex)}
+                              className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold border transition cursor-pointer ${
+                                currentVal === ex
+                                  ? 'bg-[#c34c36] text-white border-[#c34c36]'
+                                  : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200'
+                              }`}
+                              title={`Bấm để điền nhanh "${ex}"`}
+                            >
+                              + {ex}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* The Input Field Underneath the Question */}
+                      <div className="sm:pl-8">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={currentVal}
+                            onChange={(e) => handleAnswerChange(idx, e.target.value)}
+                            placeholder={
+                              parsed.examples.length > 0
+                                ? `VD: ${parsed.examples.slice(0, 3).join(', ')}...`
+                                : `Nhập câu trả lời cho câu hỏi này...`
+                            }
+                            className="w-full px-4 py-2.5 bg-slate-50 hover:bg-white focus:bg-white border border-gray-200 focus:border-[#c34c36] rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition shadow-2xs"
+                          />
+                          {currentVal && (
+                            <button
+                              type="button"
+                              onClick={() => handleAnswerChange(idx, '')}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center text-xs cursor-pointer transition"
+                              title="Xóa câu trả lời"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -836,57 +1604,193 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
           {/* AI Chat Drawer / Accordion */}
           <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50">
-            <div className="px-4 py-3 bg-slate-100/70 border-b border-slate-200 flex items-center justify-between">
+            <div 
+              onClick={() => setShowAiChatDrawer(!showAiChatDrawer)}
+              className="px-4 py-3 bg-slate-100/70 border-b border-slate-200 flex items-center justify-between cursor-pointer hover:bg-slate-200/50 transition"
+            >
               <div className="flex items-center gap-2 text-xs font-bold text-[#24263e]">
                 <Bot className="w-4 h-4 text-[#c34c36]" />
                 <span>Trợ lý AI Hỗ trợ hoàn thiện mô tả (Chat & Tổng hợp)</span>
+                <span className="text-[10px] text-slate-400 font-normal">
+                  ({showAiChatDrawer ? 'Bấm để thu gọn' : 'Bấm để mở chat'})
+                </span>
               </div>
-              <button
-                type="button"
-                onClick={handleFinalizeChatAndSync}
-                disabled={isFinalizingChat}
-                className="px-3 py-1.5 rounded-xl bg-[#c34c36] hover:bg-[#b0402c] text-white text-[11px] font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
-              >
-                {isFinalizingChat ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                <span>AI Tổng Hợp Lại Mô Tả</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {showAiChatDrawer && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleFinalizeChatAndSync();
+                    }}
+                    disabled={isFinalizingChat}
+                    className="px-3 py-1.5 rounded-xl bg-[#c34c36] hover:bg-[#b0402c] text-white text-[11px] font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+                  >
+                    {isFinalizingChat ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                    <span>AI Tổng Hợp Lại Mô Tả</span>
+                  </button>
+                )}
+                {showAiChatDrawer ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+              </div>
             </div>
 
-            {/* Chat Messages */}
-            <div className="p-4 max-h-52 overflow-y-auto space-y-3">
-              {chatMessages.map((m, idx) => (
-                <div key={idx} className={`flex items-start gap-2.5 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  {m.role === 'ai' && (
-                    <div className="w-7 h-7 rounded-lg bg-[#24263e] text-white flex items-center justify-center shrink-0 text-xs">
-                      <Bot className="w-3.5 h-3.5" />
+            {showAiChatDrawer && (
+              <>
+                {/* Category & Item Context Card with Guided Questions based on chosen photo, category, and item */}
+                <div className="p-3.5 bg-gradient-to-r from-amber-50 to-orange-50/50 border-b border-amber-200/80 text-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-extrabold text-[#24263e] uppercase tracking-wide text-[11px] flex items-center gap-1">
+                          <HelpCircle className="w-3.5 h-3.5 text-amber-600" />
+                          {parsedAiQuestions.length > 0 ? 'Câu hỏi AI tạo theo sản phẩm:' : 'Bộ câu hỏi AI gợi ý cho:'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 font-bold text-[11px]">
+                          {currentCategory?.name || currentQuestionGuide.categoryTitle} • {currentItem?.name || currentQuestionGuide.itemTitle}
+                        </span>
+                        {brand && (
+                          <span className="px-2 py-0.5 rounded-md bg-slate-200/80 text-slate-800 font-bold text-[11px]">
+                            {brand} {model}
+                          </span>
+                        )}
+                        {parsedAiQuestions.length > 0 && (
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                            ⚡ Tự động tạo từ Backend AI
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-600 mt-1">
+                        📷 <em>{isCatalogPhotoWarning ? 'Ảnh catalog/quảng cáo - AI cần thêm thông tin thực tế' : currentQuestionGuide.photoObservation}</em>. Bấm vào câu hỏi để điền nhanh câu trả lời:
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowQuestionsList(!showQuestionsList)}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-amber-900 bg-amber-100/80 hover:bg-amber-200/80 transition shrink-0 cursor-pointer"
+                    >
+                      {showQuestionsList ? 'Thu gọn' : `Xem câu hỏi (${effectiveQuestions.length})`}
+                    </button>
+                  </div>
+
+                  {showQuestionsList && (
+                    <div className="mt-2.5 pt-2.5 border-t border-amber-200/60 space-y-1.5 animate-fadeIn">
+                      {effectiveQuestions.map((q, idx) => {
+                        const labelMatch = q.match(/\*\*(.*?)\*\*/);
+                        const label = labelMatch ? labelMatch[1].replace(/[:]/g, '').trim() : q.split(':')[0] || q;
+                        return (
+                          <div
+                            key={idx}
+                            onClick={() => {
+                              if (!isSessionCompleted) {
+                                setChatInput((prev) => (prev ? `${prev}, ${label}: ` : `${label}: `));
+                              }
+                            }}
+                            className="flex items-start gap-2 text-slate-700 p-1.5 rounded-lg hover:bg-amber-100/60 transition cursor-pointer"
+                            title="Bấm để chèn vào ô nhập tin nhắn"
+                          >
+                            <span className="w-4 h-4 rounded-full bg-amber-200 text-amber-900 font-black flex items-center justify-center shrink-0 text-[10px] mt-0.5">
+                              {idx + 1}
+                            </span>
+                            <span className="font-medium leading-relaxed hover:text-[#c34c36]">
+                              {q}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
-                  <div className={`p-3 rounded-2xl text-xs max-w-lg leading-relaxed ${m.role === 'user' ? 'bg-[#24263e] text-white' : 'bg-white border border-gray-200 text-slate-800'}`}>
-                    <div>{m.text}</div>
-                    <div className={`text-[9px] mt-1 text-right ${m.role === 'user' ? 'text-white/60' : 'text-slate-400'}`}>{m.time}</div>
-                  </div>
                 </div>
-              ))}
-            </div>
 
-            {/* Chat Input */}
-            <form onSubmit={handleSendChatMessage} className="p-3 bg-white border-t border-slate-200 flex items-center gap-2">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Nhập chi tiết cần bổ sung cho AI (ví dụ: máy dùng 2 năm, cửa xước dăm nhẹ, đủ dây nguồn...)"
-                className="flex-1 px-3.5 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#c34c36]"
-              />
-              <button
-                type="submit"
-                disabled={!chatInput.trim() || isSendingChat}
-                className="px-4 py-2 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1 disabled:opacity-40 transition cursor-pointer"
-              >
-                {isSendingChat ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                <span className="hidden sm:inline">Gửi</span>
-              </button>
-            </form>
+                {/* Chat Messages */}
+                <div className="p-4 max-h-72 overflow-y-auto space-y-3">
+                  {chatMessages.map((m, idx) => (
+                    <div key={idx} className={`flex items-start gap-2.5 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      {m.role === 'ai' && (
+                        <div className="w-7 h-7 rounded-lg bg-[#24263e] text-white flex items-center justify-center shrink-0 text-xs">
+                          <Bot className="w-3.5 h-3.5" />
+                        </div>
+                      )}
+                      <div className={`p-3 rounded-2xl text-xs max-w-lg leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-[#24263e] text-white' : 'bg-white border border-gray-200 text-slate-800'}`}>
+                        <div>{m.text}</div>
+                        <div className={`text-[9px] mt-1 text-right ${m.role === 'user' ? 'text-white/60' : 'text-slate-400'}`}>{m.time}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Quick Reply Suggestion Chips based on category & item */}
+                <div className="px-3 pt-2 pb-1 bg-white border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto">
+                  <span className="text-[10px] font-bold text-slate-400 shrink-0 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-amber-500" />
+                    Gợi ý nhanh:
+                  </span>
+                  {currentQuestionGuide.quickReplies.map((replyText, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        if (!isSessionCompleted) {
+                          setChatInput(replyText);
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-amber-100 hover:text-amber-900 text-slate-700 text-[11px] font-medium transition cursor-pointer whitespace-nowrap shrink-0 border border-slate-200 hover:border-amber-300"
+                    >
+                      + {replyText}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Chat Input & Session Status */}
+                {isSessionCompleted ? (
+                  <div className="p-3.5 bg-emerald-50 border-t border-emerald-200 text-xs text-emerald-900 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      Cuộc trò chuyện đã được tổng hợp thành mô tả sản phẩm. Bạn có thể chỉnh sửa trực tiếp mô tả bên trên.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsSessionCompleted(false)}
+                      className="text-[11px] underline text-emerald-700 hover:text-emerald-950 font-bold shrink-0 ml-2 cursor-pointer"
+                    >
+                      Mở lại chat
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSendChatMessage} className="p-3 bg-white border-t border-slate-200 flex flex-col gap-2">
+                    <div className="flex items-center justify-between px-1 text-[11px]">
+                      {userChatCount < 5 ? (
+                        <span className="text-slate-500">
+                          Tin nhắn đã gửi: <strong className="text-slate-800">{userChatCount}/5</strong> (Miễn phí theo gói tin)
+                        </span>
+                      ) : (
+                        <span className="text-amber-700 font-bold flex items-center gap-1">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                          Đã dùng {userChatCount} tin nhắn (Tin tiếp theo trừ 1 Chat Credit)
+                        </span>
+                      )}
+                      <span className="text-slate-400 text-[10px]">Nhấn Enter hoặc Gửi</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        placeholder="Nhập chi tiết cần bổ sung cho AI (ví dụ: máy dùng 2 năm, cửa xước dăm nhẹ, đủ dây nguồn...)"
+                        className="flex-1 px-3.5 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#c34c36]"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!chatInput.trim() || isSendingChat}
+                        className="px-4 py-2 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1 disabled:opacity-40 transition cursor-pointer"
+                      >
+                        {isSendingChat ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                        <span className="hidden sm:inline">Gửi</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </>
+            )}
           </div>
 
           {/* Navigation Buttons */}
@@ -900,12 +1804,21 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </button>
 
             <button
-              onClick={() => setCurrentStep(3)}
-              disabled={!title.trim() || !description.trim()}
+              onClick={handleGoToStep3}
+              disabled={isFinalizingChat}
               className="px-6 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-black shadow-xs flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
             >
-              <span>Tiếp tục: Xác nhận mô tả</span>
-              <ArrowRight className="w-4 h-4" />
+              {isFinalizingChat ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Đang tổng hợp mô tả...</span>
+                </>
+              ) : (
+                <>
+                  <span>Tiếp tục: Xác nhận mô tả</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -1249,46 +2162,82 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           {/* Submission Result Banner */}
           {submitResult && (
             <div
-              className={`p-5 rounded-2xl border space-y-3 animate-fadeIn ${submitResult.status === 'ACTIVE'
+              className={`p-5 rounded-2xl border space-y-4 animate-fadeIn ${submitResult.status === 'ACTIVE'
                   ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                  : submitResult.status === 'PENDING'
+                  : submitResult.status === 'INSUFFICIENT_CREDIT'
                     ? 'bg-amber-50 border-amber-300 text-amber-950'
                     : submitResult.status === 'PENDING_INSPECTION'
                       ? 'bg-cyan-50 border-cyan-300 text-cyan-950'
-                      : 'bg-rose-50 border-rose-300 text-rose-950'
+                      : submitResult.status === 'PENDING'
+                        ? 'bg-amber-50 border-amber-300 text-amber-950'
+                        : 'bg-rose-50 border-rose-300 text-rose-950'
                 }`}
             >
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-start gap-3">
                 {submitResult.status === 'ACTIVE' ? (
-                  <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
-                ) : submitResult.status === 'PENDING' ? (
-                  <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0" />
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
+                ) : submitResult.status === 'INSUFFICIENT_CREDIT' ? (
+                  <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
                 ) : submitResult.status === 'PENDING_INSPECTION' ? (
-                  <ShieldCheck className="w-6 h-6 text-cyan-600 shrink-0" />
+                  <ShieldCheck className="w-6 h-6 text-cyan-600 shrink-0 mt-0.5" />
+                ) : submitResult.status === 'PENDING' ? (
+                  <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
                 ) : (
-                  <AlertTriangle className="w-6 h-6 text-rose-600 shrink-0" />
+                  <AlertTriangle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
                 )}
-                <div>
+                <div className="space-y-1">
                   <h4 className="font-black text-sm uppercase">
                     {submitResult.status === 'ACTIVE'
                       ? 'Đăng bài thành công! (ACTIVE)'
-                      : submitResult.status === 'PENDING'
-                        ? 'Nghi ngờ trùng lặp - Chờ STAFF kiểm duyệt (PENDING)'
+                      : submitResult.status === 'INSUFFICIENT_CREDIT'
+                        ? 'Cần nạp thêm Credit để thanh toán phí kiểm định'
                         : submitResult.status === 'PENDING_INSPECTION'
-                          ? 'Chờ kiểm định chất lượng (PENDING_INSPECTION)'
-                          : 'Bài đăng bị từ chối (REJECTED)'}
+                          ? 'Chờ kiểm định chất lượng trung tâm (PENDING_INSPECTION)'
+                          : submitResult.status === 'PENDING'
+                            ? 'Nghi ngờ trùng lặp - Chờ STAFF kiểm duyệt (PENDING)'
+                            : 'Bài đăng bị từ chối (REJECTED)'}
                   </h4>
-                  <p className="text-xs mt-0.5">
-                    {submitResult.status === 'ACTIVE'
-                      ? 'Bài đăng của bạn đã được xuất bản công khai. Đã trừ 1 lượt LISTING.'
-                      : submitResult.status === 'PENDING'
-                        ? 'Phát hiện hình ảnh hoặc nội dung trùng với bài đăng khác trên sàn. Nhân viên Staff sẽ đối soát thủ công. Chưa trừ credit.'
-                        : submitResult.status === 'PENDING_INSPECTION'
-                          ? 'Sản phẩm có giá trị > 5 triệu đồng đang chờ Kỹ thuật viên trung tâm kiểm định tiếp nhận. Chưa trừ credit.'
-                          : (submitResult.reviewReason || 'Bài đăng không đạt tiêu chuẩn nội dung của sàn. Không trừ credit.')}
+                  <p className="text-xs leading-relaxed">
+                    {submitResult.message || (
+                      submitResult.status === 'ACTIVE'
+                        ? 'Bài đăng của bạn đã được xuất bản công khai. Đã trừ 1 lượt LISTING.'
+                        : submitResult.status === 'INSUFFICIENT_CREDIT'
+                          ? 'Sản phẩm có giá trị > 5.000.000 đ bắt buộc phải qua kiểm định. Bạn chưa có đủ credit để thanh toán phí.'
+                          : submitResult.status === 'PENDING_INSPECTION'
+                            ? 'Sản phẩm có giá trị > 5 triệu đồng đang chờ Kỹ thuật viên trung tâm kiểm định tiếp nhận.'
+                            : submitResult.status === 'PENDING'
+                              ? 'Phát hiện hình ảnh hoặc nội dung trùng với bài đăng khác trên sàn. Nhân viên Staff sẽ đối soát thủ công.'
+                              : (submitResult.reviewReason || 'Bài đăng không đạt tiêu chuẩn nội dung của sàn. Không trừ credit.')
+                    )}
                   </p>
                 </div>
               </div>
+
+              {/* Fee Breakdown if Inspection is required */}
+              {submitResult.inspectionRequired && (
+                <div className="p-3.5 bg-white/90 rounded-xl border border-slate-200 grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <span className="text-slate-500 block text-[11px]">Phí kiểm định kỹ thuật:</span>
+                    <span className="font-black text-slate-800">
+                      {formatVND(Number(submitResult.inspectionFee || 200000))}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[11px]">Phí vận chuyển trung tâm:</span>
+                    <span className="font-black text-slate-800">
+                      {formatVND(Number(submitResult.shippingFee || 50000))}
+                    </span>
+                  </div>
+                  {submitResult.creditShortfall != null && Number(submitResult.creditShortfall) > 0 && (
+                    <div className="col-span-2 sm:col-span-1">
+                      <span className="text-rose-600 block text-[11px] font-bold">Số tiền/credit còn thiếu:</span>
+                      <span className="font-black text-rose-600 text-sm">
+                        {formatVND(Number(submitResult.creditShortfall))}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {submitResult.duplicateMatches && submitResult.duplicateMatches.length > 0 && (
                 <div className="p-3 bg-white/80 rounded-xl text-xs space-y-1">
@@ -1299,21 +2248,45 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </div>
               )}
 
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={loadCredits}
-                  className="px-3.5 py-1.5 rounded-xl bg-white border border-gray-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
-                >
-                  Kiểm tra lại số dư credit
-                </button>
-                <button
-                  type="button"
-                  onClick={handleFinishAndExit}
-                  className="px-4 py-1.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold transition cursor-pointer"
-                >
-                  Hoàn tất & Về Bàn làm việc
-                </button>
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                {submitResult.status === 'INSUFFICIENT_CREDIT' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleQuickBuyCredit}
+                      disabled={isPurchasingCredits}
+                      className="px-4 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83c28] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    >
+                      {isPurchasingCredits ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5 text-amber-300" />}
+                      <span>Nạp thêm Credit ngay</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSubmitPostFinal}
+                      disabled={isSubmittingPost}
+                      className="px-4 py-2 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold transition cursor-pointer"
+                    >
+                      Thử gửi lại bài đăng
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={loadCredits}
+                      className="px-3.5 py-1.5 rounded-xl bg-white border border-gray-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                    >
+                      Kiểm tra lại số dư credit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleFinishAndExit}
+                      className="px-4 py-1.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold transition cursor-pointer"
+                    >
+                      Hoàn tất & Về Bàn làm việc
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}

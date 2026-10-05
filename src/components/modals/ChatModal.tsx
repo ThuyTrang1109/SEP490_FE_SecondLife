@@ -39,35 +39,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
   const sellerTrust = reviewService.getSellerTrustProfile(listing.sellerId, listing.sellerName);
 
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'm-1',
-      senderId: 'buyer-01',
-      senderName: 'Hoàng Quốc Khang',
-      senderRole: 'buyer',
-      text: 'Chào bạn! Máy còn nguyên hóa đơn mua hàng không ạ? Khả năng vận hành và bảo hành thế nào?',
-      timestamp: '10:15'
-    },
-    {
-      id: 'm-2',
-      senderId: 'seller-01',
-      senderName: listing.sellerName,
-      senderRole: 'seller',
-      text: 'Chào bạn! Máy nguyên zin 100%, đủ phụ kiện và hóa đơn. Mình hoàn toàn đồng ý giao dịch qua kiểm định SecondLife Hub để bạn an tâm!',
-      timestamp: '10:17'
-    },
-    {
-      id: 'm-3',
-      senderId: 'buyer-01',
-      senderName: 'Hoàng Quốc Khang',
-      senderRole: 'buyer',
-      text: 'Mình xin phép gửi đề xuất mua với mức giá này, nếu được bạn đồng ý để mình chốt cọc Escrow luôn nhé!',
-      timestamp: '10:20',
-      isOffer: true,
-      offerAmountVnd: Math.round((listing.priceVnd * 0.94) / 100000) * 100000,
-      offerStatus: 'pending'
-    }
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   const [inputMessage, setInputMessage] = useState('');
   const [offerInput, setOfferInput] = useState<number>(
@@ -382,7 +354,17 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
         {/* Chat Messages Log */}
         <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#faf8f5]">
-          {messages.map((msg) => {
+          {messages.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 p-6 space-y-2">
+              <ShoppingBag className="w-10 h-10 text-slate-300" />
+              <p className="text-xs font-semibold text-slate-500">
+                {lang === 'vi'
+                  ? 'Chưa có tin nhắn nào. Hãy gửi tin nhắn hoặc đề xuất giá đầu tiên!'
+                  : 'No messages yet. Send a message or make an offer!'}
+              </p>
+            </div>
+          ) : (
+            messages.map((msg) => {
             const isMe = msg.senderRole === currentRole;
             const isSystem = msg.senderRole === 'system';
 
@@ -544,8 +526,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 </div>
               </div>
             );
-          })}
-        </div>
+          })
+        )}
+      </div>
 
         {/* Quick Offer Popup */}
         {showOfferForm && (

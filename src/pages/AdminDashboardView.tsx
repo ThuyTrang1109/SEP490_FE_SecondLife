@@ -166,6 +166,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [userSearchTerm, setUserSearchTerm] = useState('');
 
   useEffect(() => {
+    if (initialListings && initialListings.length > 0) {
+      setLocalListings(initialListings);
+    }
+  }, [initialListings]);
+
+  useEffect(() => {
+    if (initialOrders && initialOrders.length > 0) {
+      setLocalOrders(initialOrders);
+    }
+  }, [initialOrders]);
+
+  useEffect(() => {
     adminService.getAdminUsers({ page: 0, size: 20 })
       .then(res => {
         if (res && res.items && res.items.length > 0) {
@@ -178,6 +190,49 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       .then(res => {
         if (res && res.items && res.items.length > 0) {
           setBackendVerifications(res.items);
+        }
+      })
+      .catch(() => {});
+
+    adminPostService.getAdminPosts()
+      .then(res => {
+        const items = Array.isArray(res) ? res : res?.items || res?.content || [];
+        if (items.length > 0) {
+          const mapped: Listing[] = items.map((post: any) => {
+            const photoUrl = post.coverImageUrl || post.imageUrl || post.thumbnailUrl || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800';
+            return {
+              id: post.id || `post-${Date.now()}`,
+              title: post.title || 'Thiết bị gia dụng SecondLife',
+              category: (post.category || 'Tủ lạnh & Tủ đông') as any,
+              brand: post.brand || 'SecondLife',
+              model: post.model || 'Model',
+              purchaseYear: 2024,
+              priceVnd: Number(post.price || post.priceVnd || 0),
+              originalPriceVnd: Number(post.originalPriceVnd || post.aiSuggestedPrice || post.price || 0),
+              conditionGrade: (post.itemCondition || post.condition || 'Like New') as any,
+              declaredConditionText: post.itemCondition || post.condition || 'Tình trạng tốt',
+              description: post.description || post.aiDescription || 'Đã qua thẩm định SecondLife.',
+              location: post.location || 'Việt Nam',
+              sellerId: post.user?.id || post.sellerId || 'seller',
+              sellerName: post.user?.fullName || post.sellerName || 'Người bán SecondLife',
+              sellerRating: 5.0,
+              sellerCompletedOrders: 1,
+              sellerVerified: true,
+              status: (post.status === 'ACTIVE' ? 'active' : post.status === 'DRAFT' ? 'draft' : 'reserved') as any,
+              createdAt: post.createdAt || new Date().toISOString(),
+              isInspectionGuaranteed: true,
+              requiresInspection: Number(post.price || post.priceVnd || 0) > 5000000,
+              photos: {
+                front: photoUrl,
+                back: photoUrl,
+                screenOrDetails: photoUrl,
+                accessoriesOrBox: photoUrl,
+                serialOrReceipt: photoUrl,
+              },
+              photoGallery: [photoUrl],
+            };
+          });
+          setLocalListings(mapped);
         }
       })
       .catch(() => {});
@@ -742,103 +797,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   };
 
-  // Mock Bookings Data (Khách hàng đặt lịch)
-  const [bookings, setBookings] = useState<BookingAppointment[]>([
-    {
-      id: 'BK-001',
-      stt: 1,
-      customerName: 'Nguyễn Văn An',
-      phone: '0912 345 678',
-      gender: 'Nam',
-      content: 'Đặt lịch Kỹ sư Hub kiểm định Tủ lạnh Samsung Bespoke tại nhà',
-      bookingDate: '2025-04-12 09:30',
-      status: 'CONFIRMED'
-    },
-    {
-      id: 'BK-002',
-      stt: 2,
-      customerName: 'Trần Thị Mai',
-      phone: '0988 765 432',
-      gender: 'Nữ',
-      content: 'Hẹn bưu tá GHTK qua kho lấy Máy giặt sấy LG Inverter chuyển về Hub Cầu Giấy',
-      bookingDate: '2025-04-12 14:00',
-      status: 'IN_PROGRESS'
-    },
-    {
-      id: 'BK-003',
-      stt: 3,
-      customerName: 'Lê Hoàng Long',
-      phone: '0903 112 233',
-      gender: 'Nam',
-      content: 'Mang Máy pha cà phê DeLonghi qua Hub Cầu Giấy test áp suất & mạch nhiệt',
-      bookingDate: '2025-04-13 10:15',
-      status: 'PENDING'
-    },
-    {
-      id: 'BK-004',
-      stt: 4,
-      customerName: 'Phạm Hương Giang',
-      phone: '0977 445 566',
-      gender: 'Nữ',
-      content: 'Đặt lịch bưu tá lấy Robot hút bụi Dreame L20 Ultra tại kho Tân Bình',
-      bookingDate: '2025-04-13 15:30',
-      status: 'CONFIRMED'
-    },
-    {
-      id: 'BK-005',
-      stt: 5,
-      customerName: 'Vũ Đình Trọng',
-      phone: '0936 889 900',
-      gender: 'Nam',
-      content: 'Kiểm tra lò nướng âm tủ Bosch trước khi hoàn tất thủ tục giải ngân Escrow',
-      bookingDate: '2025-04-14 08:45',
-      status: 'CONFIRMED'
-    }
-  ]);
+  // Bookings Data (Khách hàng đặt lịch)
+  const [bookings, setBookings] = useState<BookingAppointment[]>([]);
 
-  // Mock Customer Contacts (Khách hàng liên hệ)
-  const [contacts, setContacts] = useState<CustomerContact[]>([
-    {
-      id: 'CT-01',
-      stt: 1,
-      customerName: 'kt05',
-      content: 'Yêu cầu cập nhật địa chỉ giao hàng đơn DH-QK1NA sang Cầu Giấy',
-      receivedDate: '2025-04-11 15:20',
-      status: 'PENDING',
-      email: 'kt05@gmail.com'
-    },
-    {
-      id: 'CT-02',
-      stt: 2,
-      customerName: 'Hoàng Quốc Khang',
-      content: 'Cần hỗ trợ xuất hóa đơn VAT điện tử cho đơn hàng Máy giặt LG Inverter',
-      receivedDate: '2025-04-11 11:05',
-      status: 'RESOLVED',
-      email: 'khang.hq@gmail.com'
-    },
-    {
-      id: 'CT-03',
-      stt: 3,
-      customerName: 'Lê Văn Toàn',
-      content: 'Hỏi quy trình dán tem NFC niêm phong máy và thủ tục đóng gói chống sốc',
-      receivedDate: '2025-04-10 16:45',
-      status: 'RESOLVED',
-      email: 'toan.le@techcorp.vn'
-    },
-    {
-      id: 'CT-04',
-      stt: 4,
-      customerName: 'Nguyễn Minh Anh',
-      content: 'Khiếu nại bưu tá giao trễ hẹn 1 ngày so với cam kết thời gian Hub',
-      receivedDate: '2025-04-10 09:12',
-      status: 'PENDING',
-      email: 'minhanh.ng@gmail.com'
-    }
-  ]);
+  // Customer Contacts (Khách hàng liên hệ)
+  const [contacts, setContacts] = useState<CustomerContact[]>([]);
 
   // Financial & Operational Metrics
   const totalGmv = useMemo(() => {
-    return localOrders.reduce((sum, o) => sum + (o.itemPriceVnd || 0), 0) + 185000000;
+    return localOrders.reduce((sum, o) => sum + (o.itemPriceVnd || 0), 0);
   }, [localOrders]);
 
   const escrowHeld = useMemo(() => {
@@ -848,11 +815,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   }, [localOrders]);
 
   const platformEarnings = useMemo(() => {
-    return Math.round(totalGmv * (commissionRate / 100)) + localOrders.length * 150000;
-  }, [totalGmv, commissionRate, localOrders.length]);
+    return Math.round(totalGmv * (commissionRate / 100));
+  }, [totalGmv, commissionRate]);
 
   const completedOrdersCount = useMemo(() => {
-    return localOrders.filter((o) => o.escrowStatus === 'COMPLETED_RELEASED').length + 86;
+    return localOrders.filter((o) => o.escrowStatus === 'COMPLETED_RELEASED').length;
   }, [localOrders]);
 
   // Listing moderation actions

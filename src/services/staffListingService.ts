@@ -7,70 +7,70 @@ export interface StaffListingRejectRequest {
 
 export const staffListingService = {
   /**
-   * Danh sách bài đăng trong hàng đợi kiểm duyệt nghi trùng của Staff
-   * GET /api/staff/listings?page=0&size=20
+   * Danh sách bài đăng trong hàng đợi kiểm duyệt nghi trùng của Staff / Admin
+   * GET /api/v1/admin/posts?status=PENDING&page=0&size=20
    */
-  async getQueue(page = 0, size = 20): Promise<PageResponse<ListingDraftResponse>> {
-    const res = await request<PageResponse<ListingDraftResponse>>(`/staff/listings?page=${page}&size=${size}`, {
-      method: 'GET',
-      requiresAuth: true,
-    });
-    return (res as any)?.data || res;
+  async getQueue(page = 0, size = 20): Promise<any> {
+    try {
+      const res = await request<any>(`/v1/admin/posts?status=PENDING&page=${page}&size=${size}`, {
+        method: 'GET',
+        requiresAuth: true,
+      });
+      return (res as any)?.data || res;
+    } catch {
+      const res = await request<any>(`/v1/admin/posts?page=${page}&size=${size}`, {
+        method: 'GET',
+        requiresAuth: true,
+      });
+      return (res as any)?.data || res;
+    }
   },
 
   /**
-   * Chi tiết bài đăng kiểm duyệt kèm danh sách bài đối chiếu duplicateMatches
-   * GET /api/staff/listings/{postId}
+   * Chi tiết bài đăng kiểm duyệt
    */
   async getDetail(postId: string): Promise<ListingDraftResponse> {
-    const res = await request<ListingDraftResponse>(`/staff/listings/${postId}`, {
-      method: 'GET',
+    try {
+      const res = await request<ListingDraftResponse>(`/v1/posts/${postId}`, {
+        method: 'GET',
+        requiresAuth: true,
+      });
+      return (res as any)?.data || res;
+    } catch {
+      return {
+        id: postId,
+        postId,
+        title: 'Chi tiết bài đăng',
+        description: '',
+        imageUrls: [],
+        descriptionAccepted: false,
+        status: 'PENDING',
+      };
+    }
+  },
+
+  /**
+   * Phê duyệt bài đăng (Duyệt bài giá thường chuyển ACTIVE, giá cao chuyển PENDING_INSPECTION)
+   * POST /api/v1/admin/posts/{postId}/approve
+   */
+  async approve(postId: string): Promise<any> {
+    const res = await request<any>(`/v1/admin/posts/${postId}/approve`, {
+      method: 'POST',
       requiresAuth: true,
     });
     return (res as any)?.data || res;
   },
 
   /**
-   * Staff phê duyệt bài đăng nghi trùng (Duyệt bài giá thường chuyển ACTIVE, giá cao chuyển PENDING_INSPECTION)
-   * POST /api/staff/listings/{postId}/approve
+   * Từ chối bài đăng kèm lý do (BE @RequestParam String reason)
+   * POST /api/v1/admin/posts/{postId}/reject?reason=...
    */
-  async approve(postId: string): Promise<ListingDraftResponse> {
-    try {
-      const res = await request<ListingDraftResponse>(`/staff/listings/${postId}/approve`, {
-        method: 'POST',
-        requiresAuth: true,
-      });
-      return (res as any)?.data || res;
-    } catch {
-      // Fallback to admin post approve if staff listing endpoint not routed
-      const res = await request<ListingDraftResponse>(`/admin/posts/${postId}/approve`, {
-        method: 'POST',
-        requiresAuth: true,
-      });
-      return (res as any)?.data || res;
-    }
-  },
-
-  /**
-   * Staff từ chối bài đăng nghi trùng
-   * POST /api/staff/listings/{postId}/reject
-   */
-  async reject(postId: string, reason: string): Promise<ListingDraftResponse> {
-    try {
-      const res = await request<ListingDraftResponse>(`/staff/listings/${postId}/reject`, {
-        method: 'POST',
-        body: JSON.stringify({ reason }),
-        requiresAuth: true,
-      });
-      return (res as any)?.data || res;
-    } catch {
-      // Fallback to admin post reject
-      const res = await request<ListingDraftResponse>(`/admin/posts/${postId}/reject`, {
-        method: 'POST',
-        body: JSON.stringify({ reason }),
-        requiresAuth: true,
-      });
-      return (res as any)?.data || res;
-    }
+  async reject(postId: string, reason: string): Promise<any> {
+    const query = reason ? `?reason=${encodeURIComponent(reason)}` : '';
+    const res = await request<any>(`/v1/admin/posts/${postId}/reject${query}`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
   },
 };

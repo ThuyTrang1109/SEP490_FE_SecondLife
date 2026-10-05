@@ -79,6 +79,8 @@ export interface Listing {
     trustScore: number;
     duplicateFound: boolean;
   };
+  backendStatus?: string;
+  rejectionReason?: string;
 }
 
 export type EscrowStatus =

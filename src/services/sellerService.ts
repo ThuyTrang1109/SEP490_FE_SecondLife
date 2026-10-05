@@ -79,4 +79,30 @@ export const sellerService = {
     });
     return res.data;
   },
+
+  /**
+   * Gọi trực tiếp VNPT eKYC xác thực CMND/CCCD và ảnh chân dung selfie
+   * POST /api/v1/ekyc/verify (multipart/form-data)
+   */
+  async verifyVnptEkyc(
+    frontImage: File,
+    backImage: File,
+    selfieImage: File,
+    clientSession: string = 'client-session-' + Date.now(),
+    token: string = 'token-auth'
+  ): Promise<any> {
+    const formData = new FormData();
+    formData.append('frontImage', frontImage);
+    formData.append('backImage', backImage);
+    formData.append('selfieImage', selfieImage);
+    formData.append('clientSession', clientSession);
+    formData.append('token', token);
+
+    const res = await request<any>('/v1/ekyc/verify', {
+      method: 'POST',
+      body: formData,
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
 };

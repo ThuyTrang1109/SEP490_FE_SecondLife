@@ -25,6 +25,7 @@ import { formatVND } from '../utils/translations';
 import { sellerService, SellerVerificationResponseDto } from '../services/sellerService';
 import { sellerCreditService, CreditBalanceResponseDto, CreditLedgerResponseDto } from '../services/sellerCreditService';
 import { mediaService } from '../services/mediaService';
+import { postService } from '../services/postService';
 import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
 
 interface SellerDashboardViewProps {
@@ -42,7 +43,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   onViewOrders,
   lang,
 }) => {
-  const [filterStatus, setFilterStatus] = useState<'ALL' | 'active' | 'reserved' | 'sold'>('ALL');
+  const [filterStatus, setFilterStatus] = useState<'ALL' | 'active' | 'pending' | 'rejected' | 'reserved' | 'sold'>('ALL');
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
   const [bankName, setBankName] = useState('Vietcombank - Ngân hàng TMCP Ngoại Thương Việt Nam');
   const [accountNumber, setAccountNumber] = useState('10298839201');
@@ -67,34 +68,82 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [creditLedgerItems, setCreditLedgerItems] = useState<CreditLedgerResponseDto[]>([]);
   const [isLoadingLedger, setIsLoadingLedger] = useState(false);
 
-  useEffect(() => {
-    sellerService.getMyVerification()
-      .then((ver) => {
-        if (ver) {
-          setMyVerification(ver);
-          setResubmitDocNum(ver.documentNumber || '');
-          setResubmitFrontUrl(ver.documentFrontUrl || '');
-          setResubmitBackUrl(ver.documentBackUrl || '');
-          setResubmitSelfieUrl(ver.selfieUrl || '');
-        }
-      })
-      .catch(() => {
-        // Ignored if not verified yet
-      });
+  // Real Backend Posts State
+  const [myServerPosts, setMyServerPosts] = useState<Listing[]>([]);
+  const [isLoadingPosts, setIsLoadingPosts] = useState(false);
 
-    // Fetch Credit Balance
-    sellerCreditService.getCredits()
-      .then((bal) => {
-        if (bal) setCreditBalance(bal);
-      })
-      .catch(() => {});
+  const fetchSellerData = React.useCallback(async () => {
+    setIsLoadingPosts(true);
+    try {
+      sellerService.getMyVerification()
+        .then((ver) => {
+          if (ver) {
+            setMyVerification(ver);
+            setResubmitDocNum(ver.documentNumber || '');
+            setResubmitFrontUrl(ver.documentFrontUrl || '');
+            setResubmitBackUrl(ver.documentBackUrl || '');
+            setResubmitSelfieUrl(ver.selfieUrl || '');
+          }
+        })
+        .catch(() => {});
 
-    // Fetch backend categories & public posts
-    import('../services').then(({ categoryService, postService }) => {
-      categoryService.getCategories().catch(() => []);
-      postService.getPublicPosts().catch(() => []);
-    });
+      sellerCreditService.getCredits()
+        .then((bal) => {
+          if (bal) setCreditBalance(bal);
+        })
+        .catch(() => {});
+
+      const res = await postService.getMyPosts(0, 50);
+      const posts = (res as any)?.content || (res as any)?.data || (Array.isArray(res) ? res : []);
+      if (posts && posts.length > 0) {
+        const mapped: Listing[] = posts.map((p: any) => {
+          const photoUrl = p.imageUrl || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800';
+          return {
+            id: p.id || `post-${Date.now()}`,
+            title: p.title || 'Thiết bị gia dụng SecondLife',
+            category: (p.category || 'Tủ lạnh & Tủ đông') as any,
+            brand: p.brand || 'SecondLife',
+            model: p.model || 'Model',
+            purchaseYear: 2024,
+            priceVnd: Number(p.price || p.aiSuggestedPrice || 0),
+            originalPriceVnd: Number(p.aiSuggestedPrice || p.price || 0),
+            conditionGrade: (p.itemCondition || 'Like New') as any,
+            declaredConditionText: p.itemCondition || 'Tình trạng tốt',
+            description: p.description || p.aiDescription || 'Đã qua thẩm định SecondLife.',
+            location: 'Việt Nam',
+            sellerId: p.user?.id || p.userId || 'me',
+            sellerName: p.user?.fullName || 'Tôi',
+            sellerRating: 5.0,
+            sellerCompletedOrders: 0,
+            sellerVerified: true,
+            status: (p.status === 'ACTIVE' ? 'active' : p.status === 'DRAFT' ? 'draft' : 'reserved') as any,
+            backendStatus: p.status,
+            rejectionReason: p.rejectionReason,
+            createdAt: p.createdAt || new Date().toISOString(),
+            isInspectionGuaranteed: true,
+            requiresInspection: Number(p.price || 0) > 5000000,
+            photos: {
+              front: photoUrl,
+              back: photoUrl,
+              screenOrDetails: photoUrl,
+              accessoriesOrBox: photoUrl,
+              serialOrReceipt: photoUrl,
+            },
+            photoGallery: [photoUrl],
+          };
+        });
+        setMyServerPosts(mapped);
+      }
+    } catch (err) {
+      console.warn('Lỗi tải dữ liệu người bán từ server:', err);
+    } finally {
+      setIsLoadingPosts(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchSellerData();
+  }, [fetchSellerData]);
 
   const handleOpenCreditLedger = async () => {
     setIsCreditLedgerOpen(true);
@@ -144,8 +193,31 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     }
   };
 
-  const sellerListings = listings.filter(l => l.sellerId === 'user-tuan-hcm' || true);
-  const filteredListings = sellerListings.filter(l => filterStatus === 'ALL' || l.status === filterStatus);
+  // Merge server-loaded posts with listings props, prioritizing server posts
+  const combinedListings = React.useMemo(() => {
+    const list = [...myServerPosts];
+    const existingIds = new Set(myServerPosts.map(p => p.id));
+    for (const item of listings) {
+      if (!existingIds.has(item.id)) {
+        list.push(item);
+      }
+    }
+    return list;
+  }, [myServerPosts, listings]);
+
+  const filteredListings = combinedListings.filter((l) => {
+    if (filterStatus === 'ALL') return true;
+    if (filterStatus === 'pending') {
+      return l.backendStatus === 'PENDING' || l.backendStatus === 'PENDING_INSPECTION' || l.status === 'draft';
+    }
+    if (filterStatus === 'rejected') {
+      return l.backendStatus === 'REJECTED';
+    }
+    if (filterStatus === 'active') {
+      return l.backendStatus === 'ACTIVE' || l.status === 'active';
+    }
+    return l.status === filterStatus;
+  });
 
   const totalEarnings = 42800000;
   const pendingEscrow = 18500000;
@@ -416,24 +488,40 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-[#faf8f5] p-1 rounded-xl border border-gray-200 self-start sm:self-auto">
-            {(['ALL', 'active', 'reserved', 'sold'] as const).map((st) => (
-              <button
-                key={st}
-                onClick={() => setFilterStatus(st)}
-                className={`px-3 py-1 rounded-lg text-xs transition cursor-pointer ${
-                  filterStatus === st ? 'bg-[#24263e] text-white font-bold' : 'text-[#24263e]/70 hover:text-[#24263e] font-medium'
-                }`}
-              >
-                {st === 'ALL'
-                  ? (lang === 'vi' ? 'Tất cả' : 'All')
-                  : st === 'active'
-                  ? (lang === 'vi' ? 'Đang bán' : 'Active')
-                  : st === 'reserved'
-                  ? (lang === 'vi' ? 'Đang giữ hàng' : 'Reserved')
-                  : (lang === 'vi' ? 'Đã bán' : 'Sold')}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            <button
+              onClick={fetchSellerData}
+              disabled={isLoadingPosts}
+              className="p-1.5 px-2.5 rounded-xl border border-gray-200 bg-[#faf8f5] hover:bg-gray-100 text-[#24263e] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+              title={lang === 'vi' ? 'Làm mới dữ liệu từ server' : 'Refresh server data'}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPosts ? 'animate-spin text-indigo-600' : ''}`} />
+              <span>{lang === 'vi' ? 'Làm mới' : 'Refresh'}</span>
+            </button>
+
+            <div className="flex items-center gap-1.5 bg-[#faf8f5] p-1 rounded-xl border border-gray-200">
+              {(['ALL', 'active', 'pending', 'rejected', 'reserved', 'sold'] as const).map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setFilterStatus(st)}
+                  className={`px-3 py-1 rounded-lg text-xs transition cursor-pointer ${
+                    filterStatus === st ? 'bg-[#24263e] text-white font-bold' : 'text-[#24263e]/70 hover:text-[#24263e] font-medium'
+                  }`}
+                >
+                  {st === 'ALL'
+                    ? (lang === 'vi' ? 'Tất cả' : 'All')
+                    : st === 'active'
+                    ? (lang === 'vi' ? 'Đang bán' : 'Active')
+                    : st === 'pending'
+                    ? (lang === 'vi' ? 'Chờ duyệt / Hub' : 'Pending')
+                    : st === 'rejected'
+                    ? (lang === 'vi' ? 'Bị từ chối' : 'Rejected')
+                    : st === 'reserved'
+                    ? (lang === 'vi' ? 'Đang giữ hàng' : 'Reserved')
+                    : (lang === 'vi' ? 'Đã bán' : 'Sold')}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -449,14 +537,34 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   alt={item.title}
                   className="w-20 h-20 rounded-xl object-cover border border-gray-200 shrink-0 bg-[#FFFFFF]"
                 />
-                <div className="space-y-1 overflow-hidden">
+                <div className="space-y-1 overflow-hidden flex-1">
                   <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    item.status === 'active' ? 'bg-[#24263e] text-white' : 'bg-[#c34c36] text-[#24263e] font-bold'
+                    item.backendStatus === 'REJECTED'
+                      ? 'bg-rose-600 text-white'
+                      : item.backendStatus === 'PENDING' || item.backendStatus === 'PENDING_INSPECTION'
+                      ? 'bg-amber-500 text-white'
+                      : item.backendStatus === 'DRAFT' || item.status === 'draft'
+                      ? 'bg-slate-500 text-white'
+                      : item.status === 'active'
+                      ? 'bg-[#24263e] text-white'
+                      : 'bg-[#c34c36] text-white'
                   }`}>
-                    {item.status === 'active'
+                    {item.backendStatus === 'REJECTED'
+                      ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
+                      : item.backendStatus === 'PENDING' || item.backendStatus === 'PENDING_INSPECTION'
+                      ? (lang === 'vi' ? '● Chờ Duyệt / Hub' : '● Pending Review')
+                      : item.backendStatus === 'DRAFT' || item.status === 'draft'
+                      ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
+                      : item.status === 'active'
                       ? (lang === 'vi' ? '● Đang Niêm Yết' : '● Active')
                       : (lang === 'vi' ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited')}
                   </span>
+                  {item.backendStatus === 'REJECTED' && item.rejectionReason && (
+                    <div className="text-[10px] text-rose-700 bg-rose-50 p-1.5 rounded-lg border border-rose-200 mt-1 leading-snug">
+                      <span className="font-bold">{lang === 'vi' ? 'Lý do: ' : 'Reason: '}</span>
+                      <span>{item.rejectionReason}</span>
+                    </div>
+                  )}
                   <h3 className="font-bold text-xs text-[#24263e] truncate" title={item.title}>
                     {item.title}
                   </h3>

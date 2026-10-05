@@ -79,7 +79,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   const [reviewedOrderIds, setReviewedOrderIds] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('secondlife_reviewed_order_ids');
-      return saved ? JSON.parse(saved) : ['ORD-2026-8804'];
+      if (saved && saved !== 'undefined' && saved !== 'null' && saved.trim() !== '') {
+        return JSON.parse(saved);
+      }
+      return ['ORD-2026-8804'];
     } catch {
       return ['ORD-2026-8804'];
     }

@@ -127,27 +127,73 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
         .then((data: any) => {
           const items = data?.items || data?.content || (Array.isArray(data) ? data : []);
           if (items && items.length > 0) {
-            setStaffListings((prev) => {
-              const mapped = items.map((it: any) => ({
-                id: it.postId || it.id,
-                title: it.title || 'Bài đăng nghi trùng cần duyệt',
-                category: it.category || 'Thiết bị điện tử',
-                sellerName: it.sellerName || 'Người bán ' + (it.sellerId?.slice(0, 8) || ''),
-                sellerRating: 4.8,
-                priceVnd: it.price || 1000000,
-                aiEstimatedPrice: it.price || 1000000,
-                aiConfidence: 85,
-                isSuspicious: Boolean(it.duplicateMatches?.length) || it.status === 'PENDING',
-                suspiciousReason: it.reviewReason || (it.duplicateMatches?.length ? `Phát hiện ${it.duplicateMatches.length} bài đối chiếu nghi trùng` : 'Chờ nhân viên duyệt'),
-                status: it.status || 'PENDING',
-                images: it.imageUrls?.length ? it.imageUrls : ['https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=400&q=80'],
-                description: it.description || 'Chưa có mô tả'
-              }));
-              return [...mapped, ...prev.filter((p) => !mapped.some((m: any) => m.id === p.id))];
-            });
+            const mapped = items.map((it: any) => ({
+              id: it.postId || it.id,
+              title: it.title || 'Bài đăng cần duyệt',
+              category: it.category || 'Thiết bị điện tử',
+              sellerName: it.sellerName || 'Người bán ' + (it.sellerId?.slice(0, 8) || ''),
+              sellerRating: 5.0,
+              priceVnd: it.price || 0,
+              aiEstimatedPrice: it.price || 0,
+              aiConfidence: 85,
+              isSuspicious: Boolean(it.duplicateMatches?.length) || it.status === 'PENDING',
+              suspiciousReason: it.reviewReason || (it.duplicateMatches?.length ? `Phát hiện ${it.duplicateMatches.length} bài đối chiếu nghi trùng` : 'Chờ nhân viên duyệt'),
+              status: it.status || 'PENDING',
+              images: it.imageUrls?.length ? it.imageUrls : [it.imageUrl || 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=400&q=80'],
+              description: it.description || 'Chưa có mô tả'
+            }));
+            setStaffListings(mapped);
+          } else {
+            adminPostService.getAdminPosts().then((res: any) => {
+              const adminItems = res?.content || res?.items || (Array.isArray(res) ? res : []);
+              if (adminItems && adminItems.length > 0) {
+                const mapped = adminItems.map((it: any) => ({
+                  id: it.id,
+                  title: it.title || 'Bài đăng cần duyệt',
+                  category: it.category || 'Thiết bị gia dụng',
+                  sellerName: it.user?.fullName || it.user?.email || 'Người bán',
+                  sellerRating: 5.0,
+                  priceVnd: it.price || 0,
+                  aiEstimatedPrice: it.aiSuggestedPrice || it.price || 0,
+                  aiConfidence: 90,
+                  isSuspicious: it.status === 'PENDING',
+                  suspiciousReason: it.rejectionReason || 'Chờ nhân viên thẩm định',
+                  status: it.status || 'PENDING',
+                  images: [it.imageUrl || 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=400&q=80'],
+                  description: it.description || 'Chưa có mô tả'
+                }));
+                setStaffListings(mapped);
+              } else {
+                setStaffListings([]);
+              }
+            }).catch(() => setStaffListings([]));
           }
         })
-        .catch((err) => console.warn('Lỗi tải danh sách staff listings từ backend:', err));
+        .catch(() => {
+          adminPostService.getAdminPosts().then((res: any) => {
+            const adminItems = res?.content || res?.items || (Array.isArray(res) ? res : []);
+            if (adminItems && adminItems.length > 0) {
+              const mapped = adminItems.map((it: any) => ({
+                id: it.id,
+                title: it.title || 'Bài đăng cần duyệt',
+                category: it.category || 'Thiết bị gia dụng',
+                sellerName: it.user?.fullName || it.user?.email || 'Người bán',
+                sellerRating: 5.0,
+                priceVnd: it.price || 0,
+                aiEstimatedPrice: it.aiSuggestedPrice || it.price || 0,
+                aiConfidence: 90,
+                isSuspicious: it.status === 'PENDING',
+                suspiciousReason: it.rejectionReason || 'Chờ nhân viên thẩm định',
+                status: it.status || 'PENDING',
+                images: [it.imageUrl || 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=400&q=80'],
+                description: it.description || 'Chưa có mô tả'
+              }));
+              setStaffListings(mapped);
+            } else {
+              setStaffListings([]);
+            }
+          }).catch(() => setStaffListings([]));
+        });
     }
   }, [activeTab]);
 
@@ -157,397 +203,38 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     setTimeout(() => setActionNotice(null), 4000);
   };
 
-  // 1. Mock Listings Data (Bao gồm tin thường & tin có dấu hiệu nghi vấn)
-  const [staffListings, setStaffListings] = useState([
-    {
-      id: 'POST-8891',
-      title: 'Tủ Lạnh Hitachi Side-by-Side Inverter 540L (Gương Kính)',
-      category: 'Tủ lạnh & Tủ đông',
-      sellerName: 'Nguyễn Văn Đạt',
-      sellerRating: 3.2,
-      priceVnd: 3500000,
-      aiEstimatedPrice: 18500000,
-      aiConfidence: 45,
-      isSuspicious: true,
-      suspiciousReason: 'Giá rao bán thấp hơn 81% so với định giá thị trường AI. Nghi vấn hàng hỏng hóc hoặc lừa cọc ngoài.',
-      status: 'PENDING_REVIEW',
-      images: ['https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=400&q=80'],
-      description: 'Cần bán gấp tủ lạnh Hitachi mặt gương, chuyển nhà sang nước ngoài. Ưu tiên khách cọc trước qua Zalo.'
-    },
-    {
-      id: 'POST-7721',
-      title: 'Máy Giặt Cửa Ngang LG AI DD 10.5kg Inverter',
-      category: 'Máy giặt & Máy sấy',
-      sellerName: 'Hoàng Quốc Khang',
-      sellerRating: 4.8,
-      priceVnd: 7200000,
-      aiEstimatedPrice: 7500000,
-      aiConfidence: 94,
-      isSuspicious: false,
-      suspiciousReason: '',
-      status: 'PENDING_REVIEW',
-      images: ['https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?auto=format&fit=crop&w=400&q=80'],
-      description: 'Máy giặt dùng gia đình 1.5 năm, còn bảo hành chính hãng, giặt êm, chưa qua sửa chữa.'
-    },
-    {
-      id: 'POST-9912',
-      title: 'Máy Rửa Bát Bosch Serie 6 Độc Lập SMS6ZCI49E',
-      category: 'Lò vi sóng & Lò nướng',
-      sellerName: 'Lê Minh Tuấn',
-      sellerRating: 2.5,
-      priceVnd: 12000000,
-      aiEstimatedPrice: 19000000,
-      aiConfidence: 52,
-      isSuspicious: true,
-      suspiciousReason: 'Thuật toán Image Hash phát hiện 98.7% trùng ảnh với bài đăng trên sàn khác.',
-      status: 'PENDING_REVIEW',
-      images: ['https://images.unsplash.com/photo-1585659722983-3a675dabf23d?auto=format&fit=crop&w=400&q=80'],
-      description: 'Máy rửa chén Bosch mới 99%, đầy đủ phụ kiện. Liên hệ số Zalo để thương lượng giá ship.'
-    },
-    {
-      id: 'POST-4410',
-      title: 'Điều Hòa Daikin Inverter 1.5 HP FTKB35WAVMV',
-      category: 'Điều hòa & Máy lọc',
-      sellerName: 'Trần Thị Mai',
-      sellerRating: 4.9,
-      priceVnd: 6800000,
-      aiEstimatedPrice: 7000000,
-      aiConfidence: 91,
-      isSuspicious: false,
-      suspiciousReason: '',
-      status: 'PENDING_REVIEW',
-      images: ['https://images.unsplash.com/photo-1614633833026-0820552978b6?auto=format&fit=crop&w=400&q=80'],
-      description: 'Máy lạnh tháo phòng ngủ chung cư, làm lạnh cực nhanh, tiết kiệm điện 5 sao.'
-    },
-    {
-      id: 'POST-3321',
-      title: 'Robot Hút Bụi Lau Nhà Dreame L20 Ultra Flagship',
-      category: 'Robot & Máy hút bụi',
-      sellerName: 'Vũ Đình Trọng',
-      sellerRating: 4.7,
-      priceVnd: 14500000,
-      aiEstimatedPrice: 15200000,
-      aiConfidence: 89,
-      isSuspicious: false,
-      suspiciousReason: '',
-      status: 'PENDING_REVIEW',
-      images: ['https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?auto=format&fit=crop&w=400&q=80'],
-      description: 'Mới mua 4 tháng, trạm sạc tự giặt giẻ sấy khô hoàn hảo, phụ kiện còn nguyên hộp.'
-    }
-  ]);
+  // 1. Staff Listings (Được tải trực tiếp từ Backend)
+  const [staffListings, setStaffListings] = useState<any[]>([]);
 
   // 2. Duplicate Images & Fraud Alerts
-  const [duplicateCases, setDuplicateCases] = useState([
-    {
-      id: 'DUP-101',
-      listingId: 'POST-9912',
-      sellerName: 'Lê Minh Tuấn',
-      sellerImage: 'https://images.unsplash.com/photo-1585659722983-3a675dabf23d?auto=format&fit=crop&w=400&q=80',
-      originalSourceUrl: 'shopee.vn/sp-bosch-serie6-official-10294',
-      similarityScore: 98.7,
-      firstSeenDate: '2025-11-20',
-      status: 'FLAGGED',
-      note: 'Perceptual Hash khớp ảnh đại diện gian hàng chính hãng Shopee Mall.'
-    },
-    {
-      id: 'DUP-102',
-      listingId: 'POST-8814',
-      sellerName: 'Phạm Văn Hùng',
-      sellerImage: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=400&q=80',
-      originalSourceUrl: 'chotot.com/tin-dang-tu-lanh-cu-49102',
-      similarityScore: 94.2,
-      firstSeenDate: '2026-01-15',
-      status: 'FLAGGED',
-      note: 'Ảnh bị chụp lại từ màn hình bài đăng khác đã thanh lý 2 tháng trước.'
-    }
-  ]);
-
-  const [fraudAlerts, setFraudAlerts] = useState([
-    {
-      id: 'FRD-501',
-      type: 'OUT_OF_ESCROW_DEPOSIT',
-      riskLevel: 'HIGH',
-      user: 'TuanStore (tuan.store@gmail.com)',
-      description: 'Phát hiện tin nhắn yêu cầu người mua chuyển cọc trước 500.000đ qua ZaloPay cá nhân để giữ máy.',
-      timestamp: '15 phút trước',
-      status: 'PENDING'
-    },
-    {
-      id: 'FRD-502',
-      type: 'BANK_ACCOUNT_SWITCH',
-      riskLevel: 'HIGH',
-      user: 'Hoàng Quốc Khang (khang.seller@gmail.com)',
-      description: 'Tài khoản người bán vừa đổi tên chủ tài khoản nhận tiền giải ngân khác với tên CCCD eKYC.',
-      timestamp: '1 giờ trước',
-      status: 'PENDING'
-    },
-    {
-      id: 'FRD-503',
-      type: 'SPAM_LISTING_FLOOD',
-      riskLevel: 'MEDIUM',
-      user: 'hung.spam@gmail.com',
-      description: 'Tạo liên tiếp 15 bài đăng cùng danh mục máy điều hòa trong vòng 10 phút.',
-      timestamp: '2 giờ trước',
-      status: 'INVESTIGATING'
-    }
-  ]);
+  const [duplicateCases, setDuplicateCases] = useState<any[]>([]);
+  const [fraudAlerts, setFraudAlerts] = useState<any[]>([]);
 
   // 3. Proof of Possession (Xác minh sở hữu)
-  const [proofList, setProofList] = useState([
-    {
-      id: 'POS-001',
-      sellerName: 'Hoàng Quốc Khang',
-      productTitle: 'Máy Giặt Cửa Ngang LG AI DD 10.5kg',
-      price: 7200000,
-      handwrittenNotePhoto: 'https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&w=400&q=80',
-      serialNumber: 'SN-LG2024-992014',
-      serialPhoto: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=400&q=80',
-      videoTestUrl: 'video_test_hoat_dong.mp4',
-      status: 'PENDING',
-      submittedAt: '2026-09-29 14:20'
-    },
-    {
-      id: 'POS-002',
-      sellerName: 'Vũ Đình Trọng',
-      productTitle: 'Robot Hút Bụi Lau Nhà Dreame L20 Ultra',
-      price: 14500000,
-      handwrittenNotePhoto: 'https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&w=400&q=80',
-      serialNumber: 'SN-DREAME-L20U-8819',
-      serialPhoto: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=400&q=80',
-      videoTestUrl: 'video_test_dreame.mp4',
-      status: 'VERIFIED',
-      submittedAt: '2026-09-29 11:05'
-    }
-  ]);
+  const [proofList, setProofList] = useState<any[]>([]);
 
   // 4. Reports & Support Tickets
-  const [reports, setReports] = useState([
-    {
-      id: 'REP-101',
-      target: 'Bài tin #POST-8891 (Tủ Lạnh Hitachi)',
-      reporter: 'hoang.nam@gmail.com',
-      reason: 'Nghi vấn sản phẩm hàng dựng/hàng nhái, giá rẻ bất thường nhằm lừa tiền cọc',
-      status: 'PENDING',
-      createdAt: '2026-09-29 10:15'
-    },
-    {
-      id: 'REP-102',
-      target: 'Người bán TuanStore',
-      reporter: 'minh.tuan@gmail.com',
-      reason: 'Yêu cầu chuyển khoản ngoài hệ thống ký quỹ Escrow bảo vệ',
-      status: 'PENDING',
-      createdAt: '2026-09-29 09:40'
-    }
-  ]);
-
-  const [supportTickets, setSupportTickets] = useState([
-    {
-      id: 'TCK-301',
-      user: 'pham.nam@gmail.com',
-      subject: 'Thắc mắc quy trình giải ngân tiền Escrow khi người mua bấm nhận hàng',
-      priority: 'HIGH',
-      status: 'OPEN',
-      updatedAt: '10 phút trước'
-    },
-    {
-      id: 'TCK-302',
-      user: 'hoang.store@gmail.com',
-      subject: 'Hướng dẫn nộp lại ảnh giấy tờ xác minh sở hữu bị mờ',
-      priority: 'MEDIUM',
-      status: 'OPEN',
-      updatedAt: '25 phút trước'
-    }
-  ]);
+  const [reports, setReports] = useState<any[]>([]);
+  const [supportTickets, setSupportTickets] = useState<any[]>([]);
 
   // 5. Disputes & Evidence
-  const [disputes, setDisputes] = useState([
-    {
-      id: 'DSP-501',
-      orderId: 'ORD-99120',
-      buyer: 'Lê Văn An',
-      seller: 'Hoàng Quốc Khang',
-      amount: 14500000,
-      reason: 'Tủ lạnh bị hỏng blốc nén làm lạnh khi bưu tá giao tới nơi',
-      status: 'IN_REVIEW',
-      buyerEvidence: 'Video mở hộp & cắm điện không kêu blốc (unboxing_video.mp4)',
-      sellerEvidence: 'Biên bản test đạt 25 điểm tại Hub Cầu Giấy (hub_test_han01.pdf)',
-      additionalEvidenceRequest: ''
-    },
-    {
-      id: 'DSP-502',
-      orderId: 'ORD-88102',
-      buyer: 'Trần Thị Mai',
-      seller: 'Cửa Hàng Điện Máy Cũ',
-      amount: 8900000,
-      reason: 'Máy giặt bị rò nước gioăng cao su cửa lồng sấy',
-      status: 'WAITING_EVIDENCE',
-      buyerEvidence: 'Ảnh rò rỉ nước chân máy giặt (anh_ro_nuoc.jpg)',
-      sellerEvidence: 'Video test giặt vắt trước khi bưu tá nhận',
-      additionalEvidenceRequest: 'Yêu cầu người mua quay cận cảnh tem gioăng cao su trong 24h.'
-    }
-  ]);
+  const [disputes, setDisputes] = useState<any[]>([]);
 
   // 6. Refund Requests (Chức năng hoàn tiền)
-  const [refundRequests, setRefundRequests] = useState([
-    {
-      id: 'REF-301',
-      orderId: 'ORD-99120',
-      buyerName: 'Lê Văn An',
-      productName: 'Tủ Lạnh Hitachi Side-by-Side Inverter 540L',
-      amount: 14500000,
-      reason: 'Sản phẩm lỗi hỏng blốc nén, không đạt tiêu chuẩn cam kết',
-      paymentMethod: 'Ví Ký Quỹ Escrow (VietQR)',
-      status: 'PENDING_APPROVAL',
-      createdAt: '2026-09-29 16:30'
-    },
-    {
-      id: 'REF-302',
-      orderId: 'ORD-77402',
-      buyerName: 'Đặng Quốc Huy',
-      productName: 'Lò Vi Sóng Có Nướng Panasonic 27L',
-      amount: 2400000,
-      reason: 'Bị móp méo vỏ kim loại trong quá trình vận chuyển bưu tá',
-      paymentMethod: 'Cổng VNPay Escrow',
-      status: 'PENDING_APPROVAL',
-      createdAt: '2026-09-29 15:10'
-    }
-  ]);
+  const [refundRequests, setRefundRequests] = useState<any[]>([]);
 
   // 7. Payouts & Escrow Hold (Case có tranh chấp)
-  const [payouts, setPayouts] = useState([
-    {
-      id: 'PAY-801',
-      orderId: 'ORD-99120',
-      sellerName: 'Hoàng Quốc Khang',
-      amount: 14500000,
-      bank: 'Vietcombank - 991204882',
-      status: 'HOLD',
-      holdReason: 'Đang có khiếu nại tranh chấp đơn #ORD-99120 (#DSP-501)'
-    },
-    {
-      id: 'PAY-802',
-      orderId: 'ORD-88102',
-      sellerName: 'Cửa Hàng Điện Máy Cũ',
-      amount: 8900000,
-      bank: 'MBBank - 10298839',
-      status: 'HOLD',
-      holdReason: 'Tạm giữ theo đơn khiếu nại máy giặt rò nước #DSP-502'
-    },
-    {
-      id: 'PAY-803',
-      orderId: 'ORD-66301',
-      sellerName: 'Nguyễn Minh Tuấn',
-      amount: 42800000,
-      bank: 'Techcombank - 1903348829',
-      status: 'APPROVED',
-      holdReason: 'Đã hoàn tất kiểm định Hub & người mua xác nhận hài lòng'
-    }
-  ]);
+  const [payouts, setPayouts] = useState<any[]>([]);
 
   // 8. Inspections (Điều phối & kết quả kiểm định)
-  const [inspectionOrders, setInspectionOrders] = useState([
-    {
-      id: 'INS-001',
-      orderId: 'ORD-99120',
-      productName: 'Tủ Lạnh Hitachi Side-by-Side Inverter 540L',
-      method: 'AT_HOME',
-      hubCenter: 'Hub Cầu Giấy (Hà Nội)',
-      technician: 'KTV Trưởng Nguyễn Văn Hải',
-      appointmentDate: '2026-09-30 09:30',
-      status: 'COORDINATED'
-    },
-    {
-      id: 'INS-002',
-      orderId: 'ORD-55410',
-      productName: 'Điều Hòa Daikin Inverter 1.5 HP',
-      method: 'AT_HUB',
-      hubCenter: 'Hub Quận 10 (TP.HCM)',
-      technician: 'KTV Trần Minh Tuấn',
-      appointmentDate: '2026-09-30 14:00',
-      status: 'PENDING_SCHEDULE'
-    }
-  ]);
-
-  const [inspectionResults, setInspectionResults] = useState([
-    {
-      id: 'RPT-8891',
-      productName: 'Robot Hút Bụi Lau Nhà Dreame L20 Ultra',
-      technician: 'Lê Hoàng Khang (Hub Đà Nẵng)',
-      score: '25/25',
-      verdict: 'PASS',
-      nfcTamperSealId: 'NFC-2026-SL-881924',
-      componentsStatus: 'Zin 100%, pin dung lượng 98%, động cơ hút êm',
-      date: '2026-09-29 16:45'
-    },
-    {
-      id: 'RPT-8890',
-      productName: 'Máy Giặt Sấy Samsung EcoBubble 9.5kg',
-      technician: 'Nguyễn Văn Hải (Hub Cầu Giấy)',
-      score: '19/25',
-      verdict: 'FAIL',
-      nfcTamperSealId: 'KHÔNG CẤP TEM',
-      componentsStatus: 'Lồng sấy phát ra tiếng kêu ma sát bạc đạn cốt trục',
-      date: '2026-09-29 11:20'
-    }
-  ]);
+  const [inspectionOrders, setInspectionOrders] = useState<any[]>([]);
+  const [inspectionResults, setInspectionResults] = useState<any[]>([]);
 
   // 9. Realtime Transactions Monitoring
-  const [transactions, setTransactions] = useState([
-    {
-      id: 'TXN-9012',
-      orderId: 'ORD-99120',
-      timestamp: '2026-09-29 16:30:15',
-      type: 'ESCROW_LOCK',
-      gateway: 'VietQR / Napas247',
-      amount: 14500000,
-      riskLevel: 'LOW',
-      note: 'Khách hàng nạp ký quỹ bảo đảm thành công'
-    },
-    {
-      id: 'TXN-9011',
-      orderId: 'ORD-88102',
-      timestamp: '2026-09-29 15:45:00',
-      type: 'ESCROW_HOLD',
-      gateway: 'Hệ thống Escrow',
-      amount: 8900000,
-      riskLevel: 'WARNING',
-      note: 'Đóng băng tiền giải ngân do khiếu nại #DSP-502'
-    },
-    {
-      id: 'TXN-9010',
-      orderId: 'ORD-66301',
-      timestamp: '2026-09-29 14:10:22',
-      type: 'PAYOUT_RELEASE',
-      gateway: 'Chuyển khoản Vietcombank',
-      amount: 42800000,
-      riskLevel: 'SAFE',
-      note: 'Giải ngân tiền bán hàng thành công cho người bán'
-    }
-  ]);
+  const [transactions, setTransactions] = useState<any[]>([]);
 
   // 10. Restricted & Warned Users
-  const [restrictedUsers, setRestrictedUsers] = useState([
-    {
-      id: 'USR-991',
-      name: 'Trần Văn Hùng',
-      email: 'hung.spam@gmail.com',
-      role: 'SELLER',
-      violationCount: 3,
-      status: 'LOCKED_POSTING',
-      reason: 'Đăng lặp lại 15 tin rác phá giá thị trường',
-      expiresAt: '2026-10-07'
-    },
-    {
-      id: 'USR-992',
-      name: 'TuanStore',
-      email: 'tuan.store@gmail.com',
-      role: 'SELLER',
-      violationCount: 1,
-      status: 'WARNED',
-      reason: 'Yêu cầu chuyển tiền cọc ngoài hệ thống Escrow',
-      expiresAt: 'Cảnh cáo lần 1'
-    }
-  ]);
+  const [restrictedUsers, setRestrictedUsers] = useState<any[]>([]);
 
   // Filtered listings
   const filteredListings = useMemo(() => {

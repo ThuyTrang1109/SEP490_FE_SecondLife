@@ -7,18 +7,8 @@ import {
   Phone,
   Mail,
   MapPin,
-  Building,
   CheckCircle2,
-  Copy,
-  Home,
-  ShoppingBag,
-  Store,
-  PlusCircle,
-  Clock,
-  MessageSquare,
-  Wrench,
-  ShieldAlert,
-  ArrowRight
+  Copy
 } from 'lucide-react';
 import { Language, UserRole } from '../../types';
 import { PolicyTabKey } from '../modals/PolicyModal';
@@ -33,127 +23,18 @@ interface FooterProps {
   onOpenPolicy?: (policyKey: PolicyTabKey) => void;
 }
 
-interface NavItemConfig {
-  id: string;
-  labelVi: string;
-  labelEn: string;
-  titleVi: string;
-  titleEn: string;
-  icon: React.ComponentType<{ className?: string }>;
-  roles: UserRole[];
-}
-
-const getNavItems = (role: UserRole | string = 'buyer'): NavItemConfig[] => {
-  const normalizedRole = (role || 'buyer') as UserRole;
-  const allItems: NavItemConfig[] = [
-    {
-      id: 'home',
-      labelVi: 'Trang Chủ Giới Thiệu',
-      labelEn: 'Showcase Home',
-      titleVi: 'Xem trang giới thiệu hệ sinh thái SecondLife',
-      titleEn: 'View SecondLife platform showcase',
-      icon: Home,
-      roles: ['buyer', 'seller', 'inspector', 'staff', 'admin'],
-    },
-    {
-      id: 'marketplace',
-      labelVi: 'Sàn Bán Hàng (Chính)',
-      labelEn: 'Marketplace (Main)',
-      titleVi: 'Mua sắm trực tiếp trên sàn đồ cũ kiểm định',
-      titleEn: 'Shop certified second-hand appliances',
-      icon: ShoppingBag,
-      roles: ['buyer', 'seller', 'inspector', 'staff', 'admin'],
-    },
-    {
-      id: 'orders',
-      labelVi: normalizedRole === 'seller' ? 'Quản Lý Đơn Bán' : 'Đơn Ký Quỹ Escrow',
-      labelEn: normalizedRole === 'seller' ? 'Sales Orders' : 'Escrow Orders',
-      titleVi: normalizedRole === 'seller' ? 'Quản lý đơn bán hàng và bảo lãnh thanh toán' : 'Theo dõi đơn hàng và tiền ký quỹ an toàn',
-      titleEn: 'Track orders and escrow payment status',
-      icon: Clock,
-      roles: ['buyer', 'seller', 'inspector', 'staff', 'admin'],
-    },
-    {
-      id: 'chat',
-      labelVi: 'Chat & Đàm Phán AI',
-      labelEn: 'AI Negotiation',
-      titleVi: 'Chat trực tiếp & thương lượng giá thông minh',
-      titleEn: 'Live chat & AI smart price negotiation',
-      icon: MessageSquare,
-      roles: ['buyer', 'seller', 'inspector', 'staff', 'admin'],
-    },
-    {
-      id: 'seller-dashboard',
-      labelVi: 'Kênh Người Bán',
-      labelEn: 'Seller Hub',
-      titleVi: 'Bảng điều khiển dành riêng cho người bán',
-      titleEn: 'Dedicated seller management dashboard',
-      icon: Store,
-      roles: ['seller', 'admin'],
-    },
-    {
-      id: 'create-listing',
-      labelVi: 'Đăng Bán AI',
-      labelEn: 'Post Listing',
-      titleVi: 'Đăng tải sản phẩm mới với AI hỗ trợ',
-      titleEn: 'Post new appliance listing with AI support',
-      icon: PlusCircle,
-      roles: ['seller', 'admin'],
-    },
-    {
-      id: 'inspection-hub',
-      labelVi: 'Kiểm Định Hub',
-      labelEn: 'Inspection Hub',
-      titleVi: 'Cổng kiểm định kỹ thuật 48 bước phòng Lab',
-      titleEn: '48-point technical inspection portal',
-      icon: Building,
-      roles: ['inspector', 'staff', 'admin'],
-    },
-    {
-      id: 'staff-workspace',
-      labelVi: 'Nghiệp Vụ Staff',
-      labelEn: 'Staff Portal',
-      titleVi: 'Không gian xử lý nghiệp vụ nhân viên sàn',
-      titleEn: 'Staff operational management portal',
-      icon: Wrench,
-      roles: ['staff', 'admin'],
-    },
-    {
-      id: 'admin-dashboard',
-      labelVi: 'Quản Trị Admin',
-      labelEn: 'Admin Hub',
-      titleVi: 'Quản trị toàn diện hệ thống SecondLife',
-      titleEn: 'System administration & analytics hub',
-      icon: ShieldAlert,
-      roles: ['admin'],
-    },
-  ];
-
-  return allItems.filter((item) => item.roles.includes(normalizedRole));
-};
-
 export const Footer: React.FC<FooterProps> = ({
   lang = 'vi',
-  currentRole = 'buyer',
-  activeTab = 'marketplace',
-  onTabChange,
   onOpenProfile,
   onOpenPolicy
 }) => {
   const [copiedEmail, setCopiedEmail] = React.useState(false);
-
-  const navItems = React.useMemo(() => getNavItems(currentRole), [currentRole]);
 
   const handleCopyEmail = (e: React.MouseEvent) => {
     e.preventDefault();
     navigator.clipboard.writeText('noreply.homeappliance@gmail.com');
     setCopiedEmail(true);
     setTimeout(() => setCopiedEmail(false), 2000);
-  };
-
-  const handleNavigate = (tab: string) => {
-    onTabChange?.(tab);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
@@ -223,34 +104,9 @@ export const Footer: React.FC<FooterProps> = ({
         </div>
       </div>
 
-      {/* QUICK SYSTEM NAVIGATION STRIP (Role-based Navigation) */}
-      <div className="bg-[#171826] border-b border-white/10 py-3 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto flex items-center justify-center gap-2 overflow-x-auto scrollbar-none flex-wrap">
-          {navItems.map((item) => {
-            const isActive = activeTab === item.id;
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleNavigate(item.id)}
-                className={`px-3.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0 ${
-                  isActive
-                    ? 'bg-[#c34c36] text-white font-black shadow-md ring-1 ring-white/25 hover:opacity-90'
-                    : 'bg-white/10 hover:bg-[#c34c36] text-white/90 hover:text-white'
-                }`}
-                title={lang === 'vi' ? item.titleVi : item.titleEn}
-              >
-                <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-white' : 'text-white/80'}`} />
-                <span>{lang === 'vi' ? item.labelVi : item.labelEn}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 2. Main Footer Directory Links (5 Columns) */}
+      {/* 2. Main Footer Directory Links */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
           {/* Cột 1: Thông tin công ty & Hotline */}
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-center gap-3">
@@ -326,33 +182,7 @@ export const Footer: React.FC<FooterProps> = ({
             </div>
           </div>
 
-          {/* Cột 2: Các Trang Hệ Thống (Phù hợp theo role) */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-black text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>{lang === 'vi' ? 'Các Trang Hệ Thống' : 'System Pages'}</span>
-            </h4>
-            <ul className="space-y-2 text-xs text-white/85 font-medium">
-              {navItems.map((item) => {
-                const isActive = activeTab === item.id;
-                return (
-                  <li key={item.id}>
-                    <button
-                      onClick={() => handleNavigate(item.id)}
-                      className={`hover:text-[#fce5da] hover:underline transition flex items-center gap-1.5 text-left cursor-pointer ${
-                        isActive ? 'font-bold text-white' : 'text-white/85'
-                      }`}
-                    >
-                      <ArrowRight className={`w-3 h-3 ${isActive ? 'text-[#c34c36]' : 'text-white/40'}`} />
-                      <span>{lang === 'vi' ? item.labelVi : item.labelEn}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          {/* Cột 3: Chăm Sóc Khách Hàng & Quy Chuẩn */}
+          {/* Cột 2: Chăm Sóc Khách Hàng & Quy Chuẩn */}
           <div className="space-y-3">
             <h4 className="text-xs font-black text-white uppercase tracking-wider">
               {lang === 'vi' ? 'Chăm Sóc Khách Hàng' : 'Customer Service'}

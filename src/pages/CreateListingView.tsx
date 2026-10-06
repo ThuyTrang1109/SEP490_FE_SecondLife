@@ -60,33 +60,119 @@ export interface ParsedQuestionItem {
 
 export const parseQuestionItem = (q: string, idx: number): ParsedQuestionItem => {
   const parenMatch = q.match(/\((.*?)\)/);
-  const hint = parenMatch ? parenMatch[1].trim() : '';
+  const rawHint = parenMatch ? parenMatch[1].trim() : '';
 
   let label = parenMatch ? q.split('(')[0].replace(/[:?]/g, '').trim() : q.trim();
-
-  // Strip Markdown bold asterisks if they exist just in case
+  // Strip Markdown bold asterisks if they exist
   label = label.replace(/\*\*/g, '').trim();
 
+  let finalHint = rawHint;
   const examples: string[] = [];
-  if (hint) {
-    // Chỉ tạo nút bấm gợi ý nếu hint bắt đầu bằng "VD:" hoặc "Ví dụ:"
-    const isExample = /^(Ví dụ|VD|ví dụ|vd)[:\s]*/i.test(hint);
-    if (isExample) {
-      const cleanHint = hint.replace(/^(Ví dụ|VD|ví dụ|vd)[:\s]*/i, '').replace(/\.\.\.$/, '');
-      const tokens = cleanHint
-        .split(/[,;\/]/)
-        .map(t => t.trim())
-        .filter(t => t.length > 0 && t.length < 35);
+
+  // TH 1: Hint đã bắt đầu bằng "VD:" hoặc "Ví dụ:"
+  if (rawHint && /^(Ví dụ|VD|ví dụ|vd)[:\s]*/i.test(rawHint)) {
+    const cleanHint = rawHint.replace(/^(Ví dụ|VD|ví dụ|vd)[:\s]*/i, '').replace(/\.\.\.$/, '');
+    const tokens = cleanHint
+      .split(/[,;\/]/)
+      .map(t => t.trim())
+      .filter(t => t.length > 0 && t.length < 35);
+    examples.push(...tokens.slice(0, 5));
+    finalHint = `VD: ${cleanHint}`;
+  } 
+  // TH 2: Hint chứa các tùy chọn ngăn cách bởi dấu '/' hoặc ',' (ví dụ "Cửa trước/Cửa trên", "Mới/Đã qua sử dụng", "Có/Không")
+  else if (rawHint && (rawHint.includes('/') || rawHint.includes(','))) {
+    const tokens = rawHint
+      .split(/[/,;]/)
+      .map(t => t.trim())
+      .filter(t => t.length > 0 && t.length < 35);
+    if (tokens.length > 0) {
       examples.push(...tokens.slice(0, 5));
+      finalHint = `VD: ${tokens.join(', ')}`;
     }
+  }
+
+  // TH 3: Nếu vẫn chưa có gợi ý hoặc hint chỉ là đơn vị/từ đơn (như "kg", "Hãng?", "Loại máy", "Tình trạng"), tự động suy luận gợi ý thực tế:
+  if (examples.length === 0) {
+    const combined = (label + ' ' + rawHint + ' ' + q).toLowerCase();
+
+    // 1. Hãng sản xuất / Thương hiệu / Brand
+    if (combined.includes('hãng') || combined.includes('thương hiệu') || combined.includes('brand')) {
+      examples.push('Panasonic', 'Toshiba', 'LG', 'Samsung', 'Electrolux', 'Aqua');
+      finalHint = 'VD: Panasonic, Toshiba, LG, Samsung, Electrolux';
+    }
+    // 2. Khối lượng giặt / kg
+    else if (combined.includes('giặt') && (combined.includes('khối lượng') || combined.includes('kg') || rawHint.toLowerCase() === 'kg')) {
+      examples.push('7kg', '8.5kg', '9kg', '10kg', '12kg');
+      finalHint = 'VD: 7kg, 8.5kg, 9kg, 10kg';
+    }
+    // 3. Khối lượng / Trọng lượng nói chung (kg)
+    else if (rawHint.toLowerCase() === 'kg' || combined.includes('khối lượng') || combined.includes('trọng lượng')) {
+      examples.push('5kg', '8kg', '10kg', '15kg');
+      finalHint = 'VD: 5kg, 8kg, 10kg, 15kg';
+    }
+    // 4. Dung tích (tủ lạnh, máy nước nóng, nồi chiên...)
+    else if (combined.includes('dung tích') || rawHint.toLowerCase() === 'lít' || rawHint.toLowerCase() === 'l') {
+      examples.push('180L', '250L', '350L', '500L');
+      finalHint = 'VD: 180L, 250L, 350L, 500L';
+    }
+    // 5. Loại máy / Kiểu dáng (cửa trước, cửa trên, cửa ngang...)
+    else if (combined.includes('loại máy') || combined.includes('kiểu máy') || combined.includes('cửa trước') || combined.includes('cửa trên')) {
+      examples.push('Cửa trước', 'Cửa trên', 'Cửa ngang');
+      finalHint = 'VD: Cửa trước, Cửa trên, Cửa ngang';
+    }
+    // 6. Tình trạng / Độ mới
+    else if (combined.includes('tình trạng') || combined.includes('độ mới') || combined.includes('mới bao nhiêu')) {
+      examples.push('Mới 99%', 'Đã qua sử dụng', 'Như mới', 'Còn rất tốt');
+      finalHint = 'VD: Mới 99%, Đã qua sử dụng, Như mới';
+    }
+    // 7. Thời gian sử dụng / Bao lâu
+    else if (combined.includes('bao lâu') || combined.includes('thời gian') || combined.includes('dùng bao lâu')) {
+      examples.push('6 tháng', '1 năm', '2 năm', 'Hơn 3 năm');
+      finalHint = 'VD: 6 tháng, 1 năm, 2 năm';
+    }
+    // 8. Bảo hành chính hãng
+    else if (combined.includes('bảo hành')) {
+      examples.push('Còn 6 tháng', 'Hết bảo hành', 'Còn bảo hành hãng');
+      finalHint = 'VD: Còn 6 tháng, Hết bảo hành';
+    }
+    // 9. Hóa đơn / Phụ kiện
+    else if (combined.includes('hóa đơn') || combined.includes('chứng từ') || combined.includes('phụ kiện')) {
+      examples.push('Còn hóa đơn gốc', 'Đầy đủ phụ kiện', 'Không còn');
+      finalHint = 'VD: Còn hóa đơn gốc, Không còn';
+    }
+    // 10. Hoạt động / Sửa chữa / Lỗi
+    else if (combined.includes('sửa chữa') || combined.includes('thay thế') || combined.includes('nguyên bản')) {
+      examples.push('Nguyên zin chưa sửa', 'Hoạt động tốt êm ái', 'Đã thay linh kiện');
+      finalHint = 'VD: Nguyên zin chưa sửa, Hoạt động tốt';
+    }
+    // 11. Inverter / Tiết kiệm điện
+    else if (combined.includes('inverter') || combined.includes('tiết kiệm điện')) {
+      examples.push('Có Inverter', 'Không có Inverter');
+      finalHint = 'VD: Có Inverter, Không có Inverter';
+    }
+    // 12. Câu hỏi Có / Không chung
+    else if (combined.includes('không') || combined.includes('chưa') || label.endsWith('?')) {
+      examples.push('Có', 'Không', 'Bình thường');
+      finalHint = 'VD: Có, Không';
+    }
+    // 13. Fallback: Nếu có rawHint đơn lẻ
+    else if (rawHint) {
+      finalHint = rawHint.startsWith('VD:') ? rawHint : `VD: ${rawHint}`;
+      examples.push(rawHint);
+    }
+  }
+
+  // Đảm bảo hint hiển thị thống nhất có tiền tố "VD:"
+  if (finalHint && !/^vd:/i.test(finalHint) && !/^ví dụ:/i.test(finalHint)) {
+    finalHint = `VD: ${finalHint}`;
   }
 
   return {
     id: idx,
     rawText: q,
     label: label || `Câu hỏi ${idx + 1}`,
-    hint,
-    examples,
+    hint: finalHint,
+    examples: examples.slice(0, 5),
   };
 };
 
@@ -326,7 +412,28 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       }
     }
     
-    return uniqueQuestions;
+    // Lọc bỏ câu hỏi về Hãng / Thương hiệu vì người bán đã chọn hoặc điền ở bước đầu tiên
+    return uniqueQuestions.filter(q => {
+      const lower = q.toLowerCase().trim();
+      // Giữ lại các câu hỏi liên quan đến bảo hành (ví dụ: "Bảo hành chính hãng không")
+      if (lower.includes('bảo hành')) return true;
+
+      if (
+        lower === 'hãng?' ||
+        lower === 'hãng' ||
+        lower.startsWith('hãng?') ||
+        lower.startsWith('hãng:') ||
+        lower.includes('hãng sản xuất') ||
+        lower.includes('thương hiệu') ||
+        lower.includes('nhà sản xuất') ||
+        lower.includes('tên hãng') ||
+        lower.includes('thuộc hãng nào') ||
+        (lower.includes('hãng') && lower.length < 30)
+      ) {
+        return false;
+      }
+      return true;
+    });
   }, [parsedAiQuestions]);
 
   // Questionnaire Answers State

@@ -76,6 +76,7 @@ import {
   Loader2,
   History
 } from 'lucide-react';
+import { CatalogAiTab } from '../components/admin/CatalogAiTab';
 
 interface AdminDashboardViewProps {
   orders: EscrowOrder[];
@@ -88,6 +89,7 @@ interface AdminDashboardViewProps {
 
 type AdminTab =
   | 'overview'
+  | 'catalog-ai'
   | 'orders'
   | 'listings'
   | 'disputes'
@@ -997,6 +999,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       badge: localListings.length
     },
     {
+      id: 'catalog-ai' as AdminTab,
+      label: lang === 'vi' ? 'CATALOG & KỊCH BẢN AI' : 'CATALOG & AI TEMPLATES',
+      icon: Layers,
+      badge: null
+    },
+    {
       id: 'orders' as AdminTab,
       label: lang === 'vi' ? 'QUẢN LÝ BÁN HÀNG' : 'SALES ORDERS',
       icon: Package,
@@ -1676,6 +1684,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB: CATALOG & AI */}
+          {/* ======================================================== */}
+          {activeTab === 'catalog-ai' && (
+            <div className="max-w-7xl mx-auto animate-fadeIn">
+              <CatalogAiTab lang={lang} />
             </div>
           )}
 

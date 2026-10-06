@@ -174,318 +174,122 @@ export const adminCatalogService = {
   // --------------------------------------------------------------------------
   // 1. CATEGORY (Danh mục)
   // --------------------------------------------------------------------------
-  async getCategories(): Promise<AdminCategory[]> {
-    try {
-      const response = await request<AdminCategory[]>('/v1/admin/catalog/categories', {
-        method: 'GET',
-        requiresAuth: true
-      });
-      const data: any = (response as any)?.data || response;
-      if (Array.isArray(data) && data.length > 0) {
-        saveMock(STORAGE_KEYS.CATEGORIES, data);
-        return data;
-      }
-      return loadMock<AdminCategory[]>(STORAGE_KEYS.CATEGORIES, DEFAULT_CATEGORIES);
-    } catch (err) {
-      console.warn('Backend /api/v1/admin/catalog/categories chưa sẵn sàng, dùng mock fallback:', err);
-      return loadMock<AdminCategory[]>(STORAGE_KEYS.CATEGORIES, DEFAULT_CATEGORIES);
-    }
+  async getAllCategories(): Promise<AdminCategory[]> {
+    const response = await request<AdminCategory[]>('/v1/admin/catalog/categories', {
+      method: 'GET',
+      requiresAuth: true
+    });
+    return (response as any)?.data || response || [];
   },
 
   async createCategory(payload: CreateCategoryRequest): Promise<AdminCategory> {
-    try {
-      const response = await request<AdminCategory>('/v1/admin/catalog/categories', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-        requiresAuth: true
-      });
-      const data: any = (response as any)?.data || response;
-      if (data && data.id) {
-        const list = loadMock<AdminCategory[]>(STORAGE_KEYS.CATEGORIES, DEFAULT_CATEGORIES);
-        saveMock(STORAGE_KEYS.CATEGORIES, [data, ...list]);
-        return data;
-      }
-      throw new Error('No response from backend');
-    } catch {
-      // Mock fallback
-      const newCategory: AdminCategory = {
-        id: generateUUID(),
-        name: payload.name,
-        description: payload.description || ''
-      };
-      const list = loadMock<AdminCategory[]>(STORAGE_KEYS.CATEGORIES, DEFAULT_CATEGORIES);
-      const updated = [newCategory, ...list];
-      saveMock(STORAGE_KEYS.CATEGORIES, updated);
-      return newCategory;
-    }
+    const response = await request<AdminCategory>('/v1/admin/catalog/categories', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      requiresAuth: true
+    });
+    return (response as any)?.data || response;
   },
 
   async updateCategory(id: string, payload: UpdateCategoryRequest): Promise<AdminCategory> {
-    try {
-      const response = await request<AdminCategory>(`/v1/admin/catalog/categories/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-        requiresAuth: true
-      });
-      const data: any = (response as any)?.data || response;
-      if (data && data.id) {
-        const list = loadMock<AdminCategory[]>(STORAGE_KEYS.CATEGORIES, DEFAULT_CATEGORIES);
-        const updated = list.map((c) => (c.id === id ? data : c));
-        saveMock(STORAGE_KEYS.CATEGORIES, updated);
-        return data;
-      }
-      throw new Error('No response from backend');
-    } catch {
-      // Mock fallback
-      const list = loadMock<AdminCategory[]>(STORAGE_KEYS.CATEGORIES, DEFAULT_CATEGORIES);
-      const updatedCategory: AdminCategory = {
-        id,
-        name: payload.name,
-        description: payload.description || ''
-      };
-      const updated = list.map((c) => (c.id === id ? updatedCategory : c));
-      saveMock(STORAGE_KEYS.CATEGORIES, updated);
-      return updatedCategory;
-    }
+    const response = await request<AdminCategory>(`/v1/admin/catalog/categories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+      requiresAuth: true
+    });
+    return (response as any)?.data || response;
   },
 
   async deleteCategory(id: string): Promise<string> {
-    try {
-      const response = await request<any>(`/v1/admin/catalog/categories/${id}`, {
-        method: 'DELETE',
-        requiresAuth: true
-      });
-      const list = loadMock<AdminCategory[]>(STORAGE_KEYS.CATEGORIES, DEFAULT_CATEGORIES);
-      saveMock(STORAGE_KEYS.CATEGORIES, list.filter((c) => c.id !== id));
-      const resMsg = (response as any)?.message || response;
-      return typeof resMsg === 'string' ? resMsg : 'Category deleted successfully';
-    } catch {
-      // Mock fallback
-      const list = loadMock<AdminCategory[]>(STORAGE_KEYS.CATEGORIES, DEFAULT_CATEGORIES);
-      saveMock(STORAGE_KEYS.CATEGORIES, list.filter((c) => c.id !== id));
-      return 'Category deleted successfully';
-    }
+    const response = await request<any>(`/v1/admin/catalog/categories/${id}`, {
+      method: 'DELETE',
+      requiresAuth: true
+    });
+    const resMsg = (response as any)?.message || response;
+    return typeof resMsg === 'string' ? resMsg : 'Category deleted successfully';
   },
 
   // --------------------------------------------------------------------------
   // 2. ITEM (Sản phẩm con)
   // --------------------------------------------------------------------------
-  async getItems(): Promise<AdminItem[]> {
-    try {
-      const response = await request<AdminItem[]>('/v1/admin/catalog/items', {
-        method: 'GET',
-        requiresAuth: true
-      });
-      const data: any = (response as any)?.data || response;
-      if (Array.isArray(data) && data.length > 0) {
-        saveMock(STORAGE_KEYS.ITEMS, data);
-        return data;
-      }
-      return loadMock<AdminItem[]>(STORAGE_KEYS.ITEMS, DEFAULT_ITEMS);
-    } catch (err) {
-      console.warn('Backend /api/v1/admin/catalog/items chưa sẵn sàng, dùng mock fallback:', err);
-      return loadMock<AdminItem[]>(STORAGE_KEYS.ITEMS, DEFAULT_ITEMS);
-    }
+  async getAllItems(): Promise<AdminItem[]> {
+    const response = await request<AdminItem[]>('/v1/admin/catalog/items', {
+      method: 'GET',
+      requiresAuth: true
+    });
+    return (response as any)?.data || response || [];
   },
 
   async getItemsByCategory(categoryId: string): Promise<AdminItem[]> {
-    try {
-      const response = await request<AdminItem[]>(`/v1/admin/catalog/categories/${categoryId}/items`, {
-        method: 'GET',
-        requiresAuth: true
-      });
-      const data: any = (response as any)?.data || response;
-      if (Array.isArray(data)) {
-        return data;
-      }
-      const allItems = loadMock<AdminItem[]>(STORAGE_KEYS.ITEMS, DEFAULT_ITEMS);
-      return allItems.filter((i) => i.category?.id === categoryId);
-    } catch {
-      const allItems = loadMock<AdminItem[]>(STORAGE_KEYS.ITEMS, DEFAULT_ITEMS);
-      return allItems.filter((i) => i.category?.id === categoryId);
-    }
+    const response = await request<AdminItem[]>(`/v1/admin/catalog/categories/${categoryId}/items`, {
+      method: 'GET',
+      requiresAuth: true
+    });
+    return (response as any)?.data || response || [];
   },
 
   async createItem(payload: CreateItemRequest): Promise<AdminItem> {
-    try {
-      const response = await request<AdminItem>('/v1/admin/catalog/items', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-        requiresAuth: true
-      });
-      const data: any = (response as any)?.data || response;
-      if (data && data.id) {
-        const list = loadMock<AdminItem[]>(STORAGE_KEYS.ITEMS, DEFAULT_ITEMS);
-        saveMock(STORAGE_KEYS.ITEMS, [data, ...list]);
-        return data;
-      }
-      throw new Error('No response from backend');
-    } catch {
-      // Mock fallback
-      const categories = loadMock<AdminCategory[]>(STORAGE_KEYS.CATEGORIES, DEFAULT_CATEGORIES);
-      const category = categories.find((c) => c.id === payload.categoryId) || {
-        id: payload.categoryId,
-        name: 'Danh mục',
-        description: ''
-      };
-      const newItem: AdminItem = {
-        id: generateUUID(),
-        name: payload.name,
-        category
-      };
-      const list = loadMock<AdminItem[]>(STORAGE_KEYS.ITEMS, DEFAULT_ITEMS);
-      saveMock(STORAGE_KEYS.ITEMS, [newItem, ...list]);
-      return newItem;
-    }
+    const response = await request<AdminItem>('/v1/admin/catalog/items', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      requiresAuth: true
+    });
+    return (response as any)?.data || response;
   },
 
   async updateItem(id: string, payload: UpdateItemRequest): Promise<AdminItem> {
-    try {
-      const response = await request<AdminItem>(`/v1/admin/catalog/items/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-        requiresAuth: true
-      });
-      const data: any = (response as any)?.data || response;
-      if (data && data.id) {
-        const list = loadMock<AdminItem[]>(STORAGE_KEYS.ITEMS, DEFAULT_ITEMS);
-        const updated = list.map((i) => (i.id === id ? data : i));
-        saveMock(STORAGE_KEYS.ITEMS, updated);
-        return data;
-      }
-      throw new Error('No response from backend');
-    } catch {
-      // Mock fallback
-      const categories = loadMock<AdminCategory[]>(STORAGE_KEYS.CATEGORIES, DEFAULT_CATEGORIES);
-      const category = categories.find((c) => c.id === payload.categoryId) || {
-        id: payload.categoryId,
-        name: 'Danh mục',
-        description: ''
-      };
-      const updatedItem: AdminItem = {
-        id,
-        name: payload.name,
-        category
-      };
-      const list = loadMock<AdminItem[]>(STORAGE_KEYS.ITEMS, DEFAULT_ITEMS);
-      const updated = list.map((i) => (i.id === id ? updatedItem : i));
-      saveMock(STORAGE_KEYS.ITEMS, updated);
-      return updatedItem;
-    }
+    const response = await request<AdminItem>(`/v1/admin/catalog/items/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+      requiresAuth: true
+    });
+    return (response as any)?.data || response;
   },
 
   async deleteItem(id: string): Promise<string> {
-    try {
-      const response = await request<any>(`/v1/admin/catalog/items/${id}`, {
-        method: 'DELETE',
-        requiresAuth: true
-      });
-      const list = loadMock<AdminItem[]>(STORAGE_KEYS.ITEMS, DEFAULT_ITEMS);
-      saveMock(STORAGE_KEYS.ITEMS, list.filter((i) => i.id !== id));
-      const resMsg = (response as any)?.message || response;
-      return typeof resMsg === 'string' ? resMsg : 'Item deleted successfully';
-    } catch {
-      // Mock fallback
-      const list = loadMock<AdminItem[]>(STORAGE_KEYS.ITEMS, DEFAULT_ITEMS);
-      saveMock(STORAGE_KEYS.ITEMS, list.filter((i) => i.id !== id));
-      return 'Item deleted successfully';
-    }
+    const response = await request<any>(`/v1/admin/catalog/items/${id}`, {
+      method: 'DELETE',
+      requiresAuth: true
+    });
+    const resMsg = (response as any)?.message || response;
+    return typeof resMsg === 'string' ? resMsg : 'Item deleted successfully';
   },
 
   // --------------------------------------------------------------------------
   // 3. CATEGORY QUESTION TEMPLATE (Kịch bản AI)
   // --------------------------------------------------------------------------
-  async getTemplates(): Promise<AdminCategoryQuestionTemplate[]> {
-    try {
-      const response = await request<AdminCategoryQuestionTemplate[]>('/v1/admin/catalog/templates', {
-        method: 'GET',
-        requiresAuth: true
-      });
-      const data: any = (response as any)?.data || response;
-      if (Array.isArray(data) && data.length > 0) {
-        saveMock(STORAGE_KEYS.TEMPLATES, data);
-        return data;
-      }
-      return loadMock<AdminCategoryQuestionTemplate[]>(STORAGE_KEYS.TEMPLATES, DEFAULT_TEMPLATES);
-    } catch (err) {
-      console.warn('Backend /api/v1/admin/catalog/templates chưa sẵn sàng, dùng mock fallback:', err);
-      return loadMock<AdminCategoryQuestionTemplate[]>(STORAGE_KEYS.TEMPLATES, DEFAULT_TEMPLATES);
-    }
+  async getAllTemplates(): Promise<AdminCategoryQuestionTemplate[]> {
+    const response = await request<AdminCategoryQuestionTemplate[]>('/v1/admin/catalog/templates', {
+      method: 'GET',
+      requiresAuth: true
+    });
+    return (response as any)?.data || response || [];
   },
 
   async createTemplate(payload: CreateTemplateRequest): Promise<AdminCategoryQuestionTemplate> {
-    try {
-      const response = await request<AdminCategoryQuestionTemplate>('/v1/admin/catalog/templates', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-        requiresAuth: true
-      });
-      const data: any = (response as any)?.data || response;
-      if (data && data.id) {
-        const list = loadMock<AdminCategoryQuestionTemplate[]>(STORAGE_KEYS.TEMPLATES, DEFAULT_TEMPLATES);
-        saveMock(STORAGE_KEYS.TEMPLATES, [data, ...list]);
-        return data;
-      }
-      throw new Error('No response from backend');
-    } catch {
-      // Mock fallback
-      const newTemplate: AdminCategoryQuestionTemplate = {
-        id: generateUUID(),
-        categoryId: payload.categoryId,
-        itemId: payload.itemId || null,
-        templateText: payload.templateText
-      };
-      const list = loadMock<AdminCategoryQuestionTemplate[]>(STORAGE_KEYS.TEMPLATES, DEFAULT_TEMPLATES);
-      saveMock(STORAGE_KEYS.TEMPLATES, [newTemplate, ...list]);
-      return newTemplate;
-    }
+    const response = await request<AdminCategoryQuestionTemplate>('/v1/admin/catalog/templates', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      requiresAuth: true
+    });
+    return (response as any)?.data || response;
   },
 
   async updateTemplate(id: string, payload: UpdateTemplateRequest): Promise<AdminCategoryQuestionTemplate> {
-    try {
-      const response = await request<AdminCategoryQuestionTemplate>(`/v1/admin/catalog/templates/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-        requiresAuth: true
-      });
-      const data: any = (response as any)?.data || response;
-      if (data && data.id) {
-        const list = loadMock<AdminCategoryQuestionTemplate[]>(STORAGE_KEYS.TEMPLATES, DEFAULT_TEMPLATES);
-        const updated = list.map((t) => (t.id === id ? data : t));
-        saveMock(STORAGE_KEYS.TEMPLATES, updated);
-        return data;
-      }
-      throw new Error('No response from backend');
-    } catch {
-      // Mock fallback
-      const updatedTemplate: AdminCategoryQuestionTemplate = {
-        id,
-        categoryId: payload.categoryId,
-        itemId: payload.itemId || null,
-        templateText: payload.templateText
-      };
-      const list = loadMock<AdminCategoryQuestionTemplate[]>(STORAGE_KEYS.TEMPLATES, DEFAULT_TEMPLATES);
-      const updated = list.map((t) => (t.id === id ? updatedTemplate : t));
-      saveMock(STORAGE_KEYS.TEMPLATES, updated);
-      return updatedTemplate;
-    }
+    const response = await request<AdminCategoryQuestionTemplate>(`/v1/admin/catalog/templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+      requiresAuth: true
+    });
+    return (response as any)?.data || response;
   },
 
   async deleteTemplate(id: string): Promise<string> {
-    try {
-      const response = await request<any>(`/v1/admin/catalog/templates/${id}`, {
-        method: 'DELETE',
-        requiresAuth: true
-      });
-      const list = loadMock<AdminCategoryQuestionTemplate[]>(STORAGE_KEYS.TEMPLATES, DEFAULT_TEMPLATES);
-      saveMock(STORAGE_KEYS.TEMPLATES, list.filter((t) => t.id !== id));
-      const resMsg = (response as any)?.message || response;
-      return typeof resMsg === 'string' ? resMsg : 'Template deleted successfully';
-    } catch {
-      // Mock fallback
-      const list = loadMock<AdminCategoryQuestionTemplate[]>(STORAGE_KEYS.TEMPLATES, DEFAULT_TEMPLATES);
-      saveMock(STORAGE_KEYS.TEMPLATES, list.filter((t) => t.id !== id));
-      return 'Template deleted successfully';
-    }
+    const response = await request<any>(`/v1/admin/catalog/templates/${id}`, {
+      method: 'DELETE',
+      requiresAuth: true
+    });
+    const resMsg = (response as any)?.message || response;
+    return typeof resMsg === 'string' ? resMsg : 'Template deleted successfully';
   }
 };

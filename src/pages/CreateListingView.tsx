@@ -7,7 +7,6 @@ import {
   ShieldCheck,
   ArrowRight,
   ArrowLeft,
-  UploadCloud,
   Info,
   RefreshCw,
   Loader2,
@@ -92,6 +91,84 @@ export const parseQuestionItem = (q: string, idx: number): ParsedQuestionItem =>
   };
 };
 
+// Helper to automatically detect and split 2-clause compound questions into 2 separate single questions
+export const splitCompoundQuestion = (q: string): string[] => {
+  const qClean = q.trim();
+  if (!qClean) return [];
+
+  // 1. Phân tách nếu câu hỏi có từ 2 dấu chấm hỏi '?'
+  const qMarkMatches = qClean.match(/\?/g);
+  if (qMarkMatches && qMarkMatches.length > 1) {
+    const parts = qClean
+      .split('?')
+      .map(p => p.trim())
+      .filter(p => p.length > 5);
+    if (parts.length > 1) {
+      return parts.map(p => (p.endsWith('?') ? p : `${p}?`));
+    }
+  }
+
+  const lower = qClean.toLowerCase();
+
+  // Pattern 1: Thời gian sử dụng & Độ mới %
+  if ((lower.includes('bao lâu') || lower.includes('thời gian')) && (lower.includes('độ mới') || lower.includes('%'))) {
+    return [
+      'Sản phẩm đã qua sử dụng trong bao lâu (VD: 6 tháng, 1 năm, 2 năm)?',
+      'Độ mới thực tế của sản phẩm khoảng bao nhiêu % (VD: 99%, 95%, 90%)?'
+    ];
+  }
+
+  // Pattern 2: Bảo hành & Hóa đơn mua hàng
+  if (lower.includes('bảo hành') && (lower.includes('hóa đơn') || lower.includes('phiếu mua') || lower.includes('chứng từ'))) {
+    return [
+      'Sản phẩm còn bảo hành chính hãng không (VD: Còn 6 tháng, Hết bảo hành)?',
+      'Bạn có còn giữ hóa đơn mua hàng hoặc phiếu bảo hành không (VD: Còn hóa đơn gốc, Không còn)?'
+    ];
+  }
+
+  // Pattern 3: Máy chạy êm / lỗi chức năng & Đã sửa chữa chưa
+  if ((lower.includes('hoạt động') || lower.includes('chức năng') || lower.includes('êm')) && (lower.includes('sửa chữa') || lower.includes('thay thế'))) {
+    return [
+      'Máy hoạt động có êm không, có bị lỗi chức năng nào không (VD: Hoạt động tốt êm ái, Có lỗi nhẹ)?',
+      'Máy đã từng qua sửa chữa hay thay thế linh kiện chưa (VD: Nguyên zin chưa sửa, Đã thay linh kiện)?'
+    ];
+  }
+
+  // Pattern 4: Khối lượng giặt & Cửa ngang / cửa trên
+  if ((lower.includes('khối lượng') || lower.includes('kg')) && (lower.includes('cửa ngang') || lower.includes('cửa trên') || lower.includes('cửa trước'))) {
+    return [
+      'Khối lượng giặt của máy là bao nhiêu kg (VD: 8.5kg, 9kg, 10kg)?',
+      'Kiểu máy giặt là cửa ngang (cửa trước) hay cửa trên (cửa đứng)?'
+    ];
+  }
+
+  // Pattern 5: Inverter & Máy nén / rung lắc / tiếng ồn
+  if (lower.includes('inverter') && (lower.includes('compressor') || lower.includes('máy nén') || lower.includes('rung lắc') || lower.includes('chạy có êm'))) {
+    return [
+      'Thiết bị có trang bị công nghệ Inverter tiết kiệm điện không (VD: Có Inverter, Không)?',
+      'Động cơ/máy nén khi vận hành có bị ồn hoặc rung lắc bất thường không (VD: Chạy êm ru, Ồn nhẹ)?'
+    ];
+  }
+
+  // Pattern 6: Môi chất Gas & Độ lạnh sâu
+  if ((lower.includes('gas') || lower.includes('môi chất')) && (lower.includes('độ lạnh') || lower.includes('làm lạnh') || lower.includes('làm mát'))) {
+    return [
+      'Máy sử dụng loại Gas lạnh nào (VD: Gas R32, Gas R410A)?',
+      'Khả năng làm mát/làm lạnh có sâu và nhanh không (VD: Lạnh sâu nhanh, Bình thường)?'
+    ];
+  }
+
+  // Pattern 7: Công suất & Bảng điều khiển / cảm ứng
+  if ((lower.includes('công suất') || lower.includes('watt')) && (lower.includes('bảng điều khiển') || lower.includes('cảm ứng'))) {
+    return [
+      'Công suất nấu tối đa của thiết bị là bao nhiêu Watt (VD: 1200W, 2000W, 4000W)?',
+      'Bảng điều khiển và các phím bấm/cảm ứng hoạt động có tốt không (VD: Rất nhạy, Hoạt động tốt)?'
+    ];
+  }
+
+  return [qClean];
+};
+
 interface QuestionGuide {
   categoryTitle: string;
   itemTitle: string;
@@ -122,17 +199,19 @@ const getCategoryQuestionGuide = (
       photoObservation: photoNote,
       questions: [
         'Dung tích thực tế của tủ là bao nhiêu lít (VD: 200L, 250L, 350L, 500L)?',
-        'Khả năng làm đá và nhiệt độ làm lạnh ngăn đông/ngăn mát có sâu và ổn định không?',
-        'Tủ có trang bị công nghệ Inverter tiết kiệm điện không? Máy nén Compressor chạy có êm không?',
-        'Gioăng cao su viền cửa tủ có hít chặt không, có bị hở, rách hoặc mốc ố không?',
-        'Tủ đã từng qua nạp lại gas hay sửa chữa bo mạch lần nào chưa?'
+        'Khả năng làm đá và nhiệt độ làm lạnh ngăn đông/ngăn mát có sâu và ổn định không (VD: Làm đá nhanh, Làm lạnh tốt)?',
+        'Tủ có trang bị công nghệ Inverter tiết kiệm điện không (VD: Có Inverter, Không có Inverter)?',
+        'Máy nén (Compressor) khi chạy có phát ra tiếng ồn hoặc rung bất thường không (VD: Chạy êm ru, Ồn nhẹ)?',
+        'Gioăng cao su viền cửa tủ có hít chặt không, có bị hở hoặc mốc ố không (VD: Hít chặt khít, Hơi hở nhẹ)?',
+        'Tủ đã từng qua nạp lại gas hay sửa chữa bo mạch lần nào chưa (VD: Gas nguyên bản chưa sửa, Đã nạp gas)?'
       ],
       quickReplies: [
         'Dung tích 250L Inverter siêu tiết kiệm điện',
         'Ngăn đông -18°C làm đá cực nhanh, không đóng tuyết',
-        'Gioăng cửa hít chặt 100%, máy chạy êm ru',
-        'Gas R600a nguyên bản, chưa qua sửa chữa',
-        'Dùng 1 năm, còn bảo hành chính hãng 12 tháng'
+        'Có Inverter tiết kiệm điện tối ưu',
+        'Máy nén chạy êm ru, không tiếng ồn',
+        'Gioăng cửa hít chặt 100%, không hở nhiệt',
+        'Gas R600a nguyên bản, chưa qua sửa chữa'
       ]
     };
   }
@@ -143,15 +222,18 @@ const getCategoryQuestionGuide = (
       itemTitle: itemName || 'Máy giặt',
       photoObservation: photoNote,
       questions: [
-        'Khối lượng giặt bao nhiêu kg (VD: 8.5kg, 9kg, 10kg)? Kiểu máy cửa ngang hay cửa trên?',
-        'Động cơ Inverter truyền động trực tiếp hay dây curoa? Có rung lắc khi vắt 1400 vòng không?',
-        'Lồng giặt inox có sáng sạch không, gioăng cửa cao su có bị rách mốc không?',
-        'Máy có tích hợp tính năng sấy khô hoặc giặt nước nóng diệt khuẩn không?',
-        'Còn đầy đủ ống cấp nước và ống xả thoát nước nguyên bản không?'
+        'Khối lượng giặt của máy là bao nhiêu kg (VD: 8.5kg, 9kg, 10kg)?',
+        'Kiểu máy giặt là cửa ngang (cửa trước) hay cửa trên (cửa đứng)?',
+        'Động cơ là loại Inverter truyền động trực tiếp hay dùng dây curoa (VD: Truyền động trực tiếp Inverter, Dây curoa)?',
+        'Máy có bị rung lắc mạnh hoặc kêu to khi vắt tốc độ cao không (VD: Máy đầm êm, Rung nhẹ)?',
+        'Lồng giặt inox có sáng sạch không, gioăng cửa cao su có bị rách mốc không (VD: Lồng giặt sạch đẹp, Gioăng tốt)?',
+        'Máy có tích hợp tính năng sấy khô hoặc giặt nước nóng diệt khuẩn không (VD: Có sấy khô, Có giặt nước nóng, Giặt thường)?',
+        'Còn đầy đủ ống cấp nước và ống xả thoát nước nguyên bản không (VD: Đủ cả 2 ống zin, Thiếu ống cấp)?'
       ],
       quickReplies: [
-        'Máy giặt cửa ngang 9kg, truyền động trực tiếp Inverter',
-        'Vắt 1400 vòng cực êm, không rung lắc',
+        'Khối lượng giặt 9kg cửa ngang hiện đại',
+        'Động cơ truyền động trực tiếp Inverter cực êm',
+        'Vắt 1400 vòng đầm chắc, không rung lắc',
         'Lồng giặt inox sáng sạch, gioăng cao su nguyên bản',
         'Đầy đủ dây nguồn, ống cấp & ống xả nước zin',
         'Máy dùng gia đình 8 tháng, ngoại hình 98%'
@@ -166,17 +248,18 @@ const getCategoryQuestionGuide = (
       photoObservation: photoNote,
       questions: [
         'Công suất làm lạnh bao nhiêu HP/BTU (VD: 1.0 HP / 9.000 BTU, 1.5 HP, 2.0 HP)?',
-        'Sử dụng loại môi chất làm lạnh gì (Gas R32 hay R410A)? Độ lạnh có sâu và nhanh không?',
-        'Có công nghệ Inverter tiết kiệm điện và màng lọc khử mùi/bụi mịn PM2.5 không?',
-        'Tình trạng cục nóng và cục lạnh: các lá nhôm tản nhiệt có bị móp dập rỉ sét không?',
-        'Còn giữ điều khiển remote chính hãng và phụ kiện giá đỡ ống đồng không?'
+        'Máy sử dụng loại Gas lạnh nào (VD: Gas R32, Gas R410A)?',
+        'Khả năng làm mát có sâu và phả hơi lạnh nhanh không (VD: Lạnh sâu nhanh, Bình thường)?',
+        'Máy có công nghệ Inverter tiết kiệm điện không (VD: Có Inverter, Dòng tiêu chuẩn)?',
+        'Tình trạng dàn nóng và dàn lạnh: các lá nhôm tản nhiệt có bị móp dập rỉ sét không (VD: Lá nhôm thẳng đẹp, Có xước nhẹ)?',
+        'Còn giữ điều khiển remote chính hãng và phụ kiện giá đỡ ống đồng không (VD: Đủ remote zin và pát treo, Thiếu remote)?'
       ],
       quickReplies: [
         'Công suất 1.5 HP Inverter, làm lạnh phòng 20m² cực nhanh',
         'Sử dụng Gas R32 thân thiện môi trường, nguyên áp suất',
+        'Có Inverter tiết kiệm điện 60%',
         'Đủ cả cục lạnh, cục nóng và remote chính hãng',
-        'Lá nhôm tản nhiệt thẳng đẹp, máy chạy êm',
-        'Máy dùng 1 mùa hè, còn rất mới 95%'
+        'Lá nhôm tản nhiệt thẳng đẹp, máy chạy êm'
       ]
     };
   }
@@ -188,10 +271,10 @@ const getCategoryQuestionGuide = (
       photoObservation: photoNote,
       questions: [
         'Lực hút tối đa bao nhiêu Pa (VD: 4000Pa, 5000Pa, 6000Pa)?',
-        'Pin còn hoạt động liên tục được bao nhiêu phút sau mỗi lần sạc đầy?',
-        'Cảm biến laser LiDAR và camera quét bản đồ 3D né vật cản có nhạy không?',
-        'Trạm sạc dock Omni có tự giặt sấy giẻ bằng nước nóng/khí nóng không?',
-        'Phụ kiện kèm theo còn đủ chổi quét cạnh, giẻ lau dự phòng và màng lọc HEPA không?'
+        'Pin còn hoạt động liên tục được bao nhiêu phút sau mỗi lần sạc đầy (VD: 90 phút, 120 phút)?',
+        'Cảm biến laser LiDAR và camera quét bản đồ né vật cản có nhạy không (VD: Cảm biến nhạy, Quét bản đồ tốt)?',
+        'Trạm sạc dock Omni có tự giặt sấy giẻ bằng nước nóng/khí nóng không (VD: Có tự giặt sấy, Dock thường)?',
+        'Phụ kiện kèm theo còn đủ chổi quét cạnh, giẻ lau dự phòng và màng lọc HEPA không (VD: Đầy đủ phụ kiện, Thiếu giẻ lau)?'
       ],
       quickReplies: [
         'Lực hút mạnh 5000Pa, hút sạch bụi mịn và lông thú',
@@ -209,39 +292,46 @@ const getCategoryQuestionGuide = (
       itemTitle: itemName || 'Thiết bị nhà bếp',
       photoObservation: photoNote,
       questions: [
-        'Loại thiết bị: Nồi cao tần IH, bếp từ đơn/đôi hay lò nướng/vi sóng đối lưu?',
-        'Lòng nồi hoặc mặt kính bếp có bị trầy xước lớp chống dính/nứt vỡ không?',
-        'Công suất nấu tối đa bao nhiêu Watt, bảng điều khiển cảm ứng hoạt động tốt không?',
-        'Các cảm biến nhiệt độ tự ngắt chống cháy nổ có nhạy không?',
-        'Dung tích thực tế (L) và phụ kiện (vỉ nướng, khay, muôi, cốc đong) còn đủ không?'
+        'Loại thiết bị cụ thể là gì (VD: Nồi cơm cao tần IH, Bếp từ đôi, Lò nướng đối lưu, Nồi chiên)?',
+        'Lòng nồi hoặc mặt kính bếp có bị trầy xước lớp chống dính/nứt vỡ không (VD: Lòng nồi đẹp 100%, Xước dăm nhẹ)?',
+        'Công suất nấu tối đa của thiết bị là bao nhiêu Watt (VD: 1200W, 2000W, 4000W)?',
+        'Bảng điều khiển và các phím bấm/cảm ứng hoạt động có tốt không (VD: Cảm ứng rất nhạy, Phím bấm tốt)?',
+        'Các cảm biến nhiệt độ tự ngắt an toàn chống cháy nổ có hoạt động tốt không (VD: Tự ngắt chuẩn xác, Hoạt động tốt)?',
+        'Dung tích thực tế và phụ kiện đi kèm (khay, vỉ nướng, muôi, cốc đong) còn đủ không (VD: Đủ phụ kiện, Thiếu cốc đong)?'
       ],
       quickReplies: [
-        'Nồi cơm cao tần IH áp suất 1.8L, nấu cơm dẻo ngon',
+        'Nồi cơm cao tần IH áp suất 1.8L',
         'Lòng nồi nguyên vẹn 100%, không bong tróc chống dính',
-        'Mặt kính Ceramic chịu nhiệt chịu lực, không vết xước',
-        'Công suất 4000W Inverter tiết kiệm điện, phím cảm ứng nhạy',
+        'Mặt kính Ceramic chịu lực, không vết xước',
+        'Công suất 2000W, bảng điều khiển cảm ứng nhạy',
         'Hàng chính hãng fullbox, còn bảo hành 6 tháng'
       ]
     };
   }
 
-  // Default guide
+  // Default guide: Tách rõ các câu hỏi 2 vế thành từng câu hỏi đơn lẻ
   return {
     categoryTitle: categoryName || 'Thiết bị gia dụng',
     itemTitle: itemName || 'Sản phẩm',
     photoObservation: photoNote,
     questions: [
-      'Sản phẩm đã qua sử dụng bao lâu và độ mới thực tế khoảng bao nhiêu %?',
-      'Tình trạng bảo hành: Còn bảo hành chính hãng không, có hóa đơn mua hàng không?',
-      'Phụ kiện đi kèm gồm những gì (hộp, dây cáp nguồn, linh kiện phụ)?',
-      'Máy hoạt động có êm không, có lỗi chức năng hay từng qua sửa chữa chưa?',
-      'Điện áp sử dụng là 220V chuẩn hay dòng máy 110V nội địa?'
+      'Sản phẩm đã qua sử dụng trong bao lâu (VD: 6 tháng, 1 năm, 2 năm)?',
+      'Độ mới thực tế của sản phẩm khoảng bao nhiêu % (VD: 99%, 95%, 90%)?',
+      'Sản phẩm còn bảo hành chính hãng không (VD: Còn 6 tháng, Hết bảo hành)?',
+      'Bạn có còn giữ hóa đơn mua hàng hoặc phiếu bảo hành không (VD: Còn hóa đơn gốc, Không còn)?',
+      'Phụ kiện đi kèm gồm những gì (VD: Đầy đủ hộp, Cáp sạc, Dây nguồn zin)?',
+      'Máy hoạt động có êm không, có bị lỗi chức năng nào không (VD: Hoạt động tốt êm ái, Có lỗi nhẹ)?',
+      'Máy đã từng qua sửa chữa hay thay thế linh kiện chưa (VD: Nguyên zin chưa sửa, Đã thay linh kiện)?',
+      'Điện áp sử dụng là 220V chuẩn hay dòng máy 110V nội địa (VD: 220V, 110V)?'
     ],
     quickReplies: [
-      'Máy dùng được 6 tháng, ngoại hình 95% không cấn móp',
-      'Còn nguyên tem bảo hành chính hãng và hóa đơn',
+      'Máy dùng được 6 tháng',
+      'Độ mới 95% không cấn móp',
+      'Còn bảo hành chính hãng 6 tháng',
+      'Còn nguyên tem và hóa đơn mua hàng',
       'Đầy đủ hộp fullbox, phụ kiện và dây nguồn zin',
-      'Mọi tính năng hoạt động hoàn hảo 100%, chưa sửa chữa',
+      'Mọi tính năng hoạt động êm ái 100%',
+      'Máy nguyên zin chưa từng qua sửa chữa',
       'Điện áp 220V cắm dùng trực tiếp tiện lợi'
     ]
   };
@@ -292,11 +382,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
   // Images state: Raw files for FormData & previews
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
-  const [photoPreviews, setPhotoPreviews] = useState<string[]>([
-    'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80',
-    'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=600&q=80',
-    'https://images.unsplash.com/photo-1585338107529-13afc5f02586?auto=format&fit=crop&w=600&q=80'
-  ]);
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   // Post & AI Session IDs from Backend
@@ -359,10 +445,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     return questions;
   }, [aiInitialMessage]);
 
-  // Effective questions to display: Prioritize dynamic questions from Backend AI template
-  const effectiveQuestions = parsedAiQuestions.length > 0
-    ? parsedAiQuestions
-    : currentQuestionGuide.questions;
+  // Effective questions to display: Prioritize dynamic questions from Backend AI template, and split any compound questions into single questions
+  const effectiveQuestions = useMemo(() => {
+    const rawQuestions = parsedAiQuestions.length > 0
+      ? parsedAiQuestions
+      : currentQuestionGuide.questions;
+    return rawQuestions.flatMap(q => splitCompoundQuestion(q));
+  }, [parsedAiQuestions, currentQuestionGuide.questions]);
 
   // Questionnaire Answers State
   const [questionAnswers, setQuestionAnswers] = useState<Record<number, string>>({});
@@ -421,7 +510,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
   const handleSendAnswersToAi = async () => {
     if (answeredCount === 0) {
-      alert(lang === 'vi' ? 'Vui lòng điền ít nhất một câu trả lời để gửi cho AI.' : 'Please answer at least one question to send to AI.');
+      alert(lang === 'vi' ? 'Vui lòng điền câu trả lời cho ít nhất một câu hỏi trước khi gửi cho AI.' : 'Please answer at least one question before sending to AI.');
       return;
     }
     if (!sessionId || !postId) {
@@ -442,24 +531,15 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
     const promptMessage = `Tôi đã trả lời các câu hỏi về sản phẩm như sau: ${formattedAnswers}. Nhờ bạn viết lại một đoạn mô tả bán hàng thật chuyên nghiệp, trung thực và thu hút người mua nhé!`;
 
-    setChatMessages((prev) => [
-      ...prev,
-      { role: 'user', text: promptMessage, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
-    ]);
-    setUserChatCount((prev) => prev + 1);
-    setShowAiChatDrawer(true);
-
     try {
       const res = await aiChatService.chat(promptMessage, sessionId, postId);
       const reply = res?.reply || (res as any)?.message || '';
       if (reply) {
-        setChatMessages((prev) => [
-          ...prev,
-          { role: 'ai', text: reply, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
-        ]);
         setDescription(reply);
-        setApplySuccessNotice(lang === 'vi' ? 'Trợ lý AI đã tổng hợp xong bài mô tả bán hàng mới!' : 'AI generated a new sales description!');
-        setTimeout(() => setApplySuccessNotice(null), 4500);
+        setApplySuccessNotice(lang === 'vi' ? '✨ Trợ lý AI đã tổng hợp xong bài mô tả bán hàng và cập nhật vào ô Mô tả bên dưới!' : '✨ AI generated a new sales description and updated the description box below!');
+        setTimeout(() => setApplySuccessNotice(null), 5000);
+      } else {
+        handleApplyAnswersToDescription();
       }
     } catch (err: any) {
       console.warn('Lỗi gửi câu trả lời cho AI chat:', err);
@@ -1181,37 +1261,23 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
           {/* Photo Checklist 3-6 Photos */}
           <div className="space-y-3 pt-2 border-t border-gray-100">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <label className="text-xs font-bold text-[#24263e] flex items-center gap-2">
-                  <span>Ảnh chụp sản phẩm thực tế (Yêu cầu 3 - 6 ảnh) *</span>
-                  <span
-                    className={`text-[10px] font-black px-2 py-0.5 rounded-full ${photoPreviews.length >= 3 && photoPreviews.length <= 6
-                        ? 'bg-emerald-100 text-emerald-800'
+            <div>
+              <label className="text-xs font-bold text-[#24263e] flex items-center gap-2">
+                <span>Ảnh chụp sản phẩm thực tế (Yêu cầu 3 - 6 ảnh) *</span>
+                <span
+                  className={`text-[10px] font-black px-2 py-0.5 rounded-full ${photoPreviews.length >= 3 && photoPreviews.length <= 6
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : photoPreviews.length === 0
+                        ? 'bg-slate-100 text-slate-600'
                         : 'bg-rose-100 text-rose-800'
-                      }`}
-                  >
-                    Đã có: {photoPreviews.length}/6 ảnh
-                  </span>
-                </label>
-                <p className="text-[11px] text-slate-500">
-                  Tải lên mặt trước, mặt sau, góc cạnh, tem nhãn/seri và phụ kiện để AI định giá tối ưu.
-                </p>
-              </div>
-
-              {photoPreviews.length < 6 && (
-                <label className="px-4 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0 transition">
-                  <UploadCloud className="w-4 h-4 text-amber-300" />
-                  <span>+ Chọn thêm ảnh từ máy</span>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={handleFileChange}
-                  />
-                </label>
-              )}
+                    }`}
+                >
+                  Đã có: {photoPreviews.length}/6 ảnh
+                </span>
+              </label>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Tải lên mặt trước, mặt sau, góc cạnh, tem nhãn/seri và phụ kiện để AI định giá tối ưu.
+              </p>
             </div>
 
             {/* Photos Preview Grid */}
@@ -1234,9 +1300,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               ))}
 
               {photoPreviews.length < 6 && (
-                <label className="border-2 border-dashed border-gray-300 hover:border-[#c34c36] rounded-2xl flex flex-col items-center justify-center gap-1 aspect-square bg-slate-50 hover:bg-slate-100 transition cursor-pointer text-slate-500 text-center p-2">
-                  <Camera className="w-5 h-5 text-slate-400" />
-                  <span className="text-[10px] font-bold">+ Thêm ảnh</span>
+                <label className="border-2 border-dashed border-gray-300 hover:border-[#c34c36] rounded-2xl flex flex-col items-center justify-center gap-1.5 aspect-square bg-slate-50 hover:bg-slate-100 transition cursor-pointer text-slate-500 text-center p-2 group shadow-xs">
+                  <div className="w-9 h-9 rounded-full bg-white border border-gray-200 flex items-center justify-center group-hover:scale-105 group-hover:border-[#c34c36] transition shadow-xs">
+                    <Camera className="w-4.5 h-4.5 text-slate-500 group-hover:text-[#c34c36] transition" />
+                  </div>
+                  <span className="text-[11px] font-bold text-slate-600 group-hover:text-[#c34c36] transition">+ Thêm ảnh</span>
                   <input
                     type="file"
                     multiple
@@ -1426,7 +1494,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </div>
 
                 {/* Progress Indicator */}
-                <div className="flex items-center gap-2.5 self-start sm:self-auto bg-white px-3.5 py-2 rounded-2xl border border-amber-200 shadow-2xs shrink-0">
+                <div className="flex items-center gap-2.5 bg-white px-3.5 py-2 rounded-2xl border border-amber-200 shadow-2xs self-start sm:self-auto shrink-0">
                   <div className="text-right">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tiến độ điền</div>
                     <div className="text-xs font-black text-[#c34c36]">
@@ -1554,6 +1622,50 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   );
                 })}
               </div>
+
+              {/* Bottom Action Bar for Questionnaire */}
+              <div className="mt-4 pt-3.5 border-t border-amber-200/80 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="text-xs text-slate-600 flex items-center gap-1.5 self-start sm:self-auto">
+                  <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>
+                    {answeredCount > 0
+                      ? `Đã điền ${answeredCount}/${effectiveQuestions.length} câu trả lời. Bấm nút để AI viết bài mô tả hoàn chỉnh:`
+                      : 'Hãy trả lời các câu hỏi phía trên để AI hỗ trợ viết bài mô tả chuẩn xác nhất.'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={handleApplyAnswersToDescription}
+                    disabled={answeredCount === 0 || isApplyingAnswers}
+                    className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-xl border border-amber-300 bg-white hover:bg-amber-50 text-amber-900 text-xs font-bold transition disabled:opacity-40 cursor-pointer"
+                    title="Chèn nguyên văn câu trả lời vào mô tả"
+                  >
+                    {isApplyingAnswers ? 'Đang chèn...' : 'Chèn vào mô tả'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSendAnswersToAi}
+                    disabled={answeredCount === 0 || isSubmittingAnswersToAi}
+                    className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 text-white text-xs font-black flex items-center justify-center gap-2 shadow-sm transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    title="Gửi câu trả lời để AI tổng hợp bài mô tả hoàn chỉnh"
+                  >
+                    {isSubmittingAnswersToAi ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>AI đang viết mô tả...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 text-amber-200" />
+                        <span>Gửi AI Hoàn Thiện Mô Tả</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1600,197 +1712,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </select>
               </div>
             </div>
-          </div>
-
-          {/* AI Chat Drawer / Accordion */}
-          <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50">
-            <div 
-              onClick={() => setShowAiChatDrawer(!showAiChatDrawer)}
-              className="px-4 py-3 bg-slate-100/70 border-b border-slate-200 flex items-center justify-between cursor-pointer hover:bg-slate-200/50 transition"
-            >
-              <div className="flex items-center gap-2 text-xs font-bold text-[#24263e]">
-                <Bot className="w-4 h-4 text-[#c34c36]" />
-                <span>Trợ lý AI Hỗ trợ hoàn thiện mô tả (Chat & Tổng hợp)</span>
-                <span className="text-[10px] text-slate-400 font-normal">
-                  ({showAiChatDrawer ? 'Bấm để thu gọn' : 'Bấm để mở chat'})
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                {showAiChatDrawer && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleFinalizeChatAndSync();
-                    }}
-                    disabled={isFinalizingChat}
-                    className="px-3 py-1.5 rounded-xl bg-[#c34c36] hover:bg-[#b0402c] text-white text-[11px] font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
-                  >
-                    {isFinalizingChat ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                    <span>AI Tổng Hợp Lại Mô Tả</span>
-                  </button>
-                )}
-                {showAiChatDrawer ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-              </div>
-            </div>
-
-            {showAiChatDrawer && (
-              <>
-                {/* Category & Item Context Card with Guided Questions based on chosen photo, category, and item */}
-                <div className="p-3.5 bg-gradient-to-r from-amber-50 to-orange-50/50 border-b border-amber-200/80 text-xs">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-extrabold text-[#24263e] uppercase tracking-wide text-[11px] flex items-center gap-1">
-                          <HelpCircle className="w-3.5 h-3.5 text-amber-600" />
-                          {parsedAiQuestions.length > 0 ? 'Câu hỏi AI tạo theo sản phẩm:' : 'Bộ câu hỏi AI gợi ý cho:'}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 font-bold text-[11px]">
-                          {currentCategory?.name || currentQuestionGuide.categoryTitle} • {currentItem?.name || currentQuestionGuide.itemTitle}
-                        </span>
-                        {brand && (
-                          <span className="px-2 py-0.5 rounded-md bg-slate-200/80 text-slate-800 font-bold text-[11px]">
-                            {brand} {model}
-                          </span>
-                        )}
-                        {parsedAiQuestions.length > 0 && (
-                          <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-bold text-[10px]">
-                            ⚡ Tự động tạo từ Backend AI
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-600 mt-1">
-                        📷 <em>{isCatalogPhotoWarning ? 'Ảnh catalog/quảng cáo - AI cần thêm thông tin thực tế' : currentQuestionGuide.photoObservation}</em>. Bấm vào câu hỏi để điền nhanh câu trả lời:
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowQuestionsList(!showQuestionsList)}
-                      className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-amber-900 bg-amber-100/80 hover:bg-amber-200/80 transition shrink-0 cursor-pointer"
-                    >
-                      {showQuestionsList ? 'Thu gọn' : `Xem câu hỏi (${effectiveQuestions.length})`}
-                    </button>
-                  </div>
-
-                  {showQuestionsList && (
-                    <div className="mt-2.5 pt-2.5 border-t border-amber-200/60 space-y-1.5 animate-fadeIn">
-                      {effectiveQuestions.map((q, idx) => {
-                        const labelMatch = q.match(/\*\*(.*?)\*\*/);
-                        const label = labelMatch ? labelMatch[1].replace(/[:]/g, '').trim() : q.split(':')[0] || q;
-                        return (
-                          <div
-                            key={idx}
-                            onClick={() => {
-                              if (!isSessionCompleted) {
-                                setChatInput((prev) => (prev ? `${prev}, ${label}: ` : `${label}: `));
-                              }
-                            }}
-                            className="flex items-start gap-2 text-slate-700 p-1.5 rounded-lg hover:bg-amber-100/60 transition cursor-pointer"
-                            title="Bấm để chèn vào ô nhập tin nhắn"
-                          >
-                            <span className="w-4 h-4 rounded-full bg-amber-200 text-amber-900 font-black flex items-center justify-center shrink-0 text-[10px] mt-0.5">
-                              {idx + 1}
-                            </span>
-                            <span className="font-medium leading-relaxed hover:text-[#c34c36]">
-                              {q}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* Chat Messages */}
-                <div className="p-4 max-h-72 overflow-y-auto space-y-3">
-                  {chatMessages.map((m, idx) => (
-                    <div key={idx} className={`flex items-start gap-2.5 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      {m.role === 'ai' && (
-                        <div className="w-7 h-7 rounded-lg bg-[#24263e] text-white flex items-center justify-center shrink-0 text-xs">
-                          <Bot className="w-3.5 h-3.5" />
-                        </div>
-                      )}
-                      <div className={`p-3 rounded-2xl text-xs max-w-lg leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-[#24263e] text-white' : 'bg-white border border-gray-200 text-slate-800'}`}>
-                        <div>{m.text}</div>
-                        <div className={`text-[9px] mt-1 text-right ${m.role === 'user' ? 'text-white/60' : 'text-slate-400'}`}>{m.time}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Quick Reply Suggestion Chips based on category & item */}
-                <div className="px-3 pt-2 pb-1 bg-white border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto">
-                  <span className="text-[10px] font-bold text-slate-400 shrink-0 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-amber-500" />
-                    Gợi ý nhanh:
-                  </span>
-                  {currentQuestionGuide.quickReplies.map((replyText, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => {
-                        if (!isSessionCompleted) {
-                          setChatInput(replyText);
-                        }
-                      }}
-                      className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-amber-100 hover:text-amber-900 text-slate-700 text-[11px] font-medium transition cursor-pointer whitespace-nowrap shrink-0 border border-slate-200 hover:border-amber-300"
-                    >
-                      + {replyText}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Chat Input & Session Status */}
-                {isSessionCompleted ? (
-                  <div className="p-3.5 bg-emerald-50 border-t border-emerald-200 text-xs text-emerald-900 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 font-medium">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                      Cuộc trò chuyện đã được tổng hợp thành mô tả sản phẩm. Bạn có thể chỉnh sửa trực tiếp mô tả bên trên.
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsSessionCompleted(false)}
-                      className="text-[11px] underline text-emerald-700 hover:text-emerald-950 font-bold shrink-0 ml-2 cursor-pointer"
-                    >
-                      Mở lại chat
-                    </button>
-                  </div>
-                ) : (
-                  <form onSubmit={handleSendChatMessage} className="p-3 bg-white border-t border-slate-200 flex flex-col gap-2">
-                    <div className="flex items-center justify-between px-1 text-[11px]">
-                      {userChatCount < 5 ? (
-                        <span className="text-slate-500">
-                          Tin nhắn đã gửi: <strong className="text-slate-800">{userChatCount}/5</strong> (Miễn phí theo gói tin)
-                        </span>
-                      ) : (
-                        <span className="text-amber-700 font-bold flex items-center gap-1">
-                          <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-                          Đã dùng {userChatCount} tin nhắn (Tin tiếp theo trừ 1 Chat Credit)
-                        </span>
-                      )}
-                      <span className="text-slate-400 text-[10px]">Nhấn Enter hoặc Gửi</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        placeholder="Nhập chi tiết cần bổ sung cho AI (ví dụ: máy dùng 2 năm, cửa xước dăm nhẹ, đủ dây nguồn...)"
-                        className="flex-1 px-3.5 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#c34c36]"
-                      />
-                      <button
-                        type="submit"
-                        disabled={!chatInput.trim() || isSendingChat}
-                        className="px-4 py-2 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1 disabled:opacity-40 transition cursor-pointer"
-                      >
-                        {isSendingChat ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                        <span className="hidden sm:inline">Gửi</span>
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </>
-            )}
           </div>
 
           {/* Navigation Buttons */}
@@ -1983,7 +1904,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="p-3.5 bg-white rounded-xl border border-emerald-100 shadow-xs">
                   <span className="text-[11px] text-slate-500 font-bold block">Khoảng giá hợp lý:</span>
                   <div className="text-sm font-black text-slate-800 mt-1">
@@ -1995,13 +1916,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <span className="text-[11px] text-emerald-700 font-bold block">Giá đề xuất bán tốt nhất:</span>
                   <div className="text-base font-black text-[#c34c36] mt-1">
                     {formatVND(valuationResult.suggestedPrice)}
-                  </div>
-                </div>
-
-                <div className="p-3.5 bg-white rounded-xl border border-emerald-100 shadow-xs">
-                  <span className="text-[11px] text-slate-500 font-bold block">Thời gian bán dự kiến:</span>
-                  <div className="text-sm font-black text-slate-800 mt-1">
-                    {valuationResult.expectedSellTime || '1 - 2 tuần'}
                   </div>
                 </div>
               </div>

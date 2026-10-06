@@ -439,6 +439,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           label: lang === 'vi' ? 'Nhà Bán Hàng Uy Tín (Top Seller 4.9★)' : 'Verified Seller (4.9★)',
           className: 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30',
         };
+      case 'staff':
+        return {
+          label: lang === 'vi' ? 'Nhân Viên Vận Hành (Operations Staff)' : 'Operations Staff',
+          className: 'bg-amber-500/15 text-amber-700 border-amber-500/30',
+        };
       case 'inspector':
         return {
           label: lang === 'vi' ? 'Kỹ Sư Giám Định Hub (Certified Lab Tech)' : 'Certified Lab Tech',
@@ -744,6 +749,49 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     placeholder={lang === 'vi' ? 'Nhập địa chỉ' : 'Enter address'}
                     className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] transition"
                   />
+                </div>
+              </div>
+
+              {/* Role & Workspace Switcher for Demo / Testing */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-[#c34c36]" />
+                    <span>{lang === 'vi' ? 'Chuyển Đổi Không Gian Làm Việc (Role Switcher)' : 'Role & Workspace Switcher'}</span>
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    {lang === 'vi' ? 'Chuyển nhanh góc nhìn' : 'Fast role switch'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+                  {[
+                    { role: 'buyer' as UserRole, label: 'Người Mua', icon: ShoppingBag, color: 'hover:border-blue-400 hover:text-blue-600' },
+                    { role: 'seller' as UserRole, label: 'Người Bán', icon: Store, color: 'hover:border-emerald-400 hover:text-emerald-600' },
+                    { role: 'staff' as UserRole, label: 'Staff Vận Hành', icon: FileCheck, color: 'hover:border-amber-400 hover:text-amber-600' },
+                    { role: 'inspector' as UserRole, label: 'Kỹ Sư Hub', icon: Building, color: 'hover:border-purple-400 hover:text-purple-600' },
+                    { role: 'admin' as UserRole, label: 'Admin Quản Trị', icon: Shield, color: 'hover:border-rose-400 hover:text-rose-600' },
+                  ].map((r) => {
+                    const IconComp = r.icon;
+                    const isActive = currentUser.role === r.role;
+                    return (
+                      <button
+                        key={r.role}
+                        type="button"
+                        onClick={() => {
+                          onRoleChange(r.role);
+                          onClose();
+                        }}
+                        className={`p-2 rounded-xl text-center border transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                          isActive
+                            ? 'bg-[#24263e] text-white border-[#24263e] shadow-sm font-black'
+                            : `bg-white border-slate-200 text-slate-700 ${r.color}`
+                        }`}
+                      >
+                        <IconComp className="w-4 h-4 shrink-0" />
+                        <span className="text-[11px] font-bold leading-tight">{r.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

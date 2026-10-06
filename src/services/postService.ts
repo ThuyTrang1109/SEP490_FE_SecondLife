@@ -83,20 +83,34 @@ export interface PostSubmitResponse {
 
 export const postService = {
   /**
-   * Lấy danh sách tin đăng bài công khai từ Backend
+   * Lấy danh sách tin đăng bài công khai từ Backend (GET /api/v1/posts)
+   * Backend Spring Pageable hỗ trợ: categoryId, itemId, page, size, sort
    */
-  async getPublicPosts(categoryId?: string, itemId?: string): Promise<any> {
+  async getPublicPosts(categoryId?: string, itemId?: string, page = 0, size = 50): Promise<any> {
     try {
       const params = new URLSearchParams();
       if (categoryId) params.append('categoryId', categoryId);
       if (itemId) params.append('itemId', itemId);
+      if (page !== undefined) params.append('page', String(page));
+      if (size !== undefined) params.append('size', String(size));
+      params.append('sort', 'createdAt,desc');
 
       const queryString = params.toString() ? `?${params.toString()}` : '';
       const response = await request<any>(`/v1/posts${queryString}`, {
         method: 'GET',
         requiresAuth: false,
       });
-      return (response as any)?.data || response;
+      const data: any = (response as any)?.data || response;
+      if (data && Array.isArray(data.content)) {
+        return {
+          ...data,
+          content: data.content.filter((p: any) => p.status === 'ACTIVE')
+        };
+      }
+      if (Array.isArray(data)) {
+        return data.filter((p: any) => p.status === 'ACTIVE');
+      }
+      return data;
     } catch (err) {
       console.warn('Backend chưa có API GET /api/v1/posts công khai (404), trả về danh sách rỗng fallback:', err);
       return [];

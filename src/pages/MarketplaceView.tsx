@@ -36,6 +36,10 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
 
   const filteredListings = useMemo(() => {
     return listings.filter(item => {
+      // Sàn mua bán (Marketplace) CHỈ hiển thị các bài đăng có trạng thái ACTIVE
+      const isActive = item.status === 'active' || item.backendStatus === 'ACTIVE';
+      if (!isActive) return false;
+
       const matchesSearch =
         item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||

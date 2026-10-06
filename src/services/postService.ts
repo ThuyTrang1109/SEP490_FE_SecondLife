@@ -21,7 +21,8 @@ export interface ListingDraftResponse {
   description: string;
   itemCondition?: string;
   price?: number | null;
-  imageUrls: string[];
+  imageUrls?: string[];
+  imageUrl?: string;
   aiDescription?: string;
   descriptionAccepted: boolean;
   status: string;
@@ -32,6 +33,28 @@ export interface ListingDraftResponse {
   duplicateMatches?: string[];
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface PostResponse {
+  id: string;
+  title: string;
+  description?: string;
+  imageUrls?: string[];
+  imageUrl?: string;
+  price?: number;
+  itemCondition?: string;
+  aiDescription?: string;
+  aiSuggestedPrice?: number;
+  status: string;
+  categoryId?: string;
+  itemId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  user?: {
+    id?: string;
+    email?: string;
+    fullName?: string;
+  };
 }
 
 export interface UpdateDraftRequest {

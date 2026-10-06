@@ -36,6 +36,7 @@ import {
   ItemBackend
 } from '../types';
 import { translations, formatVND } from '../utils/translations';
+import { numberToVietnameseWords, formatVndInput } from '../utils/numberToWords';
 import {
   mediaService,
   postService,
@@ -77,9 +78,14 @@ export const parseQuestionItem = (q: string, idx: number): ParsedQuestionItem =>
 
   const examples: string[] = [];
   if (hint) {
-    const cleanHint = hint.replace(/^(Ví dụ|VD|ví dụ|vd)[:\s]*/i, '').replace(/\.\.\.$/, '');
-    const tokens = cleanHint.split(/[,;\/]/).map(t => t.trim()).filter(t => t.length > 0 && t.length < 35);
-    examples.push(...tokens.slice(0, 5));
+    // Only generate quick replies if the hint explicitly starts with VD or Ví dụ
+    const isExample = /^(Ví dụ|VD|ví dụ|vd)[:\s]*/i.test(hint);
+    if (isExample) {
+      const cleanHint = hint.replace(/^(Ví dụ|VD|ví dụ|vd)[:\s]*/i, '').replace(/\.\.\.$/, '');
+      // Split by comma or semicolon, do not split by slash so examples like '110V/220V' remain intact
+      const tokens = cleanHint.split(/[,;]/).map(t => t.trim()).filter(t => t.length > 0 && t.length < 35);
+      examples.push(...tokens.slice(0, 5));
+    }
   }
 
   return {
@@ -119,7 +125,7 @@ export const splitCompoundQuestion = (q: string): string[] => {
   }
 
   // Pattern 2: Bảo hành & Hóa đơn mua hàng
-  if (lower.includes('bảo hành') && (lower.includes('hóa đơn') || lower.includes('phiếu mua') || lower.includes('chứng từ'))) {
+  if (lower.includes('bảo hành') && (lower.includes('hóa đơn') || lower.includes('chứng từ')) && (lower.includes('và') || lower.includes(','))) {
     return [
       'Sản phẩm còn bảo hành chính hãng không (VD: Còn 6 tháng, Hết bảo hành)?',
       'Bạn có còn giữ hóa đơn mua hàng hoặc phiếu bảo hành không (VD: Còn hóa đơn gốc, Không còn)?'
@@ -127,7 +133,7 @@ export const splitCompoundQuestion = (q: string): string[] => {
   }
 
   // Pattern 3: Máy chạy êm / lỗi chức năng & Đã sửa chữa chưa
-  if ((lower.includes('hoạt động') || lower.includes('chức năng') || lower.includes('êm')) && (lower.includes('sửa chữa') || lower.includes('thay thế'))) {
+  if ((lower.includes('hoạt động') || lower.includes('chức năng') || lower.includes('êm')) && (lower.includes('sửa chữa') || lower.includes('thay thế')) && (lower.includes('và') || lower.includes(','))) {
     return [
       'Máy hoạt động có êm không, có bị lỗi chức năng nào không (VD: Hoạt động tốt êm ái, Có lỗi nhẹ)?',
       'Máy đã từng qua sửa chữa hay thay thế linh kiện chưa (VD: Nguyên zin chưa sửa, Đã thay linh kiện)?'
@@ -135,7 +141,7 @@ export const splitCompoundQuestion = (q: string): string[] => {
   }
 
   // Pattern 4: Khối lượng giặt & Cửa ngang / cửa trên
-  if ((lower.includes('khối lượng') || lower.includes('kg')) && (lower.includes('cửa ngang') || lower.includes('cửa trên') || lower.includes('cửa trước'))) {
+  if ((lower.includes('khối lượng') || lower.includes('kg')) && (lower.includes('cửa ngang') || lower.includes('cửa trên') || lower.includes('cửa trước')) && (lower.includes('và') || lower.includes(','))) {
     return [
       'Khối lượng giặt của máy là bao nhiêu kg (VD: 8.5kg, 9kg, 10kg)?',
       'Kiểu máy giặt là cửa ngang (cửa trước) hay cửa trên (cửa đứng)?'
@@ -143,7 +149,7 @@ export const splitCompoundQuestion = (q: string): string[] => {
   }
 
   // Pattern 5: Inverter & Máy nén / rung lắc / tiếng ồn
-  if (lower.includes('inverter') && (lower.includes('compressor') || lower.includes('máy nén') || lower.includes('rung lắc') || lower.includes('chạy có êm'))) {
+  if (lower.includes('inverter') && (lower.includes('compressor') || lower.includes('máy nén') || lower.includes('rung lắc') || lower.includes('chạy có êm')) && (lower.includes('và') || lower.includes(','))) {
     return [
       'Thiết bị có trang bị công nghệ Inverter tiết kiệm điện không (VD: Có Inverter, Không)?',
       'Động cơ/máy nén khi vận hành có bị ồn hoặc rung lắc bất thường không (VD: Chạy êm ru, Ồn nhẹ)?'
@@ -169,173 +175,7 @@ export const splitCompoundQuestion = (q: string): string[] => {
   return [qClean];
 };
 
-interface QuestionGuide {
-  categoryTitle: string;
-  itemTitle: string;
-  photoObservation: string;
-  questions: string[];
-  quickReplies: string[];
-}
-
-const getCategoryQuestionGuide = (
-  categoryName: string,
-  itemName: string,
-  brandName: string,
-  modelName: string,
-  photoCount: number
-): QuestionGuide => {
-  const normCat = (categoryName || '').toLowerCase();
-  const normItem = (itemName || '').toLowerCase();
-
-  const brandModelText = `${brandName ? brandName + ' ' : ''}${modelName || ''}`.trim();
-  const photoNote = photoCount > 0
-    ? `Hệ thống đã nhận diện ${photoCount} ảnh chụp thực tế (mặt trước, tem mác, góc cạnh khung vỏ)`
-    : 'Chưa có ảnh chụp thực tế';
-
-  if (normCat.includes('tủ lạnh') || normCat.includes('tủ đông') || normItem.includes('tủ lạnh')) {
-    return {
-      categoryTitle: 'Tủ lạnh & Tủ đông',
-      itemTitle: itemName || 'Tủ lạnh',
-      photoObservation: photoNote,
-      questions: [
-        'Dung tích thực tế của tủ là bao nhiêu lít (VD: 200L, 250L, 350L, 500L)?',
-        'Khả năng làm đá và nhiệt độ làm lạnh ngăn đông/ngăn mát có sâu và ổn định không (VD: Làm đá nhanh, Làm lạnh tốt)?',
-        'Tủ có trang bị công nghệ Inverter tiết kiệm điện không (VD: Có Inverter, Không có Inverter)?',
-        'Máy nén (Compressor) khi chạy có phát ra tiếng ồn hoặc rung bất thường không (VD: Chạy êm ru, Ồn nhẹ)?',
-        'Gioăng cao su viền cửa tủ có hít chặt không, có bị hở hoặc mốc ố không (VD: Hít chặt khít, Hơi hở nhẹ)?',
-        'Tủ đã từng qua nạp lại gas hay sửa chữa bo mạch lần nào chưa (VD: Gas nguyên bản chưa sửa, Đã nạp gas)?'
-      ],
-      quickReplies: [
-        'Dung tích 250L Inverter siêu tiết kiệm điện',
-        'Ngăn đông -18°C làm đá cực nhanh, không đóng tuyết',
-        'Có Inverter tiết kiệm điện tối ưu',
-        'Máy nén chạy êm ru, không tiếng ồn',
-        'Gioăng cửa hít chặt 100%, không hở nhiệt',
-        'Gas R600a nguyên bản, chưa qua sửa chữa'
-      ]
-    };
-  }
-
-  if (normCat.includes('máy giặt') || normCat.includes('máy sấy') || normItem.includes('máy giặt')) {
-    return {
-      categoryTitle: 'Máy giặt & Máy sấy',
-      itemTitle: itemName || 'Máy giặt',
-      photoObservation: photoNote,
-      questions: [
-        'Khối lượng giặt của máy là bao nhiêu kg (VD: 8.5kg, 9kg, 10kg)?',
-        'Kiểu máy giặt là cửa ngang (cửa trước) hay cửa trên (cửa đứng)?',
-        'Động cơ là loại Inverter truyền động trực tiếp hay dùng dây curoa (VD: Truyền động trực tiếp Inverter, Dây curoa)?',
-        'Máy có bị rung lắc mạnh hoặc kêu to khi vắt tốc độ cao không (VD: Máy đầm êm, Rung nhẹ)?',
-        'Lồng giặt inox có sáng sạch không, gioăng cửa cao su có bị rách mốc không (VD: Lồng giặt sạch đẹp, Gioăng tốt)?',
-        'Máy có tích hợp tính năng sấy khô hoặc giặt nước nóng diệt khuẩn không (VD: Có sấy khô, Có giặt nước nóng, Giặt thường)?',
-        'Còn đầy đủ ống cấp nước và ống xả thoát nước nguyên bản không (VD: Đủ cả 2 ống zin, Thiếu ống cấp)?'
-      ],
-      quickReplies: [
-        'Khối lượng giặt 9kg cửa ngang hiện đại',
-        'Động cơ truyền động trực tiếp Inverter cực êm',
-        'Vắt 1400 vòng đầm chắc, không rung lắc',
-        'Lồng giặt inox sáng sạch, gioăng cao su nguyên bản',
-        'Đầy đủ dây nguồn, ống cấp & ống xả nước zin',
-        'Máy dùng gia đình 8 tháng, ngoại hình 98%'
-      ]
-    };
-  }
-
-  if (normCat.includes('điều hòa') || normCat.includes('máy lạnh') || normCat.includes('lọc') || normItem.includes('điều hòa')) {
-    return {
-      categoryTitle: 'Điều hòa & Máy lọc không khí',
-      itemTitle: itemName || 'Điều hòa',
-      photoObservation: photoNote,
-      questions: [
-        'Công suất làm lạnh bao nhiêu HP/BTU (VD: 1.0 HP / 9.000 BTU, 1.5 HP, 2.0 HP)?',
-        'Máy sử dụng loại Gas lạnh nào (VD: Gas R32, Gas R410A)?',
-        'Khả năng làm mát có sâu và phả hơi lạnh nhanh không (VD: Lạnh sâu nhanh, Bình thường)?',
-        'Máy có công nghệ Inverter tiết kiệm điện không (VD: Có Inverter, Dòng tiêu chuẩn)?',
-        'Tình trạng dàn nóng và dàn lạnh: các lá nhôm tản nhiệt có bị móp dập rỉ sét không (VD: Lá nhôm thẳng đẹp, Có xước nhẹ)?',
-        'Còn giữ điều khiển remote chính hãng và phụ kiện giá đỡ ống đồng không (VD: Đủ remote zin và pát treo, Thiếu remote)?'
-      ],
-      quickReplies: [
-        'Công suất 1.5 HP Inverter, làm lạnh phòng 20m² cực nhanh',
-        'Sử dụng Gas R32 thân thiện môi trường, nguyên áp suất',
-        'Có Inverter tiết kiệm điện 60%',
-        'Đủ cả cục lạnh, cục nóng và remote chính hãng',
-        'Lá nhôm tản nhiệt thẳng đẹp, máy chạy êm'
-      ]
-    };
-  }
-
-  if (normCat.includes('robot') || normCat.includes('hút bụi') || normItem.includes('robot')) {
-    return {
-      categoryTitle: 'Robot & Máy hút bụi',
-      itemTitle: itemName || 'Robot hút bụi',
-      photoObservation: photoNote,
-      questions: [
-        'Lực hút tối đa bao nhiêu Pa (VD: 4000Pa, 5000Pa, 6000Pa)?',
-        'Pin còn hoạt động liên tục được bao nhiêu phút sau mỗi lần sạc đầy (VD: 90 phút, 120 phút)?',
-        'Cảm biến laser LiDAR và camera quét bản đồ né vật cản có nhạy không (VD: Cảm biến nhạy, Quét bản đồ tốt)?',
-        'Trạm sạc dock Omni có tự giặt sấy giẻ bằng nước nóng/khí nóng không (VD: Có tự giặt sấy, Dock thường)?',
-        'Phụ kiện kèm theo còn đủ chổi quét cạnh, giẻ lau dự phòng và màng lọc HEPA không (VD: Đầy đủ phụ kiện, Thiếu giẻ lau)?'
-      ],
-      quickReplies: [
-        'Lực hút mạnh 5000Pa, hút sạch bụi mịn và lông thú',
-        'Pin dùng liên tục hơn 2 tiếng, tự động quay về dock sạc',
-        'Điều hướng laser LiDAR quét bản đồ cực chuẩn qua App',
-        'Trạm Omni tự giặt và sấy khô giẻ lau nước nóng',
-        'Fullbox đầy đủ phụ kiện và chổi lau dự phòng'
-      ]
-    };
-  }
-
-  if (normCat.includes('nồi cơm') || normCat.includes('bếp') || normCat.includes('lò') || normItem.includes('bếp') || normItem.includes('nồi')) {
-    return {
-      categoryTitle: 'Nồi cơm & Thiết bị nhà bếp',
-      itemTitle: itemName || 'Thiết bị nhà bếp',
-      photoObservation: photoNote,
-      questions: [
-        'Loại thiết bị cụ thể là gì (VD: Nồi cơm cao tần IH, Bếp từ đôi, Lò nướng đối lưu, Nồi chiên)?',
-        'Lòng nồi hoặc mặt kính bếp có bị trầy xước lớp chống dính/nứt vỡ không (VD: Lòng nồi đẹp 100%, Xước dăm nhẹ)?',
-        'Công suất nấu tối đa của thiết bị là bao nhiêu Watt (VD: 1200W, 2000W, 4000W)?',
-        'Bảng điều khiển và các phím bấm/cảm ứng hoạt động có tốt không (VD: Cảm ứng rất nhạy, Phím bấm tốt)?',
-        'Các cảm biến nhiệt độ tự ngắt an toàn chống cháy nổ có hoạt động tốt không (VD: Tự ngắt chuẩn xác, Hoạt động tốt)?',
-        'Dung tích thực tế và phụ kiện đi kèm (khay, vỉ nướng, muôi, cốc đong) còn đủ không (VD: Đủ phụ kiện, Thiếu cốc đong)?'
-      ],
-      quickReplies: [
-        'Nồi cơm cao tần IH áp suất 1.8L',
-        'Lòng nồi nguyên vẹn 100%, không bong tróc chống dính',
-        'Mặt kính Ceramic chịu lực, không vết xước',
-        'Công suất 2000W, bảng điều khiển cảm ứng nhạy',
-        'Hàng chính hãng fullbox, còn bảo hành 6 tháng'
-      ]
-    };
-  }
-
-  // Default guide: Tách rõ các câu hỏi 2 vế thành từng câu hỏi đơn lẻ
-  return {
-    categoryTitle: categoryName || 'Thiết bị gia dụng',
-    itemTitle: itemName || 'Sản phẩm',
-    photoObservation: photoNote,
-    questions: [
-      'Sản phẩm đã qua sử dụng trong bao lâu (VD: 6 tháng, 1 năm, 2 năm)?',
-      'Độ mới thực tế của sản phẩm khoảng bao nhiêu % (VD: 99%, 95%, 90%)?',
-      'Sản phẩm còn bảo hành chính hãng không (VD: Còn 6 tháng, Hết bảo hành)?',
-      'Bạn có còn giữ hóa đơn mua hàng hoặc phiếu bảo hành không (VD: Còn hóa đơn gốc, Không còn)?',
-      'Phụ kiện đi kèm gồm những gì (VD: Đầy đủ hộp, Cáp sạc, Dây nguồn zin)?',
-      'Máy hoạt động có êm không, có bị lỗi chức năng nào không (VD: Hoạt động tốt êm ái, Có lỗi nhẹ)?',
-      'Máy đã từng qua sửa chữa hay thay thế linh kiện chưa (VD: Nguyên zin chưa sửa, Đã thay linh kiện)?',
-      'Điện áp sử dụng là 220V chuẩn hay dòng máy 110V nội địa (VD: 220V, 110V)?'
-    ],
-    quickReplies: [
-      'Máy dùng được 6 tháng',
-      'Độ mới 95% không cấn móp',
-      'Còn bảo hành chính hãng 6 tháng',
-      'Còn nguyên tem và hóa đơn mua hàng',
-      'Đầy đủ hộp fullbox, phụ kiện và dây nguồn zin',
-      'Mọi tính năng hoạt động êm ái 100%',
-      'Máy nguyên zin chưa từng qua sửa chữa',
-      'Điện áp 220V cắm dùng trực tiếp tiện lợi'
-    ]
-  };
-};
+// Deleted getCategoryQuestionGuide and static templates. Templates are now solely fetched from the Backend DB.
 
 interface CreateListingViewProps {
   onListingCreated: (newListing: Listing) => void;
@@ -376,6 +216,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [brand, setBrand] = useState('Panasonic');
   const [model, setModel] = useState('');
   const [purchaseYear, setPurchaseYear] = useState<number>(2024);
+  const [originalPriceVnd, setOriginalPriceVnd] = useState<number | ''>('');
   const [itemCondition, setItemCondition] = useState<string>('USED_GOOD');
   const [description, setDescription] = useState('');
   const [finalPriceVnd, setFinalPriceVnd] = useState<number>(2200000);
@@ -401,15 +242,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const currentCategory = backendCategories.find(c => c.id === selectedCategoryId);
   const currentItem = backendItems.find(i => i.id === selectedItemId);
 
-  const currentQuestionGuide = useMemo(() => {
-    return getCategoryQuestionGuide(
-      currentCategory?.name || '',
-      currentItem?.name || '',
-      brand,
-      model,
-      photoPreviews.length
-    );
-  }, [currentCategory, currentItem, brand, model, photoPreviews.length]);
+  // Removed static currentQuestionGuide
 
   // Warning from AI Vision (Llava) if uploaded image is detected as catalog / stock photo
   const isCatalogPhotoWarning = useMemo(() => {
@@ -440,18 +273,68 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       const bulletBoldMatch = trimmed.match(/^[-*•]\s*(\*\*.*?\*\*.*)$/);
       if (bulletBoldMatch && bulletBoldMatch[1]) {
         questions.push(bulletBoldMatch[1].trim());
+        continue;
+      }
+      // Match simple bullets with a question mark
+      const bulletMatch = trimmed.match(/^[-*•]\s*(.+)$/);
+      if (bulletMatch && bulletMatch[1] && bulletMatch[1].includes('?')) {
+        questions.push(bulletMatch[1].trim());
+        continue;
+      }
+      // Match any line ending with ?
+      if (trimmed.endsWith('?')) {
+        questions.push(trimmed);
       }
     }
+    
+    // If we couldn't parse structured lines but the message contains a question mark,
+    // we can split the text by '?' as a fallback.
+    if (questions.length === 0 && aiInitialMessage.includes('?')) {
+      const parts = aiInitialMessage.split('?').map(p => p.trim()).filter(p => p.length > 10);
+      parts.forEach(p => questions.push(p + '?'));
+    }
+
+    // Fallback for paragraph with a list: "Vui lòng cung cấp thêm: Hãng, Model, Tình trạng (mới/cũ)..."
+    if (questions.length === 0) {
+      const lastColonIdx = aiInitialMessage.lastIndexOf(':');
+      if (lastColonIdx !== -1) {
+        const listStr = aiInitialMessage.substring(lastColonIdx + 1).replace(/\.$/, '').trim();
+        // Split by comma or semicolon, but NOT if it is inside parentheses ()
+        const parts = listStr.split(/[,;]\s*(?![^()]*\))/).map(p => p.trim().replace(/^(và|hoặc)\s+/i, '')).filter(p => p.length > 2);
+        if (parts.length > 1) {
+          parts.forEach(p => questions.push(p + '?'));
+        }
+      }
+    }
+    
+    // Final fallback: if nothing worked, just treat the whole message as one question so the form doesn't disappear
+    if (questions.length === 0 && aiInitialMessage.trim().length > 10) {
+      questions.push(aiInitialMessage.trim());
+    }
+    
     return questions;
   }, [aiInitialMessage]);
 
-  // Effective questions to display: Prioritize dynamic questions from Backend AI template, and split any compound questions into single questions
+  // Effective questions to display: Solely rely on dynamic questions from Backend DB AI template
   const effectiveQuestions = useMemo(() => {
-    const rawQuestions = parsedAiQuestions.length > 0
-      ? parsedAiQuestions
-      : currentQuestionGuide.questions;
-    return rawQuestions.flatMap(q => splitCompoundQuestion(q));
-  }, [parsedAiQuestions, currentQuestionGuide.questions]);
+    const rawQuestions = parsedAiQuestions;
+    const splittedQuestions = rawQuestions.flatMap(q => splitCompoundQuestion(q));
+    
+    // Deduplicate questions to prevent UI repetition
+    const uniqueQuestions: string[] = [];
+    const seenKeys = new Set<string>();
+    
+    for (const q of splittedQuestions) {
+      // Clean string for comparison: remove non-alphanumeric, spaces, and make lowercase
+      const cleanKey = q.replace(/[^a-zA-Z0-9\u00C0-\u1EF9]/g, '').toLowerCase();
+      if (!seenKeys.has(cleanKey)) {
+        seenKeys.add(cleanKey);
+        uniqueQuestions.push(q);
+      }
+    }
+    
+    return uniqueQuestions;
+  }, [parsedAiQuestions]);
 
   // Questionnaire Answers State
   const [questionAnswers, setQuestionAnswers] = useState<Record<number, string>>({});
@@ -749,20 +632,12 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         setQuestionAnswers({});
 
         // Initialize Chat messages with tailored questions
-        const guide = getCategoryQuestionGuide(
-          selectedCat?.name || '',
-          selectedItm?.name || '',
-          brand,
-          model,
-          photoPreviews.length
-        );
-
-        // Use Backend AI's initial combined message directly if present
+        // Use Backend AI's initial combined message directly
         let initialAiText = initRes.aiInitialMessage;
         if (!initialAiText) {
           initialAiText = lang === 'vi'
-            ? `Chào bạn! Tôi là Trợ lý AI SecondLife. Đã nhận diện ${photoPreviews.length} ảnh của sản phẩm **${brand ? brand + ' ' : ''}${guide.itemTitle}** thuộc danh mục **${guide.categoryTitle}**.\n\n📋 **Để AI định giá tốt nhất và viết mô tả hấp dẫn, bạn vui lòng chia sẻ thêm:**\n${guide.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`
-            : `Hello! I am SecondLife AI Assistant. Detected ${photoPreviews.length} photos for **${brand ? brand + ' ' : ''}${guide.itemTitle}** in **${guide.categoryTitle}**.\n\n📋 **Please provide more details:**\n${guide.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`;
+            ? `Chào bạn! Tôi là Trợ lý AI SecondLife. Đã nhận diện ${photoPreviews.length} ảnh của sản phẩm. Bạn vui lòng bổ sung thêm thông tin nhé.`
+            : `Hello! I am SecondLife AI Assistant. Detected ${photoPreviews.length} photos. Please provide more details.`;
         }
 
         setChatMessages([
@@ -1155,18 +1030,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <div
                 key={s.step}
                 className={`py-2 px-3 rounded-xl flex items-center gap-2 border transition ${isActive
-                    ? 'bg-[#24263e] text-white border-[#24263e] shadow-xs'
-                    : isDone
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                      : 'bg-slate-50 text-slate-400 border-slate-100'
+                  ? 'bg-[#24263e] text-white border-[#24263e] shadow-xs'
+                  : isDone
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : 'bg-slate-50 text-slate-400 border-slate-100'
                   }`}
               >
                 <div
                   className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${isActive
-                      ? 'bg-[#c34c36] text-white'
-                      : isDone
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-200 text-slate-600'
+                    ? 'bg-[#c34c36] text-white'
+                    : isDone
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-slate-200 text-slate-600'
                     }`}
                 >
                   {isDone ? <Check className="w-3 h-3" /> : s.step}
@@ -1257,6 +1132,25 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36]"
               />
             </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-[#24263e]">Giá sản phẩm lúc mua (VNĐ)</label>
+              <input
+                type="text"
+                value={originalPriceVnd ? formatVndInput(originalPriceVnd.toString()) : ''}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/\D/g, '');
+                  setOriginalPriceVnd(raw ? Number(raw) : '');
+                }}
+                placeholder="VD: 5.000.000"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+              />
+              {originalPriceVnd !== '' && (
+                <p className="text-[11px] text-emerald-600 font-medium italic">
+                  {numberToVietnameseWords(Number(originalPriceVnd))}
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Photo Checklist 3-6 Photos */}
@@ -1266,10 +1160,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <span>Ảnh chụp sản phẩm thực tế (Yêu cầu 3 - 6 ảnh) *</span>
                 <span
                   className={`text-[10px] font-black px-2 py-0.5 rounded-full ${photoPreviews.length >= 3 && photoPreviews.length <= 6
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : photoPreviews.length === 0
-                        ? 'bg-slate-100 text-slate-600'
-                        : 'bg-rose-100 text-rose-800'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : photoPreviews.length === 0
+                      ? 'bg-slate-100 text-slate-600'
+                      : 'bg-rose-100 text-rose-800'
                     }`}
                 >
                   Đã có: {photoPreviews.length}/6 ảnh
@@ -1478,7 +1372,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                       <span>{lang === 'vi' ? 'Khảo Sát Chi Tiết Sản Phẩm Cùng AI' : 'AI Product Questionnaire'}</span>
                     </span>
                     <span className="text-xs font-extrabold text-[#24263e]">
-                      {currentCategory?.name || currentQuestionGuide.categoryTitle} • {currentItem?.name || currentQuestionGuide.itemTitle}
+                      {currentCategory?.name || 'Sản phẩm'} • {currentItem?.name || 'Thiết bị'}
                     </span>
                     {brand && (
                       <span className="text-xs font-bold text-slate-700 bg-white px-2 py-0.5 rounded-md border border-gray-200">
@@ -1533,30 +1427,28 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   return (
                     <div
                       key={idx}
-                      className={`p-4 rounded-2xl border transition-all ${
-                        hasAnswer
-                          ? 'bg-white border-emerald-300 shadow-xs'
-                          : 'bg-white/85 border-amber-200/90 hover:border-amber-400 shadow-2xs'
-                      }`}
+                      className={`p-4 sm:p-5 rounded-[20px] border transition-all ${hasAnswer
+                          ? 'bg-white border-emerald-300 shadow-sm'
+                          : 'bg-white border-amber-200/60 hover:border-amber-400 shadow-sm'
+                        }`}
                     >
                       {/* Question Header */}
-                      <div className="flex items-start justify-between gap-3 mb-2">
-                        <div className="flex items-start gap-2.5">
+                      <div className="flex items-start justify-between gap-3 mb-1">
+                        <div className="flex items-start gap-3">
                           <span
-                            className={`w-6 h-6 rounded-lg font-black text-xs flex items-center justify-center shrink-0 mt-0.5 ${
-                              hasAnswer
-                                ? 'bg-emerald-600 text-white shadow-2xs'
-                                : 'bg-[#24263e] text-white'
-                            }`}
+                            className={`w-7 h-7 rounded-[10px] font-bold text-sm flex items-center justify-center shrink-0 mt-0.5 ${hasAnswer
+                                ? 'bg-emerald-600 text-white shadow-sm'
+                                : 'bg-[#1f2937] text-white'
+                              }`}
                           >
-                            {hasAnswer ? <Check className="w-3.5 h-3.5" /> : idx + 1}
+                            {hasAnswer ? <Check className="w-4 h-4" /> : idx + 1}
                           </span>
                           <div>
-                            <h4 className="text-xs font-black text-[#24263e] leading-snug">
+                            <h4 className="text-[15px] font-bold text-[#1f2937] leading-snug">
                               {parsed.label}
                             </h4>
                             {parsed.hint && (
-                              <p className="text-[11px] text-slate-500 italic mt-0.5">
+                              <p className="text-[13px] text-gray-500 italic mt-1">
                                 {parsed.hint}
                               </p>
                             )}
@@ -1572,18 +1464,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
                       {/* Quick click-to-fill pills if examples present */}
                       {parsed.examples.length > 0 && (
-                        <div className="flex items-center gap-1.5 flex-wrap mb-2 sm:pl-8">
-                          <span className="text-[10px] text-slate-400 font-bold">Gợi ý nhanh:</span>
+                        <div className="flex items-center gap-2 flex-wrap mb-3 mt-3 sm:pl-10">
+                          <span className="text-[11px] text-gray-400 font-semibold">Gợi ý nhanh:</span>
                           {parsed.examples.map((ex, exIdx) => (
                             <button
                               key={exIdx}
                               type="button"
                               onClick={() => handleAnswerChange(idx, ex)}
-                              className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold border transition cursor-pointer ${
-                                currentVal === ex
-                                  ? 'bg-[#c34c36] text-white border-[#c34c36]'
-                                  : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200'
-                              }`}
+                              className={`px-3 py-1 rounded-full text-[12px] font-semibold border transition cursor-pointer ${currentVal === ex
+                                  ? 'bg-[#1f2937] text-white border-[#1f2937]'
+                                  : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200/80'
+                                }`}
                               title={`Bấm để điền nhanh "${ex}"`}
                             >
                               + {ex}
@@ -1593,7 +1484,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                       )}
 
                       {/* The Input Field Underneath the Question */}
-                      <div className="sm:pl-8">
+                      <div className="sm:pl-10">
                         <div className="relative">
                           <input
                             type="text"
@@ -1604,13 +1495,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                                 ? `VD: ${parsed.examples.slice(0, 3).join(', ')}...`
                                 : `Nhập câu trả lời cho câu hỏi này...`
                             }
-                            className="w-full px-4 py-2.5 bg-slate-50 hover:bg-white focus:bg-white border border-gray-200 focus:border-[#c34c36] rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition shadow-2xs"
+                            className="w-full px-4 py-3 bg-gray-50 hover:bg-white focus:bg-white border border-gray-200 focus:border-amber-400 rounded-[14px] text-[13px] font-medium text-[#1f2937] focus:outline-none transition shadow-sm"
                           />
                           {currentVal && (
                             <button
                               type="button"
                               onClick={() => handleAnswerChange(idx, '')}
-                              className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center text-xs cursor-pointer transition"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center text-xs cursor-pointer transition"
                               title="Xóa câu trả lời"
                             >
                               ✕
@@ -1904,7 +1795,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-3.5 bg-white rounded-xl border border-emerald-100 shadow-xs">
                   <span className="text-[11px] text-slate-500 font-bold block">Khoảng giá hợp lý:</span>
                   <div className="text-sm font-black text-slate-800 mt-1">
@@ -1916,6 +1807,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <span className="text-[11px] text-emerald-700 font-bold block">Giá đề xuất bán tốt nhất:</span>
                   <div className="text-base font-black text-[#c34c36] mt-1">
                     {formatVND(valuationResult.suggestedPrice)}
+                  </div>
+                </div>
+
+                <div className="p-3.5 bg-white rounded-xl border border-emerald-100 shadow-xs">
+                  <span className="text-[11px] text-slate-500 font-bold block">Thời gian bán dự kiến:</span>
+                  <div className="text-sm font-black text-slate-800 mt-1">
+                    {valuationResult.expectedSellTime || '1 - 2 tuần'}
                   </div>
                 </div>
               </div>
@@ -2077,14 +1975,14 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           {submitResult && (
             <div
               className={`p-5 rounded-2xl border space-y-4 animate-fadeIn ${submitResult.status === 'ACTIVE'
-                  ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                  : submitResult.status === 'INSUFFICIENT_CREDIT'
-                    ? 'bg-amber-50 border-amber-300 text-amber-950'
-                    : submitResult.status === 'PENDING_INSPECTION'
-                      ? 'bg-cyan-50 border-cyan-300 text-cyan-950'
-                      : submitResult.status === 'PENDING'
-                        ? 'bg-amber-50 border-amber-300 text-amber-950'
-                        : 'bg-rose-50 border-rose-300 text-rose-950'
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                : submitResult.status === 'INSUFFICIENT_CREDIT'
+                  ? 'bg-amber-50 border-amber-300 text-amber-950'
+                  : submitResult.status === 'PENDING_INSPECTION'
+                    ? 'bg-cyan-50 border-cyan-300 text-cyan-950'
+                    : submitResult.status === 'PENDING'
+                      ? 'bg-amber-50 border-amber-300 text-amber-950'
+                      : 'bg-rose-50 border-rose-300 text-rose-950'
                 }`}
             >
               <div className="flex items-start gap-3">
@@ -2185,6 +2083,19 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   </>
                 ) : (
                   <>
+                    {submitResult.status === 'REJECTED' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSubmitResult(null);
+                          setCurrentStep(3);
+                        }}
+                        className="px-4 py-1.5 rounded-xl bg-[#c34c36] hover:bg-[#a83c28] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        <span>Sửa lại thông tin</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={loadCredits}

@@ -295,7 +295,12 @@ export default function App() {
   };
 
   const mapBackendPostToListing = React.useCallback((post: any): Listing => {
-    const photoUrl = post.imageUrl || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800';
+    const rawImages: string[] = Array.isArray(post.imageUrls) && post.imageUrls.length > 0
+      ? post.imageUrls
+      : (post.imageUrl ? [post.imageUrl] : []);
+    const fallbackImage = 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800';
+    const primaryImage = rawImages[0] || fallbackImage;
+
     return {
       id: post.id || `post-${Date.now()}`,
       title: post.title || 'Thiết bị gia dụng SecondLife',
@@ -321,13 +326,13 @@ export default function App() {
       isInspectionGuaranteed: true,
       requiresInspection: Number(post.price || 0) > 5000000,
       photos: {
-        front: photoUrl,
-        back: photoUrl,
-        screenOrDetails: photoUrl,
-        accessoriesOrBox: photoUrl,
-        serialOrReceipt: photoUrl,
+        front: rawImages[0] || primaryImage,
+        back: rawImages[1] || primaryImage,
+        screenOrDetails: rawImages[2] || primaryImage,
+        accessoriesOrBox: rawImages[3] || primaryImage,
+        serialOrReceipt: rawImages[4] || primaryImage,
       },
-      photoGallery: [photoUrl],
+      photoGallery: rawImages.length > 0 ? rawImages : [primaryImage],
     };
   }, []);
 

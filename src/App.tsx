@@ -11,6 +11,7 @@ import { EscrowOrdersView } from './pages/EscrowOrdersView';
 import { InspectorPortalView } from './pages/InspectorPortalView';
 import { StaffWorkspaceView } from './pages/StaffWorkspaceView';
 import { AdminDashboardView } from './pages/AdminDashboardView';
+import { InboxView } from './pages/InboxView';
 import { ChatModal } from './components/modals/ChatModal';
 import { CheckoutModal } from './components/modals/CheckoutModal';
 import { HomePageView } from './pages/HomePageView';
@@ -121,6 +122,8 @@ export default function App() {
       clearAuthTokens();
       setCurrentUser(null);
       setCurrentRole('buyer');
+      setActiveTab('marketplace');
+      window.location.reload();
     };
     window.addEventListener('unauthorized_session', handleUnauthorized);
     return () => window.removeEventListener('unauthorized_session', handleUnauthorized);
@@ -976,33 +979,18 @@ export default function App() {
         )}
 
         {activeTab === 'chat' && (
-          <div className="max-w-3xl mx-auto space-y-6 pb-16">
-            <div className="bg-[#FFFFFF] rounded-2xl p-8 border border-slate-200 shadow-xs text-center space-y-4">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center mx-auto shadow-md">
-                <Sparkles className="w-6 h-6" />
-              </div>
-              <h2 className="text-xl font-bold text-[#24263e]">
-                {lang === 'vi' ? 'Hệ Thống Đàm Phán & Chống Lừa Đảo AI' : 'Smart Negotiation & Anti-Fraud Chat'}
-              </h2>
-              <p className="text-xs sm:text-sm text-[#24263e]/70 max-w-lg mx-auto">
-                {lang === 'vi'
-                  ? 'Bấm chọn bất kỳ sản phẩm nào trên Sàn để mở phiên chat đàm phán giá. AI sẽ phân tích đề xuất và cảnh báo nếu có dấu hiệu chuyển khoản ngoài hệ thống.'
-                  : 'Select any listing in the marketplace to start negotiating with live AI counter-offer advice and anti-scam warnings.'}
-              </p>
-              <button
-                onClick={() => {
-                  if (!currentUser) {
-                    requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để sử dụng tính năng Chat & Đàm phán.' : 'Please log in to chat.');
-                    return;
-                  }
-                  setChatListing(listings[0]);
-                }}
-                className="px-5 py-2.5 bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md transition cursor-pointer"
-              >
-                Mở Hội Thoại Thử Nghiệm với Sản Phẩm Mẫu &rarr;
-              </button>
-            </div>
-          </div>
+          <InboxView 
+            listings={listings}
+            currentRole={currentRole}
+            lang={lang}
+            onOpenChat={(listing) => {
+              if (!currentUser) {
+                requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để sử dụng tính năng Chat & Đàm phán.' : 'Please log in to chat.');
+                return;
+              }
+              setChatListing(listing);
+            }}
+          />
         )}
       </main>
 

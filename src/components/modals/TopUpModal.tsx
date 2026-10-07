@@ -19,6 +19,7 @@ import {
   Award,
   ShoppingBag,
   ShieldCheck,
+  ZoomIn,
 } from 'lucide-react';
 import { TopupPackage, UserCredit, UserWallet, DepositResponseDTO, UserProfile, UserRole, Language } from '../../types';
 import { topupService, walletService, sellerCreditService } from '../../services';
@@ -196,6 +197,8 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const [creatingDeposit, setCreatingDeposit] = useState(false);
   const [depositError, setDepositError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number>(300); // 5 minutes in seconds
+  const [isZoomQrOpen, setIsZoomQrOpen] = useState<boolean>(false);
 
   // Packages State
   const [packages, setPackages] = useState<TopupPackage[]>([]);
@@ -242,6 +245,29 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       }
     }
   }, [isOpen, initialTab, isBuyerRole]);
+
+  // Timer countdown for deposit request
+  useEffect(() => {
+    let timerInterval: NodeJS.Timeout | null = null;
+    if (depositRequest && depositRequest.status === 'PENDING') {
+      timerInterval = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timerInterval!);
+            setDepositRequest(null);
+            setDepositError('Hết thời gian giao dịch (5 phút). Vui lòng tạo yêu cầu nạp tiền mới nếu vẫn muốn giao dịch.');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      setTimeLeft(300);
+    }
+    return () => {
+      if (timerInterval) clearInterval(timerInterval);
+    };
+  }, [depositRequest]);
 
   // Polling wallet balance when a deposit request is pending
   useEffect(() => {
@@ -817,12 +843,6 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                           >
                             Nạp Thêm Lần Nữa
                           </button>
-                          <button
-                            onClick={() => setActiveTab('packages')}
-                            className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition cursor-pointer shadow-sm"
-                          >
-                            Chuyển Sang Mua Gói Xu &rarr;
-                          </button>
                         </div>
                       )}
                     </div>
@@ -838,10 +858,13 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                               className="w-36 h-36 sm:w-38 sm:h-38 object-contain rounded-xl"
                             />
                           </div>
-                          <span className="text-[10px] text-slate-500 font-semibold mt-1 flex items-center gap-1">
+                          <span className="text-[10px] text-slate-500 font-semibold mt-2 flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping inline-block" />
-                            Đang chờ nhận tiền qua SePay...
+                            Đang chờ nhận tiền ({Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')})
                           </span>
+                          <button onClick={() => setIsZoomQrOpen(true)} className="text-[10px] text-[#c34c36] font-bold mt-1.5 hover:underline cursor-pointer flex items-center gap-1">
+                            <ZoomIn className="w-3 h-3" /> Phóng to mã QR
+                          </button>
                         </div>
 
                         {/* Transfer Credentials (2-Column Grid + Full Width Transfer Code) */}
@@ -1338,6 +1361,22 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Zoom QR Modal Overlay */}
+      {isZoomQrOpen && vietQrUrl && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="relative bg-white p-5 rounded-3xl max-w-sm w-full flex flex-col items-center shadow-2xl">
+            <button onClick={() => setIsZoomQrOpen(false)} className="absolute top-3 right-3 p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 transition cursor-pointer">
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="text-sm font-black text-slate-800 mb-4 mt-2">Mã VietQR Phóng To</h3>
+            <img src={vietQrUrl} alt="VietQR Zoom" className="w-full h-auto object-contain rounded-xl border border-slate-200" />
+            <p className="text-[11px] text-slate-500 font-medium mt-4 text-center">
+              Dùng app ngân hàng bất kỳ để quét mã này
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

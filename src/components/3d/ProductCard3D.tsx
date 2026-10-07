@@ -70,7 +70,7 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
       className="group relative bg-white rounded-xl border border-slate-200 hover:border-[#c34c36] shadow-2xs hover:shadow-md flex flex-col overflow-hidden cursor-pointer select-none transition-all duration-300"
     >
       {/* Photo container */}
-      <div className="relative aspect-4/3 w-full bg-[#faf8f5] overflow-hidden">
+      <div className="relative aspect-video w-full bg-[#faf8f5] overflow-hidden">
         <img
           src={item.photos.front}
           alt={item.title}

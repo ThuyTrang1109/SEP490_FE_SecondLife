@@ -10,7 +10,7 @@ export const parseQuestionItem = (q: string, idx: number): ParsedQuestionItem =>
   const parenMatch = q.match(/\((.*?)\)/);
   const rawHint = parenMatch ? parenMatch[1].trim() : '';
 
-  let label = parenMatch ? q.split('(')[0].replace(/[:?]/g, '').trim() : q.trim();
+  let label = parenMatch ? q.split('(')[0].replace(/[:?]/g, '').trim() : q.replace(/[:?]/g, '').trim();
   // Strip Markdown bold asterisks if they exist
   label = label.replace(/\*\*/g, '').trim();
 

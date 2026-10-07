@@ -315,9 +315,6 @@ export const postService = {
     }
   },
 
-  /**
-   * Định giá bằng AI (POST /api/v1/posts/{postId}/ai-price-estimation)
-   */
   async estimatePrice(postId: string, requestId?: string): Promise<AiPriceEstimationResponse> {
     const reqId =
       requestId ||
@@ -325,24 +322,12 @@ export const postService = {
         ? crypto.randomUUID()
         : `req-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
 
-    try {
-      const response = await request<AiPriceEstimationResponse>(`/v1/posts/${postId}/ai-price-estimation`, {
-        method: 'POST',
-        body: JSON.stringify({ requestId: reqId }),
-        requiresAuth: true,
-      });
-      return (response as any)?.data || response;
-    } catch {
-      return {
-        requestId: reqId,
-        fairPriceMin: 3500000,
-        fairPriceMax: 4800000,
-        suggestedPrice: 4200000,
-        modelVersion: 'SecondLife-AI-v2.1',
-        expectedSellTime: '3-5 ngày',
-        createdAt: new Date().toISOString(),
-      };
-    }
+    const response = await request<AiPriceEstimationResponse>(`/v1/posts/${postId}/ai-price-estimation`, {
+      method: 'POST',
+      body: JSON.stringify({ requestId: reqId }),
+      requiresAuth: true,
+    });
+    return (response as any)?.data || response;
   },
 
   /**

@@ -110,12 +110,6 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                     alt={listing.title}
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute bottom-2 left-2 bg-[#24263e]/90 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 border border-white/10 font-bold">
-                    <Camera className="w-3 h-3 text-white" />
-                    <span>
-                      {photoKeys.find((p) => p.key === activePhotoKey)?.[lang === 'vi' ? 'labelVi' : 'labelEn']}
-                    </span>
-                  </div>
                 </div>
 
                 {/* Thumbnails */}
@@ -142,9 +136,6 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                             alt={item.labelVi}
                             className="w-full h-full object-cover"
                           />
-                          <div className="absolute inset-x-0 bottom-0 bg-[#24263e]/90 text-white text-[8px] py-0.5 text-center truncate px-0.5 font-bold">
-                            {lang === 'vi' ? item.labelVi.split('.')[1] : item.labelEn.split('.')[1]}
-                          </div>
                         </button>
                       );
                     })}
@@ -170,11 +161,6 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   {/* Price block */}
                   <div className="bg-[#faf8f5] rounded-xl p-2.5 border border-gray-200 space-y-0.5">
                     <div className="text-[10px] text-[#24263e]/70 font-medium leading-none">
-                      {listing.originalPriceVnd && (
-                        <span className="line-through text-[#24263e]/50 mr-1.5">
-                          {formatVND(listing.originalPriceVnd)}
-                        </span>
-                      )}
                       {lang === 'vi' ? 'Giá người bán niêm yết' : 'Listing Price'}
                     </div>
                     <div className="text-lg sm:text-xl font-black text-[#c34c36] leading-tight">
@@ -301,18 +287,13 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   </div>
                 </div>
               </div>
-
-              <div className="text-[10px] text-[#24263e] bg-[#FFFFFF] p-2 rounded-lg border border-gray-200 flex items-start gap-1.5">
-                <Info className="w-3.5 h-3.5 text-[#24263e] shrink-0 mt-0.5" />
-                <span className="font-medium">{t.disclaimer}</span>
-              </div>
             </div>
           )}
 
           {/* Description */}
           <div className="space-y-1.5">
             <h3 className="font-black text-[#24263e] uppercase tracking-wider text-[10px]">
-              {lang === 'vi' ? 'Cam kết tình trạng người bán' : 'Seller Condition Statement'}
+              {lang === 'vi' ? 'Mô tả sản phẩm' : 'Product Description'}
             </h3>
             <div className="bg-[#faf8f5] rounded-xl p-3 border border-gray-200 text-xs text-[#24263e] space-y-1.5 leading-relaxed">
               <div className="font-bold text-[#24263e] flex items-center gap-1 text-[11px] bg-white border border-[#24263e]/20 px-2 py-0.5 rounded-md w-fit shadow-xs">

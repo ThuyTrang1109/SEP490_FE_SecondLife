@@ -82,7 +82,7 @@ export const Footer: React.FC<FooterProps> = ({
                 {lang === 'vi' ? 'Giao Nhận Tận Nơi' : 'Nationwide Logistics'}
               </h5>
               <p className="text-[11px] text-white/70 mt-0.5 leading-tight font-medium">
-                {lang === 'vi' ? 'Hợp tác GHTK Express chuyên điện máy' : 'Dedicated appliance freight with GHTK Express'}
+                {lang === 'vi' ? 'Hợp tác GHN chuyên điện máy' : 'Dedicated appliance freight with GHN'}
               </p>
             </div>
           </div>
@@ -266,7 +266,7 @@ export const Footer: React.FC<FooterProps> = ({
                 {lang === 'vi' ? 'Bảo Lãnh & Vận Chuyển' : 'Protection & Logistics'}
               </h4>
               <div className="flex flex-wrap gap-1">
-                {['VietQR 247', 'Escrow Bank', 'GHTK Express'].map((p) => (
+                {['VietQR 247', 'Escrow Bank', 'GHN'].map((p) => (
                   <span key={p} className="p-1 rounded bg-white/10 text-[10px] font-bold text-white/80">
                     {p}
                   </span>

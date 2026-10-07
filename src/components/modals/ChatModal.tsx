@@ -39,7 +39,48 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
   const sellerTrust = reviewService.getSellerTrustProfile(listing.sellerId, listing.sellerName);
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [_messages, _setMessages] = useState<ChatMessage[]>([]);
+  const messages = _messages;
+
+  const setMessages = React.useCallback((updater: React.SetStateAction<ChatMessage[]>) => {
+    _setMessages(prev => {
+      const next = typeof updater === 'function' ? (updater as any)(prev) : updater;
+      try {
+        localStorage.setItem(`chat_history_${listing.id}`, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, [listing.id]);
+
+  useEffect(() => {
+    const historyKey = `chat_history_${listing.id}`;
+    const stored = localStorage.getItem(historyKey);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as ChatMessage[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          _setMessages(prev => {
+            const existingIds = new Set(prev.map(m => m.id));
+            const newToAdd = parsed.filter(m => !existingIds.has(m.id));
+            return [...prev, ...newToAdd];
+          });
+        }
+      } catch {}
+    }
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === historyKey && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue) as ChatMessage[];
+          if (Array.isArray(parsed)) {
+            _setMessages(parsed);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [listing.id]);
 
   const [inputMessage, setInputMessage] = useState('');
   const [offerInput, setOfferInput] = useState<number>(
@@ -241,29 +282,31 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         <div className="px-5 py-3.5 bg-gradient-to-r from-[#fce5da] to-white border-b border-[#24263e]/15 flex items-center justify-between text-[#24263e]">
           <div className="flex items-center gap-3 overflow-hidden">
             <img
-              src={listing.photos.front}
-              alt={listing.title}
+              src={currentRole === 'buyer' ? listing.photos.front : "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200"}
+              alt={currentRole === 'buyer' ? listing.title : 'Khách Hàng'}
               className="w-11 h-11 rounded-xl object-cover border border-[#24263e]/20 shrink-0"
             />
             <div className="overflow-hidden">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="font-extrabold text-xs text-[#24263e] truncate">
-                  {listing.sellerName}
+                  {currentRole === 'buyer' ? listing.sellerName : 'Hoàng Quốc Khang (Người mua)'}
                 </span>
 
                 {/* Seller Trust Score Pill (Requirement 2 & 3) */}
-                <button
-                  type="button"
-                  onClick={() => onOpenSellerReviews?.(listing.sellerId, listing.sellerName)}
-                  className="inline-flex items-center gap-1 px-2 py-0.2 rounded-md bg-white border border-amber-300 text-[10px] font-black text-amber-800 shadow-2xs hover:bg-amber-50 cursor-pointer transition"
-                  title="Bấm để xem chi tiết uy tín và đánh giá từ người mua khác"
-                >
-                  <Award className="w-3 h-3 text-amber-600" />
-                  <span>{sellerTrust.trustScore} điểm uy tín</span>
-                  <span className="text-slate-400">|</span>
-                  <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
-                  <span>{sellerTrust.rating}</span>
-                </button>
+                {currentRole === 'buyer' && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenSellerReviews?.(listing.sellerId, listing.sellerName)}
+                    className="inline-flex items-center gap-1 px-2 py-0.2 rounded-md bg-white border border-amber-300 text-[10px] font-black text-amber-800 shadow-2xs hover:bg-amber-50 cursor-pointer transition"
+                    title="Bấm để xem chi tiết uy tín và đánh giá từ người mua khác"
+                  >
+                    <Award className="w-3 h-3 text-amber-600" />
+                    <span>{sellerTrust.trustScore} điểm uy tín</span>
+                    <span className="text-slate-400">|</span>
+                    <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
+                    <span>{sellerTrust.rating}</span>
+                  </button>
+                )}
               </div>
 
               <div className="text-[11px] text-slate-600 truncate mt-0.5">
@@ -275,17 +318,19 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
           <div className="flex items-center gap-2 shrink-0">
             {/* Direct Buy Now button in header (Requirement 5) */}
-            <button
-              onClick={() => handleBuyNow(latestAcceptedOffer || listing.priceVnd)}
-              className="px-3.5 py-2 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer transition-all"
-            >
-              <ShoppingBag className="w-3.5 h-3.5 text-white" />
-              <span>
-                {latestAcceptedOffer
-                  ? `${lang === 'vi' ? 'Mua giá chốt' : 'Buy Deal'} (${formatVND(latestAcceptedOffer)})`
-                  : lang === 'vi' ? 'Mua Ngay' : 'Buy Now'}
-              </span>
-            </button>
+            {currentRole === 'buyer' && (
+              <button
+                onClick={() => handleBuyNow(latestAcceptedOffer || listing.priceVnd)}
+                className="px-3.5 py-2 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer transition-all"
+              >
+                <ShoppingBag className="w-3.5 h-3.5 text-white" />
+                <span>
+                  {latestAcceptedOffer
+                    ? `${lang === 'vi' ? 'Mua giá chốt' : 'Buy Deal'} (${formatVND(latestAcceptedOffer)})`
+                    : lang === 'vi' ? 'Mua Ngay' : 'Buy Now'}
+                </span>
+              </button>
+            )}
 
             <button
               onClick={onClose}
@@ -297,7 +342,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         </div>
 
         {/* Accepted Offer Sticky Banner (if any offer accepted) */}
-        {latestAcceptedOffer && (
+        {latestAcceptedOffer && currentRole === 'buyer' && (
           <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2 flex items-center justify-between text-xs">
             <div className="flex items-center gap-2 text-emerald-800 font-bold">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -472,7 +517,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                                 <div className="space-y-1.5">
                                   <div className="text-[10px] opacity-80 flex items-center gap-1">
                                     <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                                    <span>{lang === 'vi' ? 'Đang chờ người bán phản hồi...' : 'Waiting for seller response...'}</span>
+                                    <span>
+                                      {lang === 'vi' 
+                                        ? (currentRole === 'buyer' ? 'Đang chờ người bán phản hồi...' : 'Đang chờ người mua phản hồi...') 
+                                        : 'Waiting for response...'}
+                                    </span>
                                   </div>
                                   <button
                                     type="button"
@@ -489,21 +538,27 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                               <div className="space-y-2">
                                 <div className="text-xs font-bold text-emerald-400 flex items-center gap-1">
                                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                                  <span>{lang === 'vi' ? '✓ Người bán đã chấp thuận mức giá này!' : '✓ Seller accepted this offer!'}</span>
+                                  <span>
+                                    {isMe 
+                                      ? (lang === 'vi' ? '✓ Bạn đã chấp thuận mức giá này!' : '✓ You accepted this offer!')
+                                      : (lang === 'vi' ? (currentRole === 'buyer' ? '✓ Người bán đã chấp thuận mức giá này!' : '✓ Người mua đã chấp thuận!') : '✓ Accepted!')}
+                                  </span>
                                 </div>
 
-                                <button
-                                  type="button"
-                                  onClick={() => handleBuyNow(msg.offerAmountVnd, msg.negotiationId)}
-                                  className="w-full py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:opacity-95 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-transform hover:scale-102"
-                                >
-                                  <ShoppingBag className="w-4 h-4" />
-                                  <span>
-                                    {lang === 'vi'
-                                      ? `Mua Hàng Ngay Với Giá ${formatVND(msg.offerAmountVnd)}`
-                                      : `Buy Now at ${formatVND(msg.offerAmountVnd)}`}
-                                  </span>
-                                </button>
+                                {currentRole === 'buyer' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleBuyNow(msg.offerAmountVnd, msg.negotiationId)}
+                                    className="w-full py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:opacity-95 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-transform hover:scale-102"
+                                  >
+                                    <ShoppingBag className="w-4 h-4" />
+                                    <span>
+                                      {lang === 'vi'
+                                        ? `Mua Hàng Ngay Với Giá ${formatVND(msg.offerAmountVnd)}`
+                                        : `Buy Now at ${formatVND(msg.offerAmountVnd)}`}
+                                    </span>
+                                  </button>
+                                )}
                               </div>
                             ) : (
                               <div className="text-xs font-bold text-rose-400 flex items-center gap-1">

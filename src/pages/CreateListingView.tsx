@@ -76,6 +76,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // Step 5: Xem lại & Gửi đăng (1 credit LISTING khi ACTIVE)
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
+  // Toast State
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 4000);
+  };
+
   // Credit Balance State
   const [credits, setCredits] = useState<CreditBalanceResponseDto | null>(null);
   const [isLoadingCredits, setIsLoadingCredits] = useState(false);
@@ -258,7 +265,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
   const handleApplyAnswersToDescription = () => {
     if (answeredCount === 0) {
-      alert(lang === 'vi' ? 'Vui lòng điền câu trả lời cho ít nhất một câu hỏi trước khi áp dụng.' : 'Please answer at least one question before applying.');
+      showToast(lang === 'vi' ? 'Vui lòng điền câu trả lời cho ít nhất một câu hỏi trước khi áp dụng.' : 'Please answer at least one question before applying.');
       return;
     }
     setIsApplyingAnswers(true);
@@ -292,7 +299,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
   const handleSendAnswersToAi = async () => {
     if (answeredCount === 0) {
-      alert(lang === 'vi' ? 'Vui lòng điền câu trả lời cho ít nhất một câu hỏi trước khi gửi cho AI.' : 'Please answer at least one question before sending to AI.');
+      showToast(lang === 'vi' ? 'Vui lòng điền câu trả lời cho ít nhất một câu hỏi trước khi gửi cho AI.' : 'Please answer at least one question before sending to AI.');
       return;
     }
     if (!sessionId || !postId) {
@@ -380,10 +387,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     setIsPurchasingCredits(true);
     try {
       await sellerCreditService.createPurchase({ listingQuantity: 2, valuationQuantity: 2 });
-      alert(lang === 'vi' ? 'Đã tạo yêu cầu mua 2 LISTING & 2 VALUATION thành công!' : 'Created purchase request for 2 LISTING & 2 VALUATION!');
+      showToast(lang === 'vi' ? 'Đã tạo yêu cầu mua 2 LISTING & 2 VALUATION thành công!' : 'Created purchase request for 2 LISTING & 2 VALUATION!');
       await loadCredits();
     } catch (err: any) {
-      alert('Mua credit thất bại: ' + (err?.message || 'Lỗi server'));
+      showToast('Mua credit thất bại: ' + (err?.message || 'Lỗi server'));
     } finally {
       setIsPurchasingCredits(false);
     }
@@ -467,11 +474,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // =========================================================================
   const handleInitPost = async (mode: 'ai' | 'manual' = 'ai') => {
     if (!selectedCategoryId) {
-      alert(lang === 'vi' ? 'Vui lòng chọn Danh mục sản phẩm' : 'Please select a Category');
+      showToast(lang === 'vi' ? 'Vui lòng chọn Danh mục sản phẩm' : 'Please select a Category');
       return;
     }
     if (photoPreviews.length < 3 || photoPreviews.length > 6) {
-      alert(lang === 'vi' ? 'Vui lòng tải lên từ 3 đến 6 ảnh sản phẩm hợp lệ' : 'Please upload 3 to 6 product images');
+      showToast(lang === 'vi' ? 'Vui lòng tải lên từ 3 đến 6 ảnh sản phẩm hợp lệ' : 'Please upload 3 to 6 product images');
       return;
     }
 
@@ -552,7 +559,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         throw new Error('Hệ thống không trả về postId từ init');
       }
     } catch (err: any) {
-      alert('Khởi tạo bài đăng thất bại: ' + (err?.message || 'Lỗi server'));
+      showToast('Khởi tạo bài đăng thất bại: ' + (err?.message || 'Lỗi server'));
     } finally {
       setIsInitializingPost(false);
       setInitMode(null);
@@ -625,9 +632,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         });
       }
       setIsSessionCompleted(true);
-      alert(lang === 'vi' ? 'AI đã tổng hợp cuộc hội thoại và cập nhật mô tả thành công!' : 'AI summarized the chat into your description!');
+      showToast(lang === 'vi' ? 'AI đã tổng hợp cuộc hội thoại và cập nhật mô tả thành công!' : 'AI summarized the chat into your description!');
     } catch (err: any) {
-      alert('Hoàn tất chat thất bại: ' + (err?.message || 'Lỗi kết nối'));
+      showToast('Hoàn tất chat thất bại: ' + (err?.message || 'Lỗi kết nối'));
     } finally {
       setIsFinalizingChat(false);
     }
@@ -711,11 +718,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
 
     if (!currentTitle) {
-      alert(lang === 'vi' ? 'Vui lòng nhập Tiêu đề bài đăng.' : 'Please enter Listing Title.');
+      showToast(lang === 'vi' ? 'Vui lòng nhập Tiêu đề bài đăng.' : 'Please enter Listing Title.');
       return;
     }
     if (!currentDesc) {
-      alert(lang === 'vi' ? 'Vui lòng nhập Mô tả sản phẩm hoặc trò chuyện với AI để tạo mô tả.' : 'Please provide a Description or chat with AI.');
+      showToast(lang === 'vi' ? 'Vui lòng nhập Mô tả sản phẩm hoặc trò chuyện với AI để tạo mô tả.' : 'Please provide a Description or chat with AI.');
       return;
     }
 
@@ -728,11 +735,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const handleSaveAndAcceptDescription = async () => {
     if (!postId) return;
     if (!title.trim()) {
-      alert(lang === 'vi' ? 'Vui lòng nhập Tiêu đề bài đăng' : 'Please enter Title');
+      showToast(lang === 'vi' ? 'Vui lòng nhập Tiêu đề bài đăng' : 'Please enter Title');
       return;
     }
     if (!description.trim()) {
-      alert(lang === 'vi' ? 'Vui lòng nhập hoặc áp dụng Mô tả sản phẩm' : 'Please enter Description');
+      showToast(lang === 'vi' ? 'Vui lòng nhập hoặc áp dụng Mô tả sản phẩm' : 'Please enter Description');
       return;
     }
 
@@ -753,8 +760,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
       // Successfully confirmed description -> Advance to Step 4
       setCurrentStep(4);
+      if (credits?.valuation !== undefined && credits.valuation > 0) {
+        handleRunAiValuation();
+      }
     } catch (err: any) {
-      alert('Xác nhận mô tả thất bại: ' + (err?.message || 'Lỗi server'));
+      showToast('Xác nhận mô tả thất bại: ' + (err?.message || 'Lỗi server'));
     } finally {
       setIsAcceptingDescription(false);
     }
@@ -778,7 +788,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       // Re-fetch credits to reflect deduction of 1 VALUATION
       await loadCredits();
     } catch (err: any) {
-      alert('Định giá AI thất bại: ' + (err?.message || 'Lỗi kết nối tới dịch vụ AI'));
+      showToast('Định giá AI thất bại: ' + (err?.message || 'Lỗi kết nối tới dịch vụ AI'));
     } finally {
       setIsEstimatingPrice(false);
     }
@@ -792,7 +802,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       setValuationHistory(items);
       setShowValuationHistory(true);
     } catch (err: any) {
-      alert('Không thể tải lịch sử định giá: ' + (err?.message || ''));
+      showToast('Không thể tải lịch sử định giá: ' + (err?.message || ''));
     }
   };
 
@@ -802,7 +812,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const handleSubmitPostFinal = async () => {
     if (!postId) return;
     if (!finalPriceVnd || finalPriceVnd < 1000) {
-      alert(lang === 'vi' ? 'Vui lòng nhập giá bán hợp lệ (tối thiểu 1.000 đ)' : 'Please enter valid price');
+      showToast(lang === 'vi' ? 'Vui lòng nhập giá bán hợp lệ (tối thiểu 1.000 đ)' : 'Please enter valid price');
       return;
     }
 
@@ -1018,6 +1028,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 placeholder="VD: Panasonic, Toshiba, LG, Sony, Apple..."
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36]"
               />
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {['Panasonic', 'LG', 'Samsung', 'Toshiba', 'Electrolux', 'Aqua', 'Daikin', 'Sharp'].map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => setBrand(b)}
+                    className="px-2.5 py-1 text-[11px] font-medium bg-white border border-gray-200 hover:border-[#c34c36] hover:text-[#c34c36] text-slate-600 rounded-lg transition-colors cursor-pointer"
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-1.5">
@@ -1049,6 +1071,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   {numberToVietnameseWords(Number(originalPriceVnd))}
                 </p>
               )}
+              <p className="text-[10.5px] text-slate-400 italic mt-1 leading-tight">
+                Giá mua gốc chỉ mang tính chất tham khảo. Trợ lý AI sẽ tự động đối chiếu với giá thị trường thực tế của sản phẩm để định giá cho bạn.
+              </p>
             </div>
           </div>
 
@@ -1569,7 +1594,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
             <div>
               <span className="text-[11px] font-bold text-slate-500 block mb-1">Mô tả sản phẩm:</span>
-              <div className="p-3 bg-white rounded-xl border border-gray-200 text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
+              <div className="p-3 bg-white rounded-xl border border-gray-200 text-xs text-slate-800 whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto subtle-scrollbar">
                 {description}
               </div>
             </div>
@@ -1700,30 +1725,37 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   </div>
                 </div>
 
-                <div className="p-3.5 bg-white rounded-xl border border-emerald-300 shadow-xs ring-2 ring-emerald-500/20">
-                  <span className="text-[11px] text-emerald-700 font-bold block">Giá đề xuất bán tốt nhất:</span>
-                  <div className="text-base font-black text-[#c34c36] mt-1">
+                <div className="p-4 bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl border border-amber-300 shadow-sm ring-2 ring-amber-400/30 flex flex-col justify-center items-center text-center">
+                  <span className="text-[11px] text-amber-800 font-bold block uppercase tracking-wider mb-1">Giá đề xuất dễ bán nhất:</span>
+                  <div className="text-2xl font-black text-[#c34c36]">
                     {formatVND(valuationResult.suggestedPrice)}
-                  </div>
-                </div>
-
-                <div className="p-3.5 bg-white rounded-xl border border-emerald-100 shadow-xs">
-                  <span className="text-[11px] text-slate-500 font-bold block">Thời gian bán dự kiến:</span>
-                  <div className="text-sm font-black text-slate-800 mt-1">
-                    {valuationResult.expectedSellTime || '1 - 2 tuần'}
                   </div>
                 </div>
               </div>
 
-              <div className="flex justify-end">
+              <div className="flex flex-col gap-3 mt-4">
                 <button
                   type="button"
                   onClick={() => setFinalPriceVnd(valuationResult.suggestedPrice)}
-                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
+                  className="w-full py-3.5 bg-gradient-to-r from-[#c34c36] to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-xl text-sm font-black transition cursor-pointer flex items-center justify-center gap-2 shadow-md"
                 >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Áp dụng giá AI đề xuất ({formatVND(valuationResult.suggestedPrice)})</span>
+                  <Sparkles className="w-5 h-5" />
+                  <span>Sử dụng mức giá này để bán nhanh</span>
                 </button>
+                <div className="flex items-start gap-2 bg-white/50 p-3 rounded-xl border border-emerald-100">
+                  <span className="text-lg leading-none mt-0.5">💡</span>
+                  <p className="text-[11px] text-emerald-800 italic leading-relaxed">
+                    <strong>Lưu ý:</strong> Mức giá trên được AI tính toán độc lập dựa trên tình trạng hao mòn và giá trị thị trường thực tế hiện tại của sản phẩm, không phụ thuộc hoàn toàn vào giá mua gốc mà bạn đã nhập.
+                  </p>
+                </div>
+                {typeof originalPriceVnd === 'number' && (originalPriceVnd < valuationResult.fairPriceMin || originalPriceVnd > valuationResult.fairPriceMax * 5) && (
+                  <div className="flex items-start gap-2 bg-rose-50 p-3 rounded-xl border border-rose-200 animate-fadeIn">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-rose-800 italic leading-relaxed">
+                      <strong>Cảnh báo:</strong> Giá mua gốc ban đầu bạn cung cấp ({formatVND(originalPriceVnd)}) có dấu hiệu bất hợp lý so với giá trị thị trường thực tế. Tuy nhiên, AI đã tự động phân tích và đưa ra mức định giá chuẩn xác dựa trên dữ liệu thật.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1770,14 +1802,14 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </div>
 
             <div className="relative">
-              <DollarSign className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
-                type="number"
-                value={finalPriceVnd}
-                onChange={(e) => setFinalPriceVnd(Number(e.target.value))}
-                step={50000}
-                min={1000}
-                className="w-full pl-9 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:border-[#c34c36]"
+                type="text"
+                value={finalPriceVnd > 0 ? new Intl.NumberFormat('vi-VN').format(finalPriceVnd) : ''}
+                onChange={(e) => {
+                  const numericValue = e.target.value.replace(/\D/g, '');
+                  setFinalPriceVnd(Number(numericValue));
+                }}
+                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:border-[#c34c36]"
               />
             </div>
 
@@ -1861,11 +1893,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
             </div>
 
-            {/* Credit Notice */}
-            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
-              <span>Credit LISTING cần dùng: <strong>1 lượt</strong> (Chỉ trừ khi bài đăng chính thức chuyển sang <strong>ACTIVE</strong>).</span>
-              <span className="font-bold">Số dư hiện tại: {credits?.listing ?? 0} lượt</span>
-            </div>
           </div>
 
           {/* Submission Result Banner */}
@@ -2039,17 +2066,25 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 {isSubmittingPost ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    <span>Đang gửi bài lên Backend...</span>
+                    <span>Đang gửi bài...</span>
                   </>
                 ) : (
                   <>
                     <ShieldCheck className="w-5 h-5 text-amber-300" />
-                    <span>Gửi Đăng Bài Ngay (Trừ 1 LISTING khi ACTIVE)</span>
+                    <span>Gửi bài đăng</span>
                   </>
                 )}
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Global Toast for CreateListingView */}
+      {toastMsg && (
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 bg-slate-900/95 text-white text-sm font-bold rounded-full shadow-2xl flex items-center gap-2 animate-fadeIn border border-slate-700/50 backdrop-blur-sm">
+          <AlertTriangle className="w-4 h-4 text-amber-400" />
+          <span>{toastMsg}</span>
         </div>
       )}
     </div>

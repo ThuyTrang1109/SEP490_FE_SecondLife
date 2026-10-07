@@ -103,7 +103,7 @@ export const USER_INFO_KEY = 'secondlife_user_session';
 
 export const getAccessToken = (): string | null => {
   try {
-    const token = localStorage.getItem(ACCESS_TOKEN_KEY);
+    const token = sessionStorage.getItem(ACCESS_TOKEN_KEY);
     if (!token || token === 'undefined' || token === 'null' || token.trim() === '') {
       return null;
     }
@@ -115,7 +115,7 @@ export const getAccessToken = (): string | null => {
 
 export const getRefreshToken = (): string | null => {
   try {
-    const token = localStorage.getItem(REFRESH_TOKEN_KEY);
+    const token = sessionStorage.getItem(REFRESH_TOKEN_KEY);
     if (!token || token === 'undefined' || token === 'null' || token.trim() === '') {
       return null;
     }
@@ -128,24 +128,24 @@ export const getRefreshToken = (): string | null => {
 export const setAuthTokens = (accessToken?: string | null, refreshToken?: string | null) => {
   try {
     if (accessToken && accessToken !== 'undefined' && accessToken !== 'null' && accessToken.trim() !== '') {
-      localStorage.setItem(ACCESS_TOKEN_KEY, accessToken.trim());
+      sessionStorage.setItem(ACCESS_TOKEN_KEY, accessToken.trim());
     } else {
-      localStorage.removeItem(ACCESS_TOKEN_KEY);
+      sessionStorage.removeItem(ACCESS_TOKEN_KEY);
     }
 
     if (refreshToken && refreshToken !== 'undefined' && refreshToken !== 'null' && refreshToken.trim() !== '') {
-      localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken.trim());
+      sessionStorage.setItem(REFRESH_TOKEN_KEY, refreshToken.trim());
     } else if (refreshToken === null) {
-      localStorage.removeItem(REFRESH_TOKEN_KEY);
+      sessionStorage.removeItem(REFRESH_TOKEN_KEY);
     }
   } catch (err) {
-    console.warn('Failed to save auth tokens to localStorage:', err);
+    console.warn('Failed to save auth tokens to sessionStorage:', err);
   }
 };
 
 export const getStoredUser = (): any | null => {
   try {
-    const raw = localStorage.getItem(USER_INFO_KEY);
+    const raw = sessionStorage.getItem(USER_INFO_KEY);
     if (!raw || raw === 'undefined' || raw === 'null' || raw.trim() === '') return null;
     return JSON.parse(raw);
   } catch {
@@ -156,22 +156,25 @@ export const getStoredUser = (): any | null => {
 export const setStoredUser = (user: any) => {
   try {
     if (user && user !== 'undefined' && user !== 'null') {
-      localStorage.setItem(USER_INFO_KEY, JSON.stringify(user));
+      sessionStorage.setItem(USER_INFO_KEY, JSON.stringify(user));
     } else {
-      localStorage.removeItem(USER_INFO_KEY);
+      sessionStorage.removeItem(USER_INFO_KEY);
     }
   } catch (err) {
-    console.warn('Failed to save user session to localStorage:', err);
+    console.warn('Failed to save user session to sessionStorage:', err);
   }
 };
 
 export const clearAuthTokens = () => {
   try {
+    sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+    sessionStorage.removeItem(REFRESH_TOKEN_KEY);
+    sessionStorage.removeItem(USER_INFO_KEY);
     localStorage.removeItem(ACCESS_TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_INFO_KEY);
   } catch (err) {
-    console.warn('Failed to clear tokens from localStorage:', err);
+    console.warn('Failed to clear tokens from storage:', err);
   }
 };
 
@@ -262,7 +265,7 @@ export async function request<T>(
     headers['Authorization'] = `Bearer ${token}`;
   } else if (requiresAuth) {
     clearAuthTokens();
-    throw new Error('ChÆ°a Ä‘Äƒng nháº­p hoáº·c phiÃªn lÃ m viá»‡c Ä‘Ã£ káº¿t thÃºc.');
+    throw new Error('Chưa đăng nhập hoặc phiên làm việc đã kết thúc.');
   }
 
   const url = resolveApiUrl(endpoint);
@@ -317,14 +320,14 @@ export async function request<T>(
       const errorMessage =
         resData?.message ||
         resData?.error ||
-        (response.status === 403 ? 'Báº¡n khÃ´ng cÃ³ quyá»n thá»±c hiá»‡n hÃ nh Ä‘á»™ng nÃ y.' : `HTTP Error ${response.status}: ${response.statusText}`);
+        (response.status === 403 ? 'B?n kh�ng c� quy?n th?c hi?n h�nh d?ng n�y.' : `HTTP Error ${response.status}: ${response.statusText}`);
       throw new Error(errorMessage);
     }
 
     return resData as ApiResponse<T>;
   } catch (error: any) {
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
-      throw new Error('KhÃ´ng thá»ƒ káº¿t ná»‘i Ä‘áº¿n Backend Server. Vui lÃ²ng kiá»ƒm tra láº¡i backend (port 8080).');
+      throw new Error('Kh�ng th? k?t n?i d?n Backend Server. Vui l�ng ki?m tra l?i backend (port 8080).');
     }
     throw error;
   }

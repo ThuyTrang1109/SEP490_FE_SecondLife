@@ -1896,7 +1896,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="p-3.5 bg-white rounded-xl border border-emerald-100 shadow-xs">
                   <span className="text-[11px] text-slate-500 font-bold block">Khoảng giá hợp lý:</span>
                   <div className="text-sm font-black text-slate-800 mt-1">
@@ -1908,13 +1908,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <span className="text-[11px] text-emerald-700 font-bold block">Giá đề xuất bán tốt nhất:</span>
                   <div className="text-base font-black text-[#c34c36] mt-1">
                     {formatVND(valuationResult.suggestedPrice)}
-                  </div>
-                </div>
-
-                <div className="p-3.5 bg-white rounded-xl border border-emerald-100 shadow-xs">
-                  <span className="text-[11px] text-slate-500 font-bold block">Thời gian bán dự kiến:</span>
-                  <div className="text-sm font-black text-slate-800 mt-1">
-                    {valuationResult.expectedSellTime || '1 - 2 tuần'}
                   </div>
                 </div>
               </div>

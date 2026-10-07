@@ -59,7 +59,6 @@ type StaffTab =
   | 'review-listings'
   | 'duplicate-images'
   | 'proof-possession'
-  | 'seller-verifications'
   | 'reports-support'
   | 'disputes'
   | 'refund-requests'
@@ -107,19 +106,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   const [refundDecisionType, setRefundDecisionType] = useState<'FULL' | 'PARTIAL' | 'REJECT'>('FULL');
   const [refundNote, setRefundNote] = useState('');
 
-  // Seller eKYC Verifications State
-  const [sellerVerifications, setSellerVerifications] = useState<SellerVerificationResponseDto[]>([]);
-  const [isLoadingVerifications, setIsLoadingVerifications] = useState(false);
-  const [selectedVerificationModal, setSelectedVerificationModal] = useState<SellerVerificationResponseDto | null>(null);
-  const [verRejectionReason, setVerRejectionReason] = useState('Ảnh CMND/CCCD bị mờ hoặc không khớp thông tin');
 
-  useEffect(() => {
-    setIsLoadingVerifications(true);
-    staffService.listVerifications()
-      .then((data) => setSellerVerifications(data?.items || (data as any)?.content || (Array.isArray(data) ? data : [])))
-      .catch((err) => console.warn('Lỗi tải eKYC verifications:', err))
-      .finally(() => setIsLoadingVerifications(false));
-  }, []);
 
   useEffect(() => {
     if (activeTab === 'review-listings' || activeTab === 'duplicate-images') {
@@ -278,13 +265,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       icon: ShieldCheck,
       badge: proofList.filter((p) => p.status === 'PENDING').length,
       badgeColor: 'bg-amber-600 text-white'
-    },
-    {
-      id: 'seller-verifications' as StaffTab,
-      label: 'PHÊ DUYỆT EKYC NGƯỜI BÁN',
-      icon: UserCheck,
-      badge: sellerVerifications.filter((v) => v.status === 'PENDING').length || null,
-      badgeColor: 'bg-emerald-600 text-white'
+
     },
     {
       id: 'reports-support' as StaffTab,
@@ -363,32 +344,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     setSelectedListingModal(null);
   };
 
-  const handleReviewSellerVerification = async (id: string, decision: 'APPROVE' | 'REJECT', reason?: string) => {
-    try {
-      await staffService.reviewVerification(id, {
-        decision,
-        rejectionReason: decision === 'REJECT' ? (reason || verRejectionReason) : undefined
-      });
-      triggerNotice(`Đã ${decision === 'APPROVE' ? 'phê duyệt' : 'từ chối'} hồ sơ người bán #${id}`);
-      setSelectedVerificationModal(null);
-      const updated = await staffService.listVerifications();
-      setSellerVerifications(updated?.items || (updated as any)?.content || (Array.isArray(updated) ? updated : []));
-    } catch (err: any) {
-      triggerNotice('Lỗi xét duyệt eKYC: ' + (err.message || ''));
-    }
-  };
 
-  const handleOpenVerificationDetail = async (item: SellerVerificationResponseDto) => {
-    setSelectedVerificationModal(item);
-    try {
-      const fullDetail = await staffService.getVerificationById(item.id);
-      if (fullDetail) {
-        setSelectedVerificationModal((prev) => (prev ? { ...prev, ...fullDetail } : fullDetail));
-      }
-    } catch (err) {
-      console.warn('Backend getVerificationById fallback to list item:', err);
-    }
-  };
 
   const handleSendEvidenceRequest = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1158,130 +1114,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
             </div>
           )}
 
-          {/* ======================================================== */}
-          {/* TAB 3B: SELLER EKYC VERIFICATIONS (PHÊ DUYỆT NGƯỜI BÁN) */}
-          {/* ======================================================== */}
-          {activeTab === 'seller-verifications' && (
-            <div className="space-y-4">
-              <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-emerald-600 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                      PHÊ DUYỆT HỒ SƠ ĐỊNH DANH NGƯỜI BÁN (SELLER EKYC)
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Thẩm định tính hợp lệ của giấy tờ CCCD/CMND, ảnh chân dung selfie và thông tin xác thực seller
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsLoadingVerifications(true);
-                      staffService.listVerifications()
-                        .then((data) => setSellerVerifications(data?.items || (data as any)?.content || (Array.isArray(data) ? data : [])))
-                        .finally(() => setIsLoadingVerifications(false));
-                    }}
-                    className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition cursor-pointer self-start sm:self-auto"
-                    title="Tải lại danh sách"
-                  >
-                    <RefreshCw className={`w-4 h-4 ${isLoadingVerifications ? 'animate-spin' : ''}`} />
-                  </button>
-                </div>
 
-                {isLoadingVerifications ? (
-                  <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
-                    <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
-                    <span className="text-xs">Đang tải danh sách hồ sơ xác minh...</span>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                          <th className="py-2.5 px-3">Mã Hồ Sơ</th>
-                          <th className="py-2.5 px-3">Người Bán</th>
-                          <th className="py-2.5 px-3">Số CMND / CCCD</th>
-                          <th className="py-2.5 px-3">Ảnh Giấy Tờ & Selfie</th>
-                          <th className="py-2.5 px-3">Trạng Thái</th>
-                          <th className="py-2.5 px-3">Thời Gian Nộp</th>
-                          <th className="py-2.5 px-3 text-center">Thao Tác</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {sellerVerifications.length > 0 ? (
-                          sellerVerifications.map((item) => (
-                            <tr key={item.id} className="hover:bg-slate-50/70 transition">
-                              <td className="py-3 px-3 font-mono font-bold text-slate-900">{item.id}</td>
-                              <td className="py-3 px-3 font-bold text-slate-900">
-                                {item.fullName || 'Người bán SecondLife'}
-                              </td>
-                              <td className="py-3 px-3 font-mono font-bold text-slate-700">
-                                {item.documentNumber || '—'}
-                              </td>
-                              <td className="py-3 px-3">
-                                <div className="flex items-center gap-1.5">
-                                  {item.documentFrontUrl && (
-                                    <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 text-[10px] font-bold border border-blue-200">
-                                      Mặt trước
-                                    </span>
-                                  )}
-                                  {item.documentBackUrl && (
-                                    <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 text-[10px] font-bold border border-indigo-200">
-                                      Mặt sau
-                                    </span>
-                                  )}
-                                  {item.selfieUrl && (
-                                    <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-800 text-[10px] font-bold border border-purple-200">
-                                      Selfie
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="py-3 px-3">
-                                <span
-                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${item.status === 'APPROVED'
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : item.status === 'REJECTED'
-                                        ? 'bg-rose-100 text-rose-800'
-                                        : 'bg-amber-100 text-amber-800'
-                                    }`}
-                                >
-                                  {item.status === 'APPROVED'
-                                    ? 'ĐÃ PHÊ DUYỆT'
-                                    : item.status === 'REJECTED'
-                                      ? 'TỪ CHỐI'
-                                      : 'CHỜ DUYỆT'}
-                                </span>
-                              </td>
-                              <td className="py-3 px-3 font-mono text-slate-500 text-[11px]">
-                                {item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : '—'}
-                              </td>
-                              <td className="py-3 px-3 text-center">
-                                <div className="flex items-center justify-center gap-1.5">
-                                  <button
-                                    onClick={() => handleOpenVerificationDetail(item)}
-                                    className="px-2.5 py-1 rounded bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-bold transition cursor-pointer"
-                                  >
-                                    Xem & Duyệt
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={7} className="py-8 text-center text-slate-400">
-                              Chưa có hồ sơ xác minh người bán nào trong hệ thống.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* ======================================================== */}
           {/* TAB 4: REPORTS & SUPPORT (BÁO CÁO & HỖ TRỢ)              */}
@@ -2245,126 +2078,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
         </div>
       )}
 
-      {/* ======================================================== */}
-      {/* MODAL: DUYỆT HỒ SƠ SELLER EKYC                           */}
-      {/* ======================================================== */}
-      {selectedVerificationModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 text-xs max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <h3 className="font-black text-sm text-slate-900">
-                  THẨM ĐỊNH HỒ SƠ EKYC NGƯỜI BÁN #{selectedVerificationModal.id}
-                </h3>
-                <p className="text-slate-500 text-[11px]">
-                  Người nộp: <strong>{selectedVerificationModal.fullName || 'Người bán SecondLife'}</strong> • Số CCCD: <strong>{selectedVerificationModal.documentNumber || '—'}</strong>
-                </p>
-              </div>
-              <button
-                onClick={() => setSelectedVerificationModal(null)}
-                className="p-1 rounded-full text-slate-400 hover:text-slate-600 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {/* Images Grid */}
-            <div className="space-y-2">
-              <span className="font-bold text-slate-700 block">Hình ảnh đối chiếu danh tính:</span>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <span className="text-[11px] font-bold text-slate-500 block">1. CCCD Mặt Trước</span>
-                  <div className="aspect-4/3 rounded-xl border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center">
-                    {selectedVerificationModal.documentFrontUrl ? (
-                      <img
-                        src={selectedVerificationModal.documentFrontUrl}
-                        alt="CCCD Front"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-slate-400 text-[10px]">Chưa có ảnh</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <span className="text-[11px] font-bold text-slate-500 block">2. CCCD Mặt Sau</span>
-                  <div className="aspect-4/3 rounded-xl border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center">
-                    {selectedVerificationModal.documentBackUrl ? (
-                      <img
-                        src={selectedVerificationModal.documentBackUrl}
-                        alt="CCCD Back"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-slate-400 text-[10px]">Chưa có ảnh</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <span className="text-[11px] font-bold text-slate-500 block">3. Chân Dung Selfie</span>
-                  <div className="aspect-4/3 rounded-xl border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center">
-                    {selectedVerificationModal.selfieUrl ? (
-                      <img
-                        src={selectedVerificationModal.selfieUrl}
-                        alt="Selfie"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-slate-400 text-[10px]">Chưa có ảnh</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Rejection reason input if pending */}
-            {selectedVerificationModal.status === 'PENDING' && (
-              <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                <label className="font-bold text-slate-700 block">
-                  Lý do từ chối (nếu không đạt):
-                </label>
-                <input
-                  type="text"
-                  value={verRejectionReason}
-                  onChange={(e) => setVerRejectionReason(e.target.value)}
-                  placeholder="Nhập lý do từ chối hồ sơ..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-rose-500"
-                />
-              </div>
-            )}
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t">
-              <button
-                type="button"
-                onClick={() => setSelectedVerificationModal(null)}
-                className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-bold transition cursor-pointer"
-              >
-                Đóng
-              </button>
-              {selectedVerificationModal.status === 'PENDING' && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => handleReviewSellerVerification(selectedVerificationModal.id, 'REJECT')}
-                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold transition cursor-pointer shadow-xs"
-                  >
-                    Từ Chối Hồ Sơ
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleReviewSellerVerification(selectedVerificationModal.id, 'APPROVE')}
-                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition cursor-pointer shadow-xs"
-                  >
-                    Phê Duyệt eKYC
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

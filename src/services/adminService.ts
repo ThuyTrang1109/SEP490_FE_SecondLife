@@ -150,6 +150,18 @@ export const adminService = {
     return res.data;
   },
 
+  async requestResubmitSellerVerification(
+    id: string,
+    data: { rejectionReason: string; reasonCode?: string }
+  ): Promise<SellerVerificationResponseDto> {
+    const res = await request<SellerVerificationResponseDto>(`/admin/seller-verifications/${id}/request-resubmit`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return res.data;
+  },
+
   async retrySellerVerification(id: string): Promise<SellerVerificationResponseDto> {
     const res = await request<SellerVerificationResponseDto>(`/admin/seller-verifications/${id}/retry-ekyc`, {
       method: 'POST',

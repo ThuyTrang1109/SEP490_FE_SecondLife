@@ -257,9 +257,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto">
-      <div className="bg-[#FFFFFF] rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-gray-200 flex flex-col my-auto text-[#24263e]">
+      <div className="bg-[#FFFFFF] rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-hidden shadow-2xl border border-gray-200 flex flex-col my-auto text-[#24263e]">
         {/* Header */}
-        <div className="p-5 border-b border-[#24263e]/15 flex items-center justify-between bg-gradient-to-r from-[#fce5da] to-[#faf8f5] text-[#24263e]">
+        <div className="p-5 border-b border-[#24263e]/15 flex items-center justify-between bg-gradient-to-r from-[#fce5da] to-[#faf8f5] text-[#24263e] shrink-0 rounded-t-3xl">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-2xl bg-[#24263e] text-white flex items-center justify-center shadow-md">
               <Lock className="w-5 h-5 text-white" />
@@ -283,7 +283,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </div>
 
         {/* Body Form */}
-        <form onSubmit={handleConfirmOrder} className="p-5 sm:p-6 space-y-6 text-xs text-[#24263e]">
+        <form onSubmit={handleConfirmOrder} className="p-5 sm:p-6 space-y-6 text-xs text-[#24263e] flex-1 overflow-y-auto subtle-scrollbar">
           {/* Item Snapshot */}
           <div className="flex items-center gap-3.5 bg-[#faf8f5] p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
             <img

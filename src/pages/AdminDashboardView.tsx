@@ -74,7 +74,11 @@ import {
   AlertCircle,
   XCircle,
   Loader2,
-  History
+  History,
+  ScanFace,
+  ZoomIn,
+  MapPin,
+  BadgeCheck
 } from 'lucide-react';
 
 interface AdminDashboardViewProps {
@@ -238,11 +242,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       .catch(() => {});
   }, []);
 
-  // Seller Verification Review Modal states
+  // Seller Verification Review states
   const [selectedVerificationDetail, setSelectedVerificationDetail] = useState<any | null>(null);
+  const [verificationFilterTab, setVerificationFilterTab] = useState<'ALL' | 'NEEDS_REVIEW' | 'APPROVED' | 'RESUBMIT_REQUIRED' | 'REJECTED' | 'EKYC_PENDING'>('ALL');
+  const [verificationSearchTerm, setVerificationSearchTerm] = useState<string>('');
+  const [isLoadingVerifications, setIsLoadingVerifications] = useState<boolean>(false);
   const [rejectModalVerificationId, setRejectModalVerificationId] = useState<string | null>(null);
   const [rejectionReasonCode, setRejectionReasonCode] = useState<string>('IMAGE_TOO_BLURRY');
   const [rejectionReasonText, setRejectionReasonText] = useState<string>('');
+  const [verReviewReason, setVerReviewReason] = useState<string>('Ảnh CMND/CCCD bị mờ hoặc không khớp thông tin');
+  const [reviewingAction, setReviewingAction] = useState<'APPROVE' | 'REJECT' | 'RESUBMIT' | 'RETRY' | null>(null);
+  const [reviewNoticeMsg, setReviewNoticeMsg] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [previewImageModal, setPreviewImageModal] = useState<{ url: string; title: string } | null>(null);
 
   // Inspection center creation modal state
   const [showAddHubModal, setShowAddHubModal] = useState<boolean>(false);
@@ -705,53 +716,168 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     setTimeout(() => setActionNotice(null), 4000);
   };
 
+  const formatScore = (val: number | null | undefined) => {
+    if (val === undefined || val === null) return '—';
+    const num = Number(val);
+    if (isNaN(num)) return '—';
+    const pct = num <= 1 ? Math.round(num * 100) : Math.round(num);
+    return `${pct}%`;
+  };
+
+  const QUICK_VERIFICATION_REASONS = [
+    'Ảnh CMND/CCCD bị mờ, chói lóa không nhận diện được chữ số',
+    'Ảnh khuôn mặt selfie không khớp với chân dung trên CCCD',
+    'Giấy tờ bị mất góc, mờ quốc huy hoặc có dấu hiệu can thiệp',
+    'Thông tin họ tên/ngày sinh không trùng khớp với hồ sơ đăng ký',
+    'Chưa chụp rõ ràng 2 mặt thẻ CCCD/CMND',
+    'Ảnh chụp từ màn hình hoặc bản photo, yêu cầu chụp bản gốc'
+  ];
+
+  const handleRefreshSellerVerifications = async () => {
+    setIsLoadingVerifications(true);
+    try {
+      const res = await adminService.getSellerVerifications({ page: 0, size: 50 });
+      if (res?.items) {
+        setBackendVerifications(res.items);
+      }
+      triggerNotice('Đã làm mới danh sách hồ sơ xác minh người bán.');
+    } catch (err: any) {
+      triggerNotice('Lỗi tải danh sách xác minh: ' + (err.message || ''));
+    } finally {
+      setIsLoadingVerifications(false);
+    }
+  };
+
+  const handleOpenVerificationDetailModal = async (item: any) => {
+    setSelectedVerificationDetail(item);
+    setReviewNoticeMsg(null);
+    setVerReviewReason(item.rejectionReason || 'Ảnh CMND/CCCD bị mờ hoặc không khớp thông tin');
+    setRejectionReasonCode(item.reasonCode && item.reasonCode !== 'NONE' ? item.reasonCode : 'IMAGE_TOO_BLURRY');
+    try {
+      const fullDetail = await adminService.getSellerVerificationById(item.id);
+      if (fullDetail) {
+        setSelectedVerificationDetail((prev: any) => ({ ...(prev || {}), ...fullDetail }));
+        if (fullDetail.rejectionReason) {
+          setVerReviewReason(fullDetail.rejectionReason);
+        }
+        if (fullDetail.reasonCode && fullDetail.reasonCode !== 'NONE') {
+          setRejectionReasonCode(fullDetail.reasonCode);
+        }
+      }
+    } catch (err) {
+      console.warn('Backend getSellerVerificationById fallback:', err);
+    }
+  };
+
   const handleApproveSellerVerification = async (id: string, currentStatus?: string) => {
-    if (currentStatus && currentStatus !== 'NEEDS_REVIEW') {
-      triggerNotice(`Chỉ hồ sơ ở trạng thái NEEDS_REVIEW mới có thể phê duyệt bởi Quản trị viên (Trạng thái hiện tại: ${currentStatus}).`);
+    if (currentStatus && currentStatus !== 'NEEDS_REVIEW' && currentStatus !== 'SUBMITTED' && currentStatus !== 'PENDING') {
+      triggerNotice(`Chỉ hồ sơ ở trạng thái chờ duyệt mới có thể phê duyệt bởi Quản trị viên (Trạng thái hiện tại: ${currentStatus}).`);
       return;
     }
+    setReviewingAction('APPROVE');
+    setReviewNoticeMsg({ text: 'Đang tiến hành phê duyệt và cấp vai trò Người bán (SELLER)...', type: 'info' });
     try {
       await adminService.approveSellerVerification(id);
+      setReviewNoticeMsg({ text: 'Đã hoàn thành xong! Hồ sơ người bán đã được phê duyệt thành công.', type: 'success' });
       triggerNotice('Đã phê duyệt hồ sơ người bán thành công! Vai trò SELLER đã được gán.');
-      const res = await adminService.getSellerVerifications({ page: 0, size: 20 });
+      const res = await adminService.getSellerVerifications({ page: 0, size: 50 });
       if (res?.items) setBackendVerifications(res.items);
-      if (selectedVerificationDetail?.id === id) setSelectedVerificationDetail(null);
+      const updated = await adminService.getSellerVerificationById(id).catch(() => null);
+      if (updated) {
+        setSelectedVerificationDetail(updated);
+      } else {
+        setSelectedVerificationDetail((prev: any) => prev ? { ...prev, status: 'APPROVED' } : null);
+      }
     } catch (err: any) {
+      setReviewNoticeMsg({ text: 'Phê duyệt thất bại: ' + (err?.message || ''), type: 'error' });
       triggerNotice(err.message || 'Phê duyệt hồ sơ thất bại');
+    } finally {
+      setReviewingAction(null);
+    }
+  };
+
+  const handleRejectSellerVerificationWithReason = async (id: string, reason?: string, code?: string) => {
+    const finalReason = reason || verReviewReason || 'Hồ sơ chưa đạt yêu cầu kiểm định định danh eKYC.';
+    const finalCode = code || rejectionReasonCode || 'IMAGE_TOO_BLURRY';
+    setReviewingAction('REJECT');
+    setReviewNoticeMsg({ text: 'Đang xử lý từ chối hồ sơ người bán...', type: 'info' });
+    try {
+      await adminService.rejectSellerVerification(id, {
+        reasonCode: finalCode,
+        rejectionReason: finalReason,
+        allowResubmission: false
+      });
+      setReviewNoticeMsg({ text: 'Đã hoàn thành xong! Đã từ chối hồ sơ xác thực của người bán.', type: 'success' });
+      triggerNotice('Đã từ chối hồ sơ xác thực người bán.');
+      setRejectModalVerificationId(null);
+      const res = await adminService.getSellerVerifications({ page: 0, size: 50 });
+      if (res?.items) setBackendVerifications(res.items);
+      const updated = await adminService.getSellerVerificationById(id).catch(() => null);
+      if (updated) {
+        setSelectedVerificationDetail(updated);
+      } else {
+        setSelectedVerificationDetail((prev: any) => prev ? { ...prev, status: 'REJECTED', rejectionReason: finalReason } : null);
+      }
+    } catch (err: any) {
+      setReviewNoticeMsg({ text: 'Từ chối thất bại: ' + (err?.message || ''), type: 'error' });
+      triggerNotice(err.message || 'Từ chối hồ sơ thất bại');
+    } finally {
+      setReviewingAction(null);
+    }
+  };
+
+  const handleRequestResubmitSellerVerificationWithReason = async (id: string, reason?: string, code?: string) => {
+    const finalReason = reason || verReviewReason || 'Ảnh CCCD/chân dung bị mờ, vui lòng chụp lại rõ nét.';
+    const finalCode = code || rejectionReasonCode || 'IMAGE_TOO_BLURRY';
+    setReviewingAction('RESUBMIT');
+    setReviewNoticeMsg({ text: 'Đang gửi yêu cầu nộp lại chứng từ cho người bán...', type: 'info' });
+    try {
+      await adminService.requestResubmitSellerVerification(id, {
+        reasonCode: finalCode,
+        rejectionReason: finalReason
+      });
+      setReviewNoticeMsg({ text: 'Đã hoàn thành xong! Đã gửi yêu cầu nộp lại ảnh chứng từ cho người bán.', type: 'success' });
+      triggerNotice('Đã gửi yêu cầu bổ sung/chụp lại eKYC cho người bán.');
+      const res = await adminService.getSellerVerifications({ page: 0, size: 50 });
+      if (res?.items) setBackendVerifications(res.items);
+      const updated = await adminService.getSellerVerificationById(id).catch(() => null);
+      if (updated) {
+        setSelectedVerificationDetail(updated);
+      } else {
+        setSelectedVerificationDetail((prev: any) => prev ? { ...prev, status: 'RESUBMIT_REQUIRED', rejectionReason: finalReason } : null);
+      }
+    } catch (err: any) {
+      setReviewNoticeMsg({ text: 'Yêu cầu nộp lại thất bại: ' + (err?.message || ''), type: 'error' });
+      triggerNotice(err.message || 'Yêu cầu nộp lại hồ sơ thất bại');
+    } finally {
+      setReviewingAction(null);
     }
   };
 
   const handleRejectSellerVerification = async () => {
     if (!rejectModalVerificationId) return;
-    try {
-      await adminService.rejectSellerVerification(rejectModalVerificationId, {
-        reasonCode: rejectionReasonCode,
-        rejectionReason: rejectionReasonText || 'Hồ sơ chưa đạt yêu cầu kiểm định identity.',
-        allowResubmission: true
-      });
-      triggerNotice('Đã từ chối hồ sơ xác thực người bán.');
-      setRejectModalVerificationId(null);
-      setRejectionReasonText('');
-      const res = await adminService.getSellerVerifications({ page: 0, size: 20 });
-      if (res?.items) setBackendVerifications(res.items);
-      if (selectedVerificationDetail?.id === rejectModalVerificationId) setSelectedVerificationDetail(null);
-    } catch (err: any) {
-      alert(err.message || 'Từ chối hồ sơ thất bại');
-    }
+    await handleRejectSellerVerificationWithReason(rejectModalVerificationId, rejectionReasonText, rejectionReasonCode);
+    setRejectionReasonText('');
   };
 
   const handleRetrySellerVerification = async (id: string) => {
+    setReviewingAction('RETRY');
+    setReviewNoticeMsg({ text: 'Đang yêu cầu hệ thống thử lại quy trình eKYC...', type: 'info' });
     try {
       await adminService.retrySellerVerification(id);
+      setReviewNoticeMsg({ text: 'Đã hoàn thành xong! Kích hoạt thử lại eKYC thành công.', type: 'success' });
       triggerNotice('Đã kích hoạt thử lại eKYC qua hệ thống thành công!');
-      const res = await adminService.getSellerVerifications({ page: 0, size: 20 });
+      const res = await adminService.getSellerVerifications({ page: 0, size: 50 });
       if (res?.items) setBackendVerifications(res.items);
       if (selectedVerificationDetail?.id === id) {
         const updated = await adminService.getSellerVerificationById(id).catch(() => null);
         if (updated) setSelectedVerificationDetail(updated);
       }
     } catch (err: any) {
+      setReviewNoticeMsg({ text: 'Thử lại thất bại: ' + (err?.message || ''), type: 'error' });
       triggerNotice(err.message || 'Thử lại eKYC thất bại');
+    } finally {
+      setReviewingAction(null);
     }
   };
 
@@ -1009,7 +1135,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       id: 'seller-kyc' as AdminTab,
       label: lang === 'vi' ? 'DUYỆT eKYC NGƯỜI BÁN' : 'SELLER KYC REVIEW',
       icon: ShieldCheck,
-      badge: backendVerifications.length || null,
+      badge: backendVerifications.filter(v => v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING').length || null,
       badgeColor: 'bg-rose-600'
     },
     {
@@ -2050,130 +2176,277 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* ======================================================== */}
           {/* TAB: SELLER-KYC (DUYỆT HỒ SƠ ĐỊNH DANH NGƯỜI BÁN)        */}
           {/* ======================================================== */}
-          {activeTab === 'seller-kyc' && (
-            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-rose-600 p-5 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 uppercase flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-rose-600" />
-                    <span>Duyệt Hồ Sơ Định Danh Người Bán (Seller eKYC & Risk Verification)</span>
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Phê duyệt hồ sơ xác minh danh tính người bán, kiểm tra kết quả eKYC & điểm đánh giá rủi ro (Risk Engine)
-                  </p>
-                </div>
-              </div>
+          {activeTab === 'seller-kyc' && (() => {
+            const needsReviewCount = backendVerifications.filter(v => v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING').length;
+            const approvedCount = backendVerifications.filter(v => v.status === 'APPROVED').length;
+            const resubmitCount = backendVerifications.filter(v => v.status === 'RESUBMIT_REQUIRED').length;
+            const rejectedCount = backendVerifications.filter(v => v.status === 'REJECTED').length;
+            const ekycPendingCount = backendVerifications.filter(v => v.status === 'EKYC_PENDING' || v.ekycStatus === 'PENDING').length;
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                      <th className="py-2.5 px-4">Tài khoản Người bán</th>
-                      <th className="py-2.5 px-4">Loại giấy tờ & Số CCCD</th>
-                      <th className="py-2.5 px-4">eKYC Status</th>
-                      <th className="py-2.5 px-4">Risk Status</th>
-                      <th className="py-2.5 px-4">Trạng thái Hồ sơ</th>
-                      <th className="py-2.5 px-4 text-right">Thao tác Quản trị</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {backendVerifications.length > 0 ? (
-                      backendVerifications.map((v) => (
-                        <tr key={v.id} className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 px-4 font-bold text-slate-900">
-                            <div>{v.userFullName || v.userEmail || 'Người bán SecondLife'}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">{v.userId}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className="font-mono font-bold text-slate-800">{v.documentNumber}</span>
-                            <span className="text-[10px] text-slate-400 block">{v.verificationType}</span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              v.ekycStatus === 'PASSED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                              v.ekycStatus === 'FAILED' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                              'bg-amber-50 text-amber-700 border border-amber-200'
-                            }`}>
-                              {v.ekycStatus || 'NOT_STARTED'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              v.riskStatus === 'CLEAR' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                              v.riskStatus === 'BLOCK' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                              'bg-purple-50 text-purple-700 border border-purple-200'
-                            }`}>
-                              {v.riskStatus || 'NOT_EVALUATED'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                              v.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
-                              v.status === 'REJECTED' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
-                              v.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-100 text-orange-800 border border-orange-300' :
-                              v.status === 'NEEDS_REVIEW' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
-                              'bg-blue-100 text-blue-800 border border-blue-300 animate-pulse'
-                            }`}>
-                              {v.status}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="inline-flex items-center gap-1.5 justify-end">
-                              <button
-                                onClick={() => adminService.getSellerVerificationById(v.id).then(setSelectedVerificationDetail).catch(() => setSelectedVerificationDetail(v))}
-                                className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition cursor-pointer flex items-center gap-1 border border-slate-200"
-                              >
-                                <Eye className="w-3.5 h-3.5 text-slate-500" />
-                                <span>Xem Chi Tiết</span>
-                              </button>
-                              {v.status === 'NEEDS_REVIEW' ? (
-                                <>
-                                  <button
-                                    onClick={() => handleApproveSellerVerification(v.id, v.status)}
-                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                    title="Phê duyệt hồ sơ người bán (Cấp vai trò SELLER)"
-                                  >
-                                    <CheckCircle2 className="w-3.5 h-3.5" />
-                                    <span>Phê Duyệt</span>
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setRejectModalVerificationId(v.id);
-                                      setRejectionReasonText('');
-                                    }}
-                                    className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                    title="Từ chối hồ sơ người bán"
-                                  >
-                                    <XCircle className="w-3.5 h-3.5" />
-                                    <span>Từ Chối</span>
-                                  </button>
-                                </>
-                              ) : v.status === 'EKYC_PENDING' || v.ekycStatus === 'PROVIDER_ERROR' ? (
+            const filteredList = backendVerifications.filter((v) => {
+              if (verificationFilterTab !== 'ALL') {
+                if (verificationFilterTab === 'NEEDS_REVIEW') {
+                  if (v.status !== 'NEEDS_REVIEW' && v.status !== 'SUBMITTED' && v.status !== 'PENDING') return false;
+                } else if (v.status !== verificationFilterTab) {
+                  return false;
+                }
+              }
+              if (verificationSearchTerm.trim()) {
+                const q = verificationSearchTerm.toLowerCase();
+                const name = (v.userFullName || '').toLowerCase();
+                const shop = (v.shopName || '').toLowerCase();
+                const email = (v.userEmail || '').toLowerCase();
+                const docNum = (v.documentNumber || v.documentNumberMasked || '').toLowerCase();
+                const phone = (v.phone || '').toLowerCase();
+                const id = (v.id || '').toLowerCase();
+                return name.includes(q) || shop.includes(q) || email.includes(q) || docNum.includes(q) || phone.includes(q) || id.includes(q);
+              }
+              return true;
+            });
+
+            return (
+              <div className="bg-white rounded-2xl shadow-xs border border-slate-200 border-t-4 border-t-rose-600 p-5 space-y-4">
+                {/* Header Section */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 uppercase flex items-center gap-2">
+                      <ShieldCheck className="w-5 h-5 text-rose-600" />
+                      <span>Thẩm Định & Duyệt Hồ Sơ Định Danh Người Bán (Seller eKYC Review)</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Phân quyền dành riêng cho Quản trị viên: Đối soát CCCD, ảnh selfie, chỉ số khớp mặt & quyết định cấp quyền gian hàng
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={handleRefreshSellerVerifications}
+                      disabled={isLoadingVerifications}
+                      className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                      title="Làm mới danh sách hồ sơ"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingVerifications ? 'animate-spin text-rose-600' : 'text-slate-500'}`} />
+                      <span>{isLoadingVerifications ? 'Đang tải...' : 'Làm Mới'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Subtab Filters & Search Bar */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      onClick={() => setVerificationFilterTab('ALL')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        verificationFilterTab === 'ALL'
+                          ? 'bg-[#24263e] text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      Tất Cả ({backendVerifications.length})
+                    </button>
+                    <button
+                      onClick={() => setVerificationFilterTab('NEEDS_REVIEW')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                        verificationFilterTab === 'NEEDS_REVIEW'
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+                      }`}
+                    >
+                      <span>Cần Duyệt</span>
+                      {needsReviewCount > 0 && (
+                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                          verificationFilterTab === 'NEEDS_REVIEW' ? 'bg-white/30 text-white' : 'bg-amber-600 text-white'
+                        }`}>
+                          {needsReviewCount}
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setVerificationFilterTab('APPROVED')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        verificationFilterTab === 'APPROVED'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      }`}
+                    >
+                      Đã Phê Duyệt ({approvedCount})
+                    </button>
+                    <button
+                      onClick={() => setVerificationFilterTab('RESUBMIT_REQUIRED')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        verificationFilterTab === 'RESUBMIT_REQUIRED'
+                          ? 'bg-orange-600 text-white shadow-xs'
+                          : 'bg-orange-50 hover:bg-orange-100 text-orange-800 border border-orange-200'
+                      }`}
+                    >
+                      Yêu Cầu Nộp Lại ({resubmitCount})
+                    </button>
+                    <button
+                      onClick={() => setVerificationFilterTab('REJECTED')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        verificationFilterTab === 'REJECTED'
+                          ? 'bg-rose-600 text-white shadow-xs'
+                          : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200'
+                      }`}
+                    >
+                      Đã Từ Chối ({rejectedCount})
+                    </button>
+                    <button
+                      onClick={() => setVerificationFilterTab('EKYC_PENDING')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        verificationFilterTab === 'EKYC_PENDING'
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200'
+                      }`}
+                    >
+                      Đang eKYC ({ekycPendingCount})
+                    </button>
+                  </div>
+
+                  <div className="relative min-w-[240px]">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
+                    <input
+                      type="text"
+                      value={verificationSearchTerm}
+                      onChange={(e) => setVerificationSearchTerm(e.target.value)}
+                      placeholder="Tìm theo Shop, Tên, CCCD, SĐT..."
+                      className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs outline-none focus:border-rose-500 bg-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Table Data */}
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50/90 text-slate-600 text-[11px] font-bold">
+                        <th className="py-3 px-4">Gian Hàng & Người Bán</th>
+                        <th className="py-3 px-4">Định Danh CCCD</th>
+                        <th className="py-3 px-4">Chỉ Số eKYC</th>
+                        <th className="py-3 px-4">Đánh Giá Rủi Ro</th>
+                        <th className="py-3 px-4">Trạng Thái Hồ Sơ</th>
+                        <th className="py-3 px-4 text-right">Thao Tác Quản Trị</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredList.length > 0 ? (
+                        filteredList.map((v) => (
+                          <tr key={v.id} className="hover:bg-slate-50/80 transition">
+                            <td className="py-3 px-4">
+                              <div className="font-bold text-slate-900 text-[13px] flex items-center gap-1.5">
+                                <Store className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                <span>{v.shopName || v.userFullName || 'Gian Hàng SecondLife'}</span>
+                              </div>
+                              <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
+                                <span>{v.userFullName || '—'}</span>
+                                {v.phone && <span>• {v.phone}</span>}
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-mono truncate max-w-[220px]" title={v.userEmail || ''}>
+                                {v.userEmail || v.userId}
+                              </div>
+                            </td>
+
+                            <td className="py-3 px-4">
+                              <span className="font-mono font-bold text-slate-800 text-[12px] block">
+                                {v.documentNumber || v.documentNumberMasked || '—'}
+                              </span>
+                              <div className="text-[10px] text-slate-400 mt-0.5">
+                                <span>{v.verificationType || 'CITIZEN_ID'}</span>
+                                {v.resubmissionCount > 0 && (
+                                  <span className="ml-1 text-orange-600 font-bold">
+                                    (Lần {v.resubmissionCount + 1})
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+
+                            <td className="py-3 px-4">
+                              <div className="space-y-0.5 text-[11px]">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-slate-500 text-[10px]">Khớp mặt:</span>
+                                  <span className="font-mono font-bold text-indigo-700">
+                                    {formatScore(v.faceMatchScore)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-slate-500 text-[10px]">Thực thể sống:</span>
+                                  <span className="font-mono font-bold text-emerald-700">
+                                    {formatScore(v.livenessScore)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-slate-500 text-[10px]">Giấy tờ:</span>
+                                  <span className="font-mono font-bold text-amber-700">
+                                    {formatScore(v.documentScore)}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="py-3 px-4">
+                              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                v.riskStatus === 'CLEAR' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                v.riskStatus === 'BLOCK' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                                'bg-purple-50 text-purple-700 border border-purple-200'
+                              }`}>
+                                {v.riskStatus || 'NOT_EVALUATED'}
+                              </span>
+                              <div className="text-[10px] text-slate-400 mt-0.5">
+                                Provider: <strong className="text-slate-600">{v.providerName || 'VNPT'}</strong>
+                              </div>
+                            </td>
+
+                            <td className="py-3 px-4">
+                              <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                v.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                                v.status === 'REJECTED' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
+                                v.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-100 text-orange-800 border border-orange-300' :
+                                v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING' ? 'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse' :
+                                'bg-blue-100 text-blue-800 border border-blue-300'
+                              }`}>
+                                {v.status}
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-4 text-right">
+                              <div className="inline-flex items-center gap-1.5 justify-end">
                                 <button
-                                  onClick={() => handleRetrySellerVerification(v.id)}
-                                  className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                  title="Thử lại quy trình eKYC"
+                                  type="button"
+                                  onClick={() => handleOpenVerificationDetailModal(v)}
+                                  className="px-3 py-1.5 rounded-xl bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                                  title="Xem toàn bộ ảnh CCCD, điểm chi tiết & Thẩm định"
                                 >
-                                  <RefreshCw className="w-3.5 h-3.5" />
-                                  <span>Thử Lại eKYC</span>
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>Xem & Thẩm Định</span>
                                 </button>
-                              ) : null}
-                            </div>
+                                {(v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleApproveSellerVerification(v.id, v.status)}
+                                    className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition cursor-pointer shadow-2xs"
+                                    title="Phê duyệt nhanh hồ sơ này"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-slate-400 text-xs">
+                            <ShieldCheck className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+                            Không tìm thấy hồ sơ xác thực người bán nào phù hợp bộ lọc.
                           </td>
                         </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={6} className="py-8 text-center text-slate-400 text-xs font-medium">
-                          Chưa có hồ sơ xác thực người bán nào trong hệ thống
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* ======================================================== */}
           {/* TAB: CUSTOMERS (QUẢN LÝ KHÁCH HÀNG & NGƯỜI DÙNG)        */}
@@ -2586,7 +2859,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       >
                         <span>{role.name || role.code}</span>
                         {!role.editable && (
-                          <Lock className="w-3 h-3 text-amber-300" title="Vai trò bảo mật cố định" />
+                          <span title="Vai trò bảo mật cố định">
+                            <Lock className="w-3 h-3 text-amber-300" />
+                          </span>
                         )}
                       </button>
                     ))}
@@ -3246,196 +3521,521 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       )}
 
       {/* ======================================================== */}
-      {/* MODAL: SELLER eKYC VERIFICATION DETAIL                   */}
+      {/* MODAL: SELLER eKYC VERIFICATION DETAIL & REVIEW          */}
       {/* ======================================================== */}
-      {selectedVerificationDetail && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 my-8">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-rose-600" />
-                <h3 className="font-bold text-base text-slate-900">
-                  Chi Tiết Hồ Sơ eKYC Ngược Mẫu #{selectedVerificationDetail.id}
-                </h3>
-              </div>
-              <button
-                onClick={() => setSelectedVerificationDetail(null)}
-                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer p-1"
-              >
-                ✕
-              </button>
-            </div>
+      {selectedVerificationDetail && (() => {
+        const isTerminalStatus = selectedVerificationDetail.status === 'APPROVED' || selectedVerificationDetail.status === 'REJECTED';
+        const isProcessing = reviewingAction !== null;
 
-            <div className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                <div>
-                  <span className="text-slate-500 text-[10px] block">Người bán / Email:</span>
-                  <span className="font-bold text-slate-900 block">{selectedVerificationDetail.userFullName || selectedVerificationDetail.userEmail || 'Chưa cập nhật'}</span>
-                  <span className="text-[10px] text-slate-400 font-mono">{selectedVerificationDetail.userId}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 text-[10px] block">Số CCCD / CMND:</span>
-                  <span className="font-mono font-bold text-slate-900 text-sm block">{selectedVerificationDetail.documentNumber}</span>
-                  <span className="text-[10px] text-slate-500">{selectedVerificationDetail.verificationType}</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-[11px]">
-                <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
-                  <span className="text-slate-400 text-[10px] block">Trạng Thái Hồ Sơ</span>
-                  <span className="font-bold text-slate-800">{selectedVerificationDetail.status}</span>
-                </div>
-                <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
-                  <span className="text-slate-400 text-[10px] block">eKYC Provider</span>
-                  <span className="font-bold text-blue-600 truncate block" title={selectedVerificationDetail.providerName || 'N/A'}>
-                    {selectedVerificationDetail.providerName || 'FPT / VNPT'}
-                  </span>
-                </div>
-                <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
-                  <span className="text-slate-400 text-[10px] block">eKYC Status</span>
-                  <span className={`font-bold ${
-                    selectedVerificationDetail.ekycStatus === 'PASSED' ? 'text-emerald-600' :
-                    selectedVerificationDetail.ekycStatus === 'PROVIDER_ERROR' ? 'text-amber-600' :
-                    'text-slate-700'
-                  }`}>
-                    {selectedVerificationDetail.ekycStatus || 'PENDING'}
-                  </span>
-                </div>
-                <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
-                  <span className="text-slate-400 text-[10px] block">Risk Rating</span>
-                  <span className="font-bold text-purple-600">{selectedVerificationDetail.riskStatus || 'NOT_EVALUATED'}</span>
-                </div>
-              </div>
-
-              {selectedVerificationDetail.reasonCode && selectedVerificationDetail.reasonCode !== 'NONE' && (
-                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between">
-                  <div>
-                    <span className="font-bold block text-[11px] text-amber-800">Mã nguyên nhân từ bên thứ 3 (Reason Code):</span>
-                    <span className="font-mono font-bold text-xs">{selectedVerificationDetail.reasonCode}</span>
+        return (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-hidden animate-in fade-in">
+            <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+              {/* FIXED HEADER */}
+              <div className="shrink-0 px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/90">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center shrink-0">
+                    <ShieldCheck className="w-5 h-5 text-rose-600" />
                   </div>
-                  {selectedVerificationDetail.providerReferenceId && (
-                    <span className="text-[10px] text-slate-500 font-mono">Ref: #{selectedVerificationDetail.providerReferenceId}</span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-black text-sm text-slate-900 uppercase">
+                        Thẩm Định eKYC Người Bán #{selectedVerificationDetail.id}
+                      </h3>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        selectedVerificationDetail.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                        selectedVerificationDetail.status === 'REJECTED' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
+                        selectedVerificationDetail.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-100 text-orange-800 border border-orange-300' :
+                        'bg-amber-100 text-amber-800 border border-amber-300'
+                      }`}>
+                        {selectedVerificationDetail.status}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {selectedVerificationDetail.shopName ? (
+                        <>Gian hàng: <strong className="text-slate-800">{selectedVerificationDetail.shopName}</strong> • </>
+                      ) : null}
+                      Người nộp: <strong className="text-slate-800">{selectedVerificationDetail.userFullName || 'Người bán SecondLife'}</strong> • Số CCCD: <strong className="font-mono text-slate-800">{selectedVerificationDetail.documentNumber || selectedVerificationDetail.documentNumberMasked || '—'}</strong>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedVerificationDetail(null)}
+                  className="p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* SCROLLABLE BODY */}
+              <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+                {/* Notice message banner */}
+                {reviewNoticeMsg && (
+                  <div className={`p-3.5 rounded-2xl flex items-center gap-2.5 text-xs font-bold ${
+                    reviewNoticeMsg.type === 'success' ? 'bg-emerald-50 text-emerald-900 border border-emerald-200' :
+                    reviewNoticeMsg.type === 'error' ? 'bg-rose-50 text-rose-900 border border-rose-200' :
+                    'bg-blue-50 text-blue-900 border border-blue-200'
+                  }`}>
+                    {reviewNoticeMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> :
+                     reviewNoticeMsg.type === 'error' ? <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" /> :
+                     <Loader2 className="w-4 h-4 text-blue-600 animate-spin shrink-0" />}
+                    <span>{reviewNoticeMsg.text}</span>
+                  </div>
+                )}
+
+                {/* Terminal status notice */}
+                {selectedVerificationDetail.status === 'APPROVED' && (
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center gap-2.5">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <div>
+                      <strong className="block font-bold">Hồ sơ đã được PHÊ DUYỆT thành công!</strong>
+                      <span className="text-[11px] text-emerald-700">Người dùng đã được cấp quyền bán hàng (Role: SELLER). Các nút thao tác đã được khóa để bảo vệ tính toàn vẹn dữ liệu.</span>
+                    </div>
+                  </div>
+                )}
+
+                {selectedVerificationDetail.status === 'REJECTED' && (
+                  <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center gap-2.5">
+                    <XCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                    <div>
+                      <strong className="block font-bold">Hồ sơ đã BỊ TỪ CHỐI!</strong>
+                      <span className="text-[11px] text-rose-700">Lý do: {selectedVerificationDetail.rejectionReason || 'Chưa đạt yêu cầu thẩm định identity'}. Quy trình xét duyệt cho hồ sơ này đã kết thúc.</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Section 1: Thông tin Gian hàng & Người bán */}
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Store className="w-4 h-4 text-rose-600" />
+                      <span className="font-bold text-slate-900 text-xs">
+                        Thông Tin Đăng Ký Gian Hàng & Liên Hệ
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-medium text-slate-500">
+                      Mã tài khoản: <strong className="font-mono text-slate-800">{selectedVerificationDetail.userId}</strong>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Tên gian hàng / Hotline:</span>
+                      <span className="font-bold text-slate-800 text-[13px] block">
+                        {selectedVerificationDetail.shopName || selectedVerificationDetail.userFullName || 'Gian Hàng SecondLife'}
+                      </span>
+                      <span className="text-[11px] text-slate-600 flex items-center gap-1 mt-0.5">
+                        <Phone className="w-3 h-3 text-slate-400" />
+                        {selectedVerificationDetail.phone || 'Chưa cung cấp SĐT'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Người nộp hồ sơ & Email:</span>
+                      <span className="font-bold text-slate-800 text-[13px] block">
+                        {selectedVerificationDetail.userFullName || 'Chưa cập nhật tên'}
+                      </span>
+                      <span className="text-[11px] text-slate-600 flex items-center gap-1 mt-0.5 truncate" title={selectedVerificationDetail.userEmail || ''}>
+                        <Mail className="w-3 h-3 text-slate-400" />
+                        {selectedVerificationDetail.userEmail || '—'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Định danh CCCD / CMND:</span>
+                      <span className="font-mono font-bold text-slate-900 text-[13px] block">
+                        {selectedVerificationDetail.documentNumber || selectedVerificationDetail.documentNumberMasked || '—'}
+                      </span>
+                      <span className="text-[11px] text-slate-500 mt-0.5 block">
+                        Loại: <strong>{selectedVerificationDetail.verificationType || 'CITIZEN_ID'}</strong>
+                        {selectedVerificationDetail.resubmissionCount > 0 && ` • Đã nộp lại ${selectedVerificationDetail.resubmissionCount} lần`}
+                      </span>
+                    </div>
+                  </div>
+
+                  {selectedVerificationDetail.pickupAddress && (
+                    <div className="pt-2 border-t border-slate-200/60 flex items-start gap-1.5 text-xs text-slate-700">
+                      <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold text-slate-800">Địa chỉ kho bưu tá lấy hàng: </span>
+                        <span>{selectedVerificationDetail.pickupAddress}</span>
+                      </div>
+                    </div>
                   )}
                 </div>
-              )}
 
-              {/* Event History / Audit Trail from eKYC Provider */}
-              {selectedVerificationDetail.eventHistory && selectedVerificationDetail.eventHistory.length > 0 && (
-                <div className="space-y-1.5 pt-1">
-                  <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                    <History className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Lịch sử xử lý từ eKYC Provider (Audit Trail):</span>
-                  </h4>
-                  <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
-                    {selectedVerificationDetail.eventHistory.map((ev: any, idx: number) => (
-                      <div key={ev.id || idx} className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-[11px] flex items-start justify-between gap-2">
-                        <div>
-                          <span className="font-bold text-slate-800">{ev.eventType}</span>
-                          {ev.notes && <p className="text-slate-600 text-[10px] mt-0.5">{ev.notes}</p>}
-                        </div>
-                        <span className="text-[10px] text-slate-400 shrink-0 font-mono">
-                          {ev.createdAt ? new Date(ev.createdAt).toLocaleTimeString('vi-VN') : ''}
-                        </span>
+                {/* Section 2: Kết quả eKYC & Chỉ số đánh giá rủi ro (Khớp Mặt, Thực Thể Sống, Chất Lượng Giấy Tờ) */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Kết Quả Thẩm Định eKYC & Đánh Giá Rủi Ro:</span>
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      Provider: <strong className="text-slate-800">{selectedVerificationDetail.providerName || 'VNPT eKYC'}</strong>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {/* Khớp Mặt */}
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-br from-indigo-50/80 to-blue-50/50 border border-indigo-100 flex flex-col justify-between shadow-2xs">
+                      <div className="flex items-center justify-between text-indigo-700 mb-1">
+                        <span className="text-[11px] font-bold">Khớp Mặt</span>
+                        <ScanFace className="w-4 h-4" />
                       </div>
-                    ))}
+                      <div className="font-black text-2xl text-indigo-950 font-mono">
+                        {formatScore(selectedVerificationDetail.faceMatchScore)}
+                      </div>
+                      <span className="text-[10px] text-indigo-600 font-medium mt-1">
+                        {selectedVerificationDetail.faceMatchScore !== undefined && selectedVerificationDetail.faceMatchScore !== null
+                          ? (Number(selectedVerificationDetail.faceMatchScore) >= 0.8 || Number(selectedVerificationDetail.faceMatchScore) >= 80 ? '✓ Đạt chuẩn đối soát' : '⚠️ Độ khớp thấp')
+                          : 'Chờ đối soát ảnh'}
+                      </span>
+                    </div>
+
+                    {/* Thực Thể Sống */}
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-br from-emerald-50/80 to-teal-50/50 border border-emerald-100 flex flex-col justify-between shadow-2xs">
+                      <div className="flex items-center justify-between text-emerald-700 mb-1">
+                        <span className="text-[11px] font-bold">Thực Thể Sống</span>
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div className="font-black text-2xl text-emerald-950 font-mono">
+                        {formatScore(selectedVerificationDetail.livenessScore)}
+                      </div>
+                      <span className="text-[10px] text-emerald-600 font-medium mt-1">
+                        {selectedVerificationDetail.livenessScore !== undefined && selectedVerificationDetail.livenessScore !== null
+                          ? '✓ Người thật (Active)'
+                          : 'Chưa kiểm tra'}
+                      </span>
+                    </div>
+
+                    {/* Chất Lượng Giấy Tờ */}
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-br from-amber-50/80 to-orange-50/50 border border-amber-100 flex flex-col justify-between shadow-2xs">
+                      <div className="flex items-center justify-between text-amber-700 mb-1">
+                        <span className="text-[11px] font-bold">Chất Lượng Giấy Tờ</span>
+                        <FileSpreadsheet className="w-4 h-4" />
+                      </div>
+                      <div className="font-black text-2xl text-amber-950 font-mono">
+                        {formatScore(selectedVerificationDetail.documentScore)}
+                      </div>
+                      <span className="text-[10px] text-amber-600 font-medium mt-1">
+                        {selectedVerificationDetail.documentScore !== undefined && selectedVerificationDetail.documentScore !== null
+                          ? '✓ CCCD đạt chuẩn OCR'
+                          : 'Chưa đánh giá'}
+                      </span>
+                    </div>
+
+                    {/* Đánh Giá Rủi Ro */}
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-br from-purple-50/80 to-pink-50/50 border border-purple-100 flex flex-col justify-between shadow-2xs">
+                      <div className="flex items-center justify-between text-purple-700 mb-1">
+                        <span className="text-[11px] font-bold">Đánh Giá Rủi Ro</span>
+                        <ShieldCheck className="w-4 h-4" />
+                      </div>
+                      <div className="font-black text-base text-purple-950 font-mono uppercase truncate">
+                        {selectedVerificationDetail.riskStatus || 'NOT_EVALUATED'}
+                      </div>
+                      <span className="text-[10px] text-purple-600 font-medium mt-1">
+                        Điểm: {formatScore(selectedVerificationDetail.riskScore)}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              )}
 
-              <div className="space-y-2">
-                <h4 className="font-bold text-slate-800 text-xs">Ảnh Giấy Tờ & Chân Dung Xác Minh:</h4>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-slate-500 block">Mặt trước CCCD</span>
-                    <div className="h-32 rounded-lg border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center">
-                      {selectedVerificationDetail.documentFrontUrl ? (
-                        <img src={selectedVerificationDetail.documentFrontUrl} alt="CCCD Mặt trước" className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-slate-400 text-[10px]">Chưa có ảnh</span>
-                      )}
+                {/* Section 3: Hình ảnh Đối chiếu Danh tính (3 ảnh) */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                      <Eye className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Hình Ảnh Đối Chiếu Danh Tính & Giấy Tờ:</span>
+                    </span>
+                    <span className="text-[11px] text-slate-400">Bấm vào ảnh để phóng to toàn màn hình</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Mặt trước */}
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-bold text-slate-600 block">1. CCCD Mặt Trước</span>
+                      <div
+                        onClick={() => selectedVerificationDetail.documentFrontUrl && setPreviewImageModal({ url: selectedVerificationDetail.documentFrontUrl, title: 'CCCD Mặt Trước' })}
+                        className="group relative aspect-4/3 rounded-2xl border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center cursor-pointer hover:border-indigo-500 transition shadow-xs"
+                      >
+                        {selectedVerificationDetail.documentFrontUrl ? (
+                          <>
+                            <img src={selectedVerificationDetail.documentFrontUrl} alt="CCCD Mặt trước" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition text-white text-xs font-bold gap-1">
+                              <ZoomIn className="w-4 h-4" />
+                              <span>Phóng to</span>
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-slate-400 text-xs">Chưa có ảnh</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Mặt sau */}
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-bold text-slate-600 block">2. CCCD Mặt Sau</span>
+                      <div
+                        onClick={() => selectedVerificationDetail.documentBackUrl && setPreviewImageModal({ url: selectedVerificationDetail.documentBackUrl, title: 'CCCD Mặt Sau' })}
+                        className="group relative aspect-4/3 rounded-2xl border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center cursor-pointer hover:border-indigo-500 transition shadow-xs"
+                      >
+                        {selectedVerificationDetail.documentBackUrl ? (
+                          <>
+                            <img src={selectedVerificationDetail.documentBackUrl} alt="CCCD Mặt sau" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition text-white text-xs font-bold gap-1">
+                              <ZoomIn className="w-4 h-4" />
+                              <span>Phóng to</span>
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-slate-400 text-xs">Chưa có ảnh</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Chân dung selfie */}
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-bold text-slate-600 block">3. Chân Dung Selfie</span>
+                      <div
+                        onClick={() => selectedVerificationDetail.selfieUrl && setPreviewImageModal({ url: selectedVerificationDetail.selfieUrl, title: 'Ảnh Chân Dung Selfie' })}
+                        className="group relative aspect-4/3 rounded-2xl border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center cursor-pointer hover:border-indigo-500 transition shadow-xs"
+                      >
+                        {selectedVerificationDetail.selfieUrl ? (
+                          <>
+                            <img src={selectedVerificationDetail.selfieUrl} alt="Selfie Chân dung" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition text-white text-xs font-bold gap-1">
+                              <ZoomIn className="w-4 h-4" />
+                              <span>Phóng to</span>
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-slate-400 text-xs">Chưa có ảnh</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-slate-500 block">Mặt sau CCCD</span>
-                    <div className="h-32 rounded-lg border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center">
-                      {selectedVerificationDetail.documentBackUrl ? (
-                        <img src={selectedVerificationDetail.documentBackUrl} alt="CCCD Mặt sau" className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-slate-400 text-[10px]">Chưa có ảnh</span>
-                      )}
+                </div>
+
+                {/* Section 4: Lịch sử xử lý từ Provider (Audit Trail) */}
+                {selectedVerificationDetail.eventHistory && selectedVerificationDetail.eventHistory.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                      <History className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Lịch sử sự kiện xử lý (Audit Trail):</span>
+                    </h4>
+                    <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
+                      {selectedVerificationDetail.eventHistory.map((ev: any, idx: number) => (
+                        <div key={ev.id || idx} className="p-2 rounded-xl bg-slate-50 border border-slate-200 text-[11px] flex items-start justify-between gap-2">
+                          <div>
+                            <span className="font-bold text-slate-800">{ev.eventType}</span>
+                            {ev.notes && <p className="text-slate-600 text-[10px] mt-0.5">{ev.notes}</p>}
+                          </div>
+                          <span className="text-[10px] text-slate-400 shrink-0 font-mono">
+                            {ev.createdAt ? new Date(ev.createdAt).toLocaleTimeString('vi-VN') : ''}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-slate-500 block">Ảnh Chân Dung Selfie</span>
-                    <div className="h-32 rounded-lg border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center">
-                      {selectedVerificationDetail.selfieUrl ? (
-                        <img src={selectedVerificationDetail.selfieUrl} alt="Selfie Chân dung" className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-slate-400 text-[10px]">Chưa có ảnh</span>
-                      )}
+                )}
+
+                {/* Section 5: Lý do & Ghi chú thẩm định */}
+                <div className="space-y-2 pt-2 border-t border-slate-200">
+                  <label className="font-bold text-slate-800 text-xs block">
+                    Lý do & Hướng dẫn bổ sung {isTerminalStatus && '(Đã ghi nhận)'}:
+                  </label>
+
+                  {!isTerminalStatus ? (
+                    <>
+                      {/* Quick reason chips */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {QUICK_VERIFICATION_REASONS.map((r, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setVerReviewReason(r)}
+                            className="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer border border-slate-200"
+                          >
+                            + {r}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                        <div>
+                          <label className="text-[10px] text-slate-500 font-bold block mb-1">Mã nguyên nhân:</label>
+                          <select
+                            value={rejectionReasonCode}
+                            onChange={(e) => setRejectionReasonCode(e.target.value)}
+                            className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-rose-500 bg-white"
+                          >
+                            <option value="IMAGE_TOO_BLURRY">Ảnh chụp bị mờ / không rõ nét</option>
+                            <option value="FACE_MISMATCH">Khuôn mặt không khớp chân dung CCCD</option>
+                            <option value="DOCUMENT_SUSPECTED_FAKE">Nghi vấn giấy tờ giả mạo</option>
+                            <option value="DOCUMENT_EXPIRED">Giấy tờ đã hết hạn sử dụng</option>
+                            <option value="DOCUMENT_NOT_FULLY_VISIBLE">Giấy tờ bị khuất / mất góc</option>
+                            <option value="SELFIE_QUALITY_LOW">Chất lượng ảnh chân dung kém</option>
+                            <option value="CONFIRMED_IDENTITY_MISMATCH">Thông tin định danh không khớp</option>
+                            <option value="DUPLICATE_IDENTITY">Số giấy tờ đã gắn tài khoản khác</option>
+                          </select>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="text-[10px] text-slate-500 font-bold block mb-1">Nội dung lý do chi tiết:</label>
+                          <input
+                            type="text"
+                            value={verReviewReason}
+                            onChange={(e) => setVerReviewReason(e.target.value)}
+                            placeholder="Nhập lý do từ chối hoặc yêu cầu nộp lại..."
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-rose-500"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-700 text-xs">
+                      {selectedVerificationDetail.rejectionReason || 'Hồ sơ đã được phê duyệt và lưu trữ trên hệ thống.'}
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
-              {selectedVerificationDetail.rejectionReason && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
-                  <strong className="block font-bold mb-0.5">Lý do bị từ chối trước đó:</strong>
-                  <span>{selectedVerificationDetail.rejectionReason}</span>
-                </div>
-              )}
+              {/* FIXED FOOTER */}
+              <div className="shrink-0 p-4 sm:p-5 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSelectedVerificationDetail(null)}
+                  className="w-full sm:w-auto px-5 py-2.5 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl font-bold text-xs transition cursor-pointer"
+                >
+                  Đóng
+                </button>
+
+                {isTerminalStatus ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold text-slate-500">
+                      Hồ sơ ở trạng thái <strong>{selectedVerificationDetail.status}</strong> — Các thao tác đã đóng.
+                    </span>
+                    <button
+                      type="button"
+                      disabled={true}
+                      className="px-4 py-2.5 bg-slate-200 text-slate-400 rounded-xl font-bold text-xs cursor-not-allowed opacity-60"
+                    >
+                      Từ Chối
+                    </button>
+                    <button
+                      type="button"
+                      disabled={true}
+                      className="px-4 py-2.5 bg-slate-200 text-slate-400 rounded-xl font-bold text-xs cursor-not-allowed opacity-60"
+                    >
+                      Yêu Cầu Nộp Lại
+                    </button>
+                    <button
+                      type="button"
+                      disabled={true}
+                      className="px-5 py-2.5 bg-slate-200 text-slate-400 rounded-xl font-bold text-xs cursor-not-allowed opacity-60"
+                    >
+                      Phê Duyệt
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-full sm:w-auto flex flex-wrap items-center gap-2.5 justify-end">
+                    {/* Thử lại eKYC nếu có lỗi */}
+                    {(selectedVerificationDetail.status === 'EKYC_PENDING' || selectedVerificationDetail.ekycStatus === 'PROVIDER_ERROR') && (
+                      <button
+                        type="button"
+                        disabled={isProcessing}
+                        onClick={() => handleRetrySellerVerification(selectedVerificationDetail.id)}
+                        className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition cursor-pointer shadow-xs flex items-center gap-1.5"
+                      >
+                        {reviewingAction === 'RETRY' ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-4 h-4" />
+                        )}
+                        <span>Thử Lại eKYC</span>
+                      </button>
+                    )}
+
+                    {/* 1. Từ chối hồ sơ */}
+                    <button
+                      type="button"
+                      disabled={isProcessing}
+                      onClick={() => handleRejectSellerVerificationWithReason(selectedVerificationDetail.id, verReviewReason, rejectionReasonCode)}
+                      className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition cursor-pointer shadow-xs flex items-center gap-1.5"
+                    >
+                      {reviewingAction === 'REJECT' ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <XCircle className="w-4 h-4" />
+                      )}
+                      <span>Từ Chối Hồ Sơ</span>
+                    </button>
+
+                    {/* 2. Yêu cầu nộp lại */}
+                    <button
+                      type="button"
+                      disabled={isProcessing}
+                      onClick={() => handleRequestResubmitSellerVerificationWithReason(selectedVerificationDetail.id, verReviewReason, rejectionReasonCode)}
+                      className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition cursor-pointer shadow-xs flex items-center gap-1.5"
+                    >
+                      {reviewingAction === 'RESUBMIT' ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4" />
+                      )}
+                      <span>Yêu Cầu Nộp Lại</span>
+                    </button>
+
+                    {/* 3. Phê duyệt eKYC */}
+                    <button
+                      type="button"
+                      disabled={isProcessing}
+                      onClick={() => handleApproveSellerVerification(selectedVerificationDetail.id, selectedVerificationDetail.status)}
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition cursor-pointer shadow-xs flex items-center gap-1.5"
+                    >
+                      {reviewingAction === 'APPROVE' ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4" />
+                      )}
+                      <span>Phê Duyệt eKYC</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
+          </div>
+        );
+      })()}
 
-            <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+      {/* ======================================================== */}
+      {/* MODAL: IMAGE PREVIEW LIGHTBOX                            */}
+      {/* ======================================================== */}
+      {previewImageModal && (
+        <div
+          className="fixed inset-0 z-60 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setPreviewImageModal(null)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[92vh] bg-slate-900 rounded-3xl p-4 shadow-2xl border border-slate-700 flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between pb-3 border-b border-slate-800 text-white">
+              <span className="font-bold text-sm">{previewImageModal.title}</span>
               <button
-                onClick={() => setSelectedVerificationDetail(null)}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer flex items-center justify-center gap-1.5"
+                onClick={() => setPreviewImageModal(null)}
+                className="p-1 rounded-full text-slate-400 hover:text-white transition cursor-pointer"
               >
-                <span>Đóng Cửa Sổ</span>
+                <X className="w-5 h-5" />
               </button>
-
-              {selectedVerificationDetail.status === 'NEEDS_REVIEW' ? (
-                <div className="w-full sm:w-auto flex items-center gap-2.5 justify-end">
-                  <button
-                    onClick={() => {
-                      setRejectModalVerificationId(selectedVerificationDetail.id);
-                      setRejectionReasonText('');
-                    }}
-                    className="flex-1 sm:flex-initial px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white text-xs font-bold shadow-md hover:shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    <XCircle className="w-4 h-4" />
-                    <span>Từ Chối Hồ Sơ</span>
-                  </button>
-                  <button
-                    onClick={() => handleApproveSellerVerification(selectedVerificationDetail.id, selectedVerificationDetail.status)}
-                    className="flex-1 sm:flex-initial px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold shadow-md hover:shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Phê Duyệt Ngay</span>
-                  </button>
-                </div>
-              ) : selectedVerificationDetail.status === 'EKYC_PENDING' || selectedVerificationDetail.ekycStatus === 'PROVIDER_ERROR' ? (
-                <div className="w-full flex items-center justify-between gap-3 bg-amber-50 px-4 py-2.5 rounded-xl border border-amber-200">
-                  <div className="text-xs text-amber-800 flex items-center gap-2 font-medium">
-                    <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>Hồ sơ đang chờ eKYC hoặc gặp lỗi nhà cung cấp ({selectedVerificationDetail.ekycStatus || 'EKYC_PENDING'}).</span>
-                  </div>
-                  <button
-                    onClick={() => handleRetrySellerVerification(selectedVerificationDetail.id)}
-                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-md transition cursor-pointer flex items-center gap-1.5 shrink-0"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Thử Lại eKYC</span>
-                  </button>
-                </div>
-              ) : selectedVerificationDetail.status === 'RESUBMIT_REQUIRED' ? (
-                <div className="w-full flex items-center justify-between gap-3 bg-orange-50 px-4 py-2.5 rounded-xl border border-orange-200">
-                  <div className="text-xs text-orange-900 flex items-center gap-2 font-medium">
-                    <AlertCircle className="w-4 h-4 text-orange-600 shrink-0" />
-                    <span>Hồ sơ đang ở trạng thái <strong>Cần Nộp Lại Ảnh (RESUBMIT_REQUIRED)</strong>. Người bán được phép chụp lại tối đa 3 lần. Hệ thống sẽ tự động chuyển sang <strong>NEEDS_REVIEW</strong> để Quản trị viên duyệt tay khi người bán nộp lại hoặc vượt quá số lần quy định.</span>
-                  </div>
-                </div>
-              ) : null}
+            </div>
+            <div className="mt-3 overflow-hidden rounded-2xl max-h-[78vh] flex items-center justify-center bg-black/50">
+              <img
+                src={previewImageModal.url}
+                alt={previewImageModal.title}
+                className="max-w-full max-h-[78vh] object-contain rounded-xl"
+              />
             </div>
           </div>
         </div>

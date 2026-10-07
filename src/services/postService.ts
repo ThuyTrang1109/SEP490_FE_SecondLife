@@ -83,24 +83,64 @@ export interface PostSubmitResponse {
 
 export const postService = {
   /**
-   * Lấy danh sách tin đăng bài công khai từ Backend
+   * Lấy danh sách sản phẩm niêm yết công khai từ Backend (GET /api/v1/listings hoặc GET /api/v1/posts)
    */
-  async getPublicPosts(categoryId?: string, itemId?: string): Promise<any> {
-    try {
-      const params = new URLSearchParams();
-      if (categoryId) params.append('categoryId', categoryId);
-      if (itemId) params.append('itemId', itemId);
+  async getPublicListings(page = 0, size = 50, categoryId?: string, itemId?: string): Promise<any> {
+    const params = new URLSearchParams();
+    params.append('page', String(page));
+    params.append('size', String(size));
+    if (categoryId) params.append('categoryId', categoryId);
+    if (itemId) params.append('itemId', itemId);
+    const queryString = `?${params.toString()}`;
 
-      const queryString = params.toString() ? `?${params.toString()}` : '';
-      const response = await request<any>(`/v1/posts${queryString}`, {
+    // 1. Thử gọi /v1/listings
+    try {
+      const res = await request<any>(`/v1/listings${queryString}`, {
         method: 'GET',
         requiresAuth: false,
       });
-      return (response as any)?.data || response;
+      const d = (res as any)?.data || res;
+      const items = d?.content || d?.items || (Array.isArray(d) ? d : []);
+      if (items && items.length > 0) return items;
     } catch (err) {
-      console.warn('Backend chưa có API GET /api/v1/posts công khai (404), trả về danh sách rỗng fallback:', err);
+      console.warn('Thử gọi /v1/listings lỗi, chuyển sang fallback /v1/posts:', err);
+    }
+
+    // 2. Fallback sang /v1/posts
+    try {
+      const resPosts = await request<any>(`/v1/posts${queryString}`, {
+        method: 'GET',
+        requiresAuth: false,
+      });
+      const d = (resPosts as any)?.data || resPosts;
+      return d?.content || d?.items || (Array.isArray(d) ? d : []);
+    } catch (err) {
+      console.warn('Thử gọi /v1/posts lỗi:', err);
       return [];
     }
+  },
+
+  /**
+   * Lấy chi tiết bài đăng niêm yết theo ID (GET /api/v1/listings/{postId})
+   */
+  async getListingDetail(postId: string): Promise<any> {
+    try {
+      const res = await request<any>(`/v1/listings/${postId}`, {
+        method: 'GET',
+        requiresAuth: false,
+      });
+      return (res as any)?.data || res;
+    } catch (err) {
+      console.warn(`Lỗi lấy chi tiết listing ${postId}:`, err);
+      return null;
+    }
+  },
+
+  /**
+   * Lấy danh sách tin đăng bài công khai từ Backend (hỗ trợ backward compatibility)
+   */
+  async getPublicPosts(categoryId?: string, itemId?: string): Promise<any> {
+    return this.getPublicListings(0, 100, categoryId, itemId);
   },
 
   /**

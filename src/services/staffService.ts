@@ -12,7 +12,7 @@ export interface GetStaffSellerVerificationsParams {
 }
 
 export interface ReviewSellerVerificationRequestDto {
-  decision: 'APPROVE' | 'REJECT';
+  decision: 'APPROVE' | 'REJECT' | 'REQUEST_RESUBMIT';
   rejectionReason?: string;
 }
 
@@ -56,33 +56,48 @@ export const staffService = {
   },
 
   /**
-   * Staff / Admin duyệt hoặc từ chối hồ sơ ngoại lệ eKYC
-   * Backend chuẩn dùng /api/admin/seller-verifications/{id}/approve hoặc /reject
+   * Staff tra cứu thông tin eKYC người bán theo User ID
+   */
+  async getVerificationByUserId(userId: string): Promise<SellerVerificationResponseDto> {
+    const res = await request<SellerVerificationResponseDto>(`/staff/seller-verifications/user/${userId}`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return res.data;
+  },
+
+  /**
+   * Staff / Admin duyệt, từ chối hoặc yêu cầu nộp lại hồ sơ ngoại lệ eKYC
    */
   async reviewVerification(
     id: string,
     data: ReviewSellerVerificationRequestDto
   ): Promise<SellerVerificationResponseDto> {
-    const adminEndpoint = data.decision === 'APPROVE'
-      ? `/admin/seller-verifications/${id}/approve`
-      : `/admin/seller-verifications/${id}/reject`;
+    const staffEndpoint = data.decision === 'APPROVE'
+      ? `/staff/seller-verifications/${id}/approve`
+      : data.decision === 'REQUEST_RESUBMIT'
+        ? `/staff/seller-verifications/${id}/request-resubmit`
+        : `/staff/seller-verifications/${id}/reject`;
 
-    const adminBody = data.decision === 'REJECT'
-      ? { reasonCode: 'OTHER', rejectionReason: data.rejectionReason || 'Hồ sơ bị từ chối bởi nhân viên kiểm duyệt' }
-      : {};
+    const body = data.decision === 'APPROVE'
+      ? {}
+      : { rejectionReason: data.rejectionReason || 'Hồ sơ chưa đạt yêu cầu kiểm duyệt' };
 
     try {
-      const res = await request<SellerVerificationResponseDto>(adminEndpoint, {
+      const res = await request<SellerVerificationResponseDto>(staffEndpoint, {
         method: 'POST',
-        body: JSON.stringify(adminBody),
+        body: JSON.stringify(body),
         requiresAuth: true,
       });
       return (res as any)?.data || res;
     } catch {
-      // Fallback: If backend environment adds /staff/seller-verifications/{id}/review
-      const res = await request<SellerVerificationResponseDto>(`/staff/seller-verifications/${id}/review`, {
+      // Fallback: If calling admin endpoints
+      const adminEndpoint = data.decision === 'APPROVE'
+        ? `/admin/seller-verifications/${id}/approve`
+        : `/admin/seller-verifications/${id}/reject`;
+      const res = await request<SellerVerificationResponseDto>(adminEndpoint, {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify(body),
         requiresAuth: true,
       });
       return (res as any)?.data || res;

@@ -42,16 +42,20 @@ import {
   RefreshCw,
   Loader2
 } from 'lucide-react';
-import { Listing, EscrowOrder, Language } from '../types';
+import { Listing, EscrowOrder, Language, UserProfile } from '../types';
 import { formatVND } from '../utils/translations';
 import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto } from '../services';
 import logoImg from '../assets/logo.png';
+import { User, LogOut } from 'lucide-react';
 
 interface StaffWorkspaceViewProps {
   listings?: Listing[];
   orders?: EscrowOrder[];
   lang?: Language;
   onViewWebsite?: () => void;
+  currentUser?: UserProfile | null;
+  onOpenProfile?: () => void;
+  onLogout?: () => void;
 }
 
 type StaffTab =
@@ -72,6 +76,9 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   orders = [],
   lang = 'vi',
   onViewWebsite,
+  currentUser,
+  onOpenProfile,
+  onLogout,
 }) => {
   const [activeTab, setActiveTab] = useState<StaffTab>('overview');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -413,109 +420,62 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
 
   return (
     <div className="min-h-screen bg-[#faf8f5] text-[#24263e] flex flex-col font-sans">
-      {/* 1. TOP NAVIGATION BAR */}
-      <header className="bg-[#24263e] text-white h-13 sm:h-14 flex items-center justify-between px-3 sm:px-4 border-b border-white/10 shrink-0 sticky top-0 z-40 shadow-sm">
-        {/* Left: Brand + Toggle + Xem website */}
-        <div className="flex items-center gap-2 sm:gap-4">
-          <div
-            onClick={() => setActiveTab('overview')}
-            className="flex items-center gap-2.5 font-black tracking-tight text-white cursor-pointer select-none pr-3 sm:pr-4 border-r border-white/15"
-          >
-            <div className="logo-badge bg-white p-1 rounded-lg shadow-xs border border-white/80 flex items-center justify-center shrink-0">
-              <img src={logoImg} alt="SecondLife Logo" className="h-7 sm:h-8 w-auto object-contain" />
-            </div>
-            <span className="font-black text-sm sm:text-base tracking-wider uppercase text-white hidden xs:inline">
-              STAFF WORKSPACE
-            </span>
-          </div>
-
-          {/* Toggle Sidebar Button */}
+      {/* 1. OPERATIONS SUB-TOOLBAR */}
+      <div className="bg-[#1e2034] text-white h-12 flex items-center justify-between px-3 sm:px-4 border-b border-white/10 shrink-0 sticky top-16 z-40 shadow-xs">
+        {/* Left: Section badge + Toggle menu */}
+        <div className="flex items-center gap-3">
           <button
             onClick={() => {
               setIsSidebarCollapsed(!isSidebarCollapsed);
               setIsMobileSidebarOpen(!isMobileSidebarOpen);
             }}
             className="p-1.5 rounded-lg text-white hover:bg-white/10 transition cursor-pointer"
-            title={lang === 'vi' ? 'Đóng / Mở menu' : 'Toggle menu'}
+            title={lang === 'vi' ? 'Đóng / Mở danh mục nghiệp vụ' : 'Toggle menu'}
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="w-4 h-4" />
           </button>
 
-          {/* Xem Website Button */}
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-[#cea981] text-[#2b1d16] uppercase tracking-wider">
+              Staff Workspace
+            </span>
+            <span className="font-bold text-xs sm:text-sm text-white/90 hidden sm:inline">
+              {lang === 'vi' ? 'Bàn Làm Việc Nghiệp Vụ Vận Hành & Kiểm Duyệt' : 'Operations & Moderation Hub'}
+            </span>
+          </div>
+        </div>
+
+        {/* Right: Quick link back to User Marketplace + Live Status */}
+        <div className="flex items-center gap-3">
           <button
             onClick={() => onViewWebsite?.()}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold text-white/80 hover:text-white hover:bg-white/10 transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1 bg-white/10 hover:bg-white/15 text-white border border-white/10 rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
+            title={lang === 'vi' ? 'Quay lại sàn đồ cũ của người dùng' : 'Back to marketplace'}
           >
-            <ExternalLink className="w-3.5 h-3.5 text-white/80" />
-            <span className="font-bold">{lang === 'vi' ? 'Xem website' : 'View Website'}</span>
-          </button>
-        </div>
-
-        {/* Right: Staff Profile */}
-        <div className="relative">
-          <button
-            onClick={() => setShowUserDropdown(!showUserDropdown)}
-            className="flex items-center gap-2.5 px-2 py-1 rounded-lg hover:bg-white/10 transition cursor-pointer"
-          >
-            <div className="w-7 h-7 rounded-full bg-white p-0.5 flex items-center justify-center shadow-xs border border-white/20 overflow-hidden">
-              <img
-                src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"
-                alt="Staff Avatar"
-                className="w-full h-full rounded-full object-cover"
-              />
-            </div>
-            <div className="text-left hidden sm:block">
-              <span className="text-xs font-black text-white block leading-tight">Staff Operator</span>
-              <span className="text-[10px] text-emerald-400 font-bold block">Kiểm Duyệt Viên</span>
-            </div>
-            <ChevronDown className="w-3.5 h-3.5 text-white hidden sm:inline" />
+            <ShoppingBag className="w-3.5 h-3.5 text-[#cea981]" />
+            <span>{lang === 'vi' ? 'Về Sàn Đồ Cũ (Người Dùng)' : 'View Marketplace'}</span>
           </button>
 
-          {showUserDropdown && (
-            <div className="absolute right-0 mt-2 w-52 bg-white text-[#24263e] rounded-xl shadow-2xl border border-gray-200 py-1 z-50 text-xs">
-              <div className="px-3 py-2 border-b border-gray-100">
-                <p className="font-black text-[#24263e]">Nhân Viên Kiểm Duyệt</p>
-                <p className="text-[11px] text-gray-500 font-medium">staff.moderator@secondlife.vn</p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowUserDropdown(false);
-                  onViewWebsite?.();
-                }}
-                className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-2 text-[#24263e] font-semibold cursor-pointer"
-              >
-                <ExternalLink className="w-3.5 h-3.5 text-[#24263e]" />
-                <span>Về trang mua bán sàn</span>
-              </button>
-              <div className="border-t border-gray-100 my-1"></div>
-              <button
-                onClick={() => {
-                  setShowUserDropdown(false);
-                  onViewWebsite?.();
-                }}
-                className="w-full text-left px-3 py-2 hover:bg-rose-50 text-rose-600 flex items-center gap-2 cursor-pointer font-bold"
-              >
-                <X className="w-3.5 h-3.5" />
-                <span>Thoát quyền Staff</span>
-              </button>
-            </div>
-          )}
+          <div className="hidden md:flex items-center gap-1.5 text-xs text-emerald-400 font-bold bg-emerald-950/40 px-2.5 py-1 rounded-full border border-emerald-500/20">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>{lang === 'vi' ? 'Trực Tuyến' : 'Online'}</span>
+          </div>
         </div>
-      </header>
+      </div>
 
       {/* 2. BODY CONTAINER: SIDEBAR + MAIN WORKSPACE */}
       <div className="flex-1 flex relative">
         {/* LEFT SIDEBAR */}
         <aside
-          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] ${isSidebarCollapsed ? 'w-16' : 'w-60 sm:w-64'
-            } ${isMobileSidebarOpen ? 'fixed inset-y-13 left-0 shadow-2xl block' : 'hidden md:flex'}`}
+          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-28 h-[calc(100vh-7rem)] ${isSidebarCollapsed ? 'w-16' : 'w-60 sm:w-64'
+            } ${isMobileSidebarOpen ? 'fixed inset-y-28 left-0 shadow-2xl block' : 'hidden md:flex'}`}
         >
           {/* User Block */}
           <div className="p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3">
             <div className="relative shrink-0">
               <div className="w-10 h-10 rounded-full bg-white p-0.5 border border-[#24263e]/20 overflow-hidden">
                 <img
-                  src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"
+                  src={currentUser?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"}
                   alt="Staff"
                   className="w-full h-full object-cover rounded-full"
                 />
@@ -524,7 +484,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
             </div>
             {!isSidebarCollapsed && (
               <div className="overflow-hidden">
-                <h4 className="font-black text-xs sm:text-sm text-[#24263e] truncate">Staff Operator</h4>
+                <h4 className="font-black text-xs sm:text-sm text-[#24263e] truncate">{currentUser?.name || 'Nhân Viên Vận Hành'}</h4>
                 <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 font-bold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
                   <span>Đang Trực Tuyến</span>

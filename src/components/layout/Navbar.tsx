@@ -100,7 +100,11 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Logo */}
         <div
           className="flex items-center gap-2.5 cursor-pointer select-none group shrink-0"
-          onClick={() => onTabChange('marketplace')}
+          onClick={() => {
+            if (currentUser?.role === 'admin' || currentRole === 'admin') onTabChange('admin-dashboard');
+            else if (currentUser?.role === 'inspector' || currentRole === 'inspector') onTabChange('inspection-hub');
+            else onTabChange('home');
+          }}
         >
           <div className="logo-badge bg-white p-1.5 rounded-xl shadow-xs border border-white/80 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
             <img
@@ -152,21 +156,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Building2 className="w-4 h-4" />
               <span>{lang === 'vi' ? 'Trung Tâm Kiểm Định Hub' : 'Inspection Hub'}</span>
             </button>
-          ) : currentUser && currentRole === 'staff' ? (
-            /* Staff role: ONLY Staff Operations portal */
-            <button
-              onClick={() => onTabChange('staff-workspace')}
-              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'staff-workspace'
-                  ? 'bg-[#2b1d16] text-white shadow-sm'
-                  : 'text-white/80 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <FileCheck className="w-4 h-4 text-[#cea981]" />
-              <span>{lang === 'vi' ? 'Nghiệp Vụ Vận Hành Staff' : 'Staff Portal'}</span>
-            </button>
           ) : (
-            /* Buyer & Seller & Public roles: Marketplace Navigation */
+            /* Buyer, Seller, Staff & Public roles: Full Marketplace Navigation */
             <>
               <button
                 onClick={() => onTabChange('home')}
@@ -192,7 +183,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span>{lang === 'vi' ? 'Sàn Đồ Cũ' : 'Marketplace'}</span>
               </button>
 
-              {currentUser && currentRole === 'seller' && (
+              {currentUser && (currentRole === 'seller' || currentRole === 'staff') && (
                 <button
                   onClick={() => onTabChange('seller-dashboard')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
@@ -206,7 +197,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
 
-              {currentUser && (
+              {currentUser && !['admin', 'inspector'].includes(currentRole) && (
                 <button
                   onClick={() => onTabChange('orders')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${
@@ -224,14 +215,29 @@ export const Navbar: React.FC<NavbarProps> = ({
                   )}
                 </button>
               )}
+
+              {/* Staff Workspace - Placed at the end of navigation */}
+              {currentUser && (currentRole === 'staff' || currentUser.role === 'staff') && (
+                <button
+                  onClick={() => onTabChange('staff-workspace')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'staff-workspace'
+                      ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <FileCheck className="w-3.5 h-3.5 text-[#cea981]" />
+                  <span>{lang === 'vi' ? 'Nghiệp Vụ Staff' : 'Staff Portal'}</span>
+                </button>
+              )}
             </>
           )}
         </nav>
 
         {/* Action buttons & Profile */}
         <div className="flex items-center gap-2.5 shrink-0">
-          {/* TopUp & Wallet Balance Badge Button - Only for Buyer & Seller */}
-          {currentUser && !['admin', 'staff', 'inspector'].includes(currentRole) && (
+          {/* TopUp & Wallet Balance Badge Button - Buyer, Seller & Staff */}
+          {currentUser && !['admin', 'inspector'].includes(currentRole) && (
             <button
               onClick={onOpenTopUp}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/15 text-white border border-white/20 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
@@ -240,7 +246,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Wallet className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <div className="flex items-center gap-1 text-[11px]">
                 <span className="text-emerald-300 font-extrabold font-mono">{formatVND(walletBalance)}</span>
-                {currentRole === 'seller' && (
+                {(currentRole === 'seller' || currentRole === 'staff') && (
                   <>
                     <span className="text-white/40">•</span>
                     <span className="text-white font-extrabold">{userCredit?.postCredits ?? (userCreditBalance ?? 0)} {lang === 'vi' ? 'tin' : 'posts'}</span>
@@ -265,13 +271,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
 
-          {/* Post Listing CTA Button - HIDE for admin, staff, inspector */}
-          {(!currentUser || !['admin', 'staff', 'inspector'].includes(currentRole)) && (
+          {/* Post Listing CTA Button - Buyer, Seller, Staff */}
+          {(!currentUser || !['admin', 'inspector'].includes(currentRole)) && (
             <button
               onClick={() => {
                 if (!currentUser) {
                   onTabChange('create-listing');
-                } else if (currentRole !== 'seller') {
+                } else if (currentRole !== 'seller' && currentRole !== 'staff') {
                   if (onOpenSellerRegister) {
                     onOpenSellerRegister();
                   } else {
@@ -386,28 +392,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>Hồ Sơ</span>
             </button>
           </>
-        ) : currentUser && currentRole === 'staff' ? (
-          <>
-            <button
-              onClick={() => onTabChange('staff-workspace')}
-              className={`flex items-center gap-1 py-1 px-2 rounded-md ${
-                activeTab === 'staff-workspace' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
-              }`}
-            >
-              <FileCheck className="w-3.5 h-3.5" />
-              <span>Nghiệp Vụ Staff</span>
-            </button>
-            <button
-              onClick={onOpenProfile}
-              className="flex items-center gap-1 py-1 px-2 rounded-md text-white/90 hover:text-white"
-            >
-              <div className="w-4 h-4 rounded-full bg-white text-[#c34c36] flex items-center justify-center font-bold text-[9px]">
-                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
-              </div>
-              <span>Hồ Sơ</span>
-            </button>
-          </>
-        ) : (
+          ) : (
           <>
             <button
               onClick={() => onTabChange('home')}
@@ -423,7 +408,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <ShoppingBag className="w-3.5 h-3.5" />
               <span>{lang === 'vi' ? 'Sàn đồ cũ' : 'Market'}</span>
             </button>
-            {currentUser && currentRole === 'seller' && (
+            {currentUser && (currentRole === 'seller' || currentRole === 'staff') && (
               <button
                 onClick={() => onTabChange('create-listing')}
                 className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'create-listing' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'}`}
@@ -439,6 +424,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <Clock className="w-3.5 h-3.5" />
                 <span>{lang === 'vi' ? 'Đơn hàng' : 'Orders'}</span>
+              </button>
+            )}
+            {currentUser && (currentRole === 'staff' || currentUser.role === 'staff') && (
+              <button
+                onClick={() => onTabChange('staff-workspace')}
+                className={`flex items-center gap-1 py-1 px-2 rounded-md ${
+                  activeTab === 'staff-workspace' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
+                }`}
+              >
+                <FileCheck className="w-3.5 h-3.5" />
+                <span>Nghiệp Vụ Staff</span>
               </button>
             )}
             {currentUser ? (

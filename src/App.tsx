@@ -32,11 +32,11 @@ export default function App() {
     const token = getAccessToken();
     const stored = getStoredUser();
     if (token && stored && stored.role) {
-      if (stored.role === 'admin') return 'admin-dashboard';
-      if (stored.role === 'inspector') return 'inspection-hub';
-      if (stored.role === 'staff') return 'staff-workspace';
+      const r = String(stored.role).toLowerCase();
+      if (r === 'admin') return 'admin-dashboard';
+      if (r === 'inspector') return 'inspection-hub';
     }
-    return 'marketplace';
+    return 'home';
   });
 
   React.useEffect(() => {
@@ -96,8 +96,6 @@ export default function App() {
             setActiveTab('admin-dashboard');
           } else if (syncedUser.role === 'inspector') {
             setActiveTab('inspection-hub');
-          } else if (syncedUser.role === 'staff') {
-            setActiveTab('staff-workspace');
           }
         } else {
           clearAuthTokens();
@@ -268,13 +266,13 @@ export default function App() {
     }
 
     if (tab === 'create-listing') {
-      if (currentUser && ['admin', 'staff', 'inspector'].includes(currentUser.role)) {
+      if (currentUser && ['admin', 'inspector'].includes(currentUser.role)) {
         showToast(lang === 'vi'
-          ? 'Tài khoản Quản trị viên, Nhân viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
-          : 'Admin, Staff and Inspector roles cannot register as sellers.');
+          ? 'Tài khoản Quản trị viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
+          : 'Admin and Inspector roles cannot register as sellers.');
         return;
       }
-      if (currentUser && currentUser.role !== 'seller') {
+      if (currentUser && currentUser.role !== 'seller' && currentUser.role !== 'staff') {
         setIsSellerRegistrationModalOpen(true);
         return;
       }
@@ -313,7 +311,7 @@ export default function App() {
     if (newRole === 'inspector') {
       handleTabChange('inspection-hub');
     } else if (newRole === 'staff') {
-      handleTabChange('staff-workspace');
+      handleTabChange('home');
     } else if (newRole === 'admin') {
       handleTabChange('admin-dashboard');
     } else if (newRole === 'seller') {
@@ -771,7 +769,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col font-sans bg-[#faf8f5] text-[#24263e] selection:bg-[#c34c36] selection:text-white">
       {/* Navigation */}
-      {activeTab !== 'admin-dashboard' && activeTab !== 'staff-workspace' && (
+      {activeTab !== 'admin-dashboard' && (
         <Navbar
           currentRole={currentRole}
           onRoleChange={handleRoleChange}
@@ -806,10 +804,10 @@ export default function App() {
           userCredit={userCredit}
           walletBalance={walletBalance}
           onOpenSellerRegister={() => {
-            if (currentUser && ['admin', 'staff', 'inspector'].includes(currentUser.role)) {
+            if (currentUser && ['admin', 'inspector'].includes(currentUser.role)) {
               showToast(lang === 'vi'
-                ? 'Tài khoản Quản trị viên, Nhân viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
-                : 'Admin, Staff and Inspector roles cannot register as sellers.');
+                ? 'Tài khoản Quản trị viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
+                : 'Admin and Inspector roles cannot register as sellers.');
               return;
             }
             setIsSellerRegistrationModalOpen(true);
@@ -849,11 +847,11 @@ export default function App() {
                 requireAuth(undefined, lang === 'vi'
                   ? 'Vui lòng đăng nhập để thử nghiệm định giá AI và đăng bán sản phẩm.'
                   : 'Please log in to experience AI valuation and create listings.');
-              } else if (['admin', 'staff', 'inspector'].includes(currentUser.role)) {
+              } else if (['admin', 'inspector'].includes(currentUser.role)) {
                 showToast(lang === 'vi'
-                  ? 'Tài khoản Quản trị viên, Nhân viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
-                  : 'Admin, Staff and Inspector roles cannot register as sellers.');
-              } else if (currentUser.role !== 'seller') {
+                  ? 'Tài khoản Quản trị viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
+                  : 'Admin and Inspector roles cannot register as sellers.');
+              } else if (currentUser.role !== 'seller' && currentUser.role !== 'staff') {
                 setIsSellerRegistrationModalOpen(true);
               } else {
                 setActiveTab('create-listing');
@@ -886,7 +884,7 @@ export default function App() {
         )}
 
         {activeTab === 'create-listing' && (
-          currentUser && currentUser.role !== 'seller' ? (
+          currentUser && currentUser.role !== 'seller' && currentUser.role !== 'staff' ? (
             <div className="py-12 px-4 text-center max-w-xl mx-auto space-y-4">
               <div className="w-16 h-16 rounded-3xl bg-[#faf8f5] text-[#24263e] flex items-center justify-center mx-auto shadow-md">
                 <Store className="w-8 h-8" />
@@ -908,10 +906,10 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => {
-                    if (['admin', 'staff', 'inspector'].includes(currentUser.role)) {
+                    if (['admin', 'inspector'].includes(currentUser.role)) {
                       showToast(lang === 'vi'
-                        ? 'Tài khoản Quản trị viên, Nhân viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
-                        : 'Admin, Staff and Inspector roles cannot register as sellers.');
+                        ? 'Tài khoản Quản trị viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
+                        : 'Admin and Inspector roles cannot register as sellers.');
                       return;
                     }
                     setIsSellerRegistrationModalOpen(true);
@@ -957,7 +955,10 @@ export default function App() {
             listings={listings}
             orders={orders}
             lang={lang}
-            onViewWebsite={() => setActiveTab('marketplace')}
+            currentUser={currentUser}
+            onOpenProfile={() => setIsProfileDialogOpen(true)}
+            onLogout={() => setIsLogoutModalOpen(true)}
+            onViewWebsite={() => setActiveTab('home')}
           />
         )}
 
@@ -1124,7 +1125,7 @@ export default function App() {
           } else if (user.role === 'inspector') {
             setActiveTab('inspection-hub');
           } else if (user.role === 'staff') {
-            setActiveTab('staff-workspace');
+            setActiveTab('home');
           } else if (pendingCheckoutItem) {
             setSelectedListing(null);
             setCheckoutListing(pendingCheckoutItem);

@@ -1,0 +1,639 @@
+[
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCatalogService.ts",
+    "method": "GET",
+    "url": "/api/v1/admin/catalog/categories",
+    "rawUrl": "/v1/admin/catalog/categories"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCatalogService.ts",
+    "method": "POST",
+    "url": "/api/v1/admin/catalog/categories",
+    "rawUrl": "/v1/admin/catalog/categories"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCatalogService.ts",
+    "method": "PUT",
+    "url": "/api/v1/admin/catalog/categories/${id}",
+    "rawUrl": "/v1/admin/catalog/categories/${id}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCatalogService.ts",
+    "method": "DELETE",
+    "url": "/api/v1/admin/catalog/categories/${id}",
+    "rawUrl": "/v1/admin/catalog/categories/${id}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCatalogService.ts",
+    "method": "GET",
+    "url": "/api/v1/admin/catalog/items",
+    "rawUrl": "/v1/admin/catalog/items"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCatalogService.ts",
+    "method": "GET",
+    "url": "/api/v1/admin/catalog/categories/${categoryId}/items",
+    "rawUrl": "/v1/admin/catalog/categories/${categoryId}/items"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCatalogService.ts",
+    "method": "POST",
+    "url": "/api/v1/admin/catalog/items",
+    "rawUrl": "/v1/admin/catalog/items"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCatalogService.ts",
+    "method": "PUT",
+    "url": "/api/v1/admin/catalog/items/${id}",
+    "rawUrl": "/v1/admin/catalog/items/${id}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCatalogService.ts",
+    "method": "DELETE",
+    "url": "/api/v1/admin/catalog/items/${id}",
+    "rawUrl": "/v1/admin/catalog/items/${id}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCatalogService.ts",
+    "method": "GET",
+    "url": "/api/v1/admin/catalog/templates",
+    "rawUrl": "/v1/admin/catalog/templates"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCatalogService.ts",
+    "method": "POST",
+    "url": "/api/v1/admin/catalog/templates",
+    "rawUrl": "/v1/admin/catalog/templates"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCatalogService.ts",
+    "method": "PUT",
+    "url": "/api/v1/admin/catalog/templates/${id}",
+    "rawUrl": "/v1/admin/catalog/templates/${id}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCatalogService.ts",
+    "method": "DELETE",
+    "url": "/api/v1/admin/catalog/templates/${id}",
+    "rawUrl": "/v1/admin/catalog/templates/${id}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCreditPricingService.ts",
+    "method": "GET",
+    "url": "/api/admin/credit-pricing",
+    "rawUrl": "/admin/credit-pricing"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCreditPricingService.ts",
+    "method": "PUT",
+    "url": "/api/admin/credit-pricing/${creditType}",
+    "rawUrl": "/admin/credit-pricing/${creditType}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCreditPricingService.ts",
+    "method": "GET",
+    "url": "/api/admin/credit-discount-tiers",
+    "rawUrl": "/admin/credit-discount-tiers"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCreditPricingService.ts",
+    "method": "POST",
+    "url": "/api/admin/credit-discount-tiers",
+    "rawUrl": "/admin/credit-discount-tiers"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminCreditPricingService.ts",
+    "method": "PUT",
+    "url": "/api/admin/credit-discount-tiers/${tierId}",
+    "rawUrl": "/admin/credit-discount-tiers/${tierId}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminPostService.ts",
+    "method": "GET",
+    "url": "/api/v1/admin/posts${queryString}",
+    "rawUrl": "/v1/admin/posts${queryString}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminPostService.ts",
+    "method": "POST",
+    "url": "/api/v1/admin/posts/${postId}/reject${queryString}",
+    "rawUrl": "/v1/admin/posts/${postId}/reject${queryString}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminRbacService.ts",
+    "method": "GET",
+    "url": "/api/admin/permissions",
+    "rawUrl": "/admin/permissions"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminRbacService.ts",
+    "method": "GET",
+    "url": "/api/admin/permissions/${permissionCode}",
+    "rawUrl": "/admin/permissions/${permissionCode}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminRbacService.ts",
+    "method": "POST",
+    "url": "/api/admin/permissions",
+    "rawUrl": "/admin/permissions"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminRbacService.ts",
+    "method": "PUT",
+    "url": "/api/admin/permissions/${permissionCode}",
+    "rawUrl": "/admin/permissions/${permissionCode}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminRbacService.ts",
+    "method": "DELETE",
+    "url": "/api/admin/permissions/${permissionCode}",
+    "rawUrl": "/admin/permissions/${permissionCode}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminRbacService.ts",
+    "method": "GET",
+    "url": "/api/admin/roles",
+    "rawUrl": "/admin/roles"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminRbacService.ts",
+    "method": "GET",
+    "url": "/api/admin/roles/${roleCode}",
+    "rawUrl": "/admin/roles/${roleCode}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminRbacService.ts",
+    "method": "PUT",
+    "url": "/api/admin/roles/${roleCode}/permissions",
+    "rawUrl": "/admin/roles/${roleCode}/permissions"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminRbacService.ts",
+    "method": "GET",
+    "url": "/api/admin/roles/${roleCode}/permission-changes",
+    "rawUrl": "/admin/roles/${roleCode}/permission-changes?page=${page}&size=${size}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminService.ts",
+    "method": "GET",
+    "url": "/api/admin/seller-verifications/${id}",
+    "rawUrl": "/admin/seller-verifications/${id}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminService.ts",
+    "method": "POST",
+    "url": "/api/admin/seller-verifications/${id}/approve",
+    "rawUrl": "/admin/seller-verifications/${id}/approve"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminService.ts",
+    "method": "POST",
+    "url": "/api/admin/seller-verifications/${id}/reject",
+    "rawUrl": "/admin/seller-verifications/${id}/reject"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminService.ts",
+    "method": "POST",
+    "url": "/api/admin/seller-verifications/${id}/retry-ekyc",
+    "rawUrl": "/admin/seller-verifications/${id}/retry-ekyc"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminService.ts",
+    "method": "POST",
+    "url": "/api/admin/inspection-center-accounts",
+    "rawUrl": "/admin/inspection-center-accounts"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminService.ts",
+    "method": "GET",
+    "url": "/api/v1/admin/users/${userId}/roles",
+    "rawUrl": "/v1/admin/users/${userId}/roles"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminService.ts",
+    "method": "PUT",
+    "url": "/api/v1/admin/users/${userId}/roles",
+    "rawUrl": "/v1/admin/users/${userId}/roles"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "adminService.ts",
+    "method": "GET",
+    "url": "/api/v1/admin/users/${userId}/role-changes",
+    "rawUrl": "/v1/admin/users/${userId}/role-changes?page=${page}&size=${size}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "authService.ts",
+    "method": "POST",
+    "url": "/api/auth/register",
+    "rawUrl": "/auth/register"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "authService.ts",
+    "method": "POST",
+    "url": "/api/auth/login",
+    "rawUrl": "/auth/login"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "authService.ts",
+    "method": "POST",
+    "url": "/api/auth/refresh",
+    "rawUrl": "/auth/refresh"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "authService.ts",
+    "method": "POST",
+    "url": "/api/auth/logout",
+    "rawUrl": "/auth/logout"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "authService.ts",
+    "method": "POST",
+    "url": "/api/auth/email-verification/confirm",
+    "rawUrl": "/auth/email-verification/confirm"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "authService.ts",
+    "method": "POST",
+    "url": "/api/auth/email-verification/send",
+    "rawUrl": "/auth/email-verification/send"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "authService.ts",
+    "method": "POST",
+    "url": "/api/auth/forgot-password",
+    "rawUrl": "/auth/forgot-password"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "authService.ts",
+    "method": "POST",
+    "url": "/api/auth/reset-password",
+    "rawUrl": "/auth/reset-password"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "authService.ts",
+    "method": "POST",
+    "url": "/api/auth/google",
+    "rawUrl": "/auth/google"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "healthService.ts",
+    "method": "GET",
+    "url": "/api/health",
+    "rawUrl": "/health"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "inspectorService.ts",
+    "method": "GET",
+    "url": "/api/inspector/orders",
+    "rawUrl": "/inspector/orders"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "inspectorService.ts",
+    "method": "GET",
+    "url": "/api/inspector/orders/all",
+    "rawUrl": "/inspector/orders/all?${params.toString()}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "inspectorService.ts",
+    "method": "POST",
+    "url": "/api/inspector/orders/${orderId}/assign",
+    "rawUrl": "/inspector/orders/${orderId}/assign?inspectorId=${encodeURIComponent(inspectorId)}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "inspectorService.ts",
+    "method": "POST",
+    "url": "/api/inspector/orders/${orderId}/result",
+    "rawUrl": "/inspector/orders/${orderId}/result"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "inspectorService.ts",
+    "method": "GET",
+    "url": "/api/inspector-center/staff",
+    "rawUrl": "/inspector-center/staff"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "inspectorService.ts",
+    "method": "POST",
+    "url": "/api/inspector-center/staff",
+    "rawUrl": "/inspector-center/staff"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "negotiationService.ts",
+    "method": "POST",
+    "url": "/api/v1/negotiations",
+    "rawUrl": "/v1/negotiations"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "negotiationService.ts",
+    "method": "GET",
+    "url": "/api/v1/negotiations/buyer",
+    "rawUrl": "/v1/negotiations/buyer?page=${page}&size=${size}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "negotiationService.ts",
+    "method": "GET",
+    "url": "/api/v1/negotiations/seller",
+    "rawUrl": "/v1/negotiations/seller?page=${page}&size=${size}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "negotiationService.ts",
+    "method": "PUT",
+    "url": "/api/v1/negotiations/${id}/accept",
+    "rawUrl": "/v1/negotiations/${id}/accept"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "negotiationService.ts",
+    "method": "PUT",
+    "url": "/api/v1/negotiations/${id}/reject",
+    "rawUrl": "/v1/negotiations/${id}/reject"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "negotiationService.ts",
+    "method": "PUT",
+    "url": "/api/v1/negotiations/${id}/cancel",
+    "rawUrl": "/v1/negotiations/${id}/cancel"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "orderService.ts",
+    "method": "POST",
+    "url": "/api/v1/orders",
+    "rawUrl": "/v1/orders"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "orderService.ts",
+    "method": "GET",
+    "url": "/api/v1/orders/buyer",
+    "rawUrl": "/v1/orders/buyer?page=${page}&size=${size}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "orderService.ts",
+    "method": "GET",
+    "url": "/api/v1/orders/seller",
+    "rawUrl": "/v1/orders/seller?page=${page}&size=${size}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "orderService.ts",
+    "method": "PUT",
+    "url": "/api/v1/orders/${id}/shipped",
+    "rawUrl": "/v1/orders/${id}/shipped"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "orderService.ts",
+    "method": "PUT",
+    "url": "/api/v1/orders/${id}/delivered",
+    "rawUrl": "/v1/orders/${id}/delivered"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "orderService.ts",
+    "method": "PUT",
+    "url": "/api/v1/orders/${id}/cancel",
+    "rawUrl": "/v1/orders/${id}/cancel"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "postService.ts",
+    "method": "GET",
+    "url": "/api/v1/posts${queryString}",
+    "rawUrl": "/v1/posts${queryString}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "postService.ts",
+    "method": "GET",
+    "url": "/api/v1/posts/my-posts",
+    "rawUrl": "/v1/posts/my-posts?page=${page}&size=${size}&sort=createdAt,desc"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "postService.ts",
+    "method": "GET",
+    "url": "/api/v1/posts/${postId}",
+    "rawUrl": "/v1/posts/${postId}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "postService.ts",
+    "method": "PUT",
+    "url": "/api/v1/posts/${postId}/draft",
+    "rawUrl": "/v1/posts/${postId}/draft"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "postService.ts",
+    "method": "POST",
+    "url": "/api/v1/posts/${postId}/accept-description",
+    "rawUrl": "/v1/posts/${postId}/accept-description"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "postService.ts",
+    "method": "POST",
+    "url": "/api/v1/posts/${postId}/ai-price-estimation",
+    "rawUrl": "/v1/posts/${postId}/ai-price-estimation"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "postService.ts",
+    "method": "GET",
+    "url": "/api/v1/posts/${postId}/ai-price-estimation",
+    "rawUrl": "/v1/posts/${postId}/ai-price-estimation"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "postService.ts",
+    "method": "GET",
+    "url": "/api/v1/posts/${postId}/ai-price-estimation/history",
+    "rawUrl": "/v1/posts/${postId}/ai-price-estimation/history?page=${page}&size=${size}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "sellerCreditService.ts",
+    "method": "GET",
+    "url": "/api/seller/credits",
+    "rawUrl": "/seller/credits"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "sellerCreditService.ts",
+    "method": "GET",
+    "url": "/api/seller/credit-pricing${qs}",
+    "rawUrl": "/seller/credit-pricing${qs}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "sellerCreditService.ts",
+    "method": "POST",
+    "url": "/api/seller/credit-purchases",
+    "rawUrl": "/seller/credit-purchases"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "sellerCreditService.ts",
+    "method": "GET",
+    "url": "/api/seller/credit-purchases",
+    "rawUrl": "/seller/credit-purchases?page=${page}&size=${size}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "sellerCreditService.ts",
+    "method": "GET",
+    "url": "/api/seller/credit-ledger",
+    "rawUrl": "/seller/credit-ledger?page=${page}&size=${size}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "sellerService.ts",
+    "method": "POST",
+    "url": "/api/seller-verifications",
+    "rawUrl": "/seller-verifications"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "sellerService.ts",
+    "method": "GET",
+    "url": "/api/seller-verifications/me",
+    "rawUrl": "/seller-verifications/me"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "sellerService.ts",
+    "method": "POST",
+    "url": "/api/seller-verifications/${verificationId}/resubmit",
+    "rawUrl": "/seller-verifications/${verificationId}/resubmit"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "sellerService.ts",
+    "method": "POST",
+    "url": "/api/v1/ekyc/verify",
+    "rawUrl": "/v1/ekyc/verify"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "staffListingService.ts",
+    "method": "GET",
+    "url": "/api/v1/posts/${postId}",
+    "rawUrl": "/v1/posts/${postId}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "staffListingService.ts",
+    "method": "POST",
+    "url": "/api/v1/admin/posts/${postId}/reject${query}",
+    "rawUrl": "/v1/admin/posts/${postId}/reject${query}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "staffService.ts",
+    "method": "GET",
+    "url": "/api/staff/seller-verifications/${id}",
+    "rawUrl": "/staff/seller-verifications/${id}"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "staffService.ts",
+    "method": "POST",
+    "url": "/api/staff/seller-verifications/${id}/review",
+    "rawUrl": "/staff/seller-verifications/${id}/review"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "userService.ts",
+    "method": "GET",
+    "url": "/api/users/me",
+    "rawUrl": "/users/me"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "userService.ts",
+    "method": "PATCH",
+    "url": "/api/users/me",
+    "rawUrl": "/users/me"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "userService.ts",
+    "method": "POST",
+    "url": "/api/auth/change-password",
+    "rawUrl": "/auth/change-password"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "walletService.ts",
+    "method": "GET",
+    "url": "/api/v1/wallets/me",
+    "rawUrl": "/v1/wallets/me"
+  },
+  {
+    "type": "ENDPOINT_MISSING_IN_BE",
+    "file": "walletService.ts",
+    "method": "POST",
+    "url": "/api/v1/wallets/deposit-request",
+    "rawUrl": "/v1/wallets/deposit-request"
+  }
+]

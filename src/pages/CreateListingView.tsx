@@ -1707,12 +1707,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   </div>
                 </div>
 
-                <div className="p-3.5 bg-white rounded-xl border border-emerald-100 shadow-xs">
-                  <span className="text-[11px] text-slate-500 font-bold block">Thời gian bán dự kiến:</span>
-                  <div className="text-sm font-black text-slate-800 mt-1">
-                    {valuationResult.expectedSellTime || '1 - 2 tuần'}
-                  </div>
-                </div>
+              
               </div>
 
               <div className="flex justify-end">

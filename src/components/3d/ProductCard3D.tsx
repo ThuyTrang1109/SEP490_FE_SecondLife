@@ -67,7 +67,7 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
         transformStyle: 'preserve-3d',
         transition: isHovered ? 'transform 0.1s ease-out' : 'transform 0.3s ease-out'
       }}
-      className="group relative bg-white rounded-2xl border border-slate-200 hover:border-[#c34c36] shadow-sm hover:shadow-md flex flex-col overflow-hidden cursor-pointer select-none transition-all duration-300"
+      className="group relative bg-white rounded-xl border border-slate-200 hover:border-[#c34c36] shadow-2xs hover:shadow-md flex flex-col overflow-hidden cursor-pointer select-none transition-all duration-300"
     >
       {/* Photo container */}
       <div className="relative aspect-4/3 w-full bg-[#faf8f5] overflow-hidden">
@@ -79,19 +79,19 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
         />
 
         {/* Top Badges */}
-        <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 z-20">
+        <div className="absolute top-2 left-2 flex items-center gap-1 z-20 flex-wrap">
           <span
-            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-[#24263e]/85 text-white backdrop-blur-md shadow-xs"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9.5px] font-bold bg-[#24263e]/85 text-white backdrop-blur-md shadow-xs"
           >
             {getConditionLabel()}
           </span>
 
           {item.isInspectionGuaranteed && (
             <span
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-[#24263e]/85 text-white backdrop-blur-md shadow-xs"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-[#24263e]/85 text-white backdrop-blur-md shadow-xs"
               title={lang === 'vi' ? 'Đã kiểm định tại SecondLife Hub' : 'Inspected at SecondLife Hub'}
             >
-              <ShieldCheck className="w-3 h-3 text-white" />
+              <ShieldCheck className="w-2.5 h-2.5 text-white" />
               <span>Hub Verified</span>
             </span>
           )}
@@ -99,75 +99,84 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
       </div>
 
       {/* Card Content */}
-      <div className="p-3.5 sm:p-4 flex-1 flex flex-col justify-between space-y-2.5 bg-white">
+      <div className="p-2.5 sm:p-3 flex-1 flex flex-col justify-between space-y-2 bg-white">
         <div>
           {/* Brand & Location */}
-          <div className="flex items-center justify-between text-[11px] text-[#24263e]/60 mb-1">
-            <span className="font-bold text-[#24263e] uppercase tracking-wide">
+          <div className="flex items-center justify-between text-[10px] text-[#24263e]/60 mb-0.5">
+            <span className="font-bold text-[#24263e] uppercase tracking-wide truncate max-w-[110px]">
               {item.brand} • {item.purchaseYear}
             </span>
-            <span className="flex items-center gap-1 text-[#24263e]/70 font-medium">
-              <MapPin className="w-3 h-3 text-[#24263e]" />
+            <span className="flex items-center gap-0.5 text-[#24263e]/70 font-medium shrink-0">
+              <MapPin className="w-2.5 h-2.5 text-[#24263e]" />
               {item.location.split(',')[0]}
             </span>
           </div>
 
           {/* Title */}
-          <h3 className="font-bold text-[#24263e] text-xs sm:text-sm line-clamp-2 leading-snug group-hover:text-[#24263e] transition-colors">
+          <h3 className="font-bold text-[#24263e] text-xs sm:text-[13px] line-clamp-2 leading-snug group-hover:text-[#c34c36] transition-colors min-h-[2rem]">
             {item.title}
           </h3>
         </div>
 
         {/* AI Fair Price Range */}
         {item.aiPriceEstimation && (
-          <div className="bg-[#faf8f5] rounded-xl p-2 border border-slate-200 space-y-1">
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="text-[#24263e] flex items-center gap-1 font-semibold">
-                <Sparkles className="w-3 h-3 text-[#24263e]" />
-                {lang === 'vi' ? 'Giá thị trường AI:' : 'AI Fair Range:'}
+          <div className="bg-[#faf8f5] rounded-lg p-1.5 border border-slate-200 space-y-0.5">
+            <div className="flex items-center justify-between text-[10px]">
+              <span className="text-[#24263e] flex items-center gap-0.5 font-semibold">
+                <Sparkles className="w-2.5 h-2.5 text-[#24263e]" />
+                {lang === 'vi' ? 'Giá AI:' : 'AI Price:'}
               </span>
-              <span className="font-bold text-[#24263e] text-[11px]">
+              <span className="font-bold text-[#24263e] text-[10px]">
                 {formatVND(item.aiPriceEstimation.minVnd)} - {formatVND(item.aiPriceEstimation.maxVnd)}
               </span>
             </div>
-            <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden flex">
+            <div className="w-full bg-slate-200 h-1 rounded-full overflow-hidden flex">
               <div className="bg-[#24263e] h-full rounded-full" style={{ width: '85%' }} />
             </div>
           </div>
         )}
 
         {/* Price & Seller Info */}
-        <div className="pt-2 border-t border-slate-100 flex items-end justify-between">
-          <div>
-            <div className="text-[10px] text-[#24263e]/60 font-medium">
-              {item.originalPriceVnd && (
-                <span className="line-through text-[#24263e]/40 mr-1.5">
+        <div className="pt-2 border-t border-slate-100 space-y-1.5">
+          {/* Row 1: Giá bán nổi bật */}
+          <div className="flex items-baseline justify-between gap-1.5">
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-sm sm:text-base font-black text-[#c34c36] leading-none">
+                {formatVND(item.priceVnd)}
+              </span>
+              {item.originalPriceVnd && item.originalPriceVnd > item.priceVnd && (
+                <span className="line-through text-[10px] text-[#24263e]/40 font-medium">
                   {formatVND(item.originalPriceVnd)}
                 </span>
               )}
+            </div>
+            <span className="text-[9px] font-medium text-[#24263e]/60 bg-[#faf8f5] px-1.5 py-0.5 rounded border border-slate-200">
               {lang === 'vi' ? 'Giá bán' : 'Price'}
-            </div>
-            <div className="text-base sm:text-lg font-black text-[#24263e] leading-none mt-0.5">
-              {formatVND(item.priceVnd)}
-            </div>
+            </span>
           </div>
 
-          {/* Seller Profile & Trust Score */}
-          <div className="text-right">
-            <div className="text-[11px] font-bold text-[#24263e] flex items-center justify-end gap-1">
-              <span className="truncate max-w-[110px]">{item.sellerName}</span>
+          {/* Row 2: Người bán & Điểm uy tín - Hiển thị trọn vẹn, không bị che khuất */}
+          <div className="flex items-center justify-between gap-2 pt-0.5">
+            <div className="flex items-center gap-1 min-w-0 flex-1">
+              <span className="text-[11px] font-bold text-[#24263e] truncate" title={item.sellerName}>
+                {item.sellerName}
+              </span>
               {item.sellerVerified && (
                 <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
               )}
             </div>
-            <div className="text-[10px] text-slate-500 flex items-center justify-end gap-1.5 mt-0.5 font-medium">
-              <span className="inline-flex items-center gap-0.5 font-bold text-amber-800 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+
+            <div className="flex items-center gap-1 shrink-0 text-[10px]">
+              <span className="inline-flex items-center gap-0.5 font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
                 <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
                 <span>{item.sellerRating}</span>
               </span>
-              <span className="inline-flex items-center gap-0.5 font-bold text-[#24263e] bg-slate-100 px-1.5 py-0.2 rounded" title={lang === 'vi' ? 'Điểm uy tín người bán' : 'Seller trust score'}>
+              <span
+                className="inline-flex items-center gap-0.5 font-bold text-[#24263e] bg-slate-100 px-1.5 py-0.5 rounded"
+                title={lang === 'vi' ? 'Điểm uy tín người bán' : 'Seller trust score'}
+              >
                 <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
-                <span>{item.sellerTrustScore || 98}đ uy tín</span>
+                <span>{item.sellerTrustScore || 98}đ</span>
               </span>
             </div>
           </div>

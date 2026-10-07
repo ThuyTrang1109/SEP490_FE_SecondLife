@@ -1235,7 +1235,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     {verifyDigits.map((digit, idx) => (
                       <input
                         key={idx}
-                        ref={(el) => (verifyOtpInputRefs.current[idx] = el)}
+                        ref={(el) => {
+                          verifyOtpInputRefs.current[idx] = el;
+                        }}
                         type="text"
                         inputMode="numeric"
                         pattern="[0-9]*"

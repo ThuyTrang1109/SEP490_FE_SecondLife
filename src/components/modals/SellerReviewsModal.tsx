@@ -52,9 +52,9 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fadeIn overflow-y-auto">
-      <div className="relative w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-3xl bg-white border border-gray-200 shadow-2xl text-[#24263e] flex flex-col my-auto">
+      <div className="relative w-full max-w-3xl max-h-[92vh] overflow-hidden rounded-3xl bg-white border border-gray-200 shadow-2xl text-[#24263e] flex flex-col my-auto">
         {/* Header */}
-        <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-[#24263e] to-[#343759] text-white">
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-[#24263e] to-[#343759] text-white shrink-0 rounded-t-3xl">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-lg font-black text-[#fce5da] shadow-sm">
               {sellerName.charAt(0)}
@@ -86,7 +86,7 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="p-5 sm:p-7 space-y-6 text-xs text-[#24263e]">
+        <div className="p-5 sm:p-7 space-y-6 text-xs text-[#24263e] flex-1 overflow-y-auto subtle-scrollbar">
           {/* Trust Score & Key Stats Banner */}
           <div className="rounded-3xl bg-gradient-to-br from-[#faf8f5] to-[#fce5da]/30 p-5 border border-amber-200/60 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

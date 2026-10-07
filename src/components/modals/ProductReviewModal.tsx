@@ -105,9 +105,9 @@ export const ProductReviewModal: React.FC<ProductReviewModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fadeIn overflow-y-auto">
-      <div className="relative w-full max-w-xl max-h-[92vh] overflow-y-auto rounded-3xl bg-white border border-gray-200 shadow-2xl text-[#24263e] flex flex-col my-auto">
+      <div className="relative w-full max-w-xl max-h-[92vh] overflow-hidden rounded-3xl bg-white border border-gray-200 shadow-2xl text-[#24263e] flex flex-col my-auto">
         {/* Header */}
-        <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-[#fce5da] to-white">
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-[#fce5da] to-white shrink-0 rounded-t-3xl">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-2xl bg-[#c34c36] text-white flex items-center justify-center shadow-sm">
               <Star className="w-5 h-5 fill-white" />
@@ -131,7 +131,7 @@ export const ProductReviewModal: React.FC<ProductReviewModalProps> = ({
         </div>
 
         {/* Content Form */}
-        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5 text-xs">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5 text-xs flex-1 overflow-y-auto subtle-scrollbar">
           {/* Product Snapshot */}
           <div className="flex items-center gap-3 bg-[#faf8f5] p-3 rounded-2xl border border-gray-200">
             <img

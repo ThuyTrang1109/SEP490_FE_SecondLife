@@ -265,7 +265,9 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       icon: ShieldCheck,
       badge: proofList.filter((p) => p.status === 'PENDING').length,
       badgeColor: 'bg-amber-600 text-white'
+
     },
+
 
     {
       id: 'reports-support' as StaffTab,

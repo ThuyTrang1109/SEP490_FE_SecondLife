@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>eKYC SDK</title>
+  <script src="web-sdk-version-3.2.1.0.js"></script>
+  <script src="./lib/VNPTQRBrowserApp.js"></script>
+  <script src="./lib/VNPTBrowserSDKAppV4.1.0.js"></script>
+</head>
+
+<body>
+  <div id="ekyc_sdk_intergrated"></div>
+  <script>
+    // customer's config
+    const CALL_BACK_END_FLOW = async (result) => {
+      console.log('result ==>', result);
+    };
+
+    const BACKEND_URL = 'https://sandbox-idg.vnpt.vn';
+    const TOKEN_ID = '34fc6f00-544a-2b01-e063-1f08a30a6b6c';
+    const TOKEN_KEY =
+      'MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBAIO3d/AUMnEboq355/IEJH4E5z0w6mWAzAMhid2Q0tSuWBd1ZYR70fq42qTeH1mif3aoB0HNQJl/FGm+FuUsx6cCAwEAAQ==';
+    const ACCESS_TOKEN =
+      'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmFuc2FjdGlvbl9pZCI6IjdhNjZlMmIxLTMzNjAtNGY1Yy1hOWY2LWUwY2Q0ZGUxMTQ2YyIsInN1YiI6IjNkMmVlZDJlLTJmYTUtMTFmMC05OTEyLTYzNTMxZGFmZDkwNyIsImF1ZCI6WyJyZXN0c2VydmljZSJdLCJ1c2VyX25hbWUiOiJ2YW5ob2FtMTBAZ21haWwuY29tIiwic2NvcGUiOlsicmVhZCJdLCJpc3MiOiJodHRwczovL2xvY2FsaG9zdCIsIm5hbWUiOiJ2YW5ob2FtMTBAZ21haWwuY29tIiwiZXhwIjoxNzc4MDYwNzEwLCJ1dWlkX2FjY291bnQiOiIzZDJlZWQyZS0yZmE1LTExZjAtOTkxMi02MzUzMWRhZmQ5MDciLCJhdXRob3JpdGllcyI6WyJVU0VSIl0sImp0aSI6ImM2NWJmMGM1LWUxNjAtNGNiOC1iZTM3LTRjZjg1NzEzNDc0ZCIsImNsaWVudF9pZCI6ImNsaWVudGFwcCJ9.ko1MiU3o-MGykcwxjTroTvhSHsQd-TOKygSsQGhPionRvhTg6wRJGRys2GMQRrGK3dkkofyG2bjSk2i-U0EhMnSrxWnrkEVR__TyNhjPWs00js1M_2NSWb2EB14L6z7s0cjIH-9KNGofTS3kqE3bj8TWQdGl_ZfQs-FJbtHwGItE1UAKguHwTNELnJoNTsIbqnvbyOL3zRWht6A6vtSvikVJLD67co_epEOpt4N1PWm7J5YkPufn8g49ID-Qnd9RK7ZEMprSznHDEteLsEKVaK1MrZDwruBvYy-v2IX7BXwZS-bqEUj3EqWOV8DRGk3XX5pMCg6v-Nbg25Uy5N9LkA';
+
+    const HAS_BACKGROUND_IMAGE = true;
+    const MAX_SIZE_IMAGE = 1; // MB
+
+    // const ENABLE_API_UPLOAD_IMAGE = false;
+    // const ENABLE_API_LIVENESS_DOCUMENT = false;
+    // const ENABLE_API_LIVENESS_FACE = false;
+    // const ENABLE_API_MASKED_FACE = false;
+    // const ENABLE_API_COMPARE_FACE = false;
+    // const ENABLE_API_OCR_DOCUMENT = false;
+    const LIST_TYPE_DOCUMENT = [-1, 4, 5, 6, 7];
+
+
+    const dataConfig = {
+      BACKEND_URL,
+      TOKEN_KEY,
+      TOKEN_ID,
+      ACCESS_TOKEN,
+      CALL_BACK_END_FLOW,
+      HAS_BACKGROUND_IMAGE,
+      MAX_SIZE_IMAGE,
+      LIST_TYPE_DOCUMENT
+    };
+
+    window.addEventListener('DOMContentLoaded', function () {
+      if (window.SDK) {
+        window.SDK.launch(dataConfig);
+      }
+    });
+  </script>
+</body>
+
+</html>

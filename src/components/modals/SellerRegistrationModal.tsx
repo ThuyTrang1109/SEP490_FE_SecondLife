@@ -1618,17 +1618,23 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {/* Front ID */}
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '1. Ảnh CCCD Mặt Trước' : '1. Front ID Card'} *</label>
-                      <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-xl p-2 bg-white text-center transition">
+                      <div className="flex items-center justify-between h-5">
+                        <label className="text-[10px] font-bold text-slate-700 block truncate">
+                          {lang === 'vi' ? '1. Ảnh CCCD Mặt Trước' : '1. Front ID Card'} <span className="text-red-500">*</span>
+                        </label>
+                        <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
+                          {lang === 'vi' ? 'Mặt trước' : 'Front'}
+                        </span>
+                      </div>
+                      <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-2xl p-2.5 bg-white text-center transition h-[145px] flex flex-col justify-between">
                         {(frontPreview || docFrontUrl) ? (
-                          <div className="space-y-1">
-                            <div className="relative">
+                          <div className="h-full flex flex-col justify-between">
+                            <div className="relative w-full h-20 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
                               <img
                                 src={frontPreview || docFrontUrl}
                                 alt="Front ID"
-                                className="w-full h-24 object-cover rounded-lg border border-slate-100"
+                                className="w-full h-full object-cover"
                               />
-                              {/* X button to clear image */}
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1636,25 +1642,25 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                                   setFrontPreview('');
                                   setDocFrontUrl('');
                                 }}
-                                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-md transition z-10"
-                                title="Xóa ảnh và tải lại"
+                                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-xs transition z-10 cursor-pointer"
+                                title={lang === 'vi' ? 'Xóa ảnh' : 'Remove photo'}
                               >
                                 <X className="w-3 h-3" />
                               </button>
                             </div>
-                            <div className="flex items-center justify-between px-1">
-                              <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+                            <div className="flex items-center justify-between px-0.5 text-[10px]">
+                              <span className="text-emerald-600 font-bold flex items-center gap-1">
                                 <CheckCircle2 className="w-3 h-3" />
-                                {frontFile ? (lang === 'vi' ? 'Sẵn sàng nộp' : 'Selected') : (lang === 'vi' ? 'Đã tải lên' : 'Uploaded')}
+                                {frontFile ? (lang === 'vi' ? 'Sẵn sàng' : 'Ready') : (lang === 'vi' ? 'Đã tải lên' : 'Uploaded')}
                               </span>
-                              <label className="text-[10px] text-[#24263e] underline font-bold cursor-pointer hover:text-[#c34c36]">
+                              <label className="text-[#24263e] hover:text-[#c34c36] font-bold underline cursor-pointer">
                                 {lang === 'vi' ? 'Đổi ảnh' : 'Change'}
                                 <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileSelect(e, 'front')} />
                               </label>
                             </div>
                           </div>
                         ) : (
-                          <label className="cursor-pointer block py-4 space-y-1.5 hover:bg-slate-50/60 rounded-lg transition">
+                          <label className="cursor-pointer flex flex-col items-center justify-center h-full space-y-1.5 hover:bg-slate-50/60 rounded-xl transition">
                             <Camera className="w-6 h-6 text-slate-400 mx-auto" />
                             <span className="text-[11px] font-bold text-slate-700 block">
                               {lang === 'vi' ? 'Chọn ảnh mặt trước' : 'Select Front Photo'}
@@ -1668,17 +1674,23 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
                     {/* Back ID */}
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '2. Ảnh CCCD Mặt Sau' : '2. Back ID Card'} *</label>
-                      <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-xl p-2 bg-white text-center transition">
+                      <div className="flex items-center justify-between h-5">
+                        <label className="text-[10px] font-bold text-slate-700 block truncate">
+                          {lang === 'vi' ? '2. Ảnh CCCD Mặt Sau' : '2. Back ID Card'} <span className="text-red-500">*</span>
+                        </label>
+                        <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
+                          {lang === 'vi' ? 'Mặt sau' : 'Back'}
+                        </span>
+                      </div>
+                      <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-2xl p-2.5 bg-white text-center transition h-[145px] flex flex-col justify-between">
                         {(backPreview || docBackUrl) ? (
-                          <div className="space-y-1">
-                            <div className="relative">
+                          <div className="h-full flex flex-col justify-between">
+                            <div className="relative w-full h-20 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
                               <img
                                 src={backPreview || docBackUrl}
                                 alt="Back ID"
-                                className="w-full h-24 object-cover rounded-lg border border-slate-100"
+                                className="w-full h-full object-cover"
                               />
-                              {/* X button to clear image */}
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1686,25 +1698,25 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                                   setBackPreview('');
                                   setDocBackUrl('');
                                 }}
-                                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-md transition z-10"
-                                title="Xóa ảnh và tải lại"
+                                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-xs transition z-10 cursor-pointer"
+                                title={lang === 'vi' ? 'Xóa ảnh' : 'Remove photo'}
                               >
                                 <X className="w-3 h-3" />
                               </button>
                             </div>
-                            <div className="flex items-center justify-between px-1">
-                              <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+                            <div className="flex items-center justify-between px-0.5 text-[10px]">
+                              <span className="text-emerald-600 font-bold flex items-center gap-1">
                                 <CheckCircle2 className="w-3 h-3" />
-                                {backFile ? (lang === 'vi' ? 'Sẵn sàng nộp' : 'Selected') : (lang === 'vi' ? 'Đã tải lên' : 'Uploaded')}
+                                {backFile ? (lang === 'vi' ? 'Sẵn sàng' : 'Ready') : (lang === 'vi' ? 'Đã tải lên' : 'Uploaded')}
                               </span>
-                              <label className="text-[10px] text-[#24263e] underline font-bold cursor-pointer hover:text-[#c34c36]">
+                              <label className="text-[#24263e] hover:text-[#c34c36] font-bold underline cursor-pointer">
                                 {lang === 'vi' ? 'Đổi ảnh' : 'Change'}
                                 <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileSelect(e, 'back')} />
                               </label>
                             </div>
                           </div>
                         ) : (
-                          <label className="cursor-pointer block py-4 space-y-1.5 hover:bg-slate-50/60 rounded-lg transition">
+                          <label className="cursor-pointer flex flex-col items-center justify-center h-full space-y-1.5 hover:bg-slate-50/60 rounded-xl transition">
                             <Camera className="w-6 h-6 text-slate-400 mx-auto" />
                             <span className="text-[11px] font-bold text-slate-700 block">
                               {lang === 'vi' ? 'Chọn ảnh mặt sau' : 'Select Back Photo'}
@@ -1718,24 +1730,23 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
                     {/* Selfie */}
                     <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-bold text-slate-600 block">
-                          {lang === 'vi' ? '3. Ảnh Chân Dung Selfie' : '3. Selfie Photo'}
+                      <div className="flex items-center justify-between h-5">
+                        <label className="text-[10px] font-bold text-slate-700 block truncate">
+                          {lang === 'vi' ? '3. Ảnh Chân Dung Selfie' : '3. Selfie Photo'} <span className="text-red-500">*</span>
                         </label>
-                        <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 shrink-0">
                           {lang === 'vi' ? 'AI So Khớp' : 'AI Face Match'}
                         </span>
                       </div>
-                      <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-xl p-2 bg-white text-center transition min-h-[105px] flex flex-col justify-center">
+                      <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-2xl p-2.5 bg-white text-center transition h-[145px] flex flex-col justify-between">
                         {(selfiePreview || selfieUrl) ? (
-                          <div className="space-y-1.5">
-                            <div className="relative w-full h-20 rounded-lg overflow-visible border border-emerald-400/80 shadow-xs">
+                          <div className="h-full flex flex-col justify-between">
+                            <div className="relative w-full h-20 rounded-xl overflow-hidden border border-emerald-400 bg-slate-50">
                               <img
                                 src={selfiePreview || selfieUrl}
                                 alt="Selfie eKYC"
-                                className="w-full h-full object-cover rounded-lg"
+                                className="w-full h-full object-cover"
                               />
-                              {/* X button to clear selfie */}
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1746,17 +1757,16 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                                   setVnptToken('');
                                   setVnptLivenessResult(null);
                                 }}
-                                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-md transition z-10"
-                                title="Xóa ảnh và chụp lại"
+                                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-xs transition z-10 cursor-pointer"
+                                title={lang === 'vi' ? 'Xóa ảnh' : 'Remove photo'}
                               >
                                 <X className="w-3 h-3" />
                               </button>
-                              <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-emerald-600/90 text-white rounded text-[9px] font-bold flex items-center gap-0.5 shadow-xs">
-                                <CheckCircle2 className="w-2.5 h-2.5" />
-                                <span>{vnptClientSession ? 'VNPT eKYC' : (lang === 'vi' ? 'Đã chụp' : 'OK')}</span>
+                              <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-emerald-600/90 text-white rounded text-[8px] font-bold shadow-xs">
+                                {vnptClientSession ? 'VNPT eKYC' : (lang === 'vi' ? 'Đã chụp' : 'OK')}
                               </div>
                             </div>
-                            <div className="flex items-center justify-between px-1 text-[10px]">
+                            <div className="flex items-center justify-between px-0.5 text-[10px]">
                               <button
                                 type="button"
                                 onClick={() => setIsFaceScannerOpen(true)}
@@ -1772,11 +1782,11 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                             </div>
                           </div>
                         ) : (
-                          <div className="py-2 px-1 flex flex-col items-center justify-center space-y-1.5">
+                          <div className="flex flex-col items-center justify-center h-full space-y-2">
                             <button
                               type="button"
                               onClick={() => setIsFaceScannerOpen(true)}
-                              className="w-full py-2 px-2 bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-slate-900 rounded-lg text-[10px] font-black shadow-xs hover:opacity-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                              className="w-full py-2 px-2 bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-slate-900 rounded-xl text-[10px] font-bold shadow-xs hover:opacity-95 transition flex items-center justify-center gap-1 cursor-pointer"
                             >
                               <Camera className="w-3.5 h-3.5 text-slate-900 shrink-0" />
                               <span className="truncate">{lang === 'vi' ? 'Mở Camera Quét Mặt' : 'Live Camera Scan'}</span>

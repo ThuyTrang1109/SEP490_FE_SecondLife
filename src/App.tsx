@@ -69,9 +69,11 @@ export default function App() {
               ? 'admin'
               : (profile.roles?.includes('INSPECTOR') || profile.roles?.includes('ROLE_INSPECTOR') || profile.roles?.includes('HUB_INSPECTOR'))
                 ? 'inspector'
-                : (profile.roles?.includes('SELLER') || profile.roles?.includes('ROLE_SELLER'))
-                  ? 'seller'
-                  : 'buyer',
+                : (profile.roles?.includes('STAFF') || profile.roles?.includes('ROLE_STAFF'))
+                  ? 'staff'
+                  : (profile.roles?.includes('SELLER') || profile.roles?.includes('ROLE_SELLER'))
+                    ? 'seller'
+                    : 'buyer',
             phone: profile.phone || '',
             avatar: profile.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
             accountStatus: profile.accountStatus,
@@ -819,7 +821,7 @@ export default function App() {
 
         {activeTab === 'marketplace' && (
           <MarketplaceView
-            listings={listings}
+            listings={listings.filter((l) => l.status === 'active' || l.backendStatus === 'ACTIVE')}
             onSelectListing={(listing) => setSelectedListing(listing)}
             lang={lang}
             onPostClick={() => handleTabChange('create-listing')}

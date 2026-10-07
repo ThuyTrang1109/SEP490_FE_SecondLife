@@ -97,7 +97,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       const posts = (res as any)?.content || (res as any)?.data || (Array.isArray(res) ? res : []);
       if (posts && posts.length > 0) {
         const mapped: Listing[] = posts.map((p: any) => {
-          const photoUrl = p.imageUrl || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800';
+          const rawImages: string[] = Array.isArray(p.imageUrls) && p.imageUrls.length > 0
+            ? p.imageUrls
+            : (p.imageUrl ? [p.imageUrl] : []);
+          const fallbackImage = 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800';
+          const primaryImage = rawImages[0] || fallbackImage;
+
           return {
             id: p.id || `post-${Date.now()}`,
             title: p.title || 'Thiết bị gia dụng SecondLife',
@@ -123,13 +128,13 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             isInspectionGuaranteed: true,
             requiresInspection: Number(p.price || 0) > 5000000,
             photos: {
-              front: photoUrl,
-              back: photoUrl,
-              screenOrDetails: photoUrl,
-              accessoriesOrBox: photoUrl,
-              serialOrReceipt: photoUrl,
+              front: rawImages[0] || primaryImage,
+              back: rawImages[1] || primaryImage,
+              screenOrDetails: rawImages[2] || primaryImage,
+              accessoriesOrBox: rawImages[3] || primaryImage,
+              serialOrReceipt: rawImages[4] || primaryImage,
             },
-            photoGallery: [photoUrl],
+            photoGallery: rawImages.length > 0 ? rawImages : [primaryImage],
           };
         });
         setMyServerPosts(mapped);

@@ -26,13 +26,12 @@ function isNoV1Path(path: string): boolean {
   ) {
     return true;
   }
-  if (path.startsWith('/admin')) {
-    if (path.startsWith('/admin/users') || path.startsWith('/admin/posts')) {
-      return false;
-    }
-    return true;
+  if (
+    path.startsWith('/admin/users') || path.startsWith('/admin/posts')
+    || path.startsWith('/admin/catalog')) {
+    return false;
   }
-  return false;
+  return true;
 }
 
 export function resolveApiUrl(endpoint: string): string {
@@ -263,7 +262,7 @@ export async function request<T>(
     headers['Authorization'] = `Bearer ${token}`;
   } else if (requiresAuth) {
     clearAuthTokens();
-    throw new Error('Chưa đăng nhập hoặc phiên làm việc đã kết thúc.');
+    throw new Error('ChÆ°a Ä‘Äƒng nháº­p hoáº·c phiÃªn lÃ m viá»‡c Ä‘Ã£ káº¿t thÃºc.');
   }
 
   const url = resolveApiUrl(endpoint);

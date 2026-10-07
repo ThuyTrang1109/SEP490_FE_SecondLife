@@ -28,11 +28,12 @@ import {
   Truck,
   FileCheck,
   Edit3,
-  AlertTriangle,
   RefreshCw,
   LocateFixed,
   Loader2,
   Clock,
+  AlertTriangle,
+  Copy,
 } from 'lucide-react';
 import { UserProfile, UserRole, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
@@ -48,7 +49,7 @@ import {
 } from '../../services';
 import { LiveFaceScannerModal, VnptEkycResultData } from './LiveFaceScannerModal';
 
-export type ProfileTab = 'info' | 'wallet' | 'kyc' | 'settings';
+export type ProfileTab = 'info' | 'wallet' | 'kyc' | 'security' | 'settings';
 
 const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 const isStrongPassword = (pass: string): boolean => {
@@ -149,6 +150,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [selfieUrl, setSelfieUrl] = useState<string>('');
   const [uploadingField, setUploadingField] = useState<'avatar' | 'front' | 'back' | 'selfie' | null>(null);
   const [isFaceScannerOpen, setIsFaceScannerOpen] = useState(false);
+  const [copiedId, setCopiedId] = useState(false);
+  const avatarInputRef = React.useRef<HTMLInputElement>(null);
   const [vnptClientSession, setVnptClientSession] = useState<string>('');
   const [vnptToken, setVnptToken] = useState<string>('');
   const [vnptLivenessResult, setVnptLivenessResult] = useState<any>(null);
@@ -926,6 +929,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           label: lang === 'vi' ? 'Nhà Bán Hàng Uy Tín (Top Seller 4.9★)' : 'Verified Seller (4.9★)',
           className: 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30',
         };
+      case 'staff':
+        return {
+          label: lang === 'vi' ? 'Nhân Viên Vận Hành (Operations Staff)' : 'Operations Staff',
+          className: 'bg-amber-500/15 text-amber-700 border-amber-500/30',
+        };
       case 'inspector':
         return {
           label: lang === 'vi' ? 'Kỹ Sư Giám Định Hub (Certified Lab Tech)' : 'Certified Lab Tech',
@@ -955,143 +963,187 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         className="relative w-full max-w-2xl max-h-[92vh] overflow-hidden rounded-3xl bg-[#FFFFFF] border border-gray-200 shadow-2xl text-[#24263e] flex flex-col my-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header Profile Cover, Avatar & Tabs (shrink-0) */}
-        <div className="relative shrink-0">
-          {/* Close Button */}
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-xl bg-white/15 hover:bg-white/25 text-white backdrop-blur-md transition cursor-pointer z-20"
-          >
-            <X className="w-5 h-5" />
-          </button>
-          
+        {/* Header Profile Cover */}
+        <div className="relative">
           {/* Cover gradient banner */}
-          <div className="h-28 sm:h-32 bg-gradient-to-r from-[#c34c36] via-[#c34c36] to-[#c34c36] relative overflow-hidden">
-            <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-gradient-to-br from-[#c34c36]/30 to-[#fce5da]/30 rounded-full blur-2xl pointer-events-none" />
-            <div className="absolute top-3 left-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-white text-[11px] font-semibold border border-white/20">
-              <ShieldCheck className="w-3.5 h-3.5 text-[#24263e]" />
-              <span>SecondLife Member ID: {currentUser.id}</span>
+          <div className="h-28 sm:h-32 bg-gradient-to-r from-[#1e2238] via-[#2d2a45] to-[#c34c36] rounded-t-3xl relative overflow-hidden">
+            {/* Ambient glows */}
+            <div className="absolute -top-12 -right-12 w-48 h-48 bg-[#c34c36]/30 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-10 left-1/4 w-36 h-36 bg-[#fce5da]/20 rounded-full blur-2xl pointer-events-none" />
+
+            {/* Top Bar inside Cover */}
+            <div className="relative z-10 p-4 sm:p-5 flex items-center justify-between">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/40 backdrop-blur-md text-white text-[11px] font-semibold border border-white/15 shadow-xs">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span className="font-mono">
+                  {currentUser.id.length > 16
+                    ? `ID: ${currentUser.id.slice(0, 8)}...${currentUser.id.slice(-6)}`
+                    : `ID: ${currentUser.id}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(currentUser.id);
+                    setCopiedId(true);
+                    setTimeout(() => setCopiedId(false), 2000);
+                  }}
+                  title={lang === 'vi' ? 'Sao chép Member ID' : 'Copy Member ID'}
+                  className="ml-1 p-0.5 rounded hover:bg-white/20 text-white/80 hover:text-white transition cursor-pointer"
+                >
+                  {copiedId ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                </button>
+              </div>
+
+              {/* Close Button */}
+              <button
+                onClick={onClose}
+                aria-label="Close"
+                className="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white backdrop-blur-md transition cursor-pointer hover:rotate-90 duration-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           </div>
+        </div>
 
-          {/* Avatar and Basic Info */}
-          <div className="px-6 sm:px-8 -mt-12 sm:-mt-14 relative z-10 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
-            <div className="flex items-end gap-3.5">
-              <div className="relative group">
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-tr from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center font-black text-2xl sm:text-3xl shadow-xl ring-4 ring-white overflow-hidden">
-                  {currentUser.avatar && currentUser.avatar !== 'string' && (currentUser.avatar.startsWith('http') || currentUser.avatar.startsWith('data:') || currentUser.avatar.startsWith('/')) ? (
+        {/* Profile Identity Bar - 100% on White Background (Zero Overlap Issues) */}
+        <div className="px-6 sm:px-8 pt-0 pb-2 bg-white">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+
+            {/* Left: Avatar (overlaps banner cleanly) + User Name & Role */}
+            <div className="flex items-end gap-3.5 sm:gap-4">
+              {/* Avatar overlapping banner */}
+              <div className="relative group shrink-0 -mt-12 sm:-mt-14 z-20">
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-tr from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center font-black text-2xl sm:text-3xl shadow-xl ring-4 ring-white overflow-hidden bg-white">
+                  {avatarUrl || currentUser.avatar ? (
                     <img
-                      src={currentUser.avatar}
-                      alt={currentUser.name}
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
-                      className="w-full h-full rounded-2xl object-cover"
+                      src={avatarUrl || currentUser.avatar}
+                      alt={name || currentUser.name}
+                      className="w-full h-full object-cover"
                     />
                   ) : (
                     ((name && name !== 'string' ? name : currentUser.name && currentUser.name !== 'string' ? currentUser.name : 'U').charAt(0).toUpperCase())
                   )}
                 </div>
+
+                {/* Hidden File Input for Avatar upload */}
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleFileUpload(e, 'avatar')}
+                />
                 <button
                   type="button"
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={uploadingField === 'avatar'}
                   title={lang === 'vi' ? 'Thay đổi ảnh đại diện' : 'Change avatar'}
-                  className="absolute bottom-1 right-1 p-1.5 rounded-lg bg-white shadow-md border border-gray-200 text-gray-700 hover:text-[#24263e] transition cursor-pointer"
+                  className="absolute -bottom-1 -right-1 p-2 rounded-xl bg-white shadow-md border border-slate-200 text-slate-700 hover:text-[#c34c36] hover:scale-105 active:scale-95 transition cursor-pointer"
                 >
-                  <Camera className="w-3.5 h-3.5" />
+                  {uploadingField === 'avatar' ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[#c34c36]" />
+                  ) : (
+                    <Camera className="w-3.5 h-3.5" />
+                  )}
                 </button>
               </div>
 
-              <div className="space-y-1.5 pb-1">
+              {/* Name & Role Badge - completely readable on clean white */}
+              <div className="space-y-1.5 pb-0.5">
                 <div className="flex items-center gap-2">
                   <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight drop-shadow-sm">
-                    {name && name !== 'string' ? name : (currentUser.name && currentUser.name !== 'string' ? currentUser.name : 'Người Dùng')}
+                    {name || currentUser.name}
                   </h2>
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
                 </div>
-                <div className="pt-0.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <span
                     className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${roleInfo.className}`}
                   >
                     <span>{roleInfo.label}</span>
                   </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                    SecondLife Member
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Trust Badges */}
-            <div className="flex sm:flex-col items-center sm:items-end gap-1.5 text-xs text-slate-500 pt-2 sm:pt-0">
-              <div className="flex items-center gap-1 bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg border border-emerald-200 font-bold text-[11px]">
+            {/* Right: Trust Badges */}
+            <div className="flex flex-row sm:flex-col items-start sm:items-end gap-1.5 w-full sm:w-auto pt-1 sm:pt-0">
+              <button
+                type="button"
+                onClick={() => setActiveTab('security')}
+                title={lang === 'vi' ? 'Xem chứng nhận định danh eKYC' : 'View eKYC certificate'}
+                className="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-3 py-1 rounded-xl border border-emerald-200/80 font-bold text-xs shadow-xs cursor-pointer transition active:scale-95"
+              >
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                 <span>{lang === 'vi' ? 'eKYC: Đã Xác Thực CCCD' : 'eKYC: ID Verified'}</span>
-              </div>
-              <div className="flex items-center gap-1 text-[11px] text-slate-600">
+              </button>
+              <div className="inline-flex items-center gap-1 bg-amber-50/90 text-slate-800 px-3 py-1 rounded-xl border border-amber-200/80 text-xs shadow-xs">
                 <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                <span>{lang === 'vi' ? 'Điểm Uy Tín: ' : 'Trust Score: '}<strong className="text-slate-900 font-bold">99/100</strong></span>
+                <span>{lang === 'vi' ? 'Điểm Uy Tín: ' : 'Trust Score: '}</span>
+                <strong className="font-black text-amber-700">99/100</strong>
               </div>
             </div>
           </div>
 
-          {/* Tab Navigation */}
-          <div className="px-6 sm:px-8 mt-5 border-b border-gray-100 flex items-center gap-1 sm:gap-2 overflow-x-auto scrollbar-none">
-            <button
-              onClick={() => setActiveTab('info')}
-              className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'info'
-                ? 'text-[#24263e]'
-                : 'text-slate-500 hover:text-slate-800'
+          {/* Tab Navigation - Pill Segmented Control Layout: 4 Tabs */}
+          <div className="px-6 sm:px-8 mt-5">
+            <div className="p-1 sm:p-1.5 bg-slate-100/90 rounded-2xl flex items-center justify-between gap-1 sm:gap-1.5 overflow-x-auto scrollbar-none border border-slate-200/50">
+              <button
+                type="button"
+                onClick={() => setActiveTab('info')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  activeTab === 'info'
+                    ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                 }`}
-            >
-              <User className="w-4 h-4" />
-              <span>{lang === 'vi' ? 'Thông Tin Cá Nhân' : 'Personal Profile'}</span>
-              {activeTab === 'info' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#c34c36] to-[#fce5da] rounded-t-full" />
-              )}
-            </button>
+              >
+                <User className={`w-4 h-4 shrink-0 ${activeTab === 'info' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                <span>{lang === 'vi' ? 'Cá Nhân' : 'Profile'}</span>
+              </button>
 
-            <button
-              onClick={() => setActiveTab('wallet')}
-              className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'wallet'
-                ? 'text-[#24263e]'
-                : 'text-slate-500 hover:text-slate-800'
+              <button
+                type="button"
+                onClick={() => setActiveTab('wallet')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  activeTab === 'wallet'
+                    ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                 }`}
-            >
-              <Wallet className="w-4 h-4" />
-              <span>{lang === 'vi' ? 'Ví Escrow & Ngân Hàng' : 'Escrow Wallet & Bank'}</span>
-              {activeTab === 'wallet' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#c34c36] to-[#fce5da] rounded-t-full" />
-              )}
-            </button>
+              >
+                <Wallet className={`w-4 h-4 shrink-0 ${activeTab === 'wallet' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                <span>{lang === 'vi' ? 'Ví Escrow' : 'Wallet'}</span>
+              </button>
 
-            <button
-              onClick={() => setActiveTab('kyc')}
-              className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'kyc'
-                ? 'text-[#24263e]'
-                : 'text-slate-500 hover:text-slate-800'
+              <button
+                type="button"
+                onClick={() => setActiveTab('security')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  activeTab === 'security' || activeTab === 'kyc'
+                    ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                 }`}
-            >
-              <Shield className="w-4 h-4" />
-              <span>{lang === 'vi' ? 'Định Danh & Bảo Mật' : 'Identity & Security'}</span>
-              {activeTab === 'kyc' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#c34c36] to-[#fce5da] rounded-t-full" />
-              )}
-            </button>
+              >
+                <Shield className={`w-4 h-4 shrink-0 ${activeTab === 'security' || activeTab === 'kyc' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                <span>{lang === 'vi' ? 'Bảo Mật' : 'Security'}</span>
+              </button>
 
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`pb-3 text-xs sm:text-sm font-bold transition-all relative cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'settings'
-                ? 'text-[#24263e]'
-                : 'text-slate-500 hover:text-slate-800'
+              <button
+                type="button"
+                onClick={() => setActiveTab('settings')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  activeTab === 'settings'
+                    ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                 }`}
-            >
-              <Store className="w-4 h-4" />
-              <span>
-                {currentUser.role === 'seller'
-                  ? (lang === 'vi' ? 'Gian Hàng Người Bán' : 'Seller Store')
-                  : (lang === 'vi' ? 'Đăng Ký Thành Người Bán' : 'Register as Seller')}
-              </span>
-              {activeTab === 'settings' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#c34c36] to-[#fce5da] rounded-t-full" />
-              )}
-            </button>
+              >
+                <Store className={`w-4 h-4 shrink-0 ${activeTab === 'settings' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                <span>{lang === 'vi' ? 'Gian Hàng' : 'Store'}</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1112,7 +1164,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       required
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] transition"
+                      placeholder={lang === 'vi' ? 'Nhập họ và tên' : 'Enter full name'}
+                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
                     />
                   </div>
                 </div>
@@ -1123,14 +1176,14 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       {lang === 'vi' ? 'Địa Chỉ Email' : 'Email Address'}
                     </label>
                     {currentUser.emailVerified ? (
-                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 inline-flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3" /> {lang === 'vi' ? 'Đã xác thực' : 'Verified'}
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 inline-flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> {lang === 'vi' ? 'Đã xác thực' : 'Verified'}
                       </span>
                     ) : (
                       <button
                         type="button"
                         onClick={() => onOpenVerifyEmail?.(email || currentUser.email)}
-                        className="text-[10px] font-bold text-[#24263e] bg-pink-50 hover:bg-pink-100 px-2 py-0.5 rounded-md border border-pink-200 inline-flex items-center gap-1 cursor-pointer transition shadow-xs"
+                        className="text-[10px] font-bold text-[#c34c36] bg-[#fce5da]/50 hover:bg-[#fce5da] px-2 py-0.5 rounded-md border border-[#c34c36]/20 inline-flex items-center gap-1 cursor-pointer transition shadow-2xs"
                       >
                         <Mail className="w-3 h-3" /> {lang === 'vi' ? 'Xác thực OTP ngay' : 'Verify OTP now'}
                       </button>
@@ -1143,7 +1196,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] transition"
+                      placeholder="email@example.com"
+                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
                     />
                   </div>
                 </div>
@@ -1159,7 +1213,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       required
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] transition"
+                      placeholder="0912 345 678"
+                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
                     />
                   </div>
                 </div>
@@ -1174,7 +1229,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       type="date"
                       value={birthday}
                       onChange={(e) => setBirthday(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] transition"
+                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
                     />
                   </div>
                 </div>
@@ -1184,46 +1239,36 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 <label className="text-xs font-bold text-slate-700 mb-1.5 block">
                   {lang === 'vi' ? 'Giới Tính' : 'Gender'}
                 </label>
-                <div className="flex items-center gap-4 text-xs font-medium text-slate-700">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="gender"
-                      value="male"
-                      checked={gender === 'male'}
-                      onChange={() => setGender('male')}
-                      className="accent-[#c34c36]"
-                    />
-                    <span>{lang === 'vi' ? 'Nam' : 'Male'}</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="gender"
-                      value="female"
-                      checked={gender === 'female'}
-                      onChange={() => setGender('female')}
-                      className="accent-[#c34c36]"
-                    />
-                    <span>{lang === 'vi' ? 'Nữ' : 'Female'}</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="gender"
-                      value="other"
-                      checked={gender === 'other'}
-                      onChange={() => setGender('other')}
-                      className="accent-[#c34c36]"
-                    />
-                    <span>{lang === 'vi' ? 'Khác' : 'Other'}</span>
-                  </label>
+                <div className="grid grid-cols-3 gap-2.5 max-w-sm">
+                  {(['male', 'female', 'other'] as const).map((g) => {
+                    const isSelected = gender === g;
+                    const labels = {
+                      male: lang === 'vi' ? 'Nam' : 'Male',
+                      female: lang === 'vi' ? 'Nữ' : 'Female',
+                      other: lang === 'vi' ? 'Khác' : 'Other',
+                    };
+                    return (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => setGender(g)}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                          isSelected
+                            ? 'bg-[#c34c36]/10 border-[#c34c36] text-[#c34c36] shadow-2xs font-black'
+                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-[#c34c36]' : 'bg-slate-300'}`} />
+                        <span>{labels[g]}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
               <div>
                 <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                  {lang === 'vi' ? 'Địa Chỉ' : 'Address'}
+                  {lang === 'vi' ? 'Địa Chỉ Cư Trú / Nhận Hàng' : 'Residential / Delivery Address'}
                 </label>
                 <div className="relative">
                   <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
@@ -1231,14 +1276,57 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     rows={2}
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
-                    placeholder={lang === 'vi' ? 'Nhập địa chỉ' : 'Enter address'}
-                    className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 focus:outline-none focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] transition"
+                    placeholder={lang === 'vi' ? 'Nhập địa chỉ chi tiết (số nhà, tên đường, phường/xã, quận/huyện...)' : 'Enter detailed address'}
+                    className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs resize-none"
                   />
                 </div>
               </div>
 
+              {/* Role & Workspace Switcher for Demo / Testing */}
+              <div className="p-4 bg-slate-50/90 border border-slate-200/90 rounded-2xl space-y-2.5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-[#c34c36]" />
+                    <span>{lang === 'vi' ? 'Chuyển Đổi Không Gian Làm Việc (Role Switcher)' : 'Role & Workspace Switcher'}</span>
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-semibold bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                    {lang === 'vi' ? 'Dành Cho Demo' : 'For Demo'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {[
+                    { role: 'buyer' as UserRole, label: 'Người Mua', icon: ShoppingBag, color: 'hover:border-blue-400 hover:text-blue-600' },
+                    { role: 'seller' as UserRole, label: 'Người Bán', icon: Store, color: 'hover:border-emerald-400 hover:text-emerald-600' },
+                    { role: 'staff' as UserRole, label: 'Staff Vận Hành', icon: FileCheck, color: 'hover:border-amber-400 hover:text-amber-600' },
+                    { role: 'inspector' as UserRole, label: 'Kỹ Sư Hub', icon: Building, color: 'hover:border-purple-400 hover:text-purple-600' },
+                    { role: 'admin' as UserRole, label: 'Admin Quản Trị', icon: Shield, color: 'hover:border-rose-400 hover:text-rose-600' },
+                  ].map((r) => {
+                    const IconComp = r.icon;
+                    const isActive = currentUser.role === r.role;
+                    return (
+                      <button
+                        key={r.role}
+                        type="button"
+                        onClick={() => {
+                          onRoleChange(r.role);
+                          onClose();
+                        }}
+                        className={`p-2.5 rounded-xl text-center border transition-all cursor-pointer flex flex-col items-center justify-center gap-1.5 ${
+                          isActive
+                            ? 'bg-[#24263e] text-white border-[#24263e] shadow-sm font-black scale-102'
+                            : `bg-white border-slate-200 text-slate-700 ${r.color} hover:bg-slate-50`
+                        }`}
+                      >
+                        <IconComp className="w-4 h-4 shrink-0" />
+                        <span className="text-[11px] font-bold leading-tight">{r.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Action Buttons inside Tab 1 */}
-              <div className="pt-3 flex items-center justify-between">
+              <div className="pt-3 flex items-center justify-between border-t border-slate-100">
                 <div>
                   {isSaved && (
                     <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 animate-in fade-in">
@@ -1257,10 +1345,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white font-bold text-xs sm:text-sm shadow-md hover:opacity-95 disabled:opacity-50 transition flex items-center gap-2 cursor-pointer"
+                  className="px-6 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#b03e29] active:scale-95 text-white font-bold text-xs sm:text-sm shadow-md hover:shadow-lg disabled:opacity-50 transition flex items-center gap-2 cursor-pointer"
                 >
-                  <Save className="w-4 h-4" />
-                  <span>{isSaving ? (lang === 'vi' ? 'Đang lưu...' : 'Saving...') : (lang === 'vi' ? 'Lưu Thay Đổi' : 'Save Changes')}</span>
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>{lang === 'vi' ? 'Đang lưu...' : 'Saving...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>{lang === 'vi' ? 'Lưu Thay Đổi' : 'Save Changes'}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -1368,9 +1465,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             </div>
           )}
 
-          {/* TAB 3: ĐỊNH DANH & BẢO MẬT */}
-          {activeTab === 'kyc' && (
+          {/* TAB 3: BẢO MẬT & ĐỊNH DANH */}
+          {(activeTab === 'security' || activeTab === 'kyc') && (
             <div className="space-y-4">
+              {/* Thẻ Định Danh eKYC Căn Cước Công Dân */}
               <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex items-start gap-3">
                 <div className="p-2 rounded-xl bg-emerald-500 text-white shrink-0 mt-0.5">
                   <ShieldCheck className="w-5 h-5" />
@@ -1387,15 +1485,48 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       : 'Your profile has passed biometric matching with a SecondLife Verified badge. You can list items and withdraw funds without limits.'}
                   </p>
                   <div className="flex items-center gap-3 pt-1 text-[11px] font-semibold text-emerald-700">
-                    <span>{lang === 'vi' ? 'Mã Định Danh: ' : 'Verification ID: '}<strong>KYC-VN-9920148</strong></span>
+                    <span>{lang === 'vi' ? 'Mã Định Danh: ' : 'Verification ID: '}<strong>KYC-VN-{currentUser.id ? currentUser.id.slice(0, 8).toUpperCase() : '9920148'}</strong></span>
                     <span>•</span>
                     <span>{lang === 'vi' ? 'Ngày Phê Duyệt: ' : 'Approval Date: '}15/01/2026</span>
                   </div>
                 </div>
               </div>
 
+              {/* Thông số đối soát sinh trắc học eKYC */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="p-3 rounded-xl border border-emerald-100 bg-emerald-50/50">
+                  <span className="text-[10px] font-bold text-slate-500 block mb-0.5">
+                    {lang === 'vi' ? 'Khớp Khuôn Mặt' : 'Face Match'}
+                  </span>
+                  <span className="text-xs font-black text-emerald-700 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    98.6% ({lang === 'vi' ? 'Đạt' : 'Passed'})
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl border border-emerald-100 bg-emerald-50/50">
+                  <span className="text-[10px] font-bold text-slate-500 block mb-0.5">
+                    {lang === 'vi' ? 'Thực Thể Sống (Liveness)' : 'Liveness Test'}
+                  </span>
+                  <span className="text-xs font-black text-emerald-700 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    {lang === 'vi' ? 'Chính Chủ (Real)' : 'Live Person'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl border border-emerald-100 bg-emerald-50/50">
+                  <span className="text-[10px] font-bold text-slate-500 block mb-0.5">
+                    {lang === 'vi' ? 'Chất Lượng Giấy Tờ' : 'Document Quality'}
+                  </span>
+                  <span className="text-xs font-black text-emerald-700 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    {lang === 'vi' ? 'Hợp Lệ (Chip CCCD)' : 'Valid Chip ID'}
+                  </span>
+                </div>
+              </div>
+
               {/* Security Checklist */}
-              <div className="space-y-2.5">
+              <div className="space-y-2.5 pt-1">
                 <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                   {lang === 'vi' ? 'Cài Đặt An Toàn & Bảo Vệ Tài Khoản' : 'Security & Account Protection Settings'}
                 </h4>
@@ -1445,6 +1576,23 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   >
                     {lang === 'vi' ? 'Đổi Mật Khẩu' : 'Change Password'}
                   </button>
+                </div>
+
+                <div className="p-3.5 rounded-xl border border-gray-200 bg-white flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Shield className="w-4 h-4 text-slate-500" />
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 block">
+                        {lang === 'vi' ? 'Phiên đăng nhập & Thiết bị tin cậy' : 'Active Sessions & Trusted Devices'}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {lang === 'vi' ? 'Đang hoạt động trên thiết bị này (Web Browser / Windows)' : 'Active on this device (Web Browser / Windows)'}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                    {lang === 'vi' ? 'Thiết Bị Tin Cậy' : 'Trusted'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -1497,7 +1645,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                               ? 'bg-orange-100 text-orange-800'
                               : 'bg-amber-100 text-amber-800 border border-amber-200'
                       }`}>
-                        {currentUser.role === 'seller' || currentUser.kycStatus === 'verified' || existingVerification?.status === 'APPROVED'
+                        {currentUser.kycStatus === 'pending'
+                          ? (lang === 'vi' ? 'Đang Chờ Quản Trị Viên Duyệt' : 'Pending Review')
+                          : (currentUser.role === 'seller' || currentUser.kycStatus === 'verified')
                           ? (lang === 'vi' ? 'Đã Kích Hoạt' : 'Active')
                           : isRejected
                             ? (lang === 'vi' ? 'Đã Bị Từ Chối' : 'Rejected')
@@ -1551,11 +1701,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     </div>
                     <div className="p-2.5 bg-white rounded-xl border border-gray-200/80">
                       <span className="text-[10px] text-slate-400 block mb-0.5">{lang === 'vi' ? 'Hotline bán hàng & Zalo' : 'Sales hotline & Zalo'}</span>
-                      <span className="font-bold text-slate-800">{sellerPhone || phone}</span>
+                      <span className="font-bold text-slate-800">
+                        {sellerPhone || phone || (
+                          <span className="text-slate-400 italic font-normal">{lang === 'vi' ? 'Chưa cập nhật' : 'Not updated'}</span>
+                        )}
+                      </span>
                     </div>
                     <div className="p-2.5 bg-white rounded-xl border border-gray-200/80 sm:col-span-2">
                       <span className="text-[10px] text-slate-400 block mb-0.5">{lang === 'vi' ? 'Địa chỉ kho bưu tá lấy hàng' : 'Courier pickup warehouse address'}</span>
-                      <span className="font-medium text-slate-800">{pickupAddress || address}</span>
+                      <span className="font-medium text-slate-800">
+                        {pickupAddress || address || (
+                          <span className="text-slate-400 italic">{lang === 'vi' ? 'Chưa cập nhật địa chỉ kho (Bấm Chỉnh sửa thông tin bên trên để thêm)' : 'Not updated'}</span>
+                        )}
+                      </span>
                     </div>
                     <div className="p-2.5 bg-white rounded-xl border border-gray-200/80">
                       <span className="text-[10px] text-slate-400 block mb-0.5">{lang === 'vi' ? 'Số CCCD định danh' : 'Citizen ID number'}</span>
@@ -2040,21 +2198,45 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         {/* Front ID */}
                         <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '1. Ảnh CCCD Mặt Trước' : '1. Front ID Card'}</label>
-                          <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-xl p-2 bg-white text-center transition">
+                          <div className="flex items-center justify-between h-5">
+                            <label className="text-[10px] font-bold text-slate-700 block truncate">
+                              {lang === 'vi' ? '1. Ảnh CCCD Mặt Trước' : '1. Front ID Card'} <span className="text-red-500">*</span>
+                            </label>
+                            <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
+                              {lang === 'vi' ? 'Mặt trước' : 'Front'}
+                            </span>
+                          </div>
+                          <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-2xl p-2.5 bg-white text-center transition h-[145px] flex flex-col justify-between">
                             {docFrontUrl ? (
-                              <div className="space-y-1">
-                                <img src={docFrontUrl} alt="Front ID" className="w-full h-20 object-cover rounded-lg" />
-                                <span className="text-[10px] text-emerald-600 font-bold block flex items-center justify-center gap-1">
-                                  <CheckCircle2 className="w-3 h-3" /> {lang === 'vi' ? 'Đã tải lên' : 'Uploaded'}
-                                </span>
+                              <div className="h-full flex flex-col justify-between">
+                                <div className="relative w-full h-20 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                                  <img src={docFrontUrl} alt="Front ID" className="w-full h-full object-cover" />
+                                  <button
+                                    type="button"
+                                    onClick={() => setDocFrontUrl('')}
+                                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-xs transition z-10 cursor-pointer"
+                                    title={lang === 'vi' ? 'Xóa ảnh' : 'Remove photo'}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                                <div className="flex items-center justify-between px-0.5 text-[10px]">
+                                  <span className="text-emerald-600 font-bold flex items-center gap-1">
+                                    <CheckCircle2 className="w-3 h-3" /> {lang === 'vi' ? 'Đã tải lên' : 'Uploaded'}
+                                  </span>
+                                  <label className="text-[#24263e] hover:text-[#c34c36] font-bold underline cursor-pointer">
+                                    {lang === 'vi' ? 'Đổi ảnh' : 'Change'}
+                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'front')} />
+                                  </label>
+                                </div>
                               </div>
                             ) : (
-                              <label className="cursor-pointer block py-3 space-y-1">
-                                <Camera className="w-5 h-5 text-slate-400 mx-auto" />
-                                <span className="text-[10px] font-bold text-slate-600 block">
+                              <label className="cursor-pointer flex flex-col items-center justify-center h-full space-y-1.5 hover:bg-slate-50/60 rounded-xl transition">
+                                <Camera className="w-6 h-6 text-slate-400 mx-auto" />
+                                <span className="text-[11px] font-bold text-slate-700 block">
                                   {uploadingField === 'front' ? (lang === 'vi' ? 'Đang tải lên...' : 'Uploading...') : (lang === 'vi' ? 'Chọn ảnh mặt trước' : 'Select Front Photo')}
                                 </span>
+                                <span className="text-[9px] text-slate-400 block">{lang === 'vi' ? 'Hỗ trợ JPG, PNG, WEBP' : 'JPG, PNG, WEBP'}</span>
                                 <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'front')} />
                               </label>
                             )}
@@ -2063,21 +2245,45 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                         {/* Back ID */}
                         <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-600 block">{lang === 'vi' ? '2. Ảnh CCCD Mặt Sau' : '2. Back ID Card'}</label>
-                          <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-xl p-2 bg-white text-center transition">
+                          <div className="flex items-center justify-between h-5">
+                            <label className="text-[10px] font-bold text-slate-700 block truncate">
+                              {lang === 'vi' ? '2. Ảnh CCCD Mặt Sau' : '2. Back ID Card'} <span className="text-red-500">*</span>
+                            </label>
+                            <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
+                              {lang === 'vi' ? 'Mặt sau' : 'Back'}
+                            </span>
+                          </div>
+                          <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-2xl p-2.5 bg-white text-center transition h-[145px] flex flex-col justify-between">
                             {docBackUrl ? (
-                              <div className="space-y-1">
-                                <img src={docBackUrl} alt="Back ID" className="w-full h-20 object-cover rounded-lg" />
-                                <span className="text-[10px] text-emerald-600 font-bold block flex items-center justify-center gap-1">
-                                  <CheckCircle2 className="w-3 h-3" /> {lang === 'vi' ? 'Đã tải lên' : 'Uploaded'}
-                                </span>
+                              <div className="h-full flex flex-col justify-between">
+                                <div className="relative w-full h-20 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                                  <img src={docBackUrl} alt="Back ID" className="w-full h-full object-cover" />
+                                  <button
+                                    type="button"
+                                    onClick={() => setDocBackUrl('')}
+                                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-xs transition z-10 cursor-pointer"
+                                    title={lang === 'vi' ? 'Xóa ảnh' : 'Remove photo'}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                                <div className="flex items-center justify-between px-0.5 text-[10px]">
+                                  <span className="text-emerald-600 font-bold flex items-center gap-1">
+                                    <CheckCircle2 className="w-3 h-3" /> {lang === 'vi' ? 'Đã tải lên' : 'Uploaded'}
+                                  </span>
+                                  <label className="text-[#24263e] hover:text-[#c34c36] font-bold underline cursor-pointer">
+                                    {lang === 'vi' ? 'Đổi ảnh' : 'Change'}
+                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'back')} />
+                                  </label>
+                                </div>
                               </div>
                             ) : (
-                              <label className="cursor-pointer block py-3 space-y-1">
-                                <Camera className="w-5 h-5 text-slate-400 mx-auto" />
-                                <span className="text-[10px] font-bold text-slate-600 block">
+                              <label className="cursor-pointer flex flex-col items-center justify-center h-full space-y-1.5 hover:bg-slate-50/60 rounded-xl transition">
+                                <Camera className="w-6 h-6 text-slate-400 mx-auto" />
+                                <span className="text-[11px] font-bold text-slate-700 block">
                                   {uploadingField === 'back' ? (lang === 'vi' ? 'Đang tải lên...' : 'Uploading...') : (lang === 'vi' ? 'Chọn ảnh mặt sau' : 'Select Back Photo')}
                                 </span>
+                                <span className="text-[9px] text-slate-400 block">{lang === 'vi' ? 'Hỗ trợ JPG, PNG, WEBP' : 'JPG, PNG, WEBP'}</span>
                                 <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'back')} />
                               </label>
                             )}
@@ -2086,24 +2292,37 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                         {/* Selfie */}
                         <div className="space-y-1">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[10px] font-bold text-slate-600 block">
-                              {lang === 'vi' ? '3. Ảnh Chân Dung Selfie' : '3. Selfie Photo'}
+                          <div className="flex items-center justify-between h-5">
+                            <label className="text-[10px] font-bold text-slate-700 block truncate">
+                              {lang === 'vi' ? '3. Ảnh Chân Dung Selfie' : '3. Selfie Photo'} <span className="text-red-500">*</span>
                             </label>
-                            <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                            <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 shrink-0">
                               {lang === 'vi' ? 'AI So Khớp' : 'AI Match'}
                             </span>
                           </div>
-                          <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-xl p-2 bg-white text-center transition min-h-[96px] flex flex-col justify-center">
+                          <div className="relative border border-dashed border-slate-300 hover:border-[#c34c36] rounded-2xl p-2.5 bg-white text-center transition h-[145px] flex flex-col justify-between">
                             {selfieUrl ? (
-                              <div className="space-y-1">
-                                <div className="relative w-full h-16 rounded-lg overflow-hidden border border-emerald-400">
+                              <div className="h-full flex flex-col justify-between">
+                                <div className="relative w-full h-20 rounded-xl overflow-hidden border border-emerald-400 bg-slate-50">
                                   <img src={selfieUrl} alt="Selfie" className="w-full h-full object-cover" />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelfieUrl('');
+                                      setVnptClientSession('');
+                                      setVnptToken('');
+                                      setVnptLivenessResult(null);
+                                    }}
+                                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-xs transition z-10 cursor-pointer"
+                                    title={lang === 'vi' ? 'Xóa ảnh' : 'Remove photo'}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
                                   <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-emerald-600/90 text-white rounded text-[8px] font-bold shadow-xs">
                                     {vnptClientSession ? 'VNPT eKYC' : 'OK'}
                                   </div>
                                 </div>
-                                <div className="flex items-center justify-between px-1 text-[10px]">
+                                <div className="flex items-center justify-between px-0.5 text-[10px]">
                                   <button
                                     type="button"
                                     onClick={() => setIsFaceScannerOpen(true)}
@@ -2119,13 +2338,13 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                                 </div>
                               </div>
                             ) : (
-                              <div className="py-1 px-1 flex flex-col items-center justify-center space-y-1">
+                              <div className="flex flex-col items-center justify-center h-full space-y-2">
                                 <button
                                   type="button"
                                   onClick={() => setIsFaceScannerOpen(true)}
-                                  className="w-full py-1.5 px-2 bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-slate-900 rounded-lg text-[10px] font-bold shadow-xs hover:opacity-95 transition flex items-center justify-center gap-1 cursor-pointer"
+                                  className="w-full py-2 px-2 bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-slate-900 rounded-xl text-[10px] font-bold shadow-xs hover:opacity-95 transition flex items-center justify-center gap-1 cursor-pointer"
                                 >
-                                  <Camera className="w-3 h-3 text-slate-900" />
+                                  <Camera className="w-3.5 h-3.5 text-slate-900" />
                                   <span>{lang === 'vi' ? 'Mở Camera Quét Mặt' : 'Scan Face'}</span>
                                 </button>
                                 <label className="text-[9px] text-slate-500 hover:text-[#24263e] underline font-bold cursor-pointer block text-center">

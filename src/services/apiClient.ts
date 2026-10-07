@@ -103,7 +103,7 @@ export const USER_INFO_KEY = 'secondlife_user_session';
 
 export const getAccessToken = (): string | null => {
   try {
-    const token = localStorage.getItem(ACCESS_TOKEN_KEY);
+    const token = sessionStorage.getItem(ACCESS_TOKEN_KEY);
     if (!token || token === 'undefined' || token === 'null' || token.trim() === '') {
       return null;
     }
@@ -115,7 +115,7 @@ export const getAccessToken = (): string | null => {
 
 export const getRefreshToken = (): string | null => {
   try {
-    const token = localStorage.getItem(REFRESH_TOKEN_KEY);
+    const token = sessionStorage.getItem(REFRESH_TOKEN_KEY);
     if (!token || token === 'undefined' || token === 'null' || token.trim() === '') {
       return null;
     }
@@ -128,24 +128,24 @@ export const getRefreshToken = (): string | null => {
 export const setAuthTokens = (accessToken?: string | null, refreshToken?: string | null) => {
   try {
     if (accessToken && accessToken !== 'undefined' && accessToken !== 'null' && accessToken.trim() !== '') {
-      localStorage.setItem(ACCESS_TOKEN_KEY, accessToken.trim());
+      sessionStorage.setItem(ACCESS_TOKEN_KEY, accessToken.trim());
     } else {
-      localStorage.removeItem(ACCESS_TOKEN_KEY);
+      sessionStorage.removeItem(ACCESS_TOKEN_KEY);
     }
 
     if (refreshToken && refreshToken !== 'undefined' && refreshToken !== 'null' && refreshToken.trim() !== '') {
-      localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken.trim());
+      sessionStorage.setItem(REFRESH_TOKEN_KEY, refreshToken.trim());
     } else if (refreshToken === null) {
-      localStorage.removeItem(REFRESH_TOKEN_KEY);
+      sessionStorage.removeItem(REFRESH_TOKEN_KEY);
     }
   } catch (err) {
-    console.warn('Failed to save auth tokens to localStorage:', err);
+    console.warn('Failed to save auth tokens to sessionStorage:', err);
   }
 };
 
 export const getStoredUser = (): any | null => {
   try {
-    const raw = localStorage.getItem(USER_INFO_KEY);
+    const raw = sessionStorage.getItem(USER_INFO_KEY);
     if (!raw || raw === 'undefined' || raw === 'null' || raw.trim() === '') return null;
     return JSON.parse(raw);
   } catch {
@@ -156,22 +156,25 @@ export const getStoredUser = (): any | null => {
 export const setStoredUser = (user: any) => {
   try {
     if (user && user !== 'undefined' && user !== 'null') {
-      localStorage.setItem(USER_INFO_KEY, JSON.stringify(user));
+      sessionStorage.setItem(USER_INFO_KEY, JSON.stringify(user));
     } else {
-      localStorage.removeItem(USER_INFO_KEY);
+      sessionStorage.removeItem(USER_INFO_KEY);
     }
   } catch (err) {
-    console.warn('Failed to save user session to localStorage:', err);
+    console.warn('Failed to save user session to sessionStorage:', err);
   }
 };
 
 export const clearAuthTokens = () => {
   try {
+    sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+    sessionStorage.removeItem(REFRESH_TOKEN_KEY);
+    sessionStorage.removeItem(USER_INFO_KEY);
     localStorage.removeItem(ACCESS_TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_INFO_KEY);
   } catch (err) {
-    console.warn('Failed to clear tokens from localStorage:', err);
+    console.warn('Failed to clear tokens from storage:', err);
   }
 };
 
@@ -262,7 +265,7 @@ export async function request<T>(
     headers['Authorization'] = `Bearer ${token}`;
   } else if (requiresAuth) {
     clearAuthTokens();
-    throw new Error('ChÆ°a Ä‘Äƒng nháº­p hoáº·c phiÃªn lÃ m viá»‡c Ä‘Ã£ káº¿t thÃºc.');
+    throw new Error('ChÆ°a Ä‘Äƒng nháº­p hoáº·c phiÃªn lÃ m viá»‡c Ä‘Ã£ káº¿t thÃºc.');
   }
 
   const url = resolveApiUrl(endpoint);
@@ -297,7 +300,7 @@ export async function request<T>(
     if (!response.ok) {
       // If 401 Unauthorized on an authenticated endpoint, try silent token refresh once
       if (response.status === 401 && !_retry && requiresAuth && !endpoint.includes('/auth/')) {
-        const refreshedToken = await refreshAccessToken();
+        const refreshedToken = await refreshAccessToken();https://github.com/ThuyTrang1109/SEP490_FE_SecondLife/pull/2/conflict?name=src%252Fservices%252FapiClient.ts&ancestor_oid=d4b27e146409b1126a7b20af575dc1778aed0ad4&base_oid=936eec38ee15b5712cc954055f6df1ed7ad552b0&head_oid=9451ffbdf6130c549a6e63576dbc6f7034315ba8
         if (refreshedToken) {
           return request<T>(endpoint, {
             ...options,
@@ -317,14 +320,18 @@ export async function request<T>(
       const errorMessage =
         resData?.message ||
         resData?.error ||
-        (response.status === 403 ? 'Bạn không có quyền thực hiện hành động này.' : `HTTP Error ${response.status}: ${response.statusText}`);
+
+        (response.status === 403 ? 'B?n không có quy?n th?c hi?n hành d?ng này.' : `HTTP Error ${response.status}: ${response.statusText}`);
+
       throw new Error(errorMessage);
     }
 
     return resData as ApiResponse<T>;
   } catch (error: any) {
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
-      throw new Error('Không thể kết nối đến Backend Server. Vui lòng kiểm tra lại backend (port 8080).');
+
+      throw new Error('Không th? k?t n?i d?n Backend Server. Vui lòng ki?m tra l?i backend (port 8080).');
+
     }
     throw error;
   }

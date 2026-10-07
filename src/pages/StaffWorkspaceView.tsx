@@ -267,6 +267,8 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       badgeColor: 'bg-amber-600 text-white'
 
     },
+
+
     {
       id: 'reports-support' as StaffTab,
       label: 'BÁO CÁO & HỖ TRỢ',
@@ -343,7 +345,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     triggerNotice(`Đã từ chối duyệt bài tin #${id}. Lý do: ${rejectReason}`);
     setSelectedListingModal(null);
   };
-
 
 
   const handleSendEvidenceRequest = (e: React.FormEvent) => {

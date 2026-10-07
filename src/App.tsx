@@ -165,17 +165,16 @@ export default function App() {
 
 
   const handleConfirmLogout = () => {
-    authService.logout();
-    clearAuthTokens();
-    setCurrentUser(null);
-    setCurrentRole('buyer');
-    setActiveTab('marketplace');
-    setIsProfileDialogOpen(false);
-    showToast(
-      lang === 'vi'
-        ? 'Đã đăng xuất tài khoản thành công.'
-        : 'Logged out successfully.'
-    );
+    authService.logout().finally(() => {
+      clearAuthTokens();
+      setCurrentUser(null);
+      setCurrentRole('buyer');
+      setActiveTab('marketplace');
+      setIsProfileDialogOpen(false);
+      
+      // Force a hard reload to ensure all memory states and third-party scripts are cleared
+      window.location.reload();
+    });
   };
 
   // Core Data State

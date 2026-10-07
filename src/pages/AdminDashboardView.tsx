@@ -4,7 +4,8 @@ import {
   DisputeCase,
   Listing,
   Language,
-  EscrowStatus
+  EscrowStatus,
+  UserProfile
 } from '../types';
 import { translations, formatVND } from '../utils/translations';
 import {
@@ -78,7 +79,9 @@ import {
   ScanFace,
   ZoomIn,
   MapPin,
-  BadgeCheck
+  BadgeCheck,
+  User,
+  LogOut,
 } from 'lucide-react';
 import { CatalogAiTab } from '../components/admin/CatalogAiTab';
 
@@ -89,6 +92,9 @@ interface AdminDashboardViewProps {
   onResolveDispute: (disputeId: string, decision: 'REFUND_BUYER' | 'RELEASE_SELLER') => void;
   lang: Language;
   onViewWebsite?: () => void;
+  currentUser?: UserProfile | null;
+  onOpenProfile?: () => void;
+  onLogout?: () => void;
 }
 
 type AdminTab =
@@ -131,7 +137,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   listings: initialListings,
   onResolveDispute,
   lang,
-  onViewWebsite
+  onViewWebsite,
+  currentUser,
+  onOpenProfile,
+  onLogout
 }) => {
   const t = translations[lang];
 
@@ -1219,73 +1228,66 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             <Menu className="w-5 h-5" />
           </button>
 
-          {/* Xem Website Button */}
-          <button
-            onClick={() => onViewWebsite?.()}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold text-white/80 hover:text-white hover:bg-white/10 transition cursor-pointer"
-          >
-            <ExternalLink className="w-3.5 h-3.5 text-white/80" />
-            <span className="font-bold">{lang === 'vi' ? 'Xem website' : 'View Website'}</span>
-          </button>
         </div>
 
         {/* Right: Admin Profile */}
         <div className="relative">
           <button
             onClick={() => setShowUserDropdown(!showUserDropdown)}
-            className="flex items-center gap-2.5 px-2 py-1 rounded-lg hover:bg-white/10 transition cursor-pointer"
+            className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl hover:bg-white/10 transition cursor-pointer"
+            title={lang === 'vi' ? 'Hồ sơ quản trị viên' : 'Admin Profile'}
           >
             <div className="w-7 h-7 rounded-full bg-white p-0.5 flex items-center justify-center shadow-xs border border-white/20">
-              <img
-                src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"
-                alt="Admin"
-                className="w-full h-full rounded-full object-cover"
-              />
+              {currentUser?.avatar ? (
+                <img
+                  src={currentUser.avatar}
+                  alt="Admin"
+                  className="w-full h-full rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full rounded-full bg-[#c34c36] text-white flex items-center justify-center font-black text-[11px]">
+                  {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'A'}
+                </div>
+              )}
             </div>
-            <span className="text-xs font-black text-white hidden sm:inline">Admin</span>
+            <span className="text-xs font-black text-white hidden sm:inline">{currentUser?.name || 'Admin'}</span>
             <ChevronDown className="w-3.5 h-3.5 text-white hidden sm:inline" />
           </button>
 
           {/* User Dropdown */}
           {showUserDropdown && (
-            <div className="absolute right-0 mt-2 w-48 bg-white text-[#24263e] rounded-xl shadow-2xl border border-gray-200 py-1 z-50 text-xs">
-              <div className="px-3 py-2 border-b border-gray-100">
-                <p className="font-black text-[#24263e]">
-                  {lang === 'vi' ? 'Quản Trị Viên Hệ Thống' : 'System Administrator'}
+            <div className="absolute right-0 mt-2 w-56 bg-white text-[#24263e] rounded-2xl shadow-2xl border border-gray-200 py-1.5 z-50 text-xs animate-in fade-in">
+              <div className="px-3.5 py-2.5 border-b border-gray-100">
+                <p className="font-black text-[#24263e] text-xs truncate">
+                  {currentUser?.name || (lang === 'vi' ? 'Quản Trị Viên Hệ Thống' : 'System Administrator')}
                 </p>
-                <p className="text-[11px] text-gray-500 font-medium">admin@secondlife.vn</p>
+                <p className="text-[11px] text-gray-500 font-medium truncate">{currentUser?.email || 'admin@secondlife.vn'}</p>
+                <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-[#c34c36]/10 text-[#c34c36] font-extrabold text-[10px]">
+                  {lang === 'vi' ? 'Quyền: Toàn Quyền Admin' : 'Role: Super Admin'}
+                </span>
               </div>
-              <button
-                onClick={() => {
-                  setShowUserDropdown(false);
-                  onViewWebsite?.();
-                }}
-                className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-2 text-[#24263e] font-semibold cursor-pointer"
-              >
-                <ExternalLink className="w-3.5 h-3.5 text-[#24263e]" />
-                <span>{lang === 'vi' ? 'Về trang mua bán' : 'Back to Marketplace'}</span>
-              </button>
-              <button
-                onClick={() => {
-                  setShowUserDropdown(false);
-                  setActiveTab('ai-settings');
-                }}
-                className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-2 text-[#24263e] font-semibold cursor-pointer"
-              >
-                <Sliders className="w-3.5 h-3.5 text-[#24263e]" />
-                <span>{lang === 'vi' ? 'Cấu hình thuật toán' : 'AI Algorithm Config'}</span>
-              </button>
-              <div className="border-t border-gray-100 my-1"></div>
-              <button
-                onClick={() => {
-                  setShowUserDropdown(false);
-                  onViewWebsite?.();
-                }}
-                className="w-full text-left px-3 py-2 hover:bg-rose-50 text-rose-600 flex items-center gap-2 cursor-pointer font-bold"
-              >
-                <X className="w-3.5 h-3.5" />
-                <span>{lang === 'vi' ? 'Thoát quyền Admin' : 'Exit Admin'}</span>
-              </button>
+              <div className="p-1 space-y-0.5">
+                <button
+                  onClick={() => {
+                    setShowUserDropdown(false);
+                    onOpenProfile?.();
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-slate-100 rounded-xl flex items-center gap-2 text-[#24263e] font-bold cursor-pointer transition"
+                >
+                  <User className="w-3.5 h-3.5 text-[#c34c36]" />
+                  <span>{lang === 'vi' ? 'Hồ Sơ Cá Nhân' : 'Admin Profile'}</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowUserDropdown(false);
+                    onLogout?.();
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-rose-50 rounded-xl text-rose-600 flex items-center gap-2 cursor-pointer font-bold transition"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? 'Đăng Xuất' : 'Log Out'}</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -1302,20 +1304,32 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             }`}
         >
           {/* User Block */}
-          <div className="p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3">
+          <div
+            onClick={() => onOpenProfile?.()}
+            className="p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3 cursor-pointer hover:bg-black/5 transition"
+            title={lang === 'vi' ? 'Xem hồ sơ cá nhân' : 'View profile'}
+          >
             <div className="relative shrink-0">
-              <div className="w-10 h-10 rounded-full bg-white p-0.5 border border-[#24263e]/20 overflow-hidden">
-                <img
-                  src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"
-                  alt="Admin"
-                  className="w-full h-full object-cover rounded-full"
-                />
+              <div className="w-10 h-10 rounded-full bg-white p-0.5 border border-[#24263e]/20 overflow-hidden flex items-center justify-center">
+                {currentUser?.avatar ? (
+                  <img
+                    src={currentUser.avatar}
+                    alt="Admin"
+                    className="w-full h-full object-cover rounded-full"
+                  />
+                ) : (
+                  <div className="w-full h-full rounded-full bg-[#c34c36] text-white flex items-center justify-center font-black text-sm">
+                    {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'A'}
+                  </div>
+                )}
               </div>
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#fce5da] absolute bottom-0 right-0"></span>
             </div>
             {!isSidebarCollapsed && (
               <div className="overflow-hidden">
-                <h4 className="font-black text-xs sm:text-sm text-[#24263e] truncate">Admin</h4>
+                <h4 className="font-black text-xs sm:text-sm text-[#24263e] truncate">
+                  {currentUser?.name || 'Admin'}
+                </h4>
                 <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 font-bold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
                   <span>Online</span>

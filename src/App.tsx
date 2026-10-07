@@ -968,7 +968,9 @@ export default function App() {
             listings={listings}
             onResolveDispute={handleResolveDispute}
             lang={lang}
-            onViewWebsite={() => window.open('/', '_blank')}
+            currentUser={currentUser}
+            onOpenProfile={() => setIsProfileDialogOpen(true)}
+            onLogout={() => setIsLogoutModalOpen(true)}
           />
         )}
 

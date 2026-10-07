@@ -1264,44 +1264,48 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                       )}
 
                       {/* Summary & Purchase Action Bar */}
-                      <div className="pt-3 border-t border-[#24263e]/10 flex flex-col sm:flex-row items-center justify-between gap-3">
-                        <div className="text-xs text-slate-700 w-full sm:w-auto">
+                      <div className="pt-3.5 pb-2 border-t border-[#24263e]/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white/80 p-3 sm:px-4 rounded-2xl shadow-2xs">
+                        <div className="flex-1 min-w-0">
                           {selectedPkg ? (
-                            <div>
-                              <span className="font-bold text-slate-500">Đang chọn: </span>
-                              <span className="font-black text-[#24263e]">{getPkgName(selectedPkg)}</span>
-                              <span className="mx-1.5">•</span>
-                              <span className="font-mono font-black text-[#c34c36]">
-                                {formatVND(getPkgPrice(selectedPkg))}
-                              </span>
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-semibold text-slate-500">Đang chọn:</span>
+                                <span className="text-xs sm:text-sm font-black text-[#24263e]">{getPkgName(selectedPkg)}</span>
+                                <span className="text-xs font-mono font-black text-[#c34c36]">
+                                  ({formatVND(getPkgPrice(selectedPkg))})
+                                </span>
+                              </div>
+                              <div className="text-[11px] font-medium">
+                                {currentWalletBalance >= getPkgPrice(selectedPkg) ? (
+                                  <span className="text-emerald-700 font-bold flex items-center gap-1">
+                                    <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                    Số dư ví: {formatVND(currentWalletBalance)} (Đủ điều kiện trừ ví)
+                                  </span>
+                                ) : (
+                                  <span className="text-amber-800 font-semibold flex items-center gap-1 flex-wrap">
+                                    <QrCode className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                                    <span>Số dư ví: <strong className="font-mono">{formatVND(currentWalletBalance)}</strong></span>
+                                    <span>•</span>
+                                    <span>Cần nạp thiếu: <strong className="text-[#c34c36] font-mono font-black">{formatVND(getPkgPrice(selectedPkg) - currentWalletBalance)}</strong></span>
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           ) : (
-                            <span className="text-slate-400 italic">Vui lòng chọn một gói nạp ở trên</span>
+                            <span className="text-xs text-slate-400 italic">Vui lòng chọn một gói nạp ở trên để tiếp tục</span>
                           )}
                         </div>
 
-                        <div className="flex items-center gap-2 w-full sm:w-auto">
-                          {selectedPkg && currentWalletBalance < getPkgPrice(selectedPkg) && (
-                            <button
-                              type="button"
-                              disabled={creatingDeposit || purchasing}
-                              onClick={() => handleConfirmPurchase(selectedPkg)}
-                              className="px-4 py-3 rounded-2xl font-bold text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 transition cursor-pointer flex items-center gap-1.5 shrink-0"
-                            >
-                              <QrCode className="w-3.5 h-3.5 text-amber-800" />
-                              <span>Nạp Thiếu {formatVND(getPkgPrice(selectedPkg) - currentWalletBalance)} &rarr;</span>
-                            </button>
-                          )}
-
+                        <div className="w-full sm:w-auto shrink-0">
                           <button
                             disabled={!selectedPkg || purchasing || creatingDeposit || packagesLoading}
                             onClick={() => handleConfirmPurchase(selectedPkg)}
-                            className="flex-1 sm:flex-none px-7 py-3 rounded-2xl font-black text-xs sm:text-sm text-white bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 active:scale-[0.99] transition shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+                            className="w-full sm:w-auto px-6 py-3 rounded-2xl font-black text-xs sm:text-sm text-white bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 active:scale-[0.99] transition shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
                           >
                             {creatingDeposit ? (
                               <>
                                 <Loader2 className="w-4 h-4 animate-spin" />
-                                <span>Đang tạo mã QR VietQR...</span>
+                                <span>Đang tạo mã VietQR...</span>
                               </>
                             ) : purchasing ? (
                               <>
@@ -1310,14 +1314,14 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                               </>
                             ) : selectedPkg && currentWalletBalance < getPkgPrice(selectedPkg) ? (
                               <>
-                                <QrCode className="w-4 h-4" />
+                                <QrCode className="w-4 h-4 shrink-0" />
                                 <span>
-                                  Xác Nhận Mua Gói (Nạp thiếu {formatVND(getPkgPrice(selectedPkg) - currentWalletBalance)})
+                                  Quét QR Nạp Thiếu & Mua Gói ({formatVND(Math.max(getPkgPrice(selectedPkg) - currentWalletBalance, 10000))})
                                 </span>
                               </>
                             ) : (
                               <>
-                                <ShoppingBag className="w-4 h-4" />
+                                <ShoppingBag className="w-4 h-4 shrink-0" />
                                 <span>
                                   Xác Nhận Mua Gói ({selectedPkg ? formatVND(getPkgPrice(selectedPkg)) : ''})
                                 </span>

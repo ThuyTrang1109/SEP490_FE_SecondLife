@@ -20,7 +20,7 @@ import {
   AdminItem,
   AdminCategoryQuestionTemplate
 } from '../../services/adminCatalogService';
-import { parseQuestionItem } from '../../pages/CreateListingView';
+import { parseQuestionItem } from '../../utils/questionParser';
 
 interface CatalogAiTabProps {
   lang: Language;

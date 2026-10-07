@@ -26,13 +26,12 @@ function isNoV1Path(path: string): boolean {
   ) {
     return true;
   }
-  if (path.startsWith('/admin')) {
-    if (path.startsWith('/admin/users') || path.startsWith('/admin/posts')) {
-      return false;
-    }
-    return true;
+  if (
+    path.startsWith('/admin/users') || path.startsWith('/admin/posts')
+    || path.startsWith('/admin/catalog')) {
+    return false;
   }
-  return false;
+  return true;
 }
 
 export function resolveApiUrl(endpoint: string): string {
@@ -263,7 +262,7 @@ export async function request<T>(
     headers['Authorization'] = `Bearer ${token}`;
   } else if (requiresAuth) {
     clearAuthTokens();
-    throw new Error('Chưa đăng nhập hoặc phiên làm việc đã kết thúc.');
+    throw new Error('ChÆ°a Ä‘Äƒng nháº­p hoáº·c phiÃªn lÃ m viá»‡c Ä‘Ã£ káº¿t thÃºc.');
   }
 
   const url = resolveApiUrl(endpoint);
@@ -318,14 +317,14 @@ export async function request<T>(
       const errorMessage =
         resData?.message ||
         resData?.error ||
-        (response.status === 403 ? 'Bạn không có quyền thực hiện hành động này.' : `HTTP Error ${response.status}: ${response.statusText}`);
+        (response.status === 403 ? 'Báº¡n khÃ´ng cÃ³ quyá»n thá»±c hiá»‡n hÃ nh Ä‘á»™ng nÃ y.' : `HTTP Error ${response.status}: ${response.statusText}`);
       throw new Error(errorMessage);
     }
 
     return resData as ApiResponse<T>;
   } catch (error: any) {
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
-      throw new Error('Không thể kết nối đến Backend Server. Vui lòng kiểm tra lại backend (port 8080).');
+      throw new Error('KhÃ´ng thá»ƒ káº¿t ná»‘i Ä‘áº¿n Backend Server. Vui lÃ²ng kiá»ƒm tra láº¡i backend (port 8080).');
     }
     throw error;
   }

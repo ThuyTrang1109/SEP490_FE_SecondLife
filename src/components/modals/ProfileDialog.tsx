@@ -34,6 +34,7 @@ import {
   Clock,
   AlertTriangle,
   Copy,
+  PlusCircle,
 } from 'lucide-react';
 import { UserProfile, UserRole, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
@@ -65,6 +66,7 @@ interface ProfileDialogProps {
   onLogout: () => void;
   onChangePassword?: () => void;
   onOpenVerifyEmail?: (email: string) => void;
+  onOpenTopUp?: () => void;
   lang?: Language;
   initialTab?: ProfileTab;
 }
@@ -78,6 +80,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   onLogout,
   onChangePassword,
   onOpenVerifyEmail,
+  onOpenTopUp,
   lang = 'vi',
   initialTab = 'info',
 }) => {
@@ -145,6 +148,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
   // Avatar & eKYC document upload states
   const [avatarUrl, setAvatarUrl] = useState<string>(currentUser?.avatar || '');
+  const [imgError, setImgError] = useState(false);
   const [docFrontUrl, setDocFrontUrl] = useState<string>('');
   const [docBackUrl, setDocBackUrl] = useState<string>('');
   const [selfieUrl, setSelfieUrl] = useState<string>('');
@@ -189,6 +193,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       setPhone(currentUser.phone || '');
       setAddress(currentUser.address || '');
       setAvatarUrl(currentUser.avatar || '');
+      setImgError(false);
       if (currentUser.gender) setGender(currentUser.gender);
       if (currentUser.birthday) setBirthday(currentUser.birthday);
       if (currentUser.bankAccount) {
@@ -200,8 +205,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       setShopName(currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop'));
       setSellerPhone(currentUser.phone || '');
       setPickupAddress(currentUser.pickupAddress || currentUser.address || '');
-      if (initialTab) {
+      const isInternalRole = ['admin', 'staff', 'inspector'].includes(currentUser.role);
+      if (initialTab && !(isInternalRole && initialTab === 'settings')) {
         setActiveTab(initialTab);
+      } else if (isInternalRole && activeTab === 'settings') {
+        setActiveTab('info');
       }
     }
   }, [currentUser, isOpen, initialTab]);
@@ -215,7 +223,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             if (fresh.fullName) setName(fresh.fullName);
             if (fresh.email) setEmail(fresh.email);
             if (fresh.phone) setPhone(fresh.phone);
-            if (fresh.avatarUrl) setAvatarUrl(fresh.avatarUrl);
+            if (fresh.avatarUrl) {
+              setAvatarUrl(fresh.avatarUrl);
+              setImgError(false);
+            }
           }
         })
         .catch((err) => {
@@ -229,15 +240,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             if (verif.documentNumber) setIdCardNumber(verif.documentNumber);
             if (verif.documentFrontUrl) {
               setDocFrontUrl(verif.documentFrontUrl);
-              setDocFrontPreview(verif.documentFrontUrl);
             }
             if (verif.documentBackUrl) {
               setDocBackUrl(verif.documentBackUrl);
-              setDocBackPreview(verif.documentBackUrl);
             }
             if (verif.selfieUrl) {
               setSelfieUrl(verif.selfieUrl);
-              setSelfiePreview(verif.selfieUrl);
             }
             if (verif.status === 'RESUBMIT_REQUIRED') {
               setShowSellerRegistrationForm(true);
@@ -555,7 +563,20 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     try {
       const folder = field === 'avatar' ? 'avatars' : 'seller-verifications';
       const uploaded = await mediaService.uploadImage(file, folder);
-      if (field === 'avatar') setAvatarUrl(uploaded.url);
+      if (field === 'avatar') {
+        setAvatarUrl(uploaded.url);
+        setImgError(false);
+        try {
+          await userService.updateMyProfile({ avatarUrl: uploaded.url });
+          const updated: UserProfile = {
+            ...currentUser,
+            avatar: uploaded.url,
+          };
+          onUpdateProfile(updated);
+        } catch (updateErr) {
+          console.warn('Auto sync avatar to profile error:', updateErr);
+        }
+      }
       if (field === 'front') setDocFrontUrl(uploaded.url);
       if (field === 'back') setDocBackUrl(uploaded.url);
       if (field === 'selfie') setSelfieUrl(uploaded.url);
@@ -643,6 +664,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     e.preventDefault();
     setSellerFormError(null);
     setSellerFormSuccess(null);
+
+    if (['admin', 'staff', 'inspector'].includes(currentUser?.role || '')) {
+      setSellerFormError(
+        lang === 'vi'
+          ? 'Tài khoản Quản trị viên (Admin), Nhân viên (Staff) và Kỹ sư Hub (Inspector) không được phép đăng ký làm Người Bán.'
+          : 'Administrator, Staff, and Hub Inspector accounts are not allowed to register as a Seller.'
+      );
+      return;
+    }
 
     if (isPendingReview) {
       setSellerFormError(
@@ -1014,12 +1044,13 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             <div className="flex items-end gap-3.5 sm:gap-4">
               {/* Avatar overlapping banner */}
               <div className="relative group shrink-0 -mt-12 sm:-mt-14 z-20">
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-tr from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center font-black text-2xl sm:text-3xl shadow-xl ring-4 ring-white overflow-hidden bg-white">
-                  {avatarUrl || currentUser.avatar ? (
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-tr from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center font-black text-2xl sm:text-3xl shadow-xl ring-4 ring-white overflow-hidden bg-white relative">
+                  {(avatarUrl || currentUser.avatar) && !imgError ? (
                     <img
                       src={avatarUrl || currentUser.avatar}
                       alt={name || currentUser.name}
                       className="w-full h-full object-cover"
+                      onError={() => setImgError(true)}
                     />
                   ) : (
                     ((name && name !== 'string' ? name : currentUser.name && currentUser.name !== 'string' ? currentUser.name : 'U').charAt(0).toUpperCase())
@@ -1052,7 +1083,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               {/* Name & Role Badge - completely readable on clean white */}
               <div className="space-y-1.5 pb-0.5">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight drop-shadow-sm">
+                  <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
                     {name || currentUser.name}
                   </h2>
                   <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
@@ -1131,18 +1162,20 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 <span>{lang === 'vi' ? 'Bảo Mật' : 'Security'}</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab('settings')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                  activeTab === 'settings'
-                    ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <Store className={`w-4 h-4 shrink-0 ${activeTab === 'settings' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                <span>{lang === 'vi' ? 'Gian Hàng' : 'Store'}</span>
-              </button>
+              {!['admin', 'staff', 'inspector'].includes(currentUser.role) && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('settings')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                    activeTab === 'settings'
+                      ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                  }`}
+                >
+                  <Store className={`w-4 h-4 shrink-0 ${activeTab === 'settings' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                  <span>{lang === 'vi' ? 'Gian Hàng' : 'Store'}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1282,48 +1315,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 </div>
               </div>
 
-              {/* Role & Workspace Switcher for Demo / Testing */}
-              <div className="p-4 bg-slate-50/90 border border-slate-200/90 rounded-2xl space-y-2.5 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-[#c34c36]" />
-                    <span>{lang === 'vi' ? 'Chuyển Đổi Không Gian Làm Việc (Role Switcher)' : 'Role & Workspace Switcher'}</span>
-                  </span>
-                  <span className="text-[10px] text-slate-500 font-semibold bg-white px-2 py-0.5 rounded-md border border-slate-200">
-                    {lang === 'vi' ? 'Dành Cho Demo' : 'For Demo'}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                  {[
-                    { role: 'buyer' as UserRole, label: 'Người Mua', icon: ShoppingBag, color: 'hover:border-blue-400 hover:text-blue-600' },
-                    { role: 'seller' as UserRole, label: 'Người Bán', icon: Store, color: 'hover:border-emerald-400 hover:text-emerald-600' },
-                    { role: 'staff' as UserRole, label: 'Staff Vận Hành', icon: FileCheck, color: 'hover:border-amber-400 hover:text-amber-600' },
-                    { role: 'inspector' as UserRole, label: 'Kỹ Sư Hub', icon: Building, color: 'hover:border-purple-400 hover:text-purple-600' },
-                    { role: 'admin' as UserRole, label: 'Admin Quản Trị', icon: Shield, color: 'hover:border-rose-400 hover:text-rose-600' },
-                  ].map((r) => {
-                    const IconComp = r.icon;
-                    const isActive = currentUser.role === r.role;
-                    return (
-                      <button
-                        key={r.role}
-                        type="button"
-                        onClick={() => {
-                          onRoleChange(r.role);
-                          onClose();
-                        }}
-                        className={`p-2.5 rounded-xl text-center border transition-all cursor-pointer flex flex-col items-center justify-center gap-1.5 ${
-                          isActive
-                            ? 'bg-[#24263e] text-white border-[#24263e] shadow-sm font-black scale-102'
-                            : `bg-white border-slate-200 text-slate-700 ${r.color} hover:bg-slate-50`
-                        }`}
-                      >
-                        <IconComp className="w-4 h-4 shrink-0" />
-                        <span className="text-[11px] font-bold leading-tight">{r.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+
 
               {/* Action Buttons inside Tab 1 */}
               <div className="pt-3 flex items-center justify-between border-t border-slate-100">
@@ -1379,13 +1371,25 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     </span>
                   </div>
                   <div className="text-2xl font-black text-[#24263e] tracking-tight">
-                    {formatVND(currentUser.walletBalanceVnd || 24500000)}
+                    {formatVND(currentUser.walletBalanceVnd || currentUser.walletBalance || 0)}
                   </div>
                   <p className="text-[11px] text-[#24263e]/80 font-medium">
                     {lang === 'vi'
-                      ? 'Tiền bán hàng đã hoàn tất giải ngân từ người mua qua quỹ Escrow.'
-                      : 'Sales proceeds released from buyers via the Escrow trust fund.'}
+                      ? 'Tiền trong ví dùng để thanh toán mua hàng an toàn qua Quỹ Escrow hoặc rút về tài khoản ngân hàng.'
+                      : 'Funds in your wallet used for secure Escrow transactions or bank withdrawal.'}
                   </p>
+                  {onOpenTopUp && (
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={onOpenTopUp}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white text-xs font-black shadow-sm transition cursor-pointer"
+                      >
+                        <PlusCircle className="w-3.5 h-3.5" />
+                        <span>{lang === 'vi' ? 'Nạp Tiền Vào Ví (VietQR)' : 'Top Up Wallet (VietQR)'}</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-[#faf8f5] to-[#faf8f5] border border-[#c34c36]/30 text-[#24263e] space-y-2 relative overflow-hidden shadow-xs">
@@ -1600,6 +1604,28 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
           {/* TAB 4: ĐỔI VAI TRÒ */}
           {activeTab === 'settings' && (
+            ['admin', 'staff', 'inspector'].includes(currentUser.role) ? (
+              <div className="py-12 px-4 text-center max-w-md mx-auto space-y-4 animate-in fade-in">
+                <div className="w-16 h-16 rounded-3xl bg-rose-50 text-[#c34c36] flex items-center justify-center mx-auto shadow-inner">
+                  <Shield className="w-8 h-8" />
+                </div>
+                <h4 className="text-base font-black text-slate-900">
+                  {lang === 'vi' ? 'Không Hỗ Trợ Đăng Ký Người Bán' : 'Seller Registration Restricted'}
+                </h4>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  {lang === 'vi'
+                    ? 'Tài khoản Quản trị viên (Admin), Nhân viên (Staff) và Kỹ sư Hub (Inspector) không được phép đăng ký làm Người Bán trên sàn SecondLife nhằm đảm bảo tính minh bạch, độc lập và bảo mật hệ thống.'
+                    : 'Administrator, Staff, and Hub Inspector accounts are restricted from registering as Sellers on SecondLife to ensure system integrity and compliance.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('info')}
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition cursor-pointer"
+                >
+                  {lang === 'vi' ? 'Quay Lại Thông Tin Cá Nhân' : 'Back to Personal Info'}
+                </button>
+              </div>
+            ) : (
             <div className="space-y-5">
               <div>
                 <div className="flex items-center justify-between mb-1">
@@ -2446,6 +2472,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 </form>
               )}
             </div>
+            )
           )}
         </div>
 

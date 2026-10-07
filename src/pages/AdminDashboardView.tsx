@@ -1126,7 +1126,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     },
     {
       id: 'catalog-ai' as AdminTab,
-      label: lang === 'vi' ? 'CATALOG & KỊCH BẢN AI' : 'CATALOG & AI TEMPLATES',
+      label: lang === 'vi' ? 'DANH MỤC SẢN PHẨM & AI' : 'PRODUCT CATALOG & AI',
       icon: Layers,
       badge: null
     },

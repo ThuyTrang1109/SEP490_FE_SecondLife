@@ -17,9 +17,10 @@ import {
   Layers,
   Flame,
   Award,
-  ShoppingBag
+  ShoppingBag,
+  ShieldCheck,
 } from 'lucide-react';
-import { TopupPackage, UserCredit, UserWallet, DepositResponseDTO } from '../../types';
+import { TopupPackage, UserCredit, UserWallet, DepositResponseDTO, UserProfile, UserRole, Language } from '../../types';
 import { topupService, walletService, sellerCreditService } from '../../services';
 import logoImg from '../../assets/logo.png';
 import { formatVND } from '../../utils/translations';
@@ -27,6 +28,8 @@ import { formatVND } from '../../utils/translations';
 interface TopUpModalProps {
   isOpen: boolean;
   onClose: () => void;
+  currentUser?: UserProfile | null;
+  currentRole?: UserRole;
   currentCredit?: number;
   userCredit?: UserCredit;
   walletBalance?: number;
@@ -34,6 +37,7 @@ interface TopUpModalProps {
   onUserCreditUpdated?: (newCredit: UserCredit) => void;
   onWalletUpdated?: (newBalance: number) => void;
   initialTab?: 'wallet' | 'packages';
+  lang?: Language;
 }
 
 const COMBO_PACKAGES: TopupPackage[] = [
@@ -167,6 +171,8 @@ const getPkgTotalCredits = (pkg?: TopupPackage | null) => getPkgCredits(pkg) + g
 export const TopUpModal: React.FC<TopUpModalProps> = ({
   isOpen,
   onClose,
+  currentUser,
+  currentRole,
   currentCredit = 0,
   userCredit: initialUserCredit,
   walletBalance: initialWalletBalance,
@@ -174,9 +180,12 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   onUserCreditUpdated,
   onWalletUpdated,
   initialTab = 'wallet',
+  lang = 'vi',
 }) => {
-  // Active primary tab: 'wallet' (nạp tiền) or 'packages' (mua gói xu)
-  const [activeTab, setActiveTab] = useState<'wallet' | 'packages'>(initialTab);
+  const isBuyerRole = (currentRole === 'buyer') || (currentUser?.role === 'buyer');
+
+  // Active primary tab: 'wallet' (nạp tiền) or 'packages' (mua gói xu). Buyers only need 'wallet'
+  const [activeTab, setActiveTab] = useState<'wallet' | 'packages'>(isBuyerRole ? 'wallet' : initialTab);
 
   // Wallet State
   const [wallet, setWallet] = useState<UserWallet | null>(null);
@@ -215,7 +224,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   // Load wallet & packages when modal opens
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialTab);
+      setActiveTab(isBuyerRole ? 'wallet' : initialTab);
       setDepositRequest(null);
       setPendingPackage(null);
       setAutoActivating(false);
@@ -223,14 +232,16 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       setPurchaseError(null);
       setPackageSuccess(false);
       loadWallet();
-      loadPackagesAndCredit();
+      if (!isBuyerRole) {
+        loadPackagesAndCredit();
+      }
     } else {
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
       }
     }
-  }, [isOpen, initialTab]);
+  }, [isOpen, initialTab, isBuyerRole]);
 
   // Polling wallet balance when a deposit request is pending
   useEffect(() => {
@@ -527,10 +538,14 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
-                Ví Tiền &amp; Quyền Sử Dụng Second<span className="text-[#c34c36]">Life</span>
+                {isBuyerRole
+                  ? <>Ví Escrow &amp; Nạp Tiền Second<span className="text-[#c34c36]">Life</span></>
+                  : <>Ví Tiền &amp; Quyền Sử Dụng Second<span className="text-[#c34c36]">Life</span></>}
               </h3>
               <p className="text-[11px] text-[#fce5da] font-medium leading-tight">
-                Nạp tiền tự động qua VietQR (SePay) &bull; Mua gói lượt đăng tin AI
+                {isBuyerRole
+                  ? 'Nạp tiền tự động qua VietQR (SePay) • Bảo đảm giao dịch an toàn qua Quỹ Escrow'
+                  : 'Nạp tiền tự động qua VietQR (SePay) • Mua gói lượt đăng tin AI'}
               </p>
             </div>
           </div>
@@ -557,25 +572,41 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 text-xs font-bold font-mono">
-              <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
-                Tin: <span className="font-black text-[#c34c36]">{userCredit.postCredits ?? 0}</span>
-              </span>
-              <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
-                AI Chat: <span className="font-black text-[#c34c36]">{userCredit.chatCredits ?? 0}</span>
-              </span>
-              <button
-                onClick={loadWallet}
-                title="Làm mới số dư"
-                className="p-1 rounded-lg bg-white border border-[#24263e]/15 text-slate-600 hover:text-[#24263e] cursor-pointer"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${walletLoading ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
+            {!isBuyerRole ? (
+              <div className="flex items-center gap-2 text-xs font-bold font-mono">
+                <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
+                  Tin: <span className="font-black text-[#c34c36]">{userCredit.postCredits ?? 0}</span>
+                </span>
+                <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
+                  AI Chat: <span className="font-black text-[#c34c36]">{userCredit.chatCredits ?? 0}</span>
+                </span>
+                <button
+                  onClick={loadWallet}
+                  title="Làm mới số dư"
+                  className="p-1 rounded-lg bg-white border border-[#24263e]/15 text-slate-600 hover:text-[#24263e] cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${walletLoading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-xs font-bold">
+                <span className="text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2.5 py-0.5 rounded-xl font-bold flex items-center gap-1 shadow-2xs">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  Bảo Lãnh Ký Quỹ Escrow
+                </span>
+                <button
+                  onClick={loadWallet}
+                  title="Làm mới số dư"
+                  className="p-1 rounded-lg bg-white border border-[#24263e]/15 text-slate-600 hover:text-[#24263e] cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${walletLoading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Tab Switcher */}
+        {/* Tab Switcher - Only show package tab if NOT buyer */}
         <div className="flex border-b border-[#24263e]/10 bg-white/70 px-5 pt-1.5 pb-1 shrink-0">
           <button
             onClick={() => {
@@ -588,24 +619,26 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
               }`}
           >
             <QrCode className="w-3.5 h-3.5" />
-            <span>1. Nạp Tiền Vào Ví (VietQR)</span>
+            <span>{isBuyerRole ? 'Nạp Tiền Vào Ví Escrow (VietQR)' : '1. Nạp Tiền Vào Ví (VietQR)'}</span>
             {depositRequest && depositRequest.status === 'PENDING' && (
               <span className="w-2 h-2 rounded-full bg-[#c34c36] animate-ping ml-1" title="Có giao dịch nạp đang chờ" />
             )}
           </button>
-          <button
-            onClick={() => {
-              setActiveTab('packages');
-              setDepositError(null);
-            }}
-            className={`pb-2 px-3.5 text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer border-b-2 ${activeTab === 'packages'
-                ? 'border-[#c34c36] text-[#c34c36]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>2. Mua Gói Quyền Sử Dụng (Trừ ví)</span>
-          </button>
+          {!isBuyerRole && (
+            <button
+              onClick={() => {
+                setActiveTab('packages');
+                setDepositError(null);
+              }}
+              className={`pb-2 px-3.5 text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer border-b-2 ${activeTab === 'packages'
+                  ? 'border-[#c34c36] text-[#c34c36]'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>2. Mua Gói Quyền Sử Dụng (Trừ ví)</span>
+            </button>
+          )}
         </div>
 
         {/* Modal Scrollable Body */}

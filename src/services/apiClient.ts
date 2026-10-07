@@ -15,7 +15,7 @@ export interface PageResponse<T> {
 }
 
 function isNoV1Path(path: string): boolean {
-  if (
+  return (
     path.startsWith('/auth') ||
     path.startsWith('/users') ||
     path.startsWith('/seller-verifications') ||
@@ -23,15 +23,7 @@ function isNoV1Path(path: string): boolean {
     path.startsWith('/staff') ||
     path.startsWith('/payment-callbacks') ||
     path.startsWith('/health')
-  ) {
-    return true;
-  }
-  if (
-    path.startsWith('/admin/users') || path.startsWith('/admin/posts')
-    || path.startsWith('/admin/catalog')) {
-    return false;
-  }
-  return true;
+  );
 }
 
 export function resolveApiUrl(endpoint: string): string {
@@ -265,7 +257,7 @@ export async function request<T>(
     headers['Authorization'] = `Bearer ${token}`;
   } else if (requiresAuth) {
     clearAuthTokens();
-    throw new Error('ChÆ°a Ä‘Äƒng nháº­p hoáº·c phiÃªn lÃ m viá»‡c Ä‘Ã£ káº¿t thÃºc.');
+    throw new Error('Chưa đăng nhập hoặc phiên làm việc đã kết thúc.');
   }
 
   const url = resolveApiUrl(endpoint);
@@ -300,7 +292,7 @@ export async function request<T>(
     if (!response.ok) {
       // If 401 Unauthorized on an authenticated endpoint, try silent token refresh once
       if (response.status === 401 && !_retry && requiresAuth && !endpoint.includes('/auth/')) {
-        const refreshedToken = await refreshAccessToken();https://github.com/ThuyTrang1109/SEP490_FE_SecondLife/pull/2/conflict?name=src%252Fservices%252FapiClient.ts&ancestor_oid=d4b27e146409b1126a7b20af575dc1778aed0ad4&base_oid=936eec38ee15b5712cc954055f6df1ed7ad552b0&head_oid=9451ffbdf6130c549a6e63576dbc6f7034315ba8
+        const refreshedToken = await refreshAccessToken();
         if (refreshedToken) {
           return request<T>(endpoint, {
             ...options,
@@ -320,8 +312,7 @@ export async function request<T>(
       const errorMessage =
         resData?.message ||
         resData?.error ||
-
-        (response.status === 403 ? 'B?n không có quy?n th?c hi?n hành d?ng này.' : `HTTP Error ${response.status}: ${response.statusText}`);
+        (response.status === 403 ? 'Bạn không có quyền thực hiện hành động này.' : `HTTP Error ${response.status}: ${response.statusText}`);
 
       throw new Error(errorMessage);
     }
@@ -329,10 +320,9 @@ export async function request<T>(
     return resData as ApiResponse<T>;
   } catch (error: any) {
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
-
-      throw new Error('Không th? k?t n?i d?n Backend Server. Vui lòng ki?m tra l?i backend (port 8080).');
-
+      throw new Error('Không thể kết nối đến Backend Server. Vui lòng kiểm tra lại backend (port 8080).');
     }
     throw error;
   }
 }
+

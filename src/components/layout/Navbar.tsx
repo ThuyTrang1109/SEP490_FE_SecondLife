@@ -126,122 +126,128 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Navigation Tabs - Clean, distinct pills */}
         <nav className="hidden lg:flex items-center gap-1 p-1 bg-white/5 rounded-2xl border border-white/10 shadow-inner">
-          <button
-            onClick={() => onTabChange('home')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              activeTab === 'home'
-                ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                : 'text-white/80 hover:text-white hover:bg-white/10'
-            }`}
-          >
-            <Home className="w-3.5 h-3.5" />
-            <span>{lang === 'vi' ? 'Trang Chủ' : 'Home'}</span>
-          </button>
-
-          <button
-            onClick={() => onTabChange('marketplace')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              activeTab === 'marketplace'
-                ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                : 'text-white/80 hover:text-white hover:bg-white/10'
-            }`}
-          >
-            <ShoppingBag className="w-3.5 h-3.5" />
-            <span>{lang === 'vi' ? 'Sàn Đồ Cũ' : 'Marketplace'}</span>
-          </button>
-
-          {currentUser && currentRole === 'seller' && (
-            <button
-              onClick={() => onTabChange('seller-dashboard')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'seller-dashboard'
-                  ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                  : 'text-white/80 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? 'Kênh Người Bán' : 'Seller Hub'}</span>
-            </button>
-          )}
-
-          {currentUser && (
-            <button
-              onClick={() => onTabChange('orders')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${
-                activeTab === 'orders'
-                  ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                  : 'text-white/80 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <Clock className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? (currentRole === 'buyer' ? 'Đơn Ký Quỹ' : 'Quản Lý Đơn') : 'Orders'}</span>
-              {activeOrdersCount > 0 && (
-                <span className="ml-0.5 px-1.5 py-0.2 bg-[#c34c36] text-white rounded-full text-[10px] font-extrabold shadow-xs">
-                  {activeOrdersCount}
-                </span>
-              )}
-            </button>
-          )}
-
-          {currentUser && currentRole === 'staff' && (
-            <button
-              onClick={() => onTabChange('staff-workspace')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'staff-workspace'
-                  ? 'bg-[#2b1d16] text-white shadow-sm font-black'
-                  : 'text-white/80 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <FileCheck className="w-3.5 h-3.5 text-[#cea981]" />
-              <span>{lang === 'vi' ? 'Nghiệp Vụ Staff' : 'Staff Portal'}</span>
-            </button>
-          )}
-
-          {currentUser && currentRole === 'inspector' && (
-            <button
-              onClick={() => onTabChange('inspection-hub')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'inspection-hub'
-                  ? 'bg-[#c34c36] text-white shadow-sm font-black'
-                  : 'text-white/80 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? 'Kiểm Định Hub' : 'Inspection Hub'}</span>
-            </button>
-          )}
-
-          {currentUser && currentRole === 'admin' && (
+          {/* Admin role: ONLY Admin Management portal */}
+          {currentUser && currentRole === 'admin' ? (
             <button
               onClick={() => onTabChange('admin-dashboard')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeTab === 'admin-dashboard'
-                  ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                  ? 'bg-[#c34c36] text-white shadow-sm'
                   : 'text-white/80 hover:text-white hover:bg-white/10'
               }`}
             >
-              <ShieldAlert className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? 'Quản Trị Admin' : 'Admin'}</span>
+              <ShieldAlert className="w-4 h-4" />
+              <span>{lang === 'vi' ? 'Quản Trị Hệ Thống (Admin)' : 'Admin Dashboard'}</span>
             </button>
+          ) : currentUser && currentRole === 'inspector' ? (
+            /* Inspector role: ONLY Hub Inspection portal */
+            <button
+              onClick={() => onTabChange('inspection-hub')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                activeTab === 'inspection-hub'
+                  ? 'bg-[#c34c36] text-white shadow-sm'
+                  : 'text-white/80 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <Building2 className="w-4 h-4" />
+              <span>{lang === 'vi' ? 'Trung Tâm Kiểm Định Hub' : 'Inspection Hub'}</span>
+            </button>
+          ) : currentUser && currentRole === 'staff' ? (
+            /* Staff role: ONLY Staff Operations portal */
+            <button
+              onClick={() => onTabChange('staff-workspace')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                activeTab === 'staff-workspace'
+                  ? 'bg-[#2b1d16] text-white shadow-sm'
+                  : 'text-white/80 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <FileCheck className="w-4 h-4 text-[#cea981]" />
+              <span>{lang === 'vi' ? 'Nghiệp Vụ Vận Hành Staff' : 'Staff Portal'}</span>
+            </button>
+          ) : (
+            /* Buyer & Seller & Public roles: Marketplace Navigation */
+            <>
+              <button
+                onClick={() => onTabChange('home')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  activeTab === 'home'
+                    ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                    : 'text-white/80 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Home className="w-3.5 h-3.5" />
+                <span>{lang === 'vi' ? 'Trang Chủ' : 'Home'}</span>
+              </button>
+
+              <button
+                onClick={() => onTabChange('marketplace')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  activeTab === 'marketplace'
+                    ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                    : 'text-white/80 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <ShoppingBag className="w-3.5 h-3.5" />
+                <span>{lang === 'vi' ? 'Sàn Đồ Cũ' : 'Marketplace'}</span>
+              </button>
+
+              {currentUser && currentRole === 'seller' && (
+                <button
+                  onClick={() => onTabChange('seller-dashboard')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                    activeTab === 'seller-dashboard'
+                      ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? 'Kênh Người Bán' : 'Seller Hub'}</span>
+                </button>
+              )}
+
+              {currentUser && (
+                <button
+                  onClick={() => onTabChange('orders')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${
+                    activeTab === 'orders'
+                      ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? (currentRole === 'buyer' ? 'Đơn Ký Quỹ' : 'Quản Lý Đơn') : 'Orders'}</span>
+                  {activeOrdersCount > 0 && (
+                    <span className="ml-0.5 px-1.5 py-0.2 bg-[#c34c36] text-white rounded-full text-[10px] font-extrabold shadow-xs">
+                      {activeOrdersCount}
+                    </span>
+                  )}
+                </button>
+              )}
+            </>
           )}
         </nav>
 
         {/* Action buttons & Profile */}
         <div className="flex items-center gap-2.5 shrink-0">
-          {/* TopUp & Wallet Balance Badge Button */}
-          {currentUser && (
+          {/* TopUp & Wallet Balance Badge Button - Only for Buyer & Seller */}
+          {currentUser && !['admin', 'staff', 'inspector'].includes(currentRole) && (
             <button
               onClick={onOpenTopUp}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/15 text-white border border-white/20 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
-              title={lang === 'vi' ? 'Ví tiền & Nạp xu' : 'Wallet & Credits'}
+              title={lang === 'vi' ? (currentRole === 'buyer' ? 'Ví Escrow & Nạp tiền' : 'Ví tiền & Gói tin đăng') : 'Wallet & Top Up'}
             >
               <Wallet className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <div className="flex items-center gap-1 text-[11px]">
                 <span className="text-emerald-300 font-extrabold font-mono">{formatVND(walletBalance)}</span>
-                <span className="text-white/40">•</span>
-                <span className="text-white font-extrabold">{userCredit?.postCredits ?? (userCreditBalance ?? 0)} {lang === 'vi' ? 'tin' : 'posts'}</span>
+                {currentRole === 'seller' && (
+                  <>
+                    <span className="text-white/40">•</span>
+                    <span className="text-white font-extrabold">{userCredit?.postCredits ?? (userCreditBalance ?? 0)} {lang === 'vi' ? 'tin' : 'posts'}</span>
+                  </>
+                )}
               </div>
-              <span className="text-[9px] px-1 py-0.2 bg-[#c34c36] text-white rounded font-black leading-none ml-0.5">+</span>
+              <span className="text-[9px] px-1 py-0.2 bg-[#c34c36] text-white rounded font-black leading-none ml-0.5" title="Nạp tiền">+</span>
             </button>
           )}
 
@@ -259,26 +265,28 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
 
-          {/* Post Listing CTA Button */}
-          <button
-            onClick={() => {
-              if (!currentUser) {
-                onTabChange('create-listing');
-              } else if (currentRole !== 'seller') {
-                if (onOpenSellerRegister) {
-                  onOpenSellerRegister();
+          {/* Post Listing CTA Button - HIDE for admin, staff, inspector */}
+          {(!currentUser || !['admin', 'staff', 'inspector'].includes(currentRole)) && (
+            <button
+              onClick={() => {
+                if (!currentUser) {
+                  onTabChange('create-listing');
+                } else if (currentRole !== 'seller') {
+                  if (onOpenSellerRegister) {
+                    onOpenSellerRegister();
+                  } else {
+                    onTabChange('create-listing');
+                  }
                 } else {
                   onTabChange('create-listing');
                 }
-              } else {
-                onTabChange('create-listing');
-              }
-            }}
-            className="hidden sm:inline-flex items-center gap-1.5 bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 text-white px-4 py-2 rounded-xl font-black text-xs shadow-md hover:shadow-lg transition cursor-pointer"
-          >
-            <Sparkles className="w-3.5 h-3.5 fill-white" />
-            <span>{lang === 'vi' ? 'Đăng Bán AI' : 'Post Listing'}</span>
-          </button>
+              }}
+              className="hidden sm:inline-flex items-center gap-1.5 bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 text-white px-4 py-2 rounded-xl font-black text-xs shadow-md hover:shadow-lg transition cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 fill-white" />
+              <span>{lang === 'vi' ? 'Đăng Bán AI' : 'Post Listing'}</span>
+            </button>
+          )}
 
           {/* Profile User Badge */}
           {currentUser ? (
@@ -335,87 +343,124 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       {/* Mobile Nav Bar */}
-      <div className="md:hidden border-t border-[#24263e]/15 bg-[#c34c36]/95 px-3 py-1.5 flex items-center justify-around text-[11px] font-medium text-[#24263e]">
-        <button
-          onClick={() => onTabChange('home')}
-          className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'home' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-[#24263e]/80'
-            }`}
-        >
-          <Home className="w-3.5 h-3.5" />
-          <span>{lang === 'vi' ? 'Trang chủ' : 'Home'}</span>
-        </button>
-        <button
-          onClick={() => onTabChange('marketplace')}
-          className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'marketplace' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-[#24263e]/80'
-            }`}
-        >
-          <ShoppingBag className="w-3.5 h-3.5" />
-          <span>{lang === 'vi' ? 'Sàn đồ cũ' : 'Market'}</span>
-        </button>
-
-        {currentUser ? (
+      <div className="md:hidden border-t border-[#24263e]/15 bg-[#c34c36]/95 px-3 py-1.5 flex items-center justify-around text-[11px] font-medium text-white">
+        {currentUser && currentRole === 'admin' ? (
           <>
-            {currentRole === 'seller' ? (
+            <button
+              onClick={() => onTabChange('admin-dashboard')}
+              className={`flex items-center gap-1 py-1 px-2 rounded-md ${
+                activeTab === 'admin-dashboard' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
+              }`}
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>Quản Trị Admin</span>
+            </button>
+            <button
+              onClick={onOpenProfile}
+              className="flex items-center gap-1 py-1 px-2 rounded-md text-white/90 hover:text-white"
+            >
+              <div className="w-4 h-4 rounded-full bg-white text-[#c34c36] flex items-center justify-center font-bold text-[9px]">
+                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+              </div>
+              <span>Hồ Sơ</span>
+            </button>
+          </>
+        ) : currentUser && currentRole === 'inspector' ? (
+          <>
+            <button
+              onClick={() => onTabChange('inspection-hub')}
+              className={`flex items-center gap-1 py-1 px-2 rounded-md ${
+                activeTab === 'inspection-hub' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span>Kiểm Định Hub</span>
+            </button>
+            <button
+              onClick={onOpenProfile}
+              className="flex items-center gap-1 py-1 px-2 rounded-md text-white/90 hover:text-white"
+            >
+              <div className="w-4 h-4 rounded-full bg-white text-[#c34c36] flex items-center justify-center font-bold text-[9px]">
+                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+              </div>
+              <span>Hồ Sơ</span>
+            </button>
+          </>
+        ) : currentUser && currentRole === 'staff' ? (
+          <>
+            <button
+              onClick={() => onTabChange('staff-workspace')}
+              className={`flex items-center gap-1 py-1 px-2 rounded-md ${
+                activeTab === 'staff-workspace' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
+              }`}
+            >
+              <FileCheck className="w-3.5 h-3.5" />
+              <span>Nghiệp Vụ Staff</span>
+            </button>
+            <button
+              onClick={onOpenProfile}
+              className="flex items-center gap-1 py-1 px-2 rounded-md text-white/90 hover:text-white"
+            >
+              <div className="w-4 h-4 rounded-full bg-white text-[#c34c36] flex items-center justify-center font-bold text-[9px]">
+                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+              </div>
+              <span>Hồ Sơ</span>
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => onTabChange('home')}
+              className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'home' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'}`}
+            >
+              <Home className="w-3.5 h-3.5" />
+              <span>{lang === 'vi' ? 'Trang chủ' : 'Home'}</span>
+            </button>
+            <button
+              onClick={() => onTabChange('marketplace')}
+              className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'marketplace' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'}`}
+            >
+              <ShoppingBag className="w-3.5 h-3.5" />
+              <span>{lang === 'vi' ? 'Sàn đồ cũ' : 'Market'}</span>
+            </button>
+            {currentUser && currentRole === 'seller' && (
               <button
                 onClick={() => onTabChange('create-listing')}
-                className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'create-listing' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-[#24263e]/80'
-                  }`}
+                className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'create-listing' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'}`}
               >
                 <PlusCircle className="w-3.5 h-3.5" />
                 <span>{lang === 'vi' ? 'Đăng tin' : 'Post Listing'}</span>
               </button>
-            ) : (
+            )}
+            {currentUser && (
               <button
-                onClick={() => {
-                  if (onOpenSellerRegister) {
-                    onOpenSellerRegister();
-                  } else {
-                    onTabChange('create-listing');
-                  }
-                }}
-                className="flex items-center gap-1 py-1 px-2 rounded-md text-[#24263e]/80 hover:text-[#24263e]"
+                onClick={() => onTabChange('orders')}
+                className={`flex items-center gap-1 py-1 px-2 rounded-md relative ${activeTab === 'orders' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'}`}
               >
-                <PlusCircle className="w-3.5 h-3.5 text-[#24263e]" />
-                <span>{lang === 'vi' ? 'Đăng tin' : 'Post Listing'}</span>
+                <Clock className="w-3.5 h-3.5" />
+                <span>{lang === 'vi' ? 'Đơn hàng' : 'Orders'}</span>
               </button>
             )}
-            <button
-              onClick={() => onTabChange('orders')}
-              className={`flex items-center gap-1 py-1 px-2 rounded-md relative ${activeTab === 'orders' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-[#24263e]/80'
-                }`}
-            >
-              <Clock className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? 'Đơn hàng' : 'Orders'}</span>
-            </button>
-            {currentRole === 'admin' ? (
+            {currentUser ? (
               <button
-                onClick={() => onTabChange('admin-dashboard')}
-                className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'admin-dashboard' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-[#24263e]/80'
-                  }`}
+                onClick={onOpenProfile}
+                className="flex items-center gap-1 py-1 px-2 rounded-md text-white/90 hover:text-white"
               >
-                <ShieldAlert className="w-3.5 h-3.5" />
-                <span>Admin</span>
+                <div className="w-4 h-4 rounded-full bg-white text-[#c34c36] flex items-center justify-center font-bold text-[9px]">
+                  {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+                </div>
+                <span className="truncate max-w-[60px] font-bold">{currentUser.name.split(' ')[0]}</span>
               </button>
             ) : (
               <button
-                onClick={onOpenProfile}
-                className="flex items-center gap-1 py-1 px-2 rounded-md text-[#24263e]/80 hover:text-[#24263e]"
+                onClick={() => onOpenAuth('login')}
+                className="flex items-center gap-1 py-1 px-2 rounded-md text-[#24263e] bg-white hover:bg-white/90 font-bold shadow-xs"
               >
-                <div className="w-4 h-4 rounded-full bg-[#24263e] text-white flex items-center justify-center font-bold text-[9px]">
-                  {currentUser.name.charAt(0)}
-                </div>
-                <span className="truncate max-w-[60px] text-[#24263e] font-bold">{currentUser.name.split(' ')[0]}</span>
+                <LogIn className="w-3.5 h-3.5" />
+                <span>{lang === 'vi' ? 'Đăng nhập' : 'Login'}</span>
               </button>
             )}
           </>
-        ) : (
-          <button
-            onClick={() => onOpenAuth('login')}
-            className="flex items-center gap-1 py-1 px-2 rounded-md text-[#24263e] hover:bg-white/40 font-bold"
-          >
-            <LogIn className="w-3.5 h-3.5" />
-            <span>{lang === 'vi' ? 'Đăng nhập' : 'Login'}</span>
-          </button>
         )}
       </div>
     </header>

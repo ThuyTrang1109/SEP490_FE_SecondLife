@@ -62,7 +62,7 @@ export const mediaService = {
     const formData = new FormData();
     formData.append('file', file);
     const query = folder ? `?folder=${encodeURIComponent(folder)}` : '';
-    const url = resolveApiUrl(`/media/upload${query}`);
+    const url = resolveApiUrl(`/v1/media/upload${query}`);
 
     const doUpload = async (headers: Record<string, string>) => {
       return fetch(url, { method: 'POST', headers, body: formData });
@@ -114,7 +114,7 @@ export const mediaService = {
     const formData = new FormData();
     files.forEach((file) => formData.append('files', file));
     const query = folder ? `?folder=${encodeURIComponent(folder)}` : '';
-    const url = resolveApiUrl(`/media/upload-multiple${query}`);
+    const url = resolveApiUrl(`/v1/media/upload-multiple${query}`);
 
     const doUpload = async (headers: Record<string, string>) => {
       return fetch(url, { method: 'POST', headers, body: formData });

@@ -58,6 +58,41 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 }) => {
   if (!isOpen || !currentUser) return null;
 
+  const isInternalRole = ['admin', 'staff', 'inspector'].includes(currentUser.role);
+  if (isInternalRole) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
+        <div className="relative w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-2xl text-center space-y-4">
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <div className="w-16 h-16 rounded-full bg-rose-50 text-[#c34c36] flex items-center justify-center mx-auto shadow-inner">
+            <AlertCircle className="w-8 h-8" />
+          </div>
+          <h3 className="text-lg font-black text-slate-900">
+            {lang === 'vi' ? 'Không Hỗ Trợ Đăng Ký Người Bán' : 'Seller Registration Restricted'}
+          </h3>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            {lang === 'vi'
+              ? 'Tài khoản Quản trị viên (Admin), Nhân viên (Staff) và Kỹ sư Hub (Inspector) không được phép đăng ký làm Người Bán trên sàn SecondLife nhằm đảm bảo tính minh bạch, độc lập và bảo mật hệ thống.'
+              : 'Administrator, Staff, and Hub Inspector accounts are restricted from registering as Sellers on the platform to maintain system integrity and compliance.'}
+          </p>
+          <div className="pt-2">
+            <button
+              onClick={onClose}
+              className="w-full py-3 bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 text-white font-bold text-sm rounded-xl transition shadow-md shadow-[#c34c36]/20 cursor-pointer"
+            >
+              {lang === 'vi' ? 'Đã Hiểu và Đóng' : 'I Understand & Close'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const isAlreadySeller = currentUser.role === 'seller';
   const isRegistered = Boolean(currentUser.isSellerRegistered || isAlreadySeller);
 

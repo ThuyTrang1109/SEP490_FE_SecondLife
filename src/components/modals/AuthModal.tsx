@@ -298,6 +298,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         email: res.user.email,
         role: mappedRole,
         phone: res.user.phone || '',
+        avatar: res.user.avatarUrl || undefined,
         address: ''
       });
       onClose();
@@ -400,6 +401,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         email: res.user.email,
         role: mappedRole,
         phone: res.user.phone || '',
+        avatar: res.user.avatarUrl || undefined,
         address: ''
       });
       onClose();

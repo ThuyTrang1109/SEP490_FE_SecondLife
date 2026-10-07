@@ -28,7 +28,16 @@ import { authService, userService, topupService, walletService, orderService, ne
 export default function App() {
   // Global State - Default to 'marketplace' so visitors enter directly into the marketplace
   const [lang, setLang] = useState<Language>('vi');
-  const [activeTab, setActiveTab] = useState<string>('marketplace');
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    const token = getAccessToken();
+    const stored = getStoredUser();
+    if (token && stored && stored.role) {
+      if (stored.role === 'admin') return 'admin-dashboard';
+      if (stored.role === 'inspector') return 'inspection-hub';
+      if (stored.role === 'staff') return 'staff-workspace';
+    }
+    return 'marketplace';
+  });
 
   React.useEffect(() => {
     document.body.classList.remove('dark');
@@ -83,6 +92,13 @@ export default function App() {
           setCurrentUser(syncedUser);
           setCurrentRole(syncedUser.role);
           setStoredUser(syncedUser);
+          if (syncedUser.role === 'admin') {
+            setActiveTab('admin-dashboard');
+          } else if (syncedUser.role === 'inspector') {
+            setActiveTab('inspection-hub');
+          } else if (syncedUser.role === 'staff') {
+            setActiveTab('staff-workspace');
+          }
         } else {
           clearAuthTokens();
           setCurrentUser(null);
@@ -215,6 +231,16 @@ export default function App() {
   };
 
   const handleTabChange = (tab: string) => {
+    if (currentUser?.role === 'admin' && tab !== 'admin-dashboard') {
+      showToast(lang === 'vi' ? 'Tài khoản Quản trị viên chỉ truy cập trang Quản Trị Hệ Thống.' : 'Admin account only accesses Admin Portal.');
+      return;
+    }
+
+    if (currentUser?.role === 'inspector' && tab !== 'inspection-hub') {
+      showToast(lang === 'vi' ? 'Tài khoản Kỹ sư Hub chỉ truy cập Trung Tâm Kiểm Định.' : 'Inspector account only accesses Inspection Hub.');
+      return;
+    }
+
     if (protectedTabs.includes(tab) && !currentUser) {
       setPendingTab(tab);
       let promptMsg = lang === 'vi'
@@ -242,6 +268,12 @@ export default function App() {
     }
 
     if (tab === 'create-listing') {
+      if (currentUser && ['admin', 'staff', 'inspector'].includes(currentUser.role)) {
+        showToast(lang === 'vi'
+          ? 'Tài khoản Quản trị viên, Nhân viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
+          : 'Admin, Staff and Inspector roles cannot register as sellers.');
+        return;
+      }
       if (currentUser && currentUser.role !== 'seller') {
         setIsSellerRegistrationModalOpen(true);
         return;
@@ -251,10 +283,14 @@ export default function App() {
     setActiveTab(tab);
   };
 
-  // Guard activeTab if logged out
+  // Guard activeTab if logged out or if internal roles (admin / inspector)
   React.useEffect(() => {
     if (!currentUser && protectedTabs.includes(activeTab)) {
       setActiveTab('marketplace');
+    } else if (currentUser?.role === 'admin' && activeTab !== 'admin-dashboard') {
+      setActiveTab('admin-dashboard');
+    } else if (currentUser?.role === 'inspector' && activeTab !== 'inspection-hub') {
+      setActiveTab('inspection-hub');
     }
   }, [currentUser, activeTab]);
 
@@ -669,7 +705,7 @@ export default function App() {
     setOrders((prev) =>
       prev.map((o) => (o.id === order.id ? { ...o, escrowStatus: 'DISPUTED' } : o))
     );
-    showToast(`Đã mở khiếu nại đơn hàng #${order.id}! Tiền trong Escrow đã được đóng bằng để Admin phân xử.`);
+    showToast(`Đã mở khiếu nại đơn hàng #${order.id}! Tiền trong Escrow đã được đóng băng để Admin phân xử.`);
   };
 
   const handleCompleteInspection = (
@@ -769,7 +805,15 @@ export default function App() {
           userCreditBalance={userCreditBalance}
           userCredit={userCredit}
           walletBalance={walletBalance}
-          onOpenSellerRegister={() => setIsSellerRegistrationModalOpen(true)}
+          onOpenSellerRegister={() => {
+            if (currentUser && ['admin', 'staff', 'inspector'].includes(currentUser.role)) {
+              showToast(lang === 'vi'
+                ? 'Tài khoản Quản trị viên, Nhân viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
+                : 'Admin, Staff and Inspector roles cannot register as sellers.');
+              return;
+            }
+            setIsSellerRegistrationModalOpen(true);
+          }}
         />
       )}
 
@@ -805,6 +849,10 @@ export default function App() {
                 requireAuth(undefined, lang === 'vi'
                   ? 'Vui lòng đăng nhập để thử nghiệm định giá AI và đăng bán sản phẩm.'
                   : 'Please log in to experience AI valuation and create listings.');
+              } else if (['admin', 'staff', 'inspector'].includes(currentUser.role)) {
+                showToast(lang === 'vi'
+                  ? 'Tài khoản Quản trị viên, Nhân viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
+                  : 'Admin, Staff and Inspector roles cannot register as sellers.');
               } else if (currentUser.role !== 'seller') {
                 setIsSellerRegistrationModalOpen(true);
               } else {
@@ -859,7 +907,15 @@ export default function App() {
                   {lang === 'vi' ? 'Quay lại Sàn' : 'Back to Market'}
                 </button>
                 <button
-                  onClick={() => setIsSellerRegistrationModalOpen(true)}
+                  onClick={() => {
+                    if (['admin', 'staff', 'inspector'].includes(currentUser.role)) {
+                      showToast(lang === 'vi'
+                        ? 'Tài khoản Quản trị viên, Nhân viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
+                        : 'Admin, Staff and Inspector roles cannot register as sellers.');
+                      return;
+                    }
+                    setIsSellerRegistrationModalOpen(true);
+                  }}
                   className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-sm font-bold shadow-md hover:opacity-95 transition cursor-pointer"
                 >
                   {lang === 'vi' ? 'Đăng Ký Người Bán Ngay' : 'Register as Seller Now'}
@@ -912,7 +968,7 @@ export default function App() {
             listings={listings}
             onResolveDispute={handleResolveDispute}
             lang={lang}
-            onViewWebsite={() => setActiveTab('marketplace')}
+            onViewWebsite={() => window.open('/', '_blank')}
           />
         )}
 
@@ -1061,7 +1117,13 @@ export default function App() {
               ? `Chào mừng ${user.name} (${user.role === 'buyer' ? 'Người Mua' : user.role === 'seller' ? 'Người Bán' : user.role === 'inspector' ? 'Kỹ Sư Hub' : user.role === 'staff' ? 'Nhân Viên Vận Hành' : 'Quản Trị'}) đã đăng nhập!`
               : `Welcome ${user.name}! Logged in successfully as ${user.role.toUpperCase()}.`
           );
-          if (pendingCheckoutItem) {
+          if (user.role === 'admin') {
+            setActiveTab('admin-dashboard');
+          } else if (user.role === 'inspector') {
+            setActiveTab('inspection-hub');
+          } else if (user.role === 'staff') {
+            setActiveTab('staff-workspace');
+          } else if (pendingCheckoutItem) {
             setSelectedListing(null);
             setCheckoutListing(pendingCheckoutItem);
             setPendingCheckoutItem(null);
@@ -1102,6 +1164,7 @@ export default function App() {
           setVerifyEmailTarget(targetEmail);
           setIsVerifyEmailModalOpen(true);
         }}
+        onOpenTopUp={() => setIsTopUpModalOpen(true)}
       />
 
       {/* 6-Digit OTP Email Verification Modal Popup */}
@@ -1152,6 +1215,9 @@ export default function App() {
       <TopUpModal
         isOpen={isTopUpModalOpen}
         onClose={() => setIsTopUpModalOpen(false)}
+        currentUser={currentUser}
+        currentRole={currentRole}
+        lang={lang}
         currentCredit={userCreditBalance}
         userCredit={userCredit}
         walletBalance={walletBalance}
@@ -1176,7 +1242,7 @@ export default function App() {
       />
 
       {/* E-Commerce Footer */}
-      {activeTab !== 'admin-dashboard' && (
+      {activeTab !== 'admin-dashboard' && activeTab !== 'inspection-hub' && activeTab !== 'staff-workspace' && (
         <Footer
           lang={lang}
           currentRole={currentRole}

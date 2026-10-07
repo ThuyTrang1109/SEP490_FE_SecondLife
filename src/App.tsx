@@ -116,18 +116,7 @@ export default function App() {
     }
   }, []);
 
-  // Listen for 401 Unauthorized session revocation events
-  React.useEffect(() => {
-    const handleUnauthorized = () => {
-      clearAuthTokens();
-      setCurrentUser(null);
-      setCurrentRole('buyer');
-      setActiveTab('marketplace');
-      window.location.reload();
-    };
-    window.addEventListener('unauthorized_session', handleUnauthorized);
-    return () => window.removeEventListener('unauthorized_session', handleUnauthorized);
-  }, []);
+    // The unauthorized_session listener was moved below state declarations to utilize toast and modal.
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | 'forgot'>('login');
@@ -188,7 +177,7 @@ export default function App() {
       setCurrentRole('buyer');
       setActiveTab('marketplace');
       setIsProfileDialogOpen(false);
-      
+
       // Force a hard reload to ensure all memory states and third-party scripts are cleared
       window.location.reload();
     });
@@ -212,6 +201,22 @@ export default function App() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 5000);
   };
+
+  // Listen for 401 Unauthorized session revocation events
+  React.useEffect(() => {
+    const handleUnauthorized = () => {
+      clearAuthTokens();
+      setCurrentUser(null);
+      setCurrentRole('buyer');
+      
+      // Notify user that session expired without destroying their current UI state
+      showToast(lang === 'vi' ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.' : 'Session expired. Please log in again to continue.');
+      setAuthModalMode('login');
+      setIsAuthModalOpen(true);
+    };
+    window.addEventListener('unauthorized_session', handleUnauthorized);
+    return () => window.removeEventListener('unauthorized_session', handleUnauthorized);
+  }, [lang]);
 
   // Auth Guard Helper
   const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'admin-dashboard', 'staff-workspace', 'chat'];
@@ -480,7 +485,7 @@ export default function App() {
           if (items && items.length > 0) {
             postsData = items;
           }
-        } catch {}
+        } catch { }
       }
 
       // Nếu là người bán (SELLER), lấy thêm các bài đăng cá nhân từ BE
@@ -498,7 +503,7 @@ export default function App() {
               }
             }
           }
-        } catch {}
+        } catch { }
       }
 
       if (postsData.length > 0) {
@@ -979,7 +984,7 @@ export default function App() {
         )}
 
         {activeTab === 'chat' && (
-          <InboxView 
+          <InboxView
             listings={listings}
             currentRole={currentRole}
             lang={lang}

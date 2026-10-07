@@ -318,13 +318,19 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       .filter(Boolean)
       .join(', ');
 
-    const promptMessage = `Tôi đã trả lời các câu hỏi về sản phẩm như sau: ${formattedAnswers}. Nhờ bạn viết lại một đoạn mô tả bán hàng thật chuyên nghiệp, trung thực và thu hút người mua nhé!`;
+    const promptMessage = `Đây là thông tin bổ sung người dùng cung cấp: ${formattedAnswers}`;
 
     try {
-      const res = await aiChatService.chat(promptMessage, sessionId, postId);
-      const reply = res?.reply || (res as any)?.message || '';
+      // B1: Gửi câu trả lời vào chat history để AI ghi nhận (bỏ qua câu trả lời tạm thời của AI)
+      await aiChatService.chat(promptMessage, sessionId, postId);
+
+      // B2: Gọi API finalize để ép AI tổng hợp thông tin thành đoạn văn mô tả
+      const finalizeRes = await postService.finalizeChat(sessionId);
+      const reply = finalizeRes?.description || (finalizeRes as any)?.message || '';
+      
       if (reply) {
         setDescription(reply);
+        setIsSessionCompleted(true);
         setApplySuccessNotice(lang === 'vi' ? '✨ Trợ lý AI đã tổng hợp xong bài mô tả bán hàng và cập nhật vào ô Mô tả bên dưới!' : '✨ AI generated a new sales description and updated the description box below!');
         setTimeout(() => setApplySuccessNotice(null), 5000);
       } else {

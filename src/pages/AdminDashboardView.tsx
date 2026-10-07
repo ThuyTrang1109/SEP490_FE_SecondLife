@@ -287,6 +287,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [selectedBookingModal, setSelectedBookingModal] = useState<BookingAppointment | null>(null);
   const [selectedContactModal, setSelectedContactModal] = useState<CustomerContact | null>(null);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const userDropdownRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userDropdownRef.current && !userDropdownRef.current.contains(event.target as Node)) {
+        setShowUserDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Admin User Detail Modal states (Requirement 9)
   const [selectedUserDetailId, setSelectedUserDetailId] = useState<string | null>(null);
@@ -1231,7 +1242,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </div>
 
         {/* Right: Admin Profile */}
-        <div className="relative">
+        <div className="relative" ref={userDropdownRef}>
           <button
             onClick={() => setShowUserDropdown(!showUserDropdown)}
             className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl hover:bg-white/10 transition cursor-pointer"
@@ -1418,43 +1429,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   ? 'Dashboard'
                   : navItems.find((n) => n.id === activeTab)?.label}
               </h1>
-              <span className="text-xs text-slate-500 font-normal">Control panel</span>
             </div>
 
-            {/* Breadcrumbs & Live Health Indicator */}
+            {/* Breadcrumbs */}
             <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={checkBackendHealth}
-                disabled={isLoadingHealth}
-                title="Bấm để kiểm tra lại tình trạng kết nối máy chủ Backend"
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border transition cursor-pointer ${
-                  healthInfo.status === 'UP'
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                    : healthInfo.status === 'DOWN'
-                    ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
-                    : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-                }`}
-              >
-                <span className={`w-2 h-2 rounded-full ${
-                  healthInfo.status === 'UP'
-                    ? 'bg-emerald-500 animate-pulse'
-                    : healthInfo.status === 'DOWN'
-                    ? 'bg-red-500'
-                    : 'bg-slate-400'
-                }`} />
-                <span>
-                  {isLoadingHealth
-                    ? 'Đang ping server...'
-                    : healthInfo.status === 'UP'
-                    ? `BE Online (${healthInfo.latency || 25}ms)`
-                    : healthInfo.status === 'DOWN'
-                    ? 'BE Mất kết nối'
-                    : 'Kiểm tra Backend'}
-                </span>
-                <RefreshCw className={`w-3 h-3 ${isLoadingHealth ? 'animate-spin' : ''}`} />
-              </button>
-
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
                 <Home className="w-3.5 h-3.5 text-slate-400" />
                 <button
@@ -2552,13 +2530,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                               </span>
                             </td>
                             <td className="py-3 px-4">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                user.emailVerified
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
-                              }`}>
-                                {user.emailVerified ? 'Đã xác thực OTP' : 'Chờ xác thực OTP'}
-                              </span>
+                              {user.emailVerified ? (
+                                <span className="flex items-center gap-1 w-fit px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-bold whitespace-nowrap shadow-sm">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  Đã xác thực
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1 w-fit px-2 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-[10px] font-bold whitespace-nowrap shadow-sm">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  Chờ xác thực
+                                </span>
+                              )}
                             </td>
                             <td className="py-3 px-4 text-right">
                               <div className="flex items-center justify-end gap-1.5">
@@ -2612,8 +2594,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             </span>
                           </td>
                           <td className="py-3 px-4">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              {user.kyc}
+                            <span className="flex items-center gap-1 w-fit px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-bold whitespace-nowrap shadow-sm">
+                              <CheckCircle2 className="w-3 h-3" />
+                              Đã xác thực
                             </span>
                           </td>
                           <td className="py-3 px-4 text-right">
@@ -4320,13 +4303,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       }`}>
                         {userDetailModalData.accountStatus}
                       </span>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        userDetailModalData.emailVerified
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-amber-50 text-amber-700 border border-amber-200'
-                      }`}>
-                        {userDetailModalData.emailVerified ? 'Đã xác thực OTP' : 'Chưa xác thực OTP'}
-                      </span>
+                      {userDetailModalData.emailVerified ? (
+                        <span className="flex items-center gap-1 w-fit px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-bold whitespace-nowrap shadow-sm">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Đã xác thực
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 w-fit px-2 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-[10px] font-bold whitespace-nowrap shadow-sm">
+                          <AlertTriangle className="w-3 h-3" />
+                          Chưa xác thực
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

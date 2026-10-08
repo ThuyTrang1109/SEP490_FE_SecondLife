@@ -82,5 +82,13 @@ export const aiChatService = {
 
     return (response as any)?.data || response;
   },
+
+  async regenerate(sessionId: string): Promise<any> {
+    const response = await request<any>(/v1/posts/regenerate-chat/, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return (response as any)?.data || response;
+  },
 };
 

@@ -94,15 +94,37 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
       setFinalizeNotice(
         typeof res === 'string' && res.length > 0 && !res.toLowerCase().includes('finalized')
           ? res
-          : (lang === 'vi'
+          : (res?.description || (lang === 'vi'
               ? 'AI đã tổng hợp cuộc trò chuyện và cập nhật mô tả chi tiết vào bài đăng thành công! Bạn có thể gửi bài đăng ngay bây giờ.'
-              : 'AI has summarized the conversation and saved the description to your post! You can now submit the post.')
+              : 'AI has summarized the conversation and saved the description to your post! You can now submit the post.'))
       );
     } catch (err: any) {
       setErrorMsg(err?.message || (lang === 'vi' ? 'Lỗi khi hoàn tất mô tả AI. Vui lòng thử lại.' : 'Failed to finalize AI description.'));
     } finally {
       setIsFinalizing(false);
     }
+  };
+
+  const handleRegenerateDescription = async () => {
+    setIsFinalizing(true);
+    setIsFinalized(false);
+    setFinalizeNotice(null);
+    try {
+      const res = await aiChatService.regenerate(sessionId);
+      setIsFinalized(true);
+      setFinalizeNotice(
+        typeof res === 'string' && res.length > 0 && !res.toLowerCase().includes('finalized')
+          ? res
+          : (res?.description || (lang === 'vi'
+              ? 'AI đã tạo lại mô tả thành công!'
+              : 'AI has regenerated the description successfully!'))
+      );
+    } catch (err: any) {
+      setErrorMsg(err?.message || (lang === 'vi' ? 'Không thể tạo lại mô tả.' : 'Failed to regenerate description.'));
+    } finally {
+      setIsFinalizing(false);
+    }
+  }
   };
 
   const handleSubmitPost = async () => {
@@ -269,9 +291,23 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
                 )}
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={handleSubmitPost}
+              <>
+                <button
+                  type="button"
+                  onClick={handleRegenerateDescription}
+                  disabled={isFinalizing}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition"
+                >
+                  {isFinalizing ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Bot className="w-3.5 h-3.5" />
+                  )}
+                  <span>{lang === 'vi' ? 'Tạo lại' : 'Regen'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitPost}
                 disabled={isSubmitting}
                 className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-95 text-white text-xs font-bold shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition"
               >

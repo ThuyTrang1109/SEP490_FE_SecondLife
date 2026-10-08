@@ -232,6 +232,22 @@ export const chatService = {
   },
 
   /**
+   * Lấy phòng chat hiện có (không tạo mới)
+   * GET /api/v1/chats/rooms?postId={postId}
+   */
+  async getRoom(postId: string): Promise<ChatRoomDto | null> {
+    try {
+      const response = await request<ChatRoomDto | null>(/v1/chats/rooms?postId=, {
+        method: 'GET',
+        requiresAuth: true,
+      });
+      return ((response as any)?.data !== undefined ? (response as any).data : response) as ChatRoomDto | null;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
    * Tải lịch sử tin nhắn trong một phòng chat
    * GET /api/v1/chats/{roomId}/messages
    */

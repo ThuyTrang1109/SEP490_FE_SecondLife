@@ -49,6 +49,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const sellerTrust = reviewService.getSellerTrustProfile(listing.sellerId, listing.sellerName);
 
   const [roomId, setRoomId] = useState<string | null>(null);
+  const [roomData, setRoomData] = useState<any>(null);
   const [loadingRoom, setLoadingRoom] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -120,7 +121,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         negotiationId,
       };
     },
-    [currentUser?.id, currentRole, listing.sellerName]
+    [currentUser?.id, currentRole, listing.sellerName, roomData?.buyerName]
   );
 
   // Initialize or fetch Chat Room from Backend
@@ -131,11 +132,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       setLoadingRoom(true);
       try {
         // API: POST /api/v1/chats/rooms?postId={postId}
-        const room = await chatService.getOrCreateRoom(listing.id);
+        const room = await chatService.getRoom(listing.id);
         if (!isMounted) return;
 
         if (room?.id) {
           setRoomId(room.id);
+          setRoomData(room);
           // API: GET /api/v1/chats/{roomId}/messages
           const historyDtos = await chatService.getMessages(room.id);
           if (isMounted && Array.isArray(historyDtos)) {
@@ -167,9 +169,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
   // Subscribe to WebSocket for real-time messages (/user/queue/messages)
   useEffect(() => {
-    if (!roomId) return;
-
-    // Connect WS
+    // Connect WS unconditionally so we receive messages even if room just created
     chatService.connectWebSocket();
 
     const unsubscribe = chatService.subscribeToMessages((newDto: ChatMessageDto) => {
@@ -260,9 +260,19 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
 
     try {
-      if (roomId) {
+      let targetRoomId = roomId;
+      if (!targetRoomId) {
+        const room = await chatService.getOrCreateRoom(listing.id);
+        if (room?.id) {
+          targetRoomId = room.id;
+          setRoomId(room.id);
+          setRoomData(room);
+        }
+      }
+      
+      if (targetRoomId) {
         // Call Backend API: POST /api/v1/chats/{roomId}/messages
-        const res = await chatService.sendMessage(roomId, text);
+        const res = await chatService.sendMessage(targetRoomId, text);
         if (res?.id) {
           setMessages((prev) =>
             prev.map((m) => (m.id === tempId ? { ...m, id: res.id } : m))

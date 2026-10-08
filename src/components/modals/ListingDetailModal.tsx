@@ -187,13 +187,22 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                             )}
                           </div>
 
-                          <div className="text-[10px] text-slate-500 flex items-center gap-1.5 mt-0.2">
+                          <div className="text-[10px] text-slate-500 flex items-center gap-1.5 mt-0.2 flex-wrap">
                             <span className="flex items-center text-amber-500 font-bold">
                               <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400 mr-0.5" />
                               {listing.sellerRating}
                             </span>
                             <span>•</span>
                             <span>{sellerTrust.reviewCount} {lang === 'vi' ? 'đánh giá' : 'reviews'}</span>
+                            {listing.location && (
+                              <>
+                                <span>•</span>
+                                <span className="flex items-center gap-0.5 text-slate-600 font-medium">
+                                  <MapPin className="w-2.5 h-2.5 text-[#c34c36]" />
+                                  <span>{listing.location}</span>
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>

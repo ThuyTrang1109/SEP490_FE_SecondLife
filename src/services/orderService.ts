@@ -7,11 +7,25 @@ export const orderService = {
    * Đặt mua hàng & ký quỹ Escrow (trừ tiền ví ngay lập tức, tiền giữ ở escrow)
    * POST /api/v1/orders
    */
-  async createOrder(postId: string, negotiationId?: string): Promise<OrderBackend> {
-    const payload: OrderRequestDTO = {
-      postId,
-      ...(negotiationId ? { negotiationId } : {}),
-    };
+  async createOrder(
+    input: string | OrderRequestDTO,
+    shippingQuoteIdOrNegotiationId?: string,
+    requestId?: string,
+    negotiationId?: string,
+    agreedPrice?: number
+  ): Promise<OrderBackend> {
+    let payload: OrderRequestDTO;
+    if (typeof input === 'object') {
+      payload = input;
+    } else {
+      payload = {
+        postId: input,
+        shippingQuoteId: shippingQuoteIdOrNegotiationId || '',
+        requestId: requestId || crypto.randomUUID(),
+        ...(negotiationId ? { negotiationId } : {}),
+        ...(agreedPrice !== undefined ? { agreedPrice } : {}),
+      };
+    }
     const response = await request<OrderBackend>('/v1/orders', {
       method: 'POST',
       body: JSON.stringify(payload),

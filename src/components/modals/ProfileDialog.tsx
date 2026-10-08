@@ -47,8 +47,13 @@ import {
   FALLBACK_PROVINCES,
   resolveProvinceFromText,
   normalizeAddressText,
+  addressService,
+  OpenApiProvince,
+  OpenApiDistrict,
+  OpenApiWard,
 } from '../../services';
 import { LiveFaceScannerModal, VnptEkycResultData } from './LiveFaceScannerModal';
+import { saveSellerAddress } from '../../utils/addressUtils';
 
 export type ProfileTab = 'info' | 'wallet' | 'kyc' | 'security' | 'settings';
 
@@ -185,6 +190,216 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [isLoadingWards, setIsLoadingWards] = useState(false);
   const [isDetectingLocation, setIsDetectingLocation] = useState(false);
 
+  // User Profile Open API Address state (Tỉnh/Thành, Quận/Huyện, Phường/Xã)
+  const [userProvinces, setUserProvinces] = useState<OpenApiProvince[]>([]);
+  const [userDistricts, setUserDistricts] = useState<OpenApiDistrict[]>([]);
+  const [userWards, setUserWards] = useState<OpenApiWard[]>([]);
+
+  const [selectedProvinceCode, setSelectedProvinceCode] = useState<number | ''>('');
+  const [selectedProvinceName, setSelectedProvinceName] = useState<string>(currentUser.province || currentUser.provinceName || '');
+  const [selectedDistrictCode, setSelectedDistrictCode] = useState<number | ''>('');
+  const [selectedDistrictName, setSelectedDistrictName] = useState<string>(currentUser.district || '');
+  const [selectedWardCode, setSelectedWardCode] = useState<number | ''>('');
+  const [selectedWardName, setSelectedWardName] = useState<string>(currentUser.ward || currentUser.wardName || '');
+  const [userStreetAddress, setUserStreetAddress] = useState<string>(currentUser.streetAddress || '');
+
+  const [isLoadingUserProvinces, setIsLoadingUserProvinces] = useState(false);
+  const [isLoadingUserDistricts, setIsLoadingUserDistricts] = useState(false);
+  const [isLoadingUserWards, setIsLoadingUserWards] = useState(false);
+
+  const computeFullAddress = () => {
+    const parts = [
+      userStreetAddress.trim(),
+      selectedWardName.trim(),
+      selectedDistrictName.trim(),
+      selectedProvinceName.trim(),
+    ].filter(Boolean);
+    return parts.join(', ');
+  };
+
+  // Tải danh sách Open API và khớp địa chỉ người dùng
+  const syncOpenApiAddress = async (
+    targetProvince?: string,
+    targetDistrict?: string,
+    targetWard?: string,
+    targetStreet?: string
+  ) => {
+    setIsLoadingUserProvinces(true);
+    try {
+      const pList = await addressService.getProvinces();
+      setUserProvinces(pList);
+
+      if (targetStreet) {
+        setUserStreetAddress(targetStreet);
+      }
+
+      const provQuery = (targetProvince || '').trim().toLowerCase();
+      if (!provQuery) return;
+
+      const cleanQuery = (s: string) =>
+        s.toLowerCase().replace(/^(tỉnh|thành phố|tp\.|tp|quận|huyện|thị xã|phường|xã|thị trấn)\s+/gi, '').trim();
+
+      const normalizedProvQuery = cleanQuery(provQuery);
+
+      const foundProv = pList.find((p) => {
+        const pNorm = cleanQuery(p.name);
+        return (
+          p.name.toLowerCase() === provQuery ||
+          pNorm === normalizedProvQuery ||
+          p.name.toLowerCase().includes(provQuery) ||
+          provQuery.includes(p.name.toLowerCase()) ||
+          pNorm.includes(normalizedProvQuery) ||
+          normalizedProvQuery.includes(pNorm)
+        );
+      });
+
+      if (foundProv) {
+        setSelectedProvinceCode(foundProv.code);
+        setSelectedProvinceName(foundProv.name);
+
+        setIsLoadingUserDistricts(true);
+        const dList = await addressService.getDistricts(foundProv.code);
+        setUserDistricts(dList);
+        setIsLoadingUserDistricts(false);
+
+        const distQuery = (targetDistrict || '').trim().toLowerCase();
+        if (!distQuery) return;
+
+        const normalizedDistQuery = cleanQuery(distQuery);
+
+        const foundDist = dList.find((d) => {
+          const dNorm = cleanQuery(d.name);
+          return (
+            d.name.toLowerCase() === distQuery ||
+            dNorm === normalizedDistQuery ||
+            d.name.toLowerCase().includes(distQuery) ||
+            distQuery.includes(d.name.toLowerCase()) ||
+            dNorm.includes(normalizedDistQuery) ||
+            normalizedDistQuery.includes(dNorm)
+          );
+        });
+
+        if (foundDist) {
+          setSelectedDistrictCode(foundDist.code);
+          setSelectedDistrictName(foundDist.name);
+
+          setIsLoadingUserWards(true);
+          const wList = await addressService.getWards(foundDist.code);
+          setUserWards(wList);
+          setIsLoadingUserWards(false);
+
+          const wardQuery = (targetWard || '').trim().toLowerCase();
+          if (!wardQuery) return;
+
+          const normalizedWardQuery = cleanQuery(wardQuery);
+
+          const foundWard = wList.find((w) => {
+            const wNorm = cleanQuery(w.name);
+            return (
+              w.name.toLowerCase() === wardQuery ||
+              wNorm === normalizedWardQuery ||
+              w.name.toLowerCase().includes(wardQuery) ||
+              wardQuery.includes(w.name.toLowerCase()) ||
+              wNorm.includes(normalizedWardQuery) ||
+              normalizedWardQuery.includes(wNorm)
+            );
+          });
+
+          if (foundWard) {
+            setSelectedWardCode(foundWard.code);
+            setSelectedWardName(foundWard.name);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to sync Open API address:', err);
+    } finally {
+      setIsLoadingUserProvinces(false);
+      setIsLoadingUserDistricts(false);
+      setIsLoadingUserWards(false);
+    }
+  };
+
+  const handleUserProvinceChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const rawVal = e.target.value;
+    const pCode = rawVal ? Number(rawVal) : '';
+    setSelectedProvinceCode(pCode);
+    const pObj = userProvinces.find((p) => p.code === pCode);
+    const newProvName = pObj ? pObj.name : '';
+    setSelectedProvinceName(newProvName);
+
+    setSelectedDistrictCode('');
+    setSelectedDistrictName('');
+    setSelectedWardCode('');
+    setSelectedWardName('');
+    setUserDistricts([]);
+    setUserWards([]);
+
+    const newFull = [userStreetAddress.trim(), '', '', newProvName].filter(Boolean).join(', ');
+    setAddress(newFull);
+
+    if (pCode) {
+      setIsLoadingUserDistricts(true);
+      try {
+        const dList = await addressService.getDistricts(pCode);
+        setUserDistricts(Array.isArray(dList) ? dList : []);
+      } catch (err) {
+        console.warn('handleUserProvinceChange error:', err);
+        setUserDistricts([]);
+      } finally {
+        setIsLoadingUserDistricts(false);
+      }
+    }
+  };
+
+  const handleUserDistrictChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const rawVal = e.target.value;
+    const dCode = rawVal ? Number(rawVal) : '';
+    setSelectedDistrictCode(dCode);
+    const dObj = userDistricts.find((d) => d.code === dCode);
+    const newDistName = dObj ? dObj.name : '';
+    setSelectedDistrictName(newDistName);
+
+    setSelectedWardCode('');
+    setSelectedWardName('');
+    setUserWards([]);
+
+    const newFull = [userStreetAddress.trim(), '', newDistName, selectedProvinceName].filter(Boolean).join(', ');
+    setAddress(newFull);
+
+    if (dCode) {
+      setIsLoadingUserWards(true);
+      try {
+        const wList = await addressService.getWards(dCode);
+        setUserWards(Array.isArray(wList) ? wList : []);
+      } catch (err) {
+        console.warn('handleUserDistrictChange error:', err);
+        setUserWards([]);
+      } finally {
+        setIsLoadingUserWards(false);
+      }
+    }
+  };
+
+  const handleUserWardChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const rawVal = e.target.value;
+    const wCode = rawVal ? Number(rawVal) : '';
+    setSelectedWardCode(wCode);
+    const wObj = userWards.find((w) => w.code === wCode);
+    const newWardName = wObj ? wObj.name : '';
+    setSelectedWardName(newWardName);
+
+    const newFull = [userStreetAddress.trim(), newWardName, selectedDistrictName, selectedProvinceName].filter(Boolean).join(', ');
+    setAddress(newFull);
+  };
+
+  const handleUserStreetAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setUserStreetAddress(val);
+    const newFull = [val.trim(), selectedWardName, selectedDistrictName, selectedProvinceName].filter(Boolean).join(', ');
+    setAddress(newFull);
+  };
+
   // Sync state whenever currentUser or modal opens
   useEffect(() => {
     if (currentUser) {
@@ -200,6 +415,18 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         if (currentUser.bankAccount.bankName) setBankName(currentUser.bankAccount.bankName);
         if (currentUser.bankAccount.accountNumber) setAccountNumber(currentUser.bankAccount.accountNumber);
         if (currentUser.bankAccount.accountHolder) setAccountHolder(currentUser.bankAccount.accountHolder);
+      }
+      if (currentUser.province || currentUser.provinceName) {
+        setSelectedProvinceName(currentUser.province || currentUser.provinceName || '');
+      }
+      if (currentUser.district) {
+        setSelectedDistrictName(currentUser.district || '');
+      }
+      if (currentUser.ward || currentUser.wardName) {
+        setSelectedWardName(currentUser.ward || currentUser.wardName || '');
+      }
+      if (currentUser.streetAddress) {
+        setUserStreetAddress(currentUser.streetAddress || '');
       }
       setIsSellerRegistered(Boolean(currentUser.isSellerRegistered || currentUser.role === 'seller'));
       setShopName(currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop'));
@@ -227,10 +454,27 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               setAvatarUrl(fresh.avatarUrl);
               setImgError(false);
             }
+            if (fresh.province) setSelectedProvinceName(fresh.province);
+            if (fresh.district) setSelectedDistrictName(fresh.district);
+            if (fresh.ward) setSelectedWardName(fresh.ward);
+            if (fresh.streetAddress) setUserStreetAddress(fresh.streetAddress);
+
+            syncOpenApiAddress(
+              fresh.province || currentUser?.province || currentUser?.provinceName,
+              fresh.district || currentUser?.district,
+              fresh.ward || currentUser?.ward || currentUser?.wardName,
+              fresh.streetAddress || currentUser?.streetAddress
+            );
           }
         })
         .catch((err) => {
           console.warn('Backend getMyProfile fallback to local session:', err);
+          syncOpenApiAddress(
+            currentUser?.province || currentUser?.provinceName,
+            currentUser?.district,
+            currentUser?.ward || currentUser?.wardName,
+            currentUser?.streetAddress
+          );
         });
 
       sellerService.getMyVerification()
@@ -621,6 +865,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         },
       });
 
+      const selProv = provinces.find((p) => String(p._id) === String(selectedProvinceId) || String((p as any).id) === String(selectedProvinceId));
+      const selWard = wards.find((w) => String(w._id) === String(selectedWardId) || String((w as any).id) === String(selectedWardId));
+      saveSellerAddress(pickupAddress.trim() || streetAddress.trim(), selWard?.name, selProv?.name);
+
       await shippingService.sendSellerOnboardingEmailCode();
       setHasSentShopOtp(true);
       setShopOtpCountdown(60);
@@ -908,12 +1156,20 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     setSaveError(null);
     setIsSaving(true);
 
+    const fullAddr = computeFullAddress() || address.trim();
+
     const updated: UserProfile = {
       ...currentUser,
       name: name.trim(),
       email,
       phone: phone.trim(),
-      address,
+      address: fullAddr,
+      province: selectedProvinceName.trim() || undefined,
+      provinceName: selectedProvinceName.trim() || undefined,
+      district: selectedDistrictName.trim() || undefined,
+      ward: selectedWardName.trim() || undefined,
+      wardName: selectedWardName.trim() || undefined,
+      streetAddress: userStreetAddress.trim() || undefined,
       avatar: avatarUrl || currentUser.avatar,
       gender,
       birthday,
@@ -924,11 +1180,23 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       },
     };
 
+    saveSellerAddress(
+      pickupAddress || fullAddr,
+      selectedWardName.trim() || currentUser?.wardName,
+      selectedProvinceName.trim() || currentUser?.provinceName
+    );
+
     try {
       await userService.updateMyProfile({
         fullName: name.trim(),
         phone: phone.trim() || undefined,
         avatarUrl: avatarUrl || undefined,
+        province: selectedProvinceName.trim() || undefined,
+        district: selectedDistrictName.trim() || undefined,
+        ward: selectedWardName.trim() || undefined,
+        streetAddress: userStreetAddress.trim() || undefined,
+        latitude: null,
+        longitude: null,
       });
 
       onUpdateProfile(updated);
@@ -1299,20 +1567,117 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                  {lang === 'vi' ? 'Địa Chỉ Cư Trú / Nhận Hàng' : 'Residential / Delivery Address'}
-                </label>
-                <div className="relative">
-                  <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                  <textarea
-                    rows={2}
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    placeholder={lang === 'vi' ? 'Nhập địa chỉ chi tiết (số nhà, tên đường, phường/xã, quận/huyện...)' : 'Enter detailed address'}
-                    className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs resize-none"
+              {/* Địa Chỉ Hành Chính 3 Cấp & Chi Tiết (Open API) */}
+              <div className="p-3.5 bg-gradient-to-br from-[#faf8f5] to-orange-50/20 border border-slate-200 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <MapPin className="w-4 h-4 text-[#c34c36]" />
+                    <span>{lang === 'vi' ? 'Địa Chỉ Cư Trú / Nhận Hàng' : 'Residential / Delivery Address'}</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-medium">
+                    {lang === 'vi' ? 'Dữ liệu hành chính chuẩn (Open API)' : 'Standard administrative data'}
+                  </span>
+                </div>
+
+                {/* 3 Dropdown: Tỉnh / Quận / Phường */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                      {lang === 'vi' ? 'Tỉnh / Thành Phố' : 'Province / City'} <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={selectedProvinceCode}
+                      onChange={handleUserProvinceChange}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition cursor-pointer"
+                    >
+                      <option value="">
+                        {isLoadingUserProvinces
+                          ? (lang === 'vi' ? 'Đang tải tỉnh/thành...' : 'Loading provinces...')
+                          : `-- ${lang === 'vi' ? 'Chọn Tỉnh / Thành' : 'Select Province'} --`}
+                      </option>
+                      {userProvinces.map((p) => (
+                        <option key={p.code} value={p.code}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                      {lang === 'vi' ? 'Quận / Huyện' : 'District'} <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={selectedDistrictCode}
+                      onChange={handleUserDistrictChange}
+                      disabled={!selectedProvinceCode || isLoadingUserDistricts}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
+                    >
+                      <option value="">
+                        {isLoadingUserDistricts
+                          ? (lang === 'vi' ? 'Đang tải quận/huyện...' : 'Loading districts...')
+                          : !selectedProvinceCode
+                            ? (lang === 'vi' ? '-- Chọn tỉnh trước --' : '-- Select province first --')
+                            : `-- ${lang === 'vi' ? 'Chọn Quận / Huyện' : 'Select District'} --`}
+                      </option>
+                      {userDistricts.map((d) => (
+                        <option key={d.code} value={d.code}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                      {lang === 'vi' ? 'Phường / Xã' : 'Ward / Commune'} <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={selectedWardCode}
+                      onChange={handleUserWardChange}
+                      disabled={!selectedDistrictCode || isLoadingUserWards}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
+                    >
+                      <option value="">
+                        {isLoadingUserWards
+                          ? (lang === 'vi' ? 'Đang tải phường/xã...' : 'Loading wards...')
+                          : !selectedDistrictCode
+                            ? (lang === 'vi' ? '-- Chọn quận trước --' : '-- Select district first --')
+                            : `-- ${lang === 'vi' ? 'Chọn Phường / Xã' : 'Select Ward'} --`}
+                      </option>
+                      {userWards.map((w) => (
+                        <option key={w.code} value={w.code}>
+                          {w.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Input Text: Số nhà, tên đường chi tiết */}
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                    {lang === 'vi' ? 'Số nhà, tên đường, ngõ ngách chi tiết' : 'Street address / House number'}
+                  </label>
+                  <input
+                    type="text"
+                    value={userStreetAddress}
+                    onChange={handleUserStreetAddressChange}
+                    placeholder={lang === 'vi' ? 'Ví dụ: Số 202, Đường số 8, Khu phố 6' : 'e.g. 202 Street 8'}
+                    className="w-full px-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
                   />
                 </div>
+
+                {/* Xem trước địa chỉ hoàn chỉnh */}
+                {(computeFullAddress() || address) && (
+                  <div className="p-2.5 bg-white/80 rounded-xl border border-orange-200/60 flex items-start gap-2 text-xs">
+                    <MapPin className="w-3.5 h-3.5 text-[#c34c36] shrink-0 mt-0.5" />
+                    <div className="text-slate-700">
+                      <span className="font-bold text-slate-800">{lang === 'vi' ? 'Địa chỉ đầy đủ: ' : 'Full Address: '}</span>
+                      <span>{computeFullAddress() || address}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
 

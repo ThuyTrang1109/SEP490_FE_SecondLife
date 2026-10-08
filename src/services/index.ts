@@ -22,3 +22,5 @@ export * from './orderService';
 export * from './staffListingService';
 export * from './shippingService';
 export * from './adminCatalogService';
+export * from './chatService';
+export * from './addressService';

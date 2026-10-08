@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit, ItemCategory, ConditionGrade } from './types';
 import { formatVND } from './utils/translations';
+import { extractWardAndCity, getSavedSellerAddress, saveSellerAddress } from './utils/addressUtils';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 import { MarketplaceView } from './pages/MarketplaceView';
@@ -24,7 +25,7 @@ import { TopUpModal } from './components/modals/TopUpModal';
 import { PolicyModal, PolicyTabKey } from './components/modals/PolicyModal';
 import { SellerReviewsModal } from './components/modals/SellerReviewsModal';
 import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
-import { authService, userService, topupService, walletService, orderService, negotiationService, postService, adminPostService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
+import { authService, userService, topupService, walletService, orderService, negotiationService, postService, adminPostService, shippingService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
 
 export default function App() {
   // Global State - Default to 'marketplace' so visitors enter directly into the marketplace
@@ -69,8 +70,45 @@ export default function App() {
   React.useEffect(() => {
     const token = getAccessToken();
     if (token) {
-      userService.getMyProfile().then((profile) => {
+      userService.getMyProfile().then(async (profile) => {
         if (profile) {
+          // Lấy thông tin địa chỉ kho bưu tá / onboarding từ BE
+          let pickupAddr: any = null;
+          try {
+            const [obRes, paRes] = await Promise.allSettled([
+              shippingService.getSellerOnboarding(),
+              shippingService.getPickupAddress(),
+            ]);
+            if (obRes.status === 'fulfilled' && obRes.value?.pickupAddress) {
+              pickupAddr = obRes.value.pickupAddress;
+            } else if (paRes.status === 'fulfilled' && paRes.value) {
+              pickupAddr = paRes.value;
+            }
+          } catch (_) {}
+
+          const fullPickup = pickupAddr
+            ? [pickupAddr.address, pickupAddr.wardName, pickupAddr.provinceName].filter(Boolean).join(', ')
+            : '';
+
+          const stored = getStoredUser();
+          const savedAddr = getSavedSellerAddress();
+
+          const profileFullAddress = [
+            profile.streetAddress,
+            profile.ward,
+            profile.district,
+            profile.province,
+          ].filter(Boolean).join(', ');
+
+          const resolvedAddress = profileFullAddress || stored?.address || savedAddr?.address || '';
+          const resolvedPickup = fullPickup || stored?.pickupAddress || profileFullAddress || savedAddr?.address || '';
+          const resolvedWard = profile.ward || pickupAddr?.wardName || stored?.wardName || savedAddr?.wardName || '';
+          const resolvedProv = profile.province || pickupAddr?.provinceName || stored?.provinceName || savedAddr?.provinceName || '';
+
+          if (resolvedPickup || resolvedAddress) {
+            saveSellerAddress(resolvedPickup || resolvedAddress, resolvedWard, resolvedProv);
+          }
+
           const syncedUser: UserProfile = {
             id: profile.id,
             name: profile.fullName || profile.email,
@@ -85,6 +123,14 @@ export default function App() {
                     ? 'seller'
                     : 'buyer',
             phone: profile.phone || '',
+            address: resolvedAddress,
+            pickupAddress: resolvedPickup,
+            province: profile.province,
+            district: profile.district,
+            ward: profile.ward,
+            streetAddress: profile.streetAddress,
+            wardName: resolvedWard,
+            provinceName: resolvedProv,
             avatar: profile.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
             accountStatus: profile.accountStatus,
             kycStatus: (profile.roles?.includes('SELLER') || profile.roles?.includes('ROLE_SELLER')) ? 'verified' : 'unverified',
@@ -104,7 +150,6 @@ export default function App() {
           setCurrentRole('buyer');
         }
       }).catch(() => {
-        // Clear session on any token verification error
         clearAuthTokens();
         setCurrentUser(null);
         setCurrentRole('buyer');
@@ -420,6 +465,39 @@ export default function App() {
     const photoList = rawImgs.length > 0 ? rawImgs : [defaultImg];
     const price = Number(post.price || 0);
 
+    // Xác định địa chỉ sản phẩm từ người bán (chỉ lấy phường và thành phố)
+    let postLocation = '';
+    const isOwner = Boolean(
+      currentUser && (
+        post.userId === currentUser.id ||
+        post.sellerId === currentUser.id ||
+        post.user?.id === currentUser.id ||
+        post.sellerName === currentUser.name
+      )
+    );
+
+    const savedAddr = getSavedSellerAddress();
+    const sellerAddr = currentUser?.pickupAddress || currentUser?.address || savedAddr.address;
+    const sellerWard = currentUser?.wardName || savedAddr.wardName;
+    const sellerProv = currentUser?.provinceName || savedAddr.provinceName;
+
+    if (isOwner && (sellerAddr || sellerWard || sellerProv)) {
+      postLocation = extractWardAndCity(sellerAddr, sellerWard, sellerProv);
+    } else if (post.sellerAddress || post.pickupAddress || post.user?.address) {
+      postLocation = extractWardAndCity(post.sellerAddress || post.pickupAddress || post.user?.address);
+    } else if (post.location && post.location.toLowerCase() !== 'việt nam' && post.location.toLowerCase() !== 'toàn quốc') {
+      postLocation = extractWardAndCity(post.location);
+    }
+
+    // Nếu chưa có location và người dùng hiện tại là seller, lấy từ profile người bán
+    if (!postLocation && (sellerAddr || sellerWard || sellerProv)) {
+      postLocation = extractWardAndCity(sellerAddr, sellerWard, sellerProv);
+    }
+
+    if (!postLocation) {
+      postLocation = 'Hà Nội';
+    }
+
     return {
       id: post.postId || post.id || `post-${Date.now()}`,
       title: cleanTitle,
@@ -432,9 +510,9 @@ export default function App() {
       conditionGrade: detectedGrade,
       declaredConditionText: post.itemCondition || (detectedGrade === 'Like New' ? 'Độ mới 99%, nguyên zin chưa sửa chữa' : 'Tình trạng tốt, hoạt động ổn định'),
       description: post.description || post.aiDescription || 'Đã qua thẩm định và xác thực trên hệ thống SecondLife.',
-      location: 'Việt Nam',
-      sellerId: post.sellerId || post.user?.id || post.userId || '1e338576-457a-4371-9822-52ca04e31546',
-      sellerName: post.user?.fullName || post.sellerName || 'Người bán SecondLife',
+      location: postLocation,
+      sellerId: post.sellerId || post.user?.id || post.userId || (isOwner && currentUser ? currentUser.id : '1e338576-457a-4371-9822-52ca04e31546'),
+      sellerName: isOwner && currentUser?.name ? currentUser.name : (post.user?.fullName || post.sellerName || 'Người bán SecondLife'),
       sellerRating: 5.0,
       sellerCompletedOrders: 3,
       sellerVerified: true,
@@ -564,15 +642,23 @@ export default function App() {
           };
 
           let mappedEscrowStatus: EscrowOrder['escrowStatus'] = 'HELD_IN_ESCROW';
-          if (bOrd.escrowStatus === 'RELEASED' || bOrd.status === 'DELIVERED') {
+          if (bOrd.escrowStatus === 'RELEASED') {
             mappedEscrowStatus = 'COMPLETED_RELEASED';
           } else if (bOrd.escrowStatus === 'REFUNDED' || bOrd.status === 'CANCELLED') {
             mappedEscrowStatus = 'REFUNDED_TO_BUYER';
+          } else if (bOrd.status === 'DELIVERED') {
+            mappedEscrowStatus = 'DELIVERED_INSPECTION_WINDOW';
           } else if (bOrd.status === 'SHIPPED') {
             mappedEscrowStatus = 'SHIPPED_TO_BUYER';
           } else if (bOrd.status === 'PROCESSING' || bOrd.status === 'PENDING') {
             mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
           }
+
+          const buyerAddr = typeof bOrd.deliveryAddress === 'string'
+            ? bOrd.deliveryAddress
+            : bOrd.deliveryAddress?.detailAddress
+              ? `${bOrd.deliveryAddress.detailAddress}, ${bOrd.deliveryAddress.wardName || ''}, ${bOrd.deliveryAddress.provinceName || ''}`
+              : 'SecondLife Hub Address';
 
           return {
             id: bOrd.id,
@@ -581,31 +667,35 @@ export default function App() {
             buyerId: bOrd.buyerId,
             buyerName: 'Khách Hàng',
             buyerPhone: '0912 345 678',
-            buyerAddress: 'SecondLife Hub Address',
+            buyerAddress: buyerAddr,
             sellerId: bOrd.sellerId,
             sellerName: 'Người Bán',
-            itemPriceVnd: bOrd.finalPrice,
+            itemPriceVnd: bOrd.finalPrice || 0,
             inspectionFeeVnd: 0,
-            shippingFeeVnd: 0,
+            shippingFeeVnd: bOrd.shippingFee || 0,
             platformFeeVnd: 0,
-            totalPaidVnd: bOrd.finalPrice,
+            totalPaidVnd: bOrd.totalPaid || (bOrd.finalPrice + (bOrd.shippingFee || 0)),
             escrowStatus: mappedEscrowStatus,
+            backendStatus: bOrd.status,
+            shippingQuoteId: bOrd.shippingQuoteId,
+            shippingDeliveredAt: bOrd.shippingDeliveredAt,
+            deliveryAddress: bOrd.deliveryAddress,
             hasInspectionService: true,
             shippingLegs: [
               {
                 id: 'LEG-1',
                 legType: 'SELLER_TO_CENTER',
-                carrier: 'GHTK',
-                trackingNumber: `SCL-ORD-${bOrd.id.slice(0, 8)}`,
+                carrier: 'GHN Express',
+                trackingNumber: `GHN-${bOrd.id.slice(0, 8).toUpperCase()}`,
                 status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : 'IN_TRANSIT',
-                origin: 'Địa chỉ người bán',
-                destination: 'SecondLife Hub / Người mua',
-                estimatedDelivery: '1 ngày',
+                origin: 'Địa chỉ kho người bán',
+                destination: buyerAddr,
+                estimatedDelivery: '1 - 2 ngày',
                 timeline: [
                   {
                     timestamp: new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
                     description: `Khởi tạo đơn hàng qua Escrow. Trạng thái: ${bOrd.status}.`,
-                    location: 'Hệ thống SecondLife Escrow'
+                    location: 'Hệ thống SecondLife GHN'
                   }
                 ]
               }
@@ -651,16 +741,19 @@ export default function App() {
   const handleConfirmReceipt = async (orderId: string) => {
     try {
       await orderService.confirmDelivery(orderId);
+      showToast(lang === 'vi' ? 'Đã xác nhận nhận hàng! Tiền trong Escrow đã được giải ngân thành công cho người bán.' : 'Delivery confirmed! Escrow funds released to seller.');
+      loadUserOrders();
+      loadUserWallet();
     } catch (err: any) {
       console.warn('Backend confirmDelivery fallback:', err);
+      const errMsg = err?.response?.data?.message || err.message || 'Không thể xác nhận nhận hàng';
+      showToast(`Thông báo: ${errMsg}`);
+      setOrders((prev) =>
+        prev.map((ord) =>
+          ord.id === orderId ? { ...ord, escrowStatus: 'COMPLETED_RELEASED' } : ord
+        )
+      );
     }
-    setOrders((prev) =>
-      prev.map((ord) =>
-        ord.id === orderId ? { ...ord, escrowStatus: 'COMPLETED_RELEASED' } : ord
-      )
-    );
-    loadUserWallet();
-    showToast(lang === 'vi' ? 'Đã xác nhận nhận hàng! Tiền trong Escrow đã được giải ngân thành công cho người bán.' : 'Delivery confirmed! Escrow funds released to seller.');
   };
 
   const handleMarkShipped = async (orderId: string) => {
@@ -933,6 +1026,7 @@ export default function App() {
               onListingCreated={handleListingCreated}
               lang={lang}
               onCancel={() => setActiveTab('marketplace')}
+              currentUser={currentUser}
             />
           )
         )}
@@ -944,6 +1038,7 @@ export default function App() {
             onOpenDispute={handleOpenDispute}
             onMarkShipped={handleMarkShipped}
             onCancelOrder={handleCancelOrder}
+            onRefreshOrders={loadUserOrders}
             lang={lang}
             userRole={currentRole}
             onOpenChat={(listing) => setChatListing(listing)}

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Listing, EscrowOrder, Language, UserWallet } from '../../types';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Listing, EscrowOrder, Language, UserWallet, ShippingQuoteResponseDto, ShippingLeg } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import {
   ShieldCheck,
@@ -11,18 +11,15 @@ import {
   Phone,
   User,
   Mail,
-  Building,
-  CreditCard,
   QrCode,
-  FileText,
   Sparkles,
-  AlertCircle,
-  HelpCircle,
   Wallet,
   AlertTriangle,
-  Loader2
+  Loader2,
+  RefreshCw,
+  Clock
 } from 'lucide-react';
-import { orderService, walletService } from '../../services';
+import { orderService, walletService, shippingService, GhnLocation } from '../../services';
 
 interface CheckoutModalProps {
   listing: Listing;
@@ -34,19 +31,6 @@ interface CheckoutModalProps {
   negotiationId?: string;
   onOpenDeposit?: () => void;
 }
-
-const VIETNAM_CITIES = [
-  'TP. Hồ Chí Minh',
-  'Hà Nội',
-  'Đà Nẵng',
-  'Hải Phòng',
-  'Cần Thơ',
-  'Bình Dương',
-  'Đồng Nai',
-  'Khánh Hòa',
-  'Quảng Ninh',
-  'Bà Rịa - Vũng Tàu'
-];
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   listing,
@@ -65,15 +49,40 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const hasAgreedDiscount = agreedPrice && agreedPrice < listing.priceVnd;
   const discountAmount = hasAgreedDiscount ? listing.priceVnd - agreedPrice : 0;
 
-  const [hasInspection, setHasInspection] = useState(true);
-  const [carrier, setCarrier] = useState<'GHTK' | 'GHN'>('GHTK');
-  const [paymentMethod, setPaymentMethod] = useState<'WALLET' | 'VIETQR' | 'CARD'>('WALLET');
+  const [hasInspection, setHasInspection] = useState(false);
 
   // Wallet and Order Submission States
   const [wallet, setWallet] = useState<UserWallet | null>(null);
   const [walletLoading, setWalletLoading] = useState(false);
   const [submittingOrder, setSubmittingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
+
+  // GHN Address & Catalogue States
+  const [provinces, setProvinces] = useState<GhnLocation[]>([]);
+  const [loadingProvinces, setLoadingProvinces] = useState(false);
+  const [selectedProvinceId, setSelectedProvinceId] = useState<number | ''>('');
+  const [selectedProvinceName, setSelectedProvinceName] = useState<string>('');
+
+  const [wards, setWards] = useState<GhnLocation[]>([]);
+  const [loadingWards, setLoadingWards] = useState(false);
+  const [selectedWardName, setSelectedWardName] = useState<string>('');
+
+  // Buyer Form Information
+  const [buyerName, setBuyerName] = useState(currentUser?.name || '');
+  const [buyerPhone, setBuyerPhone] = useState(currentUser?.phone || '');
+  const [buyerEmail, setBuyerEmail] = useState(currentUser?.email || '');
+  const [streetAddress, setStreetAddress] = useState(currentUser?.address || '');
+  const [addressType, setAddressType] = useState<'home' | 'office'>('home');
+  const [deliveryNote, setDeliveryNote] = useState('');
+  const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
+
+  // Delivery & Protection Option: 'INSPECTION' (Verify Then Ship) or 'DIRECT' (Direct Door-to-Door)
+  const [deliveryOption, setDeliveryOption] = useState<'INSPECTION' | 'DIRECT'>('INSPECTION');
+
+  // GHN Quote State
+  const [ghnQuote, setGhnQuote] = useState<ShippingQuoteResponseDto | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
 
   // Load wallet on mount
   useEffect(() => {
@@ -93,25 +102,123 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     return () => { isMounted = false; };
   }, []);
 
-  // Buyer Form Information
-  const [buyerName, setBuyerName] = useState(currentUser?.name || '');
-  const [buyerPhone, setBuyerPhone] = useState(currentUser?.phone || '');
-  const [buyerEmail, setBuyerEmail] = useState(currentUser?.email || '');
-  const [city, setCity] = useState('');
-  const [district, setDistrict] = useState('');
-  const [ward, setWard] = useState('');
-  const [streetAddress, setStreetAddress] = useState(currentUser?.address || '');
-  const [addressType, setAddressType] = useState<'home' | 'office'>('home');
-  const [deliveryNote, setDeliveryNote] = useState('');
+  // Load GHN Provinces on mount
+  useEffect(() => {
+    let isMounted = true;
+    const loadProvinces = async () => {
+      setLoadingProvinces(true);
+      try {
+        const provs = await shippingService.getProvinces();
+        if (isMounted && Array.isArray(provs) && provs.length > 0) {
+          setProvinces(provs);
+        }
+      } catch (err) {
+        console.warn('Error loading GHN provinces:', err);
+      } finally {
+        if (isMounted) setLoadingProvinces(false);
+      }
+    };
+    loadProvinces();
+    return () => { isMounted = false; };
+  }, []);
 
-  const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
+  // Load GHN Wards when selectedProvinceId changes
+  useEffect(() => {
+    if (!selectedProvinceId) {
+      setWards([]);
+      setSelectedWardName('');
+      setGhnQuote(null);
+      return;
+    }
 
-  const inspectionFee = hasInspection ? 250000 : 0;
-  const shippingFee = hasInspection ? 85000 : 45000;
-  const platformFee = Math.round(itemPrice * 0.025);
-  const totalAmount = itemPrice + inspectionFee + shippingFee + platformFee;
+    let isMounted = true;
+    const loadWards = async () => {
+      setLoadingWards(true);
+      try {
+        const w = await shippingService.getWards(selectedProvinceId);
+        if (isMounted) {
+          setWards(w);
+        }
+      } catch (err) {
+        console.warn('Error loading GHN wards:', err);
+      } finally {
+        if (isMounted) setLoadingWards(false);
+      }
+    };
+    loadWards();
+    return () => { isMounted = false; };
+  }, [selectedProvinceId]);
 
-  const fullAddress = `${streetAddress}, ${ward}, ${district}, ${city}`;
+  // Request GHN Shipping Quote
+  const calculateGhnQuote = useCallback(async (
+    pName?: string,
+    wName?: string,
+    addr?: string,
+    name?: string,
+    phone?: string
+  ) => {
+    const province = (pName || selectedProvinceName || '').trim();
+    const ward = (wName || selectedWardName || '').trim();
+    if (!province || !ward) {
+      return;
+    }
+
+    const rawPhone = (phone || buyerPhone || currentUser?.phone || '').replace(/\D/g, '');
+    const validPhone = rawPhone.length >= 9 && rawPhone.length <= 15 ? rawPhone : '0912345678';
+    const validName = (name || buyerName || currentUser?.name || 'Khách Hàng').trim() || 'Khách Hàng';
+    const validAddress = (addr || streetAddress || 'Địa chỉ nhận hàng').trim() || 'Địa chỉ nhận hàng';
+
+    setQuoteLoading(true);
+    setQuoteError(null);
+    try {
+      const quote = await shippingService.getShippingQuote({
+        postId: listing.id,
+        ...(negotiationId ? { negotiationId } : {}),
+        deliveryAddress: {
+          name: validName,
+          phone: validPhone,
+          address: validAddress,
+          provinceName: province,
+          wardName: ward,
+          newAddress: true,
+        },
+      });
+      setGhnQuote(quote);
+      setQuoteError(null);
+    } catch (err: any) {
+      console.warn('Failed to calculate GHN quote:', err);
+      let errMsg = err?.response?.data?.message || err?.message || 'Không thể tính phí vận chuyển GHN.';
+      if (typeof errMsg === 'string') {
+        if (errMsg.includes('Seller pickup address is not configured')) {
+          errMsg = 'Người bán chưa cấu hình địa chỉ kho lấy hàng GHN. Hệ thống sẽ tạm tính cước phí giao tiêu chuẩn.';
+        } else if (errMsg.includes('You cannot buy your own post')) {
+          errMsg = 'Bạn đang đăng nhập bằng tài khoản người bán. Không thể tạo báo giá mua bài đăng của chính mình.';
+        } else if (errMsg.includes('Post is not available')) {
+          errMsg = 'Bài đăng hiện không ở trạng thái sẵn sàng để giao dịch.';
+        }
+      }
+      setQuoteError(errMsg);
+    } finally {
+      setQuoteLoading(false);
+    }
+  }, [selectedProvinceName, selectedWardName, streetAddress, buyerName, buyerPhone, currentUser, listing.id, negotiationId]);
+
+  // Debounced auto-quote calculation when address fields change
+  useEffect(() => {
+    if (selectedProvinceName && selectedWardName) {
+      const timer = setTimeout(() => {
+        calculateGhnQuote(selectedProvinceName, selectedWardName, streetAddress, buyerName, buyerPhone);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedProvinceName, selectedWardName, streetAddress, calculateGhnQuote]);
+
+  // Financial values
+  const shippingFee = ghnQuote ? Number(ghnQuote.shippingFee) : 30000;
+  const productPrice = ghnQuote ? Number(ghnQuote.productPrice) : itemPrice;
+  const totalAmount = ghnQuote ? Number(ghnQuote.totalPayable) : (itemPrice + shippingFee);
+
+  const fullAddress = `${streetAddress}, ${selectedWardName}, ${selectedProvinceName}`;
 
   const validateForm = () => {
     const errors: { [key: string]: string } = {};
@@ -121,14 +228,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     if (!buyerPhone.trim() || buyerPhone.replace(/\D/g, '').length < 9) {
       errors.buyerPhone = lang === 'vi' ? 'Số điện thoại không hợp lệ (tối thiểu 9 số)' : 'Valid phone required';
     }
-    if (!city) {
-      errors.city = lang === 'vi' ? 'Vui lòng chọn Tỉnh/Thành phố' : 'City is required';
+    if (!selectedProvinceName) {
+      errors.city = lang === 'vi' ? 'Vui lòng chọn Tỉnh/Thành phố GHN' : 'City is required';
     }
-    if (!district.trim()) {
-      errors.district = lang === 'vi' ? 'Vui lòng nhập Quận/Huyện' : 'District is required';
-    }
-    if (!ward.trim()) {
-      errors.ward = lang === 'vi' ? 'Vui lòng nhập Phường/Xã' : 'Ward is required';
+    if (!selectedWardName) {
+      errors.ward = lang === 'vi' ? 'Vui lòng chọn Phường/Xã GHN' : 'Ward is required';
     }
     if (!streetAddress.trim()) {
       errors.streetAddress = lang === 'vi' ? 'Vui lòng nhập số nhà, tên đường' : 'Street address is required';
@@ -150,12 +254,47 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     e.preventDefault();
     if (!validateForm()) return;
 
+    let activeQuote = ghnQuote;
+    if (!activeQuote || !activeQuote.quoteId) {
+      if (selectedProvinceName && selectedWardName) {
+        setSubmittingOrder(true);
+        try {
+          const rawPhone = (buyerPhone || currentUser?.phone || '').replace(/\D/g, '');
+          const validPhone = rawPhone.length >= 9 && rawPhone.length <= 15 ? rawPhone : '0912345678';
+          activeQuote = await shippingService.getShippingQuote({
+            postId: listing.id,
+            ...(negotiationId ? { negotiationId } : {}),
+            deliveryAddress: {
+              name: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
+              phone: validPhone,
+              address: (streetAddress || 'Địa chỉ nhận hàng').trim(),
+              provinceName: selectedProvinceName.trim(),
+              wardName: selectedWardName.trim(),
+              newAddress: true,
+            },
+          });
+          setGhnQuote(activeQuote);
+        } catch (err: any) {
+          setOrderError(err?.message || 'Không thể lấy báo giá GHN. Vui lòng kiểm tra lại địa chỉ hoặc thử lại.');
+          setSubmittingOrder(false);
+          return;
+        }
+      } else {
+        setOrderError(
+          lang === 'vi'
+            ? 'Đang chờ báo giá vận chuyển từ GHN. Vui lòng kiểm tra lại địa chỉ hoặc bấm thử lại.'
+            : 'Awaiting GHN shipping quote. Please check your address or retry.'
+        );
+        return;
+      }
+    }
+
     const currentBal = wallet?.balance ?? 0;
-    if (currentBal < itemPrice) {
+    if (currentBal < totalAmount) {
       setOrderError(
         lang === 'vi'
-          ? `Số dư ví của bạn (${formatVND(currentBal)}) không đủ để ký quỹ đơn hàng (${formatVND(itemPrice)}). Vui lòng nạp thêm tiền vào ví để hoàn tất đặt hàng.`
-          : `Your wallet balance (${formatVND(currentBal)}) is insufficient for escrow custody (${formatVND(itemPrice)}). Please deposit funds to continue.`
+          ? `Số dư ví của bạn (${formatVND(currentBal)}) không đủ để thanh toán đơn hàng (${formatVND(totalAmount)}). Vui lòng nạp thêm tiền vào ví để hoàn tất đặt hàng.`
+          : `Your wallet balance (${formatVND(currentBal)}) is insufficient for order checkout (${formatVND(totalAmount)}). Please deposit funds to continue.`
       );
       return;
     }
@@ -164,18 +303,87 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setSubmittingOrder(true);
 
     try {
-      // 1. Call Backend API: POST /api/v1/orders
-      const backendOrder = await orderService.createOrder(listing.id, negotiationId);
+      // Step 7: Call Backend API: POST /api/v1/orders
+      const requestId = crypto.randomUUID();
+      const backendOrder = await orderService.createOrder({
+        postId: listing.id,
+        shippingQuoteId: ghnQuote.quoteId,
+        requestId,
+        ...(negotiationId ? {
+          negotiationId,
+          agreedPrice: productPrice,
+        } : {}),
+      });
 
       const orderId = backendOrder?.id || `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`;
-      const finalChargedPrice = backendOrder?.finalPrice || itemPrice;
+      const finalChargedPrice = backendOrder?.finalPrice || productPrice;
+      const finalShippingFee = backendOrder?.shippingFee || shippingFee;
+      const finalTotalPaid = backendOrder?.totalPaid || totalAmount;
+
+      const isInspected = deliveryOption === 'INSPECTION';
+      const shippingLegsData: ShippingLeg[] = isInspected
+        ? [
+            {
+              id: 'LEG-1',
+              legType: 'SELLER_TO_CENTER',
+              carrier: 'GHN Express',
+              trackingNumber: `GHN-HUB-${orderId.slice(0, 8).toUpperCase()}`,
+              status: 'PICKED_UP',
+              origin: listing.location || 'Địa chỉ kho người bán',
+              destination: 'Trạm Kiểm Định SecondLife Hub Lab',
+              estimatedDelivery: '1-2 ngày',
+              timeline: [
+                {
+                  timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                  description: 'Khởi tạo đơn hàng có kiểm định Hub (Verify Then Ship). Bưu tá GHN chuẩn bị lấy hàng chuyển về Hub.',
+                  location: 'Hệ thống SecondLife Escrow'
+                }
+              ]
+            },
+            {
+              id: 'LEG-2',
+              legType: 'CENTER_TO_BUYER',
+              carrier: 'GHN Express',
+              trackingNumber: `GHN-BUYER-${orderId.slice(0, 8).toUpperCase()}`,
+              status: 'IN_TRANSIT',
+              origin: 'Trạm Kiểm Định SecondLife Hub Lab',
+              destination: fullAddress,
+              estimatedDelivery: '1-2 ngày sau khi đạt chuẩn kiểm định',
+              timeline: [
+                {
+                  timestamp: '--:--',
+                  description: 'Chờ hoàn tất quy trình kiểm định và dán tem niêm phong NFC tại Hub Lab.',
+                  location: 'Trung tâm kiểm định SecondLife'
+                }
+              ]
+            }
+          ]
+        : [
+            {
+              id: 'LEG-1',
+              legType: 'SELLER_TO_BUYER',
+              carrier: 'GHN Express',
+              trackingNumber: `GHN-DIRECT-${orderId.slice(0, 8).toUpperCase()}`,
+              status: 'PICKED_UP',
+              origin: listing.location || 'Địa chỉ kho người bán',
+              destination: fullAddress,
+              estimatedDelivery: ghnQuote?.expectedDeliveryTime || '1-2 ngày',
+              timeline: [
+                {
+                  timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                  description: 'Đã thanh toán ví thành công qua Escrow. Bưu tá GHN lấy hàng và giao thẳng trực tiếp đến người mua.',
+                  location: 'Hệ thống SecondLife Escrow'
+                }
+              ]
+            }
+          ];
 
       const newOrder: EscrowOrder = {
         id: orderId,
         listingId: listing.id,
         listing: {
           ...listing,
-          priceVnd: finalChargedPrice
+          priceVnd: finalChargedPrice,
         },
         buyerId: currentUser?.id || 'buyer-current',
         buyerName,
@@ -184,68 +392,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         sellerId: listing.sellerId,
         sellerName: listing.sellerName,
         itemPriceVnd: finalChargedPrice,
-        inspectionFeeVnd: inspectionFee,
-        shippingFeeVnd: shippingFee,
-        platformFeeVnd: platformFee,
-        totalPaidVnd: finalChargedPrice + inspectionFee + shippingFee + platformFee,
-        escrowStatus: hasInspection ? 'INSPECTION_IN_PROGRESS' : 'SHIPPED_TO_BUYER',
-        hasInspectionService: hasInspection,
-        shippingLegs: hasInspection
-          ? [
-              {
-                id: 'LEG-1',
-                legType: 'SELLER_TO_CENTER',
-                carrier: 'GHTK',
-                trackingNumber: `GHTK-SG-${Math.floor(100000 + Math.random() * 900000)}`,
-                status: 'PICKED_UP',
-                origin: listing.location,
-                destination: 'SecondLife Inspection Hub',
-                estimatedDelivery: '2026-10-04T15:00:00Z',
-                timeline: [
-                  {
-                    timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-                    description: 'Đã tạo mã vận đơn lấy hàng từ người bán đưa về phòng Lab Hub',
-                    location: listing.location
-                  }
-                ]
-              },
-              {
-                id: 'LEG-2',
-                legType: 'CENTER_TO_BUYER',
-                carrier: 'GHN',
-                trackingNumber: `GHN-EXP-${Math.floor(100000 + Math.random() * 900000)}`,
-                status: 'PICKED_UP',
-                origin: 'SecondLife Hub Lab',
-                destination: fullAddress,
-                estimatedDelivery: '2026-10-06T12:00:00Z',
-                timeline: [
-                  {
-                    timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-                    description: 'Chờ trung tâm kiểm định 48 bước & dán tem niêm phong trước khi giao',
-                    location: 'Kho trung tâm SecondLife Hub'
-                  }
-                ]
-              }
-            ]
-          : [
-              {
-                id: 'LEG-DIRECT',
-                legType: 'DIRECT',
-                carrier,
-                trackingNumber: `${carrier}-DIR-${Math.floor(100000 + Math.random() * 900000)}`,
-                status: 'PICKED_UP',
-                origin: listing.location,
-                destination: fullAddress,
-                estimatedDelivery: '2026-10-05T18:00:00Z',
-                timeline: [
-                  {
-                    timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-                    description: 'Người bán đang chuẩn bị đóng gói giao cho bưu tá',
-                    location: listing.location
-                  }
-                ]
-              }
-            ],
+        inspectionFeeVnd: 0,
+        shippingFeeVnd: finalShippingFee,
+        platformFeeVnd: 0,
+        totalPaidVnd: finalTotalPaid,
+        escrowStatus: 'HELD_IN_ESCROW',
+        hasInspectionService: isInspected,
+        shippingLegs: shippingLegsData,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         multiStagePhotos: {
@@ -256,11 +409,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       onOrderPlaced(newOrder);
     } catch (err: any) {
       console.error('Order creation error:', err);
-      setOrderError(err?.message || 'Không thể tạo đơn hàng trên hệ thống. Vui lòng kiểm tra lại kết nối backend hoặc số dư ví.');
+      const errMsg = (err?.message || '').toLowerCase();
+      if (
+        errMsg.includes('400') ||
+        errMsg.includes('negotiation') ||
+        errMsg.includes('thương lượng') ||
+        errMsg.includes('bad request') ||
+        errMsg.includes('invalid')
+      ) {
+        setOrderError(
+          lang === 'vi'
+            ? 'Mức giá thương lượng không hợp lệ, đã bị thay đổi hoặc đã hết hiệu lực (Lỗi 400). Vui lòng kiểm tra lại phòng chat hoặc đàm phán lại mức giá mới.'
+            : 'Invalid or expired negotiation deal price (400 Bad Request). Please review in chat before placing order.'
+        );
+      } else {
+        setOrderError(err?.message || 'Không thể tạo đơn hàng trên hệ thống. Vui lòng kiểm tra lại kết nối backend hoặc số dư ví.');
+      }
     } finally {
       setSubmittingOrder(false);
     }
   };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto">
@@ -324,6 +493,102 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     (Tiết kiệm {formatVND(discountAmount)})
                   </span>
                 )}
+              </div>
+            </div>
+          </div>
+
+          {/* LỰA CHỌN PHƯƠNG THỨC GIAO NHẬN (KIỂM ĐỊNH HOẶC GIAO THẲNG) */}
+          <div className="space-y-3 bg-white p-4.5 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                </div>
+                <h4 className="font-extrabold text-xs sm:text-sm text-[#24263e] uppercase tracking-wide">
+                  {lang === 'vi' ? 'Phương Thức Giao Nhận & Bảo Vệ' : 'Delivery & Protection Option'}
+                </h4>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              {/* Option 1: Kiểm định hàng qua Hub */}
+              <div
+                onClick={() => setDeliveryOption('INSPECTION')}
+                className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer relative flex flex-col justify-between ${
+                  deliveryOption === 'INSPECTION'
+                    ? 'border-[#c34c36] bg-[#faf8f5] shadow-xs'
+                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                }`}
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-end">
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                      deliveryOption === 'INSPECTION' ? 'border-[#c34c36] bg-[#c34c36]' : 'border-slate-300'
+                    }`}>
+                      {deliveryOption === 'INSPECTION' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 pt-0.5">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                      <ShieldCheck className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 className="font-extrabold text-xs text-slate-900 leading-tight">
+                        {lang === 'vi' ? 'Kiểm Định Hàng Qua Hub' : 'Hub Lab Inspection'}
+                      </h5>
+                      <span className="text-[11px] text-emerald-700 font-bold block mt-0.5">
+                        Verify Then Ship
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-slate-600 leading-relaxed pt-1">
+                    {lang === 'vi'
+                      ? 'Kỹ sư Hub Lab kiểm định kỹ thuật 20+ chỉ tiêu, dán tem niêm phong NFC chống tráo trước khi giao đến bạn.'
+                      : 'Engineers inspect technical condition, apply tamper NFC seal before final delivery.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Option 2: Giao thẳng */}
+              <div
+                onClick={() => setDeliveryOption('DIRECT')}
+                className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer relative flex flex-col justify-between ${
+                  deliveryOption === 'DIRECT'
+                    ? 'border-[#c34c36] bg-[#faf8f5] shadow-xs'
+                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                }`}
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-end">
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                      deliveryOption === 'DIRECT' ? 'border-[#c34c36] bg-[#c34c36]' : 'border-slate-300'
+                    }`}>
+                      {deliveryOption === 'DIRECT' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 pt-0.5">
+                    <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                      <Truck className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 className="font-extrabold text-xs text-slate-900 leading-tight">
+                        {lang === 'vi' ? 'Giao Thẳng Trực Tiếp' : 'Direct Door-to-Door'}
+                      </h5>
+                      <span className="text-[11px] text-blue-700 font-bold block mt-0.5">
+                        Người bán → Người mua
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-slate-600 leading-relaxed pt-1">
+                    {lang === 'vi'
+                      ? 'Bưu tá GHN lấy hàng từ người bán và phát thẳng tới địa chỉ của bạn. Đồng kiểm ngoại quan lúc nhận máy.'
+                      : 'GHN courier picks up from seller and delivers straight to you with co-inspection upon receipt.'}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -420,26 +685,32 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             </div>
 
-            {/* Address fields */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Address fields with GHN Catalogue */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  {lang === 'vi' ? 'Tỉnh / Thành phố *' : 'City / Province *'}
+                  {lang === 'vi' ? 'Tỉnh / Thành phố nhận hàng (GHN) *' : 'GHN Province / City *'}
                 </label>
                 <select
-                  value={city}
+                  value={selectedProvinceId}
                   onChange={(e) => {
-                    setCity(e.target.value);
+                    const id = e.target.value ? Number(e.target.value) : '';
+                    setSelectedProvinceId(id);
+                    const found = provinces.find((p) => p._id === id);
+                    setSelectedProvinceName(found ? found.name : '');
                     if (formErrors.city) setFormErrors({ ...formErrors, city: '' });
                   }}
+                  disabled={loadingProvinces}
                   className={`w-full px-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition cursor-pointer ${
                     formErrors.city ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
                   }`}
                 >
-                  <option value="" disabled hidden>{lang === 'vi' ? 'Chọn Tỉnh / Thành phố' : 'Select City'}</option>
-                  {VIETNAM_CITIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
+                  <option value="" disabled hidden>
+                    {loadingProvinces ? 'Đang tải danh mục GHN...' : 'Chọn Tỉnh / Thành phố'}
+                  </option>
+                  {provinces.map((p) => (
+                    <option key={p._id} value={p._id}>
+                      {p.name}
                     </option>
                   ))}
                 </select>
@@ -450,48 +721,43 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  {lang === 'vi' ? 'Quận / Huyện *' : 'District *'}
+                  {lang === 'vi' ? 'Phường / Xã nhận hàng (GHN) *' : 'GHN Ward *'}
                 </label>
-                <input
-                  type="text"
-                  value={district}
+                <select
+                  value={selectedWardName}
                   onChange={(e) => {
-                    setDistrict(e.target.value);
-                    if (formErrors.district) setFormErrors({ ...formErrors, district: '' });
-                  }}
-                  placeholder="Quận/Huyện"
-                  className={`w-full px-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition ${
-                    formErrors.district ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
-                  }`}
-                />
-                {formErrors.district && (
-                  <span className="text-[10px] text-rose-500 font-semibold mt-0.5 block">{formErrors.district}</span>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  {lang === 'vi' ? 'Phường / Xã *' : 'Ward *'}
-                </label>
-                <input
-                  type="text"
-                  value={ward}
-                  onChange={(e) => {
-                    setWard(e.target.value);
+                    const newWard = e.target.value;
+                    setSelectedWardName(newWard);
                     if (formErrors.ward) setFormErrors({ ...formErrors, ward: '' });
+                    if (selectedProvinceName && newWard) {
+                      calculateGhnQuote(selectedProvinceName, newWard, streetAddress, buyerName, buyerPhone);
+                    }
                   }}
-                  placeholder="Phường/Xã"
-                  className={`w-full px-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition ${
+                  disabled={!selectedProvinceId || loadingWards}
+                  className={`w-full px-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition cursor-pointer ${
                     formErrors.ward ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
                   }`}
-                />
+                >
+                  <option value="" disabled hidden>
+                    {!selectedProvinceId
+                      ? 'Vui lòng chọn Tỉnh/Thành trước'
+                      : loadingWards
+                        ? 'Đang tải danh sách Phường/Xã...'
+                        : 'Chọn Phường / Xã'}
+                  </option>
+                  {wards.map((w) => (
+                    <option key={w._id} value={w.name}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
                 {formErrors.ward && (
                   <span className="text-[10px] text-rose-500 font-semibold mt-0.5 block">{formErrors.ward}</span>
                 )}
               </div>
             </div>
 
-            {/* Street Address & Address Type */}
+            {/* Street Address */}
             <div>
               <label className="block text-[11px] font-bold text-slate-700 mb-1">
                 {lang === 'vi' ? 'Địa chỉ chi tiết (Số nhà, tên đường, căn hộ/tòa nhà) *' : 'Detailed Street Address *'}
@@ -505,7 +771,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     setStreetAddress(e.target.value);
                     if (formErrors.streetAddress) setFormErrors({ ...formErrors, streetAddress: '' });
                   }}
-                  placeholder="Số 92 Phan Châu Trinh, Tòa nhà Sunview, Căn 402"
+                  onBlur={(e) => {
+                    if (selectedProvinceName && selectedWardName) {
+                      calculateGhnQuote(selectedProvinceName, selectedWardName, e.target.value, buyerName, buyerPhone);
+                    }
+                  }}
+                  placeholder="Số 92 Phan Châu Trinh, Căn 402"
                   className={`w-full pl-9 pr-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition ${
                     formErrors.streetAddress ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
                   }`}
@@ -514,6 +785,37 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               {formErrors.streetAddress && (
                 <span className="text-[10px] text-rose-500 font-semibold mt-0.5 block">{formErrors.streetAddress}</span>
               )}
+            </div>
+
+            {/* Direct GHN Calculation Action Bar */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-3">
+              <div className="text-[11px] text-slate-600">
+                {selectedProvinceName && selectedWardName ? (
+                  <span>
+                    📍 Giao đến: <strong className="text-slate-900">{selectedWardName}, {selectedProvinceName}</strong>
+                  </span>
+                ) : (
+                  <span className="italic text-slate-400">Chọn Tỉnh/Thành và Phường/Xã để tính cước phí GHN</span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => calculateGhnQuote()}
+                disabled={!selectedProvinceName || !selectedWardName || quoteLoading}
+                className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
+              >
+                {quoteLoading ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Đang tính...</span>
+                  </>
+                ) : (
+                  <>
+                    <Truck className="w-3.5 h-3.5" />
+                    <span>Tính Phí GHN</span>
+                  </>
+                )}
+              </button>
             </div>
 
             {/* Address Type Selector */}
@@ -546,7 +848,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             {/* Delivery Note */}
             <div>
               <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                {lang === 'vi' ? 'Ghi chú cho bưu tá giao nhận & Kỹ sư Hub' : 'Delivery Note for Courier'}
+                {lang === 'vi' ? 'Ghi chú cho bưu tá giao nhận GHN' : 'Delivery Note for GHN Courier'}
               </label>
               <input
                 type="text"
@@ -556,71 +858,64 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 className="w-full px-3 py-2 bg-[#faf8f5] border border-slate-200 rounded-xl text-xs font-medium text-[#24263e] focus:outline-none focus:border-[#c34c36]"
               />
             </div>
-          </div>
 
-          {/* Workflow Toggle: Inspection vs Direct */}
-          <div className="space-y-2">
-            <label className="font-extrabold text-[#24263e] uppercase tracking-wider text-[11px]">
-              {lang === 'vi' ? 'Phương thức giao dịch & kiểm định:' : 'Transaction & Inspection Mode:'}
-            </label>
+            {/* Live GHN Quote Status Indicator */}
+            {quoteLoading && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-2.5 text-xs text-blue-800">
+                <Loader2 className="w-4 h-4 text-blue-600 animate-spin shrink-0" />
+                <span>Đang kết nối API GHN tính toán cước phí vận chuyển và thời gian giao hàng...</span>
+              </div>
+            )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setHasInspection(true)}
-                className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
-                  hasInspection
-                    ? 'bg-[#FFFFFF] border-[#24263e] text-[#24263e] ring-2 ring-[#24263e]/20'
-                    : 'bg-[#faf8f5] border-gray-200 text-[#24263e]/60 hover:border-[#24263e]'
-                }`}
-              >
-                <div>
-                  <div className="font-bold text-xs flex items-center gap-1.5 text-[#24263e]">
-                    <ShieldCheck className="w-4 h-4 text-[#c34c36]" />
-                    <span>{lang === 'vi' ? 'Kiểm Định Hub 48 Bước (Khuyên Dùng)' : 'Hub 48-Point Inspection (Recommended)'}</span>
+            {quoteError && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-2.5 text-xs text-amber-900">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>{quoteError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => calculateGhnQuote(selectedProvinceName, selectedWardName, streetAddress, buyerName, buyerPhone)}
+                  className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 rounded-lg font-bold text-[11px] cursor-pointer"
+                >
+                  Thử lại
+                </button>
+              </div>
+            )}
+
+            {ghnQuote && (
+              <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xl space-y-1.5 text-xs text-emerald-950 animate-fadeIn">
+                <div className="flex items-center justify-between font-bold text-emerald-900">
+                  <div className="flex items-center gap-1.5">
+                    <Truck className="w-4 h-4 text-emerald-700" />
+                    <span>Báo giá Giao Hàng Nhanh (GHN) hợp lệ</span>
                   </div>
-                  <p className="text-[10px] text-[#24263e]/70 mt-1 font-medium">
-                    {lang === 'vi'
-                      ? 'Hàng qua SecondLife Hub: Kỹ sư test máy nén, bo mạch, cảm biến & dán tem niêm phong NFC trước khi giao.'
-                      : 'Tested at SecondLife Hub: 48-point diagnostic, authentic parts check & NFC tamper-proof sealing.'}
-                  </p>
+                  <span className="font-mono text-[11px] bg-emerald-200/80 px-2 py-0.5 rounded text-emerald-900 font-semibold">
+                    Chặng: {ghnQuote.leg || 'SELLER_TO_BUYER'}
+                  </span>
                 </div>
-                <div className="text-xs font-black text-[#c34c36] mt-2">
-                  {lang === 'vi' ? 'Phí: 250,000đ (Bảo hành hoàn tiền 100%)' : 'Fee: 250,000 VND (100% Refund Guarantee)'}
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setHasInspection(false)}
-                className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between cursor-pointer ${
-                  !hasInspection
-                    ? 'bg-[#FFFFFF] border-[#24263e] text-[#24263e] ring-2 ring-[#24263e]/20'
-                    : 'bg-[#faf8f5] border-gray-200 text-[#24263e]/60 hover:border-[#24263e]'
-                }`}
-              >
-                <div>
-                  <div className="font-bold text-xs flex items-center gap-1.5 text-[#24263e]">
-                    <Truck className="w-4 h-4 text-[#24263e]" />
-                    <span>{lang === 'vi' ? 'Giao Thẳng (Standard Escrow)' : 'Direct Delivery (Standard Escrow)'}</span>
+                <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
+                  <div>
+                    <span className="text-emerald-700">Phí giao GHN: </span>
+                    <strong className="text-emerald-950">{formatVND(ghnQuote.shippingFee)}</strong>
                   </div>
-                  <p className="text-[10px] text-[#24263e]/70 mt-1 font-medium">
-                    {lang === 'vi'
-                      ? 'Người bán ship trực tiếp đến bạn. Tiền vẫn giữ trong Escrow 48h để bạn tự test máy trước khi giải ngân.'
-                      : 'Seller ships directly. Funds held in Escrow for 48h for your self-verification.'}
-                  </p>
+                  <div>
+                    <span className="text-emerald-700">Thời gian dự kiến: </span>
+                    <strong className="text-emerald-950">
+                      {ghnQuote.expectedDeliveryTime
+                        ? new Date(ghnQuote.expectedDeliveryTime).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                        : '2-3 ngày'}
+                    </strong>
+                  </div>
                 </div>
-                <div className="text-xs font-bold text-slate-500 mt-2">
-                  {lang === 'vi' ? 'Miễn phí kiểm định (0đ)' : 'No inspection fee (0 VND)'}
-                </div>
-              </button>
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Payment Method Selector & Wallet Balance */}
           <div className="space-y-2">
             <label className="font-extrabold text-[#24263e] uppercase tracking-wider text-[11px] flex items-center justify-between">
-              <span>{lang === 'vi' ? 'Phương thức nạp tiền ký quỹ Escrow:' : 'Escrow Custody Payment Method:'}</span>
+              <span>{lang === 'vi' ? 'Phương thức thanh toán bằng ví điện tử:' : 'Payment Method:'}</span>
               <span className="text-emerald-700 font-bold lowercase">
                 {lang === 'vi' ? 'Trừ trực tiếp số dư ví' : 'Direct wallet debit'}
               </span>
@@ -628,14 +923,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
             {/* Wallet Balance Card */}
             <div className={`p-4 rounded-2xl border transition-all ${
-              (wallet?.balance ?? 0) >= itemPrice
+              (wallet?.balance ?? 0) >= totalAmount
                 ? 'bg-gradient-to-r from-emerald-50 via-teal-50 to-white border-emerald-300'
                 : 'bg-gradient-to-r from-amber-50 via-orange-50 to-white border-amber-300'
             }`}>
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
-                    (wallet?.balance ?? 0) >= itemPrice ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+                    (wallet?.balance ?? 0) >= totalAmount ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
                   }`}>
                     <Wallet className="w-5 h-5" />
                   </div>
@@ -650,7 +945,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </div>
                 </div>
 
-                {onOpenDeposit && (
+                {onOpenDeposit && (wallet?.balance ?? 0) < totalAmount ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -662,16 +957,21 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <QrCode className="w-3.5 h-3.5" />
                     <span>{lang === 'vi' ? 'Nạp Tiền Ví' : 'Top Up Wallet'}</span>
                   </button>
-                )}
+                ) : (wallet?.balance ?? 0) >= totalAmount ? (
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-100/90 text-emerald-800 text-[11px] font-bold flex items-center gap-1 shrink-0">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>{lang === 'vi' ? 'Đủ số dư' : 'Sufficient'}</span>
+                  </span>
+                ) : null}
               </div>
 
-              {(wallet?.balance ?? 0) < itemPrice && (
+              {(wallet?.balance ?? 0) < totalAmount && (
                 <div className="mt-2.5 pt-2 border-t border-amber-200/80 text-[11px] text-amber-800 font-medium flex items-center gap-1.5">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                   <span>
                     {lang === 'vi'
-                      ? `Số dư ví còn thiếu ${formatVND(itemPrice - (wallet?.balance ?? 0))}. Vui lòng nạp tiền vào ví trước khi xác nhận đặt hàng.`
-                      : `Wallet is short by ${formatVND(itemPrice - (wallet?.balance ?? 0))}. Please top up before ordering.`}
+                      ? `Số dư ví còn thiếu ${formatVND(totalAmount - (wallet?.balance ?? 0))}. Vui lòng nạp tiền vào ví trước khi xác nhận đặt hàng.`
+                      : `Wallet is short by ${formatVND(totalAmount - (wallet?.balance ?? 0))}. Please top up before ordering.`}
                   </span>
                 </div>
               )}
@@ -680,8 +980,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
           {/* Financial Breakdown */}
           <div className="space-y-2 bg-[#faf8f5] p-4 rounded-2xl border border-slate-200">
-            <div className="font-extrabold text-[11px] text-[#24263e] uppercase tracking-wider border-b border-slate-200/60 pb-1.5">
-              {lang === 'vi' ? 'Chi tiết thanh toán ký quỹ' : 'Escrow Payment Breakdown'}
+            <div className="font-extrabold text-[11px] text-[#24263e] uppercase tracking-wider border-b border-slate-200/60 pb-1.5 flex items-center justify-between">
+              <span>{lang === 'vi' ? 'Chi tiết thanh toán đơn hàng & vận chuyển' : 'Payment Breakdown'}</span>
+              {ghnQuote?.expiresAt && (
+                <span className="text-[10px] text-slate-500 font-normal lowercase flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-slate-400" />
+                  báo giá hiệu lực đến: {new Date(ghnQuote.expiresAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
             </div>
 
             <div className="flex justify-between text-slate-600 text-[11px]">
@@ -692,7 +998,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     {formatVND(listing.priceVnd)}
                   </span>
                 )}
-                <span className="font-bold text-[#24263e]">{formatVND(itemPrice)}</span>
+                <span className="font-bold text-[#24263e]">{formatVND(productPrice)}</span>
               </div>
             </div>
 
@@ -703,25 +1009,44 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             )}
 
-            {hasInspection && (
-              <div className="flex justify-between text-slate-600 text-[11px]">
-                <span>{lang === 'vi' ? 'Phí kiểm định phòng Lab Hub (48 bước):' : 'Certified Hub Inspection Fee:'}</span>
-                <span className="font-semibold text-[#24263e]">{formatVND(inspectionFee)}</span>
-              </div>
-            )}
-
-            <div className="flex justify-between text-slate-600 text-[11px]">
-              <span>{lang === 'vi' ? 'Phí vận chuyển bưu tá & bảo hiểm hàng:' : 'Logistics & Freight Insurance:'}</span>
-              <span className="font-semibold text-[#24263e]">{formatVND(shippingFee)}</span>
+            <div className="flex justify-between text-slate-600 text-[11px] items-center">
+              <span>Hình thức giao nhận:</span>
+              <span className="font-bold text-slate-800">
+                {deliveryOption === 'INSPECTION' ? '🛡️ Kiểm định qua Hub' : '⚡ Giao thẳng trực tiếp'}
+              </span>
             </div>
 
-            <div className="flex justify-between text-slate-600 text-[11px]">
-              <span>{lang === 'vi' ? 'Phí nền tảng bảo lãnh Escrow (2.5%):' : 'Escrow Platform Guarantee Fee (2.5%):'}</span>
-              <span className="font-semibold text-[#24263e]">{formatVND(platformFee)}</span>
+            <div className="flex justify-between text-slate-600 text-[11px] items-center">
+              <span>{lang === 'vi' ? 'Phí giao hàng Giao Hàng Nhanh (GHN):' : 'GHN Shipping Fee:'}</span>
+              <div className="text-right">
+                {quoteLoading ? (
+                  <span className="text-blue-600 font-bold flex items-center gap-1 justify-end">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Đang tính phí GHN...</span>
+                  </span>
+                ) : ghnQuote ? (
+                  <span className="font-bold text-emerald-700">
+                    +{formatVND(shippingFee)}
+                  </span>
+                ) : quoteError ? (
+                  <span className="text-amber-800 font-medium">
+                    +{formatVND(shippingFee)} (Tạm tính)
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => calculateGhnQuote()}
+                    disabled={!selectedProvinceName || !selectedWardName}
+                    className="text-blue-600 hover:underline font-bold disabled:text-slate-400 disabled:no-underline cursor-pointer"
+                  >
+                    {selectedProvinceName && selectedWardName ? 'Bấm tính phí ship GHN' : 'Chờ chọn địa chỉ...'}
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm text-[#24263e]">
-              <span>{lang === 'vi' ? 'Tổng số tiền phong tỏa tạm giữ:' : 'Total Amount to Lock in Escrow:'}</span>
+              <span>{lang === 'vi' ? 'Tổng số tiền trừ ví:' : 'Total Payable from Wallet:'}</span>
               <span className="text-base sm:text-lg font-black text-[#c34c36]">
                 {formatVND(totalAmount)}
               </span>
@@ -734,8 +1059,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <span className="leading-snug">
               <strong>{lang === 'vi' ? 'Cam kết Escrow:' : 'Escrow Custody Guarantee:'}</strong>{' '}
               {lang === 'vi'
-                ? 'Tiền của người mua sẽ được phong tỏa tại quỹ Escrow ngay khi bấm đặt hàng. Người bán CHƯA nhận được tiền cho đến khi người mua xác nhận đã nhận được hàng.'
-                : 'Funds are securely locked in Escrow custody upon order placement. Seller only receives payment after buyer confirms delivery.'}
+                ? 'Tiền sẽ được trừ vào ví và phong tỏa an toàn tại quỹ Escrow. Sau khi GHN giao hàng và bạn xác nhận đã nhận hàng thành công, tiền hàng mới được giải ngân cho người bán.'
+                : 'Payment is securely held in Escrow custody. Seller receives funds only after GHN delivers and you confirm receipt.'}
             </span>
           </div>
 
@@ -750,7 +1075,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           {/* Submit */}
           <button
             type="submit"
-            disabled={submittingOrder}
+            disabled={submittingOrder || !ghnQuote}
             className="w-full py-3.5 px-4 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white rounded-2xl font-black text-xs sm:text-sm shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submittingOrder ? (
@@ -758,17 +1083,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <Loader2 className="w-4 h-4 text-white animate-spin" />
                 <span>{lang === 'vi' ? 'Đang kết nối Escrow & trừ tiền ví...' : 'Connecting Escrow & deducting wallet...'}</span>
               </>
+            ) : !ghnQuote ? (
+              <>
+                <Truck className="w-4 h-4 text-white" />
+                <span>{lang === 'vi' ? 'Vui lòng chọn địa chỉ để lấy báo giá GHN' : 'Please select address for GHN quote'}</span>
+              </>
             ) : (
               <>
                 <Lock className="w-4 h-4 text-white" />
                 <span>
                   {lang === 'vi'
-                    ? `Xác Nhận Phong Tỏa Tiền & Đặt Hàng (${formatVND(totalAmount)})`
-                    : `Authorize Escrow & Place Order (${formatVND(totalAmount)})`}
+                    ? `Xác Nhận Đặt Hàng & Thanh Toán Ví (${formatVND(totalAmount)})`
+                    : `Confirm Order & Pay with Wallet (${formatVND(totalAmount)})`}
                 </span>
               </>
             )}
           </button>
+
         </form>
       </div>
     </div>

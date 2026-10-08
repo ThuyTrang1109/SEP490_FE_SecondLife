@@ -34,6 +34,10 @@ import {
 import { ProductReviewModal } from '../components/modals/ProductReviewModal';
 import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
 import { reviewService } from '../data/mockReviews';
+import { OrderTrackingModal } from '../components/modals/OrderTrackingModal';
+import { CreateShipmentModal } from '../components/modals/CreateShipmentModal';
+import { ShippingLabelModal } from '../components/modals/ShippingLabelModal';
+import { ShipmentBackend } from '../types';
 
 interface EscrowOrdersViewProps {
   orders: EscrowOrder[];
@@ -41,6 +45,7 @@ interface EscrowOrdersViewProps {
   onOpenDispute: (order: EscrowOrder) => void;
   onMarkShipped?: (orderId: string) => void;
   onCancelOrder?: (orderId: string) => void;
+  onRefreshOrders?: () => void;
   lang: Language;
   userRole?: UserRole;
   onOpenChat?: (listing: any) => void;
@@ -61,6 +66,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   onOpenDispute,
   onMarkShipped,
   onCancelOrder,
+  onRefreshOrders,
   lang,
   userRole = 'buyer',
   onOpenChat,
@@ -72,6 +78,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [detailModalOrder, setDetailModalOrder] = useState<EscrowOrder | null>(null);
   const [activePhotoStage, setActivePhotoStage] = useState<'listing' | 'inspector' | 'handover'>('inspector');
+
+  // GHN Shipping Modals state
+  const [trackingOrder, setTrackingOrder] = useState<EscrowOrder | null>(null);
+  const [createShipmentOrder, setCreateShipmentOrder] = useState<EscrowOrder | null>(null);
+  const [activeLabelShipment, setActiveLabelShipment] = useState<{ order: EscrowOrder; shipment: ShipmentBackend } | null>(null);
 
   // Review & Seller Trust Modal state
   const [reviewModalOrder, setReviewModalOrder] = useState<EscrowOrder | null>(null);
@@ -606,29 +617,18 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                     {/* Seller Actions */}
                     {isSeller ? (
                       <>
-                        {/* Awaiting pickup / In progress: Schedule & Print Shipping Voucher */}
+                        {/* Awaiting pickup / In progress: Create GHN Shipment */}
                         {(ord.escrowStatus === 'AWAITING_PAYMENT' || ord.escrowStatus === 'HELD_IN_ESCROW' || ord.escrowStatus === 'INSPECTION_IN_PROGRESS') && (
                           <>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleConfirmCourierPickup(ord.id);
-                                onMarkShipped?.(ord.id);
+                                setCreateShipmentOrder(ord);
                               }}
                               className="px-3 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-90 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
                             >
                               <Truck className="w-3.5 h-3.5" />
-                              <span>{lang === 'vi' ? 'Xác Nhận Đã Gửi Hàng' : 'Confirm Shipped'}</span>
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setShippingLabelOrder(ord);
-                              }}
-                              className="px-3 py-2 rounded-xl bg-white border border-gray-300 hover:border-[#c34c36] text-slate-700 hover:text-[#24263e] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-                            >
-                              <Printer className="w-3.5 h-3.5" />
-                              <span>{lang === 'vi' ? 'In Phiếu Gửi Hub' : 'Print Label'}</span>
+                              <span>{lang === 'vi' ? 'Tạo Vận Đơn GHN' : 'Create GHN'}</span>
                             </button>
                             {onCancelOrder && (
                               <button
@@ -645,6 +645,18 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             )}
                           </>
                         )}
+
+                        {/* GHN Tracking & Management */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTrackingOrder(ord);
+                          }}
+                          className="px-3 py-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <Truck className="w-3.5 h-3.5 text-blue-600" />
+                          <span>{lang === 'vi' ? 'Theo Dõi GHN' : 'GHN Tracking'}</span>
+                        </button>
 
                         {/* Completed: Escrow released notice */}
                         {ord.escrowStatus === 'COMPLETED_RELEASED' && (
@@ -694,18 +706,43 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           <span>{lang === 'vi' ? 'Xem Chi Tiết' : 'View Details'}</span>
                         </button>
 
-                        {(ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.escrowStatus === 'SHIPPED_TO_BUYER') && (
+                        {/* Tracking GHN for Buyer */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTrackingOrder(ord);
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <Truck className="w-3.5 h-3.5 text-blue-600" />
+                          <span>{lang === 'vi' ? 'Theo Dõi GHN' : 'GHN Tracking'}</span>
+                        </button>
+
+                        {(ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.backendStatus === 'DELIVERED' || ord.shippingDeliveredAt) ? (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               onConfirmReceipt(ord.id);
                             }}
-                            className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                            className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm animate-pulse"
+                            title="Xác nhận đã nhận máy an toàn và giải ngân Escrow cho người bán"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>{lang === 'vi' ? 'Nhận Hàng' : 'Confirm Delivery'}</span>
+                            <span>{lang === 'vi' ? 'Đã Nhận Hàng (Giải Ngân)' : 'Confirm Delivery'}</span>
                           </button>
-                        )}
+                        ) : ord.escrowStatus === 'SHIPPED_TO_BUYER' ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTrackingOrder(ord);
+                            }}
+                            className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-medium transition flex items-center justify-center gap-1.5 cursor-pointer"
+                            title="Bưu tá đang giao hàng, bạn có thể kiểm tra định vị bưu kiện"
+                          >
+                            <Clock className="w-3.5 h-3.5 text-amber-600" />
+                            <span>{lang === 'vi' ? 'Đang Giao Hàng' : 'In Transit'}</span>
+                          </button>
+                        ) : null}
 
                         {onCancelOrder && (ord.escrowStatus === 'AWAITING_PAYMENT' || ord.escrowStatus === 'HELD_IN_ESCROW' || ord.escrowStatus === 'INSPECTION_IN_PROGRESS') && (
                           <button
@@ -833,6 +870,30 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                     {formatVND(detailModalOrder.itemPriceVnd)}
                   </div>
                 </div>
+              </div>
+
+              {/* GHN Shipping & Tracking Action in Detail Modal */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-50/90 to-slate-50 border border-blue-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-blue-600 text-white">GHN Express Tracking</span>
+                    <span className="text-xs font-bold text-slate-800">
+                      {detailModalOrder.shippingQuoteId ? `Mã báo giá: #${detailModalOrder.shippingQuoteId}` : 'Đơn hàng tích hợp GHN Tracking'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    Phí vận chuyển: <strong className="text-blue-700 font-bold">{formatVND(detailModalOrder.shippingFeeVnd)}</strong> • Địa chỉ giao: <span className="font-medium text-slate-700">{detailModalOrder.buyerAddress || 'Địa chỉ người mua'}</span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setTrackingOrder(detailModalOrder);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer shrink-0"
+                >
+                  <Truck className="w-3.5 h-3.5" />
+                  <span>Tra cứu vận đơn GHN</span>
+                </button>
               </div>
 
               {/* 2-Leg Shipping Visualizer */}
@@ -1080,115 +1141,41 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         </div>
       )}
 
-      {/* POPUP MODAL: IN PHIẾU GỬI HÀNG HUB DÀNH CHO NGƯỜI BÁN */}
-      {shippingLabelOrder && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in"
-          onClick={() => setShippingLabelOrder(null)}
-        >
-          <div
-            className="relative w-full max-w-lg rounded-3xl bg-white p-6 sm:p-7 shadow-2xl text-slate-900 border border-gray-200"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-gray-200">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white">
-                  <Printer className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900 uppercase tracking-tight">
-                    Phiếu Gửi Hàng Kiểm Định Hub
-                  </h3>
-                  <p className="text-xs text-slate-500">Mã đơn: #{shippingLabelOrder.id} &bull; Đối tác GHTK Express</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShippingLabelOrder(null)}
-                className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-900 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {/* GHN Order Tracking Modal */}
+      {trackingOrder && (
+        <OrderTrackingModal
+          order={trackingOrder}
+          isSeller={isSeller}
+          onClose={() => setTrackingOrder(null)}
+          lang={lang}
+          onConfirmReceipt={onConfirmReceipt}
+          onOpenLabelModal={(shipment) => setActiveLabelShipment({ order: trackingOrder, shipment })}
+          onOrderUpdated={onRefreshOrders}
+        />
+      )}
 
-            {/* Voucher Body */}
-            <div className="mt-5 p-5 rounded-2xl bg-slate-50 border-2 border-dashed border-gray-300 space-y-4">
-              <div className="flex items-center justify-between border-b border-gray-200 pb-3">
-                <div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Đơn vị vận chuyển</span>
-                  <span className="font-extrabold text-sm text-slate-900">GHTK Express • Hàng Lấy Tận Kho</span>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Mã vận đơn</span>
-                  <span className="font-mono font-bold text-xs bg-slate-900 text-white px-2.5 py-1 rounded-lg">
-                    {shippingLabelOrder.shippingLegs?.[0]?.trackingNumber || 'GHTK-99210488'}
-                  </span>
-                </div>
-              </div>
+      {/* GHN Create Shipment Modal */}
+      {createShipmentOrder && (
+        <CreateShipmentModal
+          order={createShipmentOrder}
+          onClose={() => setCreateShipmentOrder(null)}
+          lang={lang}
+          onShipmentCreated={(shipment) => {
+            setCreateShipmentOrder(null);
+            onRefreshOrders?.();
+            setActiveLabelShipment({ order: createShipmentOrder, shipment });
+          }}
+        />
+      )}
 
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="p-3 bg-white rounded-xl border border-gray-200">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Kho lấy hàng (Người bán)</span>
-                  <div className="font-bold text-slate-900">{shippingLabelOrder.sellerName}</div>
-                  <div className="text-[11px] text-slate-600 mt-0.5 leading-snug">
-                    {shippingLabelOrder.shippingLegs?.[0]?.origin || '92 Phan Châu Trinh, Hải Châu, Đà Nẵng'}
-                  </div>
-                </div>
-
-                <div className="p-3 bg-white rounded-xl border border-gray-200">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Nơi nhận (Trung tâm Hub)</span>
-                  <div className="font-bold text-slate-900">SecondLife Hub Lab</div>
-                  <div className="text-[11px] text-slate-600 mt-0.5 leading-snug">
-                    {shippingLabelOrder.shippingLegs?.[0]?.destination || 'Trạm Kiểm Định SecondLife Đà Nẵng'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-1.5 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Thiết bị gửi:</span>
-                  <span className="font-bold text-slate-900 truncate max-w-[240px]">{shippingLabelOrder.listing.title}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Quy cách kiện:</span>
-                  <span className="font-medium text-slate-800">Điện máy gia dụng - Có bao bọc chống va đập</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Chỉ dẫn bưu tá:</span>
-                  <span className="font-bold text-[#24263e]">Giao trực tiếp phòng Lab kiểm định</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
-                <span>Dịch vụ Verify Then Ship 2 chặng</span>
-                <span className="font-mono text-emerald-700 font-bold">Bảo Hiểm Escrow</span>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center justify-end gap-2.5 mt-5">
-              <button
-                onClick={() => setShippingLabelOrder(null)}
-                className="px-4 py-2 rounded-xl border border-gray-300 hover:bg-gray-100 text-xs font-bold text-slate-700 transition cursor-pointer"
-              >
-                Đóng
-              </button>
-              <button
-                onClick={() => {
-                  // Simulate print action without triggering browser's print dialog
-                  // which causes the page to appear blank/white
-                  const btn = document.activeElement as HTMLElement;
-                  if (btn) btn.blur();
-                  setTimeout(() => window.print(), 100);
-                }}
-                className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5 cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>In Phiếu Gửi Hàng</span>
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* GHN Official Shipping Label Modal */}
+      {activeLabelShipment && (
+        <ShippingLabelModal
+          order={activeLabelShipment.order}
+          shipment={activeLabelShipment.shipment}
+          onClose={() => setActiveLabelShipment(null)}
+          lang={lang}
+        />
       )}
 
       {/* Product Review Modal for Customer (Requirement 1) */}

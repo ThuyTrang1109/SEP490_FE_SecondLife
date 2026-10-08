@@ -1,4 +1,11 @@
 import { request } from './apiClient';
+import {
+  ShippingQuoteRequestDto,
+  ShippingQuoteResponseDto,
+  CreateShipmentRequestDto,
+  ShipmentBackend,
+  ShipmentEventBackend,
+} from '../types';
 
 export interface GhnLocation {
   _id: number;
@@ -501,4 +508,122 @@ export const shippingService = {
     });
     return res.data;
   },
+
+  /**
+   * Lấy báo giá vận chuyển GHN (Tiền hàng, phí giao, tổng tiền, thời gian giao)
+   * POST /api/v1/shipping/quotes
+   */
+  async getShippingQuote(body: ShippingQuoteRequestDto): Promise<ShippingQuoteResponseDto> {
+    const res = await request<ShippingQuoteResponseDto>('/shipping/quotes', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      requiresAuth: true,
+    });
+    const quote = (res as any)?.data ?? res;
+    return quote as ShippingQuoteResponseDto;
+  },
+
+  /**
+   * Người bán hoặc Kỹ sư Hub tạo vận đơn GHN cho đơn hàng
+   * POST /api/v1/orders/{orderId}/shipments
+   */
+  async createShipment(orderId: string, body: CreateShipmentRequestDto): Promise<ShipmentBackend> {
+    const res = await request<ShipmentBackend>(`/orders/${orderId}/shipments`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      requiresAuth: true,
+    });
+    const shipment = (res as any)?.data ?? res;
+    return shipment as ShipmentBackend;
+  },
+
+  /**
+   * Lấy danh sách vận đơn của đơn hàng
+   * GET /api/v1/orders/{orderId}/shipments
+   */
+  async getOrderShipments(orderId: string): Promise<ShipmentBackend[]> {
+    const res = await request<ShipmentBackend[]>(`/orders/${orderId}/shipments`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data ?? res;
+    return Array.isArray(data) ? data : [];
+  },
+
+  /**
+   * Lấy dòng thời gian các sự kiện vận chuyển từ GHN
+   * GET /api/v1/shipments/{shipmentId}/events
+   */
+  async getShipmentEvents(shipmentId: string): Promise<ShipmentEventBackend[]> {
+    const res = await request<ShipmentEventBackend[]>(`/shipments/${shipmentId}/events`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data ?? res;
+    return Array.isArray(data) ? data : [];
+  },
+
+  /**
+   * Đồng bộ trạng thái mới nhất từ GHN sang SecondLife
+   * POST /api/v1/shipments/{shipmentId}/sync
+   */
+  async syncShipment(shipmentId: string): Promise<ShipmentBackend> {
+    const res = await request<ShipmentBackend>(`/shipments/${shipmentId}/sync`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    const shipment = (res as any)?.data ?? res;
+    return shipment as ShipmentBackend;
+  },
+
+  /**
+   * Hủy vận đơn GHN trước khi bưu tá lấy hàng
+   * POST /api/v1/shipments/{shipmentId}/cancel
+   */
+  async cancelShipment(shipmentId: string): Promise<ShipmentBackend> {
+    const res = await request<ShipmentBackend>(`/shipments/${shipmentId}/cancel`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    const shipment = (res as any)?.data ?? res;
+    return shipment as ShipmentBackend;
+  },
+
+  /**
+   * Lấy nhãn bưu gửi GHN để in phiếu đóng gói
+   * GET /api/v1/shipments/{shipmentId}/label
+   */
+  async getShipmentLabel(shipmentId: string): Promise<any> {
+    const res = await request<any>(`/shipments/${shipmentId}/label`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return (res as any)?.data ?? res;
+  },
+
+  /**
+   * Giả lập GHN Webhook callback cho localhost / môi trường test (Mục 10 Tracking Guide)
+   * POST /api/v1/shipping/callback
+   */
+  async simulateWebhookCallback(
+    body: {
+      ShopID: number;
+      OrderCode: string;
+      Type: string;
+      Status: string;
+      Time: string;
+    },
+    secret: string = 'test-secret'
+  ): Promise<any> {
+    const res = await request<any>('/shipping/callback', {
+      method: 'POST',
+      headers: {
+        'X-GHN-Secret': secret,
+      },
+      body: JSON.stringify(body),
+      requiresAuth: false,
+    });
+    return res;
+  },
 };
+

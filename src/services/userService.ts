@@ -10,6 +10,12 @@ export interface UserProfileDto {
   emailVerified: boolean;
   roles: string[];
   permissions: string[];
+  province?: string;
+  district?: string;
+  ward?: string;
+  streetAddress?: string;
+  latitude?: number;
+  longitude?: number;
   createdAt?: string;
   updatedAt?: string;
   lastLoginAt?: string;
@@ -19,6 +25,12 @@ export interface UpdateProfileDto {
   fullName?: string;
   phone?: string;
   avatarUrl?: string;
+  province?: string;
+  district?: string;
+  ward?: string;
+  streetAddress?: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface ChangePasswordDto {

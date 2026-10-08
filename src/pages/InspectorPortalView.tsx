@@ -485,7 +485,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     key={item.id}
                     className="p-3 rounded-xl border border-gray-200 bg-[#faf8f5] flex items-center justify-between gap-3 text-xs"
                   >
-                    <span className="font-semibold text-gray-800">{item.label}</span>
+                    <span className="font-semibold text-gray-800">{item.title || item.label}</span>
                     <div className="flex gap-1">
                       <button
                         type="button"

@@ -19,7 +19,7 @@ import {
   Award,
   ShoppingBag,
   ShieldCheck,
-  ZoomIn,
+  Clock,
 } from 'lucide-react';
 import { TopupPackage, UserCredit, UserWallet, DepositResponseDTO, UserProfile, UserRole, Language } from '../../types';
 import { topupService, walletService, sellerCreditService } from '../../services';
@@ -849,22 +849,27 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   ) : (
                     <>
                       <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-[#24263e]/10 shadow-xs flex flex-col sm:flex-row gap-3.5 sm:gap-4 items-center">
-                        {/* VietQR Image */}
+                        {/* VietQR Image - Clickable to zoom */}
                         <div className="flex flex-col items-center shrink-0">
-                          <div className="p-1.5 bg-white rounded-2xl border-2 border-[#c34c36]/40 shadow-xs">
+                          <div
+                            onClick={() => setIsZoomQrOpen(true)}
+                            className="p-1.5 bg-white rounded-2xl border-2 border-[#c34c36]/40 shadow-xs cursor-pointer hover:border-[#c34c36] hover:shadow-md transition-all group"
+                          >
                             <img
                               src={vietQrUrl}
                               alt="VietQR Chuyển Khoản"
-                              className="w-36 h-36 sm:w-38 sm:h-38 object-contain rounded-xl"
+                              className="w-36 h-36 sm:w-38 sm:h-38 object-contain rounded-xl group-hover:scale-[1.02] transition-transform"
                             />
                           </div>
-                          <span className="text-[10px] text-slate-500 font-semibold mt-2 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping inline-block" />
-                            Đang chờ nhận tiền ({Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')})
-                          </span>
-                          <button onClick={() => setIsZoomQrOpen(true)} className="text-[10px] text-[#c34c36] font-bold mt-1.5 hover:underline cursor-pointer flex items-center gap-1">
-                            <ZoomIn className="w-3 h-3" /> Phóng to mã QR
-                          </button>
+                          <div className="mt-2.5 px-3 py-1 rounded-xl bg-amber-50/90 border border-amber-300/80 flex items-center justify-center gap-2 shadow-2xs">
+                            <span className="relative flex h-2 w-2 shrink-0">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                            </span>
+                            <span className="font-mono text-base font-black text-[#c34c36] tracking-wider">
+                              {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
+                            </span>
+                          </div>
                         </div>
 
                         {/* Transfer Credentials (2-Column Grid + Full Width Transfer Code) */}
@@ -1364,13 +1369,19 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
       {/* Zoom QR Modal Overlay */}
       {isZoomQrOpen && vietQrUrl && (
-        <div className="fixed inset-0 z-[60] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="relative bg-white p-5 rounded-3xl max-w-sm w-full flex flex-col items-center shadow-2xl">
+        <div
+          onClick={() => setIsZoomQrOpen(false)}
+          className="fixed inset-0 z-[60] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative bg-white p-5 rounded-3xl max-w-sm w-full flex flex-col items-center shadow-2xl cursor-default animate-fadeIn"
+          >
             <button onClick={() => setIsZoomQrOpen(false)} className="absolute top-3 right-3 p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 transition cursor-pointer">
               <X className="w-5 h-5" />
             </button>
-            <h3 className="text-sm font-black text-slate-800 mb-4 mt-2">Mã VietQR Phóng To</h3>
-            <img src={vietQrUrl} alt="VietQR Zoom" className="w-full h-auto object-contain rounded-xl border border-slate-200" />
+            <h3 className="text-sm font-black text-slate-800 mb-4 mt-2">Mã VietQR</h3>
+            <img src={vietQrUrl} alt="VietQR Zoom" className="w-full h-auto object-contain rounded-xl border border-slate-200 shadow-xs" />
             <p className="text-[11px] text-slate-500 font-medium mt-4 text-center">
               Dùng app ngân hàng bất kỳ để quét mã này
             </p>

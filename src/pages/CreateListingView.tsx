@@ -33,7 +33,8 @@ import {
   Listing,
   Language,
   CategoryBackend,
-  ItemBackend
+  ItemBackend,
+  UserProfile
 } from '../types';
 import { translations, formatVND } from '../utils/translations';
 import { numberToVietnameseWords, formatVndInput } from '../utils/numberToWords';
@@ -47,9 +48,11 @@ import {
   CreditBalanceResponseDto,
   ListingDraftResponse,
   AiPriceEstimationResponse,
-  PostSubmitResponse
+  PostSubmitResponse,
+  shippingService
 } from '../services';
 import { parseQuestionItem, splitCompoundQuestion } from '../utils/questionParser';
+import { extractWardAndCity, getSavedSellerAddress } from '../utils/addressUtils';
 
 
 
@@ -59,12 +62,14 @@ interface CreateListingViewProps {
   onListingCreated: (newListing: Listing) => void;
   lang: Language;
   onCancel: () => void;
+  currentUser?: UserProfile | null;
 }
 
 export const CreateListingView: React.FC<CreateListingViewProps> = ({
   onListingCreated,
   lang,
-  onCancel
+  onCancel,
+  currentUser
 }) => {
   const t = translations[lang];
 
@@ -98,6 +103,55 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
   // Basic Form State
   const [title, setTitle] = useState('');
+  const [sellerLocation, setSellerLocation] = useState<string>('');
+
+  // Lấy địa chỉ của người bán (chỉ lấy phường và thành phố) từ hồ sơ hoặc địa chỉ kho đã lưu
+  useEffect(() => {
+    const resolveSellerLocation = async () => {
+      // 1. Thử lấy địa chỉ kho bưu tá từ BE shippingService
+      try {
+        const [obRes, pickupRes] = await Promise.allSettled([
+          shippingService.getSellerOnboarding(),
+          shippingService.getPickupAddress(),
+        ]);
+        let pa: any = null;
+        if (obRes.status === 'fulfilled' && obRes.value?.pickupAddress) {
+          pa = obRes.value.pickupAddress;
+        } else if (pickupRes.status === 'fulfilled' && pickupRes.value) {
+          pa = pickupRes.value;
+        }
+        if (pa) {
+          const loc = extractWardAndCity(pa.address, pa.wardName, pa.provinceName);
+          if (loc) {
+            setSellerLocation(loc);
+            return;
+          }
+        }
+      } catch (e) {
+        // Fallback sang thông tin profile
+      }
+
+      // 2. Thử lấy từ currentUser profile
+      const userLoc = extractWardAndCity(
+        currentUser?.pickupAddress || currentUser?.address,
+        currentUser?.wardName,
+        currentUser?.provinceName
+      );
+      if (userLoc) {
+        setSellerLocation(userLoc);
+        return;
+      }
+
+      // 3. Thử lấy từ localStorage đã lưu của seller
+      const saved = getSavedSellerAddress();
+      const savedLoc = extractWardAndCity(saved.address, saved.wardName, saved.provinceName);
+      if (savedLoc) {
+        setSellerLocation(savedLoc);
+      }
+    };
+
+    resolveSellerLocation();
+  }, [currentUser]);
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
   const [purchaseYear, setPurchaseYear] = useState<number>(new Date().getFullYear());
@@ -844,6 +898,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const handleFinishAndExit = () => {
     if (!postId) return;
     const catName = backendCategories.find((c) => c.id === selectedCategoryId)?.name || 'Thiết bị điện tử';
+
+    // Địa chỉ của sản phẩm được cập nhật theo địa chỉ người bán (chỉ lấy phường và thành phố)
+    const saved = getSavedSellerAddress();
+    const finalLocation =
+      sellerLocation ||
+      extractWardAndCity(
+        currentUser?.pickupAddress || currentUser?.address || saved.address,
+        currentUser?.wardName || saved.wardName,
+        currentUser?.provinceName || saved.provinceName
+      ) ||
+      'Hà Nội';
+
     const newListing: Listing = {
       id: postId,
       title: title || 'Sản phẩm SecondLife',
@@ -856,11 +922,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       conditionGrade: 'Like New',
       declaredConditionText: itemCondition,
       description: description || 'Mô tả bài đăng đã qua kiểm duyệt AI',
-      location: 'Hà Nội / TP.HCM',
-      sellerId: 'current-user',
-      sellerName: 'Người bán SecondLife',
-      sellerRating: 5.0,
-      sellerCompletedOrders: 1,
+      location: finalLocation,
+      sellerId: currentUser?.id || 'current-user',
+      sellerName: currentUser?.name || 'Người bán SecondLife',
+      sellerRating: currentUser?.sellerRating || 5.0,
+      sellerCompletedOrders: currentUser?.completedOrdersCount || 1,
       sellerVerified: true,
       status: (submitResult?.status === 'ACTIVE' ? 'active' : 'pending') as any,
       createdAt: new Date().toISOString(),

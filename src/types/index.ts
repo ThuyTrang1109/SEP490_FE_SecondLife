@@ -57,6 +57,7 @@ export interface Listing {
   location: string;
   sellerId: string;
   sellerName: string;
+  sellerAvatarUrl?: string;
   sellerRating: number;
   sellerCompletedOrders: number;
   sellerVerified: boolean;
@@ -139,6 +140,7 @@ export interface EscrowOrder {
   buyerAddress: string;
   sellerId: string;
   sellerName: string;
+  sellerAvatarUrl?: string;
   itemPriceVnd: number;
   inspectionFeeVnd: number;
   shippingFeeVnd: number;
@@ -167,6 +169,7 @@ export interface ProductReview {
   productName: string;
   sellerId: string;
   sellerName: string;
+  sellerAvatarUrl?: string;
   buyerId: string;
   buyerName: string;
   buyerAvatar?: string;
@@ -186,6 +189,7 @@ export interface ProductReview {
 export interface SellerTrustProfile {
   sellerId: string;
   sellerName: string;
+  sellerAvatarUrl?: string;
   trustScore: number; // 0 - 100
   tier: 'Kim Cương' | 'Bạch Kim' | 'Vàng' | 'Bạc';
   rating: number;
@@ -206,6 +210,7 @@ export interface DisputeCase {
   buyerName: string;
   sellerId: string;
   sellerName: string;
+  sellerAvatarUrl?: string;
   reason: 'NOT_AS_DESCRIBED' | 'DAMAGE_IN_TRANSIT' | 'AUTHENTICITY_CLAIM' | 'MISSING_ACCESSORIES';
   description: string;
   buyerEvidencePhotos: string[];

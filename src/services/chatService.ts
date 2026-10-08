@@ -237,7 +237,7 @@ export const chatService = {
    */
   async getRoom(postId: string): Promise<ChatRoomDto | null> {
     try {
-      const response = await request<ChatRoomDto | null>(/v1/chats/rooms?postId=, {
+      const response = await request<ChatRoomDto | null>(`/v1/chats/rooms?postId=${postId}`, {
         method: 'GET',
         requiresAuth: true,
       });

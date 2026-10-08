@@ -108,8 +108,8 @@ class ChatWebSocketManager {
         // console.log('[STOMP]', _str);
       },
       reconnectDelay: 5000,
-      heartbeatIncoming: 4000,
-      heartbeatOutgoing: 4000,
+      heartbeatIncoming: 0,
+      heartbeatOutgoing: 0,
       onConnect: () => {
         this.isConnecting = false;
         this.notifyStatus(true);

@@ -412,7 +412,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         <div className="px-5 py-3.5 bg-gradient-to-r from-[#fce5da] to-white border-b border-[#24263e]/15 flex items-center justify-between text-[#24263e] shrink-0">
           <div className="flex items-center gap-3 overflow-hidden">
             <img
-              src={currentRole === 'buyer' ? (listing.sellerAvatarUrl || listing.photos.front) : (roomData?.buyerAvatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200")}
+              src={currentRole === 'buyer' ? (listing.sellerAvatarUrl || (listing.sellerAvatarUrl || listing.photos.front)) : (roomData?.buyerAvatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200")}
               alt={currentRole === 'buyer' ? listing.title : 'Khách Hàng'}
               className="w-11 h-11 rounded-xl object-cover border border-[#24263e]/20 shrink-0"
             />

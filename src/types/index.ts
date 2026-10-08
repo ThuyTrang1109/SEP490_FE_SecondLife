@@ -350,6 +350,17 @@ export interface DepositResponseDTO {
   createdAt: string;
 }
 
+export interface WalletTransaction {
+  id: string;
+  walletId: string;
+  amount: number;
+  type: 'DEPOSIT' | 'WITHDRAW' | 'PAYMENT' | 'REFUND' | string;
+  status: 'PENDING' | 'SUCCESS' | 'FAILED' | string;
+  description: string;
+  createdAt: string;
+}
+
+
 // ==========================================
 // 2. Negotiation Types
 // ==========================================

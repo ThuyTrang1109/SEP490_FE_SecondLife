@@ -186,7 +186,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const isBuyerRole = (currentRole === 'buyer') || (currentUser?.role === 'buyer');
 
   // Active primary tab: 'wallet' (nạp tiền) or 'packages' (mua gói xu). Buyers only need 'wallet'
-  const [activeTab, setActiveTab] = useState<'wallet' | 'packages'>(isBuyerRole ? 'wallet' : initialTab);
+  const [activeTab, setActiveTab] = useState<'wallet' | 'packages' | 'history'>(isBuyerRole ? 'wallet' : initialTab);
 
   // Wallet State
   const [wallet, setWallet] = useState<UserWallet | null>(null);
@@ -222,6 +222,10 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     initialUserCredit || { postCredits: currentCredit || 10, chatCredits: 20 }
   );
 
+  // History State
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactionsLoading, setTransactionsLoading] = useState<boolean>(false);
+
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load wallet & packages when modal opens
@@ -245,6 +249,24 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       }
     }
   }, [isOpen, initialTab, isBuyerRole]);
+
+  useEffect(() => {
+    if (activeTab === 'history') {
+      loadHistory();
+    }
+  }, [activeTab]);
+
+  const loadHistory = async () => {
+    setTransactionsLoading(true);
+    try {
+      const data = await walletService.getTransactionHistory();
+      setTransactions(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load transaction history:', err);
+    } finally {
+      setTransactionsLoading(false);
+    }
+  };
 
   // Timer countdown for deposit request
   useEffect(() => {
@@ -665,6 +687,19 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
               <span>2. Mua Gói Quyền Sử Dụng (Trừ ví)</span>
             </button>
           )}
+          <button
+            onClick={() => {
+              setActiveTab('history');
+              setDepositError(null);
+            }}
+            className={`pb-2 px-3.5 text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer border-b-2 ${activeTab === 'history'
+                ? 'border-[#c34c36] text-[#c34c36]'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>Lịch Sử Giao Dịch</span>
+          </button>
         </div>
 
         {/* Modal Scrollable Body */}
@@ -1362,6 +1397,62 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   )}
                 </>
               )}
+            </div>
+          )}
+
+          {/* ============================================================== */}
+          {/* TAB 3: TRANSACTION HISTORY                                     */}
+          {/* ============================================================== */}
+          {activeTab === 'history' && (
+            <div className="space-y-4 animate-fadeIn h-full flex flex-col">
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="w-5 h-5 text-[#c34c36]" />
+                <h4 className="font-black text-sm text-[#24263e]">Lịch sử nạp và giao dịch</h4>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-[#24263e]/10 shadow-xs flex-1 overflow-hidden flex flex-col">
+                {transactionsLoading ? (
+                  <div className="flex items-center justify-center p-10 flex-col gap-3">
+                    <Loader2 className="w-6 h-6 text-[#c34c36] animate-spin" />
+                    <span className="text-xs font-semibold text-slate-500">Đang tải lịch sử giao dịch...</span>
+                  </div>
+                ) : transactions.length === 0 ? (
+                  <div className="flex items-center justify-center p-10 flex-col gap-3">
+                    <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center">
+                      <Clock className="w-5 h-5 text-slate-300" />
+                    </div>
+                    <span className="text-sm font-semibold text-slate-500">Chưa có giao dịch nào</span>
+                  </div>
+                ) : (
+                  <div className="overflow-y-auto max-h-[50vh] divide-y divide-[#24263e]/5">
+                    {transactions.map((tx) => (
+                      <div key={tx.id} className="p-4 hover:bg-slate-50 transition flex items-start gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex flex-shrink-0 items-center justify-center shadow-xs ${tx.type === 'DEPOSIT' ? 'bg-emerald-100 text-emerald-600' : tx.type === 'WITHDRAW' || tx.type === 'PAYMENT' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
+                          {tx.type === 'DEPOSIT' ? <Wallet className="w-5 h-5" /> : tx.type === 'PAYMENT' ? <ShoppingBag className="w-5 h-5" /> : <RefreshCw className="w-5 h-5" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <h5 className="text-xs sm:text-sm font-bold text-[#24263e] truncate">
+                              {tx.description || (tx.type === 'DEPOSIT' ? 'Nạp tiền vào ví' : tx.type === 'PAYMENT' ? 'Thanh toán' : 'Giao dịch khác')}
+                            </h5>
+                            <span className={`text-xs sm:text-sm font-black whitespace-nowrap ${tx.type === 'DEPOSIT' || tx.type === 'REFUND' ? 'text-emerald-600' : 'text-red-500'}`}>
+                              {tx.type === 'DEPOSIT' || tx.type === 'REFUND' ? '+' : '-'}{formatVND(tx.amount)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] sm:text-xs text-slate-500 font-medium">
+                              {new Date(tx.createdAt).toLocaleString('vi-VN')}
+                            </span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${tx.status === 'SUCCESS' ? 'bg-emerald-100 text-emerald-700' : tx.status === 'PENDING' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                              {tx.status === 'SUCCESS' ? 'Thành công' : tx.status === 'PENDING' ? 'Chờ xử lý' : 'Thất bại'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

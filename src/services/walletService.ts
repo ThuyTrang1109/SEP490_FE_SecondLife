@@ -1,5 +1,5 @@
 import { request } from './apiClient';
-import { UserWallet, DepositResponseDTO, DepositCreateRequestDTO } from '../types';
+import { UserWallet, DepositResponseDTO, DepositCreateRequestDTO, WalletTransaction } from '../types';
 
 export const walletService = {
   /**
@@ -30,5 +30,19 @@ export const walletService = {
     return ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
       : response) as DepositResponseDTO;
+  },
+
+  /**
+   * Lấy lịch sử giao dịch của ví
+   * GET /api/v1/wallets/history
+   */
+  async getTransactionHistory(): Promise<WalletTransaction[]> {
+    const response = await request<WalletTransaction[]>('/v1/wallets/history', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return ((response as any)?.data !== undefined && (response as any)?.data !== null
+      ? (response as any).data
+      : response) as WalletTransaction[];
   },
 };

@@ -908,7 +908,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         currentUser?.wardName || saved.wardName,
         currentUser?.provinceName || saved.provinceName
       ) ||
-      'Hà Nội';
+      '';
 
     const newListing: Listing = {
       id: postId,

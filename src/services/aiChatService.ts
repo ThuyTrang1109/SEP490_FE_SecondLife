@@ -84,7 +84,7 @@ export const aiChatService = {
   },
 
   async regenerate(sessionId: string): Promise<any> {
-    const response = await request<any>(/v1/posts/regenerate-chat/, {
+    const response = await request<any>(`/v1/posts/regenerate-chat/${sessionId}`, {
       method: 'POST',
       requiresAuth: true,
     });

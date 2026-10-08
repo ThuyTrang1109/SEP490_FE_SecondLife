@@ -1083,12 +1083,12 @@ export default function App() {
             listings={listings}
             currentRole={currentRole}
             lang={lang}
-            onOpenChat={(listing) => {
+            onOpenChat={(listing, room) => {
               if (!currentUser) {
                 requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để sử dụng tính năng Chat & Đàm phán.' : 'Please log in to chat.');
                 return;
               }
-              setChatContext({listing});
+              setChatContext({listing, room});
             }}
           />
         )}

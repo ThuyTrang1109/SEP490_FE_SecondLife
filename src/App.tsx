@@ -237,7 +237,7 @@ export default function App() {
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [checkoutListing, setCheckoutListing] = useState<Listing | null>(null);
   const [checkoutAgreedPrice, setCheckoutAgreedPrice] = useState<number | undefined>(undefined);
-  const [chatListing, setChatListing] = useState<Listing | null>(null);
+  const [chatContext, setChatContext] = useState<{listing: Listing, room?: any} | null>(null);
   const [sellerReviewsModalData, setSellerReviewsModalData] = useState<{ sellerId: string; sellerName: string } | null>(null);
 
   // Flash Toast
@@ -1041,7 +1041,7 @@ export default function App() {
             onRefreshOrders={loadUserOrders}
             lang={lang}
             userRole={currentRole}
-            onOpenChat={(listing) => setChatListing(listing)}
+            onOpenChat={(listing, room) => setChatContext({listing, room})}
           />
         )}
 
@@ -1088,7 +1088,7 @@ export default function App() {
                 requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để sử dụng tính năng Chat & Đàm phán.' : 'Please log in to chat.');
                 return;
               }
-              setChatListing(listing);
+              setChatContext({listing});
             }}
           />
         )}
@@ -1119,7 +1119,7 @@ export default function App() {
                 : 'Please log in to chat and negotiate with seller.');
               return;
             }
-            setChatListing(item);
+            setChatContext({listing: item});
           }}
           onOpenSellerReviews={(sellerId, sellerName) => {
             setSellerReviewsModalData({ sellerId, sellerName });
@@ -1147,11 +1147,12 @@ export default function App() {
       )}
 
       {/* Chat & Negotiation Modal */}
-      {chatListing && (
+      {chatContext && (
         <ChatModal
-          listing={chatListing}
+          listing={chatContext.listing}
+            roomDto={chatContext.room}
           currentRole={currentRole}
-          onClose={() => setChatListing(null)}
+          onClose={() => setChatContext(null)}
           onBuyClick={(item, agreedPrice, negotiationId) => {
             if (!currentUser) {
               setPendingCheckoutItem(item);
@@ -1160,7 +1161,7 @@ export default function App() {
                 : 'Please log in to purchase with Escrow protection.');
               return;
             }
-            setChatListing(null);
+            setChatContext(null);
             setCheckoutAgreedPrice(agreedPrice);
             setCheckoutNegotiationId(negotiationId);
             setCheckoutListing(item);

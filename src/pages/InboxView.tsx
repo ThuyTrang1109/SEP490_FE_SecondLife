@@ -8,7 +8,7 @@ interface InboxViewProps {
   listings: Listing[];
   currentRole: UserRole;
   lang: Language;
-  onOpenChat: (listing: Listing) => void;
+  onOpenChat: (listing: Listing, room?: ChatRoomDto) => void;
 }
 
 export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lang, onOpenChat }) => {
@@ -64,7 +64,7 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
     // Check if listing already exists in prop
     const found = listings.find((l) => l.id === room.postId);
     if (found) {
-      onOpenChat(found);
+      onOpenChat(found, room);
       return;
     }
 
@@ -89,7 +89,7 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
       createdAt: room.updatedAt || new Date().toISOString(),
     };
 
-    onOpenChat(fallbackListing);
+    onOpenChat(fallbackListing as Listing, room);
   };
 
   const formatLastMessage = (rawText?: string) => {

@@ -27,6 +27,7 @@ import {
 } from '../../services';
 
 interface ChatModalProps {
+  roomDto?: ChatRoomDto;
   listing: Listing;
   currentRole: UserRole;
   onClose: () => void;
@@ -36,6 +37,7 @@ interface ChatModalProps {
 }
 
 export const ChatModal: React.FC<ChatModalProps> = ({
+    roomDto,
   listing,
   currentRole,
   onClose,
@@ -131,8 +133,10 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       if (!listing?.id) return;
       setLoadingRoom(true);
       try {
-        // API: POST /api/v1/chats/rooms?postId={postId}
-        const room = await chatService.getRoom(listing.id);
+        let room = roomDto;
+        if (!room) {
+          room = await chatService.getOrCreateRoom(listing.id);
+        }
         if (!isMounted) return;
 
         if (room?.id) {
@@ -408,14 +412,14 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         <div className="px-5 py-3.5 bg-gradient-to-r from-[#fce5da] to-white border-b border-[#24263e]/15 flex items-center justify-between text-[#24263e] shrink-0">
           <div className="flex items-center gap-3 overflow-hidden">
             <img
-              src={currentRole === 'buyer' ? listing.photos.front : "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200"}
+              src={currentRole === 'buyer' ? (listing.sellerAvatarUrl || listing.photos.front) : (roomData?.buyerAvatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200")}
               alt={currentRole === 'buyer' ? listing.title : 'Khách Hàng'}
               className="w-11 h-11 rounded-xl object-cover border border-[#24263e]/20 shrink-0"
             />
             <div className="overflow-hidden">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="font-extrabold text-xs text-[#24263e] truncate">
-                  {currentRole === 'buyer' ? listing.sellerName : 'Hoàng Quốc Khang (Người mua)'}
+                  {currentRole === 'buyer' ? listing.sellerName : (roomData?.buyerName ? `${roomData.buyerName} (Người mua)` : 'Người mua')}
                 </span>
 
                 {/* Seller Trust Score Pill */}

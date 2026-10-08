@@ -19,7 +19,22 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
   const loadChatRooms = useCallback(async () => {
     try {
       const data = await chatService.getChatRooms();
-      setRooms(Array.isArray(data) ? data : []);
+      const rawRooms = Array.isArray(data) ? data : [];
+      // Deduplicate by composite key (postId + buyerId + sellerId) to prevent duplicated popups/lists
+      const uniqueRooms = [];
+      const seen = new Set();
+      for (const r of rawRooms) {
+        // Fallback to room.id if any essential field is missing, though they shouldn't be
+        const key = r.postId && r.buyerId && r.sellerId 
+          ? `${r.postId}_${r.buyerId}_${r.sellerId}` 
+          : r.id;
+          
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniqueRooms.push(r);
+        }
+      }
+      setRooms(uniqueRooms);
     } catch (err) {
       console.warn('Failed to load chat rooms from backend:', err);
     } finally {

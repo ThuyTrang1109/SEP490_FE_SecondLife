@@ -63,13 +63,15 @@ interface CreateListingViewProps {
   lang: Language;
   onCancel: () => void;
   currentUser?: UserProfile | null;
+  initialDraft?: Listing;
 }
 
 export const CreateListingView: React.FC<CreateListingViewProps> = ({
   onListingCreated,
   lang,
   onCancel,
-  currentUser
+  currentUser,
+  initialDraft
 }) => {
   const t = translations[lang];
 
@@ -91,7 +93,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // Credit Balance State
   const [credits, setCredits] = useState<CreditBalanceResponseDto | null>(null);
   const [isLoadingCredits, setIsLoadingCredits] = useState(false);
-  const [isPurchasingCredits, setIsPurchasingCredits] = useState(false);
 
   // Category & Item from Backend
   const [backendCategories, setBackendCategories] = useState<CategoryBackend[]>([]);
@@ -170,6 +171,36 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [aiInitialMessage, setAiInitialMessage] = useState<string>('');
   const [draftPost, setDraftPost] = useState<ListingDraftResponse | null>(null);
+
+  // Initialize from draft if provided
+  useEffect(() => {
+    if (initialDraft) {
+      setPostId(initialDraft.id);
+      setTitle(initialDraft.title || '');
+      setBrand(initialDraft.brand || '');
+      setModel(initialDraft.model || '');
+      if (initialDraft.purchaseYear) setPurchaseYear(initialDraft.purchaseYear);
+      if (initialDraft.originalPriceVnd) setOriginalPriceVnd(initialDraft.originalPriceVnd);
+      if (initialDraft.priceVnd) setFinalPriceVnd(initialDraft.priceVnd);
+      if (initialDraft.conditionGrade) {
+        // Map condition grade string back to enum value if needed
+        const gradeMap: any = {
+          'Like New': 'LIKE_NEW',
+          'Good': 'USED_GOOD',
+          'Fair': 'USED_FAIR'
+        };
+        setItemCondition(gradeMap[initialDraft.conditionGrade] || 'USED_GOOD');
+      }
+      if (initialDraft.description) setDescription(initialDraft.description);
+      if (initialDraft.photoGallery && initialDraft.photoGallery.length > 0) {
+        setPhotoPreviews(initialDraft.photoGallery);
+      } else if (initialDraft.photos) {
+        const p = initialDraft.photos;
+        setPhotoPreviews([p.front, p.back, p.screenOrDetails, p.accessoriesOrBox, p.serialOrReceipt, p.extraDetail].filter(Boolean) as string[]);
+      }
+      // Note: Category and Item might need to be resolved by name since initialDraft only stores the string in FE mapping
+    }
+  }, [initialDraft]);
 
   // Mode: 'ai' | 'manual'
   const [initMode, setInitMode] = useState<'ai' | 'manual' | null>(null);
@@ -383,7 +414,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       const reply = finalizeRes?.description || (finalizeRes as any)?.message || '';
       
       if (reply) {
-        setDescription(reply);
+        setDescription(prev => prev.trim() ? `${prev.trim()}\n\n${reply}` : reply);
         setIsSessionCompleted(true);
         setApplySuccessNotice(lang === 'vi' ? '✨ Trợ lý AI đã tổng hợp xong bài mô tả bán hàng và cập nhật vào ô Mô tả bên dưới!' : '✨ AI generated a new sales description and updated the description box below!');
         setTimeout(() => setApplySuccessNotice(null), 5000);
@@ -442,19 +473,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     loadCredits();
   }, []);
 
-  // Quick Purchase Credit for testing
-  const handleQuickBuyCredit = async () => {
-    setIsPurchasingCredits(true);
-    try {
-      await sellerCreditService.createPurchase({ listingQuantity: 2, valuationQuantity: 2 });
-      showToast(lang === 'vi' ? 'Đã tạo yêu cầu mua 2 LISTING & 2 VALUATION thành công!' : 'Created purchase request for 2 LISTING & 2 VALUATION!');
-      await loadCredits();
-    } catch (err: any) {
-      showToast('Mua credit thất bại: ' + (err?.message || 'Lỗi server'));
-    } finally {
-      setIsPurchasingCredits(false);
-    }
-  };
 
   // Load Categories on mount
   useEffect(() => {
@@ -956,36 +974,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-base font-black tracking-wide">
-                {lang === 'vi' ? 'Hệ Thống Đăng Tin & Định Giá AI (Main Flow 1)' : 'AI Listing & Valuation Pipeline'}
+                {lang === 'vi' ? 'Hệ Thống Đăng Tin & Định Giá AI' : 'AI Listing & Valuation Pipeline'}
               </h2>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 uppercase">
-                Backend Live
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300 mt-1">
-              <span>Số dư Credit của bạn:</span>
-              <span className="px-2.5 py-0.5 rounded-lg bg-white/10 font-mono font-bold text-amber-300 flex items-center gap-1 border border-white/10">
-                <span>🎯 {credits?.listing ?? 0}</span>
-                <span className="text-[10px] text-slate-400">LISTING</span>
-              </span>
-              <span className="px-2.5 py-0.5 rounded-lg bg-white/10 font-mono font-bold text-cyan-300 flex items-center gap-1 border border-white/10">
-                <span>💡 {credits?.valuation ?? 0}</span>
-                <span className="text-[10px] text-slate-400">VALUATION</span>
-              </span>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={handleQuickBuyCredit}
-            disabled={isPurchasingCredits}
-            className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white border border-white/20 transition cursor-pointer flex items-center gap-1.5"
-            title="Tạo đơn mua 2 LISTING + 2 VALUATION"
-          >
-            {isPurchasingCredits ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5 text-amber-300" />}
-            <span>{lang === 'vi' ? 'Nạp thêm Credit' : 'Buy Credits'}</span>
-          </button>
           <button
             onClick={onCancel}
             className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-300 hover:text-white border border-white/10 transition cursor-pointer"
@@ -1317,7 +1312,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           </div>
 
           {/* AI Vision Warning: Catalog / Promotional Photo Detected */}
-          {isCatalogPhotoWarning && (
+          {postMode === 'ai' && isCatalogPhotoWarning && (
             <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 flex items-start gap-3 shadow-xs animate-fadeIn">
               <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <div className="space-y-1 text-xs">
@@ -1336,7 +1331,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           )}
 
           {/* AI Initial Description Suggestion Box (Only shown if AI produced an actual description and not just warning/questions) */}
-          {aiInitialMessage && !isCatalogPhotoWarning && parsedAiQuestions.length === 0 && (
+          {postMode === 'ai' && aiInitialMessage && !isCatalogPhotoWarning && parsedAiQuestions.length === 0 && (
             <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 text-slate-800 text-xs space-y-2">
               <div className="flex items-center justify-between">
                 <span className="font-black text-[#24263e] flex items-center gap-1.5 uppercase text-[11px]">
@@ -1358,7 +1353,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           )}
 
           {/* Interactive AI Questionnaire: Hiện các câu hỏi cần người dùng trả lời và dưới mỗi câu thì hiện chỗ để điền */}
-          {effectiveQuestions.length > 0 && (
+          {postMode === 'ai' && effectiveQuestions.length > 0 && (
             <div className="bg-gradient-to-br from-amber-50/90 via-orange-50/30 to-white rounded-3xl p-5 sm:p-6 border-2 border-amber-200/90 shadow-xs space-y-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/70 pb-4">
                 <div>
@@ -1579,6 +1574,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 placeholder="Mô tả chi tiết tình trạng máy móc, thời gian sử dụng, phụ kiện kèm theo..."
                 className="w-full px-4 py-3 bg-slate-50 border border-gray-200 rounded-xl text-xs text-slate-800 leading-relaxed focus:outline-none focus:border-[#c34c36]"
               />
+              {postMode === 'manual' && (
+                <p className="text-[11px] text-slate-500 italic mt-1">
+                  * Đối với tự mô tả bài đăng, bạn cần mô tả cụ thể và kỹ càng tình trạng, chức năng, phụ kiện đi kèm để tránh khiếu nại sau này.
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2061,11 +2061,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <>
                     <button
                       type="button"
-                      onClick={handleQuickBuyCredit}
-                      disabled={isPurchasingCredits}
+                      onClick={() => showToast('Vui lòng truy cập trang Ví để nạp Credit.')}
                       className="px-4 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83c28] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
                     >
-                      {isPurchasingCredits ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5 text-amber-300" />}
+                      <Plus className="w-3.5 h-3.5 text-amber-300" />
                       <span>Nạp thêm Credit ngay</span>
                     </button>
                     <button

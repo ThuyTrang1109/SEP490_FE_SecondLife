@@ -65,6 +65,7 @@ export default function App() {
   // Pending action after login (redirect or resume action)
   const [pendingTab, setPendingTab] = useState<string | null>(null);
   const [pendingCheckoutItem, setPendingCheckoutItem] = useState<Listing | null>(null);
+  const [editingDraft, setEditingDraft] = useState<Listing | null>(null);
 
   // Restore & verify session for THIS browser from Backend /me on startup/refresh
   React.useEffect(() => {
@@ -238,6 +239,9 @@ export default function App() {
   const [checkoutListing, setCheckoutListing] = useState<Listing | null>(null);
   const [checkoutAgreedPrice, setCheckoutAgreedPrice] = useState<number | undefined>(undefined);
   const [chatListing, setChatListing] = useState<Listing | null>(null);
+  const [chatPredefinedRoomId, setChatPredefinedRoomId] = useState<string | undefined>(undefined);
+  const [chatPartnerName, setChatPartnerName] = useState<string | undefined>(undefined);
+  const [chatPartnerAvatar, setChatPartnerAvatar] = useState<string | undefined>(undefined);
   const [sellerReviewsModalData, setSellerReviewsModalData] = useState<{ sellerId: string; sellerName: string } | null>(null);
 
   // Flash Toast
@@ -512,7 +516,8 @@ export default function App() {
       description: post.description || post.aiDescription || 'Đã qua thẩm định và xác thực trên hệ thống SecondLife.',
       location: postLocation,
       sellerId: post.sellerId || post.user?.id || post.userId || (isOwner && currentUser ? currentUser.id : '1e338576-457a-4371-9822-52ca04e31546'),
-      sellerName: isOwner && currentUser?.name ? currentUser.name : (post.user?.fullName || post.sellerName || 'Người bán SecondLife'),
+      sellerName: isOwner && currentUser?.name ? currentUser.name : (post.user?.fullName || post.user?.email || post.sellerName || 'Người bán SecondLife'),
+      sellerAvatar: post.user?.avatarUrl || undefined,
       sellerRating: 5.0,
       sellerCompletedOrders: 3,
       sellerVerified: true,
@@ -877,7 +882,12 @@ export default function App() {
           lang={lang}
           onLangChange={setLang}
           activeTab={activeTab}
-          onTabChange={handleTabChange}
+          onTabChange={(tab) => {
+            if (tab === 'create-listing') {
+              setEditingDraft(null);
+            }
+            handleTabChange(tab);
+          }}
           activeOrdersCount={orders.filter((o) => o.escrowStatus !== 'COMPLETED_RELEASED').length}
           currentUser={currentUser}
           onOpenAuth={(mode) => {
@@ -970,7 +980,10 @@ export default function App() {
             listings={listings.filter((l) => l.status === 'active' || l.backendStatus === 'ACTIVE')}
             onSelectListing={(listing) => setSelectedListing(listing)}
             lang={lang}
-            onPostClick={() => handleTabChange('create-listing')}
+            onPostClick={() => {
+              setEditingDraft(null);
+              handleTabChange('create-listing');
+            }}
           />
         )}
 
@@ -978,7 +991,10 @@ export default function App() {
           <SellerDashboardView
             listings={listings}
             onSelectListing={(listing) => setSelectedListing(listing)}
-            onCreateListing={() => handleTabChange('create-listing')}
+            onCreateListing={(draft?: any) => {
+              setEditingDraft(draft && draft.id ? draft : null);
+              handleTabChange('create-listing');
+            }}
             onViewOrders={() => handleTabChange('orders')}
             lang={lang}
           />
@@ -1025,8 +1041,12 @@ export default function App() {
             <CreateListingView
               onListingCreated={handleListingCreated}
               lang={lang}
-              onCancel={() => setActiveTab('marketplace')}
+              onCancel={() => {
+                setEditingDraft(null);
+                setActiveTab('marketplace');
+              }}
               currentUser={currentUser}
+              initialDraft={editingDraft || undefined}
             />
           )
         )}
@@ -1083,12 +1103,15 @@ export default function App() {
             listings={listings}
             currentRole={currentRole}
             lang={lang}
-            onOpenChat={(listing) => {
+            onOpenChat={(listing, roomId, partnerName, partnerAvatar) => {
               if (!currentUser) {
                 requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để sử dụng tính năng Chat & Đàm phán.' : 'Please log in to chat.');
                 return;
               }
               setChatListing(listing);
+              setChatPredefinedRoomId(roomId);
+              setChatPartnerName(partnerName);
+              setChatPartnerAvatar(partnerAvatar);
             }}
           />
         )}
@@ -1150,8 +1173,16 @@ export default function App() {
       {chatListing && (
         <ChatModal
           listing={chatListing}
+          predefinedRoomId={chatPredefinedRoomId}
+          partnerName={chatPartnerName}
+          partnerAvatar={chatPartnerAvatar}
           currentRole={currentRole}
-          onClose={() => setChatListing(null)}
+          onClose={() => {
+            setChatListing(null);
+            setChatPredefinedRoomId(undefined);
+            setChatPartnerName(undefined);
+            setChatPartnerAvatar(undefined);
+          }}
           onBuyClick={(item, agreedPrice, negotiationId) => {
             if (!currentUser) {
               setPendingCheckoutItem(item);
@@ -1205,8 +1236,8 @@ export default function App() {
           setStoredUser(profileUser);
           showToast(
             lang === 'vi'
-              ? `Chào mừng ${user.name} (${user.role === 'buyer' ? 'Người Mua' : user.role === 'seller' ? 'Người Bán' : user.role === 'inspector' ? 'Kỹ Sư Hub' : user.role === 'staff' ? 'Nhân Viên Vận Hành' : 'Quản Trị'}) đã đăng nhập!`
-              : `Welcome ${user.name}! Logged in successfully as ${user.role.toUpperCase()}.`
+              ? `Chào mừng ${user.name}${['buyer', 'seller'].includes(user.role) ? '' : ` (${user.role === 'inspector' ? 'Kỹ Sư Hub' : user.role === 'staff' ? 'Nhân Viên Vận Hành' : 'Quản Trị'})`} đã đăng nhập!`
+              : `Welcome ${user.name}! Logged in successfully${['buyer', 'seller'].includes(user.role) ? '' : ` as ${user.role.toUpperCase()}`}.`
           );
           if (user.role === 'admin') {
             setActiveTab('admin-dashboard');

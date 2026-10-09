@@ -57,6 +57,7 @@ export interface Listing {
   location: string;
   sellerId: string;
   sellerName: string;
+  sellerAvatar?: string;
   sellerRating: number;
   sellerCompletedOrders: number;
   sellerVerified: boolean;

@@ -104,8 +104,7 @@ class ChatWebSocketManager {
         Authorization: `Bearer ${token}`,
       },
       debug: (_str) => {
-        // Uncomment when debugging STOMP frames:
-        // console.log('[STOMP]', _str);
+        console.log('[STOMP]', _str);
       },
       reconnectDelay: 5000,
       heartbeatIncoming: 4000,
@@ -117,6 +116,7 @@ class ChatWebSocketManager {
         // Subscribe to user personal queue
         this.client?.subscribe('/user/queue/messages', (message) => {
           try {
+            console.log('[ChatWS] Received raw STOMP message:', message.body);
             const body: ChatMessageDto = JSON.parse(message.body);
             this.notifyMessage(body);
           } catch (err) {

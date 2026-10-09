@@ -34,15 +34,20 @@ export const walletService = {
 
   /**
    * Lấy lịch sử giao dịch của ví
-   * GET /api/v1/wallets/history
+   * GET /api/v1/wallets/me/transactions
    */
   async getTransactionHistory(): Promise<WalletTransaction[]> {
-    const response = await request<WalletTransaction[]>('/v1/wallets/history', {
+    const response = await request<any>('/v1/wallets/me/transactions?page=0&size=50', {
       method: 'GET',
       requiresAuth: true,
     });
-    return ((response as any)?.data !== undefined && (response as any)?.data !== null
+    const data = (response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
-      : response) as WalletTransaction[];
+      : response;
+      
+    if (data && Array.isArray(data.content)) {
+      return data.content as WalletTransaction[];
+    }
+    return Array.isArray(data) ? data : [];
   },
 };

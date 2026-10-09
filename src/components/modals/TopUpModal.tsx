@@ -192,7 +192,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const [wallet, setWallet] = useState<UserWallet | null>(null);
   const [walletLoading, setWalletLoading] = useState(false);
   const [depositAmount, setDepositAmount] = useState<number>(100000);
-  const [customAmount, setCustomAmount] = useState<string>('100000');
+  const [customAmount, setCustomAmount] = useState<string>('100.000');
   const [depositRequest, setDepositRequest] = useState<DepositResponseDTO | null>(null);
   const [creatingDeposit, setCreatingDeposit] = useState(false);
   const [depositError, setDepositError] = useState<string | null>(null);
@@ -503,7 +503,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       const neededAmount = Math.max(deficit, 10000);
       setPendingPackage(targetPkg);
       setDepositAmount(neededAmount);
-      setCustomAmount(neededAmount.toString());
+      setCustomAmount(neededAmount.toLocaleString('vi-VN'));
       setCreatingDeposit(true);
       setPurchaseError(null);
       setDepositError(null);
@@ -730,7 +730,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                           type="button"
                           onClick={() => {
                             setDepositAmount(amt);
-                            setCustomAmount(amt.toString());
+                            setCustomAmount(amt.toLocaleString('vi-VN'));
                           }}
                           className={`py-2 px-3 rounded-xl font-mono text-xs font-bold transition-all border cursor-pointer ${depositAmount === amt
                               ? 'bg-[#c34c36] text-white border-[#c34c36] shadow-sm'
@@ -749,15 +749,20 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                       </label>
                       <div className="relative">
                         <input
-                          type="number"
-                          min={10000}
-                          step={10000}
+                          type="text"
                           value={customAmount}
                           onChange={(e) => {
-                            setCustomAmount(e.target.value);
-                            setDepositAmount(Number(e.target.value) || 0);
+                            const rawVal = e.target.value.replace(/\D/g, '');
+                            if (!rawVal) {
+                              setCustomAmount('');
+                              setDepositAmount(0);
+                            } else {
+                              const numVal = parseInt(rawVal, 10);
+                              setCustomAmount(numVal.toLocaleString('vi-VN'));
+                              setDepositAmount(numVal);
+                            }
                           }}
-                          placeholder="Ví dụ: 150000"
+                          placeholder="Ví dụ: 150.000"
                           className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm font-bold text-slate-900 focus:outline-none focus:border-[#c34c36] focus:bg-white transition"
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">

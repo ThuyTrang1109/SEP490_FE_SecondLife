@@ -21,6 +21,7 @@ import { ProfileDialog } from './components/modals/ProfileDialog';
 import { SellerRegistrationModal } from './components/modals/SellerRegistrationModal';
 import { VerifyEmailModal } from './components/modals/VerifyEmailModal';
 import { LogoutConfirmModal } from './components/modals/LogoutConfirmModal';
+import { SessionExpiredModal } from './components/modals/SessionExpiredModal';
 import { TopUpModal } from './components/modals/TopUpModal';
 import { PolicyModal, PolicyTabKey } from './components/modals/PolicyModal';
 import { SellerReviewsModal } from './components/modals/SellerReviewsModal';
@@ -166,6 +167,7 @@ export default function App() {
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | 'forgot'>('login');
+  const [isSessionExpiredOpen, setIsSessionExpiredOpen] = useState(false);
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
   const [isSellerRegistrationModalOpen, setIsSellerRegistrationModalOpen] = useState(false);
   const [isVerifyEmailModalOpen, setIsVerifyEmailModalOpen] = useState(false);
@@ -254,18 +256,57 @@ export default function App() {
   // Listen for 401 Unauthorized session revocation events
   React.useEffect(() => {
     const handleUnauthorized = () => {
+      console.log('[App] Received unauthorized_session event! Setting isSessionExpiredOpen to true');
       clearAuthTokens();
       setCurrentUser(null);
       setCurrentRole('buyer');
       
       // Notify user that session expired without destroying their current UI state
-      showToast(lang === 'vi' ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.' : 'Session expired. Please log in again to continue.');
-      setAuthModalMode('login');
-      setIsAuthModalOpen(true);
+      setIsSessionExpiredOpen(true);
     };
     window.addEventListener('unauthorized_session', handleUnauthorized);
     return () => window.removeEventListener('unauthorized_session', handleUnauthorized);
   }, [lang]);
+
+  // Idle Time & Token Watchdog
+  React.useEffect(() => {
+    let lastActivityTime = Date.now();
+    const updateActivity = () => { lastActivityTime = Date.now(); };
+    window.addEventListener('mousemove', updateActivity);
+    window.addEventListener('keydown', updateActivity);
+    window.addEventListener('click', updateActivity);
+    window.addEventListener('scroll', updateActivity);
+
+    const interval = setInterval(() => {
+      if (currentUser) {
+        import('./services/apiClient').then(({ getAccessToken, isTokenExpired, refreshAccessToken }) => {
+          const token = getAccessToken();
+          if (token && isTokenExpired(token)) {
+            // Check if user is IDLE for 30 minutes (1800000 ms)
+            if (Date.now() - lastActivityTime >= 1800000) {
+              console.log('[App] User is idle and token expired. Dispatching unauthorized_session.');
+              window.dispatchEvent(new Event('unauthorized_session'));
+            } else {
+              // User is active, proactively refresh token
+              console.log('[App] Token expired but user active. Proactively refreshing.');
+              refreshAccessToken().then((newToken) => {
+                if (!newToken) {
+                  window.dispatchEvent(new Event('unauthorized_session'));
+                }
+              });
+            }
+          }
+        });
+      }
+    }, 5000);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('mousemove', updateActivity);
+      window.removeEventListener('keydown', updateActivity);
+      window.removeEventListener('click', updateActivity);
+      window.removeEventListener('scroll', updateActivity);
+    };
+  }, [currentUser]);
 
   // Auth Guard Helper
   const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'admin-dashboard', 'staff-workspace', 'chat'];
@@ -493,8 +534,8 @@ export default function App() {
       postLocation = extractWardAndCity(post.location);
     }
 
-    // Nếu chưa có location và người dùng hiện tại là seller, lấy từ profile người bán
-    if (!postLocation && (sellerAddr || sellerWard || sellerProv)) {
+    // Nếu chưa có location và người dùng hiện tại là seller CỦA BÀI ĐĂNG NÀY, lấy từ profile
+    if (!postLocation && isOwner && (sellerAddr || sellerWard || sellerProv)) {
       postLocation = extractWardAndCity(sellerAddr, sellerWard, sellerProv);
     }
 
@@ -535,14 +576,14 @@ export default function App() {
         serialOrReceipt: photoList[4] || photoList[0] || defaultImg,
       },
       photoGallery: photoList,
-      aiPriceEstimation: {
-        minVnd: Math.round(price * 0.9),
-        maxVnd: Math.round(price * 1.1),
-        suggestedVnd: price,
-        quickSaleVnd: Math.round(price * 0.85),
+      aiPriceEstimation: post.aiSuggestedPrice && post.aiSuggestedPrice > 0 ? {
+        minVnd: Math.round(Number(post.aiSuggestedPrice) * 0.9),
+        maxVnd: Math.round(Number(post.aiSuggestedPrice) * 1.1),
+        suggestedVnd: Number(post.aiSuggestedPrice),
+        quickSaleVnd: Math.round(Number(post.aiSuggestedPrice) * 0.85),
         confidence: 96,
         daysToSell: 3,
-      },
+      } : undefined,
     };
   }, []);
 
@@ -1095,6 +1136,7 @@ export default function App() {
             currentUser={currentUser}
             onOpenProfile={() => setIsProfileDialogOpen(true)}
             onLogout={() => setIsLogoutModalOpen(true)}
+            onOpenListingDetail={(listing) => setSelectedListing(listing)}
           />
         )}
 
@@ -1122,6 +1164,7 @@ export default function App() {
         <ListingDetailModal
           listing={selectedListing}
           onClose={() => setSelectedListing(null)}
+          isAdmin={currentRole === 'admin'}
           onBuyClick={(item) => {
             if (!currentUser) {
               setPendingCheckoutItem(item);
@@ -1258,11 +1301,23 @@ export default function App() {
         lang={lang}
       />
 
+      {/* Session Expired Modal */}
+      <SessionExpiredModal
+        isOpen={isSessionExpiredOpen}
+        lang={lang}
+        onLoginAgain={() => {
+          setIsSessionExpiredOpen(false);
+          setAuthModalMode('login');
+          setIsAuthModalOpen(true);
+        }}
+      />
+
       {/* User Profile Dialog */}
       <ProfileDialog
         isOpen={isProfileDialogOpen}
         onClose={() => setIsProfileDialogOpen(false)}
         currentUser={currentUser}
+        currentRole={currentRole}
         lang={lang}
         onUpdateProfile={(updated) => {
           setCurrentUser(updated);

@@ -64,8 +64,8 @@ const isStrongPassword = (pass: string): boolean => {
 
 interface ProfileDialogProps {
   isOpen: boolean;
-  onClose: () => void;
   currentUser: UserProfile | null;
+  currentRole?: UserRole;
   onUpdateProfile: (updated: UserProfile) => void;
   onRoleChange: (role: UserRole) => void;
   onLogout: () => void;
@@ -80,6 +80,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   isOpen,
   onClose,
   currentUser,
+  currentRole,
   onUpdateProfile,
   onRoleChange,
   onLogout,
@@ -1370,22 +1371,24 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             </div>
 
             {/* Right: Trust Badges */}
-            <div className="flex flex-row sm:flex-col items-start sm:items-end gap-1.5 w-full sm:w-auto pt-1 sm:pt-0">
-              <button
-                type="button"
-                onClick={() => setActiveTab('security')}
-                title={lang === 'vi' ? 'Xem chứng nhận định danh eKYC' : 'View eKYC certificate'}
-                className="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-3 py-1 rounded-xl border border-emerald-200/80 font-bold text-xs shadow-xs cursor-pointer transition active:scale-95"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>{lang === 'vi' ? 'eKYC: Đã Xác Thực CCCD' : 'eKYC: ID Verified'}</span>
-              </button>
-              <div className="inline-flex items-center gap-1 bg-amber-50/90 text-slate-800 px-3 py-1 rounded-xl border border-amber-200/80 text-xs shadow-xs">
-                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                <span>{lang === 'vi' ? 'Điểm Uy Tín: ' : 'Trust Score: '}</span>
-                <strong className="font-black text-amber-700">99/100</strong>
+            {currentUser.role !== 'buyer' && (
+              <div className="flex flex-row sm:flex-col items-start sm:items-end gap-1.5 w-full sm:w-auto pt-1 sm:pt-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('security')}
+                  title={lang === 'vi' ? 'Xem chứng nhận định danh eKYC' : 'View eKYC certificate'}
+                  className="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-3 py-1 rounded-xl border border-emerald-200/80 font-bold text-xs shadow-xs cursor-pointer transition active:scale-95"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>{lang === 'vi' ? 'eKYC: Đã Xác Thực CCCD' : 'eKYC: ID Verified'}</span>
+                </button>
+                <div className="inline-flex items-center gap-1 bg-amber-50/90 text-slate-800 px-3 py-1 rounded-xl border border-amber-200/80 text-xs shadow-xs">
+                  <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                  <span>{lang === 'vi' ? 'Điểm Uy Tín: ' : 'Trust Score: '}</span>
+                  <strong className="font-black text-amber-700">99/100</strong>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Tab Navigation - Pill Segmented Control Layout: 4 Tabs */}
@@ -1503,7 +1506,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   </div>
                 </div>
 
-                <div>
+                {currentRole !== 'admin' && (
+                  <>
+                    <div>
                   <label className="text-xs font-bold text-slate-700 mb-1.5 block">
                     {lang === 'vi' ? 'Số Điện Thoại (Nhận mã OTP / Bưu tá gọi)' : 'Phone Number (OTP / Courier)'}
                   </label>
@@ -1533,10 +1538,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
                     />
                   </div>
-                </div>
+                  </>
+                )}
               </div>
 
-              <div>
+              {currentRole !== 'admin' && (
+                <div>
                 <label className="text-xs font-bold text-slate-700 mb-1.5 block">
                   {lang === 'vi' ? 'Giới Tính' : 'Gender'}
                 </label>
@@ -1565,10 +1572,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     );
                   })}
                 </div>
-              </div>
+              )}
 
               {/* Địa Chỉ Hành Chính 3 Cấp & Chi Tiết (Open API) */}
-              <div className="p-3.5 bg-gradient-to-br from-[#faf8f5] to-orange-50/20 border border-slate-200 rounded-2xl space-y-3">
+              {currentRole !== 'admin' && (
+                <div className="p-3.5 bg-gradient-to-br from-[#faf8f5] to-orange-50/20 border border-slate-200 rounded-2xl space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                     <MapPin className="w-4 h-4 text-[#c34c36]" />
@@ -1679,6 +1687,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   </div>
                 )}
               </div>
+              )}
 
 
 

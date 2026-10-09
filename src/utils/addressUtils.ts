@@ -76,15 +76,8 @@ export function extractWardAndCity(
     return `${cleanWard}, ${cleanProv}`;
   }
 
-  // 2. Nếu không có địa chỉ truyền vào, thử kiểm tra địa chỉ đã lưu trong profile người bán
+  // 2. Nếu không có địa chỉ truyền vào
   if (!fullAddress || typeof fullAddress !== 'string' || !fullAddress.trim()) {
-    const saved = getSavedSellerAddress();
-    if (saved.wardName && saved.provinceName) {
-      return `${saved.wardName}, ${saved.provinceName}`;
-    }
-    if (saved.address) {
-      return extractWardAndCity(saved.address, saved.wardName, saved.provinceName);
-    }
     if (cleanProv || cleanWard) {
       return cleanProv || cleanWard;
     }
@@ -95,13 +88,6 @@ export function extractWardAndCity(
 
   // Bỏ qua giá trị chung chung 'Việt Nam' hoặc 'Toàn quốc'
   if (raw.toLowerCase() === 'việt nam' || raw.toLowerCase() === 'viet nam' || raw.toLowerCase() === 'toàn quốc') {
-    const saved = getSavedSellerAddress();
-    if (saved.wardName && saved.provinceName) {
-      return `${saved.wardName}, ${saved.provinceName}`;
-    }
-    if (saved.address && saved.address.toLowerCase() !== 'việt nam') {
-      return extractWardAndCity(saved.address, saved.wardName, saved.provinceName);
-    }
     return '';
   }
 

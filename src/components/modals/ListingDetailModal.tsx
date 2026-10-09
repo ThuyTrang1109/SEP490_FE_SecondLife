@@ -25,8 +25,8 @@ interface ListingDetailModalProps {
   onClose: () => void;
   onBuyClick: (listing: Listing) => void;
   onChatClick: (listing: Listing) => void;
-  lang: Language;
   onOpenSellerReviews?: (sellerId: string, sellerName: string) => void;
+  isAdmin?: boolean;
 }
 
 export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
@@ -35,7 +35,8 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   onBuyClick,
   onChatClick,
   lang,
-  onOpenSellerReviews
+  onOpenSellerReviews,
+  isAdmin = false
 }) => {
   if (!listing) return null;
   const t = translations[lang];
@@ -240,23 +241,37 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                 </div>
 
                 {/* Action Buttons */}
-                <div className="space-y-1.5 pt-1">
-                  <button
-                    onClick={() => onBuyClick(listing)}
-                    className="w-full py-2.5 px-3 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white rounded-xl font-black text-xs shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5 text-white" />
-                    <span>{lang === 'vi' ? 'Mua Hàng' : 'Buy Now'}</span>
-                  </button>
+                {isAdmin ? (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="w-full py-2.5 px-3 bg-slate-100 text-slate-500 rounded-xl font-bold text-xs text-center border border-slate-200">
+                      {lang === 'vi' ? 'Quản trị viên không thể mua hàng hoặc chat' : 'Admin cannot purchase or chat'}
+                    </div>
+                  </div>
+                ) : listing.status === 'RESERVED' || listing.backendStatus === 'RESERVED' || listing.status === 'reserved' ? (
+                  <div className="space-y-1.5 pt-1">
+                     <div className="w-full py-2.5 px-3 bg-amber-50 text-amber-800 rounded-xl font-bold text-xs text-center border border-amber-200">
+                        {lang === 'vi' ? 'Sản phẩm đang được người khác chốt' : 'Item is currently reserved'}
+                     </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 pt-1">
+                    <button
+                      onClick={() => onBuyClick(listing)}
+                      className="w-full py-2.5 px-3 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white rounded-xl font-black text-xs shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-white" />
+                      <span>{lang === 'vi' ? 'Mua Hàng' : 'Buy Now'}</span>
+                    </button>
 
-                  <button
-                    onClick={() => onChatClick(listing)}
-                    className="w-full py-2 px-3 bg-white hover:bg-slate-50 text-[#24263e] border border-slate-300 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5 text-[#c34c36]" />
-                    <span>{lang === 'vi' ? 'Chat & Đàm Phán Trả Giá Với Người Bán' : 'Chat & Make Counter Offer'}</span>
-                  </button>
-                </div>
+                    <button
+                      onClick={() => onChatClick(listing)}
+                      className="w-full py-2 px-3 bg-white hover:bg-slate-50 text-[#24263e] border border-slate-300 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 text-[#c34c36]" />
+                      <span>{lang === 'vi' ? 'Chat & Đàm Phán Trả Giá Với Người Bán' : 'Chat & Make Counter Offer'}</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 

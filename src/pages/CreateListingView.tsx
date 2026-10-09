@@ -160,6 +160,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [itemCondition, setItemCondition] = useState<string>('USED_GOOD');
   const [description, setDescription] = useState('');
   const [finalPriceVnd, setFinalPriceVnd] = useState<number>(0);
+  const [isManualPricingInStep3, setIsManualPricingInStep3] = useState<boolean>(false);
 
   // Images state: Raw files for FormData & previews
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
@@ -821,6 +822,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       return;
     }
 
+    if (isManualPricingInStep3) {
+      if (!finalPriceVnd || finalPriceVnd < 1000) {
+        showToast(lang === 'vi' ? 'Vui lòng nhập giá bán hợp lệ (ít nhất 1.000đ)' : 'Please enter a valid price (min 1,000)');
+        return;
+      }
+    }
+
     setIsAcceptingDescription(true);
     try {
       // 1. PUT /api/v1/posts/{postId}/draft
@@ -828,7 +836,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         title: title.trim(),
         description: description.trim(),
         itemCondition: itemCondition || 'USED',
-        price: null
+        price: isManualPricingInStep3 ? finalPriceVnd : null
       });
 
       // 2. POST /api/v1/posts/{postId}/accept-description
@@ -836,10 +844,14 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       setDescriptionAccepted(true);
       setDraftPost(acceptRes);
 
-      // Successfully confirmed description -> Advance to Step 4
-      setCurrentStep(4);
-      if (credits?.valuation !== undefined && credits.valuation > 0) {
-        handleRunAiValuation();
+      if (isManualPricingInStep3) {
+        setCurrentStep(5);
+      } else {
+        // Successfully confirmed description -> Advance to Step 4
+        setCurrentStep(4);
+        if (credits?.valuation !== undefined && credits.valuation > 0) {
+          handleRunAiValuation();
+        }
       }
     } catch (err: any) {
       showToast('Xác nhận mô tả thất bại: ' + (err?.message || 'Lỗi server'));
@@ -1681,6 +1693,51 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </div>
           </div>
 
+          {/* Manual Pricing Option */}
+          <div className="pt-4 border-t border-gray-100 space-y-4">
+            <div className="flex items-center gap-6">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="radio" 
+                  name="pricingMethod" 
+                  checked={!isManualPricingInStep3} 
+                  onChange={() => setIsManualPricingInStep3(false)} 
+                  className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span className="text-sm font-bold text-slate-700">Dùng AI Định Giá (Đề xuất)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="radio" 
+                  name="pricingMethod" 
+                  checked={isManualPricingInStep3} 
+                  onChange={() => setIsManualPricingInStep3(true)} 
+                  className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span className="text-sm font-bold text-slate-700">Tự Định Giá</span>
+              </label>
+            </div>
+
+            {isManualPricingInStep3 && (
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <label className="block text-xs font-bold text-slate-700 mb-1">Nhập giá bán mong muốn (VNĐ) <span className="text-red-500">*</span></label>
+                <div className="relative max-w-sm">
+                  <input
+                    type="text"
+                    value={finalPriceVnd > 0 ? new Intl.NumberFormat('vi-VN').format(finalPriceVnd) : ''}
+                    onChange={(e) => {
+                      const numericValue = e.target.value.replace(/\D/g, '');
+                      setFinalPriceVnd(Number(numericValue));
+                    }}
+                    placeholder="VD: 500.000"
+                    className="w-full pl-4 pr-12 py-3 rounded-xl border border-slate-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 outline-none font-black text-slate-800 transition-all"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">đ</span>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Navigation Buttons */}
           <div className="flex justify-between pt-4 border-t border-gray-100">
             <button
@@ -1699,12 +1756,12 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               {isAcceptingDescription ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Đang lưu và xác nhận mô tả...</span>
+                  <span>Đang lưu và xác nhận...</span>
                 </>
               ) : (
                 <>
                   <Check className="w-4 h-4" />
-                  <span>Xác Nhận Mô Tả & Tiếp Tục Định Giá AI</span>
+                  <span>{isManualPricingInStep3 ? 'Lưu, Đặt Giá & Sang Bước Đăng Bài' : 'Xác Nhận Mô Tả & Tiếp Tục Định Giá AI'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

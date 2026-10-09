@@ -14,7 +14,8 @@ import {
   Award,
   Loader2,
   XCircle,
-  Tag
+  Tag,
+  Clock
 } from 'lucide-react';
 import { reviewService } from '../../data/mockReviews';
 import {
@@ -606,6 +607,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   const isAccepted = offer.status === 'ACCEPTED';
                   const isRejected = offer.status === 'REJECTED';
                   const isCancelled = offer.status === 'CANCELLED';
+                  const isExpired = offer.status === 'EXPIRED';
                   const isPending = offer.status === 'PENDING';
                   
                   const isOfferSenderMe = currentUser?.id ? msg.senderId === currentUser.id : msg.senderId === currentRole;
@@ -618,6 +620,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                             ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
                             : isRejected || isCancelled
                             ? 'bg-rose-50 border-rose-200 text-rose-900'
+                            : isExpired
+                            ? 'bg-slate-50 border-slate-300 text-slate-500'
                             : 'bg-gradient-to-b from-amber-50 to-orange-50/50 border-amber-300 text-amber-950'
                         }`}
                       >
@@ -626,6 +630,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                           ) : isRejected || isCancelled ? (
                             <XCircle className="w-4 h-4 text-rose-500" />
+                          ) : isExpired ? (
+                            <Clock className="w-4 h-4 text-slate-500" />
                           ) : (
                             <Tag className="w-4 h-4 text-amber-600" />
                           )}
@@ -636,6 +642,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                               ? '❌ Đề Xuất Giá Đã Bị Từ Chối'
                               : isCancelled
                               ? 'Đề Xuất Giá Đã Được Hủy'
+                              : isExpired
+                              ? '⏳ Phiên Thương Lượng Đã Hết Hạn'
                               : '🤝 Đề Xuất Thương Lượng Giá Mới'}
                           </span>
                         </div>

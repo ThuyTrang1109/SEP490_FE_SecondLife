@@ -24,6 +24,11 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
       const uniqueRooms = [];
       const seen = new Set();
       for (const r of rawRooms) {
+        // Filter out rooms that have no messages yet
+        if (!r.lastMessage || r.lastMessage.trim() === '') {
+          continue;
+        }
+
         // Fallback to room.id if any essential field is missing, though they shouldn't be
         const key = r.postId && r.buyerId && r.sellerId 
           ? `${r.postId}_${r.buyerId}_${r.sellerId}` 

@@ -417,6 +417,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         errMsg.includes('bad request') ||
         errMsg.includes('invalid')
       ) {
+        if (errMsg.includes('expired') || errMsg.includes('hết hạn')) {
+          alert(lang === 'vi' ? 'Phiên thương lượng đã hết hạn, sản phẩm đã được mở lại cho người khác' : 'Negotiation session has expired, the product is now available to others');
+          window.location.reload();
+          return;
+        }
         setOrderError(
           lang === 'vi'
             ? 'Mức giá thương lượng không hợp lệ, đã bị thay đổi hoặc đã hết hiệu lực (Lỗi 400). Vui lòng kiểm tra lại phòng chat hoặc đàm phán lại mức giá mới.'

@@ -1,4 +1,4 @@
-import { request } from './apiClient';
+import { request, getAccessToken } from './apiClient';
 
 export interface PostInitRequest {
   categoryId: string;
@@ -93,10 +93,10 @@ export interface PostSubmitRequest {
   title: string;
   description: string;
   price: number;
-  shippingWeight: number;
-  shippingLength: number;
-  shippingWidth: number;
-  shippingHeight: number;
+  shippingWeight?: number;
+  shippingLength?: number;
+  shippingWidth?: number;
+  shippingHeight?: number;
 }
 
 export interface PostSubmitResponse {
@@ -127,7 +127,7 @@ export const postService = {
     try {
       const resPosts = await request<any>(`/v1/posts${queryString}`, {
         method: 'GET',
-        requiresAuth: false,
+        requiresAuth: false, // DO NOT SEND TOKEN TO PREVENT 401 ON EXPIRED TOKENS FOR PUBLIC APIS
       });
       const d = (resPosts as any)?.data || resPosts;
       return d?.content || d?.items || (Array.isArray(d) ? d : []);
@@ -373,9 +373,9 @@ export const postService = {
       title: 'Bài đăng mới',
       description: 'Mô tả bài đăng sản phẩm',
       price: 1000000,
-      shippingWeight: 1000,
-      shippingLength: 10,
-      shippingWidth: 10,
+      shippingWeight: 500,
+      shippingLength: 20,
+      shippingWidth: 15,
       shippingHeight: 10,
     };
     const response = await request<PostSubmitResponse>(`/v1/posts/submit/${postId}`, {

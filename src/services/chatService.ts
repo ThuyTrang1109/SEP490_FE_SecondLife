@@ -100,12 +100,16 @@ class ChatWebSocketManager {
 
     this.client = new Client({
       webSocketFactory: () => createSockJS(wsUrl),
-      connectHeaders: {
-        Authorization: `Bearer ${token}`,
+      beforeConnect: () => {
+        const currentToken = getAccessToken();
+        if (currentToken && this.client) {
+          this.client.connectHeaders = {
+            Authorization: `Bearer ${currentToken}`,
+          };
+        }
       },
       debug: (_str) => {
-        // Uncomment when debugging STOMP frames:
-        // console.log('[STOMP]', _str);
+        console.log('[STOMP]', _str);
       },
       reconnectDelay: 5000,
       heartbeatIncoming: 0,
@@ -117,6 +121,7 @@ class ChatWebSocketManager {
         // Subscribe to user personal queue
         this.client?.subscribe('/user/queue/messages', (message) => {
           try {
+            console.log('[ChatWS] Received raw STOMP message:', message.body);
             const body: ChatMessageDto = JSON.parse(message.body);
             this.notifyMessage(body);
           } catch (err) {
@@ -128,10 +133,27 @@ class ChatWebSocketManager {
         this.isConnecting = false;
         console.error('[ChatWS] Broker reported error:', frame.headers['message'], frame.body);
         this.notifyStatus(false);
+        const currentToken = getAccessToken();
+        if (currentToken) {
+          request('/users/me', { requiresAuth: true }).catch(() => {});
+        }
       },
       onWebSocketClose: () => {
         this.isConnecting = false;
         this.notifyStatus(false);
+        // Ping to trigger apiClient.ts 401 interceptors in case the close was due to token expiration
+        const currentToken = getAccessToken();
+        if (currentToken) {
+          request('/users/me', { requiresAuth: true }).catch(() => {});
+        }
+      },
+      onWebSocketError: (evt: Event) => {
+        this.isConnecting = false;
+        console.error('[ChatWS] WebSocket error:', evt);
+        const currentToken = getAccessToken();
+        if (currentToken) {
+          request('/users/me', { requiresAuth: true }).catch(() => {});
+        }
       },
     });
 

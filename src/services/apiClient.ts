@@ -87,6 +87,20 @@ export function resolveApiUrl(endpoint: string): string {
   return `${origin}/api/v1${path}`;
 }
 
+export function isTokenExpired(token: string | null): boolean {
+  if (!token) return true;
+  try {
+    const payloadBase64 = token.split('.')[1];
+    const decodedJson = atob(payloadBase64);
+    const decoded = JSON.parse(decodedJson);
+    if (!decoded.exp) return false;
+    // Check if expired (with a 5 second buffer)
+    return Date.now() >= (decoded.exp * 1000) - 5000;
+  } catch {
+    return true;
+  }
+}
+
 export const BASE_URL = resolveApiUrl('/v1');
 
 export const ACCESS_TOKEN_KEY = 'secondlife_access_token';
@@ -165,6 +179,21 @@ export const clearAuthTokens = () => {
     localStorage.removeItem(ACCESS_TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_INFO_KEY);
+    
+    // Clear legacy or additional user cached items
+    localStorage.removeItem('secondlife_user');
+    localStorage.removeItem('secondlife_seller_profile_address');
+    
+    // Clear chat history cache to prevent wrong sender names for new logins
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('chat_history_')) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+
   } catch (err) {
     console.warn('Failed to clear tokens from storage:', err);
   }
@@ -178,7 +207,7 @@ export interface RequestOptions extends RequestInit {
 // Shared promise for refreshing token to prevent concurrent duplicate calls
 let refreshPromise: Promise<string | null> | null = null;
 
-async function refreshAccessToken(): Promise<string | null> {
+export async function refreshAccessToken(): Promise<string | null> {
   const rToken = getRefreshToken();
   if (!rToken) return null;
 
@@ -303,6 +332,7 @@ export async function request<T>(
 
       // Only clear auth tokens and revoke session if 401 occurs on an authenticated route after retry
       if (response.status === 401 && requiresAuth && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
+        console.log('[apiClient] Dispatched unauthorized_session due to 401 on endpoint:', endpoint);
         clearAuthTokens();
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new Event('unauthorized_session'));

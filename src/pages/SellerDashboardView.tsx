@@ -31,7 +31,7 @@ import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
 interface SellerDashboardViewProps {
   listings: Listing[];
   onSelectListing: (listing: Listing) => void;
-  onCreateListing: () => void;
+  onCreateListing: (draft?: Listing) => void;
   onViewOrders?: () => void;
   lang: Language;
 }
@@ -364,7 +364,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
           <div className="flex flex-wrap items-center gap-3">
             <button
-              onClick={onCreateListing}
+              onClick={() => onCreateListing()}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#a83d2a] text-white font-black text-xs shadow-md transition cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
@@ -597,7 +597,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   <span>{lang === 'vi' ? 'Xem Chi Tiết' : 'View Details'}</span>
                 </button>
                 <button
-                  onClick={onCreateListing}
+                  onClick={() => onCreateListing(item)}
                   className="py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] border border-gray-200 text-[#24263e] rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
                   title={lang === 'vi' ? 'Sửa tin đăng' : 'Edit listing'}
                 >

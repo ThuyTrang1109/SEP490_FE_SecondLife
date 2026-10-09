@@ -48,7 +48,7 @@ interface EscrowOrdersViewProps {
   onRefreshOrders?: () => void;
   lang: Language;
   userRole?: UserRole;
-  onOpenChat?: (listing: any) => void;
+  onOpenChat?: (listing: any, roomId?: string) => void;
 }
 
 type OrderFilterTab =

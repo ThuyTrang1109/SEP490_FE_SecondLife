@@ -8,7 +8,7 @@ interface InboxViewProps {
   listings: Listing[];
   currentRole: UserRole;
   lang: Language;
-  onOpenChat: (listing: Listing, room?: ChatRoomDto) => void;
+  onOpenChat: (listing: Listing, roomId?: string, partnerName?: string, partnerAvatar?: string) => void;
 }
 
 export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lang, onOpenChat }) => {
@@ -24,6 +24,11 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
       const uniqueRooms = [];
       const seen = new Set();
       for (const r of rawRooms) {
+        // Filter out rooms that have no messages yet
+        if (!r.lastMessage || r.lastMessage.trim() === '') {
+          continue;
+        }
+
         // Fallback to room.id if any essential field is missing, though they shouldn't be
         const key = r.postId && r.buyerId && r.sellerId 
           ? `${r.postId}_${r.buyerId}_${r.sellerId}` 
@@ -63,8 +68,11 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
   const handleSelectRoom = (room: ChatRoomDto) => {
     // Check if listing already exists in prop
     const found = listings.find((l) => l.id === room.postId);
+    const partnerName = currentRole === 'seller' ? (room.buyerName || 'Khách Hàng') : (room.sellerName || 'Người Bán');
+    const partnerAvatar = currentRole === 'seller' ? room.buyerAvatar : room.sellerAvatar;
+
     if (found) {
-      onOpenChat(found, room);
+      onOpenChat(found, room.id, partnerName, partnerAvatar);
       return;
     }
 
@@ -89,7 +97,7 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
       createdAt: room.updatedAt || new Date().toISOString(),
     };
 
-    onOpenChat(fallbackListing as Listing, room);
+    onOpenChat(fallbackListing, room.id, partnerName, partnerAvatar);
   };
 
   const formatLastMessage = (rawText?: string) => {
@@ -190,8 +198,8 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
               >
                 <div className="relative shrink-0">
                   <img
-                    src={room.postImageUrl || partnerAvatar}
-                    alt={room.postTitle || 'Product'}
+                    src={partnerAvatar}
+                    alt={partnerName || 'User Avatar'}
                     className="w-16 h-16 rounded-xl object-cover border border-slate-200"
                   />
                   <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-[#c34c36] text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ring-2 ring-white">

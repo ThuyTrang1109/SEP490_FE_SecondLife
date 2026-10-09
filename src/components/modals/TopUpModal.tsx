@@ -75,7 +75,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const [wallet, setWallet] = useState<UserWallet | null>(null);
   const [walletLoading, setWalletLoading] = useState(false);
   const [depositAmount, setDepositAmount] = useState<number>(100000);
-  const [customAmount, setCustomAmount] = useState<string>('100000');
+  const [customAmount, setCustomAmount] = useState<string>('100.000');
   const [depositRequest, setDepositRequest] = useState<DepositResponseDTO | null>(null);
   const [creatingDeposit, setCreatingDeposit] = useState(false);
   const [depositError, setDepositError] = useState<string | null>(null);
@@ -210,6 +210,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                     await sellerCreditService.createPurchase({
                       listingQuantity: targetPkg.postCredits || 0,
                       valuationQuantity: targetPkg.chatCredits || 0,
+                      aiChatQuantity: (targetPkg as any).aiChatCredits || 0,
                     });
                   } catch (err) {
                     console.warn('sellerCreditService.createPurchase auto notice:', err);
@@ -275,6 +276,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
           setDepositRequest(null);
         }
       }
+      if (!isBuyerRole) {
+        await loadPackagesAndCredit();
+      }
     } catch (err: any) {
       console.warn('Could not load wallet from BE:', err);
     } finally {
@@ -285,9 +289,10 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const loadPackagesAndCredit = async () => {
     setPackagesLoading(true);
     try {
-      const [pkgsRes, creditObj] = await Promise.all([
+      const [pkgsRes, aiCreditObj, sellerCreditObj] = await Promise.all([
         topupService.getTopupPackages().catch(() => []),
         topupService.getMyCredit().catch(() => null),
+        sellerCreditService.getCredits().catch(() => null),
       ]);
 
       const pkgsList = Array.isArray(pkgsRes) ? pkgsRes : (pkgsRes as any)?.data || [];
@@ -298,8 +303,13 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         setSelectedPkg(allPkgs[0]);
       }
 
-      if (creditObj) {
-        setUserCredit(creditObj);
+      if (aiCreditObj || sellerCreditObj) {
+        const mergedCredit: UserCredit = {
+          ...userCredit,
+          postCredits: sellerCreditObj?.listing ?? (aiCreditObj as any)?.postCredits ?? userCredit.postCredits ?? 0,
+          chatCredits: (aiCreditObj as any)?.aiChatBalance ?? (aiCreditObj as any)?.chatCredits ?? userCredit.chatCredits ?? 0,
+        };
+        setUserCredit(mergedCredit);
       }
     } catch {
       setPackages([]);
@@ -375,7 +385,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       const neededAmount = Math.max(deficit, 10000);
       setPendingPackage(targetPkg);
       setDepositAmount(neededAmount);
-      setCustomAmount(neededAmount.toString());
+      setCustomAmount(neededAmount.toLocaleString('vi-VN'));
       setCreatingDeposit(true);
       setPurchaseError(null);
       setDepositError(null);
@@ -591,7 +601,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                           type="button"
                           onClick={() => {
                             setDepositAmount(amt);
-                            setCustomAmount(amt.toString());
+                            setCustomAmount(amt.toLocaleString('vi-VN'));
                           }}
                           className={`py-2 px-3 rounded-xl font-mono text-xs font-bold transition-all border cursor-pointer ${depositAmount === amt
                               ? 'bg-[#c34c36] text-white border-[#c34c36] shadow-sm'
@@ -610,15 +620,20 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                       </label>
                       <div className="relative">
                         <input
-                          type="number"
-                          min={10000}
-                          step={10000}
+                          type="text"
                           value={customAmount}
                           onChange={(e) => {
-                            setCustomAmount(e.target.value);
-                            setDepositAmount(Number(e.target.value) || 0);
+                            const rawVal = e.target.value.replace(/\D/g, '');
+                            if (!rawVal) {
+                              setCustomAmount('');
+                              setDepositAmount(0);
+                            } else {
+                              const numVal = parseInt(rawVal, 10);
+                              setCustomAmount(numVal.toLocaleString('vi-VN'));
+                              setDepositAmount(numVal);
+                            }
                           }}
-                          placeholder="Ví dụ: 150000"
+                          placeholder="Ví dụ: 150.000"
                           className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm font-bold text-slate-900 focus:outline-none focus:border-[#c34c36] focus:bg-white transition"
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">

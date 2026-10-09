@@ -1538,7 +1538,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
                     />
                   </div>
-                  </>
+                </div>
+                </>
                 )}
               </div>
 

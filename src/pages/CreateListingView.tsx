@@ -25,7 +25,8 @@ import {
   ChevronDown,
   ChevronUp,
   HelpCircle,
-  MessageSquare
+  MessageSquare,
+  Truck
 } from 'lucide-react';
 import {
   ItemCategory,
@@ -162,6 +163,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [finalPriceVnd, setFinalPriceVnd] = useState<number>(0);
   const [isManualPricingInStep3, setIsManualPricingInStep3] = useState<boolean>(false);
 
+  // Kích thước và trọng lượng đóng gói (GHN)
+  const [shippingWeight, setShippingWeight] = useState<number | ''>('');
+  const [shippingLength, setShippingLength] = useState<number | ''>('');
+  const [shippingWidth, setShippingWidth] = useState<number | ''>('');
+  const [shippingHeight, setShippingHeight] = useState<number | ''>('');
+
+
   // Images state: Raw files for FormData & previews
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
@@ -183,6 +191,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       if (initialDraft.purchaseYear) setPurchaseYear(initialDraft.purchaseYear);
       if (initialDraft.originalPriceVnd) setOriginalPriceVnd(initialDraft.originalPriceVnd);
       if (initialDraft.priceVnd) setFinalPriceVnd(initialDraft.priceVnd);
+      if (initialDraft.shippingWeight) setShippingWeight(initialDraft.shippingWeight);
+      if (initialDraft.shippingLength) setShippingLength(initialDraft.shippingLength);
+      if (initialDraft.shippingWidth) setShippingWidth(initialDraft.shippingWidth);
+      if (initialDraft.shippingHeight) setShippingHeight(initialDraft.shippingHeight);
       if (initialDraft.conditionGrade) {
         // Map condition grade string back to enum value if needed
         const gradeMap: any = {
@@ -456,6 +468,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [isSubmittingPost, setIsSubmittingPost] = useState(false);
   const [submitResult, setSubmitResult] = useState<PostSubmitResponse | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [showNoCreditsModal, setShowNoCreditsModal] = useState(false);
+  const [showNoValuationModal, setShowNoValuationModal] = useState(false);
 
   // Load Seller Credits
   const loadCredits = async () => {
@@ -836,7 +850,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         title: title.trim(),
         description: description.trim(),
         itemCondition: itemCondition || 'USED',
-        price: isManualPricingInStep3 ? finalPriceVnd : null
+        price: isManualPricingInStep3 ? finalPriceVnd : null,
+        shippingWeight: shippingWeight ? Number(shippingWeight) : undefined,
+        shippingLength: shippingLength ? Number(shippingLength) : undefined,
+        shippingWidth: shippingWidth ? Number(shippingWidth) : undefined,
+        shippingHeight: shippingHeight ? Number(shippingHeight) : undefined,
       });
 
       // 2. POST /api/v1/posts/{postId}/accept-description
@@ -878,7 +896,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       // Re-fetch credits to reflect deduction of 1 VALUATION
       await loadCredits();
     } catch (err: any) {
-      showToast('Định giá AI thất bại: ' + (err?.message || 'Lỗi kết nối tới dịch vụ AI'));
+      if (err?.message?.includes('400') || err?.message?.toLowerCase().includes('insufficient') || err?.message?.toLowerCase().includes('không đủ lượt')) {
+        setShowNoValuationModal(true);
+      } else {
+        showToast('Định giá AI thất bại: ' + (err?.message || 'Lỗi kết nối tới dịch vụ AI'));
+      }
     } finally {
       setIsEstimatingPrice(false);
     }
@@ -906,20 +928,33 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       return;
     }
 
+    if (!shippingWeight || !shippingLength || !shippingWidth || !shippingHeight) {
+      showToast(lang === 'vi' ? 'Vui lòng nhập đầy đủ thông tin kích thước và trọng lượng kiện hàng' : 'Please enter shipping dimensions and weight');
+      return;
+    }
+
     setIsSubmittingPost(true);
     setSubmitError(null);
     try {
       const submitRes = await postService.submitPost(postId, {
         title: title.trim(),
         description: description.trim(),
-        price: finalPriceVnd
+        price: finalPriceVnd,
+        shippingWeight: Number(shippingWeight),
+        shippingLength: Number(shippingLength),
+        shippingWidth: Number(shippingWidth),
+        shippingHeight: Number(shippingHeight)
       });
 
       setSubmitResult(submitRes);
       // Reload credits (if ACTIVE, minus 1 LISTING)
       await loadCredits();
     } catch (err: any) {
-      setSubmitError(err?.message || 'Gửi bài đăng thất bại');
+      if (err?.message?.includes('400') || err?.message?.toLowerCase().includes('insufficient') || err?.message?.toLowerCase().includes('không đủ lượt')) {
+        setShowNoCreditsModal(true);
+      } else {
+        setSubmitError(err?.message || 'Gửi bài đăng thất bại');
+      }
     } finally {
       setIsSubmittingPost(false);
     }
@@ -2022,6 +2057,60 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
             </div>
 
+            {/* Thông tin đóng gói GHN */}
+            <div className="pt-2 border-t border-slate-200">
+              <span className="text-xs font-bold text-slate-600 block mb-3">
+                <Truck className="w-4 h-4 inline mr-1 text-blue-600" />
+                Thông tin kiện hàng (Bắt buộc để tính phí GHN):
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Trọng lượng (gram)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="VD: 500"
+                    value={shippingWeight}
+                    onChange={(e) => setShippingWeight(e.target.value ? Number(e.target.value) : '')}
+                    className="w-full mt-1 p-2 border border-gray-300 rounded-lg text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Dài (cm)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="VD: 20"
+                    value={shippingLength}
+                    onChange={(e) => setShippingLength(e.target.value ? Number(e.target.value) : '')}
+                    className="w-full mt-1 p-2 border border-gray-300 rounded-lg text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Rộng (cm)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="VD: 15"
+                    value={shippingWidth}
+                    onChange={(e) => setShippingWidth(e.target.value ? Number(e.target.value) : '')}
+                    className="w-full mt-1 p-2 border border-gray-300 rounded-lg text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Cao (cm)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="VD: 10"
+                    value={shippingHeight}
+                    onChange={(e) => setShippingHeight(e.target.value ? Number(e.target.value) : '')}
+                    className="w-full mt-1 p-2 border border-gray-300 rounded-lg text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
           </div>
 
           {/* Submission Result Banner */}
@@ -2213,6 +2302,63 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 bg-slate-900/95 text-white text-sm font-bold rounded-full shadow-2xl flex items-center gap-2 animate-fadeIn border border-slate-700/50 backdrop-blur-sm">
           <AlertTriangle className="w-4 h-4 text-amber-400" />
           <span>{toastMsg}</span>
+        </div>
+      )}
+
+      {/* No Credits Modal */}
+      {showNoCreditsModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-scaleIn">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle className="w-8 h-8 text-rose-600" />
+              </div>
+              <h3 className="text-lg font-black text-slate-800 mb-2">
+                {lang === 'vi' ? 'Bạn đã hết lượt đăng tin' : 'Out of listing credits'}
+              </h3>
+              <p className="text-sm text-slate-600 mb-6">
+                {lang === 'vi' 
+                  ? 'Số lượt đăng bài của bạn đã hết. Vui lòng nạp thêm các gói dịch vụ để tiếp tục sử dụng tính năng này.' 
+                  : 'You have run out of listing credits. Please top up your package to continue.'}
+              </p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => setShowNoCreditsModal(false)}
+                  className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-[#c34c36] to-[#dc4729] text-white hover:opacity-95 transition"
+                >
+                  {lang === 'vi' ? 'Đã hiểu' : 'Understood'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* No Valuation Credits Modal */}
+      {showNoValuationModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-scaleIn">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle className="w-8 h-8 text-amber-600" />
+              </div>
+              <h3 className="text-lg font-black text-slate-800 mb-2">
+                {lang === 'vi' ? 'Bạn đã hết lượt định giá' : 'Out of valuation credits'}
+              </h3>
+              <p className="text-sm text-slate-600 mb-6">
+                {lang === 'vi' 
+                  ? 'Số lượt định giá AI của bạn đã hết. Vui lòng nạp thêm gói định giá để tiếp tục.' 
+                  : 'You have run out of valuation credits. Please top up your package to continue.'}
+              </p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => setShowNoValuationModal(false)}
+                  className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-amber-600 text-white hover:opacity-95 transition"
+                >
+                  {lang === 'vi' ? 'Đã hiểu' : 'Understood'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

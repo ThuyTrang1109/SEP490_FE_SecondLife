@@ -391,6 +391,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
           setDepositRequest(null);
         }
       }
+      if (!isBuyerRole) {
+        await loadPackagesAndCredit();
+      }
     } catch (err: any) {
       console.warn('Could not load wallet from BE:', err);
     } finally {
@@ -401,9 +404,10 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const loadPackagesAndCredit = async () => {
     setPackagesLoading(true);
     try {
-      const [pkgsRes, creditObj] = await Promise.all([
+      const [pkgsRes, aiCreditObj, sellerCreditObj] = await Promise.all([
         topupService.getTopupPackages().catch(() => []),
         topupService.getMyCredit().catch(() => null),
+        sellerCreditService.getCredits().catch(() => null),
       ]);
 
       const pkgsList = Array.isArray(pkgsRes) ? pkgsRes : (pkgsRes as any)?.data || [];
@@ -425,8 +429,13 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       setPackages(allPkgs);
       setSelectedPkg(allPkgs[0]);
 
-      if (creditObj) {
-        setUserCredit(creditObj);
+      if (aiCreditObj || sellerCreditObj) {
+        const mergedCredit: UserCredit = {
+          ...userCredit,
+          postCredits: sellerCreditObj?.listing ?? (aiCreditObj as any)?.postCredits ?? userCredit.postCredits ?? 0,
+          chatCredits: (aiCreditObj as any)?.aiChatBalance ?? (aiCreditObj as any)?.chatCredits ?? userCredit.chatCredits ?? 0,
+        };
+        setUserCredit(mergedCredit);
       }
     } catch {
       setPackages([...COMBO_PACKAGES, ...SINGLE_PACKAGES]);

@@ -68,6 +68,10 @@ export interface Listing {
   requiresInspection: boolean;
   photos: PhotoChecklist;
   photoGallery: string[];
+  shippingWeight?: number;
+  shippingLength?: number;
+  shippingWidth?: number;
+  shippingHeight?: number;
   aiPriceEstimation?: {
     minVnd: number;
     maxVnd: number;

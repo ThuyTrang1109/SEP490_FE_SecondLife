@@ -191,6 +191,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       if (typeof errMsg === 'string') {
         if (errMsg.includes('Seller pickup address is not configured')) {
           errMsg = 'Người bán chưa cấu hình địa chỉ kho lấy hàng GHN. Hệ thống sẽ tạm tính cước phí giao tiêu chuẩn.';
+        } else if (errMsg.includes('Seller must save the packed weight and dimensions')) {
+          errMsg = 'Người bán chưa cấu hình kích thước và trọng lượng kiện hàng. Hệ thống sẽ tạm tính cước phí giao tiêu chuẩn.';
         } else if (errMsg.includes('You cannot buy your own post')) {
           errMsg = 'Bạn đang đăng nhập bằng tài khoản người bán. Không thể tạo báo giá mua bài đăng của chính mình.';
         } else if (errMsg.includes('Post is not available')) {

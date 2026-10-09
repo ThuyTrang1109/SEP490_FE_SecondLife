@@ -1,4 +1,4 @@
-import { request } from './apiClient';
+import { request, getAccessToken } from './apiClient';
 
 export interface PostInitRequest {
   categoryId: string;
@@ -62,6 +62,10 @@ export interface UpdateDraftRequest {
   description: string;
   itemCondition?: string;
   price?: number | null;
+  shippingWeight?: number;
+  shippingLength?: number;
+  shippingWidth?: number;
+  shippingHeight?: number;
 }
 
 export interface AcceptDescriptionRequest {
@@ -89,6 +93,10 @@ export interface PostSubmitRequest {
   title: string;
   description: string;
   price: number;
+  shippingWeight?: number;
+  shippingLength?: number;
+  shippingWidth?: number;
+  shippingHeight?: number;
 }
 
 export interface PostSubmitResponse {
@@ -116,29 +124,29 @@ export const postService = {
     if (itemId) params.append('itemId', itemId);
     const queryString = `?${params.toString()}`;
 
-    // 1. Thử gọi /v1/listings
+    // 1. Gọi /v1/posts (endpoint đã được permitAll trong BE)
+    try {
+      const resPosts = await request<any>(`/v1/posts${queryString}`, {
+        method: 'GET',
+        requiresAuth: false, // DO NOT SEND TOKEN TO PREVENT 401 ON EXPIRED TOKENS FOR PUBLIC APIS
+      });
+      const d = (resPosts as any)?.data || resPosts;
+      const items = d?.content || d?.items || (Array.isArray(d) ? d : []);
+      if (items && items.length > 0) return items;
+    } catch (err) {
+      console.warn('Thử gọi /v1/posts lỗi, chuyển sang fallback /v1/listings:', err);
+    }
+
+    // 2. Fallback sang /v1/listings
     try {
       const res = await request<any>(`/v1/listings${queryString}`, {
         method: 'GET',
         requiresAuth: false,
       });
       const d = (res as any)?.data || res;
-      const items = d?.content || d?.items || (Array.isArray(d) ? d : []);
-      if (items && items.length > 0) return items;
-    } catch (err) {
-      console.warn('Thử gọi /v1/listings lỗi, chuyển sang fallback /v1/posts:', err);
-    }
-
-    // 2. Fallback sang /v1/posts
-    try {
-      const resPosts = await request<any>(`/v1/posts${queryString}`, {
-        method: 'GET',
-        requiresAuth: false,
-      });
-      const d = (resPosts as any)?.data || resPosts;
       return d?.content || d?.items || (Array.isArray(d) ? d : []);
     } catch (err) {
-      console.warn('Thử gọi /v1/posts lỗi:', err);
+      console.warn('Thử gọi /v1/listings lỗi:', err);
       return [];
     }
   },
@@ -379,6 +387,10 @@ export const postService = {
       title: 'Bài đăng mới',
       description: 'Mô tả bài đăng sản phẩm',
       price: 1000000,
+      shippingWeight: 500,
+      shippingLength: 20,
+      shippingWidth: 15,
+      shippingHeight: 10,
     };
     const response = await request<PostSubmitResponse>(`/v1/posts/submit/${postId}`, {
       method: 'POST',

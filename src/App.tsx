@@ -528,8 +528,11 @@ export default function App() {
 
     if (isOwner && (sellerAddr || sellerWard || sellerProv)) {
       postLocation = extractWardAndCity(sellerAddr, sellerWard, sellerProv);
-    } else if (post.sellerAddress || post.pickupAddress || post.user?.address) {
-      postLocation = extractWardAndCity(post.sellerAddress || post.pickupAddress || post.user?.address);
+    } else if (post.sellerAddress || post.pickupAddress || post.user?.address || post.user?.profile?.province) {
+      const userFullAddress = post.user?.profile ? 
+        [post.user.profile.streetAddress, post.user.profile.ward, post.user.profile.district, post.user.profile.province].filter(Boolean).join(', ') 
+        : null;
+      postLocation = extractWardAndCity(post.sellerAddress || post.pickupAddress || post.user?.address || userFullAddress);
     } else if (post.location && post.location.toLowerCase() !== 'việt nam' && post.location.toLowerCase() !== 'toàn quốc') {
       postLocation = extractWardAndCity(post.location);
     }
@@ -557,8 +560,8 @@ export default function App() {
       description: post.description || post.aiDescription || 'Đã qua thẩm định và xác thực trên hệ thống SecondLife.',
       location: postLocation,
       sellerId: post.sellerId || post.user?.id || post.userId || (isOwner && currentUser ? currentUser.id : '1e338576-457a-4371-9822-52ca04e31546'),
-      sellerName: isOwner && currentUser?.name ? currentUser.name : (post.user?.fullName || post.user?.email || post.sellerName || 'Người bán SecondLife'),
-      sellerAvatar: post.user?.avatarUrl || undefined,
+      sellerName: isOwner && currentUser?.name ? currentUser.name : (post.sellerName || post.user?.profile?.fullName || post.user?.fullName || post.user?.email || 'Người bán SecondLife'),
+      sellerAvatar: post.sellerAvatar || post.user?.profile?.avatarUrl || post.user?.avatarUrl || undefined,
       sellerRating: 5.0,
       sellerCompletedOrders: 3,
       sellerVerified: true,

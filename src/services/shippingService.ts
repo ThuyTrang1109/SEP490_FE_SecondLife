@@ -7,6 +7,13 @@ import {
   ShipmentEventBackend,
 } from '../types';
 
+export interface ShippingParcel {
+  weight: number;
+  length: number;
+  width: number;
+  height: number;
+}
+
 export interface GhnLocation {
   _id: number;
   name: string;
@@ -524,7 +531,21 @@ export const shippingService = {
   },
 
   /**
+   * Cập nhật thông tin kích thước, cân nặng của kiện hàng cho bài đăng
+   * PUT /api/v1/posts/{postId}/shipping-package
+   */
+  async updateShippingPackage(postId: string, body: ShippingParcel): Promise<ShippingParcel> {
+    const res = await request<ShippingParcel>(`/posts/${postId}/shipping-package`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+      requiresAuth: true,
+    });
+    return ((res as any)?.data ?? res) as ShippingParcel;
+  },
+
+  /**
    * Người bán hoặc Kỹ sư Hub tạo vận đơn GHN cho đơn hàng
+
    * POST /api/v1/orders/{orderId}/shipments
    */
   async createShipment(orderId: string, body: CreateShipmentRequestDto): Promise<ShipmentBackend> {

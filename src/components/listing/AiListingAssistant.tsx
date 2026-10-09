@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Sparkles, Send, Bot, User, CheckCircle2, Loader2, ShieldCheck, AlertCircle, FileText, ArrowRight } from 'lucide-react';
 import { Language } from '../../types';
-import { aiChatService, postService } from '../../services';
+import { aiChatService, postService, topupService } from '../../services';
 
 interface Message {
   id: string;
@@ -45,11 +45,28 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [chatBalance, setChatBalance] = useState<number | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    const fetchBalance = async () => {
+      try {
+        const credit = await topupService.getMyCredit();
+        if (credit && credit.chatCredits !== undefined) {
+          setChatBalance(credit.chatCredits);
+        }
+      } catch (err) {
+        console.warn('Could not fetch chat balance', err);
+      }
+    };
+    fetchBalance();
+  }, []);
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -67,6 +84,9 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
     };
     setMessages((prev) => [...prev, userMsg]);
     setIsSending(true);
+    if (chatBalance !== null && chatBalance > 0) {
+      setChatBalance(prev => (prev ? prev - 1 : 0));
+    }
 
     try {
       const res = await aiChatService.chat(userText, sessionId, postId);
@@ -298,18 +318,20 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            disabled={isSending || isSubmitting}
+            disabled={isSending || isSubmitting || (chatBalance !== null && chatBalance <= 0)}
             placeholder={
-              lang === 'vi'
-                ? 'Nhập thông tin thêm cho AI (ví dụ: máy mua năm nào, phụ kiện còn gì, có vết trầy nào không...)'
-                : 'Type additional details for AI (e.g. purchase date, accessories, blemishes...)'
+              (chatBalance !== null && chatBalance <= 0)
+                ? (lang === 'vi' ? 'Bạn đã hết năng lượng để trò chuyện. Vui lòng nạp thẻ!' : 'You have run out of chat energy. Please top up!')
+                : (lang === 'vi'
+                    ? 'Nhập thông tin thêm cho AI (ví dụ: máy mua năm nào, phụ kiện còn gì, có vết trầy nào không...)'
+                    : 'Type additional details for AI (e.g. purchase date, accessories, blemishes...)')
             }
-            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-slate-50 text-xs text-slate-900 focus:bg-white focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none transition"
+            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-slate-50 text-xs text-slate-900 focus:bg-white focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none transition disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <button
             type="submit"
-            disabled={!inputText.trim() || isSending || isSubmitting}
-            className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-40 cursor-pointer shadow-xs"
+            disabled={!inputText.trim() || isSending || isSubmitting || (chatBalance !== null && chatBalance <= 0)}
+            className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-40 cursor-pointer shadow-xs disabled:cursor-not-allowed"
           >
             <Send className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">{lang === 'vi' ? 'Gửi' : 'Send'}</span>

@@ -306,8 +306,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       if (aiCreditObj || sellerCreditObj) {
         const mergedCredit: UserCredit = {
           ...userCredit,
-          postCredits: sellerCreditObj?.listing ?? (aiCreditObj as any)?.postCredits ?? userCredit.postCredits ?? 0,
-          chatCredits: (aiCreditObj as any)?.aiChatBalance ?? (aiCreditObj as any)?.chatCredits ?? userCredit.chatCredits ?? 0,
+          postCredits: sellerCreditObj?.postCredits ?? (aiCreditObj as any)?.postCredits ?? userCredit.postCredits ?? 0,
+          valuationCredits: sellerCreditObj?.valuationCredits ?? (aiCreditObj as any)?.valuationCredits ?? userCredit.valuationCredits ?? 0,
+          chatCredits: sellerCreditObj?.chatCredits ?? (aiCreditObj as any)?.aiChatBalance ?? (aiCreditObj as any)?.chatCredits ?? userCredit.chatCredits ?? 0,
         };
         setUserCredit(mergedCredit);
       }

@@ -26,7 +26,7 @@ import { TopUpModal } from './components/modals/TopUpModal';
 import { PolicyModal, PolicyTabKey } from './components/modals/PolicyModal';
 import { SellerReviewsModal } from './components/modals/SellerReviewsModal';
 import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
-import { authService, userService, topupService, walletService, orderService, negotiationService, postService, adminPostService, shippingService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
+import { authService, userService, topupService, walletService, orderService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
 
 export default function App() {
   // Global State - Default to 'marketplace' so visitors enter directly into the marketplace
@@ -205,12 +205,20 @@ export default function App() {
   React.useEffect(() => {
     if (currentUser && getAccessToken()) {
       loadUserWallet();
-      topupService.getMyCredit()
-        .then((res) => {
-          if (res) {
-            setUserCredit(res);
-            if (typeof (res as any).balance === 'number') {
-              setUserCreditBalance((res as any).balance);
+      Promise.all([
+        topupService.getMyCredit().catch(() => null),
+        sellerCreditService.getCredits().catch(() => null)
+      ])
+        .then(([aiCreditObj, sellerCreditObj]) => {
+          if (aiCreditObj || sellerCreditObj) {
+            const merged: UserCredit = {
+              postCredits: sellerCreditObj?.postCredits ?? (aiCreditObj as any)?.postCredits ?? 0,
+              valuationCredits: sellerCreditObj?.valuationCredits ?? (aiCreditObj as any)?.valuationCredits ?? 0,
+              chatCredits: sellerCreditObj?.chatCredits ?? (aiCreditObj as any)?.aiChatBalance ?? (aiCreditObj as any)?.chatCredits ?? 0,
+            };
+            setUserCredit(merged);
+            if (aiCreditObj && typeof (aiCreditObj as any).balance === 'number') {
+              setUserCreditBalance((aiCreditObj as any).balance);
             }
           }
         })

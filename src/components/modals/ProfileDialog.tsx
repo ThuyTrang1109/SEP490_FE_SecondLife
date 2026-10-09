@@ -64,6 +64,7 @@ const isStrongPassword = (pass: string): boolean => {
 
 interface ProfileDialogProps {
   isOpen: boolean;
+  onClose: () => void;
   currentUser: UserProfile | null;
   currentRole?: UserRole;
   onUpdateProfile: (updated: UserProfile) => void;

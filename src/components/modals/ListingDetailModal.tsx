@@ -27,6 +27,7 @@ interface ListingDetailModalProps {
   onChatClick: (listing: Listing) => void;
   onOpenSellerReviews?: (sellerId: string, sellerName: string) => void;
   isAdmin?: boolean;
+  lang: Language;
 }
 
 export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({

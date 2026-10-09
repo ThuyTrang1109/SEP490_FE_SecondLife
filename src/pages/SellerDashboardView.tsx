@@ -429,16 +429,21 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               <span>{lang === 'vi' ? 'Điểm Tín Dụng (Credits)' : 'Active Credits'}</span>
               <Coins className="w-4 h-4 text-amber-500" />
             </div>
-            <div className="flex items-baseline gap-2">
+            <div className="flex flex-wrap items-baseline gap-2">
               <span className="text-2xl font-black text-[#24263e]">
-                {creditBalance ? creditBalance.listing : 12}
+                {creditBalance ? creditBalance.postCredits : 12}
               </span>
               <span className="text-xs font-bold text-slate-500">Đăng tin</span>
               <span className="text-slate-300">•</span>
               <span className="text-lg font-black text-emerald-600">
-                {creditBalance ? creditBalance.valuation : 5}
+                {creditBalance ? creditBalance.valuationCredits : 5}
               </span>
               <span className="text-xs font-bold text-slate-500">Định giá</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-lg font-black text-blue-600">
+                {creditBalance ? creditBalance.chatCredits : 10}
+              </span>
+              <span className="text-xs font-bold text-slate-500">Chat AI</span>
             </div>
             <div className="pt-1 flex items-center justify-between">
               <button

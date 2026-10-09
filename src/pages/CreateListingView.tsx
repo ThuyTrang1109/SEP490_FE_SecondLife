@@ -159,6 +159,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [itemCondition, setItemCondition] = useState<string>('USED_GOOD');
   const [description, setDescription] = useState('');
   const [finalPriceVnd, setFinalPriceVnd] = useState<number>(0);
+  const [shippingWeight, setShippingWeight] = useState<number>(0);
+  const [shippingLength, setShippingLength] = useState<number>(0);
+  const [shippingWidth, setShippingWidth] = useState<number>(0);
+  const [shippingHeight, setShippingHeight] = useState<number>(0);
 
   // Images state: Raw files for FormData & previews
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
@@ -785,6 +789,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       showToast(lang === 'vi' ? 'Vui lòng nhập Mô tả sản phẩm hoặc trò chuyện với AI để tạo mô tả.' : 'Please provide a Description or chat with AI.');
       return;
     }
+    
+    if (shippingWeight <= 0 || shippingLength <= 0 || shippingWidth <= 0 || shippingHeight <= 0) {
+      showToast(lang === 'vi' ? 'Vui lòng nhập đầy đủ Kích thước giao hàng lớn hơn 0.' : 'Please enter valid Shipping Dimensions greater than 0.');
+      return;
+    }
 
     setCurrentStep(3);
   };
@@ -810,7 +819,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         title: title.trim(),
         description: description.trim(),
         itemCondition: itemCondition || 'USED',
-        price: null
+        price: null,
+        shippingWeight,
+        shippingLength,
+        shippingWidth,
+        shippingHeight
       });
 
       // 2. POST /api/v1/posts/{postId}/accept-description
@@ -820,7 +833,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
       // Successfully confirmed description -> Advance to Step 4
       setCurrentStep(4);
-      if (credits?.valuation !== undefined && credits.valuation > 0) {
+      if (credits?.valuationCredits !== undefined && credits.valuationCredits > 0) {
         handleRunAiValuation();
       }
     } catch (err: any) {
@@ -882,7 +895,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       const submitRes = await postService.submitPost(postId, {
         title: title.trim(),
         description: description.trim(),
-        price: finalPriceVnd
+        price: finalPriceVnd,
+        shippingWeight,
+        shippingLength,
+        shippingWidth,
+        shippingHeight
       });
 
       setSubmitResult(submitRes);
@@ -965,12 +982,16 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300 mt-1">
               <span>Số dư Credit của bạn:</span>
               <span className="px-2.5 py-0.5 rounded-lg bg-white/10 font-mono font-bold text-amber-300 flex items-center gap-1 border border-white/10">
-                <span>🎯 {credits?.listing ?? 0}</span>
+                <span>📝 {credits?.postCredits ?? 0}</span>
                 <span className="text-[10px] text-slate-400">LISTING</span>
               </span>
               <span className="px-2.5 py-0.5 rounded-lg bg-white/10 font-mono font-bold text-cyan-300 flex items-center gap-1 border border-white/10">
-                <span>💡 {credits?.valuation ?? 0}</span>
+                <span>⚖️ {credits?.valuationCredits ?? 0}</span>
                 <span className="text-[10px] text-slate-400">VALUATION</span>
+              </span>
+              <span className="px-2.5 py-0.5 rounded-lg bg-white/10 font-mono font-bold text-emerald-300 flex items-center gap-1 border border-white/10">
+                <span>🤖 {credits?.chatCredits ?? 0}</span>
+                <span className="text-[10px] text-slate-400">AI CHAT</span>
               </span>
             </div>
           </div>
@@ -1595,6 +1616,53 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <option value="USED_FAIR">Đã qua sử dụng - Có xước nhẹ (Grade B)</option>
                   <option value="USED">Cũ bình thường (Grade C)</option>
                 </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[#24263e]">Trọng lượng (Gram) *</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={shippingWeight || ''}
+                  onChange={(e) => setShippingWeight(Number(e.target.value))}
+                  placeholder="VD: 1500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[#24263e]">Chiều dài (cm) *</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={shippingLength || ''}
+                  onChange={(e) => setShippingLength(Number(e.target.value))}
+                  placeholder="VD: 30"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[#24263e]">Chiều rộng (cm) *</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={shippingWidth || ''}
+                  onChange={(e) => setShippingWidth(Number(e.target.value))}
+                  placeholder="VD: 20"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[#24263e]">Chiều cao (cm) *</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={shippingHeight || ''}
+                  onChange={(e) => setShippingHeight(Number(e.target.value))}
+                  placeholder="VD: 10"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                />
               </div>
             </div>
           </div>

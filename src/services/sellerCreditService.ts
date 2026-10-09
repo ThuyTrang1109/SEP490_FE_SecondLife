@@ -2,8 +2,9 @@ import { request, PageResponse } from './apiClient';
 import { CreditPricingRuleResponseDto, CreditDiscountTierResponseDto } from './adminCreditPricingService';
 
 export interface CreditBalanceResponseDto {
-  listing: number;
-  valuation: number;
+  postCredits: number;
+  valuationCredits: number;
+  chatCredits: number;
 }
 
 export interface CreditQuoteResponseDto {

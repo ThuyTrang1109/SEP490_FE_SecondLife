@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChatMessage, Listing, Language, UserRole } from '../../types';
+import { ChatMessage, Listing, Language, UserRole, UserCredit, ChatRoomDto } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import {
   Sparkles,
@@ -23,7 +23,8 @@ import {
   getStoredUser,
   parseSystemMessage,
   ChatMessageDto,
-  SystemOfferPayload
+  SystemOfferPayload,
+  topupService
 } from '../../services';
 
 interface ChatModalProps {
@@ -62,6 +63,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const [offerError, setOfferError] = useState<string | null>(null);
   const [negotiationLoading, setNegotiationLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [userCredit, setUserCredit] = useState<UserCredit | null>(null);
+  const [loadingCredit, setLoadingCredit] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -170,6 +173,25 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       isMounted = false;
     };
   }, [listing.id, mapDtoToChatMessage]);
+
+  // Fetch User Credit
+  useEffect(() => {
+    let isMounted = true;
+    const fetchCredit = async () => {
+      try {
+        const credit = await topupService.getMyCredit();
+        if (isMounted) setUserCredit(credit);
+      } catch (err) {
+        console.warn('Could not fetch credit:', err);
+      } finally {
+        if (isMounted) setLoadingCredit(false);
+      }
+    };
+    fetchCredit();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Subscribe to WebSocket for real-time messages (/user/queue/messages)
   useEffect(() => {
@@ -890,36 +912,54 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         )}
 
         {/* Input Bar */}
-        <div className="p-3 bg-[#FFFFFF] border-t border-gray-200 flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => setShowOfferForm(!showOfferForm)}
-            className="px-3 py-2 bg-gradient-to-r from-[#c34c36] to-[#e36a54] hover:opacity-95 text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1"
-          >
-            <span>💰</span>
-            <span>{lang === 'vi' ? 'Trả giá / Offer' : 'Make Offer'}</span>
-          </button>
+        {!loadingCredit && userCredit && userCredit.chatCredits <= 0 ? (
+          <div className="p-4 bg-[#FFFFFF] border-t border-gray-200 flex flex-col items-center justify-center gap-1.5 shrink-0">
+            <AlertTriangle className="w-5 h-5 text-[#c34c36]" />
+            <span className="text-xs font-bold text-[#24263e]">
+              {lang === 'vi' ? 'Bạn đã hết lượt Chat AI' : 'Out of AI Chat credits'}
+            </span>
+            <span className="text-[10px] text-[#24263e]/70">
+              {lang === 'vi' ? 'Vui lòng nạp thêm Credit để tiếp tục.' : 'Please top up to continue.'}
+            </span>
+            <button
+              onClick={() => { window.location.href = '#topup'; }} // Assumed routing
+              className="mt-1 px-4 py-1.5 bg-[#c34c36] hover:bg-[#a83d2a] text-white rounded-lg text-[10px] font-bold shadow-xs cursor-pointer"
+            >
+              {lang === 'vi' ? 'Nạp Thêm Credit (Topup)' : 'Top Up Credits'}
+            </button>
+          </div>
+        ) : (
+          <div className="p-3 bg-[#FFFFFF] border-t border-gray-200 flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowOfferForm(!showOfferForm)}
+              className="px-3 py-2 bg-gradient-to-r from-[#c34c36] to-[#e36a54] hover:opacity-95 text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1"
+            >
+              <span>💰</span>
+              <span>{lang === 'vi' ? 'Trả giá / Offer' : 'Make Offer'}</span>
+            </button>
 
-          <input
-            type="text"
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-            placeholder={
-              lang === 'vi'
-                ? 'Nhắn tin thương lượng (an toàn 100% qua Escrow)...'
-                : 'Chat & negotiate safely via Escrow...'
-            }
-            className="flex-1 px-3.5 py-2 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36]"
-          />
+            <input
+              type="text"
+              value={inputMessage}
+              onChange={(e) => setInputMessage(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+              placeholder={
+                lang === 'vi'
+                  ? 'Nhắn tin thương lượng (an toàn 100% qua Escrow)...'
+                  : 'Chat & negotiate safely via Escrow...'
+              }
+              className="flex-1 px-3.5 py-2 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+            />
 
-          <button
-            onClick={() => handleSendMessage()}
-            disabled={isSending}
-            className="p-2.5 bg-[#24263e] hover:bg-black text-white rounded-xl cursor-pointer transition shadow-xs flex items-center justify-center"
-          >
-            {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          </button>
-        </div>
+            <button
+              onClick={() => handleSendMessage()}
+              disabled={isSending}
+              className="p-2.5 bg-[#24263e] hover:bg-black text-white rounded-xl cursor-pointer transition shadow-xs flex items-center justify-center"
+            >
+              {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

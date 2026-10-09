@@ -194,12 +194,12 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                             </span>
                             <span>•</span>
                             <span>{sellerTrust.reviewCount} {lang === 'vi' ? 'đánh giá' : 'reviews'}</span>
-                            {listing.location && (
+                            {(listing.sellerAddress || listing.location) && (
                               <>
                                 <span>•</span>
                                 <span className="flex items-center gap-0.5 text-slate-600 font-medium">
                                   <MapPin className="w-2.5 h-2.5 text-[#c34c36]" />
-                                  <span>{listing.location}</span>
+                                  <span>{listing.sellerAddress || 'Chưa cập nhật địa chỉ'}</span>
                                 </span>
                               </>
                             )}

@@ -20,6 +20,7 @@ import {
   ShoppingBag,
   ShieldCheck,
   Clock,
+  Search,
 } from 'lucide-react';
 import { TopupPackage, UserCredit, UserWallet, DepositResponseDTO, UserProfile, UserRole, Language } from '../../types';
 import { topupService, walletService, sellerCreditService } from '../../services';
@@ -41,125 +42,7 @@ interface TopUpModalProps {
   lang?: Language;
 }
 
-const COMBO_PACKAGES: TopupPackage[] = [
-  {
-    id: 'combo-starter',
-    name: 'Combo Khởi Đầu (Starter)',
-    description: 'Thanh lý nhanh gọn đồ dùng gia đình. Bao gồm 5 bài đăng và 5 lượt AI định giá.',
-    postCredits: 5,
-    chatCredits: 5,
-    price: 55000,
-    discountPercentage: 27,
-    isPopular: false,
-  },
-  {
-    id: 'combo-pro',
-    name: 'Combo Nhà Bán Chuyên Nghiệp',
-    description: 'Gói bán chạy nhất! Tối ưu chi phí cho seller đăng bán thường xuyên, hỗ trợ AI không giới hạn.',
-    postCredits: 15,
-    chatCredits: 20,
-    price: 180000,
-    discountPercentage: 28,
-    isPopular: true,
-  },
-  {
-    id: 'combo-vip',
-    name: 'Combo Siêu Thương Nhân (VIP)',
-    description: 'Dành cho cửa hàng đồ gia dụng, đại lý điện máy cũ. Mức chiết khấu cao nhất hệ thống.',
-    postCredits: 50,
-    chatCredits: 60,
-    price: 520000,
-    discountPercentage: 35,
-    isPopular: false,
-  }
-];
 
-const SINGLE_PACKAGES: (TopupPackage & { singleType: 'listing' | 'valuation' })[] = [
-  // Gói lẻ Đăng bài (Listing credits only)
-  {
-    id: 'single-listing-1',
-    name: 'Gói Lẻ: 1 Lượt Đăng Bài',
-    description: 'Đăng ngay 1 sản phẩm lên Marketplace với bảo lãnh Escrow an toàn.',
-    postCredits: 1,
-    chatCredits: 0,
-    price: 10000,
-    discountPercentage: 0,
-    singleType: 'listing',
-  },
-  {
-    id: 'single-listing-5',
-    name: 'Gói Lẻ: 5 Lượt Đăng Bài',
-    description: 'Tiết kiệm 10% chi phí đăng bài trên sàn.',
-    postCredits: 5,
-    chatCredits: 0,
-    price: 45000,
-    discountPercentage: 10,
-    singleType: 'listing',
-  },
-  {
-    id: 'single-listing-10',
-    name: 'Gói Lẻ: 10 Lượt Đăng Bài',
-    description: 'Gói đăng tin được nhiều người bán lựa chọn nhất.',
-    postCredits: 10,
-    chatCredits: 0,
-    price: 80000,
-    discountPercentage: 20,
-    singleType: 'listing',
-    isPopular: true,
-  },
-  {
-    id: 'single-listing-25',
-    name: 'Gói Lẻ: 25 Lượt Đăng Bài',
-    description: 'Đăng tin số lượng lớn dành cho người bán chuyên nghiệp.',
-    postCredits: 25,
-    chatCredits: 0,
-    price: 185000,
-    discountPercentage: 26,
-    singleType: 'listing',
-  },
-  // Gói lẻ Định giá AI (Valuation credits only)
-  {
-    id: 'single-valuation-1',
-    name: 'Gói Lẻ: 1 Lượt Định Giá AI',
-    description: 'Định giá 1 sản phẩm chính xác dựa trên Machine Learning.',
-    postCredits: 0,
-    chatCredits: 1,
-    price: 5000,
-    discountPercentage: 0,
-    singleType: 'valuation',
-  },
-  {
-    id: 'single-valuation-5',
-    name: 'Gói Lẻ: 5 Lượt Định Giá AI',
-    description: 'Khảo sát giá thị trường cho 5 thiết bị trước khi đăng bán.',
-    postCredits: 0,
-    chatCredits: 5,
-    price: 20000,
-    discountPercentage: 20,
-    singleType: 'valuation',
-  },
-  {
-    id: 'single-valuation-15',
-    name: 'Gói Lẻ: 15 Lượt Định Giá AI',
-    description: 'Tiết kiệm 33% chi phí thẩm định giá thiết bị.',
-    postCredits: 0,
-    chatCredits: 15,
-    price: 50000,
-    discountPercentage: 33,
-    singleType: 'valuation',
-    isPopular: true,
-  },
-  {
-    id: 'single-valuation-30',
-    name: 'Gói Lẻ: 30 Lượt Định Giá AI',
-    description: 'Gói chuyên sâu dành cho người hay khảo sát định giá thiết bị đồ cũ.',
-    postCredits: 0,
-    chatCredits: 30,
-    price: 90000,
-    discountPercentage: 40,
-    singleType: 'valuation',
-  },
-];
 
 const PRESET_DEPOSIT_AMOUNTS = [50000, 100000, 200000, 500000, 1000000, 2000000];
 
@@ -175,7 +58,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   currentUser,
   currentRole,
   currentCredit = 0,
-  userCredit: initialUserCredit,
+  userCredit: initialUserCredit = { postCredits: currentCredit || 10, valuationCredits: 0, chatCredits: 20 },
   walletBalance: initialWalletBalance,
   onCreditUpdated,
   onUserCreditUpdated,
@@ -219,7 +102,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const [singleFilter, setSingleFilter] = useState<'all' | 'listing' | 'valuation'>('all');
 
   const [userCredit, setUserCredit] = useState<UserCredit>(
-    initialUserCredit || { postCredits: currentCredit || 10, chatCredits: 20 }
+    initialUserCredit || { postCredits: currentCredit || 10, valuationCredits: 0, chatCredits: 20 }
   );
 
   // History State
@@ -333,8 +216,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   }
 
                   const updatedCredit: UserCredit = result || {
-                    postCredits: (userCredit.postCredits || 0) + (targetPkg.postCredits || 0),
-                    chatCredits: (userCredit.chatCredits || 0) + (targetPkg.chatCredits || 0),
+                    postCredits: (userCredit?.postCredits || 0) + (targetPkg.postCredits || 0),
+                    chatCredits: (userCredit?.chatCredits || 0) + (targetPkg.chatCredits || 0),
+                    valuationCredits: (userCredit?.valuationCredits || 0) + (targetPkg.valuationCredits || 0),
                   };
                   setUserCredit(updatedCredit);
                   if (onUserCreditUpdated) onUserCreditUpdated(updatedCredit);
@@ -408,29 +292,17 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
       const pkgsList = Array.isArray(pkgsRes) ? pkgsRes : (pkgsRes as any)?.data || [];
       const allPkgs: TopupPackage[] = [...pkgsList];
-      const existingNames = new Set(pkgsList.map((p: any) => (p.name || '').toLowerCase()));
-
-      for (const combo of COMBO_PACKAGES) {
-        if (!existingNames.has((combo.name || '').toLowerCase())) {
-          allPkgs.push(combo);
-        }
-      }
-
-      for (const single of SINGLE_PACKAGES) {
-        if (!existingNames.has((single.name || '').toLowerCase())) {
-          allPkgs.push(single);
-        }
-      }
 
       setPackages(allPkgs);
-      setSelectedPkg(allPkgs[0]);
+      if (allPkgs.length > 0) {
+        setSelectedPkg(allPkgs[0]);
+      }
 
       if (creditObj) {
         setUserCredit(creditObj);
       }
     } catch {
-      setPackages([...COMBO_PACKAGES, ...SINGLE_PACKAGES]);
-      setSelectedPkg(COMBO_PACKAGES[0]);
+      setPackages([]);
     } finally {
       setPackagesLoading(false);
     }
@@ -522,31 +394,17 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     setPurchaseError(null);
     setPurchasing(true);
     try {
-      let result: any = null;
-      const isBackendUuid = targetPkg.id && targetPkg.id.length >= 32 && targetPkg.id.includes('-');
-      if (isBackendUuid) {
-        try {
-          result = await topupService.purchasePackage(targetPkg.id);
-        } catch (err: any) {
-          console.warn('topupService.purchasePackage fallback:', err);
-        }
+      if (!targetPkg.id) {
+        throw new Error('ID gói không hợp lệ.');
       }
+      
+      // Gọi API mua gói
+      await topupService.purchasePackage(targetPkg.id);
 
-      // Sync through sellerCreditService.createPurchase
-      try {
-        await sellerCreditService.createPurchase({
-          listingQuantity: targetPkg.postCredits || 0,
-          valuationQuantity: targetPkg.chatCredits || 0,
-        });
-      } catch (err) {
-        console.warn('sellerCreditService.createPurchase notice:', err);
-      }
-
-      const updatedCredit: UserCredit = result || {
-        postCredits: (userCredit.postCredits || 0) + (targetPkg.postCredits || 0),
-        chatCredits: (userCredit.chatCredits || 0) + (targetPkg.chatCredits || 0),
-      };
+      // Nạp thành công, lấy lại số dư thực tế từ BE
+      const updatedCredit = await topupService.getMyCredit();
       setUserCredit(updatedCredit);
+      
       if (onUserCreditUpdated) onUserCreditUpdated(updatedCredit);
       if (onCreditUpdated && typeof updatedCredit.postCredits === 'number') {
         onCreditUpdated(updatedCredit.postCredits);
@@ -623,10 +481,13 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
             {!isBuyerRole ? (
               <div className="flex items-center gap-2 text-xs font-bold font-mono">
                 <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
-                  Tin: <span className="font-black text-[#c34c36]">{userCredit.postCredits ?? 0}</span>
+                  Tin: <span className="font-black text-[#c34c36]">{userCredit?.postCredits ?? 0}</span>
                 </span>
                 <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
-                  AI Chat: <span className="font-black text-[#c34c36]">{userCredit.chatCredits ?? 0}</span>
+                  AI Chat: <span className="font-black text-[#c34c36]">{userCredit?.chatCredits ?? 0}</span>
+                </span>
+                <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
+                  Định giá: <span className="font-black text-[#c34c36]">{userCredit?.valuationCredits ?? 0}</span>
                 </span>
                 <button
                   onClick={loadWallet}
@@ -1029,7 +890,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                       </span>{' '}
                       từ Ví và cộng{' '}
                       <span className="font-black font-mono">
-                        +{selectedPkg?.postCredits || 0} tin &amp; +{selectedPkg?.chatCredits || 0} AI
+                        +{selectedPkg?.postCredits || 0} tin &amp; +{selectedPkg?.chatCredits || 0} Chat AI &amp; +{selectedPkg?.valuationCredits || 0} Định giá
                       </span>{' '}
                       vào tài khoản của bạn.
                     </p>
@@ -1123,6 +984,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                               const pkgPrice = getPkgPrice(pkg);
                               const postCredits = Number(pkg.postCredits || 0);
                               const chatCredits = Number(pkg.chatCredits || 0);
+                              const valuationCredits = Number(pkg.valuationCredits || 0);
                               const isAffordable = currentWalletBalance >= pkgPrice;
 
                               return (
@@ -1142,7 +1004,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                                       🔥 Phổ Biến Nhất
                                     </span>
                                   )}
-                                  {pkg.discountPercentage && pkg.discountPercentage > 0 && !pkg.isPopular && (
+                                  {(pkg.discountPercentage ?? 0) > 0 && !pkg.isPopular && (
                                     <span className="absolute -top-2.5 right-3 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-full bg-emerald-600 text-white shadow-xs">
                                       Giảm {pkg.discountPercentage}%
                                     </span>
@@ -1154,7 +1016,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                                       <span className="text-base font-black text-[#c34c36] font-mono">
                                         {formatVND(pkgPrice)}
                                       </span>
-                                      {pkg.discountPercentage && pkg.discountPercentage > 0 && (
+                                      {(pkg.discountPercentage ?? 0) > 0 && (
                                         <span className="text-[10px] text-slate-400 line-through font-mono">
                                           {formatVND(Math.round(pkgPrice / (1 - pkg.discountPercentage / 100)))}
                                         </span>
@@ -1168,8 +1030,14 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                                       </div>
                                       <div className="flex items-center gap-1.5 text-xs text-slate-800 font-bold">
                                         <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                        <span>+{chatCredits} Lượt định giá AI</span>
+                                        <span>+{chatCredits} Lượt Chat AI</span>
                                       </div>
+                                      {valuationCredits > 0 && (
+                                        <div className="flex items-center gap-1.5 text-xs text-slate-800 font-bold">
+                                          <Search className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                          <span>+{valuationCredits} Lượt định giá AI</span>
+                                        </div>
+                                      )}
                                     </div>
 
                                     {pkg.description && (
@@ -1234,7 +1102,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                                   }`}
                               >
                                 <Sparkles className="w-3 h-3" />
-                                <span>Chỉ Lượt Định Giá AI</span>
+                                <span>Chỉ Lượt Chat AI</span>
                               </button>
                             </div>
                           </div>
@@ -1246,7 +1114,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                               const pkgPrice = getPkgPrice(pkg);
                               const postCredits = Number(pkg.postCredits || 0);
                               const chatCredits = Number(pkg.chatCredits || 0);
+                              const valuationCredits = Number(pkg.valuationCredits || 0);
                               const isListingType = postCredits > 0;
+                              const isValuationType = valuationCredits > 0;
                               const isAffordable = currentWalletBalance >= pkgPrice;
 
                               return (
@@ -1261,7 +1131,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                                       : 'bg-white border-slate-200 hover:border-[#24263e]/60 hover:shadow-xs'
                                     }`}
                                 >
-                                  {pkg.discountPercentage && pkg.discountPercentage > 0 && (
+                                  {(pkg.discountPercentage ?? 0) > 0 && (
                                     <span className="absolute -top-2 right-2 px-1.5 py-0.2 text-[9px] font-black rounded-md bg-emerald-600 text-white">
                                       -{pkg.discountPercentage}%
                                     </span>
@@ -1271,11 +1141,11 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                                     <span
                                       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black ${isListingType
                                           ? 'bg-orange-100 text-orange-900'
-                                          : 'bg-indigo-100 text-indigo-900'
+                                          : isValuationType ? 'bg-blue-100 text-blue-900' : 'bg-indigo-100 text-indigo-900'
                                         }`}
                                     >
-                                      {isListingType ? <Tag className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
-                                      <span>{isListingType ? 'Đăng Bài' : 'Định Giá AI'}</span>
+                                      {isListingType ? <Tag className="w-3 h-3" /> : isValuationType ? <Search className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
+                                      <span>{isListingType ? 'Đăng Bài' : isValuationType ? 'Định Giá AI' : 'Chat AI'}</span>
                                     </span>
 
                                     <h4 className="font-black text-xs text-[#24263e] mt-2 line-clamp-1">{pkgName}</h4>
@@ -1286,8 +1156,10 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                                     <div className="mt-2 text-xs font-bold text-slate-700 bg-slate-50 p-2 rounded-xl border border-slate-100">
                                       {isListingType ? (
                                         <span>+{postCredits} Lượt đăng tin</span>
+                                      ) : isValuationType ? (
+                                        <span>+{valuationCredits} Lượt định giá AI</span>
                                       ) : (
-                                        <span>+{chatCredits} Lượt định giá AI</span>
+                                        <span>+{chatCredits} Lượt Chat AI</span>
                                       )}
                                     </div>
                                   </div>

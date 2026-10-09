@@ -176,6 +176,7 @@ export default function App() {
   const [checkoutNegotiationId, setCheckoutNegotiationId] = useState<string | undefined>(undefined);
   const [userCredit, setUserCredit] = useState<UserCredit>({
     postCredits: 10,
+    valuationCredits: 0,
     chatCredits: 20,
   });
 

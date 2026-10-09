@@ -57,6 +57,7 @@ export interface Listing {
   location: string;
   sellerId: string;
   sellerName: string;
+  sellerAddress?: string;
   sellerAvatarUrl?: string;
   sellerRating: number;
   sellerCompletedOrders: number;
@@ -296,6 +297,7 @@ export interface TopupPackage {
   priceVnd?: number;
   postCredits?: number;
   chatCredits?: number;
+  valuationCredits?: number;
   creditPoints?: number;
   bonusPoints?: number;
   description?: string;
@@ -306,9 +308,9 @@ export interface TopupPackage {
 export interface UserCredit {
   id?: string;
   userId?: string;
-  balance?: number;
-  postCredits?: number;
-  chatCredits?: number;
+  postCredits: number;
+  valuationCredits: number;
+  chatCredits: number;
   updatedAt?: string;
 }
 

@@ -106,9 +106,9 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
             <span className="font-bold text-[#24263e] uppercase tracking-wide truncate max-w-[110px]">
               {item.brand} • {item.purchaseYear}
             </span>
-            <span className="flex items-center gap-0.5 text-[#24263e]/70 font-medium shrink-0 max-w-[130px] truncate" title={item.location}>
+            <span className="flex items-center gap-0.5 text-[#24263e]/70 font-medium shrink-0 max-w-[130px] truncate" title={item.sellerAddress || item.location}>
               <MapPin className="w-2.5 h-2.5 text-[#24263e] shrink-0" />
-              <span className="truncate">{item.location}</span>
+              <span className="truncate">{item.sellerAddress ? item.sellerAddress : "Chưa cập nhật địa chỉ"}</span>
             </span>
           </div>
 

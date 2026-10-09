@@ -62,6 +62,10 @@ export interface UpdateDraftRequest {
   description: string;
   itemCondition?: string;
   price?: number | null;
+  shippingWeight?: number;
+  shippingLength?: number;
+  shippingWidth?: number;
+  shippingHeight?: number;
 }
 
 export interface AcceptDescriptionRequest {
@@ -89,6 +93,10 @@ export interface PostSubmitRequest {
   title: string;
   description: string;
   price: number;
+  shippingWeight: number;
+  shippingLength: number;
+  shippingWidth: number;
+  shippingHeight: number;
 }
 
 export interface PostSubmitResponse {
@@ -116,20 +124,6 @@ export const postService = {
     if (itemId) params.append('itemId', itemId);
     const queryString = `?${params.toString()}`;
 
-    // 1. Thử gọi /v1/listings
-    try {
-      const res = await request<any>(`/v1/listings${queryString}`, {
-        method: 'GET',
-        requiresAuth: false,
-      });
-      const d = (res as any)?.data || res;
-      const items = d?.content || d?.items || (Array.isArray(d) ? d : []);
-      if (items && items.length > 0) return items;
-    } catch (err) {
-      console.warn('Thử gọi /v1/listings lỗi, chuyển sang fallback /v1/posts:', err);
-    }
-
-    // 2. Fallback sang /v1/posts
     try {
       const resPosts = await request<any>(`/v1/posts${queryString}`, {
         method: 'GET',
@@ -138,23 +132,23 @@ export const postService = {
       const d = (resPosts as any)?.data || resPosts;
       return d?.content || d?.items || (Array.isArray(d) ? d : []);
     } catch (err) {
-      console.warn('Thử gọi /v1/posts lỗi:', err);
+      console.warn('Lỗi gọi /v1/posts:', err);
       return [];
     }
   },
 
   /**
-   * Lấy chi tiết bài đăng niêm yết theo ID (GET /api/v1/listings/{postId})
+   * Lấy chi tiết bài đăng niêm yết theo ID (GET /api/v1/posts/{postId})
    */
   async getListingDetail(postId: string): Promise<any> {
     try {
-      const res = await request<any>(`/v1/listings/${postId}`, {
+      const res = await request<any>(`/v1/posts/${postId}`, {
         method: 'GET',
         requiresAuth: false,
       });
       return (res as any)?.data || res;
     } catch (err) {
-      console.warn(`Lỗi lấy chi tiết listing ${postId}:`, err);
+      console.warn(`Lỗi lấy chi tiết bài đăng ${postId}:`, err);
       return null;
     }
   },
@@ -379,6 +373,10 @@ export const postService = {
       title: 'Bài đăng mới',
       description: 'Mô tả bài đăng sản phẩm',
       price: 1000000,
+      shippingWeight: 1000,
+      shippingLength: 10,
+      shippingWidth: 10,
+      shippingHeight: 10,
     };
     const response = await request<PostSubmitResponse>(`/v1/posts/submit/${postId}`, {
       method: 'POST',

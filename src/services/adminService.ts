@@ -43,6 +43,8 @@ export interface UserRoleAuditResponseDto {
   action: string;
   changedBy: string;
   changedAt: string;
+  oldRoles?: string[];
+  newRoles?: string[];
 }
 
 export interface GetAdminUsersParams {

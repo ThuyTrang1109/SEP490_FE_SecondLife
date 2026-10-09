@@ -37,6 +37,7 @@ interface AuthModalProps {
     role: UserRole;
     phone?: string;
     address?: string;
+    avatar?: string;
   }) => void;
   lang: Language;
 }

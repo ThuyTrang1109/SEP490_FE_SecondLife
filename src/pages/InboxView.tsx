@@ -77,25 +77,26 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
     }
 
     // Otherwise create fallback Listing object from ChatRoom metadata
-    const fallbackListing: Listing = {
+    const fallbackListing = {
       id: room.postId,
       title: room.postTitle || 'Sản phẩm trao đổi',
       brand: 'Chính hãng',
       priceVnd: 500000,
       description: 'Thông tin sản phẩm trong cuộc hội thoại',
-      category: 'Electronics',
-      condition: 'good',
+      category: 'Điều hòa & Máy lọc',
       sellerId: room.sellerId,
       sellerName: room.sellerName || 'Người bán',
       location: 'Hồ Chí Minh',
       status: 'active',
-      isEscrowSecured: true,
       photos: {
         front: room.postImageUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
         back: room.postImageUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+        screenOrDetails: '',
+        accessoriesOrBox: '',
+        serialOrReceipt: '',
       },
       createdAt: room.updatedAt || new Date().toISOString(),
-    };
+    } as unknown as Listing;
 
     onOpenChat(fallbackListing, room.id, partnerName, partnerAvatar);
   };

@@ -1002,8 +1002,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     setLocalListings((prev) =>
       prev.map((item) => {
         if (item.id === id) {
-          const newStatus = item.status === 'ACTIVE' ? 'DRAFT' : 'ACTIVE';
-          triggerNotice(`Đã chuyển trạng thái tin đăng #${id} sang ${newStatus === 'ACTIVE' ? 'Hiển thị (Đã duyệt)' : 'Tạm ẩn'}.`);
+          const newStatus = item.status === 'active' ? 'draft' : 'active';
+          triggerNotice(`Đã chuyển trạng thái tin đăng #${id} sang ${newStatus === 'active' ? 'Hiển thị (Đã duyệt)' : 'Tạm ẩn'}.`);
           return { ...item, status: newStatus as any };
         }
         return item;

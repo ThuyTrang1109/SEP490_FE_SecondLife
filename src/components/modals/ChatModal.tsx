@@ -104,7 +104,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       const senderRole: 'buyer' | 'seller' | 'system' = isSystem
         ? 'system'
         : isSenderMe
-        ? currentRole
+        ? currentRole === 'staff' ? 'seller' : currentRole as ('buyer' | 'seller')
         : currentRole === 'buyer'
         ? 'seller'
         : 'buyer';
@@ -629,7 +629,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   const isAccepted = offer.status === 'ACCEPTED';
                   const isRejected = offer.status === 'REJECTED';
                   const isCancelled = offer.status === 'CANCELLED';
-                  const isExpired = offer.status === 'EXPIRED';
+                  const isExpired = false; // Note: EXPIRED is not in SystemOfferPayload
                   const isPending = offer.status === 'PENDING';
                   
                   const isOfferSenderMe = currentUser?.id ? msg.senderId === currentUser.id : msg.senderId === currentRole;

@@ -40,6 +40,8 @@ export interface RolePermissionAuditResponseDto {
   action: 'GRANT' | 'REVOKE' | string;
   changedBy: string;
   changedAt: string;
+  grantedPermissions?: string[];
+  revokedPermissions?: string[];
 }
 
 export const adminRbacService = {

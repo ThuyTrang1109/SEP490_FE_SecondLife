@@ -933,17 +933,46 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       return;
     }
 
+    // BE ShippingParcel: int, weight 1..50000 (gram), length/width/height 1..200 (cm)
+    const parcel = {
+      weight: Math.round(Number(shippingWeight)),
+      length: Math.round(Number(shippingLength)),
+      width: Math.round(Number(shippingWidth)),
+      height: Math.round(Number(shippingHeight)),
+    };
+    if (parcel.weight < 1 || parcel.weight > 50000) {
+      showToast(lang === 'vi' ? 'Trọng lượng phải từ 1 đến 50.000 gram (tối đa 50kg theo GHN)' : 'Weight must be 1–50000 grams');
+      return;
+    }
+    if ([parcel.length, parcel.width, parcel.height].some((v) => v < 1 || v > 200)) {
+      showToast(lang === 'vi' ? 'Dài/Rộng/Cao phải từ 1 đến 200 cm' : 'Length/Width/Height must be 1–200 cm');
+      return;
+    }
+
     setIsSubmittingPost(true);
     setSubmitError(null);
+
+    // Lưu thông tin kiện hàng (Shipping Package) trước khi Submit Post
+    try {
+      await shippingService.updateShippingPackage(postId, parcel);
+    } catch (err: any) {
+      setSubmitError(
+        (lang === 'vi' ? 'Không lưu được thông tin kiện hàng: ' : 'Failed to save shipping package: ') +
+          (err?.message || '')
+      );
+      setIsSubmittingPost(false);
+      return;
+    }
+
     try {
       const submitRes = await postService.submitPost(postId, {
         title: title.trim(),
         description: description.trim(),
         price: finalPriceVnd,
-        shippingWeight: Number(shippingWeight),
-        shippingLength: Number(shippingLength),
-        shippingWidth: Number(shippingWidth),
-        shippingHeight: Number(shippingHeight)
+        shippingWeight: parcel.weight,
+        shippingLength: parcel.length,
+        shippingWidth: parcel.width,
+        shippingHeight: parcel.height
       });
 
       setSubmitResult(submitRes);

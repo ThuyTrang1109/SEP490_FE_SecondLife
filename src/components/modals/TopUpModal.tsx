@@ -327,6 +327,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                     await sellerCreditService.createPurchase({
                       listingQuantity: targetPkg.postCredits || 0,
                       valuationQuantity: targetPkg.chatCredits || 0,
+                      aiChatQuantity: (targetPkg as any).aiChatCredits || 0,
                     });
                   } catch (err) {
                     console.warn('sellerCreditService.createPurchase auto notice:', err);
@@ -546,6 +547,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         await sellerCreditService.createPurchase({
           listingQuantity: targetPkg.postCredits || 0,
           valuationQuantity: targetPkg.chatCredits || 0,
+          aiChatQuantity: (targetPkg as any).aiChatCredits || 0,
         });
       } catch (err) {
         console.warn('sellerCreditService.createPurchase notice:', err);

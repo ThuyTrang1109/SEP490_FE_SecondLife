@@ -30,6 +30,7 @@ export interface CreditPricingResponseDto {
 export interface CreateCreditPurchaseRequestDto {
   listingQuantity: number;
   valuationQuantity: number;
+  aiChatQuantity: number;
 }
 
 export interface CreditPurchaseResponseDto {

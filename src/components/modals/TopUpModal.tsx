@@ -293,6 +293,10 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   };
 
   const loadPackagesAndCredit = async () => {
+    if (isBuyerRole) {
+      setPackagesLoading(false);
+      return;
+    }
     setPackagesLoading(true);
     try {
       const [pkgsRes, aiCreditObj, sellerCreditObj] = await Promise.all([

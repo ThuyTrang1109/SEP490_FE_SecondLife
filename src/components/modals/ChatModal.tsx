@@ -71,8 +71,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const [loadingCredit, setLoadingCredit] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Fetch User Credit
+  // Fetch User Credit (only for sellers/admins, buyers do not use credit system)
   useEffect(() => {
+    if (currentRole === 'buyer') {
+      setLoadingCredit(false);
+      return;
+    }
+
     let isMounted = true;
     const fetchCredit = async () => {
       try {
@@ -88,7 +93,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [currentRole]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

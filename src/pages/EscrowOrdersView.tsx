@@ -93,9 +93,9 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       if (saved && saved !== 'undefined' && saved !== 'null' && saved.trim() !== '') {
         return JSON.parse(saved);
       }
-      return ['ORD-2026-8804'];
+      return [];
     } catch {
-      return ['ORD-2026-8804'];
+      return [];
     }
   });
 

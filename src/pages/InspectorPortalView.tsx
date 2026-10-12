@@ -154,57 +154,14 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     setIsLoadingStaff(true);
     try {
       const data = await inspectorService.getStaff();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         setStaffList(data);
       } else {
-        // Fallback demo staff list if empty
-        setStaffList([
-          {
-            id: 'INS-01',
-            fullName: 'Lê Hoàng Nam (Trưởng Lab)',
-            email: 'nam.le@secondlife.vn',
-            phone: '0905 123 456',
-            role: 'LEAD_INSPECTOR',
-            createdAt: '2026-01-15'
-          },
-          {
-            id: 'INS-02',
-            fullName: 'Trần Minh Quân (KTV Tận Nơi)',
-            email: 'quan.tran@secondlife.vn',
-            phone: '0908 987 654',
-            role: 'ONSITE_INSPECTOR',
-            createdAt: '2026-02-10'
-          },
-          {
-            id: 'INS-03',
-            fullName: 'Nguyễn Thị Thu Thảo (KTV Điện Tử)',
-            email: 'thao.nguyen@secondlife.vn',
-            phone: '0912 345 678',
-            role: 'LAB_INSPECTOR',
-            createdAt: '2026-03-01'
-          }
-        ]);
+        setStaffList([]);
       }
     } catch (err) {
       console.warn('Backend load staff error:', err);
-      setStaffList([
-        {
-          id: 'INS-01',
-          fullName: 'Lê Hoàng Nam (Trưởng Lab)',
-          email: 'nam.le@secondlife.vn',
-          phone: '0905 123 456',
-          role: 'LEAD_INSPECTOR',
-          createdAt: '2026-01-15'
-        },
-        {
-          id: 'INS-02',
-          fullName: 'Trần Minh Quân (KTV Tận Nơi)',
-          email: 'quan.tran@secondlife.vn',
-          phone: '0908 987 654',
-          role: 'ONSITE_INSPECTOR',
-          createdAt: '2026-02-10'
-        }
-      ]);
+      setStaffList([]);
     } finally {
       setIsLoadingStaff(false);
     }
@@ -326,29 +283,34 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     window.print();
   };
 
-  // Finance calculations
-  const totalCompletedOrders = orders.filter((o) => (o.escrowStatus as string) === 'COMPLETED' || o.escrowStatus === 'COMPLETED_RELEASED' || o.escrowStatus === 'DELIVERED_INSPECTION_WINDOW').length || 4;
-  const mockFinanceOrders = orders.map((o, idx) => {
-    const isAtHome = o.inspectionMethod === 'AT_HOME' || idx % 2 === 1;
+  // Finance calculations from real orders
+  const completedOrders = orders.filter((o) =>
+    Boolean(o.inspectionReport) ||
+    (o.escrowStatus as string) === 'COMPLETED' ||
+    o.escrowStatus === 'COMPLETED_RELEASED'
+  );
+  const totalCompletedOrders = completedOrders.length;
+  const financeOrders = orders.map((o) => {
+    const isAtHome = o.inspectionMethod === 'AT_HOME';
     const baseFee = isAtHome ? 200000 : 120000;
-    const hubShare = isAtHome ? 170000 : 90000; // Hub takes 75% base + 100% on-site travel allowance
+    const hubShare = isAtHome ? 170000 : 90000;
     const platformShare = baseFee - hubShare;
     return {
       orderId: o.id,
       title: o.listing?.title || 'Thiết bị gia dụng',
-      method: isAtHome ? ('AT_HOME' as const) : ('AT_CENTER' as const),
+      method: (o.inspectionMethod || 'AT_CENTER') as 'AT_HOME' | 'AT_CENTER',
       totalFee: baseFee,
       hubShare,
       platformShare,
-      splitRule: o.inspectionFeeSplit || (idx % 3 === 0 ? 'SPLIT_50_50' : idx % 3 === 1 ? 'BUYER_100' : 'SELLER_100'),
+      splitRule: o.inspectionFeeSplit || 'SPLIT_50_50',
       status: ((o.escrowStatus as string) === 'COMPLETED' || o.escrowStatus === 'COMPLETED_RELEASED') ? 'PAID_OUT' : 'HELD_IN_ESCROW',
-      date: o.createdAt || '2026-10-10'
+      date: o.createdAt ? new Date(o.createdAt).toLocaleDateString('vi-VN') : 'Mới tạo'
     };
   });
 
-  const grossFees = mockFinanceOrders.reduce((sum, item) => sum + item.totalFee, 0);
-  const netHubRevenue = mockFinanceOrders.reduce((sum, item) => sum + item.hubShare, 0);
-  const platformRevenue = mockFinanceOrders.reduce((sum, item) => sum + item.platformShare, 0);
+  const grossFees = financeOrders.reduce((sum, item) => sum + item.totalFee, 0);
+  const netHubRevenue = financeOrders.reduce((sum, item) => sum + item.hubShare, 0);
+  const platformRevenue = financeOrders.reduce((sum, item) => sum + item.platformShare, 0);
 
   return (
     <div className="space-y-6 pb-16 text-[#24263e]">
@@ -839,22 +801,22 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     </div>
                     <div>
                       <span className="text-slate-400">Điện thoại: </span>
-                      <span className="font-semibold">{st.phone || '0905 123 456'}</span>
+                      <span className="font-semibold">{st.phone || 'Chưa cập nhật'}</span>
                     </div>
                     <div>
                       <span className="text-slate-400">Chuyên môn: </span>
                       <span className="font-medium">
-                        {idx % 2 === 0 ? 'Điện lạnh & Thiết bị cơ nhiệt' : 'Bo mạch điện tử & Smartphone'}
+                        {st.role === 'LEAD_INSPECTOR' ? 'Trưởng Lab & Giám định viên chính' : 'Kỹ thuật viên kiểm định'}
                       </span>
                     </div>
                   </div>
 
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
                     <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded">
-                      ● Đang trực ca
+                      ● Đang hoạt động
                     </span>
                     <span className="text-slate-500 font-mono">
-                      Hoàn thành: <strong className="text-slate-800">{12 + idx * 8}</strong> đơn
+                      Mã: <strong className="text-slate-800">{st.id || `INS-0${idx + 1}`}</strong>
                     </span>
                   </div>
                 </div>
@@ -1015,7 +977,14 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {mockFinanceOrders.map((row) => (
+                  {financeOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-400 text-sm">
+                        Chưa có dữ liệu đơn hàng phát sinh phí kiểm định.
+                      </td>
+                    </tr>
+                  ) : (
+                    financeOrders.map((row) => (
                     <tr key={row.orderId} className="hover:bg-slate-50/50 transition">
                       <td className="py-3 px-4 font-mono font-bold text-slate-900">#{row.orderId}</td>
                       <td className="py-3 px-4 font-semibold text-slate-800 line-clamp-1 max-w-[200px]">
@@ -1060,7 +1029,8 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                         )}
                       </td>
                     </tr>
-                  ))}
+                  ))
+                )}
                 </tbody>
               </table>
             </div>
@@ -1414,9 +1384,11 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                 <div>
                   <div className="text-gray-500">KỸ SƯ TRƯỞNG LAB</div>
                   <div className="h-14 flex items-center justify-center font-serif italic text-base text-blue-900 font-bold">
-                    Lê Hoàng Nam
+                    {activeOrder?.inspectionReport?.inspectorName || 'Giám định viên'}
                   </div>
-                  <div className="text-[11px] font-bold text-gray-700">KTV. Lê Hoàng Nam</div>
+                  <div className="text-[11px] font-bold text-gray-700">
+                    KTV. {activeOrder?.inspectionReport?.inspectorName || 'Giám định viên'}
+                  </div>
                 </div>
 
                 <div>

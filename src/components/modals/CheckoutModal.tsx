@@ -24,7 +24,10 @@ import {
   UserCheck,
   Coins,
   Percent,
-  BadgeCheck
+  BadgeCheck,
+  Check,
+  Edit3,
+  ListFilter
 } from 'lucide-react';
 import { orderService, walletService, shippingService, GhnLocation } from '../../services';
 
@@ -73,6 +76,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [wards, setWards] = useState<GhnLocation[]>([]);
   const [loadingWards, setLoadingWards] = useState(false);
   const [selectedWardName, setSelectedWardName] = useState<string>('');
+  const [provinceMode, setProvinceMode] = useState<'select' | 'manual'>('select');
+  const [wardMode, setWardMode] = useState<'select' | 'manual'>('select');
 
   // Buyer Form Information
   const [buyerName, setBuyerName] = useState(currentUser?.name || '');
@@ -85,6 +90,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Delivery & Protection Option: 'INSPECTION' (Verify Then Ship) or 'DIRECT' (Direct Door-to-Door)
   const [deliveryOption, setDeliveryOption] = useState<'INSPECTION' | 'DIRECT'>('INSPECTION');
+
+  // Confirmation of disassembly and voiding of original "zin" condition
+  const [agreedZinLoss, setAgreedZinLoss] = useState(false);
 
   // Inspection Center, Method & Fee Splitting States
   const [selectedCenterId, setSelectedCenterId] = useState<string>(mockInspectionCenters[0]?.id || 'center-hcm-01');
@@ -160,6 +168,40 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     loadProvinces();
     return () => { isMounted = false; };
   }, []);
+
+  // Handler khi người dùng tự nhập Tỉnh/Thành phố
+  const handleManualProvinceChange = (text: string) => {
+    setSelectedProvinceName(text);
+    if (formErrors.city) setFormErrors((prev) => ({ ...prev, city: '' }));
+
+    const trimmed = text.trim().toLowerCase();
+    if (!trimmed) {
+      setSelectedProvinceId('');
+      return;
+    }
+
+    const clean = (s: string) =>
+      s.toLowerCase().replace(/^(tỉnh|thành phố|tp\.|tp)\s+/i, '').trim();
+    const cleanInput = clean(trimmed);
+
+    const match = provinces.find((p) => {
+      const pLower = p.name.toLowerCase();
+      const pClean = clean(pLower);
+      return (
+        pLower === trimmed ||
+        pClean === cleanInput ||
+        pLower.includes(trimmed) ||
+        trimmed.includes(pLower) ||
+        pClean.includes(cleanInput)
+      );
+    });
+
+    if (match) {
+      setSelectedProvinceId(match._id);
+    } else {
+      setSelectedProvinceId('');
+    }
+  };
 
   // Load GHN Wards when selectedProvinceId changes
   useEffect(() => {
@@ -282,14 +324,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     if (!buyerPhone.trim() || buyerPhone.replace(/\D/g, '').length < 9) {
       errors.buyerPhone = lang === 'vi' ? 'Số điện thoại không hợp lệ (tối thiểu 9 số)' : 'Valid phone required';
     }
-    if (!selectedProvinceName) {
-      errors.city = lang === 'vi' ? 'Vui lòng chọn Tỉnh/Thành phố GHN' : 'City is required';
+    if (!selectedProvinceName.trim()) {
+      errors.city = lang === 'vi' ? 'Vui lòng chọn hoặc tự ghi Tỉnh / Thành phố' : 'Province/City is required';
     }
-    if (!selectedWardName) {
-      errors.ward = lang === 'vi' ? 'Vui lòng chọn Phường/Xã GHN' : 'Ward is required';
+    if (!selectedWardName.trim()) {
+      errors.ward = lang === 'vi' ? 'Vui lòng chọn hoặc tự ghi Phường / Xã' : 'Ward is required';
     }
     if (!streetAddress.trim()) {
       errors.streetAddress = lang === 'vi' ? 'Vui lòng nhập số nhà, tên đường' : 'Street address is required';
+    }
+    if (deliveryOption === 'INSPECTION' && !agreedZinLoss) {
+      errors.agreedZinLoss = lang === 'vi'
+        ? 'Vui lòng xác nhận bạn đã hiểu và đồng ý việc tháo sản phẩm kiểm định sẽ làm mất trạng thái zin của sản phẩm.'
+        : 'Please confirm agreement that disassembly inspection will void the product original "zin" status.';
     }
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -301,12 +348,29 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       if (currentUser.phone) setBuyerPhone(currentUser.phone);
       if (currentUser.email) setBuyerEmail(currentUser.email);
       if (currentUser.address) setStreetAddress(currentUser.address);
+      const userProv = (currentUser as any).provinceName || (currentUser as any).province || '';
+      const userWard = (currentUser as any).wardName || (currentUser as any).ward || '';
+      if (userProv) {
+        handleManualProvinceChange(userProv);
+      }
+      if (userWard) {
+        setSelectedWardName(userWard);
+      }
     }
   };
 
   const handleConfirmOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateForm()) return;
+    if (!validateForm()) {
+      if (deliveryOption === 'INSPECTION' && !agreedZinLoss) {
+        setOrderError(
+          lang === 'vi'
+            ? 'Vui lòng xác nhận bạn đã hiểu việc tháo máy kiểm định sẽ làm mất trạng thái zin của sản phẩm.'
+            : 'Please confirm agreement that inspection disassembly voids original "zin" status.'
+        );
+      }
+      return;
+    }
 
     let activeQuote = ghnQuote;
     if (!activeQuote || !activeQuote.quoteId) {
@@ -382,7 +446,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               carrier: inspectionMethod === 'AT_HOME' ? 'SecondLife On-site Team' : 'GHN Express',
               trackingNumber: `GHN-HUB-${orderId.slice(0, 8).toUpperCase()}`,
               status: 'PICKED_UP',
-              origin: listing.location || 'Địa chỉ kho người bán',
+              origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
               destination: inspectionMethod === 'AT_HOME'
                 ? `Kiểm định tại nhà người bán (Kỹ sư ${selectedCenter?.name})`
                 : (selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab'),
@@ -422,7 +486,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               carrier: 'GHN Express',
               trackingNumber: `GHN-DIRECT-${orderId.slice(0, 8).toUpperCase()}`,
               status: 'PICKED_UP',
-              origin: listing.location || 'Địa chỉ kho người bán',
+              origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
               destination: fullAddress,
               estimatedDelivery: ghnQuote?.expectedDeliveryTime || '1-2 ngày',
               timeline: [
@@ -616,6 +680,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       ? 'Kỹ sư Hub Lab kiểm định kỹ thuật 20+ chỉ tiêu, dán tem niêm phong NFC chống tráo trước khi giao đến bạn.'
                       : 'Engineers inspect technical condition, apply tamper NFC seal before final delivery.'}
                   </p>
+
+                  <div className="mt-1 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-[10px] text-amber-900 font-semibold">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>
+                      {lang === 'vi'
+                        ? 'Tháo máy kiểm định • Mất trạng thái zin'
+                        : 'Disassembled for testing • Voids original zin'}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -663,6 +736,117 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             {/* BLOCK CẤU HÌNH KIỂM ĐỊNH CHI TIẾT */}
             {deliveryOption === 'INSPECTION' && (
               <div className="mt-3 pt-3 border-t border-slate-200/80 space-y-3.5 animate-fadeIn">
+                {/* THÔNG BÁO VỀ VIỆC THÁO SẢN PHẨM KIỂM ĐỊNH & MẤT TRẠNG THÁI ZIN */}
+                <div
+                  className={`p-3.5 sm:p-4 rounded-2xl border-2 transition-all shadow-xs ${
+                    formErrors.agreedZinLoss
+                      ? 'bg-rose-50/80 border-rose-300 ring-2 ring-rose-400/20'
+                      : agreedZinLoss
+                        ? 'bg-gradient-to-br from-emerald-50/60 to-white border-emerald-300'
+                        : 'bg-gradient-to-br from-amber-50/90 via-[#fffbf5] to-orange-50/80 border-amber-300'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-xs transition ${
+                        agreedZinLoss ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+                      }`}
+                    >
+                      {agreedZinLoss ? <Check className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
+                    </div>
+
+                    <div className="space-y-2 flex-1">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <h5 className="font-extrabold text-xs sm:text-sm text-[#24263e] uppercase tracking-wide flex items-center gap-1.5">
+                          <span>
+                            {lang === 'vi'
+                              ? 'Lưu ý quan trọng: Quy trình tháo máy & Trạng thái "Zin"'
+                              : 'Important Notice: Disassembly Inspection & "Zin" Status'}
+                          </span>
+                        </h5>
+                        <span
+                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                            agreedZinLoss
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                              : 'bg-amber-100 text-amber-900 border-amber-300'
+                          }`}
+                        >
+                          {agreedZinLoss
+                            ? (lang === 'vi' ? '✓ Đã đồng ý' : '✓ Confirmed')
+                            : (lang === 'vi' ? '⚠️ Cần xác nhận' : '⚠️ Action Required')}
+                        </span>
+                      </div>
+
+                      <div className="text-[11px] text-slate-700 leading-relaxed space-y-1.5">
+                        <p>
+                          {lang === 'vi' ? (
+                            <>
+                              Khi bạn chọn mua hàng kiểm định, kỹ thuật viên chuyên trách tại Trung tâm Kiểm định SecondLife sẽ tiến hành{' '}
+                              <strong className="text-slate-900 font-bold underline decoration-amber-400 decoration-2">
+                                tháo mở sản phẩm
+                              </strong>{' '}
+                              để kiểm tra chuyên sâu các linh kiện, bo mạch, vi xử lý và phát hiện chính xác tình trạng sửa chữa, thay thế hoặc lỗi tiềm ẩn.
+                            </>
+                          ) : (
+                            <>
+                              When selecting inspection, certified technicians will{' '}
+                              <strong className="text-slate-900 font-bold underline decoration-amber-400 decoration-2">
+                                disassemble the product
+                              </strong>{' '}
+                              to perform thorough diagnostics on internal circuitry, components, and detect hidden repairs or replacements.
+                            </>
+                          )}
+                        </p>
+
+                        <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-300/80 text-amber-950 font-medium">
+                          <p>
+                            ⚠️{' '}
+                            <strong>
+                              {lang === 'vi'
+                                ? 'Sản phẩm sẽ mất trạng thái "zin" ban đầu:'
+                                : 'Product will lose original "zin" status:'}
+                            </strong>{' '}
+                            {lang === 'vi'
+                              ? 'Do phải tháo máy để kiểm định chất lượng, sản phẩm sẽ mất tem niêm phong xuất xưởng ban đầu của nhà sản xuất (mất trạng thái zin). Sau khi kiểm định đạt chuẩn, hệ thống sẽ dán Tem niêm phong bảo đảm NFC SecondLife và cấp Biên bản chứng thực độc quyền để bảo vệ quyền lợi người mua.'
+                              : 'Because disassembly is required, original factory seals will be opened (losing pristine "zin" status). In return, passed items receive an official SecondLife NFC Tamper-Evident Seal & Lab Certification.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Interactive Consent Checkbox */}
+                      <label className="flex items-start gap-2.5 pt-2 mt-1 border-t border-slate-200/80 cursor-pointer select-none group">
+                        <input
+                          type="checkbox"
+                          checked={agreedZinLoss}
+                          onChange={(e) => {
+                            setAgreedZinLoss(e.target.checked);
+                            if (formErrors.agreedZinLoss) {
+                              setFormErrors((prev) => ({ ...prev, agreedZinLoss: '' }));
+                            }
+                          }}
+                          className="mt-0.5 w-4 h-4 rounded text-[#c34c36] focus:ring-[#c34c36] border-slate-300 cursor-pointer accent-[#c34c36]"
+                        />
+                        <span
+                          className={`text-[11px] font-bold leading-snug transition ${
+                            agreedZinLoss ? 'text-emerald-800' : 'text-slate-800 group-hover:text-[#c34c36]'
+                          }`}
+                        >
+                          {lang === 'vi'
+                            ? 'Tôi đã hiểu và đồng ý rằng sản phẩm sẽ được tháo máy để kiểm định và sẽ mất trạng thái zin của sản phẩm.'
+                            : 'I understand and agree that the product will be disassembled for inspection and will lose its original "zin" condition.'}
+                        </span>
+                      </label>
+
+                      {formErrors.agreedZinLoss && (
+                        <div className="flex items-center gap-1.5 text-[11px] text-rose-600 font-bold pt-0.5 animate-fadeIn">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                          <span>{formErrors.agreedZinLoss}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 {/* 1. Chọn Trung Tâm Kiểm Định */}
                 <div className="space-y-2 bg-[#faf8f5] p-3.5 rounded-2xl border border-slate-200">
                   <div className="flex items-center justify-between">
@@ -1010,72 +1194,171 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             </div>
 
-            {/* Address fields with GHN Catalogue */}
+            {/* Address fields with GHN Catalogue & Custom Manual Input */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  {lang === 'vi' ? 'Tỉnh / Thành phố nhận hàng (GHN) *' : 'GHN Province / City *'}
-                </label>
-                <select
-                  value={selectedProvinceId}
-                  onChange={(e) => {
-                    const id = e.target.value ? Number(e.target.value) : '';
-                    setSelectedProvinceId(id);
-                    const found = provinces.find((p) => p._id === id);
-                    setSelectedProvinceName(found ? found.name : '');
-                    if (formErrors.city) setFormErrors({ ...formErrors, city: '' });
-                  }}
-                  disabled={loadingProvinces}
-                  className={`w-full px-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition cursor-pointer ${
-                    formErrors.city ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
-                  }`}
-                >
-                  <option value="" disabled hidden>
-                    {loadingProvinces ? 'Đang tải danh mục GHN...' : 'Chọn Tỉnh / Thành phố'}
-                  </option>
-                  {provinces.map((p) => (
-                    <option key={p._id} value={p._id}>
-                      {p.name}
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-bold text-slate-700">
+                    {lang === 'vi' ? 'Tỉnh / Thành phố nhận hàng *' : 'Province / City *'}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextMode = provinceMode === 'select' ? 'manual' : 'select';
+                      setProvinceMode(nextMode);
+                    }}
+                    className="text-[10px] font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer bg-[#faf8f5] px-2 py-0.5 rounded-md border border-slate-200"
+                    title={provinceMode === 'select' ? 'Chuyển sang tự nhập tay' : 'Chuyển sang chọn từ danh sách'}
+                  >
+                    {provinceMode === 'select' ? (
+                      <>
+                        <Edit3 className="w-2.5 h-2.5" />
+                        <span>Tự ghi</span>
+                      </>
+                    ) : (
+                      <>
+                        <ListFilter className="w-2.5 h-2.5" />
+                        <span>Chọn danh sách</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {provinceMode === 'select' ? (
+                  <select
+                    value={selectedProvinceId}
+                    onChange={(e) => {
+                      const id = e.target.value ? Number(e.target.value) : '';
+                      setSelectedProvinceId(id);
+                      const found = provinces.find((p) => p._id === id);
+                      setSelectedProvinceName(found ? found.name : '');
+                      if (formErrors.city) setFormErrors({ ...formErrors, city: '' });
+                    }}
+                    disabled={loadingProvinces}
+                    className={`w-full px-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition cursor-pointer ${
+                      formErrors.city ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
+                    }`}
+                  >
+                    <option value="" disabled hidden>
+                      {loadingProvinces ? 'Đang tải danh mục GHN...' : 'Chọn Tỉnh / Thành phố'}
                     </option>
-                  ))}
-                </select>
+                    {provinces.map((p) => (
+                      <option key={p._id} value={p._id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      list="province-suggestions"
+                      value={selectedProvinceName}
+                      onChange={(e) => handleManualProvinceChange(e.target.value)}
+                      placeholder="Gõ tên Tỉnh/Thành (VD: Hà Nội, TP. HCM...)"
+                      className={`w-full pl-9 pr-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition ${
+                        formErrors.city ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
+                      }`}
+                    />
+                    <datalist id="province-suggestions">
+                      {provinces.map((p) => (
+                        <option key={p._id} value={p.name} />
+                      ))}
+                    </datalist>
+                  </div>
+                )}
                 {formErrors.city && (
                   <span className="text-[10px] text-rose-500 font-semibold mt-0.5 block">{formErrors.city}</span>
                 )}
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  {lang === 'vi' ? 'Phường / Xã nhận hàng (GHN) *' : 'GHN Ward *'}
-                </label>
-                <select
-                  value={selectedWardName}
-                  onChange={(e) => {
-                    const newWard = e.target.value;
-                    setSelectedWardName(newWard);
-                    if (formErrors.ward) setFormErrors({ ...formErrors, ward: '' });
-                    if (selectedProvinceName && newWard) {
-                      calculateGhnQuote(selectedProvinceName, newWard, streetAddress, buyerName, buyerPhone);
-                    }
-                  }}
-                  disabled={!selectedProvinceId || loadingWards}
-                  className={`w-full px-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition cursor-pointer ${
-                    formErrors.ward ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
-                  }`}
-                >
-                  <option value="" disabled hidden>
-                    {!selectedProvinceId
-                      ? 'Vui lòng chọn Tỉnh/Thành trước'
-                      : loadingWards
-                        ? 'Đang tải danh sách Phường/Xã...'
-                        : 'Chọn Phường / Xã'}
-                  </option>
-                  {wards.map((w) => (
-                    <option key={w._id} value={w.name}>
-                      {w.name}
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-bold text-slate-700">
+                    {lang === 'vi' ? 'Phường / Xã nhận hàng *' : 'GHN Ward *'}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextMode = wardMode === 'select' ? 'manual' : 'select';
+                      setWardMode(nextMode);
+                    }}
+                    className="text-[10px] font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer bg-[#faf8f5] px-2 py-0.5 rounded-md border border-slate-200"
+                    title={wardMode === 'select' ? 'Chuyển sang tự nhập tay' : 'Chuyển sang chọn từ danh sách'}
+                  >
+                    {wardMode === 'select' ? (
+                      <>
+                        <Edit3 className="w-2.5 h-2.5" />
+                        <span>Tự ghi</span>
+                      </>
+                    ) : (
+                      <>
+                        <ListFilter className="w-2.5 h-2.5" />
+                        <span>Chọn danh sách</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {wardMode === 'select' ? (
+                  <select
+                    value={selectedWardName}
+                    onChange={(e) => {
+                      const newWard = e.target.value;
+                      setSelectedWardName(newWard);
+                      if (formErrors.ward) setFormErrors({ ...formErrors, ward: '' });
+                      if (selectedProvinceName && newWard) {
+                        calculateGhnQuote(selectedProvinceName, newWard, streetAddress, buyerName, buyerPhone);
+                      }
+                    }}
+                    disabled={!selectedProvinceId || loadingWards}
+                    className={`w-full px-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition cursor-pointer ${
+                      formErrors.ward ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
+                    }`}
+                  >
+                    <option value="" disabled hidden>
+                      {!selectedProvinceId
+                        ? (selectedProvinceName ? 'Bấm "Tự ghi" hoặc chọn từ gợi ý' : 'Vui lòng chọn Tỉnh/Thành trước')
+                        : loadingWards
+                          ? 'Đang tải danh sách Phường/Xã...'
+                          : 'Chọn Phường / Xã'}
                     </option>
-                  ))}
-                </select>
+                    {wards.map((w) => (
+                      <option key={w._id} value={w.name}>
+                        {w.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      list="ward-suggestions"
+                      value={selectedWardName}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedWardName(val);
+                        if (formErrors.ward) setFormErrors({ ...formErrors, ward: '' });
+                      }}
+                      onBlur={() => {
+                        if (selectedProvinceName && selectedWardName) {
+                          calculateGhnQuote(selectedProvinceName, selectedWardName, streetAddress, buyerName, buyerPhone);
+                        }
+                      }}
+                      placeholder="Gõ tên Phường / Xã..."
+                      className={`w-full pl-9 pr-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition ${
+                        formErrors.ward ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
+                      }`}
+                    />
+                    <datalist id="ward-suggestions">
+                      {wards.map((w) => (
+                        <option key={w._id} value={w.name} />
+                      ))}
+                    </datalist>
+                  </div>
+                )}
                 {formErrors.ward && (
                   <span className="text-[10px] text-rose-500 font-semibold mt-0.5 block">{formErrors.ward}</span>
                 )}
@@ -1401,6 +1684,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         : (lang === 'vi'
                             ? `Người bán chịu 100% (${formatVND(sellerInspectionFee)})`
                             : `Seller pays 100% (${formatVND(sellerInspectionFee)})`)}
+                  </span>
+                </div>
+
+                <div className="pt-1.5 border-t border-emerald-200/60 text-[10px] text-amber-900 flex items-center gap-1 font-medium">
+                  <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                  <span>
+                    {lang === 'vi'
+                      ? 'Lưu ý: Thiết bị sẽ được tháo máy để kiểm tra kỹ thuật (sẽ mất trạng thái zin nguyên bản).'
+                      : 'Notice: Device will be disassembled for inspection (voids original "zin" condition).'}
                   </span>
                 </div>
               </div>

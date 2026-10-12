@@ -7,7 +7,7 @@ import {
   UserProfile
 } from '../types';
 import { formatVND } from '../utils/translations';
-import { mockStandardChecklist, mockInspectionCenters } from '../data/mockData';
+import { mockStandardChecklist } from '../data/mockData';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -47,6 +47,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { inspectorService, InspectionOrderDto } from '../services';
+import { BarcodeScannerModal, playScanBeep } from '../components/modals/BarcodeScannerModal';
 
 interface ProductInspectionStationViewProps {
   orders: EscrowOrder[];
@@ -71,8 +72,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   onNavigateToHub,
 }) => {
   // Current active technician
-  const inspectorName = currentUser?.name || 'Kỹ sư Lê Hoàng Nam';
-  const inspectorCode = 'INS-LAB-042';
+  const inspectorName = currentUser?.name || 'Kỹ thuật viên kiểm định';
+  const inspectorCode = currentUser?.id ? `INS-${currentUser.id}` : 'INS-STAFF';
 
   // State: Task Queue
   const [selectedOrderId, setSelectedOrderId] = useState<string>(orders[0]?.id || '');
@@ -80,6 +81,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const [taskSearch, setTaskSearch] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   const [barcodeScanInput, setBarcodeScanInput] = useState('');
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannerMode, setScannerMode] = useState<'intake' | 'serial' | 'tamper'>('intake');
 
   // Active Order
   const activeOrder = useMemo(() => {
@@ -91,16 +94,14 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const [isFocusMode, setIsFocusMode] = useState(false);
 
   // --- STEP 1: INTAKE & PROFILE CHECK ---
-  const [actualSerialNo, setActualSerialNo] = useState('SN-APL-8839210-VN');
+  const [actualSerialNo, setActualSerialNo] = useState('');
   const [packagingStatus, setPackagingStatus] = useState<'INTACT' | 'SLIGHT_DAMAGE' | 'HEAVY_DAMAGE'>('INTACT');
-  const [accessoriesNote, setAccessoriesNote] = useState('Đầy đủ phụ kiện dây cắm, khay phụ, remote điều khiển zin');
+  const [accessoriesNote, setAccessoriesNote] = useState('');
 
   // --- STEP 2: EXTERIOR & GRADING ---
   const [selectedGrade, setSelectedGrade] = useState<ConditionGrade>('Like New');
   const [exteriorScore, setExteriorScore] = useState<number>(95);
-  const [exteriorNotes, setExteriorNotes] = useState(
-    'Mặt trước và viền sáng bóng, không cấn móp. Mặt sau có vết xước dăm siêu nhỏ khó nhận thấy, không ảnh hưởng thẩm mỹ.'
-  );
+  const [exteriorNotes, setExteriorNotes] = useState('');
 
   // --- STEP 3: TECHNICAL CHECKLIST ---
   const defaultCategory = 'Tủ lạnh & Tủ đông';
@@ -120,19 +121,41 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const [tamperSealInput, setTamperSealInput] = useState(
     'SL-SEAL-' + Math.floor(1000000 + Math.random() * 9000000)
   );
-  const [proofPhotos, setProofPhotos] = useState<string[]>([
-    'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80',
-    'https://images.unsplash.com/photo-1581092335397-9583fe92d232?auto=format&fit=crop&w=600&q=80'
-  ]);
-  const [sealConfirmed, setSealConfirmed] = useState(true);
+  const [proofPhotos, setProofPhotos] = useState<string[]>([]);
+  const [sealConfirmed, setSealConfirmed] = useState(false);
 
   // --- STEP 5: VERDICT & SUMMARY ---
   const [overallVerdict, setOverallVerdict] = useState<'PASS' | 'FAIL'>('PASS');
-  const [conditionScore, setConditionScore] = useState<number>(94);
-  const [inspectorNotes, setInspectorNotes] = useState(
-    'Máy nén Compressor & Áp suất Gas R600a siêu êm, độ lạnh -19.2°C chuẩn xác, gioăng cửa hít nam châm nguyên bản. Đạt chuẩn Grade A (Like New).'
-  );
-  const [isDigitalSigned, setIsDigitalSigned] = useState(true);
+  const [conditionScore, setConditionScore] = useState<number>(90);
+  const [inspectorNotes, setInspectorNotes] = useState('');
+  const [isDigitalSigned, setIsDigitalSigned] = useState(false);
+
+  // Reset or populate fields when activeOrder changes
+  useEffect(() => {
+    if (activeOrder) {
+      if (activeOrder.inspectionReport) {
+        setActualSerialNo((activeOrder.inspectionReport as any).serialNumber || '');
+        setAccessoriesNote((activeOrder.inspectionReport as any).accessoriesNote || '');
+        setExteriorNotes((activeOrder.inspectionReport as any).exteriorNotes || '');
+        setInspectorNotes(activeOrder.inspectionReport.summaryNotes || '');
+        setOverallVerdict(activeOrder.inspectionReport.verdict || 'PASS');
+        setConditionScore(activeOrder.inspectionReport.conditionScore || 90);
+        setSelectedGrade(activeOrder.inspectionReport.detectedGrade || 'Like New');
+        setTamperSealInput(activeOrder.inspectionReport.tamperSealId || ('SL-SEAL-' + Math.floor(1000000 + Math.random() * 9000000)));
+        setProofPhotos(activeOrder.inspectionReport.inspectorPhotos || []);
+        setSealConfirmed(true);
+        setIsDigitalSigned(true);
+      } else {
+        setActualSerialNo('');
+        setAccessoriesNote('');
+        setExteriorNotes('');
+        setInspectorNotes('');
+        setProofPhotos([]);
+        setSealConfirmed(false);
+        setIsDigitalSigned(false);
+      }
+    }
+  }, [activeOrder?.id]);
 
   // Submitting & Feedback states
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -143,6 +166,60 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const notify = (text: string, isError = false) => {
     setNoticeMessage({ text, isError });
     setTimeout(() => setNoticeMessage(null), 4500);
+  };
+
+  // Xử lý nạp đơn tự động khi quét barcode (Camera, máy quét USB, hoặc nhập tay)
+  const handleProcessBarcode = (rawCode: string) => {
+    const code = rawCode.trim();
+    if (!code) return;
+
+    playScanBeep();
+
+    const normalized = code.toLowerCase();
+    const match = orders.find((o) => {
+      if (o.id.toLowerCase().includes(normalized)) return true;
+      if (o.listingId && o.listingId.toLowerCase().includes(normalized)) return true;
+      if (o.listing?.title && o.listing.title.toLowerCase().includes(normalized)) return true;
+      if (o.inspectionReport?.tamperSealId && o.inspectionReport.tamperSealId.toLowerCase().includes(normalized)) return true;
+      if (
+        o.shippingLegs?.some(
+          (leg) => leg.trackingNumber && leg.trackingNumber.toLowerCase().includes(normalized)
+        )
+      ) {
+        return true;
+      }
+      return false;
+    });
+
+    if (match) {
+      setSelectedOrderId(match.id);
+      setBarcodeScanInput(match.id);
+      setCurrentStep('intake');
+      notify(
+        `[Auto-Intake] Đã quét nhận diện "${code}" -> Nạp thành công đơn kiểm định #${match.id} (${match.listing?.title || 'Thiết bị'})!`
+      );
+    } else {
+      setBarcodeScanInput(code);
+      notify(`Đã quét mã: "${code}" (Không tìm thấy đơn hàng tương ứng trong ca trực)`, true);
+    }
+  };
+
+  // Điều hướng quét mã linh hoạt theo mục tiêu
+  const handleScanCode = (rawCode: string) => {
+    const code = rawCode.trim();
+    if (!code) return;
+
+    if (scannerMode === 'serial') {
+      playScanBeep();
+      setActualSerialNo(code);
+      notify(`Đã quét & cập nhật số Serial/IMEI máy: ${code}`);
+    } else if (scannerMode === 'tamper') {
+      playScanBeep();
+      setTamperSealInput(code);
+      notify(`Đã quét & ghi nhận mã tem niêm phong: ${code}`);
+    } else {
+      handleProcessBarcode(code);
+    }
   };
 
   // Toggle checklist item
@@ -322,37 +399,77 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 <QrCode className="w-4 h-4 text-[#c34c36]" />
                 <span>Quét Barcode / Mã Đơn Nhận Máy</span>
               </span>
-              <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono font-bold">
+              <span className="text-[10px] bg-red-50 text-[#c34c36] border border-red-100 px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#c34c36] animate-pulse"></span>
                 Auto-Intake
               </span>
             </div>
 
             <div className="flex gap-2">
-              <input
-                type="text"
-                value={barcodeScanInput}
-                onChange={(e) => setBarcodeScanInput(e.target.value)}
-                placeholder="Quét mã vạch hoặc nhập mã đơn..."
-                className="flex-1 px-3.5 py-2 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs font-mono outline-none focus:border-[#c34c36]"
-              />
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={barcodeScanInput}
+                  onChange={(e) => setBarcodeScanInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleProcessBarcode(barcodeScanInput);
+                    }
+                  }}
+                  placeholder="Quét mã vạch hoặc nhập mã đơn..."
+                  className="w-full pl-3.5 pr-8 py-2 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs font-mono outline-none focus:border-[#c34c36] focus:bg-white transition"
+                />
+                {barcodeScanInput && (
+                  <button
+                    type="button"
+                    onClick={() => setBarcodeScanInput('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                    title="Xóa mã"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Nút bật Camera Quét */}
               <button
                 type="button"
                 onClick={() => {
-                  if (barcodeScanInput) {
-                    const match = orders.find((o) =>
-                      o.id.toLowerCase().includes(barcodeScanInput.toLowerCase())
-                    );
-                    if (match) {
-                      setSelectedOrderId(match.id);
-                      notify(`Đã nạp đơn kiểm định #${match.id} lên bàn thao tác!`);
-                    } else {
-                      notify('Không tìm thấy đơn hàng tương ứng', true);
-                    }
-                  }
+                  setScannerMode('intake');
+                  setIsScannerOpen(true);
                 }}
-                className="px-3.5 py-2 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl cursor-pointer"
+                className="px-3 py-2 bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-xs transition cursor-pointer shrink-0"
+                title="Bật camera quét trực tiếp mã Barcode hoặc QR Code"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Quét</span>
+              </button>
+
+              {/* Nút Nhận thủ công */}
+              <button
+                type="button"
+                onClick={() => handleProcessBarcode(barcodeScanInput)}
+                className="px-3.5 py-2 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl cursor-pointer transition shrink-0"
               >
                 Nhận
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-gray-500 pt-0.5">
+              <span className="flex items-center gap-1">
+                <Zap className="w-3 h-3 text-amber-500" />
+                <span>Hỗ trợ máy quét USB, Camera & quét ảnh</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setScannerMode('intake');
+                  setIsScannerOpen(true);
+                }}
+                className="text-[#c34c36] hover:underline font-bold text-[11px] cursor-pointer"
+              >
+                Mở Camera
               </button>
             </div>
           </div>
@@ -598,7 +715,20 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
               {/* Serial & Packaging verification */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 <div className="space-y-1.5">
-                  <label className="font-bold text-gray-700">Số Serial / IMEI Thực Tế Trên Tem Máy *</label>
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-gray-700">Số Serial / IMEI Thực Tế Trên Tem Máy *</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScannerMode('serial');
+                        setIsScannerOpen(true);
+                      }}
+                      className="text-[11px] text-[#c34c36] hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Camera className="w-3 h-3" />
+                      <span>Quét Barcode Tem</span>
+                    </button>
+                  </div>
                   <input
                     type="text"
                     value={actualSerialNo}
@@ -886,6 +1016,18 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     onChange={(e) => setTamperSealInput(e.target.value)}
                     className="flex-1 px-3.5 py-2.5 bg-white border border-orange-200 rounded-xl font-mono font-bold text-slate-800 text-sm outline-none focus:border-[#c34c36]"
                   />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScannerMode('tamper');
+                      setIsScannerOpen(true);
+                    }}
+                    className="px-3.5 py-2 bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
+                    title="Quét Barcode / QR tem niêm phong"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Quét Tem</span>
+                  </button>
                 </div>
 
                 <label className="flex items-center gap-2 cursor-pointer pt-1">
@@ -907,30 +1049,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
                     Thư Viện Ảnh Bằng Chứng Kiểm Định:
                   </span>
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleAddProofPhoto(
-                          'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80'
-                        )
-                      }
-                      className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
-                    >
-                      + Ảnh Kính Hiển Vi
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleAddProofPhoto(
-                          'https://images.unsplash.com/photo-1581092335397-9583fe92d232?auto=format&fit=crop&w=600&q=80'
-                        )
-                      }
-                      className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
-                    >
-                      + Ảnh Dán Tem Thực Tế
-                    </button>
-                  </div>
+
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1253,6 +1372,15 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
           </div>
         </div>
       )}
+
+      {/* Modal Quét Barcode & QR Code */}
+      <BarcodeScannerModal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onScanSuccess={handleScanCode}
+        orders={orders}
+        lang={lang}
+      />
     </div>
   );
 };

@@ -57,7 +57,38 @@ import { extractWardAndCity, getSavedSellerAddress } from '../utils/addressUtils
 
 
 
-// Deleted getCategoryQuestionGuide and static templates. Templates are now solely fetched from the Backend DB.
+/**
+ * Loại bỏ các câu hỏi mẫu / gợi ý khảo sát do BE sinh ra nếu bị lọt vào ô mô tả sản phẩm.
+ * Ví dụ:
+ * **Tình trạng hoạt động** (Ví dụ: Hoạt động tốt, Cần vệ sinh/sửa chữa nhẹ, Hỏng một phần)
+ * **Loại máy hút mùi** (Ví dụ: Âm tủ, Kính cong, Đảo độc lập, Treo tường cổ điển)
+ * ...
+ */
+export const cleanDescriptionFromQuestionTemplate = (desc: string): string => {
+  if (!desc || typeof desc !== 'string') return '';
+  const lines = desc.split('\n');
+  const filtered = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return true;
+    // 1. Dạng chuẩn của template câu hỏi BE: **Tiêu đề** (Ví dụ: ...)
+    if (/^[-*•\d\.\)]*\s*\*\*.*?\*\*\s*\([Vv]í\s*dụ\s*:?.*?\)/i.test(trimmed)) {
+      return false;
+    }
+    // 2. Dạng khớp các trường khảo sát cụ thể mà BE sinh ra
+    if (
+      /^[-*•\d\.\)]*\s*(\*\*)?(Tình trạng hoạt động|Loại máy hút mùi|Loại máy|Thời gian đã qua sử dụng|Độ sạch sẽ và ngoại hình|Độ sạch sẽ|Các phụ kiện đi kèm|Phụ kiện đi kèm).*?(\(Ví\s*dụ|\(Gợi ý|\))/i.test(trimmed)
+    ) {
+      return false;
+    }
+    // 3. Dòng chỉ chứa gợi ý (Ví dụ: ...)
+    if (/^\s*\([Vv]í\s*dụ\s*:.*?(\)|$)/i.test(trimmed)) {
+      return false;
+    }
+    return true;
+  });
+
+  return filtered.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+};
 
 interface CreateListingViewProps {
   onListingCreated: (newListing: Listing) => void;
@@ -204,7 +235,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         };
         setItemCondition(gradeMap[initialDraft.conditionGrade] || 'USED_GOOD');
       }
-      if (initialDraft.description) setDescription(initialDraft.description);
+      if (initialDraft.description) {
+        setDescription(cleanDescriptionFromQuestionTemplate(initialDraft.description));
+      }
       if (initialDraft.photoGallery && initialDraft.photoGallery.length > 0) {
         setPhotoPreviews(initialDraft.photoGallery);
       } else if (initialDraft.photos) {
@@ -214,6 +247,19 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       // Note: Category and Item might need to be resolved by name since initialDraft only stores the string in FE mapping
     }
   }, [initialDraft]);
+
+  // Tự động loại bỏ các câu hỏi mẫu/gợi ý khảo sát nếu bị lọt vào ô mô tả sản phẩm ở bước 2
+  useEffect(() => {
+    if (
+      description &&
+      (/(\(Ví\s*dụ\s*:|\(ví\s*dụ\s*:|\*\*Tình trạng hoạt động\*\*|\*\*Loại máy hút mùi\*\*|\*\*Các phụ kiện đi kèm\*\*)/i.test(description))
+    ) {
+      const cleaned = cleanDescriptionFromQuestionTemplate(description);
+      if (cleaned !== description) {
+        setDescription(cleaned);
+      }
+    }
+  }, [description]);
 
   // Mode: 'ai' | 'manual'
   const [initMode, setInitMode] = useState<'ai' | 'manual' | null>(null);
@@ -427,7 +473,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       const reply = finalizeRes?.description || (finalizeRes as any)?.message || '';
       
       if (reply) {
-        setDescription(prev => prev.trim() ? `${prev.trim()}\n\n${reply}` : reply);
+        const cleanedReply = cleanDescriptionFromQuestionTemplate(reply);
+        setDescription(prev => {
+          const cleanPrev = cleanDescriptionFromQuestionTemplate(prev);
+          return cleanPrev.trim() ? `${cleanPrev.trim()}\n\n${cleanedReply}` : cleanedReply;
+        });
         setIsSessionCompleted(true);
         setApplySuccessNotice(lang === 'vi' ? '✨ Trợ lý AI đã tổng hợp xong bài mô tả bán hàng và cập nhật vào ô Mô tả bên dưới!' : '✨ AI generated a new sales description and updated the description box below!');
         setTimeout(() => setApplySuccessNotice(null), 5000);
@@ -610,15 +660,16 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           initialAiDesc.includes('không phải ảnh chụp thực tế') ||
           initialAiDesc.includes('Vui lòng cung cấp');
 
-        if (initialAiDesc && !description && mode === 'ai' && !isWarningOrQuestions) {
-          setDescription(initialAiDesc);
+        const cleanedInitialDesc = cleanDescriptionFromQuestionTemplate(initialAiDesc);
+        if (cleanedInitialDesc && !description && mode === 'ai' && !isWarningOrQuestions) {
+          setDescription(cleanedInitialDesc);
         }
 
         setDraftPost({
           postId: initRes.postId,
           id: initRes.postId,
           title: defaultTitle,
-          description: isWarningOrQuestions ? '' : initialAiDesc,
+          description: isWarningOrQuestions ? '' : cleanedInitialDesc,
           aiDescription: initialAiDesc,
           descriptionAccepted: false,
           imageUrls: photoPreviews,
@@ -684,7 +735,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       ]);
       // Tự động gán mô tả nếu người dùng chưa nhập tay
       if (!description.trim() && reply) {
-        setDescription(reply);
+        setDescription(cleanDescriptionFromQuestionTemplate(reply));
       }
     } catch (err: any) {
       const errMsg = String(err?.message || '');
@@ -710,7 +761,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     try {
       const finalizeRes = await postService.finalizeChat(sessionId);
       if (finalizeRes?.description) {
-        setDescription(finalizeRes.description);
+        setDescription(cleanDescriptionFromQuestionTemplate(finalizeRes.description));
       }
       if (finalizeRes?.suggestedPrice) {
         const pNum = Number(finalizeRes.suggestedPrice);
@@ -773,12 +824,15 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     if (!currentDesc) {
       const lastAiMsg = [...chatMessages].reverse().find(m => m.role === 'ai' && !m.text.startsWith('Lỗi'));
       if (lastAiMsg?.text) {
-        currentDesc = lastAiMsg.text;
+        currentDesc = cleanDescriptionFromQuestionTemplate(lastAiMsg.text);
         setDescription(currentDesc);
       } else if (aiInitialMessage) {
-        currentDesc = aiInitialMessage;
+        currentDesc = cleanDescriptionFromQuestionTemplate(aiInitialMessage);
         setDescription(currentDesc);
       }
+    } else {
+      currentDesc = cleanDescriptionFromQuestionTemplate(currentDesc);
+      setDescription(currentDesc);
     }
 
     // 3. Nếu vẫn chưa có và có phiên chat, gọi finalizeChat từ BE để tổng hợp
@@ -787,8 +841,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         setIsFinalizingChat(true);
         const finalizeRes = await postService.finalizeChat(sessionId);
         if (finalizeRes?.description) {
-          currentDesc = finalizeRes.description;
-          setDescription(finalizeRes.description);
+          currentDesc = cleanDescriptionFromQuestionTemplate(finalizeRes.description);
+          setDescription(currentDesc);
         }
         if (finalizeRes?.suggestedPrice) {
           const pNum = Number(finalizeRes.suggestedPrice);
@@ -1434,14 +1488,14 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setDescription(aiInitialMessage)}
+                  onClick={() => setDescription(cleanDescriptionFromQuestionTemplate(aiInitialMessage))}
                   className="px-3 py-1 rounded-lg bg-[#24263e] hover:bg-black text-white text-[11px] font-bold transition cursor-pointer"
                 >
                   Dùng mô tả này
                 </button>
               </div>
               <p className="whitespace-pre-wrap leading-relaxed text-slate-700 italic">
-                "{aiInitialMessage}"
+                "{cleanDescriptionFromQuestionTemplate(aiInitialMessage)}"
               </p>
             </div>
           )}

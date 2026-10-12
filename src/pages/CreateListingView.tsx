@@ -26,7 +26,8 @@ import {
   ChevronUp,
   HelpCircle,
   MessageSquare,
-  Truck
+  Truck,
+  MapPin
 } from 'lucide-react';
 import {
   ItemCategory,
@@ -243,6 +244,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       } else if (initialDraft.photos) {
         const p = initialDraft.photos;
         setPhotoPreviews([p.front, p.back, p.screenOrDetails, p.accessoriesOrBox, p.serialOrReceipt, p.extraDetail].filter(Boolean) as string[]);
+      }
+      if (initialDraft.location) {
+        setSellerLocation(initialDraft.location);
       }
       // Note: Category and Item might need to be resolved by name since initialDraft only stores the string in FE mapping
     }
@@ -1057,6 +1061,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         currentUser?.provinceName || saved.provinceName
       ) ||
       '';
+    const finalSellerAddress =
+      currentUser?.pickupAddress ||
+      currentUser?.address ||
+      saved.address ||
+      finalLocation;
 
     const newListing: Listing = {
       id: postId,
@@ -1071,6 +1080,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       declaredConditionText: itemCondition,
       description: description || 'Mô tả bài đăng đã qua kiểm duyệt AI',
       location: finalLocation,
+      sellerAddress: finalSellerAddress,
       sellerId: currentUser?.id || 'current-user',
       sellerName: currentUser?.name || 'Người bán SecondLife',
       sellerRating: currentUser?.sellerRating || 5.0,
@@ -2234,6 +2244,27 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Cao</label>
                   <div className="mt-1 text-xs font-bold text-[#24263e]">{shippingHeight ? `${shippingHeight} cm` : '---'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Địa chỉ kho lấy hàng của người bán */}
+            <div className="pt-2 border-t border-slate-200">
+              <span className="text-xs font-bold text-slate-600 block mb-2">
+                <MapPin className="w-4 h-4 inline mr-1 text-[#c34c36]" />
+                {lang === 'vi' ? 'Địa chỉ lấy hàng người bán (Cập nhật theo thông tin người bán):' : 'Seller Pickup Location (Updated with seller profile):'}
+              </span>
+              <div className="bg-white p-3.5 rounded-xl border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-bold text-[#24263e]">
+                    {currentUser?.pickupAddress || currentUser?.address || getSavedSellerAddress().address || (lang === 'vi' ? 'Kho hàng SecondLife' : 'SecondLife Warehouse')}
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    {lang === 'vi' ? 'Khu vực hiển thị trên tin đăng: ' : 'Display region on listing: '}
+                    <span className="font-semibold text-emerald-700">
+                      {sellerLocation || extractWardAndCity(currentUser?.pickupAddress || currentUser?.address || getSavedSellerAddress().address, currentUser?.wardName || getSavedSellerAddress().wardName, currentUser?.provinceName || getSavedSellerAddress().provinceName) || 'Hà Nội'}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

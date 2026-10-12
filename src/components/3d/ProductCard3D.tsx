@@ -3,6 +3,7 @@ import { ShieldCheck, Sparkles, MapPin, Star, CheckCircle2 } from 'lucide-react'
 import { Listing, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
 import { soundFx } from '../../utils/soundEffects';
+import { extractWardAndCity } from '../../utils/addressUtils';
 
 interface ProductCard3DProps {
   item: Listing;
@@ -21,6 +22,12 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
   const [rotateX, setRotateX] = useState(0);
   const [rotateY, setRotateY] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
+
+  const displayLocation =
+    extractWardAndCity(item.sellerAddress || item.location) ||
+    item.location ||
+    item.sellerAddress ||
+    (lang === 'vi' ? 'Chưa cập nhật địa chỉ' : 'Address not updated');
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!cardRef.current) return;
@@ -106,9 +113,9 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
             <span className="font-bold text-[#24263e] uppercase tracking-wide truncate max-w-[110px]">
               {item.brand} • {item.purchaseYear}
             </span>
-            <span className="flex items-center gap-0.5 text-[#24263e]/70 font-medium shrink-0 max-w-[130px] truncate" title={item.sellerAddress || item.location}>
+            <span className="flex items-center gap-0.5 text-[#24263e]/70 font-medium shrink-0 max-w-[130px] truncate" title={item.sellerAddress || item.location || displayLocation}>
               <MapPin className="w-2.5 h-2.5 text-[#24263e] shrink-0" />
-              <span className="truncate">{item.sellerAddress ? item.sellerAddress : "Chưa cập nhật địa chỉ"}</span>
+              <span className="truncate">{displayLocation}</span>
             </span>
           </div>
 

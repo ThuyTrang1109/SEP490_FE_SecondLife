@@ -201,7 +201,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                                 <span>•</span>
                                 <span className="flex items-center gap-0.5 text-slate-600 font-medium">
                                   <MapPin className="w-2.5 h-2.5 text-[#c34c36]" />
-                                  <span>{listing.sellerAddress || 'Chưa cập nhật địa chỉ'}</span>
+                                  <span>{listing.sellerAddress || listing.location || (lang === 'vi' ? 'Chưa cập nhật địa chỉ' : 'Address not updated')}</span>
                                 </span>
                               </>
                             )}
@@ -464,8 +464,8 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                 </div>
                 <div className="text-[10px] text-[#24263e]/70 font-medium">
                   {lang === 'vi'
-                    ? 'Kỹ sư chuyên trách tháo soi linh kiện, test máy và dán tem niêm phong NFC trước khi giao.'
-                    : 'Certified hardware engineers verify parts and apply tamper-proof NFC seals.'}
+                    ? 'Kỹ sư chuyên trách tháo mở máy soi linh kiện (sản phẩm sẽ mất trạng thái zin ban đầu), test vận hành và dán tem niêm phong NFC bảo đảm.'
+                    : 'Certified engineers inspect internal hardware (disassembly voids original "zin" condition) and apply tamper-evident NFC seals.'}
                 </div>
               </div>
             </div>

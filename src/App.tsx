@@ -141,6 +141,11 @@ export default function App() {
           setCurrentUser(syncedUser);
           setCurrentRole(syncedUser.role);
           setStoredUser(syncedUser);
+          saveSellerAddress(
+            syncedUser.pickupAddress || syncedUser.address || '',
+            syncedUser.wardName || syncedUser.ward || '',
+            syncedUser.provinceName || syncedUser.province || ''
+          );
           if (syncedUser.role === 'admin') {
             setActiveTab('admin-dashboard');
           } else if (syncedUser.role === 'inspector') {
@@ -209,26 +214,36 @@ export default function App() {
   React.useEffect(() => {
     if (currentUser && getAccessToken()) {
       loadUserWallet();
-      Promise.all([
-        topupService.getMyCredit().catch(() => null),
-        sellerCreditService.getCredits().catch(() => null)
-      ])
-        .then(([aiCreditObj, sellerCreditObj]) => {
-          if (aiCreditObj || sellerCreditObj) {
-            const merged: UserCredit = {
-              postCredits: sellerCreditObj?.postCredits ?? (aiCreditObj as any)?.postCredits ?? 0,
-              valuationCredits: sellerCreditObj?.valuationCredits ?? (aiCreditObj as any)?.valuationCredits ?? 0,
-              chatCredits: sellerCreditObj?.chatCredits ?? (aiCreditObj as any)?.aiChatBalance ?? (aiCreditObj as any)?.chatCredits ?? 0,
-            };
-            setUserCredit(merged);
-            if (aiCreditObj && typeof (aiCreditObj as any).balance === 'number') {
-              setUserCreditBalance((aiCreditObj as any).balance);
+
+      const isSellerOrAdmin =
+        currentRole === 'seller' ||
+        currentRole === 'admin' ||
+        currentUser.role === 'seller' ||
+        currentUser.role === 'admin';
+
+      // Buyers only use wallet balance; credits are only for sellers/admins
+      if (isSellerOrAdmin) {
+        Promise.all([
+          topupService.getMyCredit().catch(() => null),
+          sellerCreditService.getCredits().catch(() => null)
+        ])
+          .then(([aiCreditObj, sellerCreditObj]) => {
+            if (aiCreditObj || sellerCreditObj) {
+              const merged: UserCredit = {
+                postCredits: sellerCreditObj?.postCredits ?? (aiCreditObj as any)?.postCredits ?? 0,
+                valuationCredits: sellerCreditObj?.valuationCredits ?? (aiCreditObj as any)?.valuationCredits ?? 0,
+                chatCredits: sellerCreditObj?.chatCredits ?? (aiCreditObj as any)?.aiChatBalance ?? (aiCreditObj as any)?.chatCredits ?? 0,
+              };
+              setUserCredit(merged);
+              if (aiCreditObj && typeof (aiCreditObj as any).balance === 'number') {
+                setUserCreditBalance((aiCreditObj as any).balance);
+              }
             }
-          }
-        })
-        .catch(() => { });
+          })
+          .catch(() => { });
+      }
     }
-  }, [currentUser, loadUserWallet]);
+  }, [currentUser, currentRole, loadUserWallet]);
 
 
   const handleConfirmLogout = () => {
@@ -523,40 +538,53 @@ export default function App() {
     const photoList = rawImgs.length > 0 ? rawImgs : [defaultImg];
     const price = Number(post.price || 0);
 
-    // Xác định địa chỉ sản phẩm từ người bán (chỉ lấy phường và thành phố)
+    // Xác định địa chỉ sản phẩm từ người bán (cập nhật theo địa chỉ người bán)
     let postLocation = '';
+    let postSellerAddress = '';
+
     const isOwner = Boolean(
       currentUser && (
-        post.userId === currentUser.id ||
-        post.sellerId === currentUser.id ||
-        post.user?.id === currentUser.id ||
-        post.sellerName === currentUser.name
+        (post.userId && String(post.userId) === String(currentUser.id)) ||
+        (post.sellerId && String(post.sellerId) === String(currentUser.id)) ||
+        (post.user?.id && String(post.user.id) === String(currentUser.id)) ||
+        (post.sellerName && currentUser.name && post.sellerName.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
+        (post.user?.email && currentUser.email && post.user.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase())
       )
     );
 
     const savedAddr = getSavedSellerAddress();
-    const sellerAddr = currentUser?.pickupAddress || currentUser?.address || savedAddr.address;
-    const sellerWard = currentUser?.wardName || savedAddr.wardName;
-    const sellerProv = currentUser?.provinceName || savedAddr.provinceName;
+    const currentSellerAddr = currentUser?.pickupAddress || currentUser?.address || savedAddr.address;
+    const currentSellerWard = currentUser?.wardName || currentUser?.ward || savedAddr.wardName;
+    const currentSellerProv = currentUser?.provinceName || currentUser?.province || savedAddr.provinceName;
 
-    if (isOwner && (sellerAddr || sellerWard || sellerProv)) {
-      postLocation = extractWardAndCity(sellerAddr, sellerWard, sellerProv);
-    } else if (post.sellerAddress || post.pickupAddress || post.user?.address || post.user?.profile?.province) {
-      const userFullAddress = post.user?.profile ? 
-        [post.user.profile.streetAddress, post.user.profile.ward, post.user.profile.district, post.user.profile.province].filter(Boolean).join(', ') 
-        : null;
-      postLocation = extractWardAndCity(post.sellerAddress || post.pickupAddress || post.user?.address || userFullAddress);
-    } else if (post.location && post.location.toLowerCase() !== 'việt nam' && post.location.toLowerCase() !== 'toàn quốc') {
-      postLocation = extractWardAndCity(post.location);
+    // 1. Nếu là bài đăng của chính seller hiện tại, ưu tiên lấy địa chỉ người bán mới nhất từ profile / onboarding
+    if (isOwner && (currentSellerAddr || currentSellerWard || currentSellerProv)) {
+      postLocation = extractWardAndCity(currentSellerAddr, currentSellerWard, currentSellerProv);
+      postSellerAddress = currentSellerAddr || (currentSellerWard && currentSellerProv ? `${currentSellerWard}, ${currentSellerProv}` : '');
+    } else {
+      // 2. Bài đăng từ backend của seller khác
+      const rawPostAddr = post.sellerAddress || post.pickupAddress || post.user?.address || (
+        post.user?.profile ? [post.user.profile.streetAddress, post.user.profile.ward, post.user.profile.district, post.user.profile.province].filter(Boolean).join(', ') : null
+      );
+      if (rawPostAddr) {
+        postLocation = extractWardAndCity(rawPostAddr);
+        postSellerAddress = rawPostAddr;
+      } else if (post.location && post.location.toLowerCase() !== 'việt nam' && post.location.toLowerCase() !== 'toàn quốc') {
+        postLocation = extractWardAndCity(post.location);
+        postSellerAddress = post.location;
+      }
     }
 
-    // Nếu chưa có location và người dùng hiện tại là seller CỦA BÀI ĐĂNG NÀY, lấy từ profile
-    if (!postLocation && isOwner && (sellerAddr || sellerWard || sellerProv)) {
-      postLocation = extractWardAndCity(sellerAddr, sellerWard, sellerProv);
+    if ((!postLocation || !postSellerAddress) && isOwner && (currentSellerAddr || currentSellerWard || currentSellerProv)) {
+      postLocation = postLocation || extractWardAndCity(currentSellerAddr, currentSellerWard, currentSellerProv);
+      postSellerAddress = postSellerAddress || currentSellerAddr;
     }
 
     if (!postLocation) {
-      postLocation = 'Hà Nội';
+      postLocation = postSellerAddress ? extractWardAndCity(postSellerAddress) : 'Hà Nội';
+    }
+    if (!postSellerAddress) {
+      postSellerAddress = postLocation;
     }
 
     return {
@@ -572,6 +600,7 @@ export default function App() {
       declaredConditionText: post.itemCondition || (detectedGrade === 'Like New' ? 'Độ mới 99%, nguyên zin chưa sửa chữa' : 'Tình trạng tốt, hoạt động ổn định'),
       description: post.description || post.aiDescription || 'Đã qua thẩm định và xác thực trên hệ thống SecondLife.',
       location: postLocation,
+      sellerAddress: postSellerAddress,
       sellerId: post.sellerId || post.user?.id || post.userId || (isOwner && currentUser ? currentUser.id : '1e338576-457a-4371-9822-52ca04e31546'),
       sellerName: isOwner && currentUser?.name ? currentUser.name : (post.sellerName || post.user?.profile?.fullName || post.user?.fullName || post.user?.email || 'Người bán SecondLife'),
       sellerAvatar: post.sellerAvatar || post.user?.profile?.avatarUrl || post.user?.avatarUrl || undefined,
@@ -601,7 +630,17 @@ export default function App() {
         daysToSell: 3,
       } : undefined,
     };
-  }, []);
+  }, [
+    currentUser?.id,
+    currentUser?.name,
+    currentUser?.email,
+    currentUser?.address,
+    currentUser?.pickupAddress,
+    currentUser?.ward,
+    currentUser?.wardName,
+    currentUser?.province,
+    currentUser?.provinceName,
+  ]);
 
   // Synchronize listings directly with Backend
   const loadListingsFromBackend = React.useCallback(async () => {
@@ -657,6 +696,41 @@ export default function App() {
       setListings([]);
     }
   }, [mapBackendPostToListing, currentUser?.role, currentRole]);
+
+  // Handle user profile updates (especially seller address) and sync across all listings
+  const handleUserProfileUpdated = React.useCallback(
+    (updated: UserProfile, successToast?: string) => {
+      setCurrentUser(updated);
+      setStoredUser(updated);
+      const effectiveAddr = updated.pickupAddress || updated.address || '';
+      const effectiveWard = updated.wardName || updated.ward || '';
+      const effectiveProv = updated.provinceName || updated.province || '';
+      saveSellerAddress(effectiveAddr, effectiveWard, effectiveProv);
+      const newLoc = extractWardAndCity(effectiveAddr, effectiveWard, effectiveProv);
+      if (newLoc || effectiveAddr) {
+        setListings((prev) =>
+          prev.map((item) => {
+            const isOwner =
+              item.sellerId === updated.id ||
+              (updated.name && item.sellerName?.trim().toLowerCase() === updated.name?.trim().toLowerCase());
+            if (isOwner) {
+              return {
+                ...item,
+                location: newLoc || item.location,
+                sellerAddress: effectiveAddr || item.sellerAddress || newLoc,
+              };
+            }
+            return item;
+          })
+        );
+      }
+      loadListingsFromBackend();
+      if (successToast) {
+        showToast(successToast);
+      }
+    },
+    [loadListingsFromBackend]
+  );
 
   // Synchronize orders directly with Backend
   const loadUserOrders = React.useCallback(async () => {
@@ -1053,6 +1127,7 @@ export default function App() {
               handleTabChange('create-listing');
             }}
             onViewOrders={() => handleTabChange('orders')}
+            currentUser={currentUser}
             lang={lang}
           />
         )}
@@ -1294,6 +1369,11 @@ export default function App() {
           setCurrentUser(profileUser);
           setCurrentRole(user.role);
           setStoredUser(profileUser);
+          saveSellerAddress(
+            profileUser.pickupAddress || profileUser.address || '',
+            profileUser.wardName || profileUser.ward || '',
+            profileUser.provinceName || profileUser.province || ''
+          );
           showToast(
             lang === 'vi'
               ? `Chào mừng ${user.name}${['buyer', 'seller'].includes(user.role) ? '' : ` (${user.role === 'inspector' ? 'Kỹ Sư Hub' : user.role === 'staff' ? 'Nhân Viên Vận Hành' : 'Quản Trị'})`} đã đăng nhập!`
@@ -1337,9 +1417,8 @@ export default function App() {
         currentRole={currentRole}
         lang={lang}
         onUpdateProfile={(updated) => {
-          setCurrentUser(updated);
-          setStoredUser(updated);
-          showToast(
+          handleUserProfileUpdated(
+            updated,
             lang === 'vi'
               ? 'Đã lưu thông tin hồ sơ cá nhân thành công!'
               : 'User profile updated successfully!'
@@ -1391,9 +1470,8 @@ export default function App() {
         currentUser={currentUser}
         lang={lang}
         onUpdateProfile={(updated) => {
-          setCurrentUser(updated);
-          setStoredUser(updated);
-          showToast(
+          handleUserProfileUpdated(
+            updated,
             lang === 'vi'
               ? 'Đã cập nhật hồ sơ người bán thành công!'
               : 'Seller profile updated successfully!'

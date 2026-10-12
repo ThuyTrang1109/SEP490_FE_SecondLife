@@ -1691,6 +1691,60 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </select>
               </div>
             </div>
+
+            {/* Thông tin đóng gói GHN */}
+            <div className="pt-2">
+              <span className="text-xs font-bold text-[#24263e] block mb-3">
+                <Truck className="w-4 h-4 inline mr-1 text-blue-600" />
+                Thông tin kiện hàng (Bắt buộc để tính phí vận chuyển GHN)
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Trọng lượng (gram) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="VD: 500"
+                    value={shippingWeight}
+                    onChange={(e) => setShippingWeight(e.target.value ? Number(e.target.value) : '')}
+                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Dài (cm) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="VD: 20"
+                    value={shippingLength}
+                    onChange={(e) => setShippingLength(e.target.value ? Number(e.target.value) : '')}
+                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Rộng (cm) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="VD: 15"
+                    value={shippingWidth}
+                    onChange={(e) => setShippingWidth(e.target.value ? Number(e.target.value) : '')}
+                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Cao (cm) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="VD: 10"
+                    value={shippingHeight}
+                    onChange={(e) => setShippingHeight(e.target.value ? Number(e.target.value) : '')}
+                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Navigation Buttons */}
@@ -2024,12 +2078,12 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               />
             </div>
 
-            {/* High-value threshold notice (> 5,000,000 VND) */}
-            {finalPriceVnd > 5000000 && (
+            {/* High-value threshold notice (> 10,000,000 VND) */}
+            {finalPriceVnd >= 10000000 && (
               <div className="p-3.5 rounded-xl bg-cyan-50 border border-cyan-200 text-cyan-900 text-xs flex items-start gap-2.5">
                 <ShieldCheck className="w-4 h-4 text-cyan-700 shrink-0 mt-0.5" />
                 <div>
-                  <span className="font-bold block">Sản phẩm giá trị cao (trên 5.000.000 VND):</span>
+                  <span className="font-bold block">Sản phẩm giá trị cao (từ 10.000.000 VND trở lên):</span>
                   <span>Bài đăng sẽ tự động chuyển sang quy trình Kiểm định chất lượng của Kỹ thuật viên (PENDING_INSPECTION) trước khi hiển thị công khai trên Sàn. Chưa trừ credit LISTING cho tới khi kiểm định đạt chuẩn.</span>
                 </div>
               </div>
@@ -2108,52 +2162,24 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             <div className="pt-2 border-t border-slate-200">
               <span className="text-xs font-bold text-slate-600 block mb-3">
                 <Truck className="w-4 h-4 inline mr-1 text-blue-600" />
-                Thông tin kiện hàng (Bắt buộc để tính phí GHN):
+                Thông tin kiện hàng (Sử dụng để tính phí vận chuyển):
               </span>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white p-3 rounded-xl border border-gray-200">
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Trọng lượng (gram)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    placeholder="VD: 500"
-                    value={shippingWeight}
-                    onChange={(e) => setShippingWeight(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full mt-1 p-2 border border-gray-300 rounded-lg text-xs"
-                  />
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Trọng lượng</label>
+                  <div className="mt-1 text-xs font-bold text-[#24263e]">{shippingWeight ? `${shippingWeight} gram` : '---'}</div>
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Dài (cm)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    placeholder="VD: 20"
-                    value={shippingLength}
-                    onChange={(e) => setShippingLength(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full mt-1 p-2 border border-gray-300 rounded-lg text-xs"
-                  />
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Dài</label>
+                  <div className="mt-1 text-xs font-bold text-[#24263e]">{shippingLength ? `${shippingLength} cm` : '---'}</div>
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Rộng (cm)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    placeholder="VD: 15"
-                    value={shippingWidth}
-                    onChange={(e) => setShippingWidth(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full mt-1 p-2 border border-gray-300 rounded-lg text-xs"
-                  />
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Rộng</label>
+                  <div className="mt-1 text-xs font-bold text-[#24263e]">{shippingWidth ? `${shippingWidth} cm` : '---'}</div>
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Cao (cm)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    placeholder="VD: 10"
-                    value={shippingHeight}
-                    onChange={(e) => setShippingHeight(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full mt-1 p-2 border border-gray-300 rounded-lg text-xs"
-                  />
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Cao</label>
+                  <div className="mt-1 text-xs font-bold text-[#24263e]">{shippingHeight ? `${shippingHeight} cm` : '---'}</div>
                 </div>
               </div>
             </div>
@@ -2203,9 +2229,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                       submitResult.status === 'ACTIVE'
                         ? 'Bài đăng của bạn đã được xuất bản công khai. Đã trừ 1 lượt LISTING.'
                         : submitResult.status === 'INSUFFICIENT_CREDIT'
-                          ? 'Sản phẩm có giá trị > 5.000.000 đ bắt buộc phải qua kiểm định. Bạn chưa có đủ credit để thanh toán phí.'
+                          ? 'Sản phẩm có giá trị > 10.000.000 đ bắt buộc phải qua kiểm định. Bạn chưa có đủ credit để thanh toán phí.'
                           : submitResult.status === 'PENDING_INSPECTION'
-                            ? 'Sản phẩm có giá trị > 5 triệu đồng đang chờ Kỹ thuật viên trung tâm kiểm định tiếp nhận.'
+                            ? 'Sản phẩm có giá trị > 10 triệu đồng đang chờ Kỹ thuật viên trung tâm kiểm định tiếp nhận.'
                             : submitResult.status === 'PENDING'
                               ? 'Phát hiện hình ảnh hoặc nội dung trùng với bài đăng khác trên sàn. Nhân viên Staff sẽ đối soát thủ công.'
                               : (submitResult.reviewReason || 'Bài đăng không đạt tiêu chuẩn nội dung của sàn. Không trừ credit.')

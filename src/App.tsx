@@ -194,6 +194,10 @@ export default function App() {
         const w = await walletService.getMyWallet();
         if (w && typeof w.balance === 'number') {
           setWalletBalance(w.balance);
+          setCurrentUser((prev) => {
+            if (!prev || (prev.walletBalanceVnd === w.balance && prev.walletBalance === w.balance)) return prev;
+            return { ...prev, walletBalance: w.balance, walletBalanceVnd: w.balance };
+          });
         }
       } catch (err) {
         console.warn('Could not load wallet from server:', err);

@@ -104,18 +104,18 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   const [pickupAddress, setPickupAddress] = useState(
     currentUser.pickupAddress || currentUser.address || ''
   );
-  const [idCardNumber, setIdCardNumber] = useState(currentUser.idCardNumber || '048299102941');
+  const [idCardNumber, setIdCardNumber] = useState(currentUser.idCardNumber || '');
   const [sellerBankName, setSellerBankName] = useState(
-    currentUser.bankAccount?.bankName || 'Vietcombank'
+    currentUser.bankAccount?.bankName || ''
   );
   const [sellerAccountNumber, setSellerAccountNumber] = useState(
-    currentUser.bankAccount?.accountNumber || '991204882910'
+    currentUser.bankAccount?.accountNumber || ''
   );
   const [sellerAccountHolder, setSellerAccountHolder] = useState(
-    currentUser.bankAccount?.accountHolder || (currentUser.name ? currentUser.name.toUpperCase() : 'HOANG QUOC KHANG')
+    currentUser.bankAccount?.accountHolder || (currentUser.name ? currentUser.name.toUpperCase() : '')
   );
   const [sellerProductTypes, setSellerProductTypes] = useState(
-    'Tủ lạnh, Máy giặt, Thiết bị điện lạnh gia dụng'
+    currentUser.productTypes || ''
   );
   const [sellerTermsAgreed, setSellerTermsAgreed] = useState(true);
 
@@ -1292,7 +1292,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       required
                       value={shopName}
                       onChange={(e) => setShopName(e.target.value)}
-                      placeholder={lang === 'vi' ? 'VD: Điện Máy Cũ Hoàng Khang' : 'e.g., Hoang Khang Pre-owned Tech'}
+                      placeholder={lang === 'vi' ? 'VD: Cửa Hàng Điện Gia Dụng...' : 'e.g., Home Appliances Store'}
                       className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
                     />
                   </div>
@@ -1601,7 +1601,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       required
                       value={idCardNumber}
                       onChange={(e) => setIdCardNumber(e.target.value)}
-                      placeholder="048299102941"
+                      placeholder={lang === 'vi' ? 'Nhập 12 số CCCD gắn chip...' : '12-digit Citizen ID'}
                       className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
                     />
                   </div>
@@ -1851,7 +1851,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                         type="text"
                         value={sellerBankName}
                         onChange={(e) => setSellerBankName(e.target.value)}
-                        placeholder="Vietcombank"
+                        placeholder={lang === 'vi' ? 'VD: Vietcombank, MB Bank...' : 'e.g. Vietcombank'}
                         className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
                       />
                     </div>
@@ -1861,7 +1861,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                         type="text"
                         value={sellerAccountNumber}
                         onChange={(e) => setSellerAccountNumber(e.target.value)}
-                        placeholder="991204882910"
+                        placeholder={lang === 'vi' ? 'Nhập số tài khoản...' : 'Account number'}
                         className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
                       />
                     </div>
@@ -1870,8 +1870,8 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       <input
                         type="text"
                         value={sellerAccountHolder}
-                        onChange={(e) => setSellerAccountHolder(e.target.value)}
-                        placeholder="HOANG QUOC KHANG"
+                        onChange={(e) => setSellerAccountHolder(e.target.value.toUpperCase())}
+                        placeholder={currentUser?.name ? currentUser.name.toUpperCase() : (lang === 'vi' ? 'HỌ VÀ TÊN CHỦ TÀI KHOẢN' : 'ACCOUNT HOLDER NAME')}
                         className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
                       />
                     </div>

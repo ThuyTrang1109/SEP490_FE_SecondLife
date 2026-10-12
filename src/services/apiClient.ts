@@ -15,15 +15,7 @@ export interface PageResponse<T> {
 }
 
 function isNoV1Path(path: string): boolean {
-  return (
-    path.startsWith('/auth') ||
-    path.startsWith('/users') ||
-    path.startsWith('/seller-verifications') ||
-    path.startsWith('/seller') ||
-    path.startsWith('/staff') ||
-    path.startsWith('/payment-callbacks') ||
-    path.startsWith('/health')
-  );
+  return path.startsWith('/auth');
 }
 
 export function resolveApiUrl(endpoint: string): string {
@@ -69,13 +61,13 @@ export function resolveApiUrl(endpoint: string): string {
 
   // Path aliases
   if (path === '/me') {
-    return `${origin}/api/users/me`;
+    return `${origin}/api/v1/users/me`;
   }
   if (path === '/me/change-password') {
     return `${origin}/api/auth/change-password`;
   }
   if (path.startsWith('/me/')) {
-    return `${origin}/api/users${path.substring(3)}`;
+    return `${origin}/api/v1/users${path.substring(3)}`;
   }
 
   // Check if path belongs to a NO-V1 controller

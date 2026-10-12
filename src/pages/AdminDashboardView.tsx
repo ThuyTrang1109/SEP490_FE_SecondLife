@@ -268,7 +268,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   // Seller Verification Review states
   const [selectedVerificationDetail, setSelectedVerificationDetail] = useState<any | null>(null);
-  const [verificationFilterTab, setVerificationFilterTab] = useState<'ALL' | 'NEEDS_REVIEW' | 'APPROVED' | 'RESUBMIT_REQUIRED' | 'REJECTED' | 'EKYC_PENDING'>('ALL');
+  const [verificationFilterTab, setVerificationFilterTab] = useState<'ALL' | 'NEEDS_REVIEW' | 'PROVIDER_ERROR' | 'APPROVED' | 'RESUBMIT_REQUIRED' | 'REJECTED' | 'EKYC_PENDING'>('ALL');
   const [verificationSearchTerm, setVerificationSearchTerm] = useState<string>('');
   const [isLoadingVerifications, setIsLoadingVerifications] = useState<boolean>(false);
   const [rejectModalVerificationId, setRejectModalVerificationId] = useState<string | null>(null);
@@ -814,44 +814,58 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   };
 
   const handleApproveSellerVerification = async (id: string, currentStatus?: string) => {
-    if (currentStatus && currentStatus !== 'NEEDS_REVIEW' && currentStatus !== 'SUBMITTED' && currentStatus !== 'PENDING') {
-      triggerNotice(`Chỉ hồ sơ ở trạng thái chờ duyệt mới có thể phê duyệt bởi Quản trị viên (Trạng thái hiện tại: ${currentStatus}).`);
+    if (currentStatus && !['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(currentStatus)) {
+      triggerNotice(`Chỉ hồ sơ ở trạng thái chờ duyệt (SUBMITTED, EKYC_PENDING, NEEDS_REVIEW) mới có thể phê duyệt bởi Quản trị viên (Trạng thái hiện tại: ${currentStatus}).`);
       return;
     }
     setReviewingAction('APPROVE');
     setReviewNoticeMsg({ text: 'Đang tiến hành phê duyệt và cấp vai trò Người bán (SELLER)...', type: 'info' });
     try {
-      await adminService.approveSellerVerification(id);
-      setReviewNoticeMsg({ text: 'Đã hoàn thành xong! Hồ sơ người bán đã được phê duyệt thành công.', type: 'success' });
-      triggerNotice('Đã phê duyệt hồ sơ người bán thành công! Vai trò SELLER đã được gán.');
+      const result = await adminService.approveSellerVerification(id);
+      setReviewNoticeMsg({ text: 'Đã hoàn tất! Hồ sơ người bán đã được phê duyệt thành công, vai trò SELLER đã được kích hoạt.', type: 'success' });
+      triggerNotice('Đã phê duyệt hồ sơ người bán thành công! Vai trò SELLER đã được cấp.');
       const res = await adminService.getSellerVerifications({ page: 0, size: 50 });
       if (res?.items) setBackendVerifications(res.items);
       const updated = await adminService.getSellerVerificationById(id).catch(() => null);
       if (updated) {
         setSelectedVerificationDetail(updated);
+      } else if (result) {
+        setSelectedVerificationDetail(result);
       } else {
         setSelectedVerificationDetail((prev: any) => prev ? { ...prev, status: 'APPROVED' } : null);
       }
     } catch (err: any) {
-      setReviewNoticeMsg({ text: 'Phê duyệt thất bại: ' + (err?.message || ''), type: 'error' });
-      triggerNotice(err.message || 'Phê duyệt hồ sơ thất bại');
+      const errMsg = err?.message || '';
+      if (errMsg.includes('409') || err?.status === 409) {
+        setReviewNoticeMsg({ text: 'Hồ sơ đã thay đổi trạng thái trên hệ thống (409 Conflict). Đang đồng bộ lại dữ liệu...', type: 'error' });
+        triggerNotice('Hồ sơ đã thay đổi trạng thái. Đang làm mới dữ liệu...');
+        const updated = await adminService.getSellerVerificationById(id).catch(() => null);
+        if (updated) setSelectedVerificationDetail(updated);
+        const res = await adminService.getSellerVerifications({ page: 0, size: 50 }).catch(() => null);
+        if (res?.items) setBackendVerifications(res.items);
+      } else {
+        setReviewNoticeMsg({ text: 'Phê duyệt thất bại: ' + errMsg, type: 'error' });
+        triggerNotice(errMsg || 'Phê duyệt hồ sơ thất bại');
+      }
     } finally {
       setReviewingAction(null);
     }
   };
 
-  const handleRejectSellerVerificationWithReason = async (id: string, reason?: string, code?: string) => {
-    const finalReason = reason || verReviewReason || 'Hồ sơ chưa đạt yêu cầu kiểm định định danh eKYC.';
-    const finalCode = code || rejectionReasonCode || 'IMAGE_TOO_BLURRY';
+  const handleRejectSellerVerificationWithReason = async (id: string, reason?: string) => {
+    const rawReason = (reason || verReviewReason || '').trim();
+    if (!rawReason) {
+      triggerNotice('Vui lòng nhập lý do từ chối hồ sơ (tối đa 1000 ký tự).');
+      return;
+    }
+    const finalReason = rawReason.length > 1000 ? rawReason.substring(0, 1000) : rawReason;
     setReviewingAction('REJECT');
     setReviewNoticeMsg({ text: 'Đang xử lý từ chối hồ sơ người bán...', type: 'info' });
     try {
       await adminService.rejectSellerVerification(id, {
-        reasonCode: finalCode,
-        rejectionReason: finalReason,
-        allowResubmission: false
+        rejectionReason: finalReason
       });
-      setReviewNoticeMsg({ text: 'Đã hoàn thành xong! Đã từ chối hồ sơ xác thực của người bán.', type: 'success' });
+      setReviewNoticeMsg({ text: 'Đã từ chối hồ sơ xác thực. Hồ sơ đã kết thúc (REJECTED).', type: 'success' });
       triggerNotice('Đã từ chối hồ sơ xác thực người bán.');
       setRejectModalVerificationId(null);
       const res = await adminService.getSellerVerifications({ page: 0, size: 50 });
@@ -863,24 +877,37 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         setSelectedVerificationDetail((prev: any) => prev ? { ...prev, status: 'REJECTED', rejectionReason: finalReason } : null);
       }
     } catch (err: any) {
-      setReviewNoticeMsg({ text: 'Từ chối thất bại: ' + (err?.message || ''), type: 'error' });
-      triggerNotice(err.message || 'Từ chối hồ sơ thất bại');
+      const errMsg = err?.message || '';
+      if (errMsg.includes('409') || err?.status === 409) {
+        setReviewNoticeMsg({ text: 'Hồ sơ đã thay đổi trạng thái trên hệ thống (409 Conflict). Đang đồng bộ lại dữ liệu...', type: 'error' });
+        triggerNotice('Hồ sơ đã thay đổi trạng thái. Đang làm mới dữ liệu...');
+        const updated = await adminService.getSellerVerificationById(id).catch(() => null);
+        if (updated) setSelectedVerificationDetail(updated);
+        const res = await adminService.getSellerVerifications({ page: 0, size: 50 }).catch(() => null);
+        if (res?.items) setBackendVerifications(res.items);
+      } else {
+        setReviewNoticeMsg({ text: 'Từ chối thất bại: ' + errMsg, type: 'error' });
+        triggerNotice(errMsg || 'Từ chối hồ sơ thất bại');
+      }
     } finally {
       setReviewingAction(null);
     }
   };
 
-  const handleRequestResubmitSellerVerificationWithReason = async (id: string, reason?: string, code?: string) => {
-    const finalReason = reason || verReviewReason || 'Ảnh CCCD/chân dung bị mờ, vui lòng chụp lại rõ nét.';
-    const finalCode = code || rejectionReasonCode || 'IMAGE_TOO_BLURRY';
+  const handleRequestResubmitSellerVerificationWithReason = async (id: string, reason?: string) => {
+    const rawReason = (reason || verReviewReason || '').trim();
+    if (!rawReason) {
+      triggerNotice('Vui lòng nhập lý do/hướng dẫn yêu cầu nộp lại chứng từ (tối đa 1000 ký tự).');
+      return;
+    }
+    const finalReason = rawReason.length > 1000 ? rawReason.substring(0, 1000) : rawReason;
     setReviewingAction('RESUBMIT');
     setReviewNoticeMsg({ text: 'Đang gửi yêu cầu nộp lại chứng từ cho người bán...', type: 'info' });
     try {
       await adminService.requestResubmitSellerVerification(id, {
-        reasonCode: finalCode,
         rejectionReason: finalReason
       });
-      setReviewNoticeMsg({ text: 'Đã hoàn thành xong! Đã gửi yêu cầu nộp lại ảnh chứng từ cho người bán.', type: 'success' });
+      setReviewNoticeMsg({ text: 'Đã gửi yêu cầu nộp lại ảnh chứng từ (RESUBMIT_REQUIRED). Đang chờ người bán cập nhật.', type: 'success' });
       triggerNotice('Đã gửi yêu cầu bổ sung/chụp lại eKYC cho người bán.');
       const res = await adminService.getSellerVerifications({ page: 0, size: 50 });
       if (res?.items) setBackendVerifications(res.items);
@@ -891,8 +918,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         setSelectedVerificationDetail((prev: any) => prev ? { ...prev, status: 'RESUBMIT_REQUIRED', rejectionReason: finalReason } : null);
       }
     } catch (err: any) {
-      setReviewNoticeMsg({ text: 'Yêu cầu nộp lại thất bại: ' + (err?.message || ''), type: 'error' });
-      triggerNotice(err.message || 'Yêu cầu nộp lại hồ sơ thất bại');
+      const errMsg = err?.message || '';
+      if (errMsg.includes('409') || err?.status === 409) {
+        setReviewNoticeMsg({ text: 'Hồ sơ đã thay đổi trạng thái trên hệ thống (409 Conflict). Đang đồng bộ lại dữ liệu...', type: 'error' });
+        triggerNotice('Hồ sơ đã thay đổi trạng thái. Đang làm mới dữ liệu...');
+        const updated = await adminService.getSellerVerificationById(id).catch(() => null);
+        if (updated) setSelectedVerificationDetail(updated);
+        const res = await adminService.getSellerVerifications({ page: 0, size: 50 }).catch(() => null);
+        if (res?.items) setBackendVerifications(res.items);
+      } else {
+        setReviewNoticeMsg({ text: 'Yêu cầu nộp lại thất bại: ' + errMsg, type: 'error' });
+        triggerNotice(errMsg || 'Yêu cầu nộp lại hồ sơ thất bại');
+      }
     } finally {
       setReviewingAction(null);
     }
@@ -900,26 +937,41 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   const handleRejectSellerVerification = async () => {
     if (!rejectModalVerificationId) return;
-    await handleRejectSellerVerificationWithReason(rejectModalVerificationId, rejectionReasonText, rejectionReasonCode);
+    const reason = (rejectionReasonText || 'Hồ sơ chưa đạt yêu cầu kiểm định định danh eKYC.').trim();
+    await handleRejectSellerVerificationWithReason(rejectModalVerificationId, reason);
     setRejectionReasonText('');
   };
 
   const handleRetrySellerVerification = async (id: string) => {
     setReviewingAction('RETRY');
-    setReviewNoticeMsg({ text: 'Đang yêu cầu hệ thống thử lại quy trình eKYC...', type: 'info' });
+    setReviewNoticeMsg({ text: 'Đang kích hoạt thử lại quy trình eKYC với đối tác VNPT từ ảnh đã lưu...', type: 'info' });
     try {
-      await adminService.retrySellerVerification(id);
-      setReviewNoticeMsg({ text: 'Đã hoàn thành xong! Kích hoạt thử lại eKYC thành công.', type: 'success' });
-      triggerNotice('Đã kích hoạt thử lại eKYC qua hệ thống thành công!');
-      const res = await adminService.getSellerVerifications({ page: 0, size: 50 });
-      if (res?.items) setBackendVerifications(res.items);
-      if (selectedVerificationDetail?.id === id) {
+      const res = await adminService.retrySellerVerification(id);
+      const updated = await adminService.getSellerVerificationById(id).catch(() => res);
+      if (updated) setSelectedVerificationDetail(updated);
+      const listRes = await adminService.getSellerVerifications({ page: 0, size: 50 });
+      if (listRes?.items) setBackendVerifications(listRes.items);
+
+      const statusText = updated?.status || res?.status || 'Đã gửi yêu cầu';
+      const ekycText = updated?.ekycStatus || res?.ekycStatus || '';
+      setReviewNoticeMsg({
+        text: `Đã hoàn tất thử lại eKYC! Kết quả hiện tại: Trạng thái ${statusText} ${ekycText ? `(${ekycText})` : ''}`,
+        type: 'success'
+      });
+      triggerNotice(`Đã kích hoạt thử lại eKYC. Kết quả: ${statusText}`);
+    } catch (err: any) {
+      const errMsg = err?.message || '';
+      if (errMsg.includes('409') || err?.status === 409) {
+        setReviewNoticeMsg({ text: 'Hồ sơ không ở trạng thái hợp lệ để retry hoặc đã đổi trạng thái (409 Conflict). Đang tải lại...', type: 'error' });
+        triggerNotice('Hồ sơ đã đổi trạng thái, đang làm mới...');
         const updated = await adminService.getSellerVerificationById(id).catch(() => null);
         if (updated) setSelectedVerificationDetail(updated);
+        const listRes = await adminService.getSellerVerifications({ page: 0, size: 50 });
+        if (listRes?.items) setBackendVerifications(listRes.items);
+      } else {
+        setReviewNoticeMsg({ text: 'Thử lại thất bại: ' + errMsg, type: 'error' });
+        triggerNotice(errMsg || 'Thử lại eKYC thất bại');
       }
-    } catch (err: any) {
-      setReviewNoticeMsg({ text: 'Thử lại thất bại: ' + (err?.message || ''), type: 'error' });
-      triggerNotice(err.message || 'Thử lại eKYC thất bại');
     } finally {
       setReviewingAction(null);
     }
@@ -2216,15 +2268,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* ======================================================== */}
           {activeTab === 'seller-kyc' && (() => {
             const needsReviewCount = backendVerifications.filter(v => v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING').length;
+            const providerErrorCount = backendVerifications.filter(v => v.status === 'EKYC_PENDING' && v.ekycStatus === 'PROVIDER_ERROR').length;
             const approvedCount = backendVerifications.filter(v => v.status === 'APPROVED').length;
             const resubmitCount = backendVerifications.filter(v => v.status === 'RESUBMIT_REQUIRED').length;
             const rejectedCount = backendVerifications.filter(v => v.status === 'REJECTED').length;
-            const ekycPendingCount = backendVerifications.filter(v => v.status === 'EKYC_PENDING' || v.ekycStatus === 'PENDING').length;
+            const ekycPendingCount = backendVerifications.filter(v => v.status === 'EKYC_PENDING').length;
 
             const filteredList = backendVerifications.filter((v) => {
               if (verificationFilterTab !== 'ALL') {
                 if (verificationFilterTab === 'NEEDS_REVIEW') {
                   if (v.status !== 'NEEDS_REVIEW' && v.status !== 'SUBMITTED' && v.status !== 'PENDING') return false;
+                } else if (verificationFilterTab === 'PROVIDER_ERROR') {
+                  if (v.status !== 'EKYC_PENDING' || v.ekycStatus !== 'PROVIDER_ERROR') return false;
                 } else if (v.status !== verificationFilterTab) {
                   return false;
                 }
@@ -2243,244 +2298,465 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             });
 
             return (
-              <div className="bg-white rounded-2xl shadow-xs border border-slate-200 border-t-4 border-t-rose-600 p-5 space-y-4">
-                {/* Header Section */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900 uppercase flex items-center gap-2">
-                      <ShieldCheck className="w-5 h-5 text-rose-600" />
-                      <span>Thẩm Định & Duyệt Hồ Sơ Định Danh Người Bán (Seller eKYC Review)</span>
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Phân quyền dành riêng cho Quản trị viên: Đối soát CCCD, ảnh selfie, chỉ số khớp mặt & quyết định cấp quyền gian hàng
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 self-start sm:self-auto">
-                    <button
-                      type="button"
-                      onClick={handleRefreshSellerVerifications}
-                      disabled={isLoadingVerifications}
-                      className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                      title="Làm mới danh sách hồ sơ"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingVerifications ? 'animate-spin text-rose-600' : 'text-slate-500'}`} />
-                      <span>{isLoadingVerifications ? 'Đang tải...' : 'Làm Mới'}</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Subtab Filters & Search Bar */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      onClick={() => setVerificationFilterTab('ALL')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                        verificationFilterTab === 'ALL'
-                          ? 'bg-[#24263e] text-white shadow-xs'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                      }`}
-                    >
-                      Tất Cả ({backendVerifications.length})
-                    </button>
-                    <button
-                      onClick={() => setVerificationFilterTab('NEEDS_REVIEW')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                        verificationFilterTab === 'NEEDS_REVIEW'
-                          ? 'bg-amber-600 text-white shadow-xs'
-                          : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
-                      }`}
-                    >
-                      <span>Cần Duyệt</span>
-                      {needsReviewCount > 0 && (
-                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                          verificationFilterTab === 'NEEDS_REVIEW' ? 'bg-white/30 text-white' : 'bg-amber-600 text-white'
-                        }`}>
-                          {needsReviewCount}
+              <div className="space-y-4">
+                {/* 1. Header Banner */}
+                <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-rose-500 to-rose-600 text-white flex items-center justify-center shadow-sm shadow-rose-200 shrink-0">
+                      <ShieldCheck className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-base font-black text-slate-900 tracking-tight">
+                          Thẩm Định & Duyệt Hồ Sơ eKYC Người Bán
+                        </h3>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                          VNPT eKYC Engine
                         </span>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setVerificationFilterTab('APPROVED')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                        verificationFilterTab === 'APPROVED'
-                          ? 'bg-emerald-600 text-white shadow-xs'
-                          : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
-                      }`}
-                    >
-                      Đã Phê Duyệt ({approvedCount})
-                    </button>
-                    <button
-                      onClick={() => setVerificationFilterTab('RESUBMIT_REQUIRED')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                        verificationFilterTab === 'RESUBMIT_REQUIRED'
-                          ? 'bg-orange-600 text-white shadow-xs'
-                          : 'bg-orange-50 hover:bg-orange-100 text-orange-800 border border-orange-200'
-                      }`}
-                    >
-                      Yêu Cầu Nộp Lại ({resubmitCount})
-                    </button>
-                    <button
-                      onClick={() => setVerificationFilterTab('REJECTED')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                        verificationFilterTab === 'REJECTED'
-                          ? 'bg-rose-600 text-white shadow-xs'
-                          : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200'
-                      }`}
-                    >
-                      Đã Từ Chối ({rejectedCount})
-                    </button>
-                    <button
-                      onClick={() => setVerificationFilterTab('EKYC_PENDING')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                        verificationFilterTab === 'EKYC_PENDING'
-                          ? 'bg-blue-600 text-white shadow-xs'
-                          : 'bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200'
-                      }`}
-                    >
-                      Đang eKYC ({ekycPendingCount})
-                    </button>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Đối soát CCCD, sinh trắc học khuôn mặt và phê duyệt quyền kinh doanh gian hàng
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="relative min-w-[240px]">
-                    <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
-                    <input
-                      type="text"
-                      value={verificationSearchTerm}
-                      onChange={(e) => setVerificationSearchTerm(e.target.value)}
-                      placeholder="Tìm theo Shop, Tên, CCCD, SĐT..."
-                      className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs outline-none focus:border-rose-500 bg-white"
-                    />
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRefreshSellerVerifications}
+                    disabled={isLoadingVerifications}
+                    className="px-3.5 py-2 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer flex items-center gap-2 shadow-2xs self-start sm:self-auto shrink-0 bg-white"
+                    title="Làm mới danh sách hồ sơ"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingVerifications ? 'animate-spin text-rose-600' : 'text-slate-500'}`} />
+                    <span>{isLoadingVerifications ? 'Đang đồng bộ...' : 'Làm Mới Dữ Liệu'}</span>
+                  </button>
                 </div>
 
-                {/* Table Data */}
-                <div className="overflow-x-auto rounded-xl border border-slate-200">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50/90 text-slate-600 text-[11px] font-bold">
-                        <th className="py-3 px-4">Gian Hàng & Người Bán</th>
-                        <th className="py-3 px-4">Định Danh CCCD</th>
-                        <th className="py-3 px-4">Chỉ Số eKYC</th>
-                        <th className="py-3 px-4">Đánh Giá Rủi Ro</th>
-                        <th className="py-3 px-4">Trạng Thái Hồ Sơ</th>
-                        <th className="py-3 px-4 text-right">Thao Tác Quản Trị</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {filteredList.length > 0 ? (
-                        filteredList.map((v) => (
-                          <tr key={v.id} className="hover:bg-slate-50/80 transition">
-                            <td className="py-3 px-4">
-                              <div className="font-bold text-slate-900 text-[13px] flex items-center gap-1.5">
-                                <Store className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                                <span>{v.shopName || v.userFullName || 'Gian Hàng SecondLife'}</span>
-                              </div>
-                              <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
-                                <span>{v.userFullName || '—'}</span>
-                                {v.phone && <span>• {v.phone}</span>}
-                              </div>
-                              <div className="text-[10px] text-slate-400 font-mono truncate max-w-[220px]" title={v.userEmail || ''}>
-                                {v.userEmail || v.userId}
-                              </div>
-                            </td>
+                {/* 2. Interactive KPI Stat Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  {/* Card: Tất cả */}
+                  <button
+                    type="button"
+                    onClick={() => setVerificationFilterTab('ALL')}
+                    className={`p-3.5 rounded-2xl text-left transition-all border cursor-pointer ${
+                      verificationFilterTab === 'ALL'
+                        ? 'bg-[#24263e] text-white border-[#24263e] shadow-md ring-2 ring-[#24263e]/15'
+                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 shadow-2xs'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${verificationFilterTab === 'ALL' ? 'text-slate-300' : 'text-slate-400'}`}>
+                        Tổng Hồ Sơ
+                      </span>
+                      <Layers className={`w-3.5 h-3.5 ${verificationFilterTab === 'ALL' ? 'text-slate-300' : 'text-slate-400'}`} />
+                    </div>
+                    <div className="text-2xl font-black font-mono">
+                      {backendVerifications.length}
+                    </div>
+                    <span className={`text-[10px] font-medium block mt-0.5 ${verificationFilterTab === 'ALL' ? 'text-slate-300' : 'text-slate-400'}`}>
+                      Toàn bộ hồ sơ nộp
+                    </span>
+                  </button>
 
-                            <td className="py-3 px-4">
-                              <span className="font-mono font-bold text-slate-800 text-[12px] block">
-                                {v.documentNumber || v.documentNumberMasked || '—'}
-                              </span>
-                              <div className="text-[10px] text-slate-400 mt-0.5">
-                                <span>{v.verificationType || 'CITIZEN_ID'}</span>
-                                {v.resubmissionCount > 0 && (
-                                  <span className="ml-1 text-orange-600 font-bold">
-                                    (Lần {v.resubmissionCount + 1})
-                                  </span>
-                                )}
-                              </div>
-                            </td>
+                  {/* Card: Cần Duyệt */}
+                  <button
+                    type="button"
+                    onClick={() => setVerificationFilterTab('NEEDS_REVIEW')}
+                    className={`p-3.5 rounded-2xl text-left transition-all border cursor-pointer ${
+                      verificationFilterTab === 'NEEDS_REVIEW'
+                        ? 'bg-amber-500 text-white border-amber-500 shadow-md ring-2 ring-amber-500/20'
+                        : 'bg-amber-50/50 hover:bg-amber-50 text-amber-900 border-amber-200 shadow-2xs'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${verificationFilterTab === 'NEEDS_REVIEW' ? 'text-white/90' : 'text-amber-800'}`}>
+                        Cần Duyệt
+                      </span>
+                      <Clock className={`w-3.5 h-3.5 ${verificationFilterTab === 'NEEDS_REVIEW' ? 'text-white' : 'text-amber-600'}`} />
+                    </div>
+                    <div className="text-2xl font-black font-mono">
+                      {needsReviewCount}
+                    </div>
+                    <span className={`text-[10px] font-medium block mt-0.5 ${verificationFilterTab === 'NEEDS_REVIEW' ? 'text-white/90' : 'text-amber-700'}`}>
+                      {needsReviewCount > 0 ? '● Chờ thẩm định' : 'Đã thẩm định xong'}
+                    </span>
+                  </button>
 
-                            <td className="py-3 px-4">
-                              <div className="space-y-0.5 text-[11px]">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-slate-500 text-[10px]">Khớp mặt:</span>
-                                  <span className="font-mono font-bold text-indigo-700">
-                                    {formatScore(v.faceMatchScore)}
-                                  </span>
+                  {/* Card: Lỗi Provider VNPT */}
+                  <button
+                    type="button"
+                    onClick={() => setVerificationFilterTab('PROVIDER_ERROR')}
+                    className={`p-3.5 rounded-2xl text-left transition-all border cursor-pointer ${
+                      verificationFilterTab === 'PROVIDER_ERROR'
+                        ? 'bg-rose-600 text-white border-rose-600 shadow-md ring-2 ring-rose-600/20'
+                        : 'bg-rose-50/50 hover:bg-rose-50 text-rose-900 border-rose-200 shadow-2xs'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${verificationFilterTab === 'PROVIDER_ERROR' ? 'text-white/90' : 'text-rose-800'}`}>
+                        Lỗi Provider VNPT
+                      </span>
+                      <AlertTriangle className={`w-3.5 h-3.5 ${verificationFilterTab === 'PROVIDER_ERROR' ? 'text-white' : 'text-rose-600'}`} />
+                    </div>
+                    <div className="text-2xl font-black font-mono">
+                      {providerErrorCount}
+                    </div>
+                    <span className={`text-[10px] font-medium block mt-0.5 ${verificationFilterTab === 'PROVIDER_ERROR' ? 'text-white/90' : 'text-rose-700'}`}>
+                      {providerErrorCount > 0 ? '⚠️ Cần bấm thử lại' : 'Kết nối ổn định'}
+                    </span>
+                  </button>
+
+                  {/* Card: Yêu Cầu Nộp Lại */}
+                  <button
+                    type="button"
+                    onClick={() => setVerificationFilterTab('RESUBMIT_REQUIRED')}
+                    className={`p-3.5 rounded-2xl text-left transition-all border cursor-pointer ${
+                      verificationFilterTab === 'RESUBMIT_REQUIRED'
+                        ? 'bg-orange-500 text-white border-orange-500 shadow-md ring-2 ring-orange-500/20'
+                        : 'bg-orange-50/50 hover:bg-orange-50 text-orange-900 border-orange-200 shadow-2xs'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${verificationFilterTab === 'RESUBMIT_REQUIRED' ? 'text-white/90' : 'text-orange-800'}`}>
+                        Chờ Nộp Lại
+                      </span>
+                      <RefreshCw className={`w-3.5 h-3.5 ${verificationFilterTab === 'RESUBMIT_REQUIRED' ? 'text-white' : 'text-orange-600'}`} />
+                    </div>
+                    <div className="text-2xl font-black font-mono">
+                      {resubmitCount}
+                    </div>
+                    <span className={`text-[10px] font-medium block mt-0.5 ${verificationFilterTab === 'RESUBMIT_REQUIRED' ? 'text-white/90' : 'text-orange-700'}`}>
+                      Đang chờ seller cập nhật
+                    </span>
+                  </button>
+
+                  {/* Card: Đã Phê Duyệt */}
+                  <button
+                    type="button"
+                    onClick={() => setVerificationFilterTab('APPROVED')}
+                    className={`p-3.5 rounded-2xl text-left transition-all border cursor-pointer col-span-2 sm:col-span-1 ${
+                      verificationFilterTab === 'APPROVED'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-600/20'
+                        : 'bg-emerald-50/50 hover:bg-emerald-50 text-emerald-900 border-emerald-200 shadow-2xs'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${verificationFilterTab === 'APPROVED' ? 'text-white/90' : 'text-emerald-800'}`}>
+                        Đã Phê Duyệt
+                      </span>
+                      <CheckCircle2 className={`w-3.5 h-3.5 ${verificationFilterTab === 'APPROVED' ? 'text-white' : 'text-emerald-600'}`} />
+                    </div>
+                    <div className="text-2xl font-black font-mono">
+                      {approvedCount}
+                    </div>
+                    <span className={`text-[10px] font-medium block mt-0.5 ${verificationFilterTab === 'APPROVED' ? 'text-white/90' : 'text-emerald-700'}`}>
+                      Đã cấp quyền SELLER
+                    </span>
+                  </button>
+                </div>
+
+                {/* 3. Main Data Card with Toolbar & Table */}
+                <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+                  {/* Toolbar: Segmented Tab Bar & Search Input */}
+                  <div className="p-3 sm:p-4 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-slate-50/40">
+                    {/* Segmented Filter Pills */}
+                    <div className="flex items-center gap-1 overflow-x-auto p-1 bg-slate-100/80 rounded-xl border border-slate-200/60 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setVerificationFilterTab('ALL')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${
+                          verificationFilterTab === 'ALL'
+                            ? 'bg-white text-slate-900 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                        }`}
+                      >
+                        Tất Cả ({backendVerifications.length})
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setVerificationFilterTab('NEEDS_REVIEW')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                          verificationFilterTab === 'NEEDS_REVIEW'
+                            ? 'bg-white text-amber-900 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                        }`}
+                      >
+                        <span>Cần Duyệt</span>
+                        {needsReviewCount > 0 && (
+                          <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-amber-500 text-white">
+                            {needsReviewCount}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setVerificationFilterTab('PROVIDER_ERROR')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                          verificationFilterTab === 'PROVIDER_ERROR'
+                            ? 'bg-white text-rose-900 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                        }`}
+                      >
+                        <span>Lỗi Provider</span>
+                        {providerErrorCount > 0 && (
+                          <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-rose-600 text-white animate-pulse">
+                            {providerErrorCount}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setVerificationFilterTab('EKYC_PENDING')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${
+                          verificationFilterTab === 'EKYC_PENDING'
+                            ? 'bg-white text-blue-900 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                        }`}
+                      >
+                        Đang eKYC ({ekycPendingCount})
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setVerificationFilterTab('RESUBMIT_REQUIRED')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${
+                          verificationFilterTab === 'RESUBMIT_REQUIRED'
+                            ? 'bg-white text-orange-900 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                        }`}
+                      >
+                        Yêu Cầu Nộp Lại ({resubmitCount})
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setVerificationFilterTab('APPROVED')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${
+                          verificationFilterTab === 'APPROVED'
+                            ? 'bg-white text-emerald-900 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                        }`}
+                      >
+                        Đã Duyệt ({approvedCount})
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setVerificationFilterTab('REJECTED')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${
+                          verificationFilterTab === 'REJECTED'
+                            ? 'bg-white text-rose-900 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                        }`}
+                      >
+                        Đã Từ Chối ({rejectedCount})
+                      </button>
+                    </div>
+
+                    {/* Search Input Bar */}
+                    <div className="relative w-full lg:w-72 shrink-0">
+                      <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                      <input
+                        type="text"
+                        value={verificationSearchTerm}
+                        onChange={(e) => setVerificationSearchTerm(e.target.value)}
+                        placeholder="Tìm Shop, Tên, CCCD, SĐT..."
+                        className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 bg-white transition shadow-2xs"
+                      />
+                      {verificationSearchTerm && (
+                        <button
+                          type="button"
+                          onClick={() => setVerificationSearchTerm('')}
+                          className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Table Data */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
+                          <th className="py-3 px-4">Gian Hàng & Người Bán</th>
+                          <th className="py-3 px-4">Định Danh CCCD</th>
+                          <th className="py-3 px-4">Chỉ Số eKYC (VNPT)</th>
+                          <th className="py-3 px-4">Đánh Giá Rủi Ro</th>
+                          <th className="py-3 px-4">Trạng Thái Hồ Sơ</th>
+                          <th className="py-3 px-4 text-right">Thao Tác Quản Trị</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredList.length > 0 ? (
+                          filteredList.map((v) => (
+                            <tr key={v.id} className="hover:bg-slate-50/80 transition">
+                              <td className="py-3 px-4">
+                                <div className="font-bold text-slate-900 text-[13px] flex items-center gap-1.5">
+                                  <Store className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                  <span>{v.shopName || v.userFullName || 'Gian Hàng SecondLife'}</span>
                                 </div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-slate-500 text-[10px]">Thực thể sống:</span>
-                                  <span className="font-mono font-bold text-emerald-700">
-                                    {formatScore(v.livenessScore)}
-                                  </span>
+                                <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
+                                  <span>{v.userFullName || '—'}</span>
+                                  {v.phone && <span>• {v.phone}</span>}
                                 </div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-slate-500 text-[10px]">Giấy tờ:</span>
-                                  <span className="font-mono font-bold text-amber-700">
-                                    {formatScore(v.documentScore)}
-                                  </span>
+                                <div className="text-[10px] text-slate-400 font-mono truncate max-w-[220px]" title={v.userEmail || ''}>
+                                  {v.userEmail || v.userId}
                                 </div>
-                              </div>
-                            </td>
+                              </td>
 
-                            <td className="py-3 px-4">
-                              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                v.riskStatus === 'CLEAR' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                                v.riskStatus === 'BLOCK' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                                'bg-purple-50 text-purple-700 border border-purple-200'
-                              }`}>
-                                {v.riskStatus || 'NOT_EVALUATED'}
-                              </span>
-                              <div className="text-[10px] text-slate-400 mt-0.5">
-                                Provider: <strong className="text-slate-600">{v.providerName || 'VNPT'}</strong>
-                              </div>
-                            </td>
+                              <td className="py-3 px-4">
+                                <span className="font-mono font-bold text-slate-800 text-[12px] block">
+                                  {v.documentNumber || v.documentNumberMasked || '—'}
+                                </span>
+                                <div className="text-[10px] text-slate-400 mt-0.5">
+                                  <span>{v.verificationType || 'CITIZEN_ID'}</span>
+                                  {v.resubmissionCount > 0 && (
+                                    <span className="ml-1 text-orange-600 font-bold">
+                                      (Lần {v.resubmissionCount + 1})
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
 
-                            <td className="py-3 px-4">
-                              <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                                v.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
-                                v.status === 'REJECTED' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
-                                v.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-100 text-orange-800 border border-orange-300' :
-                                v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING' ? 'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse' :
-                                'bg-blue-100 text-blue-800 border border-blue-300'
-                              }`}>
-                                {v.status}
-                              </span>
-                            </td>
+                              <td className="py-3 px-4">
+                                <div className="space-y-0.5 text-[11px]">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-slate-500 text-[10px]">Khớp mặt:</span>
+                                    <span className="font-mono font-bold text-indigo-700">
+                                      {formatScore(v.faceMatchScore)}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-slate-500 text-[10px]">Thực thể sống:</span>
+                                    <span className="font-mono font-bold text-emerald-700">
+                                      {formatScore(v.livenessScore)}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-slate-500 text-[10px]">Giấy tờ:</span>
+                                    <span className="font-mono font-bold text-amber-700">
+                                      {formatScore(v.documentScore)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
 
-                            <td className="py-3 px-4 text-right">
-                              <div className="inline-flex items-center gap-1.5 justify-end">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenVerificationDetailModal(v)}
-                                  className="px-3 py-1.5 rounded-xl bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                                  title="Xem toàn bộ ảnh CCCD, điểm chi tiết & Thẩm định"
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                  <span>Xem & Thẩm Định</span>
-                                </button>
-                                {(v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING') && (
+                              <td className="py-3 px-4">
+                                <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  v.riskStatus === 'CLEAR' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                  v.riskStatus === 'BLOCK' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                                  'bg-purple-50 text-purple-700 border border-purple-200'
+                                }`}>
+                                  {v.riskStatus || 'NOT_EVALUATED'}
+                                </span>
+                                <div className="text-[10px] text-slate-400 mt-0.5">
+                                  Provider: <strong className="text-slate-600">{v.providerName || 'VNPT'}</strong>
+                                </div>
+                              </td>
+
+                              <td className="py-3 px-4">
+                                <div className="flex flex-col gap-1 items-start">
+                                  <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                    v.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                                    v.status === 'REJECTED' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
+                                    v.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-100 text-orange-800 border border-orange-300' :
+                                    v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING' ? 'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse' :
+                                    'bg-blue-100 text-blue-800 border border-blue-300'
+                                  }`}>
+                                    {v.status}
+                                  </span>
+
+                                  {v.ekycStatus === 'PROVIDER_ERROR' && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                      ⚠️ Lỗi Provider VNPT
+                                    </span>
+                                  )}
+
+                                  {(v.reasonCodeDescription || v.rejectionReason) && (
+                                    <span className="text-[10px] text-slate-500 line-clamp-1 max-w-[200px]" title={v.reasonCodeDescription || v.rejectionReason}>
+                                      {v.reasonCodeDescription || v.rejectionReason}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+
+                              <td className="py-3 px-4 text-right">
+                                <div className="inline-flex items-center gap-1.5 justify-end">
                                   <button
                                     type="button"
-                                    onClick={() => handleApproveSellerVerification(v.id, v.status)}
-                                    className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition cursor-pointer shadow-2xs"
-                                    title="Phê duyệt nhanh hồ sơ này"
+                                    onClick={() => handleOpenVerificationDetailModal(v)}
+                                    className="px-3 py-1.5 rounded-xl bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                                    title="Xem toàn bộ ảnh CCCD, điểm chi tiết & Thẩm định"
                                   >
-                                    <Check className="w-3.5 h-3.5" />
+                                    <Eye className="w-3.5 h-3.5" />
+                                    <span>Xem & Thẩm Định</span>
                                   </button>
-                                )}
+                                  {v.status === 'EKYC_PENDING' && v.ekycStatus === 'PROVIDER_ERROR' && (
+                                    <button
+                                      type="button"
+                                      disabled={reviewingAction === 'RETRY'}
+                                      onClick={() => handleRetrySellerVerification(v.id)}
+                                      className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold transition cursor-pointer shadow-2xs flex items-center gap-1"
+                                      title="Thử lại pipeline eKYC với đối tác VNPT"
+                                    >
+                                      <RefreshCw className={`w-3.5 h-3.5 ${reviewingAction === 'RETRY' ? 'animate-spin' : ''}`} />
+                                      <span className="hidden sm:inline">Thử Lại</span>
+                                    </button>
+                                  )}
+                                  {(v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING') && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleApproveSellerVerification(v.id, v.status)}
+                                      className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition cursor-pointer shadow-2xs"
+                                      title="Phê duyệt nhanh hồ sơ này"
+                                    >
+                                      <Check className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={6} className="py-14 text-center">
+                              <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mx-auto mb-3 shadow-inner">
+                                <ShieldCheck className="w-7 h-7 text-slate-400" />
                               </div>
+                              <h4 className="font-bold text-slate-800 text-sm">
+                                Không tìm thấy hồ sơ xác thực nào
+                              </h4>
+                              <p className="text-slate-500 text-xs mt-1 max-w-sm mx-auto">
+                                {verificationSearchTerm
+                                  ? `Không có kết quả nào phù hợp với từ khóa "${verificationSearchTerm}".`
+                                  : verificationFilterTab !== 'ALL'
+                                  ? `Hiện không có hồ sơ nào ở mục "${verificationFilterTab}".`
+                                  : 'Chưa có hồ sơ người bán nào gửi yêu cầu xác thực eKYC.'}
+                              </p>
+                              {(verificationFilterTab !== 'ALL' || verificationSearchTerm) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setVerificationFilterTab('ALL');
+                                    setVerificationSearchTerm('');
+                                  }}
+                                  className="mt-3 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer inline-flex items-center gap-1.5"
+                                >
+                                  <RefreshCw className="w-3 h-3" />
+                                  <span>Đặt lại bộ lọc</span>
+                                </button>
+                              )}
                             </td>
                           </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={6} className="py-12 text-center text-slate-400 text-xs">
-                            <ShieldCheck className="w-8 h-8 mx-auto text-slate-300 mb-2" />
-                            Không tìm thấy hồ sơ xác thực người bán nào phù hợp bộ lọc.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             );
@@ -3568,6 +3844,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       {/* ======================================================== */}
       {selectedVerificationDetail && (() => {
         const isTerminalStatus = selectedVerificationDetail.status === 'APPROVED' || selectedVerificationDetail.status === 'REJECTED';
+        const isResubmitRequired = selectedVerificationDetail.status === 'RESUBMIT_REQUIRED';
+        const isProviderError = selectedVerificationDetail.status === 'EKYC_PENDING' && selectedVerificationDetail.ekycStatus === 'PROVIDER_ERROR';
+        const canReview = ['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(selectedVerificationDetail.status);
         const isProcessing = reviewingAction !== null;
 
         return (
@@ -3592,6 +3871,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       }`}>
                         {selectedVerificationDetail.status}
                       </span>
+                      {selectedVerificationDetail.ekycStatus === 'PROVIDER_ERROR' && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                          ⚠️ PROVIDER_ERROR
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       {selectedVerificationDetail.shopName ? (
@@ -3626,13 +3910,39 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   </div>
                 )}
 
+                {/* Provider Error Notice Banner */}
+                {isProviderError && (
+                  <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-center gap-2.5">
+                    <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+                    <div>
+                      <strong className="block font-bold">Gián đoạn kết nối đối tác eKYC VNPT (PROVIDER_ERROR)</strong>
+                      <span className="text-[11px] text-amber-800">
+                        Hồ sơ đã được tiếp nhận nhưng đối soát eKYC tự động bị gián đoạn do sự cố kết nối hoặc cấu hình VNPT. Quản trị viên hãy kiểm tra dịch vụ và bấm <strong>"Thử Lại eKYC"</strong> bên dưới để chạy lại quy trình từ ảnh đã lưu.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Resubmit Required Notice Banner */}
+                {isResubmitRequired && (
+                  <div className="p-3.5 rounded-2xl bg-orange-50 border border-orange-200 text-orange-950 text-xs flex items-center gap-2.5">
+                    <RefreshCw className="w-5 h-5 text-orange-600 shrink-0" />
+                    <div>
+                      <strong className="block font-bold">Hồ sơ đang ở trạng thái YÊU CẦU NỘP LẠI (RESUBMIT_REQUIRED)</strong>
+                      <span className="text-[11px] text-orange-800">
+                        Lý do: <em>{selectedVerificationDetail.rejectionReason || 'Chụp lại ảnh chứng từ rõ nét'}</em>. Đang chờ người bán đăng nhập để tải lại ảnh mới. Các thao tác thẩm định tạm khóa cho đến khi người bán nộp lại.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Terminal status notice */}
                 {selectedVerificationDetail.status === 'APPROVED' && (
                   <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center gap-2.5">
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                     <div>
                       <strong className="block font-bold">Hồ sơ đã được PHÊ DUYỆT thành công!</strong>
-                      <span className="text-[11px] text-emerald-700">Người dùng đã được cấp quyền bán hàng (Role: SELLER). Các nút thao tác đã được khóa để bảo vệ tính toàn vẹn dữ liệu.</span>
+                      <span className="text-[11px] text-emerald-700">Người dùng đã được cấp quyền bán hàng (Role: SELLER). Các nút thao tác đã được đóng để bảo vệ tính toàn vẹn dữ liệu.</span>
                     </div>
                   </div>
                 )}
@@ -3641,8 +3951,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center gap-2.5">
                     <XCircle className="w-5 h-5 text-rose-600 shrink-0" />
                     <div>
-                      <strong className="block font-bold">Hồ sơ đã BỊ TỪ CHỐI!</strong>
-                      <span className="text-[11px] text-rose-700">Lý do: {selectedVerificationDetail.rejectionReason || 'Chưa đạt yêu cầu thẩm định identity'}. Quy trình xét duyệt cho hồ sơ này đã kết thúc.</span>
+                      <strong className="block font-bold">Hồ sơ đã BỊ TỪ CHỐI và kết thúc!</strong>
+                      <span className="text-[11px] text-rose-700">Lý do: {selectedVerificationDetail.rejectionReason || 'Chưa đạt yêu cầu thẩm định identity'}. Quy trình xét duyệt hồ sơ này đã đóng. Người dùng cần tạo hồ sơ mới nếu muốn đăng ký lại.</span>
                     </div>
                   </div>
                 )}
@@ -3703,6 +4013,28 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         <span className="font-bold text-slate-800">Địa chỉ kho bưu tá lấy hàng: </span>
                         <span>{selectedVerificationDetail.pickupAddress}</span>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Provider Reference ID & Client Session nếu có */}
+                  {(selectedVerificationDetail.providerReferenceId || selectedVerificationDetail.clientSession) && (
+                    <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center gap-3 text-[11px] text-slate-600">
+                      {selectedVerificationDetail.providerReferenceId && (
+                        <div>
+                          <span className="font-bold text-slate-800">Mã đối tác (Ref ID): </span>
+                          <span className="font-mono bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-900">
+                            {selectedVerificationDetail.providerReferenceId}
+                          </span>
+                        </div>
+                      )}
+                      {selectedVerificationDetail.clientSession && (
+                        <div>
+                          <span className="font-bold text-slate-800">Phiên client: </span>
+                          <span className="font-mono bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-900">
+                            {selectedVerificationDetail.clientSession}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3781,6 +4113,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         Điểm: {formatScore(selectedVerificationDetail.riskScore)}
                       </span>
                     </div>
+                  </div>
+
+                  {/* Ghi chú nguyên tắc nghiệp vụ theo Section 7 & 8 */}
+                  <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200 text-[11px] text-blue-900 flex items-start gap-2">
+                    <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>Lưu ý thẩm định:</strong> Các điểm số eKYC do hệ thống VNPT trả về mang tính tham khảo kỹ thuật. Quản trị viên đưa ra quyết định thẩm định cuối cùng dựa trên đối chiếu thực tế tính xác thực của ảnh CCCD và chân dung.
+                    </span>
                   </div>
                 </div>
 
@@ -3885,11 +4225,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
                 {/* Section 5: Lý do & Ghi chú thẩm định */}
                 <div className="space-y-2 pt-2 border-t border-slate-200">
-                  <label className="font-bold text-slate-800 text-xs block">
-                    Lý do & Hướng dẫn bổ sung {isTerminalStatus && '(Đã ghi nhận)'}:
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-800 text-xs block">
+                      Lý do & Hướng dẫn bổ sung {(!canReview) && '(Đã ghi nhận)'}:
+                    </label>
+                    {selectedVerificationDetail.reasonCodeDescription && (
+                      <span className="text-[11px] text-slate-500 font-medium">
+                        Diễn giải: <strong className="text-slate-700">{selectedVerificationDetail.reasonCodeDescription}</strong>
+                      </span>
+                    )}
+                  </div>
 
-                  {!isTerminalStatus ? (
+                  {canReview ? (
                     <>
                       {/* Quick reason chips */}
                       <div className="flex flex-wrap gap-1.5">
@@ -3905,40 +4252,30 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         ))}
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
-                        <div>
-                          <label className="text-[10px] text-slate-500 font-bold block mb-1">Mã nguyên nhân:</label>
-                          <select
-                            value={rejectionReasonCode}
-                            onChange={(e) => setRejectionReasonCode(e.target.value)}
-                            className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-rose-500 bg-white"
-                          >
-                            <option value="IMAGE_TOO_BLURRY">Ảnh chụp bị mờ / không rõ nét</option>
-                            <option value="FACE_MISMATCH">Khuôn mặt không khớp chân dung CCCD</option>
-                            <option value="DOCUMENT_SUSPECTED_FAKE">Nghi vấn giấy tờ giả mạo</option>
-                            <option value="DOCUMENT_EXPIRED">Giấy tờ đã hết hạn sử dụng</option>
-                            <option value="DOCUMENT_NOT_FULLY_VISIBLE">Giấy tờ bị khuất / mất góc</option>
-                            <option value="SELFIE_QUALITY_LOW">Chất lượng ảnh chân dung kém</option>
-                            <option value="CONFIRMED_IDENTITY_MISMATCH">Thông tin định danh không khớp</option>
-                            <option value="DUPLICATE_IDENTITY">Số giấy tờ đã gắn tài khoản khác</option>
-                          </select>
-                        </div>
-
-                        <div className="sm:col-span-2">
-                          <label className="text-[10px] text-slate-500 font-bold block mb-1">Nội dung lý do chi tiết:</label>
-                          <input
-                            type="text"
-                            value={verReviewReason}
-                            onChange={(e) => setVerReviewReason(e.target.value)}
-                            placeholder="Nhập lý do từ chối hoặc yêu cầu nộp lại..."
-                            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-rose-500"
-                          />
-                        </div>
+                      <div className="pt-1">
+                        <label className="text-[10px] text-slate-500 font-bold block mb-1">
+                          Nội dung lý do chi tiết (rejectionReason - tối đa 1000 ký tự):
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={1000}
+                          value={verReviewReason}
+                          onChange={(e) => setVerReviewReason(e.target.value)}
+                          placeholder="Nhập lý do từ chối hoặc yêu cầu nộp lại..."
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-rose-500"
+                        />
                       </div>
                     </>
                   ) : (
-                    <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-700 text-xs">
-                      {selectedVerificationDetail.rejectionReason || 'Hồ sơ đã được phê duyệt và lưu trữ trên hệ thống.'}
+                    <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-700 text-xs space-y-1">
+                      <p className="font-medium">
+                        {selectedVerificationDetail.rejectionReason || 'Hồ sơ đã được xử lý và lưu trữ trên hệ thống.'}
+                      </p>
+                      {selectedVerificationDetail.reasonCode && selectedVerificationDetail.reasonCode !== 'NONE' && (
+                        <p className="text-[11px] text-slate-500">
+                          Mã lý do: <strong className="font-mono">{selectedVerificationDetail.reasonCode}</strong>
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3981,15 +4318,43 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       Phê Duyệt
                     </button>
                   </div>
+                ) : isResubmitRequired ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold text-orange-700">
+                      Đang chờ người bán tải lại ảnh chứng từ (RESUBMIT_REQUIRED) — Các thao tác tạm khóa.
+                    </span>
+                    <button
+                      type="button"
+                      disabled={true}
+                      className="px-4 py-2.5 bg-slate-200 text-slate-400 rounded-xl font-bold text-xs cursor-not-allowed opacity-60"
+                    >
+                      Từ Chối
+                    </button>
+                    <button
+                      type="button"
+                      disabled={true}
+                      className="px-4 py-2.5 bg-slate-200 text-slate-400 rounded-xl font-bold text-xs cursor-not-allowed opacity-60"
+                    >
+                      Yêu Cầu Nộp Lại
+                    </button>
+                    <button
+                      type="button"
+                      disabled={true}
+                      className="px-5 py-2.5 bg-slate-200 text-slate-400 rounded-xl font-bold text-xs cursor-not-allowed opacity-60"
+                    >
+                      Phê Duyệt
+                    </button>
+                  </div>
                 ) : (
                   <div className="w-full sm:w-auto flex flex-wrap items-center gap-2.5 justify-end">
-                    {/* Thử lại eKYC nếu có lỗi */}
-                    {(selectedVerificationDetail.status === 'EKYC_PENDING' || selectedVerificationDetail.ekycStatus === 'PROVIDER_ERROR') && (
+                    {/* Thử lại eKYC khi ĐỒNG THỜI status = EKYC_PENDING và ekycStatus = PROVIDER_ERROR theo Mục 7.2 */}
+                    {isProviderError && (
                       <button
                         type="button"
                         disabled={isProcessing}
                         onClick={() => handleRetrySellerVerification(selectedVerificationDetail.id)}
                         className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition cursor-pointer shadow-xs flex items-center gap-1.5"
+                        title="Thử lại quy trình eKYC với đối tác VNPT từ ảnh đã lưu"
                       >
                         {reviewingAction === 'RETRY' ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -4004,8 +4369,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <button
                       type="button"
                       disabled={isProcessing}
-                      onClick={() => handleRejectSellerVerificationWithReason(selectedVerificationDetail.id, verReviewReason, rejectionReasonCode)}
+                      onClick={() => handleRejectSellerVerificationWithReason(selectedVerificationDetail.id, verReviewReason)}
                       className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition cursor-pointer shadow-xs flex items-center gap-1.5"
+                      title="Từ chối hồ sơ và kết thúc quy trình"
                     >
                       {reviewingAction === 'REJECT' ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -4019,8 +4385,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <button
                       type="button"
                       disabled={isProcessing}
-                      onClick={() => handleRequestResubmitSellerVerificationWithReason(selectedVerificationDetail.id, verReviewReason, rejectionReasonCode)}
+                      onClick={() => handleRequestResubmitSellerVerificationWithReason(selectedVerificationDetail.id, verReviewReason)}
                       className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition cursor-pointer shadow-xs flex items-center gap-1.5"
+                      title="Yêu cầu người bán chụp lại hoặc bổ sung ảnh giấy tờ"
                     >
                       {reviewingAction === 'RESUBMIT' ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -4036,6 +4403,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       disabled={isProcessing}
                       onClick={() => handleApproveSellerVerification(selectedVerificationDetail.id, selectedVerificationDetail.status)}
                       className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition cursor-pointer shadow-xs flex items-center gap-1.5"
+                      title="Phê duyệt hồ sơ và cấp vai trò SELLER"
                     >
                       {reviewingAction === 'APPROVE' ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -4120,12 +4488,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Chi tiết lý do từ chối:</label>
+                <label className="block text-slate-700 font-bold mb-1">Chi tiết lý do từ chối (rejectionReason - tối đa 1000 ký tự):</label>
                 <textarea
                   rows={3}
+                  maxLength={1000}
                   value={rejectionReasonText}
                   onChange={(e) => setRejectionReasonText(e.target.value)}
-                  placeholder="Nhập hướng dẫn cụ thể để người bán bổ sung lại giấy tờ..."
+                  placeholder="Nhập lý do cụ thể (tối đa 1000 ký tự)..."
                   className="w-full p-2.5 rounded-xl border border-slate-300 text-xs outline-none focus:border-rose-600"
                 />
               </div>

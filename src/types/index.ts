@@ -155,6 +155,12 @@ export interface EscrowOrder {
   totalPaidVnd: number;
   escrowStatus: EscrowStatus;
   hasInspectionService: boolean;
+  inspectionCenterId?: string;
+  inspectionCenterName?: string;
+  inspectionMethod?: 'AT_CENTER' | 'AT_HOME';
+  inspectionFeeSplit?: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
+  buyerInspectionFeeVnd?: number;
+  sellerInspectionFeeVnd?: number;
   inspectionReport?: InspectionReport;
   shippingLegs: ShippingLeg[];
   inspectionWindowEndsAt?: string;
@@ -293,6 +299,7 @@ export interface UserProfile {
     accountNumber: string;
     accountHolder: string;
   };
+  productTypes?: string;
 }
 
 export interface TopupPackage {

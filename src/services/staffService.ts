@@ -73,29 +73,31 @@ export const staffService = {
     id: string,
     data: ReviewSellerVerificationRequestDto
   ): Promise<SellerVerificationResponseDto> {
-    const staffEndpoint = data.decision === 'APPROVE'
-      ? `/staff/seller-verifications/${id}/approve`
+    const adminEndpoint = data.decision === 'APPROVE'
+      ? `/admin/seller-verifications/${id}/approve`
       : data.decision === 'REQUEST_RESUBMIT'
-        ? `/staff/seller-verifications/${id}/request-resubmit`
-        : `/staff/seller-verifications/${id}/reject`;
+        ? `/admin/seller-verifications/${id}/request-resubmit`
+        : `/admin/seller-verifications/${id}/reject`;
 
     const body = data.decision === 'APPROVE'
       ? {}
       : { rejectionReason: data.rejectionReason || 'Hồ sơ chưa đạt yêu cầu kiểm duyệt' };
 
     try {
-      const res = await request<SellerVerificationResponseDto>(staffEndpoint, {
+      const res = await request<SellerVerificationResponseDto>(adminEndpoint, {
         method: 'POST',
         body: JSON.stringify(body),
         requiresAuth: true,
       });
       return (res as any)?.data || res;
-    } catch {
-      // Fallback: If calling admin endpoints
-      const adminEndpoint = data.decision === 'APPROVE'
-        ? `/admin/seller-verifications/${id}/approve`
-        : `/admin/seller-verifications/${id}/reject`;
-      const res = await request<SellerVerificationResponseDto>(adminEndpoint, {
+    } catch (err) {
+      // Fallback: If backend routes through staff path
+      const staffEndpoint = data.decision === 'APPROVE'
+        ? `/staff/seller-verifications/${id}/approve`
+        : data.decision === 'REQUEST_RESUBMIT'
+          ? `/staff/seller-verifications/${id}/request-resubmit`
+          : `/staff/seller-verifications/${id}/reject`;
+      const res = await request<SellerVerificationResponseDto>(staffEndpoint, {
         method: 'POST',
         body: JSON.stringify(body),
         requiresAuth: true,

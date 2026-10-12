@@ -46,9 +46,9 @@ interface TopUpModalProps {
 
 const PRESET_DEPOSIT_AMOUNTS = [50000, 100000, 200000, 500000, 1000000, 2000000];
 
-const getPkgName = (pkg?: TopupPackage | null) => pkg?.name || pkg?.packageName || 'Gói nạp Xu';
-const getPkgPrice = (pkg?: TopupPackage | null) => Number(pkg?.price ?? pkg?.priceVnd ?? 50000);
-const getPkgCredits = (pkg?: TopupPackage | null) => Number(pkg?.postCredits ?? pkg?.creditPoints ?? 50);
+const getPkgName = (pkg?: TopupPackage | null) => pkg?.name || pkg?.packageName || 'Gói dịch vụ';
+const getPkgPrice = (pkg?: TopupPackage | null) => Number(pkg?.price ?? pkg?.priceVnd ?? 0);
+const getPkgCredits = (pkg?: TopupPackage | null) => Number(pkg?.postCredits ?? pkg?.creditPoints ?? 0);
 const getPkgBonus = (pkg?: TopupPackage | null) => Number(pkg?.chatCredits ?? pkg?.bonusPoints ?? 0);
 const getPkgTotalCredits = (pkg?: TopupPackage | null) => getPkgCredits(pkg) + getPkgBonus(pkg);
 
@@ -90,6 +90,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const [purchasing, setPurchasing] = useState<boolean>(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [packageSuccess, setPackageSuccess] = useState<boolean>(false);
+  const [purchasedPackage, setPurchasedPackage] = useState<TopupPackage | null>(null);
 
   // Pending package to auto-purchase after deficit topup via VietQR
   const [pendingPackage, setPendingPackage] = useState<TopupPackage | null>(null);
@@ -121,6 +122,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       setDepositError(null);
       setPurchaseError(null);
       setPackageSuccess(false);
+      setPurchasedPackage(null);
       loadWallet();
       if (!isBuyerRole) {
         loadPackagesAndCredit();
@@ -209,8 +211,8 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   try {
                     await sellerCreditService.createPurchase({
                       listingQuantity: targetPkg.postCredits || 0,
-                      valuationQuantity: targetPkg.chatCredits || 0,
-                      aiChatQuantity: (targetPkg as any).aiChatCredits || 0,
+                      valuationQuantity: targetPkg.valuationCredits || 0,
+                      aiChatQuantity: targetPkg.chatCredits || 0,
                     });
                   } catch (err) {
                     console.warn('sellerCreditService.createPurchase auto notice:', err);
@@ -234,7 +236,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   }
 
                   setDepositRequest(null);
+                  setPendingPackage(null);
                   setSelectedPkg(targetPkg);
+                  setPurchasedPackage(targetPkg);
                   setPackageSuccess(true);
                   setActiveTab('packages');
                   return;
@@ -272,7 +276,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
         // Nếu đang có pendingPackage và số dư ví đã đủ
         if (depositRequest && depositRequest.status === 'PENDING' && pendingPackage && w.balance >= getPkgPrice(pendingPackage)) {
-          await handleConfirmPurchase(pendingPackage);
+          const pkgToActivate = pendingPackage;
+          setPendingPackage(null);
+          await handleConfirmPurchase(pkgToActivate);
           setDepositRequest(null);
         }
       }
@@ -385,6 +391,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       const deficit = pkgPrice - currentBal;
       const neededAmount = Math.max(deficit, 10000);
       setPendingPackage(targetPkg);
+      setSelectedPkg(targetPkg);
       setDepositAmount(neededAmount);
       setCustomAmount(neededAmount.toLocaleString('vi-VN'));
       setCreatingDeposit(true);
@@ -422,6 +429,8 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       }
       // Re-fetch wallet balance after deduction
       await loadWallet();
+      setPurchasedPackage(targetPkg);
+      setSelectedPkg(targetPkg);
       setPackageSuccess(true);
       setPendingPackage(null);
     } catch (err: any) {
@@ -722,7 +731,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                         <CheckCircle2 className="w-7 h-7" />
                       </div>
                       <h4 className="text-base sm:text-lg font-black text-emerald-800">
-                        Nạp Tiền Thành Công!
+                        {pendingPackage 
+                          ? `Chuyển Tiền Thành Công - Đang Kích Hoạt Gói ${getPkgName(pendingPackage)}!`
+                          : 'Nạp Tiền Thành Công!'}
                       </h4>
                       <p className="text-xs text-emerald-700">
                         Hệ thống đã nhận được khoản thanh toán <strong>{formatVND(depositRequest.amount)}</strong>. Số dư ví của bạn hiện tại: <strong>{formatVND(wallet?.balance ?? 0)}</strong>.
@@ -897,24 +908,73 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                     <CheckCircle2 className="w-10 h-10" />
                   </div>
 
-                  <div className="space-y-1">
-                    <h3 className="text-xl font-black text-emerald-900">Mua Gói Xu Thành Công!</h3>
-                    <p className="text-xs text-emerald-700 font-medium">
-                      Đã trừ{' '}
-                      <span className="font-black font-mono">
-                        {selectedPkg ? formatVND(getPkgPrice(selectedPkg)) : ''}
-                      </span>{' '}
-                      từ Ví và cộng{' '}
-                      <span className="font-black font-mono">
-                        +{selectedPkg?.postCredits || 0} tin &amp; +{selectedPkg?.chatCredits || 0} Chat AI &amp; +{selectedPkg?.valuationCredits || 0} Định giá
-                      </span>{' '}
-                      vào tài khoản của bạn.
-                    </p>
-                  </div>
+                  {(() => {
+                    const activePkg = purchasedPackage || selectedPkg;
+                    const pkgName = getPkgName(activePkg);
+                    const pkgPrice = getPkgPrice(activePkg);
+                    const posts = Number(activePkg?.postCredits || 0);
+                    const chats = Number(activePkg?.chatCredits || 0);
+                    const valuations = Number(activePkg?.valuationCredits || 0);
+
+                    return (
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <h3 className="text-xl font-black text-emerald-900">
+                            Kích Hoạt Gói {pkgName} Thành Công!
+                          </h3>
+                          <p className="text-xs text-emerald-700 font-medium">
+                            Đã thanh toán{' '}
+                            <span className="font-black font-mono text-emerald-800">
+                              {formatVND(pkgPrice)}
+                            </span>{' '}
+                            từ Ví và cộng quyền lợi vào tài khoản của bạn.
+                          </p>
+                        </div>
+
+                        {/* Danh sách quyền lợi thực tế của gói vừa mua - Không hardcode các trường bằng 0 */}
+                        <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                          {posts > 0 && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-xs font-black text-emerald-800 shadow-2xs">
+                              <Tag className="w-3.5 h-3.5 text-[#c34c36]" />
+                              <span>+{posts} Lượt đăng tin</span>
+                            </span>
+                          )}
+                          {chats > 0 && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-xs font-black text-emerald-800 shadow-2xs">
+                              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                              <span>+{chats} Lượt Chat AI</span>
+                            </span>
+                          )}
+                          {valuations > 0 && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-xs font-black text-emerald-800 shadow-2xs">
+                              <Search className="w-3.5 h-3.5 text-blue-500" />
+                              <span>+{valuations} Lượt định giá AI</span>
+                            </span>
+                          )}
+                          {posts === 0 && chats === 0 && valuations === 0 && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-xs font-bold text-emerald-800 shadow-2xs">
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Đã cộng đầy đủ quyền lợi của gói</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Tóm tắt số dư và quyền lợi sau khi mua */}
+                        <div className="pt-2 text-[11px] text-emerald-800/80 font-medium flex items-center justify-center gap-3">
+                          <span>Số dư ví còn lại: <strong className="font-mono text-emerald-900">{formatVND(wallet?.balance ?? 0)}</strong></span>
+                          <span>&bull;</span>
+                          <span>Tổng tin bài: <strong className="font-mono text-emerald-900">{userCredit?.postCredits ?? 0}</strong></span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   <div className="pt-3 flex items-center justify-center gap-3">
                     <button
-                      onClick={() => setPackageSuccess(false)}
+                      onClick={() => {
+                        setPackageSuccess(false);
+                        setPurchasedPackage(null);
+                      }}
                       className="px-5 py-2.5 rounded-xl text-xs font-bold bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition cursor-pointer"
                     >
                       Mua Tiếp Gói Khác

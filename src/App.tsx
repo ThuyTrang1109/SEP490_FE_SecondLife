@@ -1125,6 +1125,7 @@ export default function App() {
         {activeTab === 'inspection-hub' && (
           <InspectorPortalView
             orders={orders}
+            currentUser={currentUser}
             onCompleteInspection={handleCompleteInspection}
             lang={lang}
           />

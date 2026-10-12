@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Phone, Coins, FileCheck, Wallet } from 'lucide-react';
+import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Phone, Coins, FileCheck, Wallet, Wrench } from 'lucide-react';
 import { UserRole, Language, UserCredit } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import logoImg from '../../assets/logo.png';
@@ -144,7 +144,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>{lang === 'vi' ? 'Quản Trị Hệ Thống (Admin)' : 'Admin Dashboard'}</span>
             </button>
           ) : currentUser && currentRole === 'inspector' ? (
-            /* Inspector role: ONLY Hub Inspection portal */
+            /* Inspector role: Single Inspection Center Portal */
             <button
               onClick={() => onTabChange('inspection-hub')}
               className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
@@ -154,7 +154,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <Building2 className="w-4 h-4" />
-              <span>{lang === 'vi' ? 'Trung Tâm Kiểm Định Hub' : 'Inspection Hub'}</span>
+              <span>{lang === 'vi' ? 'Trung Tâm Kiểm Định' : 'Inspection Center'}</span>
             </button>
           ) : (
             /* Buyer, Seller, Staff & Public roles: Full Marketplace Navigation */
@@ -380,7 +380,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <Building2 className="w-3.5 h-3.5" />
-              <span>Kiểm Định Hub</span>
+              <span>Trung Tâm KĐ</span>
             </button>
             <button
               onClick={onOpenProfile}

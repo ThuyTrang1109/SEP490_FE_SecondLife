@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Listing, EscrowOrder, Language, UserWallet, ShippingQuoteResponseDto, ShippingLeg } from '../../types';
+import { Listing, EscrowOrder, Language, UserWallet, ShippingQuoteResponseDto, ShippingLeg, InspectionCenter } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
+import { mockInspectionCenters } from '../../data/mockData';
 import {
   ShieldCheck,
   Truck,
@@ -17,7 +18,13 @@ import {
   AlertTriangle,
   Loader2,
   RefreshCw,
-  Clock
+  Clock,
+  Building2,
+  Home,
+  UserCheck,
+  Coins,
+  Percent,
+  BadgeCheck
 } from 'lucide-react';
 import { orderService, walletService, shippingService, GhnLocation } from '../../services';
 
@@ -78,6 +85,38 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Delivery & Protection Option: 'INSPECTION' (Verify Then Ship) or 'DIRECT' (Direct Door-to-Door)
   const [deliveryOption, setDeliveryOption] = useState<'INSPECTION' | 'DIRECT'>('INSPECTION');
+
+  // Inspection Center, Method & Fee Splitting States
+  const [selectedCenterId, setSelectedCenterId] = useState<string>(mockInspectionCenters[0]?.id || 'center-hcm-01');
+  const [inspectionMethod, setInspectionMethod] = useState<'AT_CENTER' | 'AT_HOME'>('AT_CENTER');
+  const [feeSplit, setFeeSplit] = useState<'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100'>('BUYER_100');
+
+  // Auto suggest/select inspection center based on buyer province
+  useEffect(() => {
+    if (!selectedProvinceName) return;
+    const provLower = selectedProvinceName.toLowerCase();
+    if (provLower.includes('hà nội') || provLower.includes('ha noi')) {
+      const hn = mockInspectionCenters.find((c) => c.id.includes('hn'));
+      if (hn) setSelectedCenterId(hn.id);
+    } else if (
+      provLower.includes('đà nẵng') ||
+      provLower.includes('da nang') ||
+      provLower.includes('huế') ||
+      provLower.includes('quảng')
+    ) {
+      const dn = mockInspectionCenters.find((c) => c.id.includes('dn'));
+      if (dn) setSelectedCenterId(dn.id);
+    } else if (
+      provLower.includes('hồ chí minh') ||
+      provLower.includes('ho chi minh') ||
+      provLower.includes('sài gòn') ||
+      provLower.includes('bình dương') ||
+      provLower.includes('đồng nai')
+    ) {
+      const hcm = mockInspectionCenters.find((c) => c.id.includes('hcm'));
+      if (hcm) setSelectedCenterId(hcm.id);
+    }
+  }, [selectedProvinceName]);
 
   // GHN Quote State
   const [ghnQuote, setGhnQuote] = useState<ShippingQuoteResponseDto | null>(null);
@@ -215,10 +254,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   }, [selectedProvinceName, selectedWardName, streetAddress, calculateGhnQuote]);
 
+  // Inspection fee & split calculations
+  const isInspected = deliveryOption === 'INSPECTION';
+  const selectedCenter = mockInspectionCenters.find((c) => c.id === selectedCenterId) || mockInspectionCenters[0];
+  const baseInspectionFee = isInspected ? (inspectionMethod === 'AT_HOME' ? 200000 : 120000) : 0;
+  const buyerInspectionFee = isInspected
+    ? feeSplit === 'BUYER_100'
+      ? baseInspectionFee
+      : feeSplit === 'SPLIT_50_50'
+        ? Math.round(baseInspectionFee / 2)
+        : 0
+    : 0;
+  const sellerInspectionFee = isInspected ? baseInspectionFee - buyerInspectionFee : 0;
+
   // Financial values
   const shippingFee = ghnQuote ? Number(ghnQuote.shippingFee) : 30000;
   const productPrice = ghnQuote ? Number(ghnQuote.productPrice) : itemPrice;
-  const totalAmount = ghnQuote ? Number(ghnQuote.totalPayable) : (itemPrice + shippingFee);
+  const totalAmount = productPrice + shippingFee + buyerInspectionFee;
 
   const fullAddress = `${streetAddress}, ${selectedWardName}, ${selectedProvinceName}`;
 
@@ -320,25 +372,28 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       const orderId = backendOrder?.id || `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`;
       const finalChargedPrice = backendOrder?.finalPrice || productPrice;
       const finalShippingFee = backendOrder?.shippingFee || shippingFee;
-      const finalTotalPaid = backendOrder?.totalPaid || totalAmount;
+      const finalTotalPaid = backendOrder?.totalPaid ? Number(backendOrder.totalPaid) + (isInspected ? buyerInspectionFee : 0) : totalAmount;
 
-      const isInspected = deliveryOption === 'INSPECTION';
       const shippingLegsData: ShippingLeg[] = isInspected
         ? [
             {
               id: 'LEG-1',
               legType: 'SELLER_TO_CENTER',
-              carrier: 'GHN Express',
+              carrier: inspectionMethod === 'AT_HOME' ? 'SecondLife On-site Team' : 'GHN Express',
               trackingNumber: `GHN-HUB-${orderId.slice(0, 8).toUpperCase()}`,
               status: 'PICKED_UP',
               origin: listing.location || 'Địa chỉ kho người bán',
-              destination: 'Trạm Kiểm Định SecondLife Hub Lab',
+              destination: inspectionMethod === 'AT_HOME'
+                ? `Kiểm định tại nhà người bán (Kỹ sư ${selectedCenter?.name})`
+                : (selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab'),
               estimatedDelivery: '1-2 ngày',
               timeline: [
                 {
                   timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-                  description: 'Khởi tạo đơn hàng có kiểm định Hub (Verify Then Ship). Bưu tá GHN chuẩn bị lấy hàng chuyển về Hub.',
-                  location: 'Hệ thống SecondLife Escrow'
+                  description: inspectionMethod === 'AT_HOME'
+                    ? `Cử chuyên viên kỹ thuật từ ${selectedCenter?.name} đến tận nhà người bán kiểm định trực tiếp on-site.`
+                    : `Khởi tạo đơn hàng kiểm định Hub (${selectedCenter?.name}). Bưu tá GHN chuẩn bị lấy hàng chuyển về Hub.`,
+                  location: selectedCenter?.name || 'Hệ thống SecondLife Escrow'
                 }
               ]
             },
@@ -348,14 +403,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               carrier: 'GHN Express',
               trackingNumber: `GHN-BUYER-${orderId.slice(0, 8).toUpperCase()}`,
               status: 'IN_TRANSIT',
-              origin: 'Trạm Kiểm Định SecondLife Hub Lab',
+              origin: selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab',
               destination: fullAddress,
               estimatedDelivery: '1-2 ngày sau khi đạt chuẩn kiểm định',
               timeline: [
                 {
                   timestamp: '--:--',
                   description: 'Chờ hoàn tất quy trình kiểm định và dán tem niêm phong NFC tại Hub Lab.',
-                  location: 'Trung tâm kiểm định SecondLife'
+                  location: selectedCenter?.name || 'Trung tâm kiểm định SecondLife'
                 }
               ]
             }
@@ -394,12 +449,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         sellerId: listing.sellerId,
         sellerName: listing.sellerName,
         itemPriceVnd: finalChargedPrice,
-        inspectionFeeVnd: 0,
+        inspectionFeeVnd: isInspected ? buyerInspectionFee : 0,
         shippingFeeVnd: finalShippingFee,
         platformFeeVnd: 0,
         totalPaidVnd: finalTotalPaid,
         escrowStatus: 'HELD_IN_ESCROW',
         hasInspectionService: isInspected,
+        inspectionCenterId: isInspected ? selectedCenter?.id : undefined,
+        inspectionCenterName: isInspected ? selectedCenter?.name : undefined,
+        inspectionMethod: isInspected ? inspectionMethod : undefined,
+        inspectionFeeSplit: isInspected ? feeSplit : undefined,
+        buyerInspectionFeeVnd: isInspected ? buyerInspectionFee : 0,
+        sellerInspectionFeeVnd: isInspected ? sellerInspectionFee : 0,
         shippingLegs: shippingLegsData,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -598,6 +659,263 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* BLOCK CẤU HÌNH KIỂM ĐỊNH CHI TIẾT */}
+            {deliveryOption === 'INSPECTION' && (
+              <div className="mt-3 pt-3 border-t border-slate-200/80 space-y-3.5 animate-fadeIn">
+                {/* 1. Chọn Trung Tâm Kiểm Định */}
+                <div className="space-y-2 bg-[#faf8f5] p-3.5 rounded-2xl border border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-[#c34c36]" />
+                      <span>{lang === 'vi' ? '1. Chọn Trung Tâm Kiểm Định Tiếp Nhận' : '1. Select Inspection Hub'}</span>
+                    </label>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
+                      📍 {selectedCenter.city}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                    {mockInspectionCenters.map((hub) => {
+                      const isSelected = hub.id === selectedCenterId;
+                      return (
+                        <div
+                          key={hub.id}
+                          onClick={() => setSelectedCenterId(hub.id)}
+                          className={`p-2.5 rounded-xl border text-left cursor-pointer transition flex flex-col justify-between ${
+                            isSelected
+                              ? 'border-[#c34c36] bg-white shadow-xs ring-2 ring-[#c34c36]/20'
+                              : 'border-slate-200 hover:border-slate-300 bg-white/70'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-extrabold text-[11px] text-slate-900 leading-snug line-clamp-1">
+                                {hub.city}
+                              </span>
+                              {isSelected ? (
+                                <BadgeCheck className="w-3.5 h-3.5 text-[#c34c36] shrink-0" />
+                              ) : (
+                                <div className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0" />
+                              )}
+                            </div>
+                            <p className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">
+                              {hub.name.replace('SecondLife Home Hub ', '')}
+                            </p>
+                          </div>
+                          <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9px] text-slate-500">
+                            <span className="font-bold text-emerald-700">⏱️ SLA: {hub.slaHours}h</span>
+                            <span className="font-semibold text-slate-600">Đạt: {hub.passRatePercentage}%</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Chi tiết trung tâm đã chọn */}
+                  <div className="mt-2 p-2.5 bg-white rounded-xl border border-slate-200 text-[11px] space-y-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-bold text-slate-900 flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 text-[#c34c36] shrink-0" />
+                        {selectedCenter.name}
+                      </span>
+                      <span className="text-[10px] font-semibold text-slate-600 shrink-0">
+                        📞 Hotline: <strong className="text-slate-900">{selectedCenter.phone}</strong>
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-600 pl-4.5">
+                      {selectedCenter.address}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5 pl-4.5 pt-0.5 text-[9px] text-slate-500">
+                      <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-700">
+                        👨‍🔧 Đội ngũ: <strong>{selectedCenter.activeInspectors} kỹ sư</strong>
+                      </span>
+                      <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-700">
+                        📦 Công suất: <strong>{selectedCenter.capacityPerDay} máy/ngày</strong>
+                      </span>
+                      <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
+                        ✅ Tỷ lệ thẩm định đạt: {selectedCenter.passRatePercentage}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Chọn Cách Kiểm Định (2 cách) */}
+                <div className="space-y-2 bg-[#faf8f5] p-3.5 rounded-2xl border border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                      <span>{lang === 'vi' ? '2. Chọn Phương Thức Kiểm Định' : '2. Inspection Method'}</span>
+                    </label>
+                    <span className="text-[10px] text-slate-500 font-semibold">
+                      (2 phương thức linh hoạt)
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    {/* Cách 1: Đưa đến trung tâm */}
+                    <div
+                      onClick={() => setInspectionMethod('AT_CENTER')}
+                      className={`p-3 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                        inspectionMethod === 'AT_CENTER'
+                          ? 'border-blue-600 bg-white shadow-xs ring-2 ring-blue-600/15'
+                          : 'border-slate-200 hover:border-slate-300 bg-white/70'
+                      }`}
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <Building2 className="w-4 h-4 text-blue-600 shrink-0" />
+                            <span className="font-extrabold text-xs text-slate-900">
+                              {lang === 'vi' ? 'Đưa đến trung tâm' : 'Bring to Center'}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-black text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-200">
+                            120.000 VNĐ
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-600 leading-relaxed">
+                          {lang === 'vi'
+                            ? 'Bưu tá GHN chuyển hàng về Hub Lab SecondLife. Kỹ sư đo kiểm vi mạch, hiệu năng trên dàn máy đo tiêu chuẩn.'
+                            : 'Shipped to Hub Lab. Engineers inspect 20+ technical criteria on test benches.'}
+                        </p>
+                      </div>
+                      <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9px] text-blue-700 font-bold">
+                        <span>🏷️ Phí tiêu chuẩn Hub Lab</span>
+                        {inspectionMethod === 'AT_CENTER' && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                      </div>
+                    </div>
+
+                    {/* Cách 2: Cử người đến nhà */}
+                    <div
+                      onClick={() => setInspectionMethod('AT_HOME')}
+                      className={`p-3 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                        inspectionMethod === 'AT_HOME'
+                          ? 'border-purple-600 bg-white shadow-xs ring-2 ring-purple-600/15'
+                          : 'border-slate-200 hover:border-slate-300 bg-white/70'
+                      }`}
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <Home className="w-4 h-4 text-purple-600 shrink-0" />
+                            <span className="font-extrabold text-xs text-slate-900">
+                              {lang === 'vi' ? 'Cử người đến nhà kiểm định' : 'On-site at Home'}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-black text-purple-800 bg-purple-100 px-2 py-0.5 rounded-full border border-purple-200">
+                            200.000 VNĐ
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-600 leading-relaxed">
+                          {lang === 'vi'
+                            ? 'Chuyên viên SecondLife mang thiết bị đo lưu động đến tận nhà người bán kiểm tra tại chỗ. Khuyên dùng đồ gia dụng cồng kềnh.'
+                            : 'Technicians bring portable equipment to inspect at seller home. Ideal for bulky appliances.'}
+                        </p>
+                      </div>
+                      <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9px] text-purple-700 font-bold">
+                        <span>⭐ Khuyên dùng đồ lớn (Tủ lạnh, Máy giặt...)</span>
+                        {inspectionMethod === 'AT_HOME' && <Check className="w-3.5 h-3.5 text-purple-600" />}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Chia Tiền Kiểm Định */}
+                <div className="space-y-2 bg-[#faf8f5] p-3.5 rounded-2xl border border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5">
+                      <Coins className="w-3.5 h-3.5 text-amber-600" />
+                      <span>{lang === 'vi' ? '3. Phân Chia Tiền Kiểm Định' : '3. Inspection Fee Split'}</span>
+                    </label>
+                    <span className="text-[10px] text-slate-500 font-semibold">
+                      Tổng phí: <strong className="text-slate-900 font-bold">{formatVND(baseInspectionFee)}</strong>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                    {/* Option 1: Người mua 100% */}
+                    <div
+                      onClick={() => setFeeSplit('BUYER_100')}
+                      className={`p-2.5 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                        feeSplit === 'BUYER_100'
+                          ? 'border-[#c34c36] bg-white shadow-xs ring-2 ring-[#c34c36]/15'
+                          : 'border-slate-200 hover:border-slate-300 bg-white/70'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-extrabold text-[11px] text-slate-900">
+                            {lang === 'vi' ? 'Người mua 100%' : 'Buyer 100%'}
+                          </span>
+                          {feeSplit === 'BUYER_100' && <Check className="w-3.5 h-3.5 text-[#c34c36]" />}
+                        </div>
+                        <span className="text-[10px] text-slate-500 block mt-0.5">Mặc định</span>
+                      </div>
+                      <div className="mt-2 pt-1 border-t border-slate-100 text-[10px] font-bold text-[#c34c36]">
+                        Bạn trả: {formatVND(baseInspectionFee)}
+                      </div>
+                    </div>
+
+                    {/* Option 2: Chia đôi 50% - 50% */}
+                    <div
+                      onClick={() => setFeeSplit('SPLIT_50_50')}
+                      className={`p-2.5 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                        feeSplit === 'SPLIT_50_50'
+                          ? 'border-emerald-600 bg-white shadow-xs ring-2 ring-emerald-600/15'
+                          : 'border-slate-200 hover:border-slate-300 bg-white/70'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-extrabold text-[11px] text-slate-900">
+                            {lang === 'vi' ? 'Chia đôi 50% - 50%' : 'Split 50% - 50%'}
+                          </span>
+                          {feeSplit === 'SPLIT_50_50' && <Check className="w-3.5 h-3.5 text-emerald-600" />}
+                        </div>
+                        <span className="text-[10px] text-slate-500 block mt-0.5">Mỗi bên một nửa</span>
+                      </div>
+                      <div className="mt-2 pt-1 border-t border-slate-100 text-[10px] font-bold text-emerald-700">
+                        Bạn trả: {formatVND(Math.round(baseInspectionFee / 2))}
+                      </div>
+                    </div>
+
+                    {/* Option 3: Người bán 100% */}
+                    <div
+                      onClick={() => setFeeSplit('SELLER_100')}
+                      className={`p-2.5 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                        feeSplit === 'SELLER_100'
+                          ? 'border-blue-600 bg-white shadow-xs ring-2 ring-blue-600/15'
+                          : 'border-slate-200 hover:border-slate-300 bg-white/70'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-extrabold text-[11px] text-slate-900">
+                            {lang === 'vi' ? 'Người bán 100%' : 'Seller 100%'}
+                          </span>
+                          {feeSplit === 'SELLER_100' && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                        </div>
+                        <span className="text-[10px] text-slate-500 block mt-0.5">Cam kết người bán</span>
+                      </div>
+                      <div className="mt-2 pt-1 border-t border-slate-100 text-[10px] font-bold text-blue-700">
+                        Bạn trả: 0 VNĐ
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Thanh tóm tắt phân chia */}
+                  <div className="mt-2 p-2 rounded-xl bg-amber-50 border border-amber-200 text-[10px] text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                    <span>
+                      💡 <strong>Bạn thanh toán:</strong> <strong className="text-[#c34c36] font-bold">{formatVND(buyerInspectionFee)}</strong>
+                    </span>
+                    <span>
+                      Người bán chịu: <strong className="text-slate-900 font-bold">{formatVND(sellerInspectionFee)}</strong> (khấu trừ doanh thu khi hoàn tất)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Form Thông Tin Người Mua Nhận Hàng (Requirement 4) */}
@@ -1051,6 +1369,42 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 )}
               </div>
             </div>
+
+            {deliveryOption === 'INSPECTION' && (
+              <div className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200/90 space-y-1.5 text-[11px] animate-fadeIn">
+                <div className="flex justify-between text-emerald-950 font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>
+                      {lang === 'vi' ? 'Phí kiểm định' : 'Inspection Fee'} (
+                      {inspectionMethod === 'AT_HOME'
+                        ? (lang === 'vi' ? 'Cử người đến nhà' : 'On-site')
+                        : (lang === 'vi' ? 'Đưa đến trung tâm' : 'At Center')}
+                      ):
+                    </span>
+                  </span>
+                  <span className="font-extrabold text-[#c34c36]">
+                    {buyerInspectionFee > 0 ? `+${formatVND(buyerInspectionFee)}` : (lang === 'vi' ? '0 VNĐ (Người bán chịu)' : '0 VND (Seller covered)')}
+                  </span>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[10px] text-emerald-800 gap-1 pt-0.5 border-t border-emerald-200/60 font-medium">
+                  <span className="truncate">
+                    📍 {selectedCenter?.name}
+                  </span>
+                  <span className="shrink-0 font-semibold">
+                    {feeSplit === 'BUYER_100'
+                      ? (lang === 'vi' ? 'Người mua chịu 100%' : 'Buyer pays 100%')
+                      : feeSplit === 'SPLIT_50_50'
+                        ? (lang === 'vi'
+                            ? `Chia đôi (Bạn: ${formatVND(buyerInspectionFee)} | Bán: ${formatVND(sellerInspectionFee)})`
+                            : `Split 50-50 (You: ${formatVND(buyerInspectionFee)} | Seller: ${formatVND(sellerInspectionFee)})`)
+                        : (lang === 'vi'
+                            ? `Người bán chịu 100% (${formatVND(sellerInspectionFee)})`
+                            : `Seller pays 100% (${formatVND(sellerInspectionFee)})`)}
+                  </span>
+                </div>
+              </div>
+            )}
 
             <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm text-[#24263e]">
               <span>{lang === 'vi' ? 'Tổng số tiền trừ ví:' : 'Total Payable from Wallet:'}</span>

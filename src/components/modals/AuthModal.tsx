@@ -394,6 +394,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         email: emailOrPhone.trim(),
         password: password
       });
+      // FE-01: Clear password from memory state immediately
+      setPassword('');
       soundFx.playChime();
       const mappedRole = mapBackendRole(res.roles);
       onLoginSuccess({
@@ -405,8 +407,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         avatar: res.user.avatarUrl || undefined,
         address: ''
       });
+      setEmailOrPhone('');
       onClose();
     } catch (err: any) {
+      // FE-01: Clear password on failure to prevent memory leakage
+      setPassword('');
       soundFx.playCancel();
       setErrorMsg(err.message || (lang === 'vi' ? 'Đăng nhập không thành công. Sai email/SĐT hoặc mật khẩu.' : 'Login failed. Invalid credentials.'));
     } finally {
@@ -441,6 +446,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         fullName: fullName.trim(),
         phone: phoneNumber.trim() || undefined
       });
+      // FE-01: Wipe registration passwords from state
+      setRegisterPassword('');
+      setConfirmPassword('');
       soundFx.playChime();
       setVerifyEmailAddress(registerEmail.trim());
       setVerifyOtpCode('');
@@ -458,6 +466,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           : `Account registered! Verification code sent to ${registerEmail.trim()}.`
       );
     } catch (err: any) {
+      setRegisterPassword('');
+      setConfirmPassword('');
       soundFx.playCancel();
       setErrorMsg(err.message || (lang === 'vi' ? 'Đăng ký không thành công. Email có thể đã được đăng ký trước đó.' : 'Registration failed. Email may already be registered.'));
     } finally {
@@ -582,6 +592,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         code: otpCode.trim(),
         newPassword: newPassword
       });
+      // FE-01: Clear sensitive passwords from state
+      setNewPassword('');
+      setConfirmNewPassword('');
       soundFx.playChime();
       setSuccessMsg(
         lang === 'vi'
@@ -597,6 +610,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setErrorMsg(null);
       }, 1500);
     } catch (err: any) {
+      setNewPassword('');
+      setConfirmNewPassword('');
       soundFx.playCancel();
       setErrorMsg(err.message || (lang === 'vi' ? 'Đổi mật khẩu thất bại. Vui lòng kiểm tra lại mã OTP.' : 'Failed to reset password. Please check your OTP.'));
       return;

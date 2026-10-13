@@ -190,7 +190,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang }) => {
 
   // TEMPLATE ACTIONS
   const handleSaveTemplate = async () => {
-    if (!templateCategoryId || !templateText.trim()) return alert('Vui lòng chọn danh mục và nhập nội dung kịch bản');
+    if (!templateCategoryId || !templateItemId || !templateText.trim()) return alert('Vui lòng chọn đầy đủ Danh mục, Loại sản phẩm và nhập nội dung kịch bản');
     try {
       if (editingTemplate) {
         await adminCatalogService.updateTemplate(editingTemplate.id, { 
@@ -572,7 +572,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang }) => {
                   onChange={e => setTemplateText(e.target.value)} 
                   rows={8} 
                   className="w-full p-4 bg-slate-900 text-green-400 font-mono border-0 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none transition resize-none" 
-                  placeholder="**Hãng sản xuất** (Ví dụ: Samsung, LG, Panasonic)&#10;**Thời gian sử dụng** (Ví dụ: Dưới 6 tháng, 1 năm)..." 
+                  placeholder="**Tần suất sử dụng** (Ví dụ: mới dùng vài lần cất hộp, dùng 2-3 lần/tuần, dùng đều đặn hằng ngày)&#10;**Hiện trạng ngoại quan và phụ kiện** (Ví dụ: đẹp like-new 99% fullbox, xước nhẹ đủ phụ kiện)..." 
                 />
               </div>
             </div>

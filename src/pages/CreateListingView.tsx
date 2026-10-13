@@ -26,7 +26,8 @@ import {
   ChevronUp,
   HelpCircle,
   MessageSquare,
-  Truck
+  Truck,
+  Eye
 } from 'lucide-react';
 import {
   ItemCategory,
@@ -105,6 +106,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
   // Basic Form State
   const [title, setTitle] = useState('');
+  const [isSuggestingTitle, setIsSuggestingTitle] = useState(false);
   const [sellerLocation, setSellerLocation] = useState<string>('');
 
   // Lấy địa chỉ của người bán (chỉ lấy phường và thành phố) từ hồ sơ hoặc địa chỉ kho đã lưu
@@ -163,11 +165,150 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [finalPriceVnd, setFinalPriceVnd] = useState<number>(0);
   const [isManualPricingInStep3, setIsManualPricingInStep3] = useState<boolean>(false);
 
+  // Gợi ý thương hiệu đồ gia dụng thông minh theo Danh mục và Loại sản phẩm
+  const brandSuggestionsData = useMemo(() => {
+    const selectedCat = backendCategories.find(c => c.id === selectedCategoryId);
+    const selectedItm = backendItems.find(i => i.id === selectedItemId);
+    const itmName = (selectedItm?.name || '').toLowerCase();
+    const catName = (selectedCat?.name || '').toLowerCase();
+
+    // 1. Bàn ăn, Ghế ăn, Bàn ghế nội thất gia đình (Ưu tiên số 1: Bàn ăn thuộc Phòng ăn cũng là Bàn ghế, không được nhận nhầm sang đồ điện bếp)
+    if (
+      itmName.includes('bàn ăn') ||
+      itmName.includes('ghế ăn') ||
+      itmName.includes('bàn làm việc') ||
+      itmName.includes('bàn học') ||
+      itmName.includes('bàn trà') ||
+      itmName.includes('bàn sofa') ||
+      itmName.includes('bàn ban công') ||
+      itmName.includes('bàn trang điểm') ||
+      itmName.includes('ghế sofa') ||
+      itmName.includes('ghế bành') ||
+      itmName.includes('ghế xoay') ||
+      itmName.includes('ghế công thái học') ||
+      itmName.includes('sofa') ||
+      itmName.includes('giường') ||
+      itmName.includes('nệm') ||
+      itmName.includes('đệm') ||
+      itmName.includes('tủ quần áo') ||
+      itmName.includes('tủ đầu giường') ||
+      itmName.includes('tủ giày') ||
+      itmName.includes('kệ sách') ||
+      itmName.includes('giá sách') ||
+      itmName.includes('kệ tivi') ||
+      itmName.includes('giá phơi') ||
+      itmName.includes('giàn phơi')
+    ) {
+      return {
+        placeholder: 'VD: Hòa Phát, Xuân Hòa, IKEA, JYSK, An Cường, Hàng xưởng đặt đóng...',
+        brands: ['Hòa Phát', 'Xuân Hòa', 'IKEA', 'JYSK', 'An Cường', 'Nhà Xinh', 'Duy Tân', 'Hoàng Anh Gia Lai', 'Hàng xưởng / Tự đóng', 'Hàng nhập khẩu']
+      };
+    }
+
+    // 2. Bếp & Phòng ăn (Thiết bị điện & gia dụng nhà bếp)
+    if (catName.includes('bếp') || catName.includes('phòng ăn') || catName.includes('kitchen') || catName.includes('dining')) {
+      return {
+        placeholder: 'VD: Cuckoo, Sunhouse, Tiger, Zojirushi, BlueStone, Philips, Kangaroo...',
+        brands: ['Cuckoo', 'Sunhouse', 'Tiger', 'Zojirushi', 'BlueStone', 'Philips', 'Toshiba', 'Panasonic', 'Sharp', 'Kangaroo', 'Lock&Lock', 'Tefal']
+      };
+    }
+
+    // 3. Phòng khách & Phòng ngủ
+    if (catName.includes('khách') || catName.includes('ngủ') || catName.includes('living') || catName.includes('bedroom')) {
+      return {
+        placeholder: 'VD: Daikin, Panasonic, LG, Casper, Mitsubishi, Xiaomi...',
+        brands: ['Panasonic', 'Daikin', 'LG', 'Samsung', 'Casper', 'Mitsubishi Electric', 'Xiaomi', 'Sony', 'Sharp', 'Toshiba']
+      };
+    }
+
+    // 4. Ban công & Giặt sấy
+    if (catName.includes('ban công') || catName.includes('giặt') || catName.includes('laundry')) {
+      return {
+        placeholder: 'VD: Electrolux, LG, Toshiba, Panasonic, Aqua, Samsung...',
+        brands: ['Electrolux', 'LG', 'Toshiba', 'Panasonic', 'Aqua', 'Samsung', 'Whirlpool', 'Coex', 'Beko']
+      };
+    }
+
+    // 5. Phòng tắm & Vệ sinh
+    if (catName.includes('tắm') || catName.includes('vệ sinh') || catName.includes('bath')) {
+      return {
+        placeholder: 'VD: Ariston, Ferroli, Panasonic, Inax, Toto...',
+        brands: ['Ariston', 'Ferroli', 'Panasonic', 'Inax', 'Toto', 'Kangaroo', 'Sunhouse', 'Electrolux', 'Karcher']
+      };
+    }
+
+    // Fallback mặc định chung cho đồ gia dụng
+    return {
+      placeholder: 'VD: Panasonic, Toshiba, Sunhouse, Philips, BlueStone, Sharp...',
+      brands: ['Panasonic', 'Toshiba', 'Sunhouse', 'Philips', 'Sharp', 'Electrolux', 'BlueStone', 'Kangaroo', 'Samsung', 'LG']
+    };
+  }, [selectedCategoryId, selectedItemId, backendCategories, backendItems]);
+
   // Kích thước và trọng lượng đóng gói (GHN)
   const [shippingWeight, setShippingWeight] = useState<number | ''>('');
   const [shippingLength, setShippingLength] = useState<number | ''>('');
   const [shippingWidth, setShippingWidth] = useState<number | ''>('');
   const [shippingHeight, setShippingHeight] = useState<number | ''>('');
+
+  // Đơn vị và input nhập liệu thông minh cho kiện hàng GHN
+  const [weightUnit, setWeightUnit] = useState<'kg' | 'g'>('kg');
+  const [rawWeightInput, setRawWeightInput] = useState<string>('');
+  const [dimensionUnit, setDimensionUnit] = useState<'cm' | 'm'>('cm');
+  const [rawLengthInput, setRawLengthInput] = useState<string>('');
+  const [rawWidthInput, setRawWidthInput] = useState<string>('');
+  const [rawHeightInput, setRawHeightInput] = useState<string>('');
+
+  const handleWeightChange = (valStr: string) => {
+    setRawWeightInput(valStr);
+    const num = parseFloat(valStr);
+    if (!isNaN(num) && num > 0) {
+      setShippingWeight(weightUnit === 'kg' ? Math.round(num * 1000) : Math.round(num));
+    } else {
+      setShippingWeight('');
+    }
+  };
+
+  const handleWeightUnitSwitch = (newUnit: 'kg' | 'g') => {
+    if (newUnit === weightUnit) return;
+    setWeightUnit(newUnit);
+    if (rawWeightInput && !isNaN(Number(rawWeightInput))) {
+      const currentVal = Number(rawWeightInput);
+      const converted = newUnit === 'g' ? Math.round(currentVal * 1000) : Number((currentVal / 1000).toFixed(2));
+      setRawWeightInput(converted.toString());
+      setShippingWeight(newUnit === 'g' ? converted : Math.round(converted * 1000));
+    }
+  };
+
+  const handleDimensionChange = (field: 'length' | 'width' | 'height', valStr: string) => {
+    if (field === 'length') setRawLengthInput(valStr);
+    if (field === 'width') setRawWidthInput(valStr);
+    if (field === 'height') setRawHeightInput(valStr);
+
+    const num = parseFloat(valStr);
+    if (!isNaN(num) && num > 0) {
+      const inCm = dimensionUnit === 'm' ? Math.round(num * 100) : Math.round(num);
+      if (field === 'length') setShippingLength(inCm);
+      if (field === 'width') setShippingWidth(inCm);
+      if (field === 'height') setShippingHeight(inCm);
+    } else {
+      if (field === 'length') setShippingLength('');
+      if (field === 'width') setShippingWidth('');
+      if (field === 'height') setShippingHeight('');
+    }
+  };
+
+  const handleDimensionUnitSwitch = (newUnit: 'cm' | 'm') => {
+    if (newUnit === dimensionUnit) return;
+    setDimensionUnit(newUnit);
+    const convert = (valStr: string) => {
+      if (!valStr || isNaN(Number(valStr))) return valStr;
+      const num = Number(valStr);
+      return newUnit === 'm' ? Number((num / 100).toFixed(2)).toString() : Math.round(num * 100).toString();
+    };
+    if (rawLengthInput) setRawLengthInput(convert(rawLengthInput));
+    if (rawWidthInput) setRawWidthInput(convert(rawWidthInput));
+    if (rawHeightInput) setRawHeightInput(convert(rawHeightInput));
+  };
 
 
   // Images state: Raw files for FormData & previews
@@ -179,6 +320,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [postId, setPostId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [aiInitialMessage, setAiInitialMessage] = useState<string>('');
+  const [aiVisualReport, setAiVisualReport] = useState<string>('');
   const [draftPost, setDraftPost] = useState<ListingDraftResponse | null>(null);
 
   // Initialize from draft if provided
@@ -195,6 +337,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       if (initialDraft.shippingLength) setShippingLength(initialDraft.shippingLength);
       if (initialDraft.shippingWidth) setShippingWidth(initialDraft.shippingWidth);
       if (initialDraft.shippingHeight) setShippingHeight(initialDraft.shippingHeight);
+      if (initialDraft.shippingWeight) setRawWeightInput((Number(initialDraft.shippingWeight) / 1000).toString());
+      if (initialDraft.shippingLength) setRawLengthInput(initialDraft.shippingLength.toString());
+      if (initialDraft.shippingWidth) setRawWidthInput(initialDraft.shippingWidth.toString());
+      if (initialDraft.shippingHeight) setRawHeightInput(initialDraft.shippingHeight.toString());
       if (initialDraft.conditionGrade) {
         // Map condition grade string back to enum value if needed
         const gradeMap: any = {
@@ -242,10 +388,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // Dynamic question parser: Extracts questions generated by Backend AI from aiInitialMessage
   const parsedAiQuestions = useMemo(() => {
     if (!aiInitialMessage) return [];
-    const lines = aiInitialMessage.split('\n');
+
+    // Tự động chuẩn hóa xuống dòng nếu chuỗi các câu hỏi bị dính liền trên 1 dòng
+    let normalized = aiInitialMessage;
+    normalized = normalized.replace(/\)\s+(?=[A-ZÀ-Ỹ0-9\*\#])/g, ')\n');
+    normalized = normalized.replace(/\?\s+(?=[A-ZÀ-Ỹ0-9\*\#])/g, '?\n');
+
+    const lines = normalized.split('\n');
     const questions: string[] = [];
     for (const line of lines) {
       const trimmed = line.trim();
+      if (!trimmed) continue;
       // Match "1. ...", "1) ...", "- 1. ...", "* 1. ..."
       const numMatch = trimmed.match(/^[-*•]?\s*(\d+)[\.\)]\s*(.+)$/);
       if (numMatch && numMatch[2]) {
@@ -253,7 +406,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         continue;
       }
       // Match bullet with bold question: "- **Câu hỏi:** ..." or "* **Câu hỏi:** ..."
-      const bulletBoldMatch = trimmed.match(/^[-*•]\s*(\*\*.*?\*\*.*)$/);
+      const bulletBoldMatch = trimmed.match(/^[-*•]\s*(\**.*?\*\*.*)$/);
       if (bulletBoldMatch && bulletBoldMatch[1]) {
         questions.push(bulletBoldMatch[1].trim());
         continue;
@@ -264,35 +417,27 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         questions.push(bulletMatch[1].trim());
         continue;
       }
-      // Match any line ending with ?
-      if (trimmed.endsWith('?')) {
+      // Match any line ending with ? or having parenthesized hint (Ví dụ: ...)
+      if (trimmed.endsWith('?') || /\((?:ví\s*dụ|vd|gợi\s*ý)/i.test(trimmed)) {
+        questions.push(trimmed);
+        continue;
+      }
+      // Match standalone line if longer than 5 chars
+      if (trimmed.length > 5 && !trimmed.toLowerCase().startsWith('lưu ý') && !trimmed.toLowerCase().startsWith('chào bạn')) {
         questions.push(trimmed);
       }
     }
 
     // If we couldn't parse structured lines but the message contains a question mark,
     // we can split the text by '?' as a fallback.
-    if (questions.length === 0 && aiInitialMessage.includes('?')) {
-      const parts = aiInitialMessage.split('?').map(p => p.trim()).filter(p => p.length > 10);
+    if (questions.length === 0 && normalized.includes('?')) {
+      const parts = normalized.split('?').map(p => p.trim()).filter(p => p.length > 10);
       parts.forEach(p => questions.push(p + '?'));
     }
 
-    // Fallback for paragraph with a list: "Vui lòng cung cấp thêm: Hãng, Model, Tình trạng (mới/cũ)..."
-    if (questions.length === 0) {
-      const lastColonIdx = aiInitialMessage.lastIndexOf(':');
-      if (lastColonIdx !== -1) {
-        const listStr = aiInitialMessage.substring(lastColonIdx + 1).replace(/\.$/, '').trim();
-        // Split by comma or semicolon, but NOT if it is inside parentheses ()
-        const parts = listStr.split(/[,;]\s*(?![^()]*\))/).map(p => p.trim().replace(/^(và|hoặc)\s+/i, '')).filter(p => p.length > 2);
-        if (parts.length > 1) {
-          parts.forEach(p => questions.push(p + '?'));
-        }
-      }
-    }
-
     // Final fallback: if nothing worked, just treat the whole message as one question so the form doesn't disappear
-    if (questions.length === 0 && aiInitialMessage.trim().length > 10) {
-      questions.push(aiInitialMessage.trim());
+    if (questions.length === 0 && normalized.trim().length > 10) {
+      questions.push(normalized.trim());
     }
 
     return questions;
@@ -320,7 +465,22 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     return uniqueQuestions.filter(q => {
       const lower = q.toLowerCase().trim();
       // Giữ lại các câu hỏi liên quan đến bảo hành (ví dụ: "Bảo hành chính hãng không")
-      if (lower.includes('bảo hành')) return true;
+            if (lower.includes('bảo hành') || lower.includes('bo hnh')) return true;
+
+      // Lọc bỏ câu hỏi về thời gian/năm mua/giá mua vì người bán đã điền ở Bước 1
+      if (
+        lower.includes('thời gian đã sử dụng') ||
+        lower.includes('thời gian sử dụng') ||
+        lower.includes('thời gian mua') ||
+        lower.includes('thời gian bạn mua') ||
+        lower.includes('năm mua') ||
+        lower.includes('năm bạn mua') ||
+        lower.includes('giá mua mới') ||
+        lower.includes('giá lúc mua') ||
+        lower.includes('giá gốc')
+      ) {
+        return false;
+      }
 
       if (
         lower === 'hãng?' ||
@@ -340,8 +500,27 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     });
   }, [parsedAiQuestions]);
 
+  
   // Questionnaire Answers State
   const [questionAnswers, setQuestionAnswers] = useState<Record<number, string>>({});
+
+  // Tự động suy luận Tình trạng phân loại (Item Condition) từ câu trả lời khảo sát của người bán
+  useEffect(() => {
+    const allAnswers = Object.values(questionAnswers).join(' ').toLowerCase();
+    if (!allAnswers) return;
+
+    if (allAnswers.includes('mới 100%') || allAnswers.includes('nguyên hộp') || allAnswers.includes('chưa qua sử dụng') || allAnswers.includes('chưa dùng')) {
+      setItemCondition('NEW');
+    } else if (allAnswers.includes('like-new') || allAnswers.includes('like new') || allAnswers.includes('hàng lướt') || allAnswers.includes('99%') || allAnswers.includes('vài lần cất hộp')) {
+      setItemCondition('LIKE_NEW');
+    } else if (allAnswers.includes('xước nhẹ') || allAnswers.includes('cấn móp') || allAnswers.includes('tróc chống dính') || allAnswers.includes('trầy xước nhẹ') || allAnswers.includes('grade b')) {
+      setItemCondition('USED_FAIR');
+    } else if (allAnswers.includes('cũ bình thường') || allAnswers.includes('nhiều vết xước') || allAnswers.includes('hỏng nhẹ') || allAnswers.includes('grade c')) {
+      setItemCondition('USED');
+    } else if (allAnswers.includes('hoạt động tốt') || allAnswers.includes('nguyên bản') || allAnswers.includes('nấu chín đều') || allAnswers.includes('dùng đều đặn') || allAnswers.includes('grade a')) {
+      setItemCondition('USED_GOOD');
+    }
+  }, [questionAnswers]);
   const [isApplyingAnswers, setIsApplyingAnswers] = useState(false);
   const [isSubmittingAnswersToAi, setIsSubmittingAnswersToAi] = useState(false);
   const [applySuccessNotice, setApplySuccessNotice] = useState<string | null>(null);
@@ -361,35 +540,163 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
   };
 
+    // Tự động tạo tiêu đề bài đăng hấp dẫn chuẩn sàn TMĐT từ thông tin & khảo sát
+  const buildSmartProductTitle = (): string => {
+    const selectedCat = backendCategories.find(c => c.id === selectedCategoryId);
+    const selectedItm = backendItems.find(i => i.id === selectedItemId);
+    const itmName = selectedItm?.name || selectedCat?.name || 'Sản phẩm';
+    const brandName = brand?.trim() || '';
+    const modelName = model?.trim() || '';
+
+    // Trích xuất thông số cốt lõi từ câu trả lời thông số kỹ thuật (câu 4) hoặc ảnh
+    let keySpec = '';
+    const answer4 = (questionAnswers[3] || '').trim();
+    if (answer4) {
+      const specMatch = answer4.match(/\b(\d+(?:[\.,]\d+)?\s*(?:l|lít|kg|w|watt|inch|inverter|cửa ngang|cửa trước|nắp gài|ngăn đá dưới))\b/i);
+      if (specMatch) {
+        keySpec = specMatch[0].toUpperCase();
+      } else {
+        const firstWords = answer4.split(/[,;\n]/)[0].trim();
+        if (firstWords.length <= 25) {
+          keySpec = firstWords;
+        }
+      }
+    }
+
+    // Trích xuất điểm nổi bật về tình trạng (Like New 99%, Hàng Lướt, Mới 99%...)
+    let conditionHighlight = '';
+    const allAnswers = Object.values(questionAnswers).join(' ').toLowerCase();
+    if (allAnswers.includes('mới 100%') || allAnswers.includes('nguyên hộp') || allAnswers.includes('chưa bóc')) {
+      conditionHighlight = 'Mới 100% Nguyên Hộp';
+    } else if (allAnswers.includes('like-new') || allAnswers.includes('like new') || allAnswers.includes('hàng lướt') || allAnswers.includes('99%') || allAnswers.includes('vài lần')) {
+      conditionHighlight = 'Hàng Lướt Like New 99%';
+    } else if (allAnswers.includes('hoạt động tốt') || allAnswers.includes('nguyên bản') || allAnswers.includes('chưa từng sửa')) {
+      conditionHighlight = 'Nguyên Bản Chạy Tốt';
+    } else if (allAnswers.includes('xước nhẹ') || allAnswers.includes('cấn móp nhẹ')) {
+      conditionHighlight = 'Hoạt Động Tốt Giá Tốt';
+    } else {
+      conditionHighlight = 'Chính Hãng Đẹp Bền';
+    }
+
+    const mainParts = [itmName, brandName, modelName, keySpec].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    return `${mainParts} - ${conditionHighlight}`.trim();
+  };
+
+  // =========================================================================
+  // Gợi ý tiêu đề bài đăng bằng AI (-1 credit AI)
+  // =========================================================================
+  const handleSuggestTitleWithAi = async () => {
+    if ((credits?.chatCredits ?? 0) < 1) {
+      showToast(lang === 'vi'
+        ? 'Bạn đã hết lượt dùng AI chat (cần 1 credit). Vui lòng nạp thêm credit để AI gợi ý tiêu đề.'
+        : 'Insufficient AI Chat credits. Please top up to use AI title suggestion.');
+      return;
+    }
+    if (!postId) {
+      const smartTitle = buildSmartProductTitle();
+      setTitle(smartTitle);
+      return;
+    }
+
+    setIsSuggestingTitle(true);
+    try {
+      const contextInfo = [
+        brand ? `Hãng: ${brand}` : '',
+        model ? `Model: ${model}` : '',
+        itemCondition ? `Tình trạng: ${itemCondition}` : '',
+        aiVisualReport ? `Ngoại quan: ${aiVisualReport.slice(0, 100)}` : ''
+      ].filter(Boolean).join(', ');
+
+      const res = await postService.suggestTitle(postId, contextInfo);
+      if (res && res.title) {
+        setTitle(res.title);
+        await loadCredits();
+        showToast(lang === 'vi' ? '✨ Đã tạo tiêu đề gợi ý từ AI (-1 credit)!' : '✨ Generated title suggestion with AI (-1 credit)!');
+      } else {
+        const smartTitle = buildSmartProductTitle();
+        setTitle(smartTitle);
+      }
+    } catch (err: any) {
+      const errMsg = String(err?.message || '');
+      if (errMsg.toLowerCase().includes('insufficient') || errMsg.toLowerCase().includes('credit')) {
+        showToast(lang === 'vi' ? 'Bạn đã hết lượt dùng AI chat (hết credit).' : 'Insufficient AI chat credits.');
+        await loadCredits();
+      } else {
+        // Fallback to client-side smart title generator
+        const smartTitle = buildSmartProductTitle();
+        setTitle(smartTitle);
+        showToast(lang === 'vi' ? 'Không thể kết nối AI, đã tạo tiêu đề mẫu từ thông tin sẵn có.' : 'Used template title.');
+      }
+    } finally {
+      setIsSuggestingTitle(false);
+    }
+  };
+
+  // Tự động tổng hợp bài mô tả sản phẩm hoàn chỉnh, kết hợp cả ngoại quan từ ảnh và khảo sát thực tế
+  const buildSmartProductDescription = (): string => {
+    const sections: string[] = [];
+
+    // 1. Ngoại hình & Thiết kế thực tế (Được AI Vision nhận diện từ ảnh chụp)
+    if (aiVisualReport && aiVisualReport.trim()) {
+      sections.push('✨ Ngoại hình & Thiết kế thực tế:\n' + aiVisualReport.trim());
+    }
+
+    // 2. Thông số cơ bản
+    const basicSpecs: string[] = [];
+    if (brand && brand.trim()) basicSpecs.push(`• Thương hiệu: ${brand.trim()}`);
+    if (model && model.trim()) basicSpecs.push(`• Model: ${model.trim()}`);
+    if (purchaseYear) basicSpecs.push(`• Năm mua: ${purchaseYear}`);
+    if (originalPriceVnd) basicSpecs.push(`• Giá lúc mua mới: ${Number(originalPriceVnd).toLocaleString('vi-VN')} VNĐ`);
+
+    if (basicSpecs.length > 0) {
+      sections.push('📌 Thông số cơ bản:\n' + basicSpecs.join('\n'));
+    }
+
+    // 3. Hiện trạng sử dụng thực tế (Chuyển đổi câu hỏi thành tiêu đề tự nhiên, loại bỏ dấu ? thô sơ)
+    const answerLines: string[] = [];
+    effectiveQuestions.forEach((q, idx) => {
+      const ans = questionAnswers[idx]?.trim();
+      if (!ans) return;
+      const parsed = parseQuestionItem(q, idx);
+
+      let naturalLabel = parsed.label;
+      const lower = naturalLabel.toLowerCase();
+      if (lower.includes('tần suất') || lower.includes('mức độ sử dụng')) {
+        naturalLabel = 'Tần suất & mức độ sử dụng';
+      } else if (lower.includes('ngoại quan') || lower.includes('phụ kiện')) {
+        naturalLabel = 'Hiện trạng ngoại quan & phụ kiện';
+      } else if (lower.includes('thông số') || lower.includes('dung tích') || lower.includes('công suất')) {
+        naturalLabel = 'Thông số kỹ thuật & công năng';
+      } else if (lower.includes('hoạt động') || lower.includes('vận hành') || lower.includes('kỹ thuật') || lower.includes('bảo hành') || lower.includes('sửa chữa')) {
+        naturalLabel = 'Tình trạng máy móc & bảo hành';
+      } else {
+        naturalLabel = naturalLabel.replace(/^(\d+[\.\)]\s*|\*\*)/, '').replace(/(\*\*|\?)\s*$/, '').trim();
+      }
+
+      answerLines.push(`• ${naturalLabel}: ${ans}`);
+    });
+
+    if (answerLines.length > 0) {
+      sections.push('📋 Hiện trạng thực tế từ người bán:\n' + answerLines.join('\n'));
+    }
+
+    // 4. Cam kết người bán
+    sections.push('💡 Cam kết: Sản phẩm hoạt động tốt, đúng như hình ảnh và thông tin mô tả. Khách mua có thể kiểm tra hàng thoải mái khi nhận.');
+
+    return sections.join('\n\n').trim();
+  };
+
   const handleApplyAnswersToDescription = () => {
-    if (answeredCount === 0) {
+    if (answeredCount === 0 && !aiVisualReport) {
       showToast(lang === 'vi' ? 'Vui lòng điền câu trả lời cho ít nhất một câu hỏi trước khi áp dụng.' : 'Please answer at least one question before applying.');
       return;
     }
     setIsApplyingAnswers(true);
-    const formattedAnswers = effectiveQuestions
-      .map((q, idx) => {
-        const ans = questionAnswers[idx]?.trim();
-        if (!ans) return null;
-        const parsed = parseQuestionItem(q, idx);
-        return `• ${parsed.label}: ${ans}`;
-      })
-      .filter(Boolean)
-      .join('\n');
-
-    if (formattedAnswers) {
-      const sectionHeader = '📋 Thông tin chi tiết sản phẩm:';
-      let newDesc = description.trim();
-      if (!newDesc) {
-        newDesc = `${sectionHeader}\n${formattedAnswers}`;
-      } else if (newDesc.includes(sectionHeader)) {
-        const parts = newDesc.split(sectionHeader);
-        newDesc = `${parts[0].trim()}\n\n${sectionHeader}\n${formattedAnswers}`.trim();
-      } else {
-        newDesc = `${newDesc}\n\n${sectionHeader}\n${formattedAnswers}`;
-      }
-      setDescription(newDesc);
-      setApplySuccessNotice(lang === 'vi' ? 'Đã cập nhật câu trả lời vào phần Mô tả sản phẩm bên dưới!' : 'Updated answers into product description below!');
+    const fullSmartDesc = buildSmartProductDescription();
+    if (fullSmartDesc) {
+      setDescription(fullSmartDesc);
+      setTitle(buildSmartProductTitle());
+      setApplySuccessNotice(lang === 'vi' ? '✨ Đã tổng hợp đầy đủ ngoại hình và hiện trạng vào ô Mô tả bên dưới!' : '✨ Updated complete visual and condition details into description below!');
       setTimeout(() => setApplySuccessNotice(null), 4000);
     }
     setIsApplyingAnswers(false);
@@ -405,6 +712,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       return;
     }
 
+    if ((credits?.chatCredits ?? 0) < 1) {
+      showToast(lang === 'vi' ? 'Bạn đã hết lượt dùng AI hoàn thiện mô tả (cần 1 credit chat). Vui lòng nạp thêm credit.' : 'Out of AI chat credits.');
+      return;
+    }
+
     setIsSubmittingAnswersToAi(true);
     const formattedAnswers = effectiveQuestions
       .map((q, idx) => {
@@ -416,27 +728,46 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       .filter(Boolean)
       .join(', ');
 
-    const promptMessage = `Đây là thông tin bổ sung người dùng cung cấp: ${formattedAnswers}`;
+    const basicInfoParts: string[] = [];
+    if (brand && brand.trim()) basicInfoParts.push(`Thương hiệu: ${brand.trim()}`);
+    if (model && model.trim()) basicInfoParts.push(`Model: ${model.trim()}`);
+    if (purchaseYear) basicInfoParts.push(`Năm mua: ${purchaseYear}`);
+    if (originalPriceVnd) basicInfoParts.push(`Giá lúc mua: ${Number(originalPriceVnd).toLocaleString('vi-VN')} VNĐ`);
+
+    const basicStr = basicInfoParts.length > 0 ? `Thông tin sản phẩm: ${basicInfoParts.join(', ')}.\n` : '';
+    const visualStr = aiVisualReport ? `Ghi nhận ngoại quan từ ảnh chụp: ${aiVisualReport}.\n` : '';
+    const surveyStr = formattedAnswers ? `Khảo sát hiện trạng thực tế từ người bán: ${formattedAnswers}.\n` : '';
+    const promptMessage = `${basicStr}${visualStr}${surveyStr}`.trim();
 
     try {
-      // B1: Gửi câu trả lời vào chat history để AI ghi nhận (bỏ qua câu trả lời tạm thời của AI)
-      await aiChatService.chat(promptMessage, sessionId, postId);
-
-      // B2: Gọi API finalize để ép AI tổng hợp thông tin thành đoạn văn mô tả
-      const finalizeRes = await postService.finalizeChat(sessionId);
+      // Gửi trực tiếp promptMessage qua finalizeChat để AI biên tập mô tả và tiêu đề, trừ 1 credit chat
+      const finalizeRes = await postService.finalizeChat(sessionId, promptMessage);
       const reply = finalizeRes?.description || (finalizeRes as any)?.message || '';
       
       if (reply) {
-        setDescription(prev => prev.trim() ? `${prev.trim()}\n\n${reply}` : reply);
+        setDescription(reply);
+        const generatedTitle = (finalizeRes as any)?.title;
+        if (generatedTitle && generatedTitle.trim()) {
+          setTitle(generatedTitle.trim());
+        } else {
+          setTitle(buildSmartProductTitle());
+        }
         setIsSessionCompleted(true);
-        setApplySuccessNotice(lang === 'vi' ? '✨ Trợ lý AI đã tổng hợp xong bài mô tả bán hàng và cập nhật vào ô Mô tả bên dưới!' : '✨ AI generated a new sales description and updated the description box below!');
+        // Tải lại số dư credit ngay lập tức để cập nhật số lượt còn lại trên UI
+        await loadCredits();
+        setApplySuccessNotice(lang === 'vi' ? '✨ Trợ lý AI đã tổng hợp xong tiêu đề & mô tả (-1 credit AI)!' : '✨ AI generated engaging title and sales description below!');
         setTimeout(() => setApplySuccessNotice(null), 5000);
       } else {
         handleApplyAnswersToDescription();
       }
     } catch (err: any) {
-      console.warn('Lỗi gửi câu trả lời cho AI chat:', err);
-      handleApplyAnswersToDescription();
+      console.warn('Lỗi AI hoàn thiện mô tả:', err);
+      if (err?.message?.toLowerCase().includes('insufficient') || err?.message?.toLowerCase().includes('credit')) {
+        showToast(lang === 'vi' ? 'Bạn đã hết lượt dùng AI hoàn thiện mô tả (hết credit chat). Vui lòng nạp thêm credit.' : 'Out of AI credits.');
+        await loadCredits();
+      } else {
+        handleApplyAnswersToDescription();
+      }
     } finally {
       setIsSubmittingAnswersToAi(false);
     }
@@ -470,6 +801,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [showNoCreditsModal, setShowNoCreditsModal] = useState(false);
   const [showNoValuationModal, setShowNoValuationModal] = useState(false);
+  const [mismatchType, setMismatchType] = useState<'item' | 'brand' | null>(null);
+  const [detectedBrand, setDetectedBrand] = useState<string>('');
+  const [imageMismatchReason, setImageMismatchReason] = useState<string | null>(null);
+  const [showMismatchModal, setShowMismatchModal] = useState<boolean>(false);
+  const [showAiScanConfirmModal, setShowAiScanConfirmModal] = useState<boolean>(false);
 
   // Load Seller Credits
   const loadCredits = async () => {
@@ -565,6 +901,25 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // =========================================================================
   // STEP 1: Init Post (POST /api/v1/posts/init with multipart/form-data)
   // =========================================================================
+  const handleTriggerAiChat = () => {
+    if (!selectedCategoryId) {
+      showToast(lang === 'vi' ? 'Vui lòng chọn Danh mục sản phẩm trước khi quét AI' : 'Please select a Category');
+      return;
+    }
+    if (photoPreviews.length < 3 || photoPreviews.length > 6) {
+      showToast(lang === 'vi' ? 'Vui lòng tải lên từ 3 đến 6 ảnh sản phẩm hợp lệ' : 'Please upload 3 to 6 product images');
+      return;
+    }
+    if ((credits?.chatCredits ?? 0) < 1) {
+      showToast(lang === 'vi'
+        ? 'Bạn đã hết lượt dùng AI chat (cần 1 credit). Vui lòng nạp thêm credit để quét hình ảnh sản phẩm.'
+        : 'Insufficient AI Chat credits. Please top up to use AI visual scan.');
+      return;
+    }
+    // Mở pop-up xác nhận để người dùng đối chiếu kỹ thông tin trước khi tiêu tốn credit
+    setShowAiScanConfirmModal(true);
+  };
+
   const handleInitPost = async (mode: 'ai' | 'manual' = 'ai') => {
     if (!selectedCategoryId) {
       showToast(lang === 'vi' ? 'Vui lòng chọn Danh mục sản phẩm' : 'Please select a Category');
@@ -572,6 +927,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
     if (photoPreviews.length < 3 || photoPreviews.length > 6) {
       showToast(lang === 'vi' ? 'Vui lòng tải lên từ 3 đến 6 ảnh sản phẩm hợp lệ' : 'Please upload 3 to 6 product images');
+      return;
+    }
+
+    if (mode === 'ai' && (credits?.chatCredits ?? 0) < 1) {
+      showToast(lang === 'vi'
+        ? 'Bạn đã hết lượt dùng AI chat (cần 1 credit). Vui lòng nạp thêm credit để AI quét ngoại hình và hỗ trợ mô tả sản phẩm.'
+        : 'Insufficient AI Chat credits. Please top up to use AI visual scan.');
       return;
     }
 
@@ -585,14 +947,23 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       const initRes = await postService.initPost({
         categoryId: selectedCategoryId,
         itemId: selectedItemId || undefined,
-        images: imageBlobs
+        brand: brand?.trim() || undefined,
+        model: model?.trim() || undefined,
+        images: imageBlobs,
+        mode: mode
       });
 
       if (initRes && initRes.postId) {
+        if (mode === 'ai') {
+          // Re-fetch credits to reflect deduction of 1 AI_CHAT credit
+          await loadCredits();
+        }
         setPostId(initRes.postId);
         setSessionId(initRes.sessionId);
-        const initialAiDesc = initRes.aiInitialMessage || initRes.aiDescription || '';
-        setAiInitialMessage(initialAiDesc);
+        const questionnaireTemplate = initRes.aiInitialMessage || '';
+        const visualAssessment = initRes.aiDescription || '';
+        setAiInitialMessage(questionnaireTemplate);
+        setAiVisualReport(visualAssessment);
 
         // Auto-generate title from selections if empty
         const selectedCat = backendCategories.find(c => c.id === selectedCategoryId);
@@ -602,24 +973,16 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           setTitle(defaultTitle);
         }
 
-        // Initialize draft state with data returned directly from BE initPost
-        // Note: Do not overwrite description if initialAiDesc is purely an image warning or questionnaire template
-        const isWarningOrQuestions =
-          initialAiDesc.includes('ảnh quảng cáo') ||
-          initialAiDesc.includes('ảnh catalog') ||
-          initialAiDesc.includes('không phải ảnh chụp thực tế') ||
-          initialAiDesc.includes('Vui lòng cung cấp');
-
-        if (initialAiDesc && !description && mode === 'ai' && !isWarningOrQuestions) {
-          setDescription(initialAiDesc);
-        }
+        // QUAN TRỌNG: Không tự ý nhồi nhận xét ảnh hay câu hỏi khảo sát vào ô mô tả sản phẩm.
+        // Để trống để người bán tự viết hoặc bấm "Gửi AI Hoàn Thiện Mô Tả" sau khi trả lời khảo sát.
+        setDescription('');
 
         setDraftPost({
           postId: initRes.postId,
           id: initRes.postId,
           title: defaultTitle,
-          description: isWarningOrQuestions ? '' : initialAiDesc,
-          aiDescription: initialAiDesc,
+          description: '',
+          aiDescription: visualAssessment,
           descriptionAccepted: false,
           imageUrls: photoPreviews,
           status: 'DRAFT',
@@ -652,7 +1015,37 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         throw new Error('Hệ thống không trả về postId từ init');
       }
     } catch (err: any) {
-      showToast('Khởi tạo bài đăng thất bại: ' + (err?.message || 'Lỗi server'));
+      const errMsg = String(err?.message || '');
+      if (errMsg.includes('HÌNH ẢNH KHÔNG KHỚP THƯƠNG HIỆU') || errMsg.includes('KHÔNG KHỚP THƯƠNG HIỆU')) {
+        let detected = '';
+        const match = errMsg.match(/\[DETECTED_BRAND:\s*([^\]]+)\]/);
+        if (match) {
+          detected = match[1].trim();
+        }
+        const cleanMsg = errMsg
+          .replace(/^(Khởi tạo bài đăng thất bại:\s*)?HÌNH ẢNH KHÔNG KHỚP THƯƠNG HIỆU:\s*/i, '')
+          .replace(/\[DETECTED_BRAND:[^\]]+\]\s*/g, '')
+          .trim();
+        setMismatchType('brand');
+        setDetectedBrand(detected);
+        setImageMismatchReason(cleanMsg);
+        setShowMismatchModal(true);
+        await loadCredits();
+      } else if (errMsg.includes('HÌNH ẢNH KHÔNG KHỚP') || errMsg.includes('không khớp với loại') || errMsg.includes('CẢNH_BÁO_KHÔNG_KHỚP')) {
+        const cleanMsg = errMsg
+          .replace(/^(Khởi tạo bài đăng thất bại:\s*)?HÌNH ẢNH KHÔNG KHỚP(\s*LOẠI SẢN PHẨM)?:\s*/i, '')
+          .trim();
+        setMismatchType('item');
+        setDetectedBrand('');
+        setImageMismatchReason(cleanMsg);
+        setShowMismatchModal(true);
+        await loadCredits();
+      } else if (errMsg.toLowerCase().includes('insufficient') || errMsg.toLowerCase().includes('credit')) {
+        showToast(lang === 'vi' ? 'Bạn đã hết lượt dùng AI chat. Vui lòng nạp thêm credit để AI quét hình ảnh sản phẩm.' : 'Insufficient AI chat credits. Please top up.');
+        await loadCredits();
+      } else {
+        showToast('Khởi tạo bài đăng thất bại: ' + (errMsg || 'Lỗi server'));
+      }
     } finally {
       setIsInitializingPost(false);
       setInitMode(null);
@@ -745,38 +1138,20 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       setTitle(currentTitle);
     }
 
-    // 1.5. Tự động đồng bộ các câu trả lời từ bảng câu hỏi AI vào mô tả
+    // 1.5. Tự động tổng hợp đầy đủ ngoại hình từ ảnh và câu trả lời khảo sát vào mô tả nếu chưa có
     const currentAnsweredCount = (Object.values(questionAnswers) as string[]).filter((v) => v && typeof v === 'string' && v.trim().length > 0).length;
-    if (currentAnsweredCount > 0) {
-      const answersText = effectiveQuestions
-        .map((q, idx) => {
-          const ans = questionAnswers[idx]?.trim();
-          if (!ans) return null;
-          const parsed = parseQuestionItem(q, idx);
-          return `• ${parsed.label}: ${ans}`;
-        })
-        .filter(Boolean)
-        .join('\n');
-      if (answersText) {
-        const sectionHeader = '📋 Thông tin chi tiết sản phẩm:';
-        if (!currentDesc) {
-          currentDesc = `${sectionHeader}\n${answersText}`;
-          setDescription(currentDesc);
-        } else if (!currentDesc.includes(sectionHeader)) {
-          currentDesc = `${currentDesc}\n\n${sectionHeader}\n${answersText}`;
-          setDescription(currentDesc);
-        }
+    if (!currentDesc && (currentAnsweredCount > 0 || aiVisualReport)) {
+      currentDesc = buildSmartProductDescription();
+      if (currentDesc) {
+        setDescription(currentDesc);
       }
     }
 
-    // 2. Tự động lấy mô tả từ tin nhắn AI gần nhất hoặc gợi ý ban đầu
+    // 2. Tự động lấy mô tả từ tin nhắn AI gần nhất
     if (!currentDesc) {
       const lastAiMsg = [...chatMessages].reverse().find(m => m.role === 'ai' && !m.text.startsWith('Lỗi'));
       if (lastAiMsg?.text) {
         currentDesc = lastAiMsg.text;
-        setDescription(currentDesc);
-      } else if (aiInitialMessage) {
-        currentDesc = aiInitialMessage;
         setDescription(currentDesc);
       }
     }
@@ -981,6 +1356,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     } catch (err: any) {
       if (err?.message?.includes('400') || err?.message?.toLowerCase().includes('insufficient') || err?.message?.toLowerCase().includes('không đủ lượt')) {
         setShowNoCreditsModal(true);
+      } else if (err?.message?.toLowerCase().includes('seller verification')) {
+        setSubmitError(lang === 'vi'
+          ? 'Tài khoản chưa hoàn tất hồ sơ xác thực người bán (eKYC). Vui lòng xác thực trước khi gửi đăng bài.'
+          : 'An approved seller verification is required before publish');
       } else {
         setSubmitError(err?.message || 'Gửi bài đăng thất bại');
       }
@@ -1186,16 +1565,16 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 type="text"
                 value={brand}
                 onChange={(e) => setBrand(e.target.value)}
-                placeholder="VD: Panasonic, Toshiba, LG, Sony, Apple..."
+                placeholder={brandSuggestionsData.placeholder}
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36]"
               />
               <div className="flex flex-wrap gap-1.5 pt-1">
-                {['Panasonic', 'LG', 'Samsung', 'Toshiba', 'Electrolux', 'Aqua', 'Daikin', 'Sharp'].map((b) => (
+                {brandSuggestionsData.brands.map((b) => (
                   <button
                     key={b}
                     type="button"
                     onClick={() => setBrand(b)}
-                    className="px-2.5 py-1 text-[11px] font-medium bg-white border border-gray-200 hover:border-[#c34c36] hover:text-[#c34c36] text-slate-600 rounded-lg transition-colors cursor-pointer"
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-colors cursor-pointer ${brand === b ? 'bg-[#c34c36] text-white border border-[#c34c36]' : 'bg-white border border-gray-200 hover:border-[#c34c36] hover:text-[#c34c36] text-slate-700'}`}
                   >
                     {b}
                   </button>
@@ -1204,7 +1583,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[#24263e]">Năm sản xuất / Mua</label>
+              <label className="text-xs font-bold text-[#24263e]">Năm mua</label>
               <input
                 type="number"
                 value={purchaseYear}
@@ -1230,6 +1609,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               {originalPriceVnd !== '' && (
                 <p className="text-[11px] text-emerald-600 font-medium italic">
                   {numberToVietnameseWords(Number(originalPriceVnd))}
+                </p>
+              )}
+              {typeof originalPriceVnd === 'number' && originalPriceVnd > 0 && originalPriceVnd < 10000 && (
+                <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{lang === 'vi' ? 'Giá bạn nhập có vẻ quá thấp (< 10.000đ). Vui lòng kiểm tra lại để AI định giá chính xác.' : 'Price seems too low (< 10,000 VND). Please verify.'}</span>
+                </p>
+              )}
+              {typeof originalPriceVnd === 'number' && originalPriceVnd > 100000000 && (
+                <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{lang === 'vi' ? 'Giá bạn nhập có vẻ bất hợp lý (> 100 triệu). Hãy kiểm tra lại số lượng số 0 để tránh AI định giá sai lệch.' : 'Price seems unusually high (> 100M VND). Please check zeros.'}</span>
                 </p>
               )}
               <p className="text-[10.5px] text-slate-400 italic mt-1 leading-tight">
@@ -1328,7 +1719,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               {/* Nút 2: Chat với AI */}
               <button
                 type="button"
-                onClick={() => handleInitPost('ai')}
+                onClick={handleTriggerAiChat}
                 disabled={isInitializingPost || photoPreviews.length < 3 || photoPreviews.length > 6}
                 className="px-7 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-md flex items-center justify-center gap-2.5 transition cursor-pointer bg-gradient-to-r from-[#c34c36] to-[#24263e] text-white hover:opacity-95 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Sử dụng trí tuệ nhân tạo để phân tích ảnh và hoàn thiện mô tả"
@@ -1336,12 +1727,15 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 {isInitializingPost && initMode === 'ai' ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
-                    <span>AI đang phân tích ảnh...</span>
+                    <span>AI đang quét hình ảnh...</span>
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4 text-amber-300" />
                     <span>Chat Với AI</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-amber-200 font-bold">
+                      -1 credit ({credits?.chatCredits ?? 0})
+                    </span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -1447,6 +1841,41 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           )}
 
           {/* Interactive AI Questionnaire: Hiện các câu hỏi cần người dùng trả lời và dưới mỗi câu thì hiện chỗ để điền */}
+          {/* AI Visual Inspection Report: Hiển thị báo cáo nhận diện thị giác từ ảnh chụp */}
+          {postMode === 'ai' && aiVisualReport && (
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-50/80 via-slate-50 to-indigo-50/50 border border-blue-200/90 text-slate-800 text-xs space-y-2 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="font-black text-blue-900 flex items-center gap-1.5 uppercase text-[11px] tracking-wide">
+                  <Eye className="w-4 h-4 text-blue-600" />
+                  Kết quả AI thẩm định hình ảnh thực tế:
+                </span>
+                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-md flex items-center gap-1 border border-emerald-200">
+                  <Check className="w-3 h-3" /> Ảnh chụp hợp lệ
+                </span>
+              </div>
+              <p className="text-slate-700 leading-relaxed italic">
+                "{aiVisualReport}"
+              </p>
+              <div className="flex items-center justify-between pt-1 border-t border-blue-200/50 text-[10px] text-slate-500">
+                <span>* Đây là ghi nhận khách quan của AI qua ảnh để đối chiếu thông số và hỗ trợ định giá.</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (aiVisualReport && description.includes(aiVisualReport.trim())) {
+                      showToast(lang === 'vi' ? 'Nhận xét ảnh đã có trong phần mô tả rồi' : 'Visual review already in description');
+                      return;
+                    }
+                    setDescription(prev => prev.trim() ? `${prev.trim()}\n\n${aiVisualReport}` : aiVisualReport);
+                    showToast(lang === 'vi' ? 'Đã chèn nhận xét ảnh vào ô Mô tả' : 'Inserted visual review into description');
+                  }}
+                  className="text-blue-700 hover:text-blue-900 font-bold underline cursor-pointer"
+                >
+                  Chèn vào mô tả
+                </button>
+              </div>
+            </div>
+          )}
+
           {postMode === 'ai' && effectiveQuestions.length > 0 && (
             <div className="bg-gradient-to-br from-amber-50/90 via-orange-50/30 to-white rounded-3xl p-5 sm:p-6 border-2 border-amber-200/90 shadow-xs space-y-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/70 pb-4">
@@ -1622,9 +2051,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <button
                     type="button"
                     onClick={handleSendAnswersToAi}
-                    disabled={answeredCount === 0 || isSubmittingAnswersToAi}
+                    disabled={answeredCount === 0 || isSubmittingAnswersToAi || (credits?.chatCredits ?? 0) < 1}
                     className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 text-white text-xs font-black flex items-center justify-center gap-2 shadow-sm transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                    title="Gửi câu trả lời để AI tổng hợp bài mô tả hoàn chỉnh"
+                    title="Gửi câu trả lời để AI tổng hợp bài mô tả hoàn chỉnh (-1 credit chat)"
                   >
                     {isSubmittingAnswersToAi ? (
                       <>
@@ -1635,6 +2064,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                       <>
                         <Sparkles className="w-4 h-4 text-amber-200" />
                         <span>Gửi AI Hoàn Thiện Mô Tả</span>
+                        <span className="ml-1 px-1.5 py-0.5 rounded-md bg-black/30 text-[10px] font-bold text-amber-200">
+                          -1 credit (còn {credits?.chatCredits ?? 0})
+                        </span>
                       </>
                     )}
                   </button>
@@ -1646,12 +2078,36 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           {/* Main Editing Fields */}
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[#24263e]">Tiêu đề bài đăng *</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-[#24263e]">Tiêu đề bài đăng *</label>
+                <button
+                  type="button"
+                  onClick={handleSuggestTitleWithAi}
+                  disabled={isSuggestingTitle || (credits?.chatCredits ?? 0) < 1}
+                  className="text-[11px] font-bold text-amber-800 hover:text-amber-950 bg-amber-100/90 hover:bg-amber-200 px-3 py-1 rounded-xl border border-amber-300 flex items-center gap-1.5 transition cursor-pointer shadow-xs disabled:opacity-50"
+                  title="Sử dụng AI để đặt tiêu đề hấp dẫn chuẩn sàn TMĐT (-1 credit AI chat)"
+                >
+                  {isSuggestingTitle ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-700" />
+                      <span>AI đang tạo tiêu đề...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                      <span>AI Gợi Ý Tiêu Đề</span>
+                      <span className="text-[10px] bg-amber-200/80 text-amber-900 px-1.5 py-0.5 rounded-md font-bold">
+                        -1 credit ({credits?.chatCredits ?? 0})
+                      </span>
+                    </>
+                  )}
+                </button>
+              </div>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="VD: Tủ Lạnh Panasonic 250L Inverter Tiết Kiệm Điện"
+                placeholder="VD: Nồi Cơm Điện BlueStone 1.8L - Hàng Lướt Like New 99%"
                 className="w-full px-4 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
               />
             </div>
@@ -1665,7 +2121,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 rows={6}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Mô tả chi tiết tình trạng máy móc, thời gian sử dụng, phụ kiện kèm theo..."
+                placeholder="Mô tả chi tiết tình trạng máy móc, thời gian sử dụng, phụ kiện kèm theo... (hoặc trả lời 4 câu hỏi bên trên rồi bấm 'Gửi AI Hoàn Thiện Mô Tả' để AI viết bài)"
                 className="w-full px-4 py-3 bg-slate-50 border border-gray-200 rounded-xl text-xs text-slate-800 leading-relaxed focus:outline-none focus:border-[#c34c36]"
               />
               {postMode === 'manual' && (
@@ -1675,73 +2131,180 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[#24263e]">Tình trạng phân loại (Item Condition)</label>
+            {/* Phân loại tình trạng thông minh: Tự động suy luận từ bộ câu hỏi */}
+            <div className="p-3.5 bg-gradient-to-r from-slate-50 via-amber-50/20 to-slate-50 border border-slate-200/90 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-start sm:items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-black text-[#24263e]">Tình trạng phân loại sản phẩm</span>
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-md">
+                      Tự động từ khảo sát
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Hệ thống tự động suy luận theo câu trả lời phía trên để hiển thị huy hiệu trên sàn và định giá.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto">
                 <select
                   value={itemCondition}
                   onChange={(e) => setItemCondition(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                  className="px-3 py-1.5 bg-white border border-gray-300 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36] shadow-2xs cursor-pointer"
+                  title="Bấm để điều chỉnh nếu muốn"
                 >
-                  <option value="NEW">Mới 100% (Nguyên hộp / Chưa qua sử dụng)</option>
-                  <option value="LIKE_NEW">Như mới (Grade A+ 99%, hoạt động hoàn hảo)</option>
-                  <option value="USED_GOOD">Đã qua sử dụng - Hoạt động tốt (Grade A)</option>
-                  <option value="USED_FAIR">Đã qua sử dụng - Có xước nhẹ (Grade B)</option>
+                  <option value="NEW">Mới 100% (Nguyên hộp)</option>
+                  <option value="LIKE_NEW">Như mới (Grade A+ 99%)</option>
+                  <option value="USED_GOOD">Đã qua sử dụng - Tốt (Grade A)</option>
+                  <option value="USED_FAIR">Đã qua sử dụng - Xước nhẹ (Grade B)</option>
                   <option value="USED">Cũ bình thường (Grade C)</option>
                 </select>
               </div>
             </div>
 
-            {/* Thông tin đóng gói GHN */}
-            <div className="pt-2">
-              <span className="text-xs font-bold text-[#24263e] block mb-3">
-                <Truck className="w-4 h-4 inline mr-1 text-blue-600" />
-                Thông tin kiện hàng (Bắt buộc để tính phí vận chuyển GHN)
-              </span>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Trọng lượng (gram) *</label>
-                  <input
-                    type="number"
-                    min="1"
-                    placeholder="VD: 500"
-                    value={shippingWeight}
-                    onChange={(e) => setShippingWeight(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
-                  />
+            {/* Thông tin đóng gói GHN với bộ chọn đơn vị thông minh (kg/g, cm/m) */}
+            <div className="p-4 bg-slate-50/70 border border-slate-200/90 rounded-2xl space-y-3 shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-gray-200/70 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <Truck className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span className="text-xs font-bold text-[#24263e]">
+                    Thông tin kiện hàng giao hàng (Bắt buộc để tính phí GHN)
+                  </span>
                 </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Dài (cm) *</label>
+                <span className="text-[11px] text-slate-400 italic">
+                  * Tự động quy đổi chuẩn BE/GHN: Trọng lượng (gram) • Kích thước (cm)
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
+                {/* Trọng lượng */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-slate-600 uppercase">Trọng lượng *</label>
+                    <div className="flex items-center bg-gray-200/80 rounded-lg p-0.5 text-[10px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => handleWeightUnitSwitch('kg')}
+                        className={`px-2 py-0.5 rounded-md transition cursor-pointer ${weightUnit === 'kg' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                        kg
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleWeightUnitSwitch('g')}
+                        className={`px-2 py-0.5 rounded-md transition cursor-pointer ${weightUnit === 'g' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                        g
+                      </button>
+                    </div>
+                  </div>
                   <input
                     type="number"
-                    min="1"
-                    placeholder="VD: 20"
-                    value={shippingLength}
-                    onChange={(e) => setShippingLength(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                    step={weightUnit === 'kg' ? '0.1' : '1'}
+                    min="0.1"
+                    placeholder={weightUnit === 'kg' ? 'VD: 3.5' : 'VD: 3500'}
+                    value={rawWeightInput}
+                    onChange={(e) => handleWeightChange(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
                   />
+                  {shippingWeight ? (
+                    <span className="text-[10px] font-bold text-emerald-600 block pl-1">
+                      = {Number(shippingWeight).toLocaleString('vi-VN')} gram (chuẩn GHN)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 block pl-1">Nhập cân nặng ({weightUnit})</span>
+                  )}
                 </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Rộng (cm) *</label>
+
+                {/* Chiều dài */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều Dài *</label>
+                    <div className="flex items-center bg-gray-200/80 rounded-lg p-0.5 text-[10px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => handleDimensionUnitSwitch('cm')}
+                        className={`px-2 py-0.5 rounded-md transition cursor-pointer ${dimensionUnit === 'cm' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                        cm
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDimensionUnitSwitch('m')}
+                        className={`px-2 py-0.5 rounded-md transition cursor-pointer ${dimensionUnit === 'm' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                        m
+                      </button>
+                    </div>
+                  </div>
                   <input
                     type="number"
+                    step={dimensionUnit === 'm' ? '0.05' : '1'}
                     min="1"
-                    placeholder="VD: 15"
-                    value={shippingWidth}
-                    onChange={(e) => setShippingWidth(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                    placeholder={dimensionUnit === 'm' ? 'VD: 0.3' : 'VD: 30'}
+                    value={rawLengthInput}
+                    onChange={(e) => handleDimensionChange('length', e.target.value)}
+                    className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
                   />
+                  {shippingLength ? (
+                    <span className="text-[10px] font-bold text-emerald-600 block pl-1">
+                      = {shippingLength} cm
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 block pl-1">Dài ({dimensionUnit})</span>
+                  )}
                 </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Cao (cm) *</label>
+
+                {/* Chiều rộng */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều Rộng *</label>
+                    <span className="text-[10px] font-bold text-slate-400">({dimensionUnit})</span>
+                  </div>
                   <input
                     type="number"
+                    step={dimensionUnit === 'm' ? '0.05' : '1'}
                     min="1"
-                    placeholder="VD: 10"
-                    value={shippingHeight}
-                    onChange={(e) => setShippingHeight(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                    placeholder={dimensionUnit === 'm' ? 'VD: 0.25' : 'VD: 25'}
+                    value={rawWidthInput}
+                    onChange={(e) => handleDimensionChange('width', e.target.value)}
+                    className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
                   />
+                  {shippingWidth ? (
+                    <span className="text-[10px] font-bold text-emerald-600 block pl-1">
+                      = {shippingWidth} cm
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 block pl-1">Rộng ({dimensionUnit})</span>
+                  )}
+                </div>
+
+                {/* Chiều cao */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều Cao *</label>
+                    <span className="text-[10px] font-bold text-slate-400">({dimensionUnit})</span>
+                  </div>
+                  <input
+                    type="number"
+                    step={dimensionUnit === 'm' ? '0.05' : '1'}
+                    min="1"
+                    placeholder={dimensionUnit === 'm' ? 'VD: 0.2' : 'VD: 20'}
+                    value={rawHeightInput}
+                    onChange={(e) => handleDimensionChange('height', e.target.value)}
+                    className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                  />
+                  {shippingHeight ? (
+                    <span className="text-[10px] font-bold text-emerald-600 block pl-1">
+                      = {shippingHeight} cm
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 block pl-1">Cao ({dimensionUnit})</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -1962,7 +2525,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    <span>Định Giá Bằng AI (1 Credit)</span>
+                    <span>{valuationResult ? 'Định Giá Lại Bằng AI (-1 Credit)' : 'Định Giá Bằng AI (-1 Credit)'}</span>
+                    <span className="text-[10px] opacity-80 font-bold bg-black/20 px-1.5 py-0.5 rounded">
+                      Còn: {credits?.valuationCredits ?? 0}
+                    </span>
                   </>
                 )}
               </button>
@@ -2013,11 +2579,30 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     <strong>Lưu ý:</strong> Mức giá trên được AI tính toán độc lập dựa trên tình trạng hao mòn và giá trị thị trường thực tế hiện tại của sản phẩm, không phụ thuộc hoàn toàn vào giá mua gốc mà bạn đã nhập.
                   </p>
                 </div>
-                {typeof originalPriceVnd === 'number' && (originalPriceVnd < valuationResult.fairPriceMin || originalPriceVnd > valuationResult.fairPriceMax * 5) && (
-                  <div className="flex items-start gap-2 bg-rose-50 p-3 rounded-xl border border-rose-200 animate-fadeIn">
-                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                    <p className="text-[11px] text-rose-800 italic leading-relaxed">
-                      <strong>Cảnh báo:</strong> Giá mua gốc ban đầu bạn cung cấp ({formatVND(originalPriceVnd)}) có dấu hiệu bất hợp lý so với giá trị thị trường thực tế. Tuy nhiên, AI đã tự động phân tích và đưa ra mức định giá chuẩn xác dựa trên dữ liệu thật.
+                {typeof originalPriceVnd === 'number' && originalPriceVnd > 0 && (
+                  originalPriceVnd < valuationResult.fairPriceMin * 0.7 || 
+                  originalPriceVnd > valuationResult.fairPriceMax * 2.8
+                ) && (
+                  <div className="p-3.5 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-900 animate-fadeIn shadow-xs space-y-1.5">
+                    <div className="flex items-center gap-2 font-black text-rose-700 text-xs">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>{lang === 'vi' ? 'Giá bạn nhập có vẻ bất hợp lý so với thị trường' : 'Declared price appears unreasonable'}</span>
+                    </div>
+                    <p className="text-xs text-rose-800 leading-relaxed">
+                      {lang === 'vi' ? (
+                        <>
+                          Mức giá mua gốc bạn khai báo ({formatVND(originalPriceVnd)}) có sự chênh lệch lớn so với giá trị thị trường của sản phẩm này (khoảng <strong>{formatVND(valuationResult.fairPriceMin)} - {formatVND(valuationResult.fairPriceMax)}</strong>).
+                        </>
+                      ) : (
+                        <>
+                          Your declared price ({formatVND(originalPriceVnd)}) differs significantly from current market range (around <strong>{formatVND(valuationResult.fairPriceMin)} - {formatVND(valuationResult.fairPriceMax)}</strong>).
+                        </>
+                      )}
+                    </p>
+                    <p className="text-[11px] text-rose-700 font-medium italic">
+                      {lang === 'vi' 
+                        ? `👉 AI đã tự động đối chiếu giá thị trường thực tế và phân tích độ hao mòn qua ảnh để định giá chuẩn xác (${formatVND(valuationResult.suggestedPrice)}) giúp bài đăng dễ bán nhất.`
+                        : `👉 AI automatically referenced realistic market benchmarks and visual wear to suggest a fair selling price (${formatVND(valuationResult.suggestedPrice)}).`}
                     </p>
                   </div>
                 )}
@@ -2077,6 +2662,16 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:border-[#c34c36]"
               />
             </div>
+            {valuationResult && finalPriceVnd > valuationResult.fairPriceMax * 1.3 && (
+              <p className="text-[11px] text-amber-700 font-semibold flex items-center gap-1.5 mt-1.5 animate-fadeIn">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>
+                  {lang === 'vi'
+                    ? `Giá bạn đặt (${formatVND(finalPriceVnd)}) cao hơn mức giá thị trường đề xuất (${formatVND(valuationResult.fairPriceMax)}). Sản phẩm có thể khó bán hoặc mất nhiều thời gian hơn.`
+                    : `Your price (${formatVND(finalPriceVnd)}) is higher than recommended market maximum (${formatVND(valuationResult.fairPriceMax)}).`}
+                </span>
+              </p>
+            )}
 
             {/* High-value threshold notice (> 10,000,000 VND) */}
             {finalPriceVnd >= 10000000 && (
@@ -2407,6 +3002,203 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         </div>
       )}
       {/* No Valuation Credits Modal */}
+      {/* Modal Xác Nhận Dùng AI Quét Ảnh (-1 Credit) */}
+      {showAiScanConfirmModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-amber-200 animate-scaleIn">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-gradient-to-tr from-amber-500 to-[#c34c36] rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-md text-white">
+                <Sparkles className="w-8 h-8 text-amber-200 animate-pulse" />
+              </div>
+              <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[11px] font-black uppercase tracking-wider mb-2 inline-block">
+                Chi Phí: 1 Credit AI Chat
+              </span>
+              <h3 className="text-lg font-black text-slate-900 mb-2">
+                {lang === 'vi' ? 'Xác Nhận Quét Hình Ảnh Bằng AI?' : 'Confirm AI Visual Scan?'}
+              </h3>
+
+              {/* Bảng rà soát thông tin trước khi quét */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-left my-4 space-y-2 text-xs">
+                <div className="flex items-center justify-between py-1 border-b border-slate-200">
+                  <span className="text-slate-500">Danh mục & Loại:</span>
+                  <span className="font-bold text-[#24263e]">
+                    {backendItems.find(i => i.id === selectedItemId)?.name || backendCategories.find(c => c.id === selectedCategoryId)?.name || 'Chưa chọn'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between py-1 border-b border-slate-200">
+                  <span className="text-slate-500">Thương hiệu bạn điền:</span>
+                  <span className="font-bold text-[#c34c36]">{brand ? brand.trim() : 'Chưa điền thương hiệu'}</span>
+                </div>
+                <div className="flex items-center justify-between py-1 border-b border-slate-200">
+                  <span className="text-slate-500">Số lượng ảnh gửi quét:</span>
+                  <span className="font-bold text-slate-700">{photoPreviews.length} ảnh</span>
+                </div>
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-slate-500">Số dư credit của bạn:</span>
+                  <span className="font-bold text-emerald-700">{credits?.chatCredits ?? 0} credit</span>
+                </div>
+              </div>
+
+              {/* Hộp Cảnh Báo Tiêu Tốn Tài Nguyên */}
+              <div className="bg-amber-50/90 border border-amber-300 rounded-2xl p-3.5 text-left mb-6 shadow-2xs">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-amber-950 font-medium leading-relaxed">
+                    {lang === 'vi'
+                      ? 'Lưu ý: Quá trình quét ảnh tiêu tốn tài nguyên AI thực tế. Nếu thông tin bạn nhập (loại máy hoặc thương hiệu) không khớp với ảnh, 1 credit vẫn sẽ bị trừ. Vui lòng đảm bảo thông tin trên là chính xác!'
+                      : 'Note: Visual scanning consumes AI computing power. If your entered info does not match the photos, 1 credit will still be consumed.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex flex-col sm:flex-row gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowAiScanConfirmModal(false)}
+                  className="flex-1 py-3 px-4 rounded-xl font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                >
+                  {lang === 'vi' ? 'Kiểm Tra Lại' : 'Review Again'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAiScanConfirmModal(false);
+                    handleInitPost('ai');
+                  }}
+                  className="flex-1 py-3 px-4 rounded-xl font-black text-xs bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  {lang === 'vi' ? 'Xác Nhận & Quét (-1)' : 'Confirm & Scan (-1)'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Cảnh báo Hình ảnh không khớp (Loại sản phẩm hoặc Thương hiệu) */}
+      {showMismatchModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-rose-200 animate-scaleIn">
+            <div className="p-6 text-center">
+              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border shadow-xs ${
+                mismatchType === 'brand' ? 'bg-amber-100 border-amber-300' : 'bg-rose-100 border-rose-300'
+              }`}>
+                <AlertTriangle className={`w-8 h-8 ${mismatchType === 'brand' ? 'text-amber-600' : 'text-rose-600'}`} />
+              </div>
+              <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider mb-2 inline-block ${
+                mismatchType === 'brand' ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
+              }`}>
+                {mismatchType === 'brand' ? 'AI Vision Phát Hiện Khác Thương Hiệu' : 'AI Vision Phát Hiện Khác Loại Thiết Bị'}
+              </span>
+              <h3 className="text-lg font-black text-slate-900 mb-2">
+                {mismatchType === 'brand' 
+                  ? (lang === 'vi' ? 'Hình ảnh không khớp với Thương hiệu đã nhập!' : 'Image brand mismatch detected!')
+                  : (lang === 'vi' ? 'Hình ảnh không khớp với Loại sản phẩm!' : 'Image product type mismatch detected!')}
+              </h3>
+
+              {/* Thông tin đối chiếu */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-left my-4 space-y-2.5 text-xs">
+                {mismatchType === 'brand' ? (
+                  <>
+                    <div className="flex items-center justify-between py-1 border-b border-slate-200">
+                      <span className="text-slate-500 font-medium">Thương hiệu bạn đã nhập:</span>
+                      <span className="font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">{brand || 'Chưa nhập'}</span>
+                    </div>
+                    {detectedBrand && (
+                      <div className="flex items-center justify-between py-1 border-b border-slate-200">
+                        <span className="text-slate-500 font-medium">Thương hiệu AI nhìn thấy trong ảnh:</span>
+                        <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">{detectedBrand}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-center justify-between py-1 border-b border-slate-200">
+                    <span className="text-slate-500 font-medium">Loại sản phẩm bạn đã chọn:</span>
+                    <span className="font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                      {backendItems.find(i => i.id === selectedItemId)?.name || 'Chưa xác định'}
+                    </span>
+                  </div>
+                )}
+                
+                <div className="pt-1.5 flex items-start gap-2 text-slate-700 leading-relaxed">
+                  <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-[12px] font-medium">
+                    {imageMismatchReason || (lang === 'vi' 
+                      ? 'Hình ảnh bạn tải lên có sự sai lệch với thông tin đã khai báo. Vui lòng kiểm tra lại trước khi tiếp tục.'
+                      : 'The uploaded image conflicts with the declared product information.')}
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-500 mb-6">
+                {lang === 'vi'
+                  ? 'Hệ thống đã hoàn tất lượt quét ảnh và trừ 1 credit AI Chat. Vui lòng điều chỉnh lại thông tin chính xác theo gợi ý bên dưới.'
+                  : 'System scanned images and deducted 1 AI credit. Please adjust your information below.'}
+              </p>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col gap-2">
+                {mismatchType === 'brand' && detectedBrand && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBrand(detectedBrand);
+                      setShowMismatchModal(false);
+                      showToast(lang === 'vi' ? `Đã tự động đổi thương hiệu thành ${detectedBrand}` : `Brand updated to ${detectedBrand}`);
+                    }}
+                    className="w-full py-3 px-4 rounded-xl font-black text-xs bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-95 text-white transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4" />
+                    {lang === 'vi' ? `Đổi thương hiệu thành "${detectedBrand}"` : `Update brand to "${detectedBrand}"`}
+                  </button>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  {mismatchType === 'brand' ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMismatchModal(false);
+                        const brandEl = document.querySelector('input[placeholder*="Philips"]') as HTMLElement;
+                        brandEl?.focus();
+                      }}
+                      className="flex-1 py-3 px-4 rounded-xl font-bold text-xs bg-[#24263e] hover:bg-black text-white transition shadow-sm cursor-pointer"
+                    >
+                      {lang === 'vi' ? 'Nhập Lại Thương Hiệu' : 'Change Brand'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMismatchModal(false);
+                        const itemEl = document.querySelector('select') as HTMLElement;
+                        itemEl?.focus();
+                      }}
+                      className="flex-1 py-3 px-4 rounded-xl font-bold text-xs bg-[#24263e] hover:bg-black text-white transition shadow-sm cursor-pointer"
+                    >
+                      {lang === 'vi' ? 'Chọn Lại Loại Thiết Bị' : 'Change Product Type'}
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMismatchModal(false);
+                      window.scrollTo({ top: 400, behavior: 'smooth' });
+                    }}
+                    className="flex-1 py-3 px-4 rounded-xl font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                  >
+                    {lang === 'vi' ? 'Tải Lại Ảnh Khác' : 'Upload Other Photos'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showNoValuationModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-scaleIn">

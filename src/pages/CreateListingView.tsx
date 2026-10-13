@@ -40,7 +40,7 @@ import {
   UserProfile
 } from '../types';
 import { translations, formatVND } from '../utils/translations';
-import { numberToVietnameseWords, formatVndInput } from '../utils/numberToWords';
+import { numberToVietnameseWords, formatVndInput, cleanVndInput } from '../utils/numberToWords';
 import {
   mediaService,
   postService,
@@ -363,8 +363,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       setBrand(initialDraft.brand || '');
       setModel(initialDraft.model || '');
       if (initialDraft.purchaseYear) setPurchaseYear(initialDraft.purchaseYear);
-      if (initialDraft.originalPriceVnd) setOriginalPriceVnd(initialDraft.originalPriceVnd);
-      if (initialDraft.priceVnd) setFinalPriceVnd(initialDraft.priceVnd);
+      // Khi chỉnh sửa bài đăng đã có: lấy giá bán thực tế của sản phẩm (priceVnd) thay vì giá mua gốc
+      const existingSellingPrice = initialDraft.priceVnd || (initialDraft as any).price || initialDraft.originalPriceVnd || '';
+      if (existingSellingPrice) {
+        setOriginalPriceVnd(Number(existingSellingPrice));
+        setFinalPriceVnd(Number(existingSellingPrice));
+        setIsManualPricingInStep3(true);
+      }
       if (initialDraft.shippingWeight) setShippingWeight(initialDraft.shippingWeight);
       if (initialDraft.shippingLength) setShippingLength(initialDraft.shippingLength);
       if (initialDraft.shippingWidth) setShippingWidth(initialDraft.shippingWidth);
@@ -1450,7 +1455,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       model: model || 'Model',
       purchaseYear,
       priceVnd: finalPriceVnd,
-      originalPriceVnd: finalPriceVnd * 1.3,
+      originalPriceVnd: finalPriceVnd,
       conditionGrade: 'Like New',
       declaredConditionText: itemCondition,
       description: description || 'Mô tả bài đăng đã qua kiểm duyệt AI',
@@ -1491,24 +1496,28 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <h2 className="text-base font-black tracking-wide">
                 {lang === 'vi' ? 'Hệ Thống Đăng Tin & Định Giá AI' : 'AI Listing & Valuation Pipeline'}
               </h2>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 uppercase">
-                Backend Live
-              </span>
             </div>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300 mt-1">
-              <span>Số dư Credit của bạn:</span>
-              <span className="px-2.5 py-0.5 rounded-lg bg-white/10 font-mono font-bold text-amber-300 flex items-center gap-1 border border-white/10">
-                <span>📝 {credits?.postCredits ?? 0}</span>
-                <span className="text-[10px] text-slate-400">LISTING</span>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300 mt-1.5">
+              <span className="text-slate-400 font-medium text-xs">
+                {lang === 'vi' ? 'Số dư Credit:' : 'Available Credits:'}
               </span>
-              <span className="px-2.5 py-0.5 rounded-lg bg-white/10 font-mono font-bold text-cyan-300 flex items-center gap-1 border border-white/10">
-                <span>⚖️ {credits?.valuationCredits ?? 0}</span>
-                <span className="text-[10px] text-slate-400">VALUATION</span>
-              </span>
-              <span className="px-2.5 py-0.5 rounded-lg bg-white/10 font-mono font-bold text-emerald-300 flex items-center gap-1 border border-white/10">
-                <span>🤖 {credits?.chatCredits ?? 0}</span>
-                <span className="text-[10px] text-slate-400">AI CHAT</span>
-              </span>
+              <div className="inline-flex items-center gap-1.5 p-1 bg-white/5 rounded-xl border border-white/10 backdrop-blur-xs">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 font-semibold text-xs">
+                  <FileEdit className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="font-bold">{credits?.postCredits ?? 0}</span>
+                  <span className="text-[10px] text-amber-200/80 font-normal">{lang === 'vi' ? 'Đăng tin' : 'Listing'}</span>
+                </div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-300 font-semibold text-xs">
+                  <Sparkles className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span className="font-bold">{credits?.valuationCredits ?? 0}</span>
+                  <span className="text-[10px] text-sky-200/80 font-normal">{lang === 'vi' ? 'Định giá' : 'Valuation'}</span>
+                </div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-semibold text-xs">
+                  <Bot className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="font-bold">{credits?.chatCredits ?? 0}</span>
+                  <span className="text-[10px] text-emerald-200/80 font-normal">{lang === 'vi' ? 'Trợ lý AI' : 'AI Chat'}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1655,16 +1664,25 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[#24263e]">Giá sản phẩm lúc mua (VNĐ)</label>
+              <label className="text-xs font-bold text-[#24263e]">
+                {initialDraft
+                  ? (lang === 'vi' ? 'Giá bán sản phẩm (VNĐ) *' : 'Selling Price (VND) *')
+                  : (lang === 'vi' ? 'Giá sản phẩm lúc mua (VNĐ)' : 'Original Purchase Price (VND)')}
+              </label>
               <input
                 type="text"
+                inputMode="numeric"
                 value={originalPriceVnd ? formatVndInput(originalPriceVnd.toString()) : ''}
                 onChange={(e) => {
-                  const raw = e.target.value.replace(/\D/g, '');
-                  setOriginalPriceVnd(raw ? Number(raw) : '');
+                  const raw = cleanVndInput(e.target.value);
+                  const numVal = raw ? Number(raw) : '';
+                  setOriginalPriceVnd(numVal);
+                  if (initialDraft && typeof numVal === 'number') {
+                    setFinalPriceVnd(numVal);
+                  }
                 }}
-                placeholder="VD: 5.000.000"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                placeholder={initialDraft ? (lang === 'vi' ? 'VD: 600.000' : 'E.g. 600,000') : (lang === 'vi' ? 'VD: 5.000.000' : 'E.g. 5,000,000')}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-medium text-[#24263e] focus:outline-none focus:border-[#c34c36] tabular-nums"
               />
               {originalPriceVnd !== '' && (
                 <p className="text-[11px] text-emerald-600 font-medium italic">
@@ -1674,17 +1692,19 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               {typeof originalPriceVnd === 'number' && originalPriceVnd > 0 && originalPriceVnd < 10000 && (
                 <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  <span>{lang === 'vi' ? 'Giá bạn nhập có vẻ quá thấp (< 10.000đ). Vui lòng kiểm tra lại để AI định giá chính xác.' : 'Price seems too low (< 10,000 VND). Please verify.'}</span>
+                  <span>{lang === 'vi' ? 'Giá bạn nhập có vẻ quá thấp (< 10.000đ). Vui lòng kiểm tra lại.' : 'Price seems too low (< 10,000 VND). Please verify.'}</span>
                 </p>
               )}
               {typeof originalPriceVnd === 'number' && originalPriceVnd > 100000000 && (
                 <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  <span>{lang === 'vi' ? 'Giá bạn nhập có vẻ bất hợp lý (> 100 triệu). Hãy kiểm tra lại số lượng số 0 để tránh AI định giá sai lệch.' : 'Price seems unusually high (> 100M VND). Please check zeros.'}</span>
+                  <span>{lang === 'vi' ? 'Giá bạn nhập có vẻ bất hợp lý (> 100 triệu). Hãy kiểm tra lại số lượng số 0.' : 'Price seems unusually high (> 100M VND). Please check zeros.'}</span>
                 </p>
               )}
               <p className="text-[10.5px] text-slate-400 italic mt-1 leading-tight">
-                Giá mua gốc chỉ mang tính chất tham khảo. Trợ lý AI sẽ tự động đối chiếu với giá thị trường thực tế của sản phẩm để định giá cho bạn.
+                {initialDraft
+                  ? (lang === 'vi' ? 'Giá bán niêm yết hiện tại của sản phẩm trên sàn SecondLife.' : 'Current listed selling price of this product on SecondLife.')
+                  : (lang === 'vi' ? 'Giá mua gốc chỉ mang tính chất tham khảo. Trợ lý AI sẽ tự động đối chiếu với giá thị trường thực tế của sản phẩm để định giá cho bạn.' : 'Original purchase price is for reference only. AI will estimate fair market price.')}
               </p>
             </div>
           </div>
@@ -2242,8 +2262,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
                 {/* Trọng lượng */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
+                <div className="space-y-1.5 flex flex-col justify-between">
+                  <div className="h-7 flex items-center justify-between">
                     <label className="text-[10px] font-bold text-slate-600 uppercase">Trọng lượng *</label>
                     <div className="flex items-center bg-gray-200/80 rounded-lg p-0.5 text-[10px] font-bold">
                       <button
@@ -2269,20 +2289,22 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     placeholder={weightUnit === 'kg' ? 'VD: 3.5' : 'VD: 3500'}
                     value={rawWeightInput}
                     onChange={(e) => handleWeightChange(e.target.value)}
-                    className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                    className="w-full h-10 px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36] shadow-2xs transition"
                   />
-                  {shippingWeight ? (
-                    <span className="text-[10px] font-bold text-emerald-600 block pl-1">
-                      = {Number(shippingWeight).toLocaleString('vi-VN')} gram (chuẩn GHN)
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-slate-400 block pl-1">Nhập cân nặng ({weightUnit})</span>
-                  )}
+                  <div className="h-5 flex items-center pl-1 text-[10px]">
+                    {shippingWeight ? (
+                      <span className="font-bold text-emerald-600 truncate">
+                        = {Number(shippingWeight).toLocaleString('vi-VN')} gram (chuẩn GHN)
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 truncate">Nhập cân nặng ({weightUnit})</span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Chiều dài */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
+                <div className="space-y-1.5 flex flex-col justify-between">
+                  <div className="h-7 flex items-center justify-between">
                     <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều Dài *</label>
                     <div className="flex items-center bg-gray-200/80 rounded-lg p-0.5 text-[10px] font-bold">
                       <button
@@ -2308,22 +2330,26 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     placeholder={dimensionUnit === 'm' ? 'VD: 0.3' : 'VD: 30'}
                     value={rawLengthInput}
                     onChange={(e) => handleDimensionChange('length', e.target.value)}
-                    className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                    className="w-full h-10 px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36] shadow-2xs transition"
                   />
-                  {shippingLength ? (
-                    <span className="text-[10px] font-bold text-emerald-600 block pl-1">
-                      = {shippingLength} cm
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-slate-400 block pl-1">Dài ({dimensionUnit})</span>
-                  )}
+                  <div className="h-5 flex items-center pl-1 text-[10px]">
+                    {shippingLength ? (
+                      <span className="font-bold text-emerald-600 truncate">
+                        = {shippingLength} cm
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 truncate">Dài ({dimensionUnit})</span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Chiều rộng */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
+                <div className="space-y-1.5 flex flex-col justify-between">
+                  <div className="h-7 flex items-center justify-between">
                     <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều Rộng *</label>
-                    <span className="text-[10px] font-bold text-slate-400">({dimensionUnit})</span>
+                    <span className="px-2 py-0.5 rounded-md bg-gray-200/80 text-slate-600 text-[10px] font-bold">
+                      {dimensionUnit}
+                    </span>
                   </div>
                   <input
                     type="number"
@@ -2332,22 +2358,26 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     placeholder={dimensionUnit === 'm' ? 'VD: 0.25' : 'VD: 25'}
                     value={rawWidthInput}
                     onChange={(e) => handleDimensionChange('width', e.target.value)}
-                    className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                    className="w-full h-10 px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36] shadow-2xs transition"
                   />
-                  {shippingWidth ? (
-                    <span className="text-[10px] font-bold text-emerald-600 block pl-1">
-                      = {shippingWidth} cm
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-slate-400 block pl-1">Rộng ({dimensionUnit})</span>
-                  )}
+                  <div className="h-5 flex items-center pl-1 text-[10px]">
+                    {shippingWidth ? (
+                      <span className="font-bold text-emerald-600 truncate">
+                        = {shippingWidth} cm
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 truncate">Rộng ({dimensionUnit})</span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Chiều cao */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
+                <div className="space-y-1.5 flex flex-col justify-between">
+                  <div className="h-7 flex items-center justify-between">
                     <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều Cao *</label>
-                    <span className="text-[10px] font-bold text-slate-400">({dimensionUnit})</span>
+                    <span className="px-2 py-0.5 rounded-md bg-gray-200/80 text-slate-600 text-[10px] font-bold">
+                      {dimensionUnit}
+                    </span>
                   </div>
                   <input
                     type="number"
@@ -2356,15 +2386,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     placeholder={dimensionUnit === 'm' ? 'VD: 0.2' : 'VD: 20'}
                     value={rawHeightInput}
                     onChange={(e) => handleDimensionChange('height', e.target.value)}
-                    className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                    className="w-full h-10 px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36] shadow-2xs transition"
                   />
-                  {shippingHeight ? (
-                    <span className="text-[10px] font-bold text-emerald-600 block pl-1">
-                      = {shippingHeight} cm
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-slate-400 block pl-1">Cao ({dimensionUnit})</span>
-                  )}
+                  <div className="h-5 flex items-center pl-1 text-[10px]">
+                    {shippingHeight ? (
+                      <span className="font-bold text-emerald-600 truncate">
+                        = {shippingHeight} cm
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 truncate">Cao ({dimensionUnit})</span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -2483,13 +2515,14 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <div className="relative max-w-sm">
                   <input
                     type="text"
-                    value={finalPriceVnd > 0 ? new Intl.NumberFormat('vi-VN').format(finalPriceVnd) : ''}
+                    inputMode="numeric"
+                    value={finalPriceVnd > 0 ? formatVndInput(finalPriceVnd.toString()) : ''}
                     onChange={(e) => {
-                      const numericValue = e.target.value.replace(/\D/g, '');
-                      setFinalPriceVnd(Number(numericValue));
+                      const numericValue = cleanVndInput(e.target.value);
+                      setFinalPriceVnd(numericValue ? Number(numericValue) : 0);
                     }}
                     placeholder="VD: 500.000"
-                    className="w-full pl-4 pr-12 py-3 rounded-xl border border-slate-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 outline-none font-black text-slate-800 transition-all"
+                    className="w-full pl-4 pr-12 py-3 rounded-xl border border-slate-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 outline-none font-black text-slate-800 transition-all tabular-nums"
                   />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">đ</span>
                 </div>
@@ -2714,12 +2747,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             <div className="relative">
               <input
                 type="text"
-                value={finalPriceVnd > 0 ? new Intl.NumberFormat('vi-VN').format(finalPriceVnd) : ''}
+                inputMode="numeric"
+                value={finalPriceVnd > 0 ? formatVndInput(finalPriceVnd.toString()) : ''}
                 onChange={(e) => {
-                  const numericValue = e.target.value.replace(/\D/g, '');
-                  setFinalPriceVnd(Number(numericValue));
+                  const numericValue = cleanVndInput(e.target.value);
+                  setFinalPriceVnd(numericValue ? Number(numericValue) : 0);
                 }}
-                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:border-[#c34c36]"
+                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:border-[#c34c36] tabular-nums"
               />
             </div>
             {valuationResult && finalPriceVnd > valuationResult.fairPriceMax * 1.3 && (

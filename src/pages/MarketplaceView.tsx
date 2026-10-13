@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, ShieldCheck, ArrowUpDown } from 'lucide-react';
+import { Search, ShieldCheck, Sparkles, ArrowUpDown } from 'lucide-react';
 import { Listing, ItemCategory, ConditionGrade, Language } from '../types';
 import { translations } from '../utils/translations';
 import { ShowroomLobby3D } from '../components/3d/ShowroomLobby3D';
@@ -150,8 +150,8 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
                 : 'bg-[#FFFFFF] text-[#24263e]/75 border-slate-200 hover:bg-[#faf8f5]'
             }`}
           >
-            <ShieldCheck className={`w-3.5 h-3.5 ${verifiedOnly ? 'text-white' : 'text-[#24263e]'}`} />
-            <span>{lang === 'vi' ? 'Có Kiểm Định Hub' : 'Inspected Hub'}</span>
+            <Sparkles className={`w-3.5 h-3.5 ${verifiedOnly ? 'text-amber-300' : 'text-[#24263e]'}`} />
+            <span>{lang === 'vi' ? 'Đã Kiểm Duyệt AI' : 'AI Verified'}</span>
           </button>
 
           <div className="flex items-center gap-1 bg-[#FFFFFF] border border-slate-200 rounded-lg px-2.5 py-1 text-[#24263e] text-[11px]">

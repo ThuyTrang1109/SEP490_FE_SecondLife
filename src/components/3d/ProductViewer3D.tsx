@@ -613,7 +613,7 @@ export const ProductViewer3D: React.FC<ProductViewer3DProps> = ({ listing, lang,
             <div className="flex items-center justify-between">
               <span className="inline-flex items-center gap-1 text-[11px] font-bold text-white uppercase bg-gradient-to-r from-[#c34c36] to-[#fce5da] px-2 py-0.5 rounded shadow-sm">
                 <ShieldCheck className="w-3 h-3" />
-                <span>SecondLife Hub Verified</span>
+                <span>SecondLife AI Verified</span>
               </span>
               <button
                 onClick={() => setActiveHotspot(null)}

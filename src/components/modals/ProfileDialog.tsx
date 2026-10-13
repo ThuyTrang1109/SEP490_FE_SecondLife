@@ -170,7 +170,13 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
   // Seller registration & switching states
   const [isSellerRegistered, setIsSellerRegistered] = useState<boolean>(
-    Boolean(currentUser.isSellerRegistered || currentUser.role === 'seller')
+    Boolean(
+      currentUser.isSellerRegistered ||
+      currentUser.role === 'seller' ||
+      currentUser.shopName ||
+      (currentUser.id && localStorage.getItem(`seller_registered_${currentUser.id}`) === 'true') ||
+      (currentUser.email && localStorage.getItem(`seller_registered_${currentUser.email}`) === 'true')
+    )
   );
   const [shopName, setShopName] = useState(
     currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : '')
@@ -486,7 +492,14 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       if (currentUser.streetAddress) {
         setUserStreetAddress(currentUser.streetAddress || '');
       }
-      setIsSellerRegistered(Boolean(currentUser.isSellerRegistered || currentUser.role === 'seller'));
+      const isKnownSeller = Boolean(
+        currentUser.isSellerRegistered ||
+        currentUser.role === 'seller' ||
+        currentUser.shopName ||
+        (currentUser.id && localStorage.getItem(`seller_registered_${currentUser.id}`) === 'true') ||
+        (currentUser.email && localStorage.getItem(`seller_registered_${currentUser.email}`) === 'true')
+      );
+      setIsSellerRegistered(isKnownSeller);
       setShopName(currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop'));
       setSellerPhone(currentUser.phone || '');
       setPickupAddress(currentUser.pickupAddress || currentUser.address || '');
@@ -551,8 +564,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             }
             if (verif.status === 'RESUBMIT_REQUIRED') {
               setShowSellerRegistrationForm(true);
-            } else if (['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(verif.status)) {
+            } else if (['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING', 'APPROVED'].includes(verif.status)) {
               setShowSellerRegistrationForm(false);
+              setIsSellerRegistered(true);
+              if (currentUser?.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
+              if (currentUser?.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
             }
           }
         })
@@ -2140,19 +2156,103 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    {lang === 'vi' ? 'Đăng Ký Thành Người Bán (Seller Center)' : 'Seller Registration & Hub Onboarding'}
+                    {lang === 'vi' ? 'Hồ Sơ Gian Hàng & Định Danh Người Bán' : 'Seller Center & Store Profile'}
                   </h4>
-                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-50 text-[#24263e] border border-rose-200">
-                    {currentUser.role === 'seller' || isSellerRegistered
-                      ? (lang === 'vi' ? 'Đã Kích Hoạt Người Bán' : 'Seller Active')
-                      : (lang === 'vi' ? 'Chưa Kích Hoạt' : 'Not Registered')}
+                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                    currentUser.role === 'seller'
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      : 'bg-blue-100 text-blue-800 border border-blue-200'
+                  }`}>
+                    {lang === 'vi' ? 'Đang hoạt động: ' : 'Active: '}
+                    <strong>{currentUser.role === 'seller' ? (lang === 'vi' ? 'Người Bán' : 'Seller') : (lang === 'vi' ? 'Người Mua' : 'Buyer')}</strong>
                   </span>
                 </div>
                 <p className="text-xs text-slate-500">
                   {lang === 'vi'
-                    ? 'Đăng ký thông tin gian hàng và địa chỉ kho lấy hàng để bắt đầu đăng bán thiết bị, bưu tá đến tận nơi nhận hàng giao Hub kiểm định 48 bước và nhận tiền bảo lãnh qua Escrow.'
-                    : 'Register your store profile and warehouse pickup location to start listing appliances, with doorstep courier pickup for 48-point Hub inspection and secure Escrow payouts.'}
+                    ? 'Quản lý thông tin gian hàng và địa chỉ kho lấy hàng để đăng bán thiết bị qua Hub kiểm định 48 bước và nhận tiền bảo lãnh qua Escrow.'
+                    : 'Manage your store profile and warehouse pickup location for 48-point Hub inspection and secure Escrow payouts.'}
                 </p>
+              </div>
+
+              {/* Banner hiển thị vai trò đang hoạt động & Nút chuyển đổi vai trò */}
+              <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                currentUser.role === 'seller'
+                  ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                  : 'bg-blue-50/70 border-blue-200 text-blue-950'
+              }`}>
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                    currentUser.role === 'seller' ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white'
+                  }`}>
+                    <Store className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        {lang === 'vi' ? 'Vai trò đang chọn:' : 'Current Role:'}
+                      </span>
+                      <span className={`text-xs font-black px-2 py-0.5 rounded-md ${
+                        currentUser.role === 'seller' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {currentUser.role === 'seller'
+                          ? (lang === 'vi' ? 'Người Bán (Seller)' : 'Seller')
+                          : (lang === 'vi' ? 'Người Mua (Buyer)' : 'Buyer')}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      {currentUser.role === 'seller'
+                        ? (lang === 'vi' ? 'Bạn đang ở giao diện Người Bán (quản lý gian hàng, đăng tin và đơn hàng).' : 'You are in Seller mode.')
+                        : (lang === 'vi' ? 'Bạn đang ở giao diện Người Mua (tìm kiếm mua sắm và theo dõi đơn mua).' : 'You are in Buyer mode.')}
+                    </p>
+                  </div>
+                </div>
+                {isSellerRegistered && (
+                  <div className="shrink-0 flex items-center gap-2">
+                    {currentUser.role === 'seller' ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
+                          if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
+                          setIsSellerRegistered(true);
+                          setShowSellerRegistrationForm(false);
+                          onRoleChange('buyer');
+                          onUpdateProfile({ ...currentUser, role: 'buyer', isSellerRegistered: true });
+                          setSellerFormSuccess(
+                            lang === 'vi'
+                              ? 'Đã chuyển sang vai trò Người Mua (Buyer).'
+                              : 'Switched to Buyer role.'
+                          );
+                          setTimeout(() => setSellerFormSuccess(null), 3000);
+                        }}
+                        className="px-3.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer shadow-xs whitespace-nowrap"
+                      >
+                        {lang === 'vi' ? 'Chuyển về Người Mua' : 'Switch to Buyer'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
+                          if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
+                          setIsSellerRegistered(true);
+                          setShowSellerRegistrationForm(false);
+                          onRoleChange('seller');
+                          onUpdateProfile({ ...currentUser, role: 'seller', isSellerRegistered: true });
+                          setSellerFormSuccess(
+                            lang === 'vi'
+                              ? 'Đã chuyển sang vai trò Người Bán (Seller).'
+                              : 'Switched to Seller role.'
+                          );
+                          setTimeout(() => setSellerFormSuccess(null), 3000);
+                        }}
+                        className="px-3.5 py-1.5 bg-[#24263e] hover:bg-[#343754] text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs whitespace-nowrap"
+                      >
+                        {lang === 'vi' ? 'Chuyển về Người Bán' : 'Switch to Seller'}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Success Notification */}
@@ -2170,7 +2270,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <div className="flex items-center gap-2">
                       <Store className="w-4 h-4 text-[#24263e]" />
                       <span className="text-xs font-bold text-slate-900">
-                        {lang === 'vi' ? 'Hồ Sơ Gian Hàng Người Bán Của Bạn' : 'Your Seller Store Profile'}
+                        {lang === 'vi' ? 'Hồ Sơ Gian Hàng Của Bạn' : 'Your Seller Store Profile'}
                       </span>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                         currentUser.role === 'seller' || currentUser.kycStatus === 'verified' || existingVerification?.status === 'APPROVED'
@@ -2193,12 +2293,16 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       </span>
                     </div>
                     <div className="flex items-center gap-3">
-                      {currentUser.role === 'seller' && (
+                      {currentUser.role === 'seller' ? (
                         <button
                           type="button"
                           onClick={() => {
+                            if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
+                            if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
+                            setIsSellerRegistered(true);
+                            setShowSellerRegistrationForm(false);
                             onRoleChange('buyer');
-                            onUpdateProfile({ ...currentUser, role: 'buyer' });
+                            onUpdateProfile({ ...currentUser, role: 'buyer', isSellerRegistered: true });
                             setSellerFormSuccess(
                               lang === 'vi'
                                 ? 'Đã chuyển sang vai trò Người Mua (Buyer).'
@@ -2209,6 +2313,27 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           className="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
                         >
                           {lang === 'vi' ? 'Chuyển về Người Mua' : 'Switch to Buyer'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
+                            if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
+                            setIsSellerRegistered(true);
+                            setShowSellerRegistrationForm(false);
+                            onRoleChange('seller');
+                            onUpdateProfile({ ...currentUser, role: 'seller', isSellerRegistered: true });
+                            setSellerFormSuccess(
+                              lang === 'vi'
+                                ? 'Đã chuyển sang vai trò Người Bán (Seller).'
+                                : 'Switched to Seller role.'
+                            );
+                            setTimeout(() => setSellerFormSuccess(null), 3000);
+                          }}
+                          className="text-xs font-bold text-[#c34c36] hover:text-[#24263e] cursor-pointer"
+                        >
+                          {lang === 'vi' ? 'Chuyển về Người Bán' : 'Switch to Seller'}
                         </button>
                       )}
                       {!isPendingReview && (

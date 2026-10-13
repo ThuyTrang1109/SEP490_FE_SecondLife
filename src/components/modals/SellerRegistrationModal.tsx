@@ -94,7 +94,6 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   }
 
   const isAlreadySeller = currentUser.role === 'seller';
-  const isRegistered = Boolean(currentUser.isSellerRegistered || isAlreadySeller);
 
   // Form State
   const [shopName, setShopName] = useState(
@@ -139,6 +138,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   // Onboarding Shop Email & OTP Verification States
   const [shopEmail, setShopEmail] = useState<string>(currentUser.email || '');
   const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
+  const [isVerifyingBeforeSubmit, setIsVerifyingBeforeSubmit] = useState(false);
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [otpCountdown, setOtpCountdown] = useState(0);
   const [isSubmittingOtp, setIsSubmittingOtp] = useState(false);
@@ -163,14 +163,24 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     return () => clearInterval(timer);
   }, [otpCountdown]);
 
+  // Verification state & registration check
+  const [existingVerification, setExistingVerification] = useState<SellerVerificationResponseDto | null>(null);
+
+  const isRegistered = Boolean(
+    currentUser.isSellerRegistered ||
+    isAlreadySeller ||
+    currentUser.shopName ||
+    (currentUser.id && localStorage.getItem(`seller_registered_${currentUser.id}`) === 'true') ||
+    (currentUser.email && localStorage.getItem(`seller_registered_${currentUser.email}`) === 'true') ||
+    (existingVerification && ['APPROVED', 'SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(existingVerification.status))
+  );
+
   // UI state
   const [showForm, setShowForm] = useState(!isRegistered);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFaceScannerOpen, setIsFaceScannerOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-
-  const [existingVerification, setExistingVerification] = useState<SellerVerificationResponseDto | null>(null);
 
   const verStatus = existingVerification?.status || (currentUser.kycStatus === 'pending' ? 'NEEDS_REVIEW' : null);
   const isPendingReview = verStatus === 'SUBMITTED' || verStatus === 'EKYC_PENDING' || verStatus === 'NEEDS_REVIEW' || verStatus === 'PENDING';
@@ -484,8 +494,12 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     }
   }, [isOpen]);
 
+  const DRAFT_KEY = `seller_reg_draft_${currentUser?.id || 'default'}`;
+
+  // Restore draft on open (or fallback to currentUser profile)
   useEffect(() => {
-    if (currentUser) {
+    if (isOpen && currentUser) {
+      // 1. Initial values from currentUser
       setShopName(currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop'));
       setSellerPhone(currentUser.phone || '');
       setPickupAddress(currentUser.pickupAddress || currentUser.address || '');
@@ -494,8 +508,101 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
       if (currentUser.bankAccount?.accountNumber) setSellerAccountNumber(currentUser.bankAccount.accountNumber);
       if (currentUser.bankAccount?.accountHolder) setSellerAccountHolder(currentUser.bankAccount.accountHolder);
       setShowForm(!Boolean(currentUser.isSellerRegistered || currentUser.role === 'seller'));
-    }
 
+      // 2. Restore saved draft if user previously typed in the form
+      try {
+        const saved = localStorage.getItem(DRAFT_KEY);
+        if (saved) {
+          const d = JSON.parse(saved);
+          if (d.shopName) setShopName(d.shopName);
+          if (d.sellerPhone) setSellerPhone(d.sellerPhone);
+          if (d.pickupAddress) setPickupAddress(d.pickupAddress);
+          if (d.streetAddress) setStreetAddress(d.streetAddress);
+          if (d.selectedProvinceId) {
+            setSelectedProvinceId(d.selectedProvinceId);
+            shippingService.getWards(d.selectedProvinceId)
+              .then((wList) => setWards(Array.isArray(wList) ? wList : []))
+              .catch(() => {});
+          }
+          if (d.selectedWardId) setSelectedWardId(d.selectedWardId);
+          if (d.idCardNumber) setIdCardNumber(d.idCardNumber);
+          if (d.sellerBankName) setSellerBankName(d.sellerBankName);
+          if (d.sellerAccountNumber) setSellerAccountNumber(d.sellerAccountNumber);
+          if (d.sellerAccountHolder) setSellerAccountHolder(d.sellerAccountHolder);
+          if (d.docFrontUrl) {
+            setDocFrontUrl(d.docFrontUrl);
+            setFrontPreview(d.docFrontUrl);
+          } else if (d.frontPreview) {
+            setFrontPreview(d.frontPreview);
+          }
+          if (d.docBackUrl) {
+            setDocBackUrl(d.docBackUrl);
+            setBackPreview(d.docBackUrl);
+          } else if (d.backPreview) {
+            setBackPreview(d.backPreview);
+          }
+          if (d.selfieUrl) {
+            setSelfieUrl(d.selfieUrl);
+            setSelfiePreview(d.selfieUrl);
+          } else if (d.selfiePreview) {
+            setSelfiePreview(d.selfiePreview);
+          }
+          if (d.isEmailVerifiedForOnboarding) setIsEmailVerifiedForOnboarding(true);
+        }
+      } catch (e) {
+        console.warn('Error restoring seller draft:', e);
+      }
+    }
+  }, [isOpen, currentUser, DRAFT_KEY]);
+
+  // Auto-save form draft whenever any field changes
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      const draft = {
+        shopName,
+        sellerPhone,
+        pickupAddress,
+        streetAddress,
+        selectedProvinceId,
+        selectedWardId,
+        idCardNumber,
+        sellerBankName,
+        sellerAccountNumber,
+        sellerAccountHolder,
+        docFrontUrl,
+        frontPreview: frontPreview?.startsWith('http') || frontPreview?.startsWith('data:') ? frontPreview : '',
+        docBackUrl,
+        backPreview: backPreview?.startsWith('http') || backPreview?.startsWith('data:') ? backPreview : '',
+        selfieUrl,
+        selfiePreview: selfiePreview?.startsWith('http') || selfiePreview?.startsWith('data:') ? selfiePreview : '',
+        isEmailVerifiedForOnboarding,
+      };
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    } catch {}
+  }, [
+    isOpen,
+    shopName,
+    sellerPhone,
+    pickupAddress,
+    streetAddress,
+    selectedProvinceId,
+    selectedWardId,
+    idCardNumber,
+    sellerBankName,
+    sellerAccountNumber,
+    sellerAccountHolder,
+    docFrontUrl,
+    frontPreview,
+    docBackUrl,
+    backPreview,
+    selfieUrl,
+    selfiePreview,
+    isEmailVerifiedForOnboarding,
+    DRAFT_KEY
+  ]);
+
+  useEffect(() => {
     if (isOpen) {
       sellerService.getMyVerification()
         .then((verif) => {
@@ -516,8 +623,10 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
             }
             if (verif.status === 'RESUBMIT_REQUIRED') {
               setShowForm(true);
-            } else if (['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(verif.status)) {
+            } else if (['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING', 'APPROVED'].includes(verif.status)) {
               setShowForm(false);
+              if (currentUser?.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
+              if (currentUser?.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
             }
           }
         })
@@ -619,6 +728,10 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
       await shippingService.sendSellerOnboardingEmailCode();
       setHasSentOtp(true);
       setOtpCountdown(60);
+      setOtpDigits(['', '', '', '', '', '']);
+      setOtpError(null);
+      setIsVerifyingBeforeSubmit(false);
+      setIsOtpModalOpen(true);
       setOtpSentSuccess(
         lang === 'vi'
           ? `Đã gửi mã xác thực 6 số đến ${targetEmail}. Vui lòng kiểm tra hộp thư (hoặc mục Spam).`
@@ -807,6 +920,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         setOtpCountdown(60);
         setOtpDigits(['', '', '', '', '', '']);
         setOtpError(null);
+        setIsVerifyingBeforeSubmit(true);
         setIsOtpModalOpen(true);
         setIsSubmitting(false);
         setUploadProgressMsg(null);
@@ -939,6 +1053,9 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
             ? 'Hồ sơ đã được gửi thành công! Kỹ sư Hub & Hệ thống sẽ thẩm định trong vòng 24 - 48 giờ.'
             : 'Application submitted! Will be reviewed in 24 - 48 hours.'
         );
+        try {
+          localStorage.removeItem(DRAFT_KEY);
+        } catch {}
       }
 
       setTimeout(() => {
@@ -965,10 +1082,18 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
       await shippingService.verifySellerOnboardingEmailCode(code);
       setIsEmailVerifiedForOnboarding(true);
       setIsOtpModalOpen(false);
-      setSuccessMsg(
-        lang === 'vi' ? 'Xác thực Email Shop thành công! Đang gửi hồ sơ eKYC...' : 'Email verified! Submitting eKYC...'
-      );
-      await doSubmitEkyc(savedImageUrls.front, savedImageUrls.back, savedImageUrls.selfie);
+      if (isVerifyingBeforeSubmit && savedImageUrls.front) {
+        setSuccessMsg(
+          lang === 'vi' ? 'Xác thực Email Shop thành công! Đang gửi hồ sơ eKYC...' : 'Email verified! Submitting eKYC...'
+        );
+        await doSubmitEkyc(savedImageUrls.front, savedImageUrls.back, savedImageUrls.selfie);
+      } else {
+        setOtpSentSuccess(
+          lang === 'vi'
+            ? 'Xác thực email thành công! Bạn có thể tiếp tục hoàn thành form đăng ký bên dưới.'
+            : 'Email verified! You can continue completing the registration form below.'
+        );
+      }
     } catch (err: any) {
       setOtpError(err.message || (lang === 'vi' ? 'Mã OTP không đúng hoặc đã hết hạn.' : 'Invalid or expired OTP code.'));
     } finally {
@@ -1081,6 +1206,71 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
           {/* VIEW: THÔNG TIN GIAN HÀNG ĐÃ ĐĂNG KÝ */}
           {isRegistered && !showForm && (
             <div className="p-5 rounded-3xl bg-slate-50 border border-gray-200 space-y-4 animate-in fade-in">
+              {/* Active Role Status Notification Banner */}
+              <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                currentUser.role === 'seller'
+                  ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                  : 'bg-blue-50/70 border-blue-200 text-blue-950'
+              }`}>
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                    currentUser.role === 'seller' ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white'
+                  }`}>
+                    <Store className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        {lang === 'vi' ? 'Vai trò đang chọn:' : 'Current Role:'}
+                      </span>
+                      <span className={`text-xs font-black px-2 py-0.5 rounded-md ${
+                        currentUser.role === 'seller' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {currentUser.role === 'seller'
+                          ? (lang === 'vi' ? 'Người Bán (Seller)' : 'Seller')
+                          : (lang === 'vi' ? 'Người Mua (Buyer)' : 'Buyer')}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      {currentUser.role === 'seller'
+                        ? (lang === 'vi' ? 'Bạn đang ở giao diện Người Bán (quản lý gian hàng, đăng tin và đơn hàng).' : 'You are in Seller mode.')
+                        : (lang === 'vi' ? 'Bạn đang ở giao diện Người Mua (tìm kiếm mua sắm và theo dõi đơn mua).' : 'You are in Buyer mode.')}
+                    </p>
+                  </div>
+                </div>
+                <div className="shrink-0 flex items-center gap-2">
+                  {currentUser.role === 'seller' ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
+                        if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
+                        setShowForm(false);
+                        onRoleChange('buyer');
+                        onUpdateProfile({ ...currentUser, role: 'buyer', isSellerRegistered: true });
+                      }}
+                      className="px-3.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer shadow-xs whitespace-nowrap"
+                    >
+                      {lang === 'vi' ? 'Chuyển về Người Mua' : 'Switch to Buyer'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
+                        if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
+                        setShowForm(false);
+                        onRoleChange('seller');
+                        onUpdateProfile({ ...currentUser, role: 'seller', isSellerRegistered: true });
+                      }}
+                      className="px-3.5 py-1.5 bg-[#24263e] hover:bg-[#343754] text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs whitespace-nowrap"
+                    >
+                      {lang === 'vi' ? 'Chuyển về Người Bán' : 'Switch to Seller'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div className="flex items-center justify-between border-b border-gray-200/80 pb-3">
                 <div className="flex items-center gap-2.5">
                   <Store className="w-4 h-4 text-[#24263e]" />
@@ -1106,22 +1296,24 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                   </span>
                 </div>
 
-                {!isPendingReview && (
-                  <button
-                    type="button"
-                    onClick={() => setShowForm(true)}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#24263e] hover:underline cursor-pointer"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>
-                      {isResubmitRequired
-                        ? (lang === 'vi' ? 'Cập nhật & Nộp lại' : 'Update & Resubmit')
-                        : isRejected
-                          ? (lang === 'vi' ? 'Đăng ký lại hồ sơ mới' : 'Reapply')
-                          : (lang === 'vi' ? 'Chỉnh sửa thông tin' : 'Edit Info')}
-                    </span>
-                  </button>
-                )}
+                <div className="flex items-center gap-3">
+                  {!isPendingReview && (
+                    <button
+                      type="button"
+                      onClick={() => setShowForm(true)}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-[#24263e] hover:underline cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>
+                        {isResubmitRequired
+                          ? (lang === 'vi' ? 'Cập nhật & Nộp lại' : 'Update & Resubmit')
+                          : isRejected
+                            ? (lang === 'vi' ? 'Đăng ký lại hồ sơ mới' : 'Reapply')
+                            : (lang === 'vi' ? 'Chỉnh sửa thông tin' : 'Edit Info')}
+                      </span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
@@ -1382,58 +1574,40 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     </button>
                   </div>
 
-                  {/* Inline OTP input when not yet verified */}
+                  {/* Trạng thái xác thực email gian hàng */}
                   {!isEmailVerifiedForOnboarding && hasSentOtp && (
-                    <div className="p-3 bg-white rounded-xl border border-amber-200 space-y-2 animate-in fade-in">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-bold text-slate-700">
-                          {lang === 'vi' ? 'Nhập mã xác thực OTP 6 số đã nhận qua email:' : 'Enter 6-digit OTP code:'}
-                        </span>
-                        {otpCountdown > 0 && (
-                          <span className="text-[10px] text-slate-400">
-                            {lang === 'vi' ? `Thời gian: ${otpCountdown}s` : `${otpCountdown}s remaining`}
+                    <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 animate-in fade-in">
+                      <div className="flex items-start gap-2">
+                        <Mail className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="text-xs">
+                          <span className="font-bold text-[#24263e] block">
+                            {lang === 'vi' ? 'Đã gửi mã xác thực đến email của bạn' : 'Verification code sent'}
                           </span>
-                        )}
+                          <span className="text-[11px] text-slate-500">
+                            {lang === 'vi' ? 'Bấm nút để mở lại bảng nhập mã xác thực OTP 6 số' : 'Click button to enter 6-digit OTP code'}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          maxLength={6}
-                          value={inlineOtpCode}
-                          onChange={(e) => setInlineOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                          placeholder="Ví dụ: 123456"
-                          className="flex-1 px-3 py-2 rounded-xl border border-gray-300 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs font-mono tracking-widest text-slate-900 bg-slate-50"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleVerifyOtpInline}
-                          disabled={isSubmittingOtp || inlineOtpCode.length !== 6}
-                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0"
-                        >
-                          {isSubmittingOtp ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                          )}
-                          <span>{lang === 'vi' ? 'Xác Nhận OTP' : 'Verify OTP'}</span>
-                        </button>
-                      </div>
-
-                      {otpError && (
-                        <p className="text-[11px] text-rose-600 font-medium flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3 shrink-0" />
-                          <span>{otpError}</span>
-                        </p>
-                      )}
-                      {otpSentSuccess && (
-                        <p className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3 shrink-0" />
-                          <span>{otpSentSuccess}</span>
-                        </p>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsVerifyingBeforeSubmit(false);
+                          setIsOtpModalOpen(true);
+                        }}
+                        className="px-3.5 py-1.5 bg-[#24263e] hover:bg-black text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer shadow-2xs"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-300" />
+                        <span>{lang === 'vi' ? 'Nhập mã xác thực' : 'Enter OTP Code'}</span>
+                      </button>
                     </div>
+                  )}
+
+                  {otpSentSuccess && (
+                    <p className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 shrink-0" />
+                      <span>{otpSentSuccess}</span>
+                    </p>
                   )}
 
                   {isEmailVerifiedForOnboarding && (
@@ -1958,9 +2132,13 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                 {shopEmail || currentUser?.email}
               </p>
               <p className="text-[11px] text-slate-400 mt-1">
-                {lang === 'vi'
-                  ? 'Theo quy định của SecondLife, email Shop cần được xác thực trước khi gửi hồ sơ eKYC.'
-                  : 'Shop email must be verified before submitting eKYC.'}
+                {isVerifyingBeforeSubmit
+                  ? (lang === 'vi'
+                    ? 'Theo quy định của SecondLife, email Shop cần được xác thực trước khi gửi hồ sơ eKYC.'
+                    : 'Shop email must be verified before submitting eKYC.')
+                  : (lang === 'vi'
+                    ? 'Nhập mã 6 số để xác thực email gian hàng và tiếp tục điền form đăng ký.'
+                    : 'Enter 6 digits to verify shop email and continue registration.')}
               </p>
             </div>
 
@@ -2038,12 +2216,20 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
               {isSubmittingOtp ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>{lang === 'vi' ? 'Đang xác thực & Nộp eKYC...' : 'Verifying & Submitting...'}</span>
+                  <span>
+                    {isVerifyingBeforeSubmit
+                      ? (lang === 'vi' ? 'Đang xác thực & Nộp eKYC...' : 'Verifying & Submitting...')
+                      : (lang === 'vi' ? 'Đang xác thực OTP...' : 'Verifying OTP...')}
+                  </span>
                 </>
               ) : (
                 <>
                   <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  <span>{lang === 'vi' ? 'Xác Thực OTP & Nộp eKYC' : 'Verify OTP & Submit eKYC'}</span>
+                  <span>
+                    {isVerifyingBeforeSubmit
+                      ? (lang === 'vi' ? 'Xác Thực OTP & Nộp eKYC' : 'Verify OTP & Submit eKYC')
+                      : (lang === 'vi' ? 'Xác Nhận & Tiếp Tục Làm Form' : 'Verify & Continue Form')}
+                  </span>
                 </>
               )}
             </button>

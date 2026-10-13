@@ -37,17 +37,46 @@ export const walletService = {
    * GET /api/v1/wallets/me/transactions
    */
   async getTransactionHistory(): Promise<WalletTransaction[]> {
-    const response = await request<any>('/v1/wallets/me/transactions?page=0&size=50', {
+    const response = await request<any>('/v1/wallets/me/transactions?page=0&size=50&sort=createdAt,desc', {
       method: 'GET',
       requiresAuth: true,
     });
     const data = (response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
       : response;
-      
-    if (data && Array.isArray(data.content)) {
-      return data.content as WalletTransaction[];
+
+    let list: any[] = [];
+    if (Array.isArray(data)) {
+      list = data;
+    } else if (data && Array.isArray(data.items)) {
+      list = data.items;
+    } else if (data && Array.isArray(data.content)) {
+      list = data.content;
+    } else if (data && data.data && Array.isArray(data.data.items)) {
+      list = data.data.items;
+    } else if (data && data.data && Array.isArray(data.data.content)) {
+      list = data.data.content;
+    } else if (data && data.data && Array.isArray(data.data)) {
+      list = data.data;
     }
-    return Array.isArray(data) ? data : [];
+
+    return list
+      .map((item: any) => ({
+        ...item,
+        amount: Number(item.amount ?? 0),
+        status: item.status || 'SUCCESS',
+        description: item.description || (
+          item.type === 'DEPOSIT' ? 'Nạp tiền vào ví (VietQR)' :
+          item.type === 'PAYMENT' ? 'Thanh toán mua gói / dịch vụ' :
+          item.type === 'EARNING' ? 'Tiền bán hàng Escrow giải ngân' :
+          item.type === 'REFUND' ? 'Hoàn tiền bảo lãnh Escrow' :
+          item.type === 'WITHDRAW' ? 'Rút tiền về ngân hàng' : 'Biến động số dư ví'
+        ),
+      }))
+      .sort((a, b) => {
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return timeB - timeA;
+      }) as WalletTransaction[];
   },
 };

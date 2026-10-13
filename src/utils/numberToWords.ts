@@ -65,8 +65,42 @@ export function numberToVietnameseWords(num: number): string {
     return words + ' đồng';
 }
 
-export function formatVndInput(value: string): string {
-    const raw = value.replace(/\D/g, '');
+/**
+ * Làm sạch và chuyển đổi input tiền VNĐ:
+ * - Khắc phục lỗi khi máy đang ở chế độ bàn phím tiếng Việt (Windows Vietnamese Keyboard)
+ *   khiến hàng phím số 1-0 bị gõ ra ký tự ă, â, ê, ô, đ hoặc dấu thanh
+ * - Tự động ánh xạ về các chữ số tương ứng 0-9
+ * - Loại bỏ toàn bộ ký tự không phải chữ số
+ */
+export function cleanVndInput(value: string | number | null | undefined): string {
+    if (value === null || value === undefined) return '';
+    let str = value.toString();
+
+    // Map các ký tự do bàn phím tiếng Việt gõ ra trên hàng phím số
+    str = str
+        .replace(/[ăĂ]/g, '1')
+        .replace(/[âÂ]/g, '2')
+        .replace(/[êÊ]/g, '3')
+        .replace(/[ôÔ]/g, '4')
+        .replace(/[đĐ]/g, '0');
+
+    // Map các dấu thanh có thể xuất hiện khi gõ phím 5, 6, 7, 8, 9
+    str = str
+        .replace(/[\u0300`]/g, '5')
+        .replace(/[\u0309]/g, '6')
+        .replace(/[\u0303~]/g, '7')
+        .replace(/[\u0301']/g, '8')
+        .replace(/[\u0323]/g, '9');
+
+    // Chỉ giữ lại chữ số
+    return str.replace(/\D/g, '');
+}
+
+export function formatVndInput(value: string | number | null | undefined): string {
+    if (value === null || value === undefined || value === '') return '';
+    const raw = cleanVndInput(value);
     if (!raw) return '';
-    return Number(raw).toLocaleString('vi-VN');
+    const num = Number(raw);
+    if (isNaN(num)) return '';
+    return num.toLocaleString('vi-VN');
 }

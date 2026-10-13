@@ -67,6 +67,7 @@ export default function App() {
   const [pendingTab, setPendingTab] = useState<string | null>(null);
   const [pendingCheckoutItem, setPendingCheckoutItem] = useState<Listing | null>(null);
   const [editingDraft, setEditingDraft] = useState<Listing | null>(null);
+  const [createListingReturnTab, setCreateListingReturnTab] = useState<string>('marketplace');
 
   // Restore & verify session for THIS browser from Backend /me on startup/refresh
   React.useEffect(() => {
@@ -448,8 +449,18 @@ export default function App() {
   };
 
   const handleListingCreated = (newListing: Listing) => {
-    setListings((prev) => [newListing, ...prev]);
-    setActiveTab('marketplace');
+    setListings((prev) => {
+      const idx = prev.findIndex((l) => l.id === newListing.id);
+      if (idx !== -1) {
+        const updated = [...prev];
+        updated[idx] = { ...prev[idx], ...newListing };
+        return updated;
+      }
+      return [newListing, ...prev];
+    });
+    const targetTab = createListingReturnTab || (editingDraft ? 'seller-dashboard' : 'marketplace');
+    setEditingDraft(null);
+    setActiveTab(targetTab as any);
     showToast(`Đăng bán thành công sản phẩm "${newListing.title}"! Giá niêm yết: ${formatVND(newListing.priceVnd)}.`);
   };
 
@@ -595,7 +606,7 @@ export default function App() {
       model: post.model || 'Standard',
       purchaseYear: 2024,
       priceVnd: price,
-      originalPriceVnd: Number(post.aiSuggestedPrice || (price > 0 ? Math.round(price * 1.15) : 0)),
+      originalPriceVnd: Number(post.originalPriceVnd || post.aiSuggestedPrice || price || 0),
       conditionGrade: detectedGrade,
       declaredConditionText: post.itemCondition || (detectedGrade === 'Like New' ? 'Độ mới 99%, nguyên zin chưa sửa chữa' : 'Tình trạng tốt, hoạt động ổn định'),
       description: post.description || post.aiDescription || 'Đã qua thẩm định và xác thực trên hệ thống SecondLife.',
@@ -1016,6 +1027,7 @@ export default function App() {
           onTabChange={(tab) => {
             if (tab === 'create-listing') {
               setEditingDraft(null);
+              setCreateListingReturnTab(activeTab === 'seller-dashboard' ? 'seller-dashboard' : 'marketplace');
             }
             handleTabChange(tab);
           }}
@@ -1124,6 +1136,7 @@ export default function App() {
             onSelectListing={(listing) => setSelectedListing(listing)}
             onCreateListing={(draft?: any) => {
               setEditingDraft(draft && draft.id ? draft : null);
+              setCreateListingReturnTab('seller-dashboard');
               handleTabChange('create-listing');
             }}
             onViewOrders={() => handleTabChange('orders')}
@@ -1174,8 +1187,9 @@ export default function App() {
               onListingCreated={handleListingCreated}
               lang={lang}
               onCancel={() => {
+                const targetTab = createListingReturnTab || (editingDraft ? 'seller-dashboard' : 'marketplace');
                 setEditingDraft(null);
-                setActiveTab('marketplace');
+                setActiveTab(targetTab as any);
               }}
               currentUser={currentUser}
               initialDraft={editingDraft || undefined}

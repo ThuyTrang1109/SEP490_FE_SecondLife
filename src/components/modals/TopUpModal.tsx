@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   Clock,
   Search,
+  Coins,
 } from 'lucide-react';
 import { TopupPackage, UserCredit, UserWallet, DepositResponseDTO, UserProfile, UserRole, Language } from '../../types';
 import { topupService, walletService, sellerCreditService } from '../../services';
@@ -145,11 +146,26 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     setTransactionsLoading(true);
     try {
       const data = await walletService.getTransactionHistory();
-      setTransactions(Array.isArray(data) ? data : []);
+      const sorted = (Array.isArray(data) ? data : []).sort((a, b) => {
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return timeB - timeA;
+      });
+      setTransactions(sorted);
     } catch (err) {
       console.error('Failed to load transaction history:', err);
     } finally {
       setTransactionsLoading(false);
+    }
+  };
+
+  const handleRefreshTopBar = () => {
+    loadWallet();
+    if (!isBuyerRole) {
+      loadPackagesAndCredit();
+    }
+    if (activeTab === 'history') {
+      loadHistory();
     }
   };
 
@@ -514,8 +530,8 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   Định giá: <span className="font-black text-[#c34c36]">{userCredit?.valuationCredits ?? 0}</span>
                 </span>
                 <button
-                  onClick={loadWallet}
-                  title="Làm mới số dư"
+                  onClick={handleRefreshTopBar}
+                  title="Làm mới số dư và lịch sử"
                   className="p-1 rounded-lg bg-white border border-[#24263e]/15 text-slate-600 hover:text-[#24263e] cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${walletLoading ? 'animate-spin' : ''}`} />
@@ -528,8 +544,8 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   Bảo Lãnh Ký Quỹ Escrow
                 </span>
                 <button
-                  onClick={loadWallet}
-                  title="Làm mới số dư"
+                  onClick={handleRefreshTopBar}
+                  title="Làm mới số dư và lịch sử"
                   className="p-1 rounded-lg bg-white border border-[#24263e]/15 text-slate-600 hover:text-[#24263e] cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${walletLoading ? 'animate-spin' : ''}`} />
@@ -1357,9 +1373,20 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
           {/* ============================================================== */}
           {activeTab === 'history' && (
             <div className="space-y-4 animate-fadeIn h-full flex flex-col">
-              <div className="flex items-center gap-2 mb-2">
-                <Clock className="w-5 h-5 text-[#c34c36]" />
-                <h4 className="font-black text-sm text-[#24263e]">Lịch sử nạp và giao dịch</h4>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-[#c34c36]" />
+                  <h4 className="font-black text-sm text-[#24263e]">Lịch sử nạp và giao dịch</h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={loadHistory}
+                  disabled={transactionsLoading}
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:text-[#c34c36] bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${transactionsLoading ? 'animate-spin' : ''}`} />
+                  <span>Làm mới</span>
+                </button>
               </div>
 
               <div className="bg-white rounded-2xl border border-[#24263e]/10 shadow-xs flex-1 overflow-hidden flex flex-col">
@@ -1377,31 +1404,69 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   </div>
                 ) : (
                   <div className="overflow-y-auto max-h-[50vh] divide-y divide-[#24263e]/5">
-                    {transactions.map((tx) => (
-                      <div key={tx.id} className="p-4 hover:bg-slate-50 transition flex items-start gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex flex-shrink-0 items-center justify-center shadow-xs ${tx.type === 'DEPOSIT' ? 'bg-emerald-100 text-emerald-600' : tx.type === 'WITHDRAW' || tx.type === 'PAYMENT' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
-                          {tx.type === 'DEPOSIT' ? <Wallet className="w-5 h-5" /> : tx.type === 'PAYMENT' ? <ShoppingBag className="w-5 h-5" /> : <RefreshCw className="w-5 h-5" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <h5 className="text-xs sm:text-sm font-bold text-[#24263e] truncate">
-                              {tx.description || (tx.type === 'DEPOSIT' ? 'Nạp tiền vào ví' : tx.type === 'PAYMENT' ? 'Thanh toán' : 'Giao dịch khác')}
-                            </h5>
-                            <span className={`text-xs sm:text-sm font-black whitespace-nowrap ${tx.type === 'DEPOSIT' || tx.type === 'REFUND' ? 'text-emerald-600' : 'text-red-500'}`}>
-                              {tx.type === 'DEPOSIT' || tx.type === 'REFUND' ? '+' : '-'}{formatVND(tx.amount)}
-                            </span>
+                    {transactions.map((tx) => {
+                      const isIncome = tx.type === 'DEPOSIT' || tx.type === 'REFUND' || tx.type === 'EARNING' || Number(tx.amount || 0) > 0;
+                      const absAmount = Math.abs(Number(tx.amount || 0));
+                      const isSuccess = !tx.status || tx.status === 'SUCCESS' || tx.status === 'COMPLETED';
+                      const isPending = tx.status === 'PENDING';
+
+                      return (
+                        <div key={tx.id} className="p-4 hover:bg-slate-50 transition flex items-start gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex flex-shrink-0 items-center justify-center shadow-xs ${
+                            tx.type === 'DEPOSIT'
+                              ? 'bg-emerald-100 text-emerald-600'
+                              : tx.type === 'EARNING'
+                              ? 'bg-teal-100 text-teal-600'
+                              : tx.type === 'REFUND'
+                              ? 'bg-blue-100 text-blue-600'
+                              : 'bg-rose-100 text-rose-600'
+                          }`}>
+                            {tx.type === 'DEPOSIT' ? <Wallet className="w-5 h-5" /> :
+                             tx.type === 'EARNING' ? <Coins className="w-5 h-5" /> :
+                             tx.type === 'REFUND' ? <RefreshCw className="w-5 h-5" /> :
+                             tx.type === 'PAYMENT' ? <ShoppingBag className="w-5 h-5" /> :
+                             <RefreshCw className="w-5 h-5" />}
                           </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] sm:text-xs text-slate-500 font-medium">
-                              {new Date(tx.createdAt).toLocaleString('vi-VN')}
-                            </span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${tx.status === 'SUCCESS' ? 'bg-emerald-100 text-emerald-700' : tx.status === 'PENDING' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                              {tx.status === 'SUCCESS' ? 'Thành công' : tx.status === 'PENDING' ? 'Chờ xử lý' : 'Thất bại'}
-                            </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                              <div>
+                                <h5 className="text-xs sm:text-sm font-bold text-[#24263e] truncate">
+                                  {tx.description || (
+                                    tx.type === 'DEPOSIT' ? 'Nạp tiền vào ví (VietQR)' :
+                                    tx.type === 'PAYMENT' ? 'Thanh toán mua gói / dịch vụ' :
+                                    tx.type === 'EARNING' ? 'Tiền bán hàng Escrow giải ngân' :
+                                    tx.type === 'REFUND' ? 'Hoàn tiền bảo lãnh Escrow' :
+                                    tx.type === 'WITHDRAW' ? 'Rút tiền về ngân hàng' : 'Giao dịch ví'
+                                  )}
+                                </h5>
+                                {tx.referenceId && (
+                                  <span className="text-[10px] text-slate-400 font-mono block">
+                                    Mã GD: #{String(tx.referenceId).substring(0, 8).toUpperCase()}
+                                  </span>
+                                )}
+                              </div>
+                              <span className={`text-xs sm:text-sm font-black whitespace-nowrap ${isIncome ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                {isIncome ? '+' : '-'}{formatVND(absAmount)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between pt-0.5">
+                              <span className="text-[10px] sm:text-xs text-slate-500 font-medium">
+                                {tx.createdAt ? new Date(tx.createdAt).toLocaleString('vi-VN') : '—'}
+                              </span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                isSuccess
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : isPending
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-rose-100 text-rose-700'
+                              }`}>
+                                {isSuccess ? 'Thành công' : isPending ? 'Chờ xử lý' : 'Thất bại'}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

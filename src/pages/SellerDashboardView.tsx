@@ -188,7 +188,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     setIsLoadingLedger(true);
     try {
       const res = await sellerCreditService.getLedger(0, 30);
-      const items = (res as any)?.content || (res as any)?.data || (Array.isArray(res) ? res : []);
+      const items = (res as any)?.items || (res as any)?.content || (res as any)?.data?.items || (res as any)?.data || (Array.isArray(res) ? res : []);
       setCreditLedgerItems(items);
     } catch (err) {
       console.warn('Lỗi lấy sổ cái credit:', err);

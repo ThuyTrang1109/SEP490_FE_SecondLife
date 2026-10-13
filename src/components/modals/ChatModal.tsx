@@ -250,34 +250,50 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     };
   }, [roomId, mapDtoToChatMessage]);
 
-  // Track latest accepted offer price & negotiationId
-  const acceptedOffers = messages.filter(
-    (m) => (m.isOffer && m.offerStatus === 'accepted' && m.offerAmountVnd) ||
-           (m.text && m.text.includes('"status":"ACCEPTED"'))
-  );
-  
-  let latestAcceptedOffer: number | undefined;
-  let latestAcceptedNegotiationId: string | undefined;
-
-  if (acceptedOffers.length > 0) {
-    const last = acceptedOffers[acceptedOffers.length - 1];
-    if (last.offerAmountVnd) {
-      latestAcceptedOffer = last.offerAmountVnd;
-      latestAcceptedNegotiationId = last.negotiationId;
-    } else {
-      const parsed = parseSystemMessage(last.text);
-      if (parsed.offer && parsed.offer.status === 'ACCEPTED') {
-        latestAcceptedOffer = parsed.offer.price;
-        latestAcceptedNegotiationId = parsed.offer.negotiationId;
-      }
+  // 1. Phân tích trạng thái mới nhất của từng phiên thương lượng (theo negotiationId)
+  const negotiationMap = new Map<string, { id: string; status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED'; price: number }>();
+  messages.forEach((m) => {
+    const parsed = parseSystemMessage(m.text);
+    if (parsed.offer && parsed.offer.negotiationId) {
+      negotiationMap.set(parsed.offer.negotiationId, {
+        id: parsed.offer.negotiationId,
+        status: parsed.offer.status,
+        price: parsed.offer.price,
+      });
+    } else if (m.isOffer && m.negotiationId) {
+      negotiationMap.set(m.negotiationId, {
+        id: m.negotiationId,
+        status: m.offerStatus === 'accepted' ? 'ACCEPTED' : m.offerStatus === 'declined' ? 'REJECTED' : 'PENDING',
+        price: m.offerAmountVnd || listing.priceVnd,
+      });
     }
-  }
+  });
 
-  const hasPendingOffer = messages.some(
-    (m) =>
-      (m.isOffer && m.offerStatus === 'pending') ||
-      (m.text && m.text.includes('"status":"PENDING"'))
+  // Chỉ coi là có pending offer nếu có phiên thương lượng mà trạng thái MỚI NHẤT là PENDING
+  const activePendingNegotiation = Array.from(negotiationMap.values()).find(
+    (n) => n.status === 'PENDING'
   );
+  const hasPendingOffer = !!activePendingNegotiation;
+
+  // Danh sách các phiên thương lượng bị từ chối
+  const rejectedNegotiations = Array.from(negotiationMap.values()).filter(
+    (n) => n.status === 'REJECTED'
+  );
+  // Mức giá cao nhất từng bị từ chối
+  const maxRejectedPrice = rejectedNegotiations.reduce(
+    (max, n) => Math.max(max, n.price),
+    0
+  );
+  const maxRejectionsAllowed = 3;
+  const isMaxRejectionsReached = rejectedNegotiations.length >= maxRejectionsAllowed;
+
+  // Lấy giá thương lượng được chấp thuận mới nhất (nếu có)
+  const acceptedNegotiations = Array.from(negotiationMap.values()).filter(
+    (n) => n.status === 'ACCEPTED'
+  );
+  const latestAccepted = acceptedNegotiations[acceptedNegotiations.length - 1];
+  const latestAcceptedOffer = latestAccepted?.price;
+  const latestAcceptedNegotiationId = latestAccepted?.id;
 
   const [aiAdvice, setAiAdvice] = useState<{
     counterOfferVnd: number;
@@ -345,6 +361,25 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   // Send official negotiation offer
   const handleSendOffer = async () => {
     if (!offerInput || offerInput <= 0) return;
+
+    if (offerInput >= listing.priceVnd) {
+      setOfferError(
+        lang === 'vi'
+          ? `Mức giá đề xuất phải thấp hơn giá gốc (${formatVND(listing.priceVnd)})`
+          : `Offer price must be lower than original price (${formatVND(listing.priceVnd)})`
+      );
+      return;
+    }
+
+    if (maxRejectedPrice > 0 && offerInput <= maxRejectedPrice) {
+      setOfferError(
+        lang === 'vi'
+          ? `Mức giá mới phải lớn hơn mức giá cao nhất đã bị từ chối (${formatVND(maxRejectedPrice)})`
+          : `Offer must be strictly higher than your highest rejected price (${formatVND(maxRejectedPrice)})`
+      );
+      return;
+    }
+
     setNegotiationLoading(true);
     setOfferError(null);
 
@@ -378,7 +413,27 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     } catch (err: any) {
       console.warn('Backend negotiation creation error:', err);
       const msg = err?.message || '';
-      if (msg.includes('internal error') || msg.includes('500')) {
+      if (msg.includes('strictly greater than your highest rejected price')) {
+        const match = msg.match(/highest rejected price:\s*(\d+)/i);
+        const amountStr = match ? formatVND(Number(match[1])) : '';
+        setOfferError(
+          lang === 'vi'
+            ? `Mức giá mới phải lớn hơn mức giá đã bị từ chối (${amountStr || formatVND(maxRejectedPrice)})`
+            : msg
+        );
+      } else if (msg.includes('maximum number of rejected negotiations')) {
+        setOfferError(
+          lang === 'vi'
+            ? 'Bạn đã đạt số lần tối đa bị từ chối đàm phán cho sản phẩm này (tối đa 3 lần).'
+            : msg
+        );
+      } else if (msg.includes('already have an active negotiation')) {
+        setOfferError(
+          lang === 'vi'
+            ? 'Bạn đang có một yêu cầu đàm phán giá đang chờ người bán phản hồi.'
+            : msg
+        );
+      } else if (msg.includes('internal error') || msg.includes('500')) {
         setOfferError('Máy chủ Backend gặp lỗi nội bộ (500) khi lưu đàm phán hoặc gửi tin nhắn hệ thống. Vui lòng kiểm tra lại server.');
       } else {
         setOfferError(msg || 'Không thể tạo đề xuất thương lượng. Mức giá đề xuất phải thấp hơn giá gốc.');
@@ -620,7 +675,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               </p>
             </div>
           ) : (
-            messages.map((msg) => {
+            messages.map((msg, msgIndex) => {
               const parsedSys = parseSystemMessage(msg.text);
 
               // -------------------------------------------------------------
@@ -631,11 +686,22 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 // If it's a structured OFFER from backend
                 if (parsedSys.offer) {
                   const offer = parsedSys.offer;
-                  const isAccepted = offer.status === 'ACCEPTED';
-                  const isRejected = offer.status === 'REJECTED';
-                  const isCancelled = offer.status === 'CANCELLED';
+
+                  // Nếu có tin nhắn trạng thái mới hơn cho cùng negotiationId này, ẩn tin nhắn cũ đi để không bị trùng lặp thẻ
+                  const hasLaterStatusMessage = messages.slice(msgIndex + 1).some((laterMsg) => {
+                    const p = parseSystemMessage(laterMsg.text);
+                    return p.offer?.negotiationId === offer.negotiationId;
+                  });
+                  if (hasLaterStatusMessage) {
+                    return null;
+                  }
+
+                  const latestStatus = negotiationMap.get(offer.negotiationId)?.status || offer.status;
+                  const isAccepted = latestStatus === 'ACCEPTED';
+                  const isRejected = latestStatus === 'REJECTED';
+                  const isCancelled = latestStatus === 'CANCELLED';
                   const isExpired = false; // Note: EXPIRED is not in SystemOfferPayload
-                  const isPending = offer.status === 'PENDING';
+                  const isPending = latestStatus === 'PENDING';
                   
                   const isOfferSenderMe = currentUser?.id ? msg.senderId === currentUser.id : msg.senderId === currentRole;
 
@@ -744,6 +810,43 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                                   : `Buy Now at ${formatVND(offer.price)}`}
                               </span>
                             </button>
+                          </div>
+                        )}
+
+                        {/* Nút gửi lại đề xuất giá mới khi bị từ chối */}
+                        {isRejected && currentRole === 'buyer' && !hasPendingOffer && (
+                          <div className="mt-2.5 pt-2.5 border-t border-rose-200/60 flex flex-col items-center gap-1.5">
+                            {!isMaxRejectionsReached ? (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    const minNext = offer.price + 50000;
+                                    const suggestedNext = Math.min(
+                                      listing.priceVnd - 50000,
+                                      Math.max(minNext, Math.round((listing.priceVnd + offer.price) / 2 / 50000) * 50000)
+                                    );
+                                    setOfferInput(suggestedNext);
+                                    setShowOfferForm(true);
+                                    setOfferError(null);
+                                  }}
+                                  className="px-4 py-2 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition transform hover:scale-102"
+                                >
+                                  <span>💰</span>
+                                  <span>{lang === 'vi' ? 'Đề xuất mức giá khác' : 'Make Another Offer'}</span>
+                                </button>
+                                <span className="text-[10px] text-slate-500 font-medium">
+                                  {lang === 'vi'
+                                    ? `(Còn ${maxRejectionsAllowed - rejectedNegotiations.length} lượt thương lượng • Mức giá mới cần > ${formatVND(offer.price)})`
+                                    : `(${maxRejectionsAllowed - rejectedNegotiations.length} attempts left • Must be > ${formatVND(offer.price)})`}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-[11px] text-rose-600 font-bold bg-rose-100/60 px-3 py-1 rounded-lg border border-rose-200">
+                                {lang === 'vi'
+                                  ? 'Đã đạt giới hạn 3 lần thương lượng giá cho sản phẩm này'
+                                  : 'Maximum 3 offer attempts reached for this item'}
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -926,17 +1029,29 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         </div>
 
         {/* Quick Offer Popup */}
-        {showOfferForm && currentRole === 'buyer' && !hasPendingOffer && (
-          <div className={`p-3.5 border-t flex items-center gap-3 animate-fadeIn shrink-0 bg-[#FFFFFF] border-gray-200`}>
-            <div className="flex-1">
-              <div className="flex items-center justify-between">
-                <label className="text-[10px] font-bold text-slate-700">
-                  {lang === 'vi' ? 'Nhập mức giá bạn muốn đề xuất mua (VNĐ):' : 'Enter offer price (VND):'}
-                </label>
-                <span className={`text-[10px] font-bold text-[#c34c36]`}>
-                  {lang === 'vi' ? 'Giá gốc:' : 'Original:'} {formatVND(listing.priceVnd)}
+        {showOfferForm && currentRole === 'buyer' && !hasPendingOffer && !isMaxRejectionsReached && (
+          <div className={`p-3.5 border-t flex flex-col gap-2.5 animate-fadeIn shrink-0 bg-[#FFFFFF] border-gray-200`}>
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-bold text-slate-700">
+                {lang === 'vi' ? 'Nhập mức giá bạn muốn đề xuất mua (VNĐ):' : 'Enter offer price (VND):'}
+              </label>
+              <span className={`text-[10px] font-bold text-[#c34c36]`}>
+                {lang === 'vi' ? 'Giá gốc:' : 'Original:'} {formatVND(listing.priceVnd)}
+              </span>
+            </div>
+
+            {maxRejectedPrice > 0 && (
+              <div className="text-[10px] text-amber-800 bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-200 font-medium flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                <span>
+                  {lang === 'vi'
+                    ? `Mức giá mới phải cao hơn mức giá bị từ chối cao nhất (${formatVND(maxRejectedPrice)}) và thấp hơn ${formatVND(listing.priceVnd)}.`
+                    : `New offer must be strictly higher than ${formatVND(maxRejectedPrice)}.`}
                 </span>
               </div>
+            )}
+
+            <div className="flex items-center gap-2">
               <input
                 type="number"
                 step={50000}
@@ -945,32 +1060,33 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   setOfferInput(Number(e.target.value));
                   if (offerError) setOfferError(null);
                 }}
-                className={`w-full px-3 py-1.5 border rounded-xl text-xs font-black text-[#24263e] focus:outline-none mt-1 bg-[#faf8f5] border-gray-200 focus:border-[#c34c36]`}
+                className={`flex-1 px-3 py-1.5 border rounded-xl text-xs font-black text-[#24263e] focus:outline-none bg-[#faf8f5] border-gray-200 focus:border-[#c34c36]`}
               />
-              {offerError && (
-                <p className="text-[11px] text-rose-600 font-bold mt-1.5 flex items-center gap-1 bg-rose-50 p-2 rounded-lg border border-rose-200 animate-fadeIn">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
-                  <span>{offerError}</span>
-                </p>
-              )}
+              <button
+                onClick={handleSendOffer}
+                disabled={negotiationLoading}
+                className={`px-4 py-2 text-white rounded-xl text-xs font-bold cursor-pointer transition shadow-xs flex items-center gap-1 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95`}
+              >
+                {negotiationLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <span>{lang === 'vi' ? 'Gửi Offer' : 'Send Offer'}</span>
+                )}
+              </button>
+              <button
+                onClick={() => setShowOfferForm(false)}
+                className="px-3 py-2 bg-[#faf8f5] hover:bg-gray-200 text-[#24263e] border border-gray-200 rounded-xl text-xs cursor-pointer transition font-medium"
+              >
+                {lang === 'vi' ? 'Hủy' : 'Cancel'}
+              </button>
             </div>
-            <button
-              onClick={handleSendOffer}
-              disabled={negotiationLoading}
-              className={`px-4 py-2 text-white rounded-xl text-xs font-bold mt-4 cursor-pointer transition shadow-xs flex items-center gap-1 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95`}
-            >
-              {negotiationLoading ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <span>{lang === 'vi' ? 'Gửi Offer' : 'Send Offer'}</span>
-              )}
-            </button>
-            <button
-              onClick={() => setShowOfferForm(false)}
-              className="px-3 py-2 bg-[#faf8f5] hover:bg-gray-200 text-[#24263e] border border-gray-200 rounded-xl text-xs mt-4 cursor-pointer transition font-medium"
-            >
-              {lang === 'vi' ? 'Hủy' : 'Cancel'}
-            </button>
+
+            {offerError && (
+              <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 bg-rose-50 p-2 rounded-lg border border-rose-200 animate-fadeIn">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                <span>{offerError}</span>
+              </p>
+            )}
           </div>
         )}
 
@@ -995,13 +1111,19 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         <div className={`p-3 border-t flex items-center gap-2 shrink-0 ${
           currentRole === 'seller' ? 'bg-slate-50 border-slate-200' : 'bg-[#FFFFFF] border-gray-200'
         }`}>
-          {currentRole === 'buyer' && !hasPendingOffer && (
+          {currentRole === 'buyer' && !hasPendingOffer && !isMaxRejectionsReached && (
             <button
-              onClick={() => setShowOfferForm(!showOfferForm)}
+              onClick={() => {
+                if (maxRejectedPrice > 0 && offerInput <= maxRejectedPrice) {
+                  setOfferInput(Math.min(listing.priceVnd - 50000, maxRejectedPrice + 50000));
+                }
+                setShowOfferForm(!showOfferForm);
+                setOfferError(null);
+              }}
               className="px-3 py-2 text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1 bg-gradient-to-r from-[#c34c36] to-[#e36a54] hover:opacity-95"
             >
               <span>💰</span>
-              <span>{lang === 'vi' ? 'Trả giá / Offer' : 'Make Offer'}</span>
+              <span>{lang === 'vi' ? (maxRejectedPrice > 0 ? 'Trả giá lại' : 'Trả giá / Offer') : 'Make Offer'}</span>
             </button>
           )}
 

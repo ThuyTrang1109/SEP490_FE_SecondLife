@@ -3,8 +3,11 @@ import { request, getAccessToken } from './apiClient';
 export interface PostInitRequest {
   categoryId: string;
   itemId?: string;
+  brand?: string;
+  model?: string;
   images?: (File | Blob | string)[];
   base64Image?: string;
+  mode?: 'ai' | 'manual';
 }
 
 export interface PostInitResponse {
@@ -187,6 +190,15 @@ export const postService = {
     if (payload.itemId) {
       formData.append('itemId', payload.itemId);
     }
+    if (payload.mode) {
+      formData.append('mode', payload.mode);
+    }
+    if (payload.brand) {
+      formData.append('brand', payload.brand);
+    }
+    if (payload.model) {
+      formData.append('model', payload.model);
+    }
 
     if (payload.images && payload.images.length > 0) {
       payload.images.forEach((img, idx) => {
@@ -356,9 +368,19 @@ export const postService = {
   /**
    * AI tổng hợp cuộc hội thoại và cập nhật mô tả vào bài đăng (POST /api/v1/posts/finalize-chat/{sessionId})
    */
-  async finalizeChat(sessionId: string): Promise<any> {
+  async finalizeChat(sessionId: string, message?: string): Promise<any> {
     const response = await request<any>(`/v1/posts/finalize-chat/${sessionId}`, {
       method: 'POST',
+      body: message ? JSON.stringify({ message }) : undefined,
+      requiresAuth: true,
+    });
+    return (response as any)?.data || response;
+  },
+
+  async regenerateChat(sessionId: string, message?: string): Promise<any> {
+    const response = await request<any>(`/v1/posts/regenerate-chat/${sessionId}`, {
+      method: 'POST',
+      body: message ? JSON.stringify({ message }) : undefined,
       requiresAuth: true,
     });
     return (response as any)?.data || response;
@@ -368,6 +390,19 @@ export const postService = {
    * Gửi đăng bài chính thức (POST /api/v1/posts/submit/{postId})
    * Đọc response.status trực tiếp: ACTIVE, PENDING, PENDING_INSPECTION, REJECTED
    */
+  /**
+   * AI Gợi ý tiêu đề chuẩn SEO TMĐT (-1 credit AI) (POST /api/v1/posts/{postId}/suggest-title)
+   */
+  async suggestTitle(postId: string, context?: string): Promise<{ title: string }> {
+    const response = await request<{ title: string }>(`/v1/posts/${postId}/suggest-title`, {
+      method: 'POST',
+      body: JSON.stringify({ context }),
+      headers: { 'Content-Type': 'application/json' },
+      requiresAuth: true,
+    });
+    return (response as any)?.data || response;
+  },
+
   async submitPost(postId: string, data?: PostSubmitRequest): Promise<PostSubmitResponse> {
     const payload: PostSubmitRequest = data || {
       title: 'Bài đăng mới',

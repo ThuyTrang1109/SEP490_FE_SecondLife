@@ -8,7 +8,6 @@ import {
   Scale,
   RotateCcw,
   Wallet,
-  Truck,
   TrendingUp,
   UserX,
   LifeBuoy,
@@ -45,7 +44,6 @@ import { Listing, EscrowOrder, Language, UserProfile } from '../types';
 import { formatVND } from '../utils/translations';
 import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto } from '../services';
 import { ListingComparisonModal } from '../components/staff/ListingComparisonModal';
-import { StaffSellerVerificationTab } from '../components/staff/StaffSellerVerificationTab';
 import logoImg from '../assets/logo.png';
 import { User, LogOut } from 'lucide-react';
 
@@ -62,13 +60,11 @@ interface StaffWorkspaceViewProps {
 type StaffTab =
   | 'overview'
   | 'review-listings'
-  | 'seller-verifications'
   | 'proof-possession'
   | 'reports-support'
   | 'disputes'
   | 'refund-requests'
   | 'payouts'
-  | 'inspections'
   | 'monitor-transactions'
   | 'restrict-users';
 
@@ -97,12 +93,10 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   // Sub-tab filters
   const [listingFilter, setListingFilter] = useState<'ALL' | 'NORMAL' | 'SUSPICIOUS'>('ALL');
   const [reportSubTab, setReportSubTab] = useState<'REPORTS' | 'TICKETS'>('REPORTS');
-  const [inspectionSubTab, setInspectionSubTab] = useState<'COORDINATE' | 'RESULTS'>('COORDINATE');
 
   // Modals
   const [selectedListingModal, setSelectedListingModal] = useState<any | null>(null);
   const [selectedProofModal, setSelectedProofModal] = useState<any | null>(null);
-  const [selectedInspectionModal, setSelectedInspectionModal] = useState<any | null>(null);
   const [rejectReason, setRejectReason] = useState('Vi phạm giá niêm yết bất thường');
 
   // Request evidence form state
@@ -191,10 +185,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   // 7. Payouts & Escrow Hold (Case có tranh chấp)
   const [payouts, setPayouts] = useState<any[]>([]);
 
-  // 8. Inspections (Điều phối & kết quả kiểm định)
-  const [inspectionOrders, setInspectionOrders] = useState<any[]>([]);
-  const [inspectionResults, setInspectionResults] = useState<any[]>([]);
-
   // 9. Realtime Transactions Monitoring
   const [transactions, setTransactions] = useState<any[]>([]);
 
@@ -231,12 +221,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       badgeColor: 'bg-[#24263e] text-white'
     },
     {
-      id: 'seller-verifications' as StaffTab,
-      label: 'DUYỆT HỒ SƠ NGƯỜI BÁN',
-      icon: UserCheck,
-      badge: null
-    },
-    {
       id: 'proof-possession' as StaffTab,
       label: 'XÁC MINH SỞ HỮU ❌',
       icon: ShieldCheck,
@@ -270,13 +254,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       icon: Wallet,
       badge: payouts.filter((p) => p.status === 'HOLD').length,
       badgeColor: 'bg-amber-700 text-white'
-    },
-    {
-      id: 'inspections' as StaffTab,
-      label: 'ĐIỀU PHỐI KIỂM ĐỊNH HUB ❌',
-      icon: Truck,
-      badge: inspectionOrders.length,
-      badgeColor: 'bg-emerald-700 text-white'
     },
     {
       id: 'monitor-transactions' as StaffTab,
@@ -923,13 +900,6 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
           )}
 
           {/* ======================================================== */}
-          {/* TAB: SELLER VERIFICATIONS QUEUE (DUYỆT HỒ SƠ NGƯỜI BÁN)    */}
-          {/* ======================================================== */}
-          {activeTab === 'seller-verifications' && (
-            <StaffSellerVerificationTab onNotify={triggerNotice} />
-          )}
-
-          {/* ======================================================== */}
           {/* TAB 2: PROOF OF POSSESSION (XÁC MINH SỞ HỮU)              */}
           {/* ======================================================== */}
           {activeTab === 'proof-possession' && (
@@ -1354,137 +1324,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
             </div>
           )}
 
-          {/* ======================================================== */}
-          {/* TAB 8: INSPECTIONS (ĐIỀU PHỐI & KẾT QUẢ KIỂM TRA)         */}
-          {/* ======================================================== */}
-          {activeTab === 'inspections' && (
-            <div className="space-y-4">
-              <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-emerald-600 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                      8. ĐIỀU PHỐI QUY TRÌNH KIỂM TRA VÀ XEM KẾT QUẢ KIỂM TRA
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Sắp xếp lịch kỹ sư kiểm định tại nhà / tại Hub và tra cứu biên bản 25 tiêu chí kỹ thuật
-                    </p>
-                  </div>
 
-                  <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-bold">
-                    <button
-                      onClick={() => setInspectionSubTab('COORDINATE')}
-                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${inspectionSubTab === 'COORDINATE' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
-                        }`}
-                    >
-                      Điều Phối Lịch ({inspectionOrders.length})
-                    </button>
-                    <button
-                      onClick={() => setInspectionSubTab('RESULTS')}
-                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${inspectionSubTab === 'RESULTS' ? 'bg-white text-[#24263e] shadow-xs font-black' : 'text-slate-600'
-                        }`}
-                    >
-                      Kết Quả Kiểm Tra ({inspectionResults.length})
-                    </button>
-                  </div>
-                </div>
-
-                {inspectionSubTab === 'COORDINATE' && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                          <th className="py-2.5 px-3">Mã Lịch Hẹn</th>
-                          <th className="py-2.5 px-3">Mã Đơn Hàng</th>
-                          <th className="py-2.5 px-3">Thiết Bị</th>
-                          <th className="py-2.5 px-3">Hình Thức Kiểm Tra</th>
-                          <th className="py-2.5 px-3">Trạm Hub / Kỹ Sư Phụ Trách</th>
-                          <th className="py-2.5 px-3">Thời Gian Hẹn</th>
-                          <th className="py-2.5 px-3 text-center">Thao Tác</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {inspectionOrders.map((ord) => (
-                          <tr key={ord.id} className="hover:bg-slate-50/70 transition">
-                            <td className="py-3 px-3 font-mono font-bold text-slate-900">{ord.id}</td>
-                            <td className="py-3 px-3 font-mono text-slate-600">{ord.orderId}</td>
-                            <td className="py-3 px-3 font-bold text-slate-900">{ord.productName}</td>
-                            <td className="py-3 px-3">
-                              <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-800 font-bold text-[10px]">
-                                {ord.method === 'AT_HOME' ? 'Kỹ Sư Đến Tận Nhà' : 'Gửi Về Trạm Hub'}
-                              </span>
-                            </td>
-                            <td className="py-3 px-3 text-slate-700">
-                              <span className="font-bold block">{ord.hubCenter}</span>
-                              <span className="text-[11px] text-slate-500">{ord.technician}</span>
-                            </td>
-                            <td className="py-3 px-3 font-mono text-slate-700">{ord.appointmentDate}</td>
-                            <td className="py-3 px-3 text-center">
-                              <button
-                                onClick={() => triggerNotice(`Đã xác nhận điều phối kỹ sư cho lịch hẹn ${ord.id}`)}
-                                className="px-2.5 py-1 rounded bg-[#24263e] hover:bg-emerald-700 text-white text-[11px] font-bold transition cursor-pointer"
-                              >
-                                Cập Nhật Lịch
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {inspectionSubTab === 'RESULTS' && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                          <th className="py-2.5 px-3">Mã Biên Bản</th>
-                          <th className="py-2.5 px-3">Sản Phẩm</th>
-                          <th className="py-2.5 px-3">Kỹ Sư Kiểm Định</th>
-                          <th className="py-2.5 px-3">Điểm Số (25 Tiêu Chí)</th>
-                          <th className="py-2.5 px-3">Kết Luận & Mã NFC</th>
-                          <th className="py-2.5 px-3">Ngày Lập</th>
-                          <th className="py-2.5 px-3 text-center">Xem Chi Tiết</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {inspectionResults.map((rpt) => (
-                          <tr key={rpt.id} className="hover:bg-slate-50/70 transition">
-                            <td className="py-3 px-3 font-mono font-bold text-slate-900">{rpt.id}</td>
-                            <td className="py-3 px-3 font-bold text-slate-900">{rpt.productName}</td>
-                            <td className="py-3 px-3 text-slate-700">{rpt.technician}</td>
-                            <td className="py-3 px-3 font-black text-slate-900">{rpt.score}</td>
-                            <td className="py-3 px-3">
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-black ${rpt.verdict === 'PASS'
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : 'bg-rose-100 text-rose-800'
-                                  }`}
-                              >
-                                {rpt.verdict === 'PASS' ? 'ĐẠT (PASS)' : 'KHÔNG ĐẠT (FAIL)'}
-                              </span>
-                              <span className="block font-mono text-[10px] text-slate-500 mt-0.5">
-                                {rpt.nfcTamperSealId}
-                              </span>
-                            </td>
-                            <td className="py-3 px-3 font-mono text-slate-600">{rpt.date}</td>
-                            <td className="py-3 px-3 text-center">
-                              <button
-                                onClick={() => setSelectedInspectionModal(rpt)}
-                                className="px-2.5 py-1 rounded bg-slate-100 hover:bg-[#24263e] hover:text-white text-slate-800 text-[11px] font-bold transition cursor-pointer"
-                              >
-                                Xem Biên Bản
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* ======================================================== */}
           {/* TAB 9: MONITOR TRANSACTIONS (GIÁM SÁT GIAO DỊCH)          */}
@@ -1918,57 +1758,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
         </div>
       )}
 
-      {/* ======================================================== */}
-      {/* MODAL: XEM BIÊN BẢN KIỂM ĐỊNH HUB                        */}
-      {/* ======================================================== */}
-      {selectedInspectionModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 text-xs">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <h3 className="font-black text-sm text-slate-900">
-                  BIÊN BẢN KIỂM ĐỊNH #{selectedInspectionModal.id}
-                </h3>
-                <p className="text-slate-500 text-[11px]">{selectedInspectionModal.productName}</p>
-              </div>
-              <button
-                onClick={() => setSelectedInspectionModal(null)}
-                className="p-1 rounded-full text-slate-400 hover:text-slate-600 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-bold">Kỹ sư kiểm tra:</span>
-                <span className="font-bold text-slate-900">{selectedInspectionModal.technician}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-bold">Điểm số 25 tiêu chí:</span>
-                <span className="font-black text-slate-900 text-sm">{selectedInspectionModal.score}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-bold">Mã tem niêm phong NFC:</span>
-                <span className="font-mono font-bold text-indigo-900">{selectedInspectionModal.nfcTamperSealId}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-bold">Tình trạng linh kiện:</span>
-                <span className="font-medium text-slate-800 text-right max-w-xs">{selectedInspectionModal.componentsStatus}</span>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2 border-t">
-              <button
-                onClick={() => setSelectedInspectionModal(null)}
-                className="px-4 py-2 bg-[#24263e] hover:bg-[#c34c36] text-white rounded-xl font-bold transition cursor-pointer"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ======================================================== */}
       {/* 2-COLUMN COMPARISON MODAL FOR STAFF LISTING REVIEW        */}

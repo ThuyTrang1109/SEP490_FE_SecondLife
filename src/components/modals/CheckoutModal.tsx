@@ -30,6 +30,7 @@ import {
   ListFilter
 } from 'lucide-react';
 import { orderService, walletService, shippingService, GhnLocation } from '../../services';
+import { LalamoveAddressPicker } from '../common/LalamoveAddressPicker';
 
 interface CheckoutModalProps {
   listing: Listing;
@@ -84,6 +85,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [buyerPhone, setBuyerPhone] = useState(currentUser?.phone || '');
   const [buyerEmail, setBuyerEmail] = useState(currentUser?.email || '');
   const [streetAddress, setStreetAddress] = useState(currentUser?.address || '');
+  const [deliveryLatitude, setDeliveryLatitude] = useState<number>(21.0285);
+  const [deliveryLongitude, setDeliveryLongitude] = useState<number>(105.8542);
   const [addressType, setAddressType] = useState<'home' | 'office'>('home');
   const [deliveryNote, setDeliveryNote] = useState('');
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
@@ -230,17 +233,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     return () => { isMounted = false; };
   }, [selectedProvinceId]);
 
-  // Request GHN Shipping Quote
-  const calculateGhnQuote = useCallback(async (
-    pName?: string,
-    wName?: string,
+  // Request Lalamove Shipping Quote via BE POST /api/v1/shipping/quotes
+  const calculateLalamoveQuote = useCallback(async (
+    lat?: number,
+    lng?: number,
     addr?: string,
     name?: string,
     phone?: string
   ) => {
-    const province = (pName || selectedProvinceName || '').trim();
-    const ward = (wName || selectedWardName || '').trim();
-    if (!province || !ward) {
+    const currentLat = lat ?? deliveryLatitude;
+    const currentLng = lng ?? deliveryLongitude;
+    if (!currentLat || !currentLng) {
       return;
     }
 
@@ -258,43 +261,43 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         deliveryAddress: {
           name: validName,
           phone: validPhone,
+          latitude: currentLat,
+          longitude: currentLng,
           address: validAddress,
-          provinceName: province,
-          wardName: ward,
-          newAddress: true,
         },
       });
       setGhnQuote(quote);
       setQuoteError(null);
     } catch (err: any) {
-      console.warn('Failed to calculate GHN quote:', err);
-      let errMsg = err?.response?.data?.message || err?.message || 'Không thể tính phí vận chuyển GHN.';
+      console.warn('Failed to calculate Lalamove quote:', err);
+      let errMsg = err?.response?.data?.message || err?.message || 'Không thể tính phí vận chuyển Lalamove.';
       if (typeof errMsg === 'string') {
         if (errMsg.includes('Seller pickup address is not configured')) {
-          errMsg = 'Người bán chưa cấu hình địa chỉ kho lấy hàng GHN. Không thể tạo đơn hàng.';
-        } else if (errMsg.includes('Seller must save the packed weight and dimensions')) {
-          errMsg = 'Người bán chưa cấu hình kích thước và trọng lượng kiện hàng. Không thể tính phí vận chuyển GHN. Vui lòng liên hệ người bán cập nhật bài đăng.';
+          errMsg = 'Người bán chưa cấu hình địa chỉ kho lấy hàng Lalamove. Không thể tạo đơn hàng.';
+        } else if (errMsg.includes('Seller must save the packed weight and dimensions') || errMsg.includes('Shipping weight is required')) {
+          errMsg = 'Người bán chưa cấu hình kích thước và trọng lượng kiện hàng. Không thể tính phí vận chuyển Lalamove. Vui lòng liên hệ người bán cập nhật bài đăng.';
         } else if (errMsg.includes('You cannot buy your own post')) {
           errMsg = 'Bạn đang đăng nhập bằng tài khoản người bán. Không thể tạo báo giá mua bài đăng của chính mình.';
         } else if (errMsg.includes('Post is not available')) {
           errMsg = 'Bài đăng hiện không ở trạng thái sẵn sàng để giao dịch.';
+        } else if (errMsg.includes('ngoài khu vực phục vụ')) {
+          errMsg = 'Địa chỉ giao hàng nằm ngoài khu vực phục vụ Lalamove (Hà Nội, Đà Nẵng, TP.HCM).';
         }
       }
       setQuoteError(errMsg);
     } finally {
       setQuoteLoading(false);
     }
-  }, [selectedProvinceName, selectedWardName, streetAddress, buyerName, buyerPhone, currentUser, listing.id, negotiationId]);
+  }, [deliveryLatitude, deliveryLongitude, buyerPhone, buyerName, streetAddress, currentUser, listing.id, negotiationId]);
 
-  // Debounced auto-quote calculation when address fields change
+  const calculateGhnQuote = calculateLalamoveQuote;
+
+  // Auto-quote calculation on initial mount if coordinates are ready
   useEffect(() => {
-    if (selectedProvinceName && selectedWardName) {
-      const timer = setTimeout(() => {
-        calculateGhnQuote(selectedProvinceName, selectedWardName, streetAddress, buyerName, buyerPhone);
-      }, 300);
-      return () => clearTimeout(timer);
+    if (deliveryLatitude && deliveryLongitude) {
+      calculateLalamoveQuote(deliveryLatitude, deliveryLongitude);
     }
-  }, [selectedProvinceName, selectedWardName, streetAddress, calculateGhnQuote]);
+  }, [calculateLalamoveQuote, deliveryLatitude, deliveryLongitude]);
 
   // Inspection fee & split calculations
   const isInspected = deliveryOption === 'INSPECTION';
@@ -374,7 +377,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     let activeQuote = ghnQuote;
     if (!activeQuote || !activeQuote.quoteId) {
-      if (selectedProvinceName && selectedWardName) {
+      if (deliveryLatitude && deliveryLongitude) {
         setSubmittingOrder(true);
         try {
           const rawPhone = (buyerPhone || currentUser?.phone || '').replace(/\D/g, '');
@@ -385,23 +388,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             deliveryAddress: {
               name: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
               phone: validPhone,
+              latitude: deliveryLatitude,
+              longitude: deliveryLongitude,
               address: (streetAddress || 'Địa chỉ nhận hàng').trim(),
-              provinceName: selectedProvinceName.trim(),
-              wardName: selectedWardName.trim(),
-              newAddress: true,
             },
           });
           setGhnQuote(activeQuote);
         } catch (err: any) {
-          setOrderError(err?.message || 'Không thể lấy báo giá GHN. Vui lòng kiểm tra lại địa chỉ hoặc thử lại.');
+          setOrderError(err?.message || 'Không thể lấy báo giá Lalamove. Vui lòng kiểm tra lại địa chỉ hoặc thử lại.');
           setSubmittingOrder(false);
           return;
         }
       } else {
         setOrderError(
           lang === 'vi'
-            ? 'Đang chờ báo giá vận chuyển từ GHN. Vui lòng kiểm tra lại địa chỉ hoặc bấm thử lại.'
-            : 'Awaiting GHN shipping quote. Please check your address or retry.'
+            ? 'Đang chờ báo giá vận chuyển từ Lalamove. Vui lòng kiểm tra lại địa chỉ hoặc bấm thử lại.'
+            : 'Awaiting Lalamove shipping quote. Please check your address or retry.'
         );
         return;
       }
@@ -443,20 +445,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             {
               id: 'LEG-1',
               legType: 'SELLER_TO_CENTER',
-              carrier: inspectionMethod === 'AT_HOME' ? 'SecondLife On-site Team' : 'GHN Express',
-              trackingNumber: `GHN-HUB-${orderId.slice(0, 8).toUpperCase()}`,
+              carrier: inspectionMethod === 'AT_HOME' ? 'SecondLife On-site Team' : 'Lalamove',
+              trackingNumber: `LLM-HUB-${orderId.slice(0, 8).toUpperCase()}`,
               status: 'PICKED_UP',
               origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
               destination: inspectionMethod === 'AT_HOME'
                 ? `Kiểm định tại nhà người bán (Kỹ sư ${selectedCenter?.name})`
                 : (selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab'),
-              estimatedDelivery: '1-2 ngày',
+              estimatedDelivery: 'Trong ngày',
               timeline: [
                 {
                   timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
                   description: inspectionMethod === 'AT_HOME'
                     ? `Cử chuyên viên kỹ thuật từ ${selectedCenter?.name} đến tận nhà người bán kiểm định trực tiếp on-site.`
-                    : `Khởi tạo đơn hàng kiểm định Hub (${selectedCenter?.name}). Bưu tá GHN chuẩn bị lấy hàng chuyển về Hub.`,
+                    : `Khởi tạo đơn hàng kiểm định Hub (${selectedCenter?.name}). Tài xế Lalamove chuẩn bị lấy hàng chuyển về Hub.`,
                   location: selectedCenter?.name || 'Hệ thống SecondLife Escrow'
                 }
               ]
@@ -464,12 +466,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             {
               id: 'LEG-2',
               legType: 'CENTER_TO_BUYER',
-              carrier: 'GHN Express',
-              trackingNumber: `GHN-BUYER-${orderId.slice(0, 8).toUpperCase()}`,
+              carrier: 'Lalamove',
+              trackingNumber: `LLM-BUYER-${orderId.slice(0, 8).toUpperCase()}`,
               status: 'IN_TRANSIT',
               origin: selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab',
               destination: fullAddress,
-              estimatedDelivery: '1-2 ngày sau khi đạt chuẩn kiểm định',
+              estimatedDelivery: 'Giao nhanh trong ngày sau khi đạt chuẩn kiểm định',
               timeline: [
                 {
                   timestamp: '--:--',
@@ -483,16 +485,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             {
               id: 'LEG-1',
               legType: 'SELLER_TO_BUYER',
-              carrier: 'GHN Express',
-              trackingNumber: `GHN-DIRECT-${orderId.slice(0, 8).toUpperCase()}`,
+              carrier: 'Lalamove',
+              trackingNumber: `LLM-DIRECT-${orderId.slice(0, 8).toUpperCase()}`,
               status: 'PICKED_UP',
               origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
               destination: fullAddress,
-              estimatedDelivery: ghnQuote?.expectedDeliveryTime || '1-2 ngày',
+              estimatedDelivery: ghnQuote?.expectedDeliveryTime || 'Giao ngay trong ngày',
               timeline: [
                 {
                   timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-                  description: 'Đã thanh toán ví thành công qua Escrow. Bưu tá GHN lấy hàng và giao thẳng trực tiếp đến người mua.',
+                  description: 'Đã thanh toán ví thành công qua Escrow. Tài xế Lalamove lấy hàng và giao thẳng trực tiếp đến người mua.',
                   location: 'Hệ thống SecondLife Escrow'
                 }
               ]
@@ -726,8 +728,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                   <p className="text-[11px] text-slate-600 leading-relaxed pt-1">
                     {lang === 'vi'
-                      ? 'Bưu tá GHN lấy hàng từ người bán và phát thẳng tới địa chỉ của bạn. Đồng kiểm ngoại quan lúc nhận máy.'
-                      : 'GHN courier picks up from seller and delivers straight to you with co-inspection upon receipt.'}
+                      ? 'Tài xế Lalamove lấy hàng từ người bán và phát thẳng tới địa chỉ của bạn. Đồng kiểm ngoại quan lúc nhận hàng.'
+                      : 'Lalamove courier picks up from seller and delivers straight to you with co-inspection upon receipt.'}
                   </p>
                 </div>
               </div>
@@ -960,8 +962,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         </div>
                         <p className="text-[10px] text-slate-600 leading-relaxed">
                           {lang === 'vi'
-                            ? 'Bưu tá GHN chuyển hàng về Hub Lab SecondLife. Kỹ sư đo kiểm vi mạch, hiệu năng trên dàn máy đo tiêu chuẩn.'
-                            : 'Shipped to Hub Lab. Engineers inspect 20+ technical criteria on test benches.'}
+                            ? 'Tài xế Lalamove chuyển hàng về Hub Lab SecondLife. Kỹ sư đo kiểm vi mạch, hiệu năng trên dàn máy đo tiêu chuẩn.'
+                            : 'Shipped via Lalamove to Hub Lab. Engineers inspect 20+ technical criteria on test benches.'}
                         </p>
                       </div>
                       <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9px] text-blue-700 font-bold">
@@ -1194,237 +1196,26 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             </div>
 
-            {/* Address fields with GHN Catalogue & Custom Manual Input */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-[11px] font-bold text-slate-700">
-                    {lang === 'vi' ? 'Tỉnh / Thành phố nhận hàng *' : 'Province / City *'}
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextMode = provinceMode === 'select' ? 'manual' : 'select';
-                      setProvinceMode(nextMode);
-                    }}
-                    className="text-[10px] font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer bg-[#faf8f5] px-2 py-0.5 rounded-md border border-slate-200"
-                    title={provinceMode === 'select' ? 'Chuyển sang tự nhập tay' : 'Chuyển sang chọn từ danh sách'}
-                  >
-                    {provinceMode === 'select' ? (
-                      <>
-                        <Edit3 className="w-2.5 h-2.5" />
-                        <span>Tự ghi</span>
-                      </>
-                    ) : (
-                      <>
-                        <ListFilter className="w-2.5 h-2.5" />
-                        <span>Chọn danh sách</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {provinceMode === 'select' ? (
-                  <select
-                    value={selectedProvinceId}
-                    onChange={(e) => {
-                      const id = e.target.value ? Number(e.target.value) : '';
-                      setSelectedProvinceId(id);
-                      const found = provinces.find((p) => p._id === id);
-                      setSelectedProvinceName(found ? found.name : '');
-                      if (formErrors.city) setFormErrors({ ...formErrors, city: '' });
-                    }}
-                    disabled={loadingProvinces}
-                    className={`w-full px-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition cursor-pointer ${
-                      formErrors.city ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
-                    }`}
-                  >
-                    <option value="" disabled hidden>
-                      {loadingProvinces ? 'Đang tải danh mục GHN...' : 'Chọn Tỉnh / Thành phố'}
-                    </option>
-                    {provinces.map((p) => (
-                      <option key={p._id} value={p._id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                      type="text"
-                      list="province-suggestions"
-                      value={selectedProvinceName}
-                      onChange={(e) => handleManualProvinceChange(e.target.value)}
-                      placeholder="Gõ tên Tỉnh/Thành (VD: Hà Nội, TP. HCM...)"
-                      className={`w-full pl-9 pr-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition ${
-                        formErrors.city ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
-                      }`}
-                    />
-                    <datalist id="province-suggestions">
-                      {provinces.map((p) => (
-                        <option key={p._id} value={p.name} />
-                      ))}
-                    </datalist>
-                  </div>
-                )}
-                {formErrors.city && (
-                  <span className="text-[10px] text-rose-500 font-semibold mt-0.5 block">{formErrors.city}</span>
-                )}
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-[11px] font-bold text-slate-700">
-                    {lang === 'vi' ? 'Phường / Xã nhận hàng *' : 'GHN Ward *'}
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextMode = wardMode === 'select' ? 'manual' : 'select';
-                      setWardMode(nextMode);
-                    }}
-                    className="text-[10px] font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer bg-[#faf8f5] px-2 py-0.5 rounded-md border border-slate-200"
-                    title={wardMode === 'select' ? 'Chuyển sang tự nhập tay' : 'Chuyển sang chọn từ danh sách'}
-                  >
-                    {wardMode === 'select' ? (
-                      <>
-                        <Edit3 className="w-2.5 h-2.5" />
-                        <span>Tự ghi</span>
-                      </>
-                    ) : (
-                      <>
-                        <ListFilter className="w-2.5 h-2.5" />
-                        <span>Chọn danh sách</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {wardMode === 'select' ? (
-                  <select
-                    value={selectedWardName}
-                    onChange={(e) => {
-                      const newWard = e.target.value;
-                      setSelectedWardName(newWard);
-                      if (formErrors.ward) setFormErrors({ ...formErrors, ward: '' });
-                      if (selectedProvinceName && newWard) {
-                        calculateGhnQuote(selectedProvinceName, newWard, streetAddress, buyerName, buyerPhone);
-                      }
-                    }}
-                    disabled={!selectedProvinceId || loadingWards}
-                    className={`w-full px-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition cursor-pointer ${
-                      formErrors.ward ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
-                    }`}
-                  >
-                    <option value="" disabled hidden>
-                      {!selectedProvinceId
-                        ? (selectedProvinceName ? 'Bấm "Tự ghi" hoặc chọn từ gợi ý' : 'Vui lòng chọn Tỉnh/Thành trước')
-                        : loadingWards
-                          ? 'Đang tải danh sách Phường/Xã...'
-                          : 'Chọn Phường / Xã'}
-                    </option>
-                    {wards.map((w) => (
-                      <option key={w._id} value={w.name}>
-                        {w.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                      type="text"
-                      list="ward-suggestions"
-                      value={selectedWardName}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setSelectedWardName(val);
-                        if (formErrors.ward) setFormErrors({ ...formErrors, ward: '' });
-                      }}
-                      onBlur={() => {
-                        if (selectedProvinceName && selectedWardName) {
-                          calculateGhnQuote(selectedProvinceName, selectedWardName, streetAddress, buyerName, buyerPhone);
-                        }
-                      }}
-                      placeholder="Gõ tên Phường / Xã..."
-                      className={`w-full pl-9 pr-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition ${
-                        formErrors.ward ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
-                      }`}
-                    />
-                    <datalist id="ward-suggestions">
-                      {wards.map((w) => (
-                        <option key={w._id} value={w.name} />
-                      ))}
-                    </datalist>
-                  </div>
-                )}
-                {formErrors.ward && (
-                  <span className="text-[10px] text-rose-500 font-semibold mt-0.5 block">{formErrors.ward}</span>
-                )}
-              </div>
-            </div>
-
-            {/* Street Address */}
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                {lang === 'vi' ? 'Địa chỉ chi tiết (Số nhà, tên đường, căn hộ/tòa nhà) *' : 'Detailed Street Address *'}
-              </label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  value={streetAddress}
-                  onChange={(e) => {
-                    setStreetAddress(e.target.value);
-                    if (formErrors.streetAddress) setFormErrors({ ...formErrors, streetAddress: '' });
-                  }}
-                  onBlur={(e) => {
-                    if (selectedProvinceName && selectedWardName) {
-                      calculateGhnQuote(selectedProvinceName, selectedWardName, e.target.value, buyerName, buyerPhone);
-                    }
-                  }}
-                  placeholder="Số 92 Phan Châu Trinh, Căn 402"
-                  className={`w-full pl-9 pr-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition ${
-                    formErrors.streetAddress ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
-                  }`}
-                />
-              </div>
-              {formErrors.streetAddress && (
-                <span className="text-[10px] text-rose-500 font-semibold mt-0.5 block">{formErrors.streetAddress}</span>
-              )}
-            </div>
-
-            {/* Direct GHN Calculation Action Bar */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-3">
-              <div className="text-[11px] text-slate-600">
-                {selectedProvinceName && selectedWardName ? (
-                  <span>
-                    📍 Giao đến: <strong className="text-slate-900">{selectedWardName}, {selectedProvinceName}</strong>
-                  </span>
-                ) : (
-                  <span className="italic text-slate-400">Chọn Tỉnh/Thành và Phường/Xã để tính cước phí GHN</span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => calculateGhnQuote()}
-                disabled={!selectedProvinceName || !selectedWardName || quoteLoading}
-                className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
-              >
-                {quoteLoading ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Đang tính...</span>
-                  </>
-                ) : (
-                  <>
-                    <Truck className="w-3.5 h-3.5" />
-                    <span>Tính Phí GHN</span>
-                  </>
-                )}
-              </button>
-            </div>
+            {/* Lalamove Delivery Address Selection */}
+            <LalamoveAddressPicker
+              initialName={buyerName}
+              initialPhone={buyerPhone}
+              initialLatitude={deliveryLatitude}
+              initialLongitude={deliveryLongitude}
+              initialAddress={streetAddress}
+              onAddressConfirmed={(data) => {
+                setDeliveryLatitude(data.latitude);
+                setDeliveryLongitude(data.longitude);
+                setStreetAddress(data.address);
+                setSelectedProvinceName(data.city);
+                if (data.name) setBuyerName(data.name);
+                if (data.phone) setBuyerPhone(data.phone);
+                calculateLalamoveQuote(data.latitude, data.longitude, data.address, data.name, data.phone);
+              }}
+              lang={lang}
+              title={lang === 'vi' ? 'Địa Chỉ Giao Nhận Hàng Lalamove' : 'Lalamove Delivery Address'}
+              description={lang === 'vi' ? 'Định vị GPS chính xác để tài xế Lalamove tính phí và giao hàng tận nơi.' : 'Precise GPS coordinates for Lalamove couriers.'}
+            />
 
             {/* Address Type Selector */}
             <div className="flex items-center gap-3">
@@ -1456,7 +1247,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             {/* Delivery Note */}
             <div>
               <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                {lang === 'vi' ? 'Ghi chú cho bưu tá giao nhận GHN' : 'Delivery Note for GHN Courier'}
+                {lang === 'vi' ? 'Ghi chú cho tài xế giao nhận Lalamove' : 'Delivery Note for Lalamove Courier'}
               </label>
               <input
                 type="text"
@@ -1467,11 +1258,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               />
             </div>
 
-            {/* Live GHN Quote Status Indicator */}
+            {/* Live Lalamove Quote Status Indicator */}
             {quoteLoading && (
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-2.5 text-xs text-blue-800">
-                <Loader2 className="w-4 h-4 text-blue-600 animate-spin shrink-0" />
-                <span>Đang kết nối API GHN tính toán cước phí vận chuyển và thời gian giao hàng...</span>
+              <div className="p-3 bg-orange-50 border border-orange-200 rounded-xl flex items-center gap-2.5 text-xs text-orange-800">
+                <Loader2 className="w-4 h-4 text-orange-600 animate-spin shrink-0" />
+                <span>Đang kết nối API Lalamove tính toán cước phí vận chuyển...</span>
               </div>
             )}
 
@@ -1483,7 +1274,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => calculateGhnQuote(selectedProvinceName, selectedWardName, streetAddress, buyerName, buyerPhone)}
+                  onClick={() => calculateLalamoveQuote(deliveryLatitude, deliveryLongitude, streetAddress, buyerName, buyerPhone)}
                   className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 rounded-lg font-bold text-[11px] cursor-pointer"
                 >
                   Thử lại
@@ -1496,7 +1287,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <div className="flex items-center justify-between font-bold text-emerald-900">
                   <div className="flex items-center gap-1.5">
                     <Truck className="w-4 h-4 text-emerald-700" />
-                    <span>Báo giá Giao Hàng Nhanh (GHN) hợp lệ</span>
+                    <span>Báo giá Lalamove hợp lệ</span>
                   </div>
                   <span className="font-mono text-[11px] bg-emerald-200/80 px-2 py-0.5 rounded text-emerald-900 font-semibold">
                     Chặng: {ghnQuote.leg || 'SELLER_TO_BUYER'}
@@ -1504,7 +1295,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </div>
                 <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
                   <div>
-                    <span className="text-emerald-700">Phí giao GHN: </span>
+                    <span className="text-emerald-700">Phí giao Lalamove: </span>
                     <strong className="text-emerald-950">{formatVND(ghnQuote.shippingFee)}</strong>
                   </div>
                   <div>
@@ -1512,7 +1303,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <strong className="text-emerald-950">
                       {ghnQuote.expectedDeliveryTime
                         ? new Date(ghnQuote.expectedDeliveryTime).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
-                        : '2-3 ngày'}
+                        : 'Giao ngay trong ngày'}
                     </strong>
                   </div>
                 </div>

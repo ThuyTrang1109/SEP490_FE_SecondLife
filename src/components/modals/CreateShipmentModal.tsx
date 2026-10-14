@@ -47,8 +47,8 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
 
       onShipmentCreated(shipment);
     } catch (err: any) {
-      console.error('Failed to create GHN shipment:', err);
-      setErrorMsg(err?.message || 'Không thể tạo vận đơn GHN. Vui lòng kiểm tra lại cấu hình kho lấy hàng hoặc thử lại.');
+      console.error('Failed to create Lalamove shipment:', err);
+      setErrorMsg(err?.message || 'Không thể tạo vận đơn Lalamove. Vui lòng kiểm tra lại cấu hình kho lấy hàng hoặc thử lại.');
     } finally {
       setIsSubmitting(false);
     }
@@ -65,7 +65,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             </div>
             <div>
               <h3 className="text-base sm:text-lg font-black text-slate-900">
-                Tạo Vận Đơn Giao Hàng Nhanh (GHN)
+                Tạo Vận Đơn Giao Hàng Lalamove
               </h3>
               <p className="text-xs text-slate-500">Đơn hàng: #{order.id.slice(0, 12)}</p>
             </div>
@@ -107,7 +107,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
           {/* Logistics Route Visualizer */}
           <div className="space-y-3 bg-[#faf8f5] p-4 rounded-2xl border border-gray-200">
             <span className="font-extrabold uppercase text-[10px] text-slate-400 block tracking-wider">
-              Lộ trình nhận & giao hàng GHN
+              Lộ trình nhận & giao hàng Lalamove
             </span>
 
             {/* From (Seller warehouse) */}
@@ -121,7 +121,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                   {order.listing.location || 'Địa chỉ kho đã lưu trong hồ sơ người bán'}
                 </span>
                 <span className="text-[10px] text-amber-700 italic block">
-                  Bưu tá GHN sẽ đến địa chỉ này lấy kiện hàng
+                  Tài xế Lalamove sẽ đến địa chỉ này lấy kiện hàng
                 </span>
               </div>
             </div>
@@ -192,7 +192,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
           <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl flex items-start gap-2 text-[11px] text-blue-900">
             <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
             <span className="leading-snug">
-              Sau khi tạo vận đơn, hệ thống sẽ cấp mã vận đơn GHN chính thức. Bạn có thể in phiếu gửi và chuẩn bị đóng gói để bàn giao cho bưu tá.
+              Sau khi tạo vận đơn, hệ thống sẽ cấp mã vận đơn Lalamove chính thức. Bạn có thể in phiếu gửi và chuẩn bị đóng gói để bàn giao cho tài xế.
             </span>
           </div>
 
@@ -214,12 +214,12 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-4 h-4 text-white animate-spin" />
-                  <span>Đang kết nối GHN...</span>
+                  <span>Đang kết nối Lalamove...</span>
                 </>
               ) : (
                 <>
                   <Truck className="w-4 h-4 text-white" />
-                  <span>Xác Nhận Tạo Vận Đơn GHN</span>
+                  <span>Xác Nhận Tạo Vận Đơn Lalamove</span>
                 </>
               )}
             </button>

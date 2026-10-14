@@ -84,6 +84,7 @@ import {
   LogOut,
 } from 'lucide-react';
 import { CatalogAiTab } from '../components/admin/CatalogAiTab';
+import { SystemWalletTab } from '../components/admin/SystemWalletTab';
 
 interface AdminDashboardViewProps {
   orders: EscrowOrder[];
@@ -109,7 +110,8 @@ type AdminTab =
   | 'customers'
   | 'seller-kyc'
   | 'permissions'
-  | 'credit-pricing';
+  | 'credit-pricing'
+  | 'system-wallet';
 
 interface BookingAppointment {
   id: string;
@@ -677,12 +679,26 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const loadCreditPricingData = async () => {
     setIsLoadingPricing(true);
     try {
-      const [prices, tiers] = await Promise.all([
+      const [pricesRes, tiersRes] = await Promise.allSettled([
         adminCreditPricingService.getCreditPrices(),
         adminCreditPricingService.getDiscountTiers()
       ]);
-      setCreditPrices(prices || []);
-      setDiscountTiers(tiers || []);
+
+      if (pricesRes.status === 'fulfilled') {
+        const pricesData = pricesRes.value;
+        const pricesList = Array.isArray(pricesData) ? pricesData : (pricesData as any)?.data || [];
+        setCreditPrices(pricesList);
+      } else {
+        console.warn('Failed to load credit prices:', pricesRes.reason);
+      }
+
+      if (tiersRes.status === 'fulfilled') {
+        const tiersData = tiersRes.value;
+        const tiersList = Array.isArray(tiersData) ? tiersData : (tiersData as any)?.data || [];
+        setDiscountTiers(tiersList);
+      } else {
+        console.warn('Failed to load discount tiers:', tiersRes.reason);
+      }
     } catch (err: any) {
       triggerNotice('Không thể tải bảng giá credit: ' + (err.message || ''));
     } finally {
@@ -690,7 +706,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   };
 
-  const handleUpdateCreditPrice = async (creditType: 'LISTING' | 'VALUATION', newPrice: number) => {
+  const handleUpdateCreditPrice = async (creditType: string, newPrice: number) => {
     try {
       await adminCreditPricingService.updateCreditPrice(creditType, newPrice);
       triggerNotice(`Đã cập nhật đơn giá ${creditType} thành ${formatVND(newPrice)}`);
@@ -1269,6 +1285,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       id: 'credit-pricing' as AdminTab,
       label: lang === 'vi' ? 'BẢNG GIÁ & CHIẾT KHẤU' : 'CREDIT & PRICING',
       icon: Tag,
+      badge: null
+    },
+    {
+      id: 'system-wallet' as AdminTab,
+      label: lang === 'vi' ? 'VÍ HỆ THỐNG & ĐỐI SOÁT' : 'SYSTEM WALLET',
+      icon: Wallet,
       badge: null
     }
   ];
@@ -3506,7 +3528,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                               </span>
                             </div>
                             <p className="text-xs text-slate-600">
-                              {(rule as any).description || (rule.creditType === 'LISTING' ? 'Phí nạp lượt đăng tin sản phẩm trên sàn' : 'Phí lượt kiểm định và thẩm định chất lượng')}
+                              {(rule as any).description || (
+                                rule.creditType === 'LISTING'
+                                  ? 'Phí nạp lượt đăng tin sản phẩm trên sàn'
+                                  : rule.creditType === 'VALUATION'
+                                    ? 'Phí lượt kiểm định và thẩm định chất lượng'
+                                    : 'Phí lượt trò chuyện và tư vấn định giá cùng AI'
+                              )}
                             </p>
 
                             <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
@@ -3644,6 +3672,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB: SYSTEM WALLET & ACCOUNTING RECONCILIATION           */}
+          {/* ======================================================== */}
+          {activeTab === 'system-wallet' && (
+            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#24263e] p-5">
+              <SystemWalletTab />
             </div>
           )}
         </div>

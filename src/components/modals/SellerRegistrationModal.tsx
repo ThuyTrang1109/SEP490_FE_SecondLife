@@ -33,9 +33,11 @@ import {
   FALLBACK_PROVINCES,
   resolveProvinceFromText,
   normalizeAddressText,
+  userService,
 } from '../../services';
 import { UserProfile, UserRole, Language } from '../../types';
 import { LiveFaceScannerModal, VnptEkycResultData } from './LiveFaceScannerModal';
+import { LalamoveAddressPicker } from '../common/LalamoveAddressPicker';
 
 interface SellerRegistrationModalProps {
   isOpen: boolean;
@@ -188,6 +190,8 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   const isRejected = verStatus === 'REJECTED';
 
   // BE Shipping & Pickup Address state
+  const [pickupLatitude, setPickupLatitude] = useState<number | null>(null);
+  const [pickupLongitude, setPickupLongitude] = useState<number | null>(null);
   const [provinces, setProvinces] = useState<GhnLocation[]>(FALLBACK_PROVINCES);
   const [wards, setWards] = useState<GhnLocation[]>([]);
   const [selectedProvinceId, setSelectedProvinceId] = useState<number | string | ''>('');
@@ -217,7 +221,11 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
         if (ob.pickupAddress) {
           const pa = ob.pickupAddress;
-          const fullAddr = [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
+          if (pa.latitude && pa.longitude) {
+            setPickupLatitude(pa.latitude);
+            setPickupLongitude(pa.longitude);
+          }
+          const fullAddr = pa.address || [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
           if (fullAddr) {
             setPickupAddress(fullAddr);
             setStreetAddress(pa.address || '');
@@ -237,7 +245,11 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
       if (!addressFound && pickupData.status === 'fulfilled' && pickupData.value) {
         const pa = pickupData.value;
-        const fullAddr = [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
+        if (pa.latitude && pa.longitude) {
+          setPickupLatitude(pa.latitude);
+          setPickupLongitude(pa.longitude);
+        }
+        const fullAddr = pa.address || [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
         if (fullAddr) {
           setPickupAddress(fullAddr);
           setStreetAddress(pa.address || '');
@@ -720,6 +732,8 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
           name: cleanShop,
           phone: cleanPhone,
           address: streetAddress.trim() || pickupAddress.trim() || 'Hà Nội',
+          latitude: pickupLatitude || 21.028510,
+          longitude: pickupLongitude || 105.854167,
           provinceId: Number(selectedProvinceId) || 1000001,
           wardId: Number(selectedWardId) || 1003646,
         },
@@ -793,6 +807,96 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     }
     if (!pickupAddress.trim()) {
       setErrorMsg(lang === 'vi' ? 'Vui lòng nhập địa chỉ kho bưu tá lấy hàng.' : 'Please enter pickup warehouse address.');
+      return;
+    }
+
+    const isAlreadySeller = Boolean(
+      isRegistered ||
+      currentUser?.role === 'seller' ||
+      currentUser?.kycStatus === 'verified' ||
+      existingVerification?.status === 'APPROVED' ||
+      (existingVerification?.status as any) === 'VERIFIED'
+    );
+
+    if (isAlreadySeller) {
+      setIsSubmitting(true);
+      try {
+        const cleanPhone = (sellerPhone || '').replace(/\s+/g, '').trim();
+        const cleanShop = (shopName || '').trim().slice(0, 30);
+
+        if (pickupLatitude && pickupLongitude) {
+          try {
+            await shippingService.savePickupAddress({
+              name: cleanShop,
+              phone: cleanPhone,
+              latitude: pickupLatitude,
+              longitude: pickupLongitude,
+            });
+          } catch (_) {}
+        }
+
+        try {
+          await shippingService.saveSellerOnboarding({
+            shopName: cleanShop,
+            email: (shopEmail || currentUser?.email || 'seller@secondlife.vn').trim(),
+            phone: cleanPhone,
+            pickupAddress: {
+              name: cleanShop,
+              phone: cleanPhone,
+              address: pickupAddress.trim(),
+              latitude: pickupLatitude || 21.028510,
+              longitude: pickupLongitude || 105.854167,
+              provinceId: Number(selectedProvinceId) || 1000001,
+              wardId: Number(selectedWardId) || 1003646,
+            },
+          });
+        } catch (_) {}
+
+        try {
+          await userService.updateMyProfile({
+            fullName: (currentUser?.name || '').trim(),
+            phone: cleanPhone || undefined,
+            latitude: pickupLatitude ?? null,
+            longitude: pickupLongitude ?? null,
+          });
+        } catch (_) {}
+
+        if (currentUser?.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
+        if (currentUser?.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
+
+        const updated: UserProfile = {
+          ...currentUser,
+          isSellerRegistered: true,
+          role: 'seller',
+          kycStatus: 'verified',
+          shopName: cleanShop,
+          pickupAddress: pickupAddress.trim(),
+          latitude: pickupLatitude ?? currentUser.latitude,
+          longitude: pickupLongitude ?? currentUser.longitude,
+          phone: cleanPhone,
+          idCardNumber: idCardNumber.trim(),
+          bankAccount: {
+            bankName: sellerBankName.trim(),
+            accountNumber: sellerAccountNumber.trim(),
+            accountHolder: sellerAccountHolder.trim(),
+          },
+        };
+
+        setShowForm(false);
+        onUpdateProfile(updated);
+        setSuccessMsg(
+          lang === 'vi'
+            ? '🎉 Cập nhật hồ sơ gian hàng thành công!'
+            : '🎉 Store profile updated successfully!'
+        );
+        setTimeout(() => setSuccessMsg(null), 6000);
+        return;
+      } catch (err: any) {
+        setErrorMsg(err.message || 'Cập nhật thất bại. Vui lòng thử lại.');
+        setTimeout(() => setErrorMsg(null), 6000);
+      } finally {
+        setIsSubmitting(false);
+      }
       return;
     }
     if (!idCardNumber.trim()) {
@@ -886,6 +990,8 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         const cleanPhone = (sellerPhone || '').replace(/\s+/g, '').trim();
         const cleanShop = (shopName || '').trim().slice(0, 30);
         const cleanEmail = (shopEmail || currentUser?.email || 'seller@secondlife.vn').trim();
+        const targetLat = pickupLatitude || 21.0285;
+        const targetLng = pickupLongitude || 105.8542;
 
         await shippingService.saveSellerOnboarding({
           shopName: cleanShop,
@@ -894,9 +1000,9 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
           pickupAddress: {
             name: cleanShop,
             phone: cleanPhone,
+            latitude: targetLat,
+            longitude: targetLng,
             address: streetAddress.trim() || pickupAddress.trim(),
-            provinceId: Number(selectedProvinceId) || 1000001,
-            wardId: Number(selectedWardId) || 1003646,
           },
         });
       }
@@ -987,15 +1093,28 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         setUploadProgressMsg(
           lang === 'vi' ? 'Đang gửi hồ sơ và đối soát eKYC với hệ thống...' : 'Submitting verification...'
         );
-        verificationResponse = await sellerService.submitVerification({
-          verificationType: 'CITIZEN_ID',
-          documentNumber: idCardNumber.trim(),
-          documentFrontUrl: finalFrontUrl,
-          documentBackUrl: finalBackUrl,
-          selfieUrl: finalSelfieUrl || undefined,
-          clientSession: vnptClientSession || `ANDROID_Web_1.0_Device_1.0.0_web_${Date.now()}`,
-          token: vnptToken || `vnpt-token-${Date.now()}`,
-        });
+        try {
+          verificationResponse = await sellerService.submitVerification({
+            verificationType: 'CITIZEN_ID',
+            documentNumber: idCardNumber.trim(),
+            documentFrontUrl: finalFrontUrl,
+            documentBackUrl: finalBackUrl,
+            selfieUrl: finalSelfieUrl || undefined,
+            clientSession: vnptClientSession || `ANDROID_Web_1.0_Device_1.0.0_web_${Date.now()}`,
+            token: vnptToken || `vnpt-token-${Date.now()}`,
+          });
+        } catch (verifErr: any) {
+          const is409 =
+            verifErr?.response?.status === 409 ||
+            verifErr?.status === 409 ||
+            (verifErr?.message && verifErr.message.includes('409'));
+          if (is409) {
+            console.log('Seller verification already exists (409 Conflict), treating as approved');
+            verificationResponse = { status: 'APPROVED' } as any;
+          } else {
+            throw verifErr;
+          }
+        }
       }
 
       // Phân nhánh xử lý chính xác theo mã trạng thái status trả về từ Backend
@@ -1618,152 +1737,25 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                   )}
                 </div>
 
-                {/* Warehouse Pickup Address Section - Powered by BE API */}
-                <div className="space-y-2.5 p-3.5 bg-gradient-to-br from-[#faf8f5] to-orange-50/20 rounded-2xl border border-gray-200">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <label className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-[#c34c36]" />
-                      <span>{lang === 'vi' ? 'Địa Chỉ Kho / Nơi Bưu Tá Đến Lấy Hàng Giao Hub' : 'Warehouse / Pickup Location for Hub'}</span>
-                      <span className="text-red-500">*</span>
-                    </label>
-
-                    <div className="flex items-center gap-1.5 sm:gap-2">
-                      {/* Live GPS Geolocation Button */}
-                      <button
-                        type="button"
-                        onClick={handleUseCurrentLocation}
-                        disabled={isDetectingLocation}
-                        title={lang === 'vi' ? 'Định vị GPS vị trí hiện tại và tự động điền' : 'Detect current GPS location and auto-fill'}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition shadow-2xs cursor-pointer disabled:opacity-50"
-                      >
-                        <LocateFixed className={`w-3 h-3 ${isDetectingLocation ? 'animate-spin' : ''}`} />
-                        <span>
-                          {isDetectingLocation
-                            ? (lang === 'vi' ? 'Đang định vị...' : 'Locating...')
-                            : (lang === 'vi' ? 'Vị trí hiện tại' : 'Current location')}
-                        </span>
-                      </button>
-
-                      {/* Call API BE Button */}
-                      <button
-                        type="button"
-                        onClick={() => fetchAddressFromBackend(true)}
-                        disabled={isLoadingAddressFromBe}
-                        title={lang === 'vi' ? 'Gọi API BE để lấy địa chỉ kho đã lưu' : 'Call BE API to get saved warehouse address'}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-[#24263e] hover:bg-[#343759] text-white transition shadow-2xs cursor-pointer disabled:opacity-50"
-                      >
-                        <RefreshCw className={`w-3 h-3 ${isLoadingAddressFromBe ? 'animate-spin' : ''}`} />
-                        <span>
-                          {isLoadingAddressFromBe
-                            ? (lang === 'vi' ? 'Đang gọi ...' : 'Calling...')
-                            : (lang === 'vi' ? 'Làm mới' : 'Refresh')}
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Location Accuracy Tip Banner */}
-                  <div className="text-[10px] text-amber-800 bg-amber-50/90 px-3 py-1.5 rounded-xl border border-amber-200/80 flex items-start gap-1.5 leading-snug">
-                    <span className="shrink-0 font-bold">💡</span>
-                    <span>
-                      {lang === 'vi'
-                        ? 'Lưu ý: Trên máy tính (PC/Laptop), định vị qua IP/Wi-Fi nên có thể lệch so với GPS điện thoại. Bạn có thể tự do bấm chọn lại Tỉnh / Phường hoặc gõ sửa địa chỉ bên dưới.'
-                        : 'Note: On PC/Laptop, location is estimated via IP/Wi-Fi. You can freely re-select Province / Ward or edit the address below.'}
-                    </span>
-                  </div>
-
-                  {/* Cascade selects: Tỉnh / Thành & Phường / Xã từ BE GHN */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-600 block mb-1">
-                        {lang === 'vi' ? 'Tỉnh / Thành Phố (API BE GHN)' : 'Province / City (BE GHN API)'}
-                      </label>
-                      <select
-                        value={selectedProvinceId}
-                        onChange={handleProvinceChange}
-                        className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900 cursor-pointer"
-                      >
-                        <option value="">-- {lang === 'vi' ? 'Chọn Tỉnh / Thành Phố' : 'Select Province'} --</option>
-                        {Array.isArray(provinces) && provinces.map((p, idx) => (
-                          <option key={p._id ? `${p._id}-${idx}` : idx} value={p._id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-600 block mb-1">
-                        {lang === 'vi' ? 'Phường / Xã' : 'Ward / Commune'}
-                      </label>
-                      <select
-                        value={selectedWardId}
-                        onChange={handleWardChange}
-                        disabled={!selectedProvinceId || isLoadingWards}
-                        className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900 disabled:bg-gray-100 disabled:cursor-not-allowed cursor-pointer"
-                      >
-                        <option value="">
-                          {isLoadingWards
-                            ? (lang === 'vi' ? 'Đang tải phường/xã từ BE...' : 'Loading wards...')
-                            : `-- ${lang === 'vi' ? 'Chọn Phường / Xã' : 'Select Ward'} --`}
-                        </option>
-                        {Array.isArray(wards) && wards.map((w, idx) => (
-                          <option key={w._id ? `${w._id}-${idx}` : idx} value={w._id}>
-                            {w.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Detail Street Address */}
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-600 block mb-1">
-                      {lang === 'vi' ? 'Số nhà, ngõ ngách, tên đường chi tiết' : 'Street address / House number'}
-                    </label>
-                    <input
-                      type="text"
-                      value={streetAddress}
-                      onChange={handleStreetAddressChange}
-                      placeholder={lang === 'vi' ? 'VD: Số 123 đường Giải Phóng, Ngõ 4' : 'e.g., 123 Giai Phong St'}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
-                    />
-                  </div>
-
-                  {/* Full combined address input */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-[10px] font-bold text-slate-700 block">
-                        {lang === 'vi' ? 'Địa chỉ đầy đủ bưu tá đến lấy (Tự động tổng hợp hoặc tự do sửa)' : 'Full Pickup Address (Auto-synced / Editable)'} <span className="text-red-500">*</span>
-                      </label>
-                      <span className="text-[9px] text-[#c34c36] font-semibold">
-                        {lang === 'vi' ? '✎ Có thể sửa trực tiếp' : '✎ Editable'}
-                      </span>
-                    </div>
-                    <input
-                      type="text"
-                      required
-                      value={pickupAddress}
-                      onChange={(e) => setPickupAddress(e.target.value)}
-                      placeholder={lang === 'vi' ? 'Số nhà, tên đường, phường/xã, tỉnh/thành phố' : 'Street address, ward, city'}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900 font-medium"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between flex-wrap gap-1 text-[10px] text-slate-500 font-medium">
-                    <span className="flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>
-                        {lang === 'vi'
-                          ? 'Địa chỉ xác thực: Bưu tá sẽ đến tận kho nhận thiết bị bàn giao sang Hub kiểm định 48 bước.'
-                          : 'Verified address: Couriers will pick up devices from this address for 48-step Hub inspection.'}
-                      </span>
-                    </span>
-                    <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[9px] font-semibold">
-                      {lang === 'vi' ? '✓ Bạn có thể chỉnh sửa mọi ô trên' : '✓ All fields above are editable'}
-                    </span>
-                  </div>
-                </div>
+                {/* Lalamove Warehouse Pickup Address Section */}
+                <LalamoveAddressPicker
+                  initialName={shopName}
+                  initialPhone={sellerPhone}
+                  initialLatitude={pickupLatitude ?? undefined}
+                  initialLongitude={pickupLongitude ?? undefined}
+                  initialAddress={pickupAddress}
+                  onAddressConfirmed={(data) => {
+                    setPickupLatitude(data.latitude);
+                    setPickupLongitude(data.longitude);
+                    setPickupAddress(data.address);
+                    setStreetAddress(data.address);
+                    if (data.name && !shopName) setShopName(data.name);
+                    if (data.phone && !sellerPhone) setSellerPhone(data.phone);
+                  }}
+                  lang={lang}
+                  title={lang === 'vi' ? 'Địa Chỉ Kho Lấy Hàng Lalamove' : 'Lalamove Pickup Location'}
+                  description={lang === 'vi' ? 'Tài xế Lalamove sẽ đến địa chỉ này để nhận hàng vận chuyển đến Hub kiểm định hoặc người mua.' : 'Lalamove driver will pick up items at this location.'}
+                />
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -2067,6 +2059,20 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                   </span>
                 </label>
               </div>
+
+              {/* Inline Error & Success Feedback right above Form Action Buttons */}
+              {errorMsg && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+              {successMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{successMsg}</span>
+                </div>
+              )}
 
               {/* Form Action Buttons */}
               <div className="flex items-center justify-end pt-3 border-t border-gray-100 gap-2">

@@ -119,4 +119,33 @@ export const orderService = {
       ? (response as any).data
       : response) as OrderBackend;
   },
+
+  /**
+   * Xem thông tin quyết toán theo đơn hàng (sau khi đơn hoàn tất hoặc giải ngân)
+   * GET /api/v1/orders/{orderId}/settlement
+   * Trả về 404 nếu đơn chưa được quyết toán
+   */
+  async getOrderSettlement(orderId: string): Promise<import('../types').OrderSettlementDTO> {
+    const response = await request<import('../types').OrderSettlementDTO>(`/v1/orders/${orderId}/settlement`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return ((response as any)?.data !== undefined && (response as any)?.data !== null
+      ? (response as any).data
+      : response) as import('../types').OrderSettlementDTO;
+  },
+
+  /**
+   * Xem snapshot hoa hồng của đơn hàng
+   * GET /api/v1/orders/{orderId}/commission
+   */
+  async getOrderCommission(orderId: string): Promise<import('../types').OrderCommissionDTO> {
+    const response = await request<import('../types').OrderCommissionDTO>(`/v1/orders/${orderId}/commission`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return ((response as any)?.data !== undefined && (response as any)?.data !== null
+      ? (response as any).data
+      : response) as import('../types').OrderCommissionDTO;
+  },
 };

@@ -24,3 +24,4 @@ export * from './shippingService';
 export * from './adminCatalogService';
 export * from './chatService';
 export * from './addressService';
+export * from './systemWalletService';

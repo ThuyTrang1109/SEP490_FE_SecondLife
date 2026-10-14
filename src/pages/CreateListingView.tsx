@@ -276,13 +276,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     };
   }, [selectedCategoryId, selectedItemId, backendCategories, backendItems]);
 
-  // Kích thước và trọng lượng đóng gói (GHN)
+  // Kích thước và trọng lượng đóng gói (Lalamove)
   const [shippingWeight, setShippingWeight] = useState<number | ''>('');
   const [shippingLength, setShippingLength] = useState<number | ''>('');
   const [shippingWidth, setShippingWidth] = useState<number | ''>('');
   const [shippingHeight, setShippingHeight] = useState<number | ''>('');
 
-  // Đơn vị và input nhập liệu thông minh cho kiện hàng GHN
+  // Đơn vị và input nhập liệu thông minh cho kiện hàng Lalamove
   const [weightUnit, setWeightUnit] = useState<'kg' | 'g'>('kg');
   const [rawWeightInput, setRawWeightInput] = useState<string>('');
   const [dimensionUnit, setDimensionUnit] = useState<'cm' | 'm'>('cm');
@@ -1375,7 +1375,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       height: Math.round(Number(shippingHeight)),
     };
     if (parcel.weight < 1 || parcel.weight > 50000) {
-      showToast(lang === 'vi' ? 'Trọng lượng phải từ 1 đến 50.000 gram (tối đa 50kg theo GHN)' : 'Weight must be 1–50000 grams');
+      showToast(lang === 'vi' ? 'Trọng lượng phải từ 1 đến 50.000 gram (tối đa 50kg theo Lalamove)' : 'Weight must be 1–50000 grams');
       return;
     }
     if ([parcel.length, parcel.width, parcel.height].some((v) => v < 1 || v > 200)) {
@@ -2246,17 +2246,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
             </div>
 
-            {/* Thông tin đóng gói GHN với bộ chọn đơn vị thông minh (kg/g, cm/m) */}
+            {/* Thông tin đóng gói Lalamove với bộ chọn đơn vị thông minh (kg/g, cm/m) */}
             <div className="p-4 bg-slate-50/70 border border-slate-200/90 rounded-2xl space-y-3 shadow-2xs">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-gray-200/70 pb-2.5">
                 <div className="flex items-center gap-2">
                   <Truck className="w-4 h-4 text-blue-600 shrink-0" />
                   <span className="text-xs font-bold text-[#24263e]">
-                    Thông tin kiện hàng giao hàng (Bắt buộc để tính phí GHN)
+                    Thông tin kiện hàng giao hàng (Bắt buộc để tính phí Lalamove)
                   </span>
                 </div>
                 <span className="text-[11px] text-slate-400 italic">
-                  * Tự động quy đổi chuẩn BE/GHN: Trọng lượng (gram) • Kích thước (cm)
+                  * Tự động quy đổi chuẩn BE/Lalamove: Trọng lượng (gram) • Kích thước (cm)
                 </span>
               </div>
 
@@ -2294,7 +2294,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <div className="h-5 flex items-center pl-1 text-[10px]">
                     {shippingWeight ? (
                       <span className="font-bold text-emerald-600 truncate">
-                        = {Number(shippingWeight).toLocaleString('vi-VN')} gram (chuẩn GHN)
+                        = {Number(shippingWeight).toLocaleString('vi-VN')} gram (chuẩn Lalamove)
                       </span>
                     ) : (
                       <span className="text-slate-400 truncate">Nhập cân nặng ({weightUnit})</span>
@@ -2847,7 +2847,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
             </div>
 
-            {/* Thông tin đóng gói GHN */}
+            {/* Thông tin đóng gói Lalamove */}
             <div className="pt-2 border-t border-slate-200">
               <span className="text-xs font-bold text-slate-600 block mb-3">
                 <Truck className="w-4 h-4 inline mr-1 text-blue-600" />

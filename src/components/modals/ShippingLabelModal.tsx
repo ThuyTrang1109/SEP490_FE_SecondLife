@@ -54,7 +54,7 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
     window.print();
   };
 
-  const trackingCode = shipment.orderCode || `GHN-${order.id.slice(0, 8).toUpperCase()}`;
+  const trackingCode = shipment.orderCode || `LLM-${order.id.slice(0, 8).toUpperCase()}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn overflow-y-auto">
@@ -67,9 +67,9 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-black text-slate-900 uppercase tracking-tight">
-                Phiếu Gửi Hàng & Vận Đơn GHN Express
+                Phiếu Gửi Hàng & Vận Đơn Lalamove Delivery
               </h3>
-              <p className="text-xs text-slate-500">Mã đơn: #{order.id} • Đối tác Giao Hàng Nhanh</p>
+              <p className="text-xs text-slate-500">Mã đơn: #{order.id} • Đối tác vận chuyển Lalamove</p>
             </div>
           </div>
 
@@ -91,19 +91,19 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
         </div>
 
         {/* Printable Voucher Paper */}
-        <div id="printable-ghn-label" className="mt-5 p-5 rounded-2xl bg-slate-50 border-2 border-dashed border-gray-300 space-y-4">
-          {/* Header Row: GHN branding & Tracking Barcode */}
+        <div id="printable-lalamove-label" className="mt-5 p-5 rounded-2xl bg-slate-50 border-2 border-dashed border-gray-300 space-y-4">
+          {/* Header Row: Lalamove branding & Tracking Barcode */}
           <div className="flex items-center justify-between border-b border-gray-200 pb-3">
             <div className="space-y-0.5">
               <div className="flex items-center gap-1.5">
-                <span className="font-black text-base text-[#c34c36] tracking-tight">GHN EXPRESS</span>
+                <span className="font-black text-base text-[#c34c36] tracking-tight">LALAMOVE DELIVERY</span>
                 <span className="text-[10px] bg-slate-900 text-white font-bold px-1.5 py-0.5 rounded">HÀNG LẤY TẬN KHO</span>
               </div>
-              <span className="text-[11px] text-slate-500 font-semibold block">Dịch vụ Giao hàng hỏa tốc chuẩn sàn</span>
+              <span className="text-[11px] text-slate-500 font-semibold block">Dịch vụ Giao hàng hỏa tốc Lalamove</span>
             </div>
 
             <div className="text-right">
-              <span className="text-[10px] text-slate-400 font-bold uppercase block">Mã vận đơn GHN</span>
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">Mã vận đơn Lalamove</span>
               <span className="font-mono font-black text-sm bg-slate-900 text-white px-3 py-1 rounded-lg block">
                 {trackingCode}
               </span>
@@ -182,14 +182,14 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
             </div>
           </div>
 
-          {/* GHN Delivery instructions */}
+          {/* Lalamove Delivery instructions */}
           <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/80 text-[11px] text-amber-900 space-y-1">
             <div className="font-bold uppercase tracking-tight flex items-center gap-1">
               <ShieldCheck className="w-3.5 h-3.5 text-amber-700" />
-              <span>Chỉ dẫn người giao hàng GHN:</span>
+              <span>Chỉ dẫn tài xế Lalamove:</span>
             </div>
             <p className="leading-snug">
-              Cho khách xem hàng, không cho dùng thử. Sản phẩm điện máy gia dụng SecondLife đã được niêm phong kỹ lưỡng. Chuyển hoàn bưu cục sau 3 lần giao không thành công.
+              Cho khách xem hàng, không cho dùng thử. Sản phẩm điện máy gia dụng SecondLife đã được niêm phong kỹ lưỡng. Chuyển hoàn về người gửi sau 3 lần giao không thành công.
             </p>
           </div>
         </div>

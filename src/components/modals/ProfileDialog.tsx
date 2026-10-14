@@ -56,6 +56,7 @@ import {
 } from '../../services';
 import { LiveFaceScannerModal, VnptEkycResultData } from './LiveFaceScannerModal';
 import { saveSellerAddress } from '../../utils/addressUtils';
+import { LalamoveAddressPicker } from '../common/LalamoveAddressPicker';
 
 export type ProfileTab = 'info' | 'wallet' | 'kyc' | 'security' | 'settings';
 
@@ -173,6 +174,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     Boolean(
       currentUser.isSellerRegistered ||
       currentUser.role === 'seller' ||
+      currentUser.kycStatus === 'verified' ||
       currentUser.shopName ||
       (currentUser.id && localStorage.getItem(`seller_registered_${currentUser.id}`) === 'true') ||
       (currentUser.email && localStorage.getItem(`seller_registered_${currentUser.email}`) === 'true')
@@ -184,6 +186,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [sellerPhone, setSellerPhone] = useState(currentUser.phone || '');
   const [pickupAddress, setPickupAddress] = useState(
     currentUser.pickupAddress || currentUser.address || ''
+  );
+  const [pickupLatitude, setPickupLatitude] = useState<number | null>(
+    currentUser.latitude ?? null
+  );
+  const [pickupLongitude, setPickupLongitude] = useState<number | null>(
+    currentUser.longitude ?? null
   );
   const [idCardNumber, setIdCardNumber] = useState(currentUser.idCardNumber || '');
   const [sellerBankName, setSellerBankName] = useState(
@@ -495,6 +503,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       const isKnownSeller = Boolean(
         currentUser.isSellerRegistered ||
         currentUser.role === 'seller' ||
+        currentUser.kycStatus === 'verified' ||
         currentUser.shopName ||
         (currentUser.id && localStorage.getItem(`seller_registered_${currentUser.id}`) === 'true') ||
         (currentUser.email && localStorage.getItem(`seller_registered_${currentUser.email}`) === 'true')
@@ -503,6 +512,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       setShopName(currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop'));
       setSellerPhone(currentUser.phone || '');
       setPickupAddress(currentUser.pickupAddress || currentUser.address || '');
+      setPickupLatitude(currentUser.latitude ?? null);
+      setPickupLongitude(currentUser.longitude ?? null);
       const isInternalRole = ['admin', 'staff', 'inspector'].includes(currentUser.role);
       if (initialTab && !(isInternalRole && initialTab === 'settings')) {
         setActiveTab(initialTab);
@@ -602,6 +613,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             setStreetAddress(pa.address || '');
             addressFound = true;
           }
+          if (pa.latitude) setPickupLatitude(pa.latitude);
+          if (pa.longitude) setPickupLongitude(pa.longitude);
         }
         if (ob.provinceId) {
           setSelectedProvinceId(ob.provinceId);
@@ -622,6 +635,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           setStreetAddress(pa.address || '');
           addressFound = true;
         }
+        if (pa.latitude) setPickupLatitude(pa.latitude);
+        if (pa.longitude) setPickupLongitude(pa.longitude);
       }
 
       if (!addressFound && currentUser?.address) {
@@ -934,10 +949,23 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           name: cleanShop,
           phone: cleanPhone,
           address: streetAddress.trim() || pickupAddress.trim() || 'Hà Nội',
+          latitude: pickupLatitude || 21.028510,
+          longitude: pickupLongitude || 105.854167,
           provinceId: Number(selectedProvinceId) || 1000001,
           wardId: Number(selectedWardId) || 1003646,
         },
       });
+
+      if (pickupLatitude && pickupLongitude) {
+        try {
+          await shippingService.savePickupAddress({
+            name: cleanShop,
+            phone: cleanPhone,
+            latitude: pickupLatitude,
+            longitude: pickupLongitude,
+          });
+        } catch (_) {}
+      }
 
       const selProv = provinces.find((p) => String(p._id) === String(selectedProvinceId) || String((p as any).id) === String(selectedProvinceId));
       const selWard = wards.find((w) => String(w._id) === String(selectedWardId) || String((w as any).id) === String(selectedWardId));
@@ -1014,9 +1042,116 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       return;
     }
     if (!pickupAddress.trim()) {
-      setSellerFormError('Vui lòng nhập địa chỉ kho bưu tá lấy hàng.');
+      setSellerFormError('Vui lòng nhập hoặc xác nhận địa chỉ kho trên bản đồ.');
       return;
     }
+
+    // NẾU ĐÃ LÀ NGƯỜI BÁN ĐÃ XÁC THỰC (Cập nhật thông tin gian hàng & kho không cần gọi lại eKYC)
+    const isAlreadySeller = Boolean(
+      isSellerRegistered ||
+      currentUser?.role === 'seller' ||
+      currentUser?.isSellerRegistered ||
+      currentUser?.kycStatus === 'verified' ||
+      existingVerification?.status === 'APPROVED' ||
+      (existingVerification?.status as any) === 'VERIFIED' ||
+      (currentUser?.id && localStorage.getItem(`seller_registered_${currentUser.id}`) === 'true') ||
+      (currentUser?.email && localStorage.getItem(`seller_registered_${currentUser.email}`) === 'true')
+    );
+
+    if (isAlreadySeller) {
+      setIsSubmittingSeller(true);
+      try {
+        const cleanPhone = (sellerPhone || '').replace(/\s+/g, '').trim();
+        const cleanShop = (shopName || '').trim().slice(0, 30);
+
+        // 1. Cập nhật địa chỉ kho lấy hàng Lalamove có tọa độ GPS
+        if (pickupLatitude && pickupLongitude) {
+          try {
+            await shippingService.savePickupAddress({
+              name: cleanShop,
+              phone: cleanPhone,
+              latitude: pickupLatitude,
+              longitude: pickupLongitude,
+            });
+          } catch (err: any) {
+            console.warn('savePickupAddress endpoint warning:', err);
+          }
+        }
+
+        // 2. Cập nhật thông tin gian hàng vào onboarding
+        try {
+          await shippingService.saveSellerOnboarding({
+            shopName: cleanShop,
+            email: (shopEmail || currentUser?.email || email || 'seller@secondlife.vn').trim(),
+            phone: cleanPhone,
+            pickupAddress: {
+              name: cleanShop,
+              phone: cleanPhone,
+              address: streetAddress.trim() || pickupAddress.trim(),
+              latitude: pickupLatitude || 21.028510,
+              longitude: pickupLongitude || 105.854167,
+              provinceId: Number(selectedProvinceId) || 1000001,
+              wardId: Number(selectedWardId) || 1003646,
+            },
+          });
+        } catch (onboardingErr: any) {
+          console.warn('saveSellerOnboarding warning:', onboardingErr);
+        }
+
+        // 3. Cập nhật thông tin profile cá nhân
+        try {
+          await userService.updateMyProfile({
+            fullName: name.trim(),
+            phone: cleanPhone || undefined,
+            streetAddress: streetAddress.trim() || undefined,
+            latitude: pickupLatitude ?? null,
+            longitude: pickupLongitude ?? null,
+          });
+        } catch (_) {}
+
+        // 4. Lưu cache localStorage để duy trì trạng thái seller
+        if (currentUser?.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
+        if (currentUser?.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
+
+        // 5. Cập nhật state UserProfile & đóng form chỉnh sửa
+        const updated: UserProfile = {
+          ...currentUser,
+          isSellerRegistered: true,
+          role: 'seller',
+          kycStatus: 'verified',
+          shopName: cleanShop,
+          pickupAddress: pickupAddress.trim(),
+          latitude: pickupLatitude ?? currentUser.latitude,
+          longitude: pickupLongitude ?? currentUser.longitude,
+          phone: cleanPhone,
+          idCardNumber: idCardNumber.trim(),
+          bankAccount: {
+            bankName: sellerBankName.trim() || bankName,
+            accountNumber: sellerAccountNumber.trim() || accountNumber,
+            accountHolder: sellerAccountHolder.trim() || accountHolder,
+          },
+        };
+
+        setIsSellerRegistered(true);
+        setShowSellerRegistrationForm(false);
+        onUpdateProfile(updated);
+        setSellerFormSuccess(
+          lang === 'vi'
+            ? '🎉 Cập nhật hồ sơ gian hàng và địa chỉ kho lấy hàng thành công!'
+            : '🎉 Store profile and warehouse pickup address updated successfully!'
+        );
+        setTimeout(() => setSellerFormSuccess(null), 6000);
+        return;
+      } catch (err: any) {
+        setSellerFormError(err.message || 'Cập nhật hồ sơ gian hàng thất bại. Vui lòng thử lại.');
+        setTimeout(() => setSellerFormError(null), 6000);
+      } finally {
+        setIsSubmittingSeller(false);
+      }
+      return;
+    }
+
+    // LUỒNG DÀNH CHO NGƯỜI DÙNG ĐĂNG KÝ MỚI eKYC
     if (!idCardNumber.trim()) {
       setSellerFormError('Vui lòng nhập số CCCD để xác minh danh tính người bán.');
       return;
@@ -1057,10 +1192,23 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               name: cleanShop,
               phone: cleanPhone,
               address: streetAddress.trim() || pickupAddress.trim(),
+              latitude: pickupLatitude || 21.028510,
+              longitude: pickupLongitude || 105.854167,
               provinceId: Number(selectedProvinceId) || 1000001,
               wardId: Number(selectedWardId) || 1003646,
             },
           });
+
+          if (pickupLatitude && pickupLongitude) {
+            try {
+              await shippingService.savePickupAddress({
+                name: cleanShop,
+                phone: cleanPhone,
+                latitude: pickupLatitude,
+                longitude: pickupLongitude,
+              });
+            } catch (_) {}
+          }
         } catch (onboardingErr) {
           console.warn('Backend saveSellerOnboarding notification:', onboardingErr);
         }
@@ -1078,19 +1226,34 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             clientSession: vnptClientSession || undefined,
             token: vnptToken || undefined,
           });
+        } else if (checkVerif?.status === 'APPROVED' || (checkVerif?.status as any) === 'VERIFIED') {
+          verificationResponse = checkVerif;
         }
       } catch (_) { }
 
       if (!verificationResponse) {
-        verificationResponse = await sellerService.submitVerification({
-          verificationType: 'CITIZEN_ID',
-          documentNumber: idCardNumber.trim(),
-          documentFrontUrl: docFrontUrl,
-          documentBackUrl: docBackUrl,
-          selfieUrl: selfieUrl || undefined,
-          clientSession: vnptClientSession || `ANDROID_Web_1.0_Device_1.0.0_web_${Date.now()}`,
-          token: vnptToken || `vnpt-token-${Date.now()}`,
-        });
+        try {
+          verificationResponse = await sellerService.submitVerification({
+            verificationType: 'CITIZEN_ID',
+            documentNumber: idCardNumber.trim(),
+            documentFrontUrl: docFrontUrl,
+            documentBackUrl: docBackUrl,
+            selfieUrl: selfieUrl || undefined,
+            clientSession: vnptClientSession || `ANDROID_Web_1.0_Device_1.0.0_web_${Date.now()}`,
+            token: vnptToken || `vnpt-token-${Date.now()}`,
+          });
+        } catch (verifErr: any) {
+          const is409 =
+            verifErr?.response?.status === 409 ||
+            verifErr?.status === 409 ||
+            (verifErr?.message && verifErr.message.includes('409'));
+          if (is409) {
+            console.log('Seller verification already exists (409 Conflict), treating as approved');
+            verificationResponse = { status: 'APPROVED' };
+          } else {
+            throw verifErr;
+          }
+        }
       }
 
       const status = verificationResponse?.status;
@@ -1269,9 +1432,20 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         district: selectedDistrictName.trim() || undefined,
         ward: selectedWardName.trim() || undefined,
         streetAddress: userStreetAddress.trim() || undefined,
-        latitude: null,
-        longitude: null,
+        latitude: pickupLatitude ?? null,
+        longitude: pickupLongitude ?? null,
       });
+
+      if (pickupLatitude && pickupLongitude) {
+        try {
+          await shippingService.savePickupAddress({
+            name: shopName || name.trim() || currentUser?.name || 'Gian Hàng',
+            phone: sellerPhone || phone.trim() || currentUser?.phone || '0900000000',
+            latitude: pickupLatitude,
+            longitude: pickupLongitude,
+          });
+        } catch (_) {}
+      }
 
       onUpdateProfile(updated);
       setIsSaved(true);
@@ -2263,6 +2437,14 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 </div>
               )}
 
+              {/* Error Notification */}
+              {sellerFormError && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium flex items-center gap-2.5 animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{sellerFormError}</span>
+                </div>
+              )}
+
               {/* THÔNG TIN GIAN HÀNG ĐÃ ĐĂNG KÝ (HIỂN THỊ KHI ĐÃ LÀ SELLER HOẶC ĐÃ ĐĂNG KÝ) */}
               {isSellerRegistered && !showSellerRegistrationForm && (
                 <div className="p-4 rounded-2xl bg-slate-50 border border-gray-200 space-y-3 animate-in fade-in">
@@ -2375,6 +2557,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           <span className="text-slate-400 italic">{lang === 'vi' ? 'Chưa cập nhật địa chỉ kho (Bấm Chỉnh sửa thông tin bên trên để thêm)' : 'Not updated'}</span>
                         )}
                       </span>
+                      {pickupLatitude && pickupLongitude && (
+                        <span className="block text-[10px] text-orange-600 font-mono mt-0.5 font-semibold">
+                          📍 GPS: {pickupLatitude.toFixed(5)}, {pickupLongitude.toFixed(5)}
+                        </span>
+                      )}
                     </div>
                     <div className="p-2.5 bg-white rounded-xl border border-gray-200/80">
                       <span className="text-[10px] text-slate-400 block mb-0.5">{lang === 'vi' ? 'Số CCCD định danh' : 'Citizen ID number'}</span>
@@ -2678,151 +2865,27 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       )}
                     </div>
 
-                    {/* Warehouse Pickup Address Section - Powered by BE API */}
-                    <div className="space-y-2.5 p-3.5 bg-gradient-to-br from-[#faf8f5] to-orange-50/20 rounded-2xl border border-gray-200">
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <label className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
-                          <MapPin className="w-3.5 h-3.5 text-[#c34c36]" />
-                          <span>{lang === 'vi' ? 'Địa Chỉ Kho / Nơi Bưu Tá Đến Lấy Hàng Giao Hub' : 'Warehouse / Pickup Location for Hub'}</span>
-                          <span className="text-red-500">*</span>
-                        </label>
-
-                        <div className="flex items-center gap-1.5 sm:gap-2">
-                          {/* Live GPS Geolocation Button */}
-                          <button
-                            type="button"
-                            onClick={handleUseCurrentLocation}
-                            disabled={isDetectingLocation}
-                            title={lang === 'vi' ? 'Định vị GPS vị trí hiện tại và tự động điền' : 'Detect current GPS location and auto-fill'}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition shadow-2xs cursor-pointer disabled:opacity-50"
-                          >
-                            <LocateFixed className={`w-3 h-3 ${isDetectingLocation ? 'animate-spin' : ''}`} />
-                            <span>
-                              {isDetectingLocation
-                                ? (lang === 'vi' ? 'Đang định vị...' : 'Locating...')
-                                : (lang === 'vi' ? 'Vị trí hiện tại' : 'Current location')}
-                            </span>
-                          </button>
-
-                          {/* Call API BE Button */}
-                          <button
-                            type="button"
-                            onClick={() => fetchAddressFromBackend(true)}
-                            disabled={isLoadingAddressFromBe}
-                            title={lang === 'vi' ? 'Gọi API BE để lấy địa chỉ kho đã lưu' : 'Call BE API to get saved warehouse address'}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-[#24263e] hover:bg-[#343759] text-white transition shadow-2xs cursor-pointer disabled:opacity-50"
-                          >
-                            <RefreshCw className={`w-3 h-3 ${isLoadingAddressFromBe ? 'animate-spin' : ''}`} />
-                            <span>
-                              {isLoadingAddressFromBe
-                                ? (lang === 'vi' ? 'Đang gọi...' : 'Calling...')
-                                : (lang === 'vi' ? 'Làm mới' : 'Refresh')}
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Location Accuracy Tip Banner */}
-                      <div className="text-[10px] text-amber-800 bg-amber-50/90 px-3 py-1.5 rounded-xl border border-amber-200/80 flex items-start gap-1.5 leading-snug">
-                        <span className="shrink-0 font-bold">💡</span>
-                        <span>
-                          {lang === 'vi'
-                            ? 'Lưu ý: Trên máy tính (PC/Laptop), định vị qua IP/Wi-Fi nên có thể lệch so với GPS điện thoại. Bạn có thể tự do bấm chọn lại Tỉnh / Phường hoặc gõ sửa địa chỉ bên dưới.'
-                            : 'Note: On PC/Laptop, location is estimated via IP/Wi-Fi. You can freely re-select Province / Ward or edit the address below.'}
-                        </span>
-                      </div>
-
-                      {/* Cascade selects: Tỉnh / Thành & Phường / Xã từ BE GHN */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="text-[10px] font-bold text-slate-600 block mb-1">
-                            {lang === 'vi' ? 'Tỉnh / Thành Phố' : 'Province / City'}
-                          </label>
-                          <select
-                            value={selectedProvinceId}
-                            onChange={handleProvinceChange}
-                            className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900 cursor-pointer"
-                          >
-                            <option value="">-- {lang === 'vi' ? 'Chọn Tỉnh / Thành Phố' : 'Select Province'} --</option>
-                            {Array.isArray(provinces) && provinces.map((p, idx) => (
-                              <option key={p._id ? `${p._id}-${idx}` : idx} value={p._id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="text-[10px] font-bold text-slate-600 block mb-1">
-                            {lang === 'vi' ? 'Phường / Xã' : 'Ward / Commune'}
-                          </label>
-                          <select
-                            value={selectedWardId}
-                            onChange={handleWardChange}
-                            disabled={!selectedProvinceId || isLoadingWards}
-                            className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900 disabled:bg-gray-100 disabled:cursor-not-allowed cursor-pointer"
-                          >
-                            <option value="">
-                              {isLoadingWards
-                                ? (lang === 'vi' ? 'Đang tải phường/xã ...' : 'Loading wards...')
-                                : `-- ${lang === 'vi' ? 'Chọn Phường / Xã' : 'Select Ward'} --`}
-                            </option>
-                            {Array.isArray(wards) && wards.map((w, idx) => (
-                              <option key={w._id ? `${w._id}-${idx}` : idx} value={w._id}>
-                                {w.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* Detail Street Address */}
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-600 block mb-1">
-                          {lang === 'vi' ? 'Số nhà, ngõ ngách, tên đường chi tiết' : 'Street address / House number'}
-                        </label>
-                        <input
-                          type="text"
-                          value={streetAddress}
-                          onChange={handleStreetAddressChange}
-                          placeholder={lang === 'vi' ? 'VD: Số 123 đường Giải Phóng, Ngõ 4' : 'e.g., 123 Giai Phong St'}
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
-                        />
-                      </div>
-
-                      {/* Full combined address input */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-[10px] font-bold text-slate-700 block">
-                            {lang === 'vi' ? 'Địa chỉ đầy đủ bưu tá đến lấy (Tự động tổng hợp hoặc tự do sửa)' : 'Full Pickup Address (Auto-synced / Editable)'} <span className="text-red-500">*</span>
-                          </label>
-                          <span className="text-[9px] text-[#c34c36] font-semibold">
-                            {lang === 'vi' ? '✎ Có thể sửa trực tiếp' : '✎ Editable'}
-                          </span>
-                        </div>
-                        <input
-                          type="text"
-                          required
-                          value={pickupAddress}
-                          onChange={(e) => setPickupAddress(e.target.value)}
-                          placeholder={lang === 'vi' ? 'Số nhà, tên đường, phường/xã, tỉnh/thành phố' : 'Street address, ward, city'}
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900 font-medium"
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between flex-wrap gap-1 text-[10px] text-slate-500 font-medium">
-                        <span className="flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          <span>
-                            {lang === 'vi'
-                              ? 'Địa chỉ xác thực: Bưu tá sẽ đến tận kho nhận thiết bị bàn giao sang Hub kiểm định 48 bước.'
-                              : 'Verified address: Couriers will pick up devices from this address for 48-step Hub inspection.'}
-                          </span>
-                        </span>
-                        <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[9px] font-semibold">
-                          {lang === 'vi' ? '✓ Bạn có thể chỉnh sửa mọi ô trên' : '✓ All fields above are editable'}
-                        </span>
-                      </div>
+                    {/* Warehouse Pickup Address Section - Powered by Lalamove & Geoapify GPS */}
+                    <div className="space-y-2">
+                      <LalamoveAddressPicker
+                        initialName={shopName || name || currentUser?.name || ''}
+                        initialPhone={sellerPhone || phone || currentUser?.phone || ''}
+                        initialLatitude={pickupLatitude ?? undefined}
+                        initialLongitude={pickupLongitude ?? undefined}
+                        initialAddress={pickupAddress}
+                        onAddressConfirmed={(data) => {
+                          setPickupLatitude(data.latitude);
+                          setPickupLongitude(data.longitude);
+                          setPickupAddress(data.address);
+                          setStreetAddress(data.address);
+                          if (data.name && !shopName) setShopName(data.name);
+                          if (data.phone && !sellerPhone) setSellerPhone(data.phone);
+                          saveSellerAddress(data.address, undefined, data.city);
+                        }}
+                        lang={lang}
+                        title={lang === 'vi' ? 'Địa Chỉ Kho Lấy Hàng Lalamove' : 'Lalamove Pickup Location'}
+                        description={lang === 'vi' ? 'Kéo ghim trên bản đồ để tài xế Lalamove định vị chính xác kho lấy hàng.' : 'Drag pin on map to set Lalamove pickup location.'}
+                      />
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3083,6 +3146,20 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       </span>
                     </label>
                   </div>
+
+                  {/* Inline Error & Success Feedback right above Action Buttons */}
+                  {sellerFormError && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>{sellerFormError}</span>
+                    </div>
+                  )}
+                  {sellerFormSuccess && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{sellerFormSuccess}</span>
+                    </div>
+                  )}
 
                   {/* Action Buttons */}
                   <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-gray-100">

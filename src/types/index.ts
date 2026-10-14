@@ -124,7 +124,7 @@ export interface InspectionReport {
 export interface ShippingLeg {
   id: string;
   legType: 'SELLER_TO_CENTER' | 'CENTER_TO_BUYER' | 'DIRECT' | string;
-  carrier: 'GHTK' | 'GHN' | 'GHN Express' | string;
+  carrier: 'Lalamove' | 'GHTK' | 'GHN' | 'GHN Express' | string;
   trackingNumber: string;
   status: 'PICKED_UP' | 'IN_TRANSIT' | 'DELIVERED' | string;
   origin: string;
@@ -437,21 +437,34 @@ export interface OrderBackend {
 }
 
 // ==========================================
-// 4. GHN Shipping & Tracking Types
+// 4. Lalamove Shipping & Tracking Types
 // ==========================================
+export interface GeocodedAddressDto {
+  address: string;
+  latitude: number;
+  longitude: number;
+  city: string;
+  countryCode: string;
+  placeId?: string;
+}
+
 export interface ShippingQuoteDeliveryAddressDto {
   name: string;
   phone: string;
-  address: string;
-  provinceName: string;
-  wardName: string;
-  newAddress: boolean;
+  latitude: number;
+  longitude: number;
+  address?: string;
+  // Legacy fields kept for backward compatibility if needed
+  provinceName?: string;
+  wardName?: string;
+  newAddress?: boolean;
 }
 
 export interface ShippingQuoteRequestDto {
   postId: string;
   negotiationId?: string;
   deliveryAddress: ShippingQuoteDeliveryAddressDto;
+  serviceType?: string;
 }
 
 export interface ShippingQuoteResponseDto {
@@ -463,6 +476,9 @@ export interface ShippingQuoteResponseDto {
   insuranceValue?: number;
   expiresAt: string;
   expectedDeliveryTime?: string;
+  carrier?: string;
+  serviceType?: string;
+  providerQuotationId?: string;
 }
 
 export interface CreateShipmentRequestDto {
@@ -480,7 +496,7 @@ export interface ShipmentBackend {
   leg: string;
   orderCode: string | null;
   status: string; // PENDING, READY_TO_PICK, PICKING, PICKED, DELIVERING, DELIVERED, CANCELLED
-  providerStatus: string | null; // GHN status: ready_to_pick, picking, picked, storing, transporting, delivering, delivered, cancel
+  providerStatus: string | null; // Lalamove status: ASSIGNING_DRIVER, ON_GOING, PICKED_UP, COMPLETED, CANCELED, REJECTED, EXPIRED
   quotedFee?: number;
   actualFee?: number;
   expectedDeliveryTime: string | null;
@@ -500,6 +516,107 @@ export interface ShipmentEventBackend {
   reason: string | null;
   payload?: string;
 }
+
+export interface LalamoveDriverCoordinates {
+  lat: string | number;
+  lng: string | number;
+  updatedAt?: string;
+}
+
+export interface LalamoveDriverInfo {
+  name?: string;
+  phone?: string;
+  plateNumber?: string;
+  photo?: string;
+  coordinates?: LalamoveDriverCoordinates | null;
+}
+
+export interface LalamoveTrackingResponse {
+  status?: string;
+  providerStatus?: string;
+  locationStatus: 'AVAILABLE' | 'UNAVAILABLE';
+  driver?: LalamoveDriverInfo | null;
+  shareLink?: string | null;
+  expectedDeliveryTime?: string | null;
+}
+
+export interface SystemWalletData {
+  id: string;
+  currency: string;
+  heldBalance: number;
+  shippingBalance: number;
+  revenueBalance: number;
+  totalBalance: number;
+  updatedAt: string;
+}
+
+export interface SystemWalletTransaction {
+  id: number;
+  orderId: string;
+  type: 'OPENING_BALANCE' | 'PAYMENT_HOLD' | 'SETTLEMENT' | 'REFUND' | string;
+  heldDelta: number;
+  shippingDelta: number;
+  revenueDelta: number;
+  heldBalanceAfter: number;
+  shippingBalanceAfter: number;
+  revenueBalanceAfter: number;
+  createdAt: string;
+}
+
+export interface SystemWalletTransactionsPage {
+  items: SystemWalletTransaction[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  isLast: boolean;
+}
+
+export interface OrderSettlementDTO {
+  settlementId?: string;
+  orderId?: string;
+  commissionSnapshotId?: string;
+  commissionBase: number;
+  rawCommission: number;
+  platformCommission: number;
+  sellerPayout: number;
+  shippingFee: number;
+  currency: string;
+  roundingMode?: string;
+  settledAt: string;
+}
+
+export interface OrderCommissionDTO {
+  orderId?: string;
+  commissionBase?: number;
+  ratePercent?: number;
+  minFee?: number;
+  maxFee?: number;
+  platformCommission?: number;
+  ruleCode?: string;
+  status?: string;
+}
+
+export interface StaffListingItemDTO {
+  postId: string;
+  categoryId?: string | null;
+  itemId?: string | null;
+  title: string;
+  description: string;
+  itemCondition?: string;
+  imageUrl?: string;
+  imageUrls: string[];
+  price: number;
+  aiSuggestedPrice?: number | null;
+  status: string;
+  rejectionReason?: string | null;
+  listingCreditCharged?: boolean;
+  aiDescription?: string | null;
+  descriptionAccepted?: boolean;
+  reviewReason?: string | null;
+  duplicateMatches?: string[];
+}
+
 
 
 

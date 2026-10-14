@@ -29,8 +29,8 @@ import {
   Edit3,
   ListFilter
 } from 'lucide-react';
-import { orderService, walletService, shippingService, GhnLocation } from '../../services';
-import { LalamoveAddressPicker } from '../common/LalamoveAddressPicker';
+import { orderService, walletService, shippingService, GhnLocation, inspectorService, InspectionQuoteResponse, InspectionTravelTierDto } from '../../services';
+import { LalamoveAddressPicker, getCityCoordinates } from '../common/LalamoveAddressPicker';
 
 interface CheckoutModalProps {
   listing: Listing;
@@ -81,12 +81,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [wardMode, setWardMode] = useState<'select' | 'manual'>('select');
 
   // Buyer Form Information
+  const sellerCityInfo = getCityCoordinates(listing.sellerAddress || listing.location);
   const [buyerName, setBuyerName] = useState(currentUser?.name || '');
   const [buyerPhone, setBuyerPhone] = useState(currentUser?.phone || '');
   const [buyerEmail, setBuyerEmail] = useState(currentUser?.email || '');
   const [streetAddress, setStreetAddress] = useState(currentUser?.address || '');
-  const [deliveryLatitude, setDeliveryLatitude] = useState<number>(21.0285);
-  const [deliveryLongitude, setDeliveryLongitude] = useState<number>(105.8542);
+  const [deliveryLatitude, setDeliveryLatitude] = useState<number>(sellerCityInfo.lat);
+  const [deliveryLongitude, setDeliveryLongitude] = useState<number>(sellerCityInfo.lng);
   const [addressType, setAddressType] = useState<'home' | 'office'>('home');
   const [deliveryNote, setDeliveryNote] = useState('');
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
@@ -133,6 +134,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [ghnQuote, setGhnQuote] = useState<ShippingQuoteResponseDto | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+
+  // Live Inspection Quote State (POST /api/v1/inspection/quote)
+  const [inspectionQuote, setInspectionQuote] = useState<InspectionQuoteResponse | null>(null);
+  const [loadingInspectionQuote, setLoadingInspectionQuote] = useState(false);
+  const [showTierBreakdown, setShowTierBreakdown] = useState(false);
 
   // Load wallet on mount
   useEffect(() => {
@@ -280,8 +286,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           errMsg = 'Bạn đang đăng nhập bằng tài khoản người bán. Không thể tạo báo giá mua bài đăng của chính mình.';
         } else if (errMsg.includes('Post is not available')) {
           errMsg = 'Bài đăng hiện không ở trạng thái sẵn sàng để giao dịch.';
-        } else if (errMsg.includes('ngoài khu vực phục vụ')) {
-          errMsg = 'Địa chỉ giao hàng nằm ngoài khu vực phục vụ Lalamove (Hà Nội, Đà Nẵng, TP.HCM).';
+        } else if (
+          errMsg.includes('ERR_OUT_OF_SERVICE_AREA') ||
+          errMsg.includes('OUT_OF_SERVICE_AREA') ||
+          errMsg.includes('ngoài khu vực phục vụ')
+        ) {
+          errMsg = `Vị trí giao hàng nằm ngoài phạm vi phục vụ Lalamove so với kho người bán (${sellerCityInfo.name}). Do Lalamove là dịch vụ giao hàng nhanh nội thành, vui lòng chọn địa chỉ nhận hàng tại cùng khu vực ${sellerCityInfo.name}.`;
+        } else if (errMsg.includes('Chưa cấu hình Geoapify') || errMsg.includes('Geoapify')) {
+          errMsg = 'Dịch vụ bản đồ Backend chưa bật Geoapify key. Đã chuyển sang chế độ định vị dự phòng OpenStreetMap.';
         }
       }
       setQuoteError(errMsg);
@@ -299,10 +311,42 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   }, [calculateLalamoveQuote, deliveryLatitude, deliveryLongitude]);
 
+  // Fetch Live Inspection Quote from Backend API
+  const fetchInspectionQuote = useCallback(async (lat?: number, lng?: number) => {
+    if (!listing.id) return;
+    setLoadingInspectionQuote(true);
+    try {
+      const q = await inspectorService.getQuote({
+        postId: listing.id,
+        buyerLatitude: lat || deliveryLatitude,
+        buyerLongitude: lng || deliveryLongitude,
+      });
+      if (q) setInspectionQuote(q);
+    } catch (err) {
+      console.warn('Could not fetch inspection quote:', err);
+    } finally {
+      setLoadingInspectionQuote(false);
+    }
+  }, [listing.id, deliveryLatitude, deliveryLongitude]);
+
+  useEffect(() => {
+    if (deliveryOption === 'INSPECTION') {
+      fetchInspectionQuote(deliveryLatitude, deliveryLongitude);
+    }
+  }, [deliveryOption, deliveryLatitude, deliveryLongitude, fetchInspectionQuote]);
+
   // Inspection fee & split calculations
   const isInspected = deliveryOption === 'INSPECTION';
   const selectedCenter = mockInspectionCenters.find((c) => c.id === selectedCenterId) || mockInspectionCenters[0];
-  const baseInspectionFee = isInspected ? (inspectionMethod === 'AT_HOME' ? 200000 : 120000) : 0;
+
+  const atHomeFee = inspectionQuote?.atHomePackage?.totalFee 
+    ?? inspectionQuote?.atHomeTotalFee 
+    ?? 175000;
+  const atCenterFee = inspectionQuote?.atCenterPackage?.totalFee 
+    ?? inspectionQuote?.atCenterTotalFee 
+    ?? 200000;
+
+  const baseInspectionFee = isInspected ? (inspectionMethod === 'AT_HOME' ? atHomeFee : atCenterFee) : 0;
   const buyerInspectionFee = isInspected
     ? feeSplit === 'BUYER_100'
       ? baseInspectionFee
@@ -423,22 +467,48 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setSubmittingOrder(true);
 
     try {
-      // Step 7: Call Backend API: POST /api/v1/orders
-      const requestId = crypto.randomUUID();
-      const backendOrder = await orderService.createOrder({
-        postId: listing.id,
-        shippingQuoteId: ghnQuote.quoteId,
-        requestId,
-        ...(negotiationId ? {
-          negotiationId,
-          agreedPrice: productPrice,
-        } : {}),
-      });
+      let orderId = `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+      let finalChargedPrice = productPrice;
+      let finalShippingFee = shippingFee;
+      let finalTotalPaid = totalAmount;
 
-      const orderId = backendOrder?.id || `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`;
-      const finalChargedPrice = backendOrder?.finalPrice || productPrice;
-      const finalShippingFee = backendOrder?.shippingFee || shippingFee;
-      const finalTotalPaid = backendOrder?.totalPaid ? Number(backendOrder.totalPaid) + (isInspected ? buyerInspectionFee : 0) : totalAmount;
+      if (isInspected) {
+        // Gửi yêu cầu mua có kiểm định tới Backend qua POST /api/v1/inspection/requests
+        const feePayerCode = feeSplit === 'BUYER_100' ? 'BUYER_PAYS' : feeSplit === 'SELLER_100' ? 'SELLER_PAYS' : 'SPLIT_50_50';
+        try {
+          const beInspectionOrder = await inspectorService.createRequest({
+            postId: listing.id,
+            orderType: inspectionMethod,
+            feePayer: feePayerCode,
+            buyerConsentZinLoss: true,
+            buyerLatitude: deliveryLatitude,
+            buyerLongitude: deliveryLongitude,
+            buyerDeliveryAddress: fullAddress,
+            note: deliveryNote || undefined,
+          });
+          if (beInspectionOrder?.id) {
+            orderId = String(beInspectionOrder.id);
+          }
+        } catch (beErr: any) {
+          console.warn('Backend inspection request fallback:', beErr);
+        }
+      } else {
+        // Gọi Backend Order trực tiếp qua POST /api/v1/orders
+        const requestId = crypto.randomUUID();
+        const backendOrder = await orderService.createOrder({
+          postId: listing.id,
+          shippingQuoteId: ghnQuote.quoteId,
+          requestId,
+          ...(negotiationId ? {
+            negotiationId,
+            agreedPrice: productPrice,
+          } : {}),
+        });
+        if (backendOrder?.id) orderId = backendOrder.id;
+        finalChargedPrice = backendOrder?.finalPrice || productPrice;
+        finalShippingFee = backendOrder?.shippingFee || shippingFee;
+        finalTotalPaid = backendOrder?.totalPaid ? Number(backendOrder.totalPaid) : totalAmount;
+      }
 
       const shippingLegsData: ShippingLeg[] = isInspected
         ? [
@@ -534,6 +604,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           listingPhotos: [listing.photos.front, listing.photos.back]
         }
       };
+
+      try {
+        localStorage.setItem(`order_buyer_info_${orderId}`, JSON.stringify({
+          buyerName: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
+          buyerPhone: buyerPhone.trim(),
+          buyerAddress: fullAddress,
+        }));
+        if (currentUser?.id) {
+          localStorage.setItem(`buyer_info_${currentUser.id}`, JSON.stringify({
+            name: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
+            phone: buyerPhone.trim(),
+          }));
+        }
+      } catch {}
 
       onOrderPlaced(newOrder);
     } catch (err: any) {
@@ -852,9 +936,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 {/* 1. Chọn Trung Tâm Kiểm Định */}
                 <div className="space-y-2 bg-[#faf8f5] p-3.5 rounded-2xl border border-slate-200">
                   <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5">
+                    <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5 flex-wrap">
                       <Building2 className="w-3.5 h-3.5 text-[#c34c36]" />
                       <span>{lang === 'vi' ? '1. Chọn Trung Tâm Kiểm Định Tiếp Nhận' : '1. Select Inspection Hub'}</span>
+                      <span className="text-[10px] text-rose-600 font-extrabold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                        ❌ [Trạm mẫu / Chưa có API Hubs]
+                      </span>
                     </label>
                     <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
                       📍 {selectedCenter.city}
@@ -957,17 +1044,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             </span>
                           </div>
                           <span className="text-[10px] font-black text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-200">
-                            120.000 VNĐ
+                            {formatVND(atCenterFee)}
                           </span>
                         </div>
                         <p className="text-[10px] text-slate-600 leading-relaxed">
                           {lang === 'vi'
-                            ? 'Tài xế Lalamove chuyển hàng về Hub Lab SecondLife. Kỹ sư đo kiểm vi mạch, hiệu năng trên dàn máy đo tiêu chuẩn.'
-                            : 'Shipped via Lalamove to Hub Lab. Engineers inspect 20+ technical criteria on test benches.'}
+                            ? `Chuyển hàng về Hub Lab SecondLife. Gồm phí ship trung tâm (${formatVND(inspectionQuote?.atCenterPackage?.shippingToCenterFee || 50000)}) và quỹ dự phòng chiều về (${formatVND(inspectionQuote?.atCenterPackage?.returnReserveFee || 50000)}).`
+                            : 'Shipped to Hub Lab. Includes shipping to center and return reserve fee.'}
                         </p>
                       </div>
                       <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9px] text-blue-700 font-bold">
-                        <span>🏷️ Phí tiêu chuẩn Hub Lab</span>
+                        <span>🏷️ Đã bao gồm dự phòng 2 chiều</span>
                         {inspectionMethod === 'AT_CENTER' && <Check className="w-3.5 h-3.5 text-blue-600" />}
                       </div>
                     </div>
@@ -990,21 +1077,55 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             </span>
                           </div>
                           <span className="text-[10px] font-black text-purple-800 bg-purple-100 px-2 py-0.5 rounded-full border border-purple-200">
-                            200.000 VNĐ
+                            {formatVND(atHomeFee)}
                           </span>
                         </div>
                         <p className="text-[10px] text-slate-600 leading-relaxed">
                           {lang === 'vi'
-                            ? 'Chuyên viên SecondLife mang thiết bị đo lưu động đến tận nhà người bán kiểm tra tại chỗ. Khuyên dùng đồ gia dụng cồng kềnh.'
-                            : 'Technicians bring portable equipment to inspect at seller home. Ideal for bulky appliances.'}
+                            ? `Kỹ thuật viên SecondLife mang thiết bị đến tận nhà người bán (${(inspectionQuote?.atHomePackage?.distanceKm || inspectionQuote?.travelDistanceKm || 10).toFixed(1)} km). Cước di chuyển 6 bậc thang.`
+                            : 'Technicians bring equipment to seller home with 6-tier distance calculation.'}
                         </p>
                       </div>
                       <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9px] text-purple-700 font-bold">
-                        <span>⭐ Khuyên dùng đồ lớn (Tủ lạnh, Máy giặt...)</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowTierBreakdown(!showTierBreakdown);
+                          }}
+                          className="hover:underline flex items-center gap-1 text-purple-800"
+                        >
+                          <span>📊 {showTierBreakdown ? 'Ẩn chi tiết cước' : 'Xem chi tiết 6 bậc cước'}</span>
+                        </button>
                         {inspectionMethod === 'AT_HOME' && <Check className="w-3.5 h-3.5 text-purple-600" />}
                       </div>
                     </div>
                   </div>
+
+                  {/* BẢNG CHI TIẾT 6 BẬC THANG CƯỚC DI CHUYỂN */}
+                  {showTierBreakdown && (
+                    <div className="mt-2 p-3 bg-purple-50/60 rounded-xl border border-purple-200 text-[10px] space-y-1.5 animate-fadeIn">
+                      <div className="font-bold text-purple-900 flex items-center justify-between">
+                        <span>Biểu Phí Cước Di Chuyển KTV (6 Bậc Thang Căn Cước Tuyến Tính):</span>
+                        <span className="text-[9px] bg-purple-200 px-2 py-0.5 rounded-full font-bold">2 Chiều (Khứ hồi)</span>
+                      </div>
+                      <div className="space-y-1 pt-1">
+                        {(inspectionQuote?.atHomePackage?.tiersBreakdown || inspectionQuote?.appliedTiers || [
+                          { tierNumber: 1, name: '0 - 5 km đầu', pricePerKm: 2000 },
+                          { tierNumber: 2, name: 'Trên 5 - 10 km', pricePerKm: 2500 },
+                          { tierNumber: 3, name: 'Trên 10 - 15 km', pricePerKm: 3000 },
+                          { tierNumber: 4, name: 'Trên 15 - 20 km', pricePerKm: 3500 },
+                          { tierNumber: 5, name: 'Trên 20 - 30 km', pricePerKm: 4000 },
+                          { tierNumber: 6, name: 'Trên 30 km', pricePerKm: 4500 }
+                        ]).map((tier: any) => (
+                          <div key={tier.tierNumber} className="flex justify-between items-center text-slate-700 py-0.5 border-b border-purple-100/60 last:border-0">
+                            <span className="font-semibold">Bậc {tier.tierNumber} ({tier.name}):</span>
+                            <span className="font-bold text-purple-900">{formatVND(tier.pricePerKm)} / km</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 3. Chia Tiền Kiểm Định */}
@@ -1203,6 +1324,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               initialLatitude={deliveryLatitude}
               initialLongitude={deliveryLongitude}
               initialAddress={streetAddress}
+              sellerCity={sellerCityInfo.name}
+              sellerLocation={listing.sellerAddress || listing.location}
               onAddressConfirmed={(data) => {
                 setDeliveryLatitude(data.latitude);
                 setDeliveryLongitude(data.longitude);
@@ -1267,18 +1390,48 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             )}
 
             {quoteError && (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-2.5 text-xs text-amber-900">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>{quoteError}</span>
+              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 animate-fadeIn">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-semibold leading-relaxed">{quoteError}</p>
+                    {(quoteError.includes('phạm vi phục vụ') || quoteError.includes('ERR_OUT_OF_SERVICE_AREA')) && (
+                      <p className="text-[11px] text-amber-700">
+                        👉 Bấm nút bên cạnh để chuyển vị trí giao hàng sang khu vực <strong>{sellerCityInfo.name}</strong>.
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => calculateLalamoveQuote(deliveryLatitude, deliveryLongitude, streetAddress, buyerName, buyerPhone)}
-                  className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 rounded-lg font-bold text-[11px] cursor-pointer"
-                >
-                  Thử lại
-                </button>
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                  {(quoteError.includes('phạm vi phục vụ') || quoteError.includes('ERR_OUT_OF_SERVICE_AREA')) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeliveryLatitude(sellerCityInfo.lat);
+                        setDeliveryLongitude(sellerCityInfo.lng);
+                        setStreetAddress(`Khu vực trung tâm ${sellerCityInfo.name}`);
+                        setSelectedProvinceName(sellerCityInfo.name);
+                        calculateLalamoveQuote(
+                          sellerCityInfo.lat,
+                          sellerCityInfo.lng,
+                          `Khu vực trung tâm ${sellerCityInfo.name}`,
+                          buyerName,
+                          buyerPhone
+                        );
+                      }}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs transition"
+                    >
+                      Đổi sang {sellerCityInfo.name}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => calculateLalamoveQuote(deliveryLatitude, deliveryLongitude, streetAddress, buyerName, buyerPhone)}
+                    className="px-3 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded-xl font-bold text-xs cursor-pointer transition"
+                  >
+                    Thử lại
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1416,12 +1569,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
 
             <div className="flex justify-between text-slate-600 text-[11px] items-center">
-              <span>{lang === 'vi' ? 'Phí giao hàng Giao Hàng Nhanh (GHN):' : 'GHN Shipping Fee:'}</span>
+              <span>{lang === 'vi' ? 'Phí giao hàng Lalamove On-Demand:' : 'Lalamove Shipping Fee:'}</span>
               <div className="text-right">
                 {quoteLoading ? (
-                  <span className="text-blue-600 font-bold flex items-center gap-1 justify-end">
+                  <span className="text-orange-600 font-bold flex items-center gap-1 justify-end">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Đang tính phí GHN...</span>
+                    <span>Đang tính phí Lalamove...</span>
                   </span>
                 ) : ghnQuote ? (
                   <span className="font-bold text-emerald-700">
@@ -1434,11 +1587,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => calculateGhnQuote()}
-                    disabled={!selectedProvinceName || !selectedWardName}
-                    className="text-blue-600 hover:underline font-bold disabled:text-slate-400 disabled:no-underline cursor-pointer"
+                    onClick={() => calculateLalamoveQuote()}
+                    className="text-orange-600 hover:underline font-bold cursor-pointer"
                   >
-                    {selectedProvinceName && selectedWardName ? 'Bấm tính phí ship GHN' : 'Chờ chọn địa chỉ...'}
+                    {lang === 'vi' ? 'Tính phí Lalamove' : 'Calculate quote'}
                   </button>
                 )}
               </div>
@@ -1503,8 +1655,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <span className="leading-snug">
               <strong>{lang === 'vi' ? 'Cam kết Escrow:' : 'Escrow Custody Guarantee:'}</strong>{' '}
               {lang === 'vi'
-                ? 'Tiền sẽ được trừ vào ví và phong tỏa an toàn tại quỹ Escrow. Sau khi GHN giao hàng và bạn xác nhận đã nhận hàng thành công, tiền hàng mới được giải ngân cho người bán.'
-                : 'Payment is securely held in Escrow custody. Seller receives funds only after GHN delivers and you confirm receipt.'}
+                ? 'Tiền sẽ được trừ vào ví và phong tỏa an toàn tại quỹ Escrow. Sau khi tài xế Lalamove giao hàng và bạn xác nhận đã nhận hàng thành công, tiền hàng mới được giải ngân cho người bán.'
+                : 'Payment is securely held in Escrow custody. Seller receives funds only after Lalamove delivers and you confirm receipt.'}
             </span>
           </div>
 
@@ -1530,7 +1682,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             ) : !ghnQuote ? (
               <>
                 <Truck className="w-4 h-4 text-white" />
-                <span>{lang === 'vi' ? 'Vui lòng chọn địa chỉ để lấy báo giá GHN' : 'Please select address for GHN quote'}</span>
+                <span>{lang === 'vi' ? 'Vui lòng xác nhận địa chỉ để lấy báo giá Lalamove' : 'Please confirm location for Lalamove quote'}</span>
               </>
             ) : (
               <>

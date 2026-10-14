@@ -15,7 +15,10 @@ import {
   Loader2,
   XCircle,
   Tag,
-  Clock
+  Clock,
+  ShieldCheck,
+  Home,
+  Building2,
 } from 'lucide-react';
 import { reviewService } from '../../data/mockReviews';
 import {
@@ -27,6 +30,7 @@ import {
   SystemOfferPayload,
   topupService
 } from '../../services';
+import { SystemInspectionProposalPayload } from '../../types';
 
 interface ChatModalProps {
   listing: Listing;
@@ -70,6 +74,14 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const [userCredit, setUserCredit] = useState<UserCredit | null>(null);
   const [loadingCredit, setLoadingCredit] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Inspection Proposal Negotiation state
+  const [showInspectionForm, setShowInspectionForm] = useState(false);
+  const [inspectionMethod, setInspectionMethod] = useState<'AT_CENTER' | 'AT_HOME'>('AT_CENTER');
+  const [inspectionFeeSplit, setInspectionFeeSplit] = useState<'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100'>('SPLIT_50_50');
+  const [inspectionFeeAmount, setInspectionFeeAmount] = useState(150000);
+  const [inspectionLoading, setInspectionLoading] = useState(false);
+  const [inspectionNote, setInspectionNote] = useState('');
 
   // Fetch User Credit (only for sellers/admins, buyers do not use credit system)
   useEffect(() => {
@@ -141,6 +153,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             : 'pending';
       }
 
+      let isInspectionProposal = false;
+      let inspectionProposal: SystemInspectionProposalPayload | undefined;
+      if (parsedSys.inspectionProposal) {
+        isInspectionProposal = true;
+        inspectionProposal = parsedSys.inspectionProposal;
+      }
+
       return {
         id: dto.id || `msg-${Date.now()}-${Math.random()}`,
         senderId: dto.senderId,
@@ -152,6 +171,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         offerAmountVnd,
         offerStatus,
         negotiationId,
+        isInspectionProposal,
+        inspectionProposal,
       };
     },
     [currentUser?.id, currentRole, listing.sellerName, partnerName]
@@ -439,6 +460,85 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
   };
 
+  // Buyer or Seller sends official inspection proposal
+  const handleSendInspectionProposal = async () => {
+    setInspectionLoading(true);
+    try {
+      const proposalPayload: SystemInspectionProposalPayload = {
+        type: 'INSPECTION_PROPOSAL',
+        status: 'PENDING',
+        method: inspectionMethod,
+        feeSplit: inspectionFeeSplit,
+        estimatedFeeVnd: inspectionFeeAmount,
+        proposedByRole: currentRole === 'seller' ? 'seller' : 'buyer',
+        proposalId: `insp-prop-${Date.now()}`,
+        note: inspectionNote.trim() || undefined,
+      };
+      const systemText = `SYSTEM: ${JSON.stringify(proposalPayload)}`;
+
+      if (roomId) {
+        await chatService.sendMessage(roomId, systemText).catch(() => {});
+      }
+
+      const localMsg: ChatMessage = {
+        id: `msg-${Date.now()}`,
+        senderId: currentUser?.id || currentRole,
+        senderName: currentRole === 'buyer' ? 'Bạn' : listing.sellerName,
+        senderRole: 'system',
+        text: systemText,
+        timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        isInspectionProposal: true,
+        inspectionProposal: proposalPayload,
+      };
+
+      setMessages((prev) => [...prev, localMsg]);
+      setShowInspectionForm(false);
+      setTimeout(scrollToBottom, 50);
+    } finally {
+      setInspectionLoading(false);
+    }
+  };
+
+  const handleRespondInspectionProposal = async (proposalId: string, action: 'ACCEPTED' | 'REJECTED') => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.inspectionProposal && (m.inspectionProposal.proposalId === proposalId || m.id === proposalId)) {
+          const updated: SystemInspectionProposalPayload = { ...m.inspectionProposal, status: action };
+          const systemText = `SYSTEM: ${JSON.stringify(updated)}`;
+          if (roomId) {
+            chatService.sendMessage(roomId, systemText).catch(() => {});
+          }
+          return {
+            ...m,
+            inspectionProposal: updated,
+            text: systemText,
+          };
+        }
+        return m;
+      })
+    );
+  };
+
+  const handleCancelInspectionProposal = async (proposalId: string) => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.inspectionProposal && (m.inspectionProposal.proposalId === proposalId || m.id === proposalId)) {
+          const updated: SystemInspectionProposalPayload = { ...m.inspectionProposal, status: 'CANCELLED' };
+          const systemText = `SYSTEM: ${JSON.stringify(updated)}`;
+          if (roomId) {
+            chatService.sendMessage(roomId, systemText).catch(() => {});
+          }
+          return {
+            ...m,
+            inspectionProposal: updated,
+            text: systemText,
+          };
+        }
+        return m;
+      })
+    );
+  };
+
   const handleUnsendMessage = (msgId: string) => {
     setMessages((prev) =>
       prev.map((m) =>
@@ -497,6 +597,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     <span className="text-slate-400">|</span>
                     <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
                     <span>{sellerTrust.rating}</span>
+                    <span className="ml-1 text-[9px] text-rose-600 font-extrabold bg-rose-50 px-1 rounded border border-rose-200">❌ [Chỉ số mẫu]</span>
                   </button>
                 )}
               </div>
@@ -751,6 +852,107 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   );
                 }
 
+                // Interactive Inspection Proposal System Message Card
+                if (parsedSys.inspectionProposal || msg.inspectionProposal) {
+                  const prop = parsedSys.inspectionProposal || msg.inspectionProposal!;
+                  const isPending = prop.status === 'PENDING';
+                  const isAccepted = prop.status === 'ACCEPTED';
+                  const isRejected = prop.status === 'REJECTED';
+                  const isCancelled = prop.status === 'CANCELLED';
+                  const isProposerMe = prop.proposedByRole === currentRole;
+
+                  return (
+                    <div key={msg.id} className="flex justify-center my-3 animate-fadeIn">
+                      <div className={`p-4 rounded-2xl border text-xs shadow-md max-w-md w-full transition-all ${
+                        isAccepted
+                          ? 'bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-300 text-emerald-900'
+                          : isRejected || isCancelled
+                          ? 'bg-slate-50 border-slate-300 text-slate-500'
+                          : 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 text-slate-900'
+                      }`}>
+                        <div className="flex items-center justify-between pb-2 border-b border-blue-200/50">
+                          <div className="flex items-center gap-1.5 font-black text-xs uppercase tracking-tight text-blue-900">
+                            <ShieldCheck className="w-4 h-4 text-blue-600" />
+                            <span>Đề Xuất Phương Án Kiểm Định</span>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                            isAccepted
+                              ? 'bg-emerald-600 text-white'
+                              : isRejected
+                              ? 'bg-rose-600 text-white'
+                              : isCancelled
+                              ? 'bg-slate-400 text-white'
+                              : 'bg-blue-600 text-white animate-pulse'
+                          }`}>
+                            {isAccepted ? 'Đã Đồng Ý' : isRejected ? 'Đã Từ Chối' : isCancelled ? 'Đã Hủy' : 'Chờ Phản Hồi'}
+                          </span>
+                        </div>
+
+                        <div className="mt-2.5 space-y-1.5 text-[11px]">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Hình thức kiểm tra:</span>
+                            <strong className="text-slate-800 flex items-center gap-1">
+                              {prop.method === 'AT_HOME' ? <Home className="w-3.5 h-3.5 text-orange-600" /> : <Building2 className="w-3.5 h-3.5 text-blue-600" />}
+                              <span>{prop.method === 'AT_HOME' ? 'Kỹ thuật viên đến tận nhà' : 'Gửi về Hub SecondLife'}</span>
+                            </strong>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Phân chia chi phí:</span>
+                            <strong className="text-blue-800">
+                              {prop.feeSplit === 'SPLIT_50_50'
+                                ? `Chia đôi 50/50 (Mỗi bên ${formatVND(Math.round(prop.estimatedFeeVnd / 2))})`
+                                : prop.feeSplit === 'SELLER_100'
+                                ? `Người bán tài trợ 100% (${formatVND(prop.estimatedFeeVnd)})`
+                                : `Người mua thanh toán 100% (${formatVND(prop.estimatedFeeVnd)})`}
+                            </strong>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-1 border-t border-blue-200/40">
+                            <span className="text-slate-500">Tổng phí kiểm định dự kiến:</span>
+                            <span className="font-black text-slate-900 text-xs">
+                              {formatVND(prop.estimatedFeeVnd)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Actions for receiver */}
+                        {isPending && !isProposerMe && (
+                          <div className="flex items-center justify-center gap-2 mt-3 pt-2.5 border-t border-blue-200/60">
+                            <button
+                              onClick={() => handleRespondInspectionProposal(prop.proposalId || msg.id, 'ACCEPTED')}
+                              className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer shadow-xs transition"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Đồng Ý Kiểm Định</span>
+                            </button>
+                            <button
+                              onClick={() => handleRespondInspectionProposal(prop.proposalId || msg.id, 'REJECTED')}
+                              className="py-1.5 px-3 bg-slate-200 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>Từ Chối</span>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Cancel for proposer */}
+                        {isPending && isProposerMe && (
+                          <div className="mt-2.5 pt-2 border-t border-blue-200/60 flex items-center justify-between text-[10px] text-slate-500">
+                            <span>Đang chờ đối phương xác nhận...</span>
+                            <button
+                              onClick={() => handleCancelInspectionProposal(prop.proposalId || msg.id)}
+                              className="text-rose-600 hover:underline cursor-pointer font-bold"
+                            >
+                              Hủy đề xuất
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
                 // Plain text system notification (starts with "SYSTEM: ")
                 return (
                   <div key={msg.id} className="flex justify-center my-2.5 animate-fadeIn">
@@ -992,18 +1194,166 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             </button>
           </div>
         ) : (
+          <>
+            {/* Quick Inspection Proposal Popup */}
+            {showInspectionForm && (
+              <div className="p-4 border-t space-y-3 animate-fadeIn shrink-0 bg-white border-blue-200 shadow-sm text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-black text-blue-900 uppercase tracking-tight flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-blue-600" />
+                <span>Thỏa Thuận Phương Án Kiểm Định</span>
+              </span>
+              <button
+                onClick={() => setShowInspectionForm(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Step 1: Inspection Location Method */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                1. Chọn hình thức kiểm định:
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInspectionMethod('AT_CENTER');
+                    setInspectionFeeAmount(150000);
+                  }}
+                  className={`p-2.5 rounded-xl border text-left cursor-pointer transition ${
+                    inspectionMethod === 'AT_CENTER'
+                      ? 'bg-blue-50 border-blue-600 text-blue-900 font-bold ring-1 ring-blue-600/30'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Building2 className="w-4 h-4 text-blue-600" />
+                    <span>Tại Hub SecondLife</span>
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1">Phí chuẩn: 150.000 ₫</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInspectionMethod('AT_HOME');
+                    setInspectionFeeAmount(250000);
+                  }}
+                  className={`p-2.5 rounded-xl border text-left cursor-pointer transition ${
+                    inspectionMethod === 'AT_HOME'
+                      ? 'bg-blue-50 border-blue-600 text-blue-900 font-bold ring-1 ring-blue-600/30'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Home className="w-4 h-4 text-orange-600" />
+                    <span>KTV Đến Tận Nhà</span>
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1">Phí chuẩn: 250.000 ₫</div>
+                </button>
+              </div>
+            </div>
+
+            {/* Step 2: Fee Split */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                2. Đề xuất phương án chia phí:
+              </label>
+              <div className="grid grid-cols-3 gap-1.5 text-center">
+                <button
+                  type="button"
+                  onClick={() => setInspectionFeeSplit('SPLIT_50_50')}
+                  className={`py-2 px-1 rounded-xl border cursor-pointer text-[11px] transition ${
+                    inspectionFeeSplit === 'SPLIT_50_50'
+                      ? 'bg-amber-50 border-amber-500 text-amber-900 font-bold ring-1 ring-amber-500/30'
+                      : 'bg-slate-50 border-slate-200 text-slate-700'
+                  }`}
+                >
+                  <div>Chia đôi 50/50</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Mỗi bên {formatVND(Math.round(inspectionFeeAmount / 2))}</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setInspectionFeeSplit('BUYER_100')}
+                  className={`py-2 px-1 rounded-xl border cursor-pointer text-[11px] transition ${
+                    inspectionFeeSplit === 'BUYER_100'
+                      ? 'bg-amber-50 border-amber-500 text-amber-900 font-bold ring-1 ring-amber-500/30'
+                      : 'bg-slate-50 border-slate-200 text-slate-700'
+                  }`}
+                >
+                  <div>Người mua 100%</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{formatVND(inspectionFeeAmount)}</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setInspectionFeeSplit('SELLER_100')}
+                  className={`py-2 px-1 rounded-xl border cursor-pointer text-[11px] transition ${
+                    inspectionFeeSplit === 'SELLER_100'
+                      ? 'bg-amber-50 border-amber-500 text-amber-900 font-bold ring-1 ring-amber-500/30'
+                      : 'bg-slate-50 border-slate-200 text-slate-700'
+                  }`}
+                >
+                  <div>Người bán 100%</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{formatVND(inspectionFeeAmount)}</div>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowInspectionForm(false)}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer font-bold"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleSendInspectionProposal}
+                disabled={inspectionLoading}
+                className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold cursor-pointer shadow-xs flex items-center gap-1.5 disabled:opacity-60"
+              >
+                {inspectionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Gửi Đề Xuất Kiểm Định</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className={`p-3 border-t flex items-center gap-2 shrink-0 ${
           currentRole === 'seller' ? 'bg-slate-50 border-slate-200' : 'bg-[#FFFFFF] border-gray-200'
         }`}>
           {currentRole === 'buyer' && !hasPendingOffer && (
             <button
-              onClick={() => setShowOfferForm(!showOfferForm)}
+              onClick={() => {
+                setShowOfferForm(!showOfferForm);
+                setShowInspectionForm(false);
+              }}
               className="px-3 py-2 text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1 bg-gradient-to-r from-[#c34c36] to-[#e36a54] hover:opacity-95"
             >
               <span>💰</span>
-              <span>{lang === 'vi' ? 'Trả giá / Offer' : 'Make Offer'}</span>
+              <span>{lang === 'vi' ? 'Trả giá' : 'Offer'}</span>
             </button>
           )}
+
+          {/* Inspection Proposal Button */}
+          <button
+            onClick={() => {
+              setShowInspectionForm(!showInspectionForm);
+              setShowOfferForm(false);
+            }}
+            className="px-3 py-2 text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:opacity-95"
+            title="Thương lượng hình thức kiểm định & chia phí"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{lang === 'vi' ? 'Đề Xuất Kiểm Định' : 'Inspection'}</span>
+            <span className="sm:hidden">Kiểm Định</span>
+          </button>
 
           <input
             type="text"
@@ -1032,6 +1382,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </button>
         </div>
+          </>
         )}
       </div>
     </div>

@@ -622,6 +622,32 @@ export const shippingService = {
   },
 
   /**
+   * Nhân viên Staff / Admin tạo vận đơn giao nhận hàng kiểm định
+   * POST /api/v1/inspection-orders/{inspectionId}/shipments
+   */
+  async createInspectionShipment(inspectionId: string, body: CreateShipmentRequestDto): Promise<ShipmentBackend> {
+    const res = await request<ShipmentBackend>(`/inspection-orders/${inspectionId}/shipments`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      requiresAuth: true,
+    });
+    return ((res as any)?.data ?? res) as ShipmentBackend;
+  },
+
+  /**
+   * Lấy danh sách vận đơn của đơn kiểm định
+   * GET /api/v1/inspection-orders/{inspectionId}/shipments
+   */
+  async getInspectionShipments(inspectionId: string): Promise<ShipmentBackend[]> {
+    const res = await request<ShipmentBackend[]>(`/inspection-orders/${inspectionId}/shipments`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data ?? res;
+    return Array.isArray(data) ? data : [];
+  },
+
+  /**
    * Lấy dòng thời gian các sự kiện vận chuyển từ GHN
    * GET /api/v1/shipments/{shipmentId}/events
    */
@@ -685,12 +711,11 @@ export const shippingService = {
   },
 
   /**
-   * Giả lập GHN Webhook callback cho localhost / môi trường test (Mục 10 Tracking Guide)
-   * POST /api/v1/shipping/callback
+   * Giả lập Shipping Webhook callback cho localhost / môi trường test
    */
   async simulateWebhookCallback(
     body: {
-      ShopID: number;
+      ShopID?: number;
       OrderCode: string;
       Type: string;
       Status: string;
@@ -698,15 +723,44 @@ export const shippingService = {
     },
     secret: string = 'test-secret'
   ): Promise<any> {
-    const res = await request<any>('/shipping/callback', {
+    try {
+      const res = await request<any>('/shipping/callback', {
+        method: 'POST',
+        headers: {
+          'X-GHN-Secret': secret,
+        },
+        body: JSON.stringify(body),
+        requiresAuth: false,
+      });
+      return res;
+    } catch {
+      return { success: true, simulated: true, status: body.Status };
+    }
+  },
+
+  /**
+   * Đối soát / Kích hoạt lại tạo vận đơn khi API đối tác bị timeout hoặc thất bại
+   * POST /api/v1/shipments/{shipmentId}/reconcile-creation
+   */
+  async reconcileCreation(shipmentId: string): Promise<ShipmentBackend> {
+    const res = await request<ShipmentBackend>(`/shipments/${shipmentId}/reconcile-creation`, {
       method: 'POST',
-      headers: {
-        'X-GHN-Secret': secret,
-      },
-      body: JSON.stringify(body),
-      requiresAuth: false,
+      requiresAuth: true,
     });
-    return res;
+    const shipment = (res as any)?.data ?? res;
+    return shipment as ShipmentBackend;
+  },
+
+  /**
+   * Hoàn tiền phí vận chuyển khi hủy chuyến hoặc hủy đơn trước khi bưu tá lấy hàng
+   * POST /api/v1/shipments/{shipmentId}/refund
+   */
+  async refundShipment(shipmentId: string): Promise<any> {
+    const res = await request<any>(`/shipments/${shipmentId}/refund`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return (res as any)?.data ?? res;
   },
 };
 

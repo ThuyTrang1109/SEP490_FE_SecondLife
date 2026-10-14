@@ -30,25 +30,22 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
   onClose,
   lang,
 }) => {
-  const [labelData, setLabelData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isReconciling, setIsReconciling] = useState(false);
+  const [reconcileNotice, setReconcileNotice] = useState<string | null>(null);
 
-  useEffect(() => {
-    let isMounted = true;
-    const fetchLabel = async () => {
-      setIsLoading(true);
-      try {
-        const data = await shippingService.getShipmentLabel(shipment.shipmentId);
-        if (isMounted) setLabelData(data);
-      } catch (err) {
-        console.warn('Could not fetch label data from GHN API:', err);
-      } finally {
-        if (isMounted) setIsLoading(false);
-      }
-    };
-    fetchLabel();
-    return () => { isMounted = false; };
-  }, [shipment.shipmentId]);
+  const handleReconcile = async () => {
+    setIsReconciling(true);
+    setReconcileNotice(null);
+    try {
+      const updated = await shippingService.reconcileCreation(shipment.shipmentId);
+      setReconcileNotice(`Đã đối soát và tạo lại vận đơn thành công: Mã #${updated.orderCode || updated.shipmentId}`);
+    } catch (err: any) {
+      setReconcileNotice(err?.message || 'Không thể đối soát tạo lại vận đơn.');
+    } finally {
+      setIsReconciling(false);
+    }
+  };
 
   const handlePrint = () => {
     window.print();
@@ -89,6 +86,31 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Reconcile notice or exception banner */}
+        {reconcileNotice && (
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-2xl text-xs text-blue-900 font-semibold flex items-center justify-between">
+            <span>{reconcileNotice}</span>
+            <button onClick={() => setReconcileNotice(null)} className="text-blue-500 hover:text-blue-700">✕</button>
+          </div>
+        )}
+
+        {(shipment.status === 'FAILED' || shipment.status === 'PENDING_RETRY') && (
+          <div className="mt-4 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 flex items-center justify-between gap-3 text-xs">
+            <div className="space-y-0.5">
+              <span className="font-bold text-rose-800 block">Vận đơn gặp sự cố hoặc timeout tạo mã</span>
+              <span className="text-[11px] text-rose-700">Bấm thử lại để kích hoạt đối soát và cấp lại mã vận đơn</span>
+            </div>
+            <button
+              onClick={handleReconcile}
+              disabled={isReconciling}
+              className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-60 shrink-0"
+            >
+              {isReconciling && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+              <span>Thử Lại (Reconcile)</span>
+            </button>
+          </div>
+        )}
 
         {/* Printable Voucher Paper */}
         <div id="printable-lalamove-label" className="mt-5 p-5 rounded-2xl bg-slate-50 border-2 border-dashed border-gray-300 space-y-4">

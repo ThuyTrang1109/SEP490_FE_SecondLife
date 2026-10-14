@@ -82,9 +82,12 @@ import {
   BadgeCheck,
   User,
   LogOut,
+  Percent,
 } from 'lucide-react';
 import { CatalogAiTab } from '../components/admin/CatalogAiTab';
 import { SystemWalletTab } from '../components/admin/SystemWalletTab';
+import { CommissionRulesTab } from '../components/admin/CommissionRulesTab';
+import { InspectionGovernanceTab } from '../components/admin/InspectionGovernanceTab';
 
 interface AdminDashboardViewProps {
   orders: EscrowOrder[];
@@ -111,7 +114,9 @@ type AdminTab =
   | 'seller-kyc'
   | 'permissions'
   | 'credit-pricing'
-  | 'system-wallet';
+  | 'system-wallet'
+  | 'commission-rules'
+  | 'inspection-governance';
 
 interface BookingAppointment {
   id: string;
@@ -1238,14 +1243,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     },
     {
       id: 'orders' as AdminTab,
-      label: lang === 'vi' ? 'QUẢN LÝ BÁN HÀNG' : 'SALES ORDERS',
+      label: (lang === 'vi' ? 'QUẢN LÝ BÁN HÀNG' : 'SALES ORDERS') + ' ❌',
       icon: Package,
       badge: localOrders.length || 1,
       badgeColor: 'bg-[#fce5da]'
     },
     {
       id: 'disputes' as AdminTab,
-      label: lang === 'vi' ? 'PHÂN XỬ TRANH CHẤP' : 'DISPUTE RESOLUTION',
+      label: (lang === 'vi' ? 'PHÂN XỬ TRANH CHẤP' : 'DISPUTE RESOLUTION') + ' ❌',
       icon: Gavel,
       badge: disputes.length || 0,
       badgeColor: 'bg-[#c34c36]'
@@ -1265,13 +1270,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     },
     {
       id: 'hubs' as AdminTab,
-      label: lang === 'vi' ? 'QUẢN LÝ TRẠM HUB' : 'HUB CENTERS',
+      label: (lang === 'vi' ? 'QUẢN LÝ TRẠM HUB' : 'HUB CENTERS') + ' ❌',
       icon: Building2,
       badge: 3
     },
     {
       id: 'ai-settings' as AdminTab,
-      label: lang === 'vi' ? 'CẤU HÌNH THUẬT TOÁN AI' : 'AI CONFIGURATION',
+      label: (lang === 'vi' ? 'CẤU HÌNH THUẬT TOÁN AI' : 'AI CONFIGURATION') + ' ❌',
       icon: Sliders,
       badge: null
     },
@@ -1291,6 +1296,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       id: 'system-wallet' as AdminTab,
       label: lang === 'vi' ? 'VÍ HỆ THỐNG & ĐỐI SOÁT' : 'SYSTEM WALLET',
       icon: Wallet,
+      badge: null
+    },
+    {
+      id: 'commission-rules' as AdminTab,
+      label: lang === 'vi' ? 'QUY TẮC HOA HỒNG SÀN' : 'COMMISSION RULES',
+      icon: Percent,
+      badge: null
+    },
+    {
+      id: 'inspection-governance' as AdminTab,
+      label: lang === 'vi' ? 'BIỂU PHÍ KIỂM ĐỊNH' : 'INSPECTION GOVERNANCE',
+      icon: ShieldCheck,
       badge: null
     }
   ];
@@ -1655,9 +1672,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#fce5da] overflow-hidden">
                 {/* Header */}
                 <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                  <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
-                    KHÁCH HÀNG ĐẶT LỊCH
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
+                      KHÁCH HÀNG ĐẶT LỊCH
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200">
+                      ❌ [Chưa có API / Hardcode]
+                    </span>
+                  </div>
                   <button
                     onClick={() => toggleCardCollapse('booking')}
                     className="p-1 rounded text-slate-400 hover:text-slate-600 transition cursor-pointer"
@@ -1742,9 +1764,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div>
                     {/* Header */}
                     <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                      <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
-                        ĐƠN ĐẶT HÀNG MỚI
-                      </h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
+                          ĐƠN ĐẶT HÀNG MỚI
+                        </h3>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200">
+                          ❌ [Chưa có API / Hardcode]
+                        </span>
+                      </div>
                       <button
                         onClick={() => toggleCardCollapse('newOrders')}
                         className="p-1 rounded text-slate-400 hover:text-slate-600 transition cursor-pointer"
@@ -1822,9 +1849,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div>
                     {/* Header */}
                     <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                      <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
-                        KHÁCH HÀNG LIÊN HỆ
-                      </h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
+                          KHÁCH HÀNG LIÊN HỆ
+                        </h3>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200">
+                          ❌ [Chưa có API / Hardcode]
+                        </span>
+                      </div>
                       <button
                         onClick={() => toggleCardCollapse('contacts')}
                         className="p-1 rounded text-slate-400 hover:text-slate-600 transition cursor-pointer"
@@ -1911,6 +1943,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* ======================================================== */}
           {activeTab === 'orders' && (
             <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] p-5 space-y-4">
+              {/* Unlinked Backend Notice */}
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2.5 text-xs font-bold text-rose-800">
+                <span className="w-5 h-5 rounded-full bg-rose-200 text-rose-800 flex items-center justify-center shrink-0 text-[11px]">❌</span>
+                <span>[GIAO DIỆN MOCK / CHƯA LIÊN KẾT BACKEND API] Mục quản lý đơn hàng bán lẻ này hiện đang sử dụng dữ liệu tĩnh cục bộ, Backend chưa cung cấp endpoint quản trị đơn hàng.</span>
+              </div>
+
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 uppercase">
@@ -2173,10 +2211,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* TAB: DISPUTES (PHÂN XỬ TRANH CHẤP & AI EVIDENCE)         */}
           {/* ======================================================== */}
           {activeTab === 'disputes' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              {/* Left: Cases */}
-              <div className="lg:col-span-4 space-y-3">
-                <div className="flex items-center justify-between">
+            <div className="space-y-4">
+              {/* Unlinked Backend Notice */}
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2.5 text-xs font-bold text-rose-800">
+                <span className="w-5 h-5 rounded-full bg-rose-200 text-rose-800 flex items-center justify-center shrink-0 text-[11px]">❌</span>
+                <span>[GIAO DIỆN MOCK / CHƯA LIÊN KẾT BACKEND API] Mục phân xử tranh chấp hiện đang sử dụng dữ liệu mẫu, Backend chưa cung cấp endpoint giải quyết khiếu nại tranh chấp.</span>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                {/* Left: Cases */}
+                <div className="lg:col-span-4 space-y-3">
+                  <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
                     <Gavel className="w-4 h-4 text-[#24263e]" />
                     <span>Hồ Sơ Cần Phán Quyết ({disputes.length})</span>
@@ -2282,6 +2327,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   </div>
                 )}
               </div>
+            </div>
             </div>
           )}
 
@@ -2938,6 +2984,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* ======================================================== */}
           {activeTab === 'hubs' && (
             <div className="space-y-4">
+              {/* Unlinked Backend Notice */}
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2.5 text-xs font-bold text-rose-800">
+                <span className="w-5 h-5 rounded-full bg-rose-200 text-rose-800 flex items-center justify-center shrink-0 text-[11px]">❌</span>
+                <span>[GIAO DIỆN MOCK / CHƯA LIÊN KẾT BACKEND API] Danh sách trạm kiểm định Hub và KTV đang dùng dữ liệu giả lập (mockHubs), Backend chưa có CRUD Hub Center.</span>
+              </div>
+
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 uppercase flex items-center gap-2">
@@ -3011,6 +3063,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* ======================================================== */}
           {activeTab === 'ai-settings' && (
             <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] p-5 sm:p-6 space-y-5">
+              {/* Unlinked Backend Notice */}
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2.5 text-xs font-bold text-rose-800">
+                <span className="w-5 h-5 rounded-full bg-rose-200 text-rose-800 flex items-center justify-center shrink-0 text-[11px]">❌</span>
+                <span>[GIAO DIỆN MOCK / CHƯA LIÊN KẾT BACKEND API] Cấu hình AI hiện đang lưu tại bộ nhớ tạm (state React), Backend chưa có database schema và endpoint lưu cấu hình AI.</span>
+              </div>
+
               <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
                 <div className="w-9 h-9 rounded-lg bg-[#c34c36] text-[#24263e] flex items-center justify-center">
                   <Sliders className="w-5 h-5" />
@@ -3681,6 +3739,24 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {activeTab === 'system-wallet' && (
             <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#24263e] p-5">
               <SystemWalletTab />
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB: COMMISSION RULES & REVISION ENGINE                 */}
+          {/* ======================================================== */}
+          {activeTab === 'commission-rules' && (
+            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] p-5">
+              <CommissionRulesTab />
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB: INSPECTION GOVERNANCE & TRAVEL TIERS                */}
+          {/* ======================================================== */}
+          {activeTab === 'inspection-governance' && (
+            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-amber-500 p-5">
+              <InspectionGovernanceTab lang={lang} />
             </div>
           )}
         </div>

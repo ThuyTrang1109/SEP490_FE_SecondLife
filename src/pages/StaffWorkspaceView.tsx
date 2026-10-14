@@ -3,7 +3,6 @@ import {
   LayoutDashboard,
   FileCheck,
   AlertTriangle,
-  Image,
   ShieldCheck,
   Flag,
   Scale,
@@ -46,6 +45,7 @@ import { Listing, EscrowOrder, Language, UserProfile } from '../types';
 import { formatVND } from '../utils/translations';
 import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto } from '../services';
 import { ListingComparisonModal } from '../components/staff/ListingComparisonModal';
+import { StaffSellerVerificationTab } from '../components/staff/StaffSellerVerificationTab';
 import logoImg from '../assets/logo.png';
 import { User, LogOut } from 'lucide-react';
 
@@ -62,7 +62,7 @@ interface StaffWorkspaceViewProps {
 type StaffTab =
   | 'overview'
   | 'review-listings'
-  | 'duplicate-images'
+  | 'seller-verifications'
   | 'proof-possession'
   | 'reports-support'
   | 'disputes'
@@ -170,16 +170,12 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'review-listings' || activeTab === 'duplicate-images') {
+    if (activeTab === 'review-listings') {
       loadStaffQueue(0);
     }
   }, [activeTab]);
 
-  // 2. Duplicate Images & Fraud Alerts
-  const [duplicateCases, setDuplicateCases] = useState<any[]>([]);
-  const [fraudAlerts, setFraudAlerts] = useState<any[]>([]);
-
-  // 3. Proof of Possession (Xác minh sở hữu)
+  // 2. Proof of Possession (Xác minh sở hữu)
   const [proofList, setProofList] = useState<any[]>([]);
 
   // 4. Reports & Support Tickets
@@ -235,66 +231,62 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       badgeColor: 'bg-[#24263e] text-white'
     },
     {
-      id: 'duplicate-images' as StaffTab,
-      label: 'ĐỐI SOÁT ẢNH & GIAN LẬN',
-      icon: Image,
-      badge: duplicateCases.length + fraudAlerts.filter((f) => f.status === 'PENDING').length,
-      badgeColor: 'bg-rose-600 text-white'
+      id: 'seller-verifications' as StaffTab,
+      label: 'DUYỆT HỒ SƠ NGƯỜI BÁN',
+      icon: UserCheck,
+      badge: null
     },
     {
       id: 'proof-possession' as StaffTab,
-      label: 'XÁC MINH SỞ HỮU',
+      label: 'XÁC MINH SỞ HỮU ❌',
       icon: ShieldCheck,
       badge: proofList.filter((p) => p.status === 'PENDING').length,
       badgeColor: 'bg-amber-600 text-white'
-
     },
-
-
     {
       id: 'reports-support' as StaffTab,
-      label: 'BÁO CÁO & HỖ TRỢ',
+      label: 'BÁO CÁO & HỖ TRỢ ❌',
       icon: Flag,
       badge: reports.filter((r) => r.status === 'PENDING').length + supportTickets.filter((t) => t.status === 'OPEN').length,
       badgeColor: 'bg-indigo-600 text-white'
     },
     {
       id: 'disputes' as StaffTab,
-      label: 'TRANH CHẤP & BẰNG CHỨNG',
+      label: 'TRANH CHẤP & BẰNG CHỨNG ❌',
       icon: Scale,
       badge: disputes.length,
       badgeColor: 'bg-[#c34c36] text-white'
     },
     {
       id: 'refund-requests' as StaffTab,
-      label: 'YÊU CẦU HOÀN TIỀN',
+      label: 'YÊU CẦU HOÀN TIỀN ❌',
       icon: RotateCcw,
       badge: refundRequests.filter((r) => r.status === 'PENDING_APPROVAL').length,
       badgeColor: 'bg-rose-500 text-white'
     },
     {
       id: 'payouts' as StaffTab,
-      label: 'QUẢN LÝ THANH TOÁN & HOLD',
+      label: 'QUẢN LÝ THANH TOÁN & HOLD ❌',
       icon: Wallet,
       badge: payouts.filter((p) => p.status === 'HOLD').length,
       badgeColor: 'bg-amber-700 text-white'
     },
     {
       id: 'inspections' as StaffTab,
-      label: 'ĐIỀU PHỐI KIỂM ĐỊNH HUB',
+      label: 'ĐIỀU PHỐI KIỂM ĐỊNH HUB ❌',
       icon: Truck,
       badge: inspectionOrders.length,
       badgeColor: 'bg-emerald-700 text-white'
     },
     {
       id: 'monitor-transactions' as StaffTab,
-      label: 'GIÁM SÁT GIAO DỊCH',
+      label: 'GIÁM SÁT GIAO DỊCH ❌',
       icon: TrendingUp,
       badge: null
     },
     {
       id: 'restrict-users' as StaffTab,
-      label: 'CẢNH BÁO & HẠN CHẾ USER',
+      label: 'CẢNH BÁO & HẠN CHẾ USER ❌',
       icon: UserX,
       badge: restrictedUsers.length,
       badgeColor: 'bg-slate-700 text-white'
@@ -576,6 +568,14 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
             </div>
           )}
 
+          {/* Unlinked Backend Notice Banner for Staff mock tabs */}
+          {!['overview', 'review-listings', 'duplicate-images'].includes(activeTab) && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2.5 text-xs font-bold text-rose-800 shadow-2xs animate-fadeIn">
+              <span className="w-5 h-5 rounded-full bg-rose-200 text-rose-800 flex items-center justify-center shrink-0 text-[11px]">❌</span>
+              <span>[GIAO DIỆN MOCK / CHƯA LIÊN KẾT BACKEND API] Mục nghiệp vụ này ({navItems.find(n => n.id === activeTab)?.label}) hiện đang chạy trên dữ liệu giả lập, Backend chưa có endpoint tương ứng.</span>
+            </div>
+          )}
+
           {/* ======================================================== */}
           {/* TAB 0: OVERVIEW                                          */}
           {/* ======================================================== */}
@@ -725,7 +725,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                         </td>
                         <td className="py-3 px-4 text-center">
                           <button
-                            onClick={() => setActiveTab('duplicate-images')}
+                            onClick={() => setActiveTab('review-listings')}
                             className="px-2.5 py-1 rounded bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-bold transition cursor-pointer"
                           >
                             Xử lý
@@ -877,22 +877,15 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                                 </span>
                               )}
                             </td>
-                            <td className="py-3 px-3 text-center">
-                              <div className="flex items-center justify-center gap-1.5">
-                                <button
-                                  onClick={() => setSelectedComparisonPostId(item.id)}
-                                  className="px-2.5 py-1 rounded bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-bold transition cursor-pointer shadow-xs"
-                                >
-                                  Xem Thẩm Định
-                                </button>
-                                <button
-                                  onClick={() => handleApproveListing(item.id)}
-                                  className="p-1 rounded bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white transition cursor-pointer"
-                                  title="Duyệt bài ngay"
-                                >
-                                  <Check className="w-4 h-4" />
-                                </button>
-                              </div>
+                            <td className="py-3 px-3 text-center whitespace-nowrap">
+                              <button
+                                onClick={() => setSelectedComparisonPostId(item.id)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#24263e] hover:bg-[#c34c36] text-white text-xs font-bold transition-all duration-200 cursor-pointer shadow-xs hover:shadow-md"
+                                title="Mở giao diện đối soát và kiểm định chi tiết tin đăng"
+                              >
+                                <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Xem Kiểm Định</span>
+                              </button>
                             </td>
                           </tr>
                         ))
@@ -930,105 +923,21 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
           )}
 
           {/* ======================================================== */}
-          {/* TAB 2: DUPLICATE IMAGES & FRAUD ALERTS                    */}
+          {/* TAB: SELLER VERIFICATIONS QUEUE (DUYỆT HỒ SƠ NGƯỜI BÁN)    */}
           {/* ======================================================== */}
-          {activeTab === 'duplicate-images' && (
-            <div className="space-y-5">
-              <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] space-y-4">
-                <div>
-                  <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    2. KIỂM TRA HÌNH ẢNH TRÙNG LẶP & CÁC CẢNH BÁO GIAN LẬN
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Thuật toán Image Hash đối soát ảnh lấy từ Shopee/Chợ Tốt & Hệ thống phát hiện hành vi ép cọc ngoài
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {duplicateCases.map((dup) => (
-                    <div key={dup.id} className="p-4 rounded-xl border border-rose-200 bg-rose-50/50 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono font-bold text-rose-900 text-xs">Mã #{dup.id} • Tin {dup.listingId}</span>
-                        <span className="px-2 py-0.5 rounded-full bg-rose-200 text-rose-900 text-[10px] font-black">
-                          {dup.similarityScore}% TRÙNG LẶP
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 text-[11px]">
-                        <div>
-                          <span className="block font-bold text-slate-700 mb-1">Ảnh người bán tải lên:</span>
-                          <img src={dup.sellerImage} alt="" className="w-full h-28 rounded-lg object-cover border" />
-                        </div>
-                        <div>
-                          <span className="block font-bold text-slate-700 mb-1">Ảnh gốc trên mạng:</span>
-                          <img src={dup.sellerImage} alt="" className="w-full h-28 rounded-lg object-cover border opacity-80" />
-                        </div>
-                      </div>
-
-                      <p className="text-slate-700 text-[11px]">
-                        <strong>Ghi chú:</strong> {dup.note}
-                      </p>
-
-                      <div className="flex justify-end gap-2 pt-2 border-t border-rose-200">
-                        <button
-                          onClick={() => triggerNotice(`Đã gửi cảnh báo bản quyền ảnh tới người bán ${dup.sellerName}`)}
-                          className="px-3 py-1.5 bg-white border border-rose-300 text-rose-800 rounded-lg text-xs font-bold hover:bg-rose-100 transition cursor-pointer"
-                        >
-                          Cảnh Báo Vi Phạm
-                        </button>
-                        <button
-                          onClick={() => triggerNotice(`Đã khóa bài tin ${dup.listingId} do đạo nhái hình ảnh`)}
-                          className="px-3 py-1.5 bg-rose-700 text-white rounded-lg text-xs font-bold hover:bg-rose-800 transition cursor-pointer"
-                        >
-                          Khóa Bài Đăng
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="pt-4 border-t border-slate-200 space-y-3">
-                  <h4 className="font-black text-xs text-slate-800 uppercase tracking-wide">
-                    CẢNH BÁO HÀNH VI GIAN LẬN HỆ THỐNG (FRAUD ALERTS QUEUE)
-                  </h4>
-                  <div className="space-y-2">
-                    {fraudAlerts.map((frd) => (
-                      <div key={frd.id} className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono font-bold text-amber-900">{frd.id}</span>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white">
-                              {frd.riskLevel === 'HIGH' ? 'RỦI RO CAO' : 'CẢNH BÁO'}
-                            </span>
-                            <span className="font-bold text-slate-800">{frd.user}</span>
-                          </div>
-                          <p className="text-slate-700">{frd.description}</p>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            onClick={() => triggerNotice(`Đã đóng băng phiên chat và chuyển tài khoản ${frd.user} vào diện kiểm soát`)}
-                            className="px-3 py-1.5 bg-rose-700 text-white rounded-lg text-xs font-bold hover:bg-rose-800 transition cursor-pointer"
-                          >
-                            Chặn Giao Dịch
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
+          {activeTab === 'seller-verifications' && (
+            <StaffSellerVerificationTab onNotify={triggerNotice} />
           )}
 
           {/* ======================================================== */}
-          {/* TAB 3: PROOF OF POSSESSION (XÁC MINH SỞ HỮU)              */}
+          {/* TAB 2: PROOF OF POSSESSION (XÁC MINH SỞ HỮU)              */}
           {/* ======================================================== */}
           {activeTab === 'proof-possession' && (
             <div className="space-y-4">
               <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-emerald-600 space-y-4">
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    3. XÁC MINH BẰNG CHỨNG SỞ HỮU (PROOF OF POSSESSION)
+                    2. XÁC MINH BẰNG CHỨNG SỞ HỮU (PROOF OF POSSESSION)
                   </h3>
                   <p className="text-xs text-slate-500">
                     Đối chiếu ảnh chụp thiết bị cùng giấy note viết tay tên/ngày giờ và tem Serial Number sản phẩm

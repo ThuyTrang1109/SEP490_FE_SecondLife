@@ -25,8 +25,10 @@ import { SessionExpiredModal } from './components/modals/SessionExpiredModal';
 import { TopUpModal } from './components/modals/TopUpModal';
 import { PolicyModal, PolicyTabKey } from './components/modals/PolicyModal';
 import { SellerReviewsModal } from './components/modals/SellerReviewsModal';
+import { NotificationCenterView } from './pages/NotificationCenterView';
+import { RealtimeNotificationToast } from './components/common/RealtimeNotificationToast';
 import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
-import { authService, userService, topupService, walletService, orderService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
+import { authService, userService, topupService, walletService, orderService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
 
 export default function App() {
   // Global State - Default to 'marketplace' so visitors enter directly into the marketplace
@@ -37,7 +39,7 @@ export default function App() {
     if (token && stored && stored.role) {
       const r = String(stored.role).toLowerCase();
       if (r === 'admin') return 'admin-dashboard';
-      if (r === 'inspector') return 'inspection-hub';
+      if (r === 'inspector' || r === 'inspection_center') return 'inspection-hub';
     }
     return 'home';
   });
@@ -338,7 +340,7 @@ export default function App() {
   }, [currentUser]);
 
   // Auth Guard Helper
-  const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'admin-dashboard', 'staff-workspace', 'chat'];
+  const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'admin-dashboard', 'staff-workspace', 'chat', 'notifications'];
 
   const requireAuth = (onSuccessAction?: () => void, customMsg?: string): boolean => {
     if (!currentUser) {
@@ -361,8 +363,8 @@ export default function App() {
       return;
     }
 
-    if (currentUser?.role === 'inspector' && tab !== 'inspection-hub') {
-      showToast(lang === 'vi' ? 'Tài khoản Kỹ sư Hub chỉ truy cập Trung Tâm Kiểm Định.' : 'Inspector account only accesses Inspection Hub.');
+    if ((currentUser?.role === 'inspector' || currentUser?.role === 'inspection_center') && tab !== 'inspection-hub') {
+      showToast(lang === 'vi' ? 'Tài khoản Kiểm định chỉ truy cập Trung Tâm Kiểm Định.' : 'Inspection account only accesses Inspection Hub.');
       return;
     }
 
@@ -387,13 +389,17 @@ export default function App() {
         promptMsg = lang === 'vi'
           ? 'Vui lòng đăng nhập với tài khoản Người Bán để vào Kênh người bán.'
           : 'Please log in with a seller account to access Seller Hub.';
+      } else if (tab === 'notifications') {
+        promptMsg = lang === 'vi'
+          ? 'Vui lòng đăng nhập để xem thông báo hệ thống và tiến độ đơn hàng.'
+          : 'Please log in to view system notifications.';
       }
       requireAuth(undefined, promptMsg);
       return;
     }
 
     if (tab === 'create-listing') {
-      if (currentUser && ['admin', 'inspector'].includes(currentUser.role)) {
+      if (currentUser && ['admin', 'inspector', 'inspection_center'].includes(currentUser.role)) {
         showToast(lang === 'vi'
           ? 'Tài khoản Quản trị viên và Kỹ sư Hub không được đăng ký làm Người Bán.'
           : 'Admin and Inspector roles cannot register as sellers.');
@@ -406,7 +412,71 @@ export default function App() {
     }
 
     setActiveTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  // Deep Link Routing for Notifications (Section 5 of FE Integration Plan)
+  const handleNotificationNavigate = React.useCallback((actionUrl: string | null, _notification?: any) => {
+    if (!actionUrl) {
+      handleTabChange('notifications');
+      return;
+    }
+
+    const url = actionUrl.toLowerCase();
+
+    // 1. Order routing: /buyer/orders, /seller/orders, /orders
+    if (url.includes('/orders') || url.includes('/order')) {
+      handleTabChange('orders');
+      return;
+    }
+
+    // 2. Inspection routing: /inspections, /inspector
+    if (url.includes('/inspections') || url.includes('/inspection')) {
+      if (currentRole === 'inspector' || currentRole === 'inspection_center' || currentUser?.role === 'inspector') {
+        handleTabChange('inspection-hub');
+      } else {
+        handleTabChange('orders');
+      }
+      return;
+    }
+
+    // 3. Negotiation / Chat routing: /negotiations, /chat
+    if (url.includes('/negotiations') || url.includes('/chat')) {
+      handleTabChange('chat');
+      return;
+    }
+
+    // 4. Wallet routing: /wallet
+    if (url.includes('/wallet')) {
+      setIsTopUpModalOpen(true);
+      return;
+    }
+
+    // 5. Listing / Post routing: /posts, /seller/posts
+    if (url.includes('/posts') || url.includes('/listing')) {
+      if (url.includes('/edit')) {
+        handleTabChange('seller-dashboard');
+      } else {
+        handleTabChange('marketplace');
+      }
+      return;
+    }
+
+    // 6. Notifications center
+    if (url.includes('/notifications')) {
+      handleTabChange('notifications');
+      return;
+    }
+
+    // 7. Seller onboarding / eKYC
+    if (url.includes('/seller')) {
+      handleTabChange('seller-dashboard');
+      return;
+    }
+
+    // Default fallback
+    handleTabChange('notifications');
+  }, [currentRole, currentUser]);
 
   // Guard activeTab if logged out or if internal roles (admin / inspector)
   React.useEffect(() => {
@@ -414,7 +484,7 @@ export default function App() {
       setActiveTab('marketplace');
     } else if (currentUser?.role === 'admin' && activeTab !== 'admin-dashboard') {
       setActiveTab('admin-dashboard');
-    } else if (currentUser?.role === 'inspector' && activeTab !== 'inspection-hub') {
+    } else if ((currentUser?.role === 'inspector' || currentUser?.role === 'inspection_center') && activeTab !== 'inspection-hub') {
       setActiveTab('inspection-hub');
     }
   }, [currentUser, activeTab]);
@@ -431,11 +501,12 @@ export default function App() {
       seller: 'Người Bán (Seller)',
       staff: 'Nhân Viên (Staff)',
       inspector: 'Kỹ Sư Hub (Inspector)',
+      inspection_center: 'Quản Lý Trung Tâm (Inspection Center)',
       admin: 'Quản Trị Viên (Admin)'
     };
     showToast(`Đã chuyển góc nhìn sang ${roleLabels[newRole]}.`);
 
-    if (newRole === 'inspector') {
+    if (newRole === 'inspector' || newRole === 'inspection_center') {
       handleTabChange('inspection-hub');
     } else if (newRole === 'staff') {
       handleTabChange('home');
@@ -744,15 +815,35 @@ export default function App() {
   );
 
   // Synchronize orders directly with Backend
+  // Synchronize orders directly with Backend
   const loadUserOrders = React.useCallback(async () => {
     if (!currentUser || !getAccessToken()) {
       setOrders([]);
       return;
     }
     try {
-      const res = currentRole === 'seller'
-        ? await orderService.getSellerOrders(0, 50)
-        : await orderService.getBuyerOrders(0, 50);
+      const [res, chatRooms] = await Promise.all([
+        currentRole === 'seller'
+          ? orderService.getSellerOrders(0, 50)
+          : orderService.getBuyerOrders(0, 50),
+        chatService.getChatRooms().catch(() => [] as any[])
+      ]);
+
+      const buyerNameMap = new Map<string, string>();
+      const buyerPhoneMap = new Map<string, string>();
+      const sellerNameMap = new Map<string, string>();
+
+      (chatRooms || []).forEach((room: any) => {
+        if (room.buyerId && room.buyerName) {
+          buyerNameMap.set(room.buyerId, room.buyerName);
+        }
+        if (room.postId && room.buyerName) {
+          buyerNameMap.set(`post_${room.postId}`, room.buyerName);
+        }
+        if (room.sellerId && room.sellerName) {
+          sellerNameMap.set(room.sellerId, room.sellerName);
+        }
+      });
 
       const items = res?.content || (res as any)?.items || (Array.isArray(res) ? res : []);
       if (items && items.length > 0) {
@@ -801,22 +892,82 @@ export default function App() {
             mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
           }
 
+          let parsedAddressObj: any = null;
+          let parsedBuyerName = '';
+          let parsedBuyerPhone = '';
+          if (bOrd.deliveryAddress) {
+            if (typeof bOrd.deliveryAddress === 'string') {
+              try {
+                parsedAddressObj = JSON.parse(bOrd.deliveryAddress);
+                if (parsedAddressObj && typeof parsedAddressObj === 'object') {
+                  parsedBuyerName = parsedAddressObj.name || '';
+                  parsedBuyerPhone = parsedAddressObj.phone || '';
+                }
+              } catch {
+                // normal text string
+              }
+            } else if (typeof bOrd.deliveryAddress === 'object') {
+              parsedAddressObj = bOrd.deliveryAddress;
+              parsedBuyerName = bOrd.deliveryAddress.name || '';
+              parsedBuyerPhone = bOrd.deliveryAddress.phone || '';
+            }
+          }
+
+          let cachedBuyer: any = null;
+          try {
+            const rawOrderBuyer = localStorage.getItem(`order_buyer_info_${bOrd.id}`);
+            if (rawOrderBuyer) {
+              cachedBuyer = JSON.parse(rawOrderBuyer);
+            } else if (bOrd.buyerId) {
+              const rawUser = localStorage.getItem(`buyer_info_${bOrd.buyerId}`);
+              if (rawUser) cachedBuyer = JSON.parse(rawUser);
+            }
+          } catch {}
+
+          const resolvedBuyerName = (
+            cachedBuyer?.buyerName ||
+            cachedBuyer?.name ||
+            buyerNameMap.get(bOrd.buyerId) ||
+            buyerNameMap.get(`post_${bOrd.postId}`) ||
+            parsedBuyerName ||
+            bOrd.buyerName ||
+            (currentRole === 'buyer' ? (currentUser?.name || currentUser?.email || 'Khách Hàng') : '') ||
+            `Khách Mua #${bOrd.buyerId ? bOrd.buyerId.slice(0, 8).toUpperCase() : 'VIP'}`
+          ).trim();
+
+          const resolvedBuyerPhone = (
+            cachedBuyer?.buyerPhone ||
+            cachedBuyer?.phone ||
+            parsedBuyerPhone ||
+            buyerPhoneMap.get(bOrd.buyerId) ||
+            bOrd.buyerPhone ||
+            (currentRole === 'buyer' ? (currentUser?.phone || '') : '') ||
+            ''
+          ).trim();
+
+          const resolvedSellerName = (
+            bOrd.sellerName ||
+            sellerNameMap.get(bOrd.sellerId) ||
+            matchedListing.sellerName ||
+            (currentRole === 'seller' ? (currentUser?.name || 'Người Bán') : 'Người Bán')
+          ).trim();
+
           const buyerAddr = typeof bOrd.deliveryAddress === 'string'
-            ? bOrd.deliveryAddress
+            ? (parsedAddressObj?.address || bOrd.deliveryAddress)
             : bOrd.deliveryAddress?.detailAddress
               ? `${bOrd.deliveryAddress.detailAddress}, ${bOrd.deliveryAddress.wardName || ''}, ${bOrd.deliveryAddress.provinceName || ''}`
-              : 'SecondLife Hub Address';
+              : (cachedBuyer?.buyerAddress || 'SecondLife Hub Address');
 
           return {
             id: bOrd.id,
             listingId: bOrd.postId,
             listing: matchedListing,
             buyerId: bOrd.buyerId,
-            buyerName: 'Khách Hàng',
-            buyerPhone: '0912 345 678',
+            buyerName: resolvedBuyerName,
+            buyerPhone: resolvedBuyerPhone,
             buyerAddress: buyerAddr,
             sellerId: bOrd.sellerId,
-            sellerName: 'Người Bán',
+            sellerName: resolvedSellerName,
             itemPriceVnd: bOrd.finalPrice || 0,
             inspectionFeeVnd: 0,
             shippingFeeVnd: bOrd.shippingFee || 0,
@@ -875,6 +1026,19 @@ export default function App() {
   }, [loadUserOrders, activeTab]);
 
   const handleOrderPlaced = (newOrder: EscrowOrder) => {
+    try {
+      localStorage.setItem(`order_buyer_info_${newOrder.id}`, JSON.stringify({
+        buyerName: newOrder.buyerName,
+        buyerPhone: newOrder.buyerPhone,
+        buyerAddress: newOrder.buyerAddress,
+      }));
+      if (newOrder.buyerId) {
+        localStorage.setItem(`buyer_info_${newOrder.buyerId}`, JSON.stringify({
+          name: newOrder.buyerName,
+          phone: newOrder.buyerPhone,
+        }));
+      }
+    } catch {}
     setOrders((prev) => [newOrder, ...prev]);
     setCheckoutListing(null);
     setCheckoutAgreedPrice(undefined);
@@ -1057,6 +1221,9 @@ export default function App() {
           userCreditBalance={userCreditBalance}
           userCredit={userCredit}
           walletBalance={walletBalance}
+          token={getAccessToken()}
+          onNavigateNotification={handleNotificationNavigate}
+          onOpenNotifications={() => handleTabChange('notifications')}
           onOpenSellerRegister={() => {
             if (currentUser && ['admin', 'inspector'].includes(currentUser.role)) {
               showToast(lang === 'vi'
@@ -1263,7 +1430,22 @@ export default function App() {
             }}
           />
         )}
+
+        {/* Notifications Center Page (Requirement 3 & Phase 3) */}
+        {activeTab === 'notifications' && (
+          <NotificationCenterView
+            lang={lang}
+            onNavigateToUrl={handleNotificationNavigate}
+            onBackToHome={() => handleTabChange('home')}
+          />
+        )}
       </main>
+
+      {/* Real-time WebSocket STOMP Push Notification Toast (Requirement 4 & Phase 4) */}
+      <RealtimeNotificationToast
+        lang={lang}
+        onNavigateToUrl={handleNotificationNavigate}
+      />
 
       {/* Listing Detail Modal */}
       {selectedListing && (
@@ -1395,7 +1577,7 @@ export default function App() {
           );
           if (user.role === 'admin') {
             setActiveTab('admin-dashboard');
-          } else if (user.role === 'inspector') {
+          } else if (user.role === 'inspector' || user.role === 'inspection_center') {
             setActiveTab('inspection-hub');
           } else if (user.role === 'staff') {
             setActiveTab('home');

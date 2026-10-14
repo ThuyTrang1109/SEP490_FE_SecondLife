@@ -25,3 +25,6 @@ export * from './adminCatalogService';
 export * from './chatService';
 export * from './addressService';
 export * from './systemWalletService';
+export * from './adminCommissionService';
+export * from './notificationService';
+export * from './notificationWsClient';

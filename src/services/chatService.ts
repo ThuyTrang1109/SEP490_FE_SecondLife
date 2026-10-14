@@ -29,6 +29,8 @@ export interface SendMessageRequest {
   messageContent: string;
 }
 
+import { SystemInspectionProposalPayload } from '../types';
+
 // System negotiation offer structure if backend sends JSON inside "SYSTEM: ..."
 export interface SystemOfferPayload {
   type: 'OFFER';
@@ -37,13 +39,18 @@ export interface SystemOfferPayload {
   negotiationId: string;
 }
 
-export function parseSystemMessage(content: string): { isSystem: boolean; cleanText: string; offer?: SystemOfferPayload } {
+export function parseSystemMessage(content: string): {
+  isSystem: boolean;
+  cleanText: string;
+  offer?: SystemOfferPayload;
+  inspectionProposal?: SystemInspectionProposalPayload;
+} {
   if (!content) return { isSystem: false, cleanText: '' };
   
   const trimmed = content.trim();
   if (trimmed.startsWith('SYSTEM:')) {
     const rawBody = trimmed.replace(/^SYSTEM:\s*/i, '').trim();
-    // Try parse as JSON (in case it is an OFFER payload)
+    // Try parse as JSON (OFFER or INSPECTION_PROPOSAL)
     try {
       const parsed = JSON.parse(rawBody);
       if (parsed && parsed.type === 'OFFER') {
@@ -51,6 +58,13 @@ export function parseSystemMessage(content: string): { isSystem: boolean; cleanT
           isSystem: true,
           cleanText: rawBody,
           offer: parsed as SystemOfferPayload
+        };
+      }
+      if (parsed && parsed.type === 'INSPECTION_PROPOSAL') {
+        return {
+          isSystem: true,
+          cleanText: rawBody,
+          inspectionProposal: parsed as SystemInspectionProposalPayload
         };
       }
     } catch {

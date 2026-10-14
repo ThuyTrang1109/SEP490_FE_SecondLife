@@ -113,9 +113,14 @@ export const ProductReviewModal: React.FC<ProductReviewModalProps> = ({
               <Star className="w-5 h-5 fill-white" />
             </div>
             <div>
-              <h3 className="font-extrabold text-base text-[#24263e]">
-                {lang === 'vi' ? 'Đánh Giá Sản Phẩm & Người Bán' : 'Review Product & Seller'}
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-base text-[#24263e]">
+                  {lang === 'vi' ? 'Đánh Giá Sản Phẩm & Người Bán' : 'Review Product & Seller'}
+                </h3>
+                <span className="text-[10px] text-rose-600 font-extrabold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                  ❌ [Lưu cục bộ / Chưa có BE Review]
+                </span>
+              </div>
               <p className="text-[11px] text-[#24263e]/70 font-medium">
                 {lang === 'vi' ? 'Đơn hàng đã hoàn thành qua bảo lãnh Escrow' : 'Verified completed Escrow order'}
               </p>

@@ -23,7 +23,7 @@ import {
 import { Listing, Language, UserProfile } from '../types';
 import { formatVND } from '../utils/translations';
 import { sellerService, SellerVerificationResponseDto } from '../services/sellerService';
-import { sellerCreditService, CreditBalanceResponseDto, CreditLedgerResponseDto } from '../services/sellerCreditService';
+import { sellerCreditService, CreditBalanceResponseDto, CreditLedgerResponseDto, CreditPurchaseResponseDto } from '../services/sellerCreditService';
 import { mediaService } from '../services/mediaService';
 import { postService } from '../services/postService';
 import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
@@ -79,6 +79,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [creditBalance, setCreditBalance] = useState<CreditBalanceResponseDto | null>(null);
   const [isCreditLedgerOpen, setIsCreditLedgerOpen] = useState(false);
   const [creditLedgerItems, setCreditLedgerItems] = useState<CreditLedgerResponseDto[]>([]);
+  const [creditPurchases, setCreditPurchases] = useState<CreditPurchaseResponseDto[]>([]);
+  const [creditModalTab, setCreditModalTab] = useState<'ledger' | 'purchases'>('ledger');
   const [isLoadingLedger, setIsLoadingLedger] = useState(false);
 
   // Real Backend Posts State
@@ -187,11 +189,16 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     setIsCreditLedgerOpen(true);
     setIsLoadingLedger(true);
     try {
-      const res = await sellerCreditService.getLedger(0, 30);
-      const items = (res as any)?.items || (res as any)?.content || (res as any)?.data?.items || (res as any)?.data || (Array.isArray(res) ? res : []);
-      setCreditLedgerItems(items);
+      const [ledgerRes, purchasesRes] = await Promise.all([
+        sellerCreditService.getLedger(0, 30),
+        sellerCreditService.getPurchases(0, 30),
+      ]);
+      const ledgerItems = (ledgerRes as any)?.items || (ledgerRes as any)?.content || (ledgerRes as any)?.data?.items || (ledgerRes as any)?.data || (Array.isArray(ledgerRes) ? ledgerRes : []);
+      const purchaseItems = (purchasesRes as any)?.items || (purchasesRes as any)?.content || (purchasesRes as any)?.data?.items || (purchasesRes as any)?.data || (Array.isArray(purchasesRes) ? purchasesRes : []);
+      setCreditLedgerItems(ledgerItems);
+      setCreditPurchases(purchaseItems);
     } catch (err) {
-      console.warn('Lỗi lấy sổ cái credit:', err);
+      console.warn('Lỗi lấy dữ liệu credit:', err);
     } finally {
       setIsLoadingLedger(false);
     }
@@ -918,15 +925,39 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               <div className="flex items-center gap-2">
                 <Coins className="w-5 h-5 text-amber-500" />
                 <h3 className="font-bold text-sm text-slate-900">
-                  Lịch Sử Biến Động Điểm Tín Dụng (Credit Ledger)
+                  Quản Lý Tín Dụng & Lịch Sử Nạp (Seller Credits)
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setIsCreditLedgerOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer p-1"
               >
                 ✕
+              </button>
+            </div>
+
+            {/* Sub-tab Switcher */}
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+              <button
+                onClick={() => setCreditModalTab('ledger')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  creditModalTab === 'ledger'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                Sổ Cái Biến Động ({creditLedgerItems.length})
+              </button>
+              <button
+                onClick={() => setCreditModalTab('purchases')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  creditModalTab === 'purchases'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                Lịch Sử Đơn Mua ({creditPurchases.length})
               </button>
             </div>
 
@@ -935,7 +966,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
                 <span className="text-xs">Đang tải lịch sử giao dịch credit...</span>
               </div>
-            ) : (
+            ) : creditModalTab === 'ledger' ? (
               <div className="overflow-x-auto max-h-96">
                 <table className="w-full text-left text-xs">
                   <thead>
@@ -982,6 +1013,59 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                       <tr>
                         <td colSpan={5} className="py-8 text-center text-slate-400">
                           Chưa có lịch sử giao dịch credit nào.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="overflow-x-auto max-h-96">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50 text-slate-600 text-[11px] font-bold">
+                      <th className="py-2.5 px-3">Mã đơn mua</th>
+                      <th className="py-2.5 px-3">Thời gian</th>
+                      <th className="py-2.5 px-3 text-center">Gói mua</th>
+                      <th className="py-2.5 px-3 text-right">Tổng tiền</th>
+                      <th className="py-2.5 px-3 text-right">Trạng thái</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {creditPurchases.length > 0 ? (
+                      creditPurchases.map((purchase, idx) => (
+                        <tr key={purchase.id || idx} className="hover:bg-slate-50/60 transition">
+                          <td className="py-2.5 px-3 font-mono font-bold text-slate-900 text-[11px]">
+                            #{purchase.id.slice(0, 8)}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-500 text-[11px]">
+                            {purchase.createdAt ? new Date(purchase.createdAt).toLocaleString('vi-VN') : '—'}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <span className="text-slate-700 font-bold">
+                              {purchase.snapshot?.listingQuantity || 0} tin • {purchase.snapshot?.valuationQuantity || 0} định giá
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-black text-[#c34c36]">
+                            {formatVND(purchase.snapshot?.finalFee || 0)}
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              purchase.status === 'PAID'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : purchase.status === 'FAILED' || purchase.status === 'EXPIRED'
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {purchase.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-slate-400">
+                          Chưa có đơn hàng mua tín dụng nào.
                         </td>
                       </tr>
                     )}

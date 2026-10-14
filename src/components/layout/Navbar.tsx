@@ -1,8 +1,9 @@
 import React from 'react';
-import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Phone, Coins, FileCheck, Wallet, Wrench } from 'lucide-react';
+import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Phone, Coins, FileCheck, Wallet, Wrench, Bell } from 'lucide-react';
 import { UserRole, Language, UserCredit } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import logoImg from '../../assets/logo.png';
+import { NotificationBell } from './NotificationBell';
 
 interface NavbarProps {
   currentRole: UserRole;
@@ -22,6 +23,9 @@ interface NavbarProps {
   userCredit?: UserCredit;
   walletBalance?: number;
   onOpenSellerRegister?: () => void;
+  onNavigateNotification?: (actionUrl: string | null, notification: any) => void;
+  onOpenNotifications?: () => void;
+  token?: string | null;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -42,6 +46,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   userCredit,
   walletBalance = 0,
   onOpenSellerRegister,
+  onNavigateNotification,
+  onOpenNotifications,
+  token,
 }) => {
   const t = translations[lang];
 
@@ -102,7 +109,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           className="flex items-center gap-2.5 cursor-pointer select-none group shrink-0"
           onClick={() => {
             if (currentUser?.role === 'admin' || currentRole === 'admin') onTabChange('admin-dashboard');
-            else if (currentUser?.role === 'inspector' || currentRole === 'inspector') onTabChange('inspection-hub');
+            else if (currentUser?.role === 'inspector' || currentRole === 'inspector' || currentUser?.role === 'inspection_center' || currentRole === 'inspection_center') onTabChange('inspection-hub');
             else onTabChange('home');
           }}
         >
@@ -143,8 +150,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               <ShieldAlert className="w-4 h-4" />
               <span>{lang === 'vi' ? 'Quản Trị Hệ Thống (Admin)' : 'Admin Dashboard'}</span>
             </button>
-          ) : currentUser && currentRole === 'inspector' ? (
-            /* Inspector role: Single Inspection Center Portal */
+          ) : currentUser && (currentRole === 'inspector' || currentRole === 'inspection_center') ? (
+            /* Inspector & Inspection Center Manager role: Single Inspection Center Portal */
             <button
               onClick={() => onTabChange('inspection-hub')}
               className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
@@ -154,7 +161,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <Building2 className="w-4 h-4" />
-              <span>{lang === 'vi' ? 'Trung Tâm Kiểm Định' : 'Inspection Center'}</span>
+              <span>{lang === 'vi' ? (currentRole === 'inspection_center' ? 'Quản Lý Trung Tâm KĐ' : 'Trung Tâm Kiểm Định') : 'Inspection Center'}</span>
             </button>
           ) : (
             /* Buyer, Seller, Staff & Public roles: Full Marketplace Navigation */
@@ -271,6 +278,22 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
 
+          {/* Notification Bell with Dropdown Popover */}
+          {currentUser && (
+            <NotificationBell
+              lang={lang}
+              token={token}
+              onNavigateToUrl={onNavigateNotification}
+              onViewAllNotifications={() => {
+                if (onOpenNotifications) {
+                  onOpenNotifications();
+                } else {
+                  onTabChange('notifications');
+                }
+              }}
+            />
+          )}
+
           {/* Post Listing CTA Button - Buyer, Seller, Staff */}
           {(!currentUser || !['admin', 'inspector'].includes(currentRole)) && (
             <button
@@ -371,7 +394,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>Hồ Sơ</span>
             </button>
           </>
-        ) : currentUser && currentRole === 'inspector' ? (
+        ) : currentUser && (currentRole === 'inspector' || currentRole === 'inspection_center') ? (
           <>
             <button
               onClick={() => onTabChange('inspection-hub')}
@@ -380,7 +403,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <Building2 className="w-3.5 h-3.5" />
-              <span>Trung Tâm KĐ</span>
+              <span>{currentRole === 'inspection_center' ? 'Quản Lý KĐ' : 'Trung Tâm KĐ'}</span>
             </button>
             <button
               onClick={onOpenProfile}
@@ -424,6 +447,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <Clock className="w-3.5 h-3.5" />
                 <span>{lang === 'vi' ? 'Đơn hàng' : 'Orders'}</span>
+              </button>
+            )}
+            {currentUser && (
+              <button
+                onClick={() => onTabChange('notifications')}
+                className={`flex items-center gap-1 py-1 px-2 rounded-md relative ${activeTab === 'notifications' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'}`}
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span>{lang === 'vi' ? 'Thông báo' : 'Alerts'}</span>
               </button>
             )}
             {currentUser && (currentRole === 'staff' || currentUser.role === 'staff') && (

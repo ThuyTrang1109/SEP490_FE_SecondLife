@@ -122,6 +122,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     'SL-SEAL-' + Math.floor(1000000 + Math.random() * 9000000)
   );
   const [proofPhotos, setProofPhotos] = useState<string[]>([]);
+  const [videoProofUrl, setVideoProofUrl] = useState('');
+  const [unboxingVideoUrl, setUnboxingVideoUrl] = useState('');
   const [sealConfirmed, setSealConfirmed] = useState(false);
 
   // --- STEP 5: VERDICT & SUMMARY ---
@@ -129,6 +131,29 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const [conditionScore, setConditionScore] = useState<number>(90);
   const [inspectorNotes, setInspectorNotes] = useState('');
   const [isDigitalSigned, setIsDigitalSigned] = useState(false);
+
+  // Load dynamic checklist from backend for activeOrder
+  useEffect(() => {
+    if (activeOrder?.id) {
+      inspectorService.getOrderChecklist(activeOrder.id)
+        .then((res) => {
+          if (res?.items && Array.isArray(res.items) && res.items.length > 0) {
+            setChecklist(
+              res.items.map((item) => ({
+                id: item.id,
+                category: res.categoryName || selectedCategory,
+                title: item.itemTitle,
+                description: item.criteriaDescription || '',
+                status: 'pending' as const,
+              }))
+            );
+          }
+        })
+        .catch(() => {
+          // Fallback to category standard checklist
+        });
+    }
+  }, [activeOrder?.id, selectedCategory]);
 
   // Reset or populate fields when activeOrder changes
   useEffect(() => {
@@ -143,6 +168,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         setSelectedGrade(activeOrder.inspectionReport.detectedGrade || 'Like New');
         setTamperSealInput(activeOrder.inspectionReport.tamperSealId || ('SL-SEAL-' + Math.floor(1000000 + Math.random() * 9000000)));
         setProofPhotos(activeOrder.inspectionReport.inspectorPhotos || []);
+        setVideoProofUrl((activeOrder as any).videoProofUrl || '');
+        setUnboxingVideoUrl((activeOrder as any).unboxingVideoUrl || '');
         setSealConfirmed(true);
         setIsDigitalSigned(true);
       } else {
@@ -151,6 +178,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         setExteriorNotes('');
         setInspectorNotes('');
         setProofPhotos([]);
+        setVideoProofUrl((activeOrder as any).videoProofUrl || '');
+        setUnboxingVideoUrl((activeOrder as any).unboxingVideoUrl || '');
         setSealConfirmed(false);
         setIsDigitalSigned(false);
       }
@@ -258,9 +287,21 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
     setIsSubmitting(true);
     try {
-      await inspectorService.submitResult(activeOrder.id, {
+      await inspectorService.submitReport(activeOrder.id, {
         status: overallVerdict === 'PASS' ? 'PASSED' : 'FAILED',
         note: `[Tem: ${tamperSealInput}][Grade: ${selectedGrade}][Điểm: ${conditionScore}/100] ${inspectorNotes}`,
+        conditionScore,
+        conditionGrade: selectedGrade,
+        tamperSealId: tamperSealInput,
+        barcode: barcodeScanInput || `BC-${activeOrder.id}`,
+        videoProofUrl: videoProofUrl || proofPhotos[0] || undefined,
+        unboxingVideoUrl: unboxingVideoUrl || undefined,
+        checklistResults: checklist.map((item) => ({
+          itemId: item.id,
+          itemTitle: item.title,
+          isPassed: item.status === 'pass',
+          inspectorNote: item.testedValue || item.notes || undefined,
+        })),
       });
     } catch (err) {
       console.warn('Backend inspection submission fallback:', err);
@@ -1093,6 +1134,42 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       }}
                     />
                   </label>
+                </div>
+              </div>
+
+              {/* Video Proofs & Unboxing URLs */}
+              <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-3 text-xs">
+                <span className="font-extrabold text-[#24263e] uppercase tracking-wider flex items-center gap-1.5">
+                  <Camera className="w-4 h-4 text-blue-600" />
+                  Bằng Chứng Video Thử Nghiệm Máy & Mở Thùng (Cloudinary / S3 URL):
+                </span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-600 block mb-1">
+                      Video Chẩn Đoán / Test Máy (Inspection Proof Video URL):
+                    </label>
+                    <input
+                      type="url"
+                      value={videoProofUrl}
+                      onChange={(e) => setVideoProofUrl(e.target.value)}
+                      placeholder="https://res.cloudinary.com/.../inspection_test.mp4"
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-600 block mb-1">
+                      Video Mở Thùng Đồng Kiểm (Unboxing Video URL):
+                    </label>
+                    <input
+                      type="url"
+                      value={unboxingVideoUrl}
+                      onChange={(e) => setUnboxingVideoUrl(e.target.value)}
+                      placeholder="https://res.cloudinary.com/.../unboxing.mp4"
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36]"
+                    />
+                  </div>
                 </div>
               </div>
 

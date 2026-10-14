@@ -1,17 +1,236 @@
 import { request, PageResponse } from './apiClient';
 
+// ============================================================================
+// DTOs & INTERFACES FOR PRODUCT INSPECTION SYSTEM
+// ============================================================================
+
+export interface InspectionTravelTierDto {
+  tierNumber: number;
+  name: string;
+  fromKm?: number;
+  toKm?: number;
+  pricePerKm: number;
+  distanceChargedInTier?: number;
+  feeInTier?: number;
+  status?: string;
+}
+
+export interface InspectionQuotePackageAtHome {
+  distanceKm?: number;
+  travelFeeOneWay?: number;
+  travelFeeRoundTrip?: number;
+  totalFee?: number;
+  suggestedSplit50?: number;
+  tiersBreakdown?: InspectionTravelTierDto[];
+}
+
+export interface InspectionQuotePackageAtCenter {
+  shippingToCenterFee?: number;
+  returnReserveFee?: number;
+  totalFee?: number;
+  suggestedSplit50?: number;
+}
+
+export interface InspectionQuoteResponse {
+  postId: string;
+  postTitle?: string;
+  postPrice?: number;
+  baseFee?: number;
+  baseInspectionFee: number;
+
+  // AT_HOME package
+  travelDistanceKm?: number;
+  travelFeeOneWay?: number;
+  travelFeeRoundTrip?: number;
+  atHomeTotalFee?: number;
+  appliedTiers?: InspectionTravelTierDto[];
+  atHomeSplitOptions?: Record<string, number>;
+  atHomePackage?: InspectionQuotePackageAtHome;
+
+  // AT_CENTER package
+  shippingToCenterFee?: number;
+  returnShippingReserveFee?: number;
+  atCenterTotalFee?: number;
+  atCenterSplitOptions?: Record<string, number>;
+  atCenterPackage?: InspectionQuotePackageAtCenter;
+}
+
+export interface InspectionQuoteRequest {
+  postId: string;
+  buyerLatitude?: number;
+  buyerLongitude?: number;
+}
+
+export interface CreateInspectionRequest {
+  postId: string;
+  orderType: 'AT_HOME' | 'AT_CENTER';
+  feePayer: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
+  buyerConsentZinLoss: boolean;
+  buyerLatitude?: number;
+  buyerLongitude?: number;
+  buyerDeliveryAddress?: string;
+  note?: string;
+}
+
+export interface InspectionSellerRespondRequest {
+  action: 'ACCEPT' | 'COUNTER' | 'REJECT';
+  counterFeePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
+  sellerConsentZinLoss?: boolean;
+  rejectionReason?: string;
+}
+
+export interface ChecklistResultItem {
+  itemId: string;
+  itemTitle: string;
+  isPassed: boolean;
+  inspectorNote?: string;
+}
+
+export interface SubmitInspectionReportRequest {
+  status: 'PASSED' | 'FAILED' | string;
+  note?: string;
+  conditionScore?: number;
+  conditionGrade?: string;
+  tamperSealId?: string;
+  barcode?: string;
+  videoProofUrl?: string;
+  unboxingVideoUrl?: string;
+  checklistResults?: ChecklistResultItem[];
+}
+
+// Backward compatibility alias for SubmitInspectionReportRequest
+export type SubmitInspectionResultRequest = SubmitInspectionReportRequest;
+
+export interface InspectionChecklistItemResponse {
+  id: string;
+  itemTitle?: string;
+  name?: string;
+  criteriaDescription?: string;
+  description?: string;
+  mandatory?: boolean;
+  orderIndex?: number;
+  weight?: number;
+}
+
+export interface InspectionChecklistResponse {
+  id: string;
+  categoryId?: string;
+  categoryCode?: string;
+  categoryName?: string;
+  title: string;
+  description?: string;
+  active?: boolean;
+  items?: InspectionChecklistItemResponse[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CreateChecklistItemRequest {
+  itemTitle?: string;
+  name?: string;
+  criteriaDescription?: string;
+  description?: string;
+  mandatory?: boolean;
+  orderIndex?: number;
+  code?: string;
+  weight?: number;
+  inspectionType?: string;
+}
+
+export interface CreateChecklistTemplateRequest {
+  categoryId?: string;
+  categoryCode?: string;
+  categoryName?: string;
+  title?: string;
+  description?: string;
+  items: CreateChecklistItemRequest[];
+}
+
+export interface InspectionFeeProposalResponse {
+  id: string;
+  categoryId?: string;
+  categoryName?: string;
+  baseInspectionFee: number;
+  tiersJson?: string;
+  tiers?: InspectionTravelTierDto[];
+  proposedById?: string;
+  proposedByName?: string;
+  proposedByEmail?: string;
+  reviewedById?: string;
+  reviewedByName?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | string;
+  rejectReason?: string;
+  createdAt?: string;
+  reviewedAt?: string;
+}
+
+export interface ProposeTravelTiersRequest {
+  categoryId?: string;
+  baseInspectionFee: number;
+  tiers: {
+    tierNumber: number;
+    name: string;
+    fromKm: number;
+    toKm: number;
+    pricePerKm: number;
+  }[];
+}
+
 export interface InspectionOrderDto {
   id: string;
   postId: string;
   postTitle?: string;
   postImageUrl?: string;
+  postImageUrls?: string[];
   postPrice?: number;
+
+  buyerId?: string;
+  buyerEmail?: string;
+  buyerName?: string;
+
+  sellerId?: string;
+  sellerEmail?: string;
+  sellerName?: string;
+
   inspectorId?: string;
   inspectorName?: string;
+
+  orderType?: 'AT_HOME' | 'AT_CENTER' | string;
+  feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50' | string;
   status: string;
   note?: string;
+
   inspectionFee?: number;
   shippingFee?: number;
+  travelDistanceKm?: number;
+  travelFee?: number;
+  returnShippingReserveFee?: number;
+
+  buyerFeeShare?: number;
+  sellerFeeShare?: number;
+
+  paymentDeadline?: string;
+  buyerPaidAt?: string;
+  sellerPaidAt?: string;
+
+  appointmentScheduledAt?: string;
+  checklistResultJson?: string;
+  videoProofUrl?: string;
+  unboxingVideoUrl?: string;
+
+  buyerConsentZin?: boolean;
+  sellerConsentZin?: boolean;
+
+  conditionScore?: number;
+  conditionGrade?: string;
+  tamperSealId?: string;
+  barcode?: string;
+
+  finalPaymentDeadline?: string;
+  finalPaymentPaidAt?: string;
+  finalItemPrice?: number;
+  finalShippingFee?: number;
+
   createdAt?: string;
   updatedAt?: string;
 }
@@ -32,17 +251,67 @@ export interface CreateInspectionStaffRequest {
   phone?: string;
 }
 
-export interface SubmitInspectionResultRequest {
-  status: 'PASSED' | 'FAILED' | string;
-  note?: string;
-}
+// ============================================================================
+// INSPECTOR SERVICE
+// ============================================================================
 
 export const inspectorService = {
+  // --------------------------------------------------------------------------
+  // 1. BUYER & SELLER INSPECTION FLOW (/api/v1/inspection)
+  // --------------------------------------------------------------------------
+
   /**
-   * Inspector xem danh sách đơn hàng kiểm định được phân công cho mình
+   * Tính toán báo giá chi tiết 2 gói AT_HOME và AT_CENTER
    */
-  async getMyOrders(): Promise<InspectionOrderDto[]> {
-    const res = await request<InspectionOrderDto[]>('/inspector/orders', {
+  async getQuote(data: InspectionQuoteRequest): Promise<InspectionQuoteResponse> {
+    const res = await request<InspectionQuoteResponse>('/inspection/quote', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      requiresAuth: false, // Public endpoint
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Buyer tạo yêu cầu mua hàng kèm kiểm định
+   */
+  async createRequest(data: CreateInspectionRequest): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>('/inspection/requests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Seller phản hồi yêu cầu: ACCEPT, COUNTER hoặc REJECT
+   */
+  async respondRequest(orderId: string, data: InspectionSellerRespondRequest): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspection/requests/${orderId}/respond`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Buyer hoặc Seller nộp phí kiểm định từ Ví vào Escrow (Hạn 6h)
+   */
+  async payInspectionFee(orderId: string): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspection/orders/${orderId}/pay-fee`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Lấy chi tiết đơn kiểm định
+   */
+  async getOrder(orderId: string): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspection/orders/${orderId}`, {
       method: 'GET',
       requiresAuth: true,
     });
@@ -50,19 +319,114 @@ export const inspectorService = {
   },
 
   /**
-   * Manager xem toàn bộ danh sách đơn kiểm định
+   * Buyer xem danh sách đơn mua có kiểm định của mình
    */
-  async getAllOrders(status?: string, page: number = 0, size: number = 20): Promise<PageResponse<InspectionOrderDto>> {
-    const params = new URLSearchParams();
-    if (status) params.append('status', status);
-    params.append('page', page.toString());
-    params.append('size', size.toString());
-
-    const res = await request<PageResponse<InspectionOrderDto>>(`/inspector/orders/all?${params.toString()}`, {
+  async getMyBuyerOrders(page: number = 0, size: number = 20): Promise<PageResponse<InspectionOrderDto>> {
+    const res = await request<PageResponse<InspectionOrderDto>>(`/inspection/my-buyer-orders?page=${page}&size=${size}`, {
       method: 'GET',
       requiresAuth: true,
     });
-    return res.data;
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Seller xem danh sách đơn bán có kiểm định của mình
+   */
+  async getMySellerOrders(page: number = 0, size: number = 20): Promise<PageResponse<InspectionOrderDto>> {
+    const res = await request<PageResponse<InspectionOrderDto>>(`/inspection/my-seller-orders?page=${page}&size=${size}`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Buyer thanh toán tiền hàng và phí vận chuyển cuối sau khi máy PASSED (Hạn 6h)
+   */
+  async confirmPurchase(orderId: string): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspection/orders/${orderId}/confirm-purchase`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  // --------------------------------------------------------------------------
+  // 2. INSPECTOR EXECUTION FLOW (/api/v1/inspector)
+  // --------------------------------------------------------------------------
+
+  /**
+   * KTV xem danh sách đơn được phân công cho mình
+   */
+  async getMyOrders(): Promise<InspectionOrderDto[]> {
+    const res = await request<InspectionOrderDto[]>('/inspector/orders', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data || res;
+    return Array.isArray(data) ? data : (data?.items || []);
+  },
+
+  /**
+   * Lên lịch hẹn kiểm tra tại nhà (Gói AT_HOME)
+   */
+  async scheduleAppointment(orderId: string, scheduledAt: string, note?: string): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/schedule`, {
+      method: 'POST',
+      body: JSON.stringify({ scheduledAt, note }),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Lấy bộ checklist động theo danh mục sản phẩm của đơn
+   */
+  async getOrderChecklist(orderId: string): Promise<InspectionChecklistResponse> {
+    const res = await request<InspectionChecklistResponse>(`/inspector/orders/${orderId}/checklist`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * KTV nộp báo cáo kết quả kiểm định chuyên sâu kèm video và checklist
+   */
+  async submitReport(orderId: string, data: SubmitInspectionReportRequest): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/submit-report`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Alias nộp kết quả tương thích ngược
+   */
+  async submitResult(orderId: string, data: SubmitInspectionReportRequest): Promise<InspectionOrderDto> {
+    return this.submitReport(orderId, data);
+  },
+
+  // --------------------------------------------------------------------------
+  // 3. INSPECTION CENTER PORTAL (/api/v1/inspector-center)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Manager xem danh sách tất cả các đơn kiểm định
+   */
+  async getAllOrders(status?: string, page: number = 0, size: number = 20): Promise<PageResponse<InspectionOrderDto>> {
+    const params = new URLSearchParams();
+    if (status && status !== 'ALL') params.append('status', status);
+    params.append('page', page.toString());
+    params.append('size', size.toString());
+
+    const res = await request<PageResponse<InspectionOrderDto>>(`/inspector-center/orders?${params.toString()}`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
   },
 
   /**
@@ -70,40 +434,29 @@ export const inspectorService = {
    */
   async assignInspector(orderId: string, inspectorId: string): Promise<InspectionOrderDto> {
     const res = await request<InspectionOrderDto>(
-      `/inspector/orders/${orderId}/assign?inspectorId=${encodeURIComponent(inspectorId)}`,
+      `/inspector-center/orders/${orderId}/assign?inspectorId=${encodeURIComponent(inspectorId)}`,
       {
         method: 'POST',
         requiresAuth: true,
       }
     );
-    return res.data;
+    return (res as any)?.data || res;
   },
 
   /**
-   * Inspector nộp kết quả thẩm định thực tế (PASSED/FAILED)
-   */
-  async submitResult(orderId: string, data: SubmitInspectionResultRequest): Promise<InspectionOrderDto> {
-    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/result`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-      requiresAuth: true,
-    });
-    return res.data;
-  },
-
-  /**
-   * Manager xem danh sách nhân viên trung tâm
+   * Manager xem danh sách nhân viên KTV thuộc trung tâm quản lý
    */
   async getStaff(): Promise<InspectionStaffDto[]> {
     const res = await request<InspectionStaffDto[]>('/inspector-center/staff', {
       method: 'GET',
       requiresAuth: true,
     });
-    return (res as any)?.data || res;
+    const data = (res as any)?.data || res;
+    return Array.isArray(data) ? data : (data?.items || []);
   },
 
   /**
-   * Manager tạo tài khoản nhân viên kiểm định
+   * Manager tạo tài khoản kỹ thuật viên mới cho trung tâm
    */
   async createStaff(data: CreateInspectionStaffRequest): Promise<InspectionStaffDto> {
     const res = await request<InspectionStaffDto>('/inspector-center/staff', {
@@ -111,6 +464,141 @@ export const inspectorService = {
       body: JSON.stringify(data),
       requiresAuth: true,
     });
-    return res.data;
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Manager xem các mẫu checklist kiểm định
+   */
+  async getChecklists(): Promise<InspectionChecklistResponse[]> {
+    const res = await request<InspectionChecklistResponse[]>('/inspector-center/checklists', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data || res;
+    return Array.isArray(data) ? data : [];
+  },
+
+  /**
+   * Manager tạo mẫu checklist theo danh mục
+   */
+  async createChecklist(data: CreateChecklistTemplateRequest): Promise<InspectionChecklistResponse> {
+    const res = await request<InspectionChecklistResponse>('/inspector-center/checklists', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Manager cập nhật mẫu checklist
+   */
+  async updateChecklist(id: string, data: Partial<CreateChecklistTemplateRequest>): Promise<InspectionChecklistResponse> {
+    const res = await request<InspectionChecklistResponse>(`/inspector-center/checklists/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Manager xóa mẫu checklist
+   */
+  async deleteChecklist(id: string): Promise<void> {
+    await request<void>(`/inspector-center/checklists/${id}`, {
+      method: 'DELETE',
+      requiresAuth: true,
+    });
+  },
+
+  /**
+   * Manager xem bảng giá 6 bậc cước di chuyển hiện tại
+   */
+  async getTravelTiers(): Promise<InspectionTravelTierDto[]> {
+    const res = await request<InspectionTravelTierDto[]>('/inspector-center/travel-tiers', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data || res;
+    return Array.isArray(data) ? data : [];
+  },
+
+  /**
+   * Manager gửi đề xuất điều chỉnh biểu phí lên Admin sàn
+   */
+  async proposeTravelTiers(data: ProposeTravelTiersRequest): Promise<InspectionFeeProposalResponse> {
+    const res = await request<InspectionFeeProposalResponse>('/inspector-center/travel-tiers/propose', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Manager xem lịch sử các đề xuất biểu phí của trung tâm
+   */
+  async getTierProposals(): Promise<InspectionFeeProposalResponse[]> {
+    const res = await request<InspectionFeeProposalResponse[]>('/inspector-center/travel-tiers/proposals', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data || res;
+    return Array.isArray(data) ? data : [];
+  },
+
+  // --------------------------------------------------------------------------
+  // 4. ADMIN GOVERNANCE FLOW (/api/v1/admin/inspection)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Admin xem danh sách các đề xuất biểu phí
+   */
+  async getAdminFeeProposals(): Promise<InspectionFeeProposalResponse[]> {
+    const res = await request<InspectionFeeProposalResponse[]>('/admin/inspection/fee-proposals', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data || res;
+    return Array.isArray(data) ? data : [];
+  },
+
+  /**
+   * Admin duyệt hoặc từ chối đề xuất biểu phí
+   */
+  async reviewFeeProposal(id: string, data: { approved: boolean; note?: string }): Promise<InspectionFeeProposalResponse> {
+    const res = await request<InspectionFeeProposalResponse>(`/admin/inspection/fee-proposals/${id}/review`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Admin xem bảng 6 bậc thang cước di chuyển
+   */
+  async getAdminTravelTiers(): Promise<InspectionTravelTierDto[]> {
+    const res = await request<InspectionTravelTierDto[]>('/admin/inspection/travel-tiers', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data || res;
+    return Array.isArray(data) ? data : [];
+  },
+
+  /**
+   * Admin cập nhật trực tiếp biểu phí bậc thang di chuyển
+   */
+  async updateAdminTravelTiers(tiers: InspectionTravelTierDto[]): Promise<InspectionTravelTierDto[]> {
+    const res = await request<InspectionTravelTierDto[]>('/admin/inspection/travel-tiers', {
+      method: 'PUT',
+      body: JSON.stringify(tiers),
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data || res;
+    return Array.isArray(data) ? data : [];
   },
 };

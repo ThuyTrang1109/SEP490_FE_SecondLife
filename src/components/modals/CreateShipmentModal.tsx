@@ -48,7 +48,12 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
       onShipmentCreated(shipment);
     } catch (err: any) {
       console.error('Failed to create Lalamove shipment:', err);
-      setErrorMsg(err?.message || 'Không thể tạo vận đơn Lalamove. Vui lòng kiểm tra lại cấu hình kho lấy hàng hoặc thử lại.');
+      const rawMsg = err?.message || '';
+      if (rawMsg.toLowerCase().includes('disabled') || rawMsg.includes('503')) {
+        setErrorMsg('Lalamove chưa được kích hoạt trên máy chủ (LALAMOVE_ENABLED=false). Vui lòng cấu hình API Key đối tác trên Backend hoặc kiểm tra thông tin kho.');
+      } else {
+        setErrorMsg(rawMsg || 'Không thể tạo vận đơn Lalamove. Vui lòng kiểm tra lại cấu hình kho lấy hàng hoặc thử lại.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -116,7 +121,12 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                 1
               </div>
               <div className="space-y-0.5 min-w-0">
-                <span className="font-bold text-slate-900 text-xs block">Kho lấy hàng (Người bán)</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-bold text-slate-900 text-xs">Kho lấy hàng (Người bán)</span>
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold border border-emerald-200">
+                    GPS Sẵn Sàng
+                  </span>
+                </div>
                 <span className="text-slate-600 text-[11px] block leading-snug">
                   {order.listing.location || 'Địa chỉ kho đã lưu trong hồ sơ người bán'}
                 </span>
@@ -134,9 +144,14 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                 2
               </div>
               <div className="space-y-0.5 min-w-0">
-                <span className="font-bold text-slate-900 text-xs block">
-                  Người nhận: {order.buyerName} ({order.buyerPhone})
-                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-bold text-slate-900 text-xs">
+                    Người nhận: {order.buyerName} ({order.buyerPhone})
+                  </span>
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold border border-emerald-200">
+                    GPS Sẵn Sàng
+                  </span>
+                </div>
                 <span className="text-slate-600 text-[11px] block leading-snug">
                   {order.buyerAddress}
                 </span>

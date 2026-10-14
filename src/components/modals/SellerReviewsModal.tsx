@@ -60,13 +60,16 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
               {sellerName.charAt(0)}
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-extrabold text-base sm:text-lg text-white">
                   {sellerName}
                 </h3>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                   <ShieldCheck className="w-3 h-3 text-emerald-300" />
                   eKYC Verified
+                </span>
+                <span className="text-[10px] text-rose-300 font-extrabold bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-500/40">
+                  ❌ [Chỉ số mẫu / Chưa có BE Review]
                 </span>
               </div>
               <p className="text-xs text-white/70 font-medium">

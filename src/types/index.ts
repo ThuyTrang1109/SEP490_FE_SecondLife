@@ -1,4 +1,4 @@
-export type UserRole = 'buyer' | 'seller' | 'inspector' | 'staff' | 'admin';
+export type UserRole = 'buyer' | 'seller' | 'inspector' | 'staff' | 'admin' | 'inspection_center';
 
 export type Language = 'vi' | 'en';
 
@@ -111,6 +111,7 @@ export interface InspectionReport {
   centerName: string;
   inspectorName: string;
   inspectedAt: string;
+  completedAt?: string;
   verdict: 'PASS' | 'FAIL';
   detectedGrade: ConditionGrade;
   conditionScore: number; // 0 - 100
@@ -247,6 +248,20 @@ export interface ChatMessage {
   negotiationId?: string;
   safetyWarning?: string;
   isUnsent?: boolean;
+  isInspectionProposal?: boolean;
+  inspectionProposal?: SystemInspectionProposalPayload;
+}
+
+export interface SystemInspectionProposalPayload {
+  type: 'INSPECTION_PROPOSAL';
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
+  method: 'AT_CENTER' | 'AT_HOME';
+  feeSplit: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
+  estimatedFeeVnd: number;
+  proposedByRole: 'buyer' | 'seller';
+  proposalId?: string;
+  orderId?: string;
+  note?: string;
 }
 
 export interface InspectionCenter {
@@ -504,6 +519,8 @@ export interface ShipmentBackend {
   reason?: string | null;
   lastError?: string | null;
   podUrl?: string | null;
+  driverId?: string | null;
+  shareLink?: string | null;
 }
 
 export interface ShipmentEventBackend {
@@ -616,7 +633,5 @@ export interface StaffListingItemDTO {
   reviewReason?: string | null;
   duplicateMatches?: string[];
 }
-
-
-
+export * from './notification';
 

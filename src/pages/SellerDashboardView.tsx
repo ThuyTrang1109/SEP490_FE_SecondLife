@@ -238,22 +238,34 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     }
   };
 
-  // Merge server-loaded posts with listings props, prioritizing server posts
+  // Chỉ lấy bài đăng thuộc về chính tài khoản người bán hiện tại (tuyệt đối không lấy bài/bản nháp của người bán khác)
   const combinedListings = React.useMemo(() => {
     const list = [...myServerPosts];
     const existingIds = new Set(myServerPosts.map(p => p.id));
     for (const item of listings) {
-      if (!existingIds.has(item.id)) {
+      const isMine =
+        Boolean(currentUser?.id && item.sellerId === currentUser.id) ||
+        Boolean(currentUser?.name && item.sellerName?.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
+        item.sellerId === 'me';
+
+      if (isMine && !existingIds.has(item.id)) {
         list.push(item);
       }
     }
-    return list;
-  }, [myServerPosts, listings]);
+    // Lọc lại để đảm bảo 100% chỉ có bài đăng của chính tài khoản người bán này
+    return list.filter(item => {
+      const isMine =
+        Boolean(currentUser?.id && item.sellerId === currentUser.id) ||
+        Boolean(currentUser?.name && item.sellerName?.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
+        item.sellerId === 'me';
+      return isMine;
+    });
+  }, [myServerPosts, listings, currentUser?.id, currentUser?.name]);
 
   const filteredListings = combinedListings.filter((l) => {
     if (filterStatus === 'ALL') return true;
     if (filterStatus === 'pending') {
-      return l.backendStatus === 'PENDING' || l.backendStatus === 'PENDING_INSPECTION' || l.status === 'draft';
+      return l.backendStatus === 'PENDING' || l.backendStatus === 'PENDING_INSPECTION' || l.backendStatus === 'PENDING_REVIEW' || l.status === 'draft';
     }
     if (filterStatus === 'rejected') {
       return l.backendStatus === 'REJECTED';

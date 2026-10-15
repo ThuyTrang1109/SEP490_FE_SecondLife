@@ -137,6 +137,20 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     }
   };
 
+  const handleConfirmInspectionPurchase = async (orderId: string) => {
+    try {
+      if (!window.confirm('Xác nhận sản phẩm kiểm định đạt chuẩn và tiến hành thanh toán tiền hàng cuối cùng?')) {
+        return;
+      }
+      await inspectorService.confirmPurchase(orderId);
+      setInspectionActionNotice('Đã xác nhận mua hàng & thanh toán thành công! Đơn hàng sẽ được chuyển sang giao bưu tá.');
+      onRefreshOrders?.();
+      setTimeout(() => setInspectionActionNotice(null), 4000);
+    } catch (err: any) {
+      alert(err?.message || 'Không thể xác nhận mua hàng');
+    }
+  };
+
   // Review & Seller Trust Modal state
   const [reviewModalOrder, setReviewModalOrder] = useState<EscrowOrder | null>(null);
   const [schedulingOrder, setSchedulingOrder] = useState<EscrowOrder | null>(null);
@@ -459,6 +473,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               ? 'Theo dõi hành trình 2 chặng: Người bán → Trung tâm kiểm định → Người mua, biên bản nghiệm thu và ảnh 3 giai đoạn.'
               : 'Multi-leg tracking: Seller → Certified Inspection Hub → Buyer, digital inspection reports, and 3-stage photo logs.'}
           </p>
+        </div>
+      )}
+
+      {inspectionActionNotice && (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-2.5 animate-in fade-in shadow-xs">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{inspectionActionNotice}</span>
         </div>
       )}
 
@@ -883,6 +904,21 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               <span>{lang === 'vi' ? 'Nộp Phí' : 'Pay Fee'}</span>
                             </button>
                           </div>
+                        )}
+
+                        {/* Inspection Passed: Buyer confirms final purchase & shipping fee within 6h */}
+                        {!isSeller && ord.escrowStatus === 'INSPECTION_PASSED' && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleConfirmInspectionPurchase(ord.id);
+                            }}
+                            className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm animate-pulse"
+                            title="Sản phẩm kiểm định ĐẠT CHUẨN! Bấm để xác nhận mua hàng và thanh toán tiền hàng cuối cùng"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>{lang === 'vi' ? 'Xác Nhận Mua Hàng & Thanh Toán' : 'Confirm Purchase'}</span>
+                          </button>
                         )}
 
                         {(ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.backendStatus === 'DELIVERED' || ord.shippingDeliveredAt) ? (
@@ -1369,6 +1405,19 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 {detailModalOrder.escrowStatus !== 'COMPLETED_RELEASED' &&
                   detailModalOrder.escrowStatus !== 'DISPUTED' && (
                     <>
+                      {!isSeller && detailModalOrder.escrowStatus === 'INSPECTION_PASSED' && (
+                        <button
+                          onClick={() => {
+                            handleConfirmInspectionPurchase(detailModalOrder.id);
+                            setDetailModalOrder(null);
+                          }}
+                          className="flex-1 py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer animate-pulse"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>{lang === 'vi' ? 'Xác Nhận Mua Hàng & Thanh Toán' : 'Confirm Final Purchase'}</span>
+                        </button>
+                      )}
+
                       <button
                         onClick={() => {
                           onConfirmReceipt(detailModalOrder.id);

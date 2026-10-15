@@ -251,6 +251,42 @@ export interface CreateInspectionStaffRequest {
   phone?: string;
 }
 
+export interface InspectionSealLogDto {
+  id: string;
+  scannedAt: string;
+  scannedByName?: string;
+  scanStage: 'INITIAL_SEAL' | 'CARRIER_HANDOVER' | 'DELIVERED_BUYER' | string;
+  sealCondition: 'INTACT' | 'TAMPERED' | string;
+  locationText?: string;
+  note?: string;
+}
+
+export interface InspectionSealVerificationResponse {
+  tamperSealId: string;
+  inspectionOrderId: string;
+  postId: string;
+  productTitle?: string;
+  productModel?: string;
+  productBrand?: string;
+  conditionScore?: number;
+  conditionGrade?: string;
+  inspectionStatus?: string;
+  inspectionCenterName?: string;
+  inspectorName?: string;
+  inspectedAt?: string;
+  currentSealStatus?: 'INTACT' | 'TAMPERED' | string;
+  isOfficialSecondLifeSeal: boolean;
+  scanHistory?: InspectionSealLogDto[];
+}
+
+export interface InspectionSealScanRequest {
+  tamperSealId: string;
+  scanStage: 'INITIAL_SEAL' | 'CARRIER_HANDOVER' | 'DELIVERED_BUYER';
+  sealCondition: 'INTACT' | 'TAMPERED';
+  locationText?: string;
+  note?: string;
+}
+
 // ============================================================================
 // INSPECTOR SERVICE
 // ============================================================================
@@ -351,6 +387,29 @@ export const inspectorService = {
     return (res as any)?.data || res;
   },
 
+  /**
+   * Quét mã QR tra cứu và xác thực thông tin tem niêm phong
+   */
+  async getSealVerification(tamperSealId: string): Promise<InspectionSealVerificationResponse> {
+    const res = await request<InspectionSealVerificationResponse>(`/inspection/seal/${encodeURIComponent(tamperSealId)}`, {
+      method: 'GET',
+      requiresAuth: false,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Ghi nhận lịch sử các lần quét mã QR tem niêm phong (KTV, Shipper, Buyer)
+   */
+  async recordSealScan(data: InspectionSealScanRequest): Promise<InspectionSealLogDto> {
+    const res = await request<InspectionSealLogDto>('/inspection/seal/scan', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
   // --------------------------------------------------------------------------
   // 2. INSPECTOR EXECUTION FLOW (/api/v1/inspector)
   // --------------------------------------------------------------------------
@@ -365,6 +424,17 @@ export const inspectorService = {
     });
     const data = (res as any)?.data || res;
     return Array.isArray(data) ? data : (data?.items || []);
+  },
+
+  /**
+   * KTV bắt đầu tiến hành kiểm định đơn hàng (chuyển trạng thái sang INSPECTING)
+   */
+  async startInspection(orderId: string): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/start`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
   },
 
   /**

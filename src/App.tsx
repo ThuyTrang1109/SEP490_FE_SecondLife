@@ -801,7 +801,9 @@ export default function App() {
           const adminRes = await adminPostService.getAdminPosts();
           const items = adminRes?.content || adminRes?.items || (Array.isArray(adminRes) ? adminRes : []);
           if (items && items.length > 0) {
-            postsData = items;
+            // Lọc bỏ hoàn toàn các bản nháp chưa submit (DRAFT) của người bán
+            const nonDrafts = items.filter((p: any) => p.status !== 'DRAFT');
+            postsData = nonDrafts;
           }
         } catch { }
       }

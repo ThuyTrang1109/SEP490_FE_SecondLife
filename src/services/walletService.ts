@@ -79,4 +79,71 @@ export const walletService = {
         return timeB - timeA;
       }) as WalletTransaction[];
   },
+
+  /**
+   * Admin lấy danh sách tất cả yêu cầu rút tiền
+   * GET /api/v1/wallet/admin/withdrawals
+   */
+  async getAdminWithdrawals(status?: string, page = 0, size = 20): Promise<{
+    items: WalletWithdrawalResponseDto[];
+    page: number;
+    size: number;
+    totalElements: number;
+    totalPages: number;
+    isLast: boolean;
+  }> {
+    const params = new URLSearchParams();
+    if (status && status !== 'ALL') params.append('status', status);
+    params.append('page', String(page));
+    params.append('size', String(size));
+
+    const res = await request<any>(`/wallet/admin/withdrawals?${params.toString()}`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data || res;
+    return {
+      items: Array.isArray(data?.items) ? data.items : Array.isArray(data?.content) ? data.content : [],
+      page: data?.page ?? page,
+      size: data?.size ?? size,
+      totalElements: data?.totalElements ?? 0,
+      totalPages: data?.totalPages ?? 1,
+      isLast: data?.isLast ?? true,
+    };
+  },
+
+  /**
+   * Admin phê duyệt hoặc từ chối yêu cầu rút tiền
+   * POST /api/v1/wallet/admin/withdrawals/{id}/review
+   */
+  async reviewWithdrawal(id: string, action: 'APPROVE' | 'REJECT', adminNote?: string): Promise<WalletWithdrawalResponseDto> {
+    const res = await request<WalletWithdrawalResponseDto>(`/wallet/admin/withdrawals/${id}/review`, {
+      method: 'POST',
+      body: JSON.stringify({ action, adminNote: adminNote || '' }),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
 };
+
+export interface WalletWithdrawalResponseDto {
+  id: string;
+  userId: string;
+  userEmail: string;
+  amount: number;
+  bankCode: string;
+  accountNumber: string;
+  accountHolderName: string;
+  status: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  adminNote?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WalletWithdrawalReviewRequestDto {
+  action: 'APPROVE' | 'REJECT';
+  adminNote?: string;
+}
+

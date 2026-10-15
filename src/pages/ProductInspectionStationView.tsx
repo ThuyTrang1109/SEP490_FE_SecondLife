@@ -132,9 +132,10 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const [inspectorNotes, setInspectorNotes] = useState('');
   const [isDigitalSigned, setIsDigitalSigned] = useState(false);
 
-  // Load dynamic checklist from backend for activeOrder
+  // Load dynamic checklist from backend for activeOrder & notify inspection started
   useEffect(() => {
     if (activeOrder?.id) {
+      inspectorService.startInspection(activeOrder.id).catch(() => {});
       inspectorService.getOrderChecklist(activeOrder.id)
         .then((res) => {
           if (res?.items && Array.isArray(res.items) && res.items.length > 0) {

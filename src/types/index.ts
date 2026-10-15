@@ -14,7 +14,7 @@ export type ItemCategory =
   | 'Lò vi sóng & Lò nướng'
   | 'Nồi cơm & Bếp từ';
 
-export type ListingStatus = 'active' | 'pending' | 'reserved' | 'sold' | 'draft' | 'RESERVED';
+export type ListingStatus = 'active' | 'pending' | 'reserved' | 'sold' | 'draft' | 'RESERVED' | 'rejected' | 'pending_inspection';
 
 export interface PhotoChecklist {
   front: string;

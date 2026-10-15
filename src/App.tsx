@@ -529,10 +529,67 @@ export default function App() {
       }
       return [newListing, ...prev];
     });
-    const targetTab = createListingReturnTab || (editingDraft ? 'seller-dashboard' : 'marketplace');
+
+    const isRejected = newListing.backendStatus === 'REJECTED' || newListing.status === 'rejected';
+    const isPendingInspection = newListing.backendStatus === 'PENDING_INSPECTION';
+    const isPendingReview = newListing.backendStatus === 'PENDING';
+    const isInsufficientCredit = newListing.backendStatus === 'INSUFFICIENT_CREDIT';
+
     setEditingDraft(null);
+
+    // 1. Trường hợp bài đăng bị AI từ chối duyệt
+    if (isRejected) {
+      const reason = newListing.rejectionReason ? `: ${newListing.rejectionReason}` : '';
+      showToast(
+        lang === 'vi'
+          ? `Bài đăng "${newListing.title}" đã bị AI từ chối kiểm duyệt${reason}. Vui lòng chỉnh sửa lại.`
+          : `Listing "${newListing.title}" was rejected by AI moderation${reason}. Please revise.`
+      );
+      setActiveTab('seller-dashboard');
+      return;
+    }
+
+    // 2. Trường hợp bài đăng chờ kiểm định chuyên gia Hub
+    if (isPendingInspection) {
+      showToast(
+        lang === 'vi'
+          ? `Bài đăng "${newListing.title}" đang chờ Kỹ thuật viên kiểm định chất lượng (PENDING_INSPECTION).`
+          : `Listing "${newListing.title}" is pending Inspection Hub review.`
+      );
+      setActiveTab('seller-dashboard');
+      return;
+    }
+
+    // 3. Trường hợp bài đăng chờ Staff đối soát thủ công
+    if (isPendingReview) {
+      showToast(
+        lang === 'vi'
+          ? `Bài đăng "${newListing.title}" đã được gửi và đang chờ duyệt (PENDING).`
+          : `Listing "${newListing.title}" is pending review.`
+      );
+      setActiveTab('seller-dashboard');
+      return;
+    }
+
+    // 4. Trường hợp không đủ credit
+    if (isInsufficientCredit) {
+      showToast(
+        lang === 'vi'
+          ? `Chưa thể xuất bản bài đăng "${newListing.title}" do không đủ credit.`
+          : `Could not publish listing "${newListing.title}" due to insufficient credit.`
+      );
+      setActiveTab('seller-dashboard');
+      return;
+    }
+
+    // 5. Trường hợp AI duyệt thành công (ACTIVE)
+    const targetTab = createListingReturnTab || (editingDraft ? 'seller-dashboard' : 'marketplace');
     setActiveTab(targetTab as any);
-    showToast(`Đăng bán thành công sản phẩm "${newListing.title}"! Giá niêm yết: ${formatVND(newListing.priceVnd)}.`);
+    showToast(
+      lang === 'vi'
+        ? `Đăng bán thành công sản phẩm "${newListing.title}"! Giá niêm yết: ${formatVND(newListing.priceVnd)}.`
+        : `Successfully published "${newListing.title}"! Listed price: ${formatVND(newListing.priceVnd)}.`
+    );
   };
 
   const mapBackendPostToListing = React.useCallback((post: any): Listing => {

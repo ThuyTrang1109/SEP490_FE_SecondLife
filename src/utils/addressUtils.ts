@@ -101,12 +101,37 @@ export function extractWardAndCity(
   let foundWard = cleanWard;
   let foundCity = cleanProv;
 
-  // Duyệt các phần tử để tìm Phường/Xã/Thị trấn và Tỉnh/Thành phố
-  for (let i = 0; i < parts.length; i++) {
+  // Kiểm tra phần tử cuối cùng: Trong chuẩn địa chỉ VN, phần tử cuối luôn là Tỉnh / Thành phố trực thuộc TW
+  const lastPart = parts[parts.length - 1];
+  const lastLower = lastPart.toLowerCase();
+  const isLastPartCityOrProv =
+    lastLower.startsWith('thành phố') ||
+    lastLower.startsWith('thanh pho') ||
+    lastLower.startsWith('tp.') ||
+    lastLower.startsWith('tp ') ||
+    lastLower.startsWith('tỉnh') ||
+    lastLower.startsWith('tinh') ||
+    lastLower === 'hà nội' ||
+    lastLower === 'ha noi' ||
+    lastLower === 'hồ chí minh' ||
+    lastLower === 'ho chi minh' ||
+    lastLower === 'đà nẵng' ||
+    lastLower === 'da nang' ||
+    lastLower === 'hải phòng' ||
+    lastLower === 'hai phong' ||
+    lastLower === 'cần thơ' ||
+    lastLower === 'can tho';
+
+  if (!foundCity && isLastPartCityOrProv) {
+    foundCity = lastPart;
+  }
+
+  // Duyệt các phần tử trước đó để tìm Phường/Xã hoặc Quận/Huyện/TP thuộc tỉnh
+  for (let i = 0; i < parts.length - (foundCity ? 1 : 0); i++) {
     const part = parts[i];
     const lower = part.toLowerCase();
 
-    // Nhận diện Phường / Xã / Thị trấn
+    // Nhận diện Phường / Xã / Thị trấn (ưu tiên cao nhất cho Ward)
     if (
       !foundWard &&
       (lower.startsWith('phường') ||
@@ -126,7 +151,7 @@ export function extractWardAndCity(
       continue;
     }
 
-    // Nhận diện Tỉnh / Thành phố
+    // Nhận diện Tỉnh / Thành phố nếu chưa tìm thấy ở phần tử cuối
     if (
       !foundCity &&
       (lower.startsWith('thành phố') ||
@@ -150,12 +175,41 @@ export function extractWardAndCity(
     }
   }
 
-  // Nếu chưa tìm ra Thành phố, thường phần tử cuối cùng là Tỉnh/Thành phố
+  // Nếu chưa có City, lấy phần tử cuối cùng
   if (!foundCity) {
     foundCity = parts[parts.length - 1];
   }
 
-  // Nếu chưa tìm ra Phường, thử lấy phần tử thứ 2 (hoặc phần tử đầu nếu chỉ có 2)
+  // Nếu chưa có Phường/Xã, thử tìm Quận/Huyện/Thị xã/Thành phố thuộc tỉnh (ở vị trí kế cuối)
+  if (!foundWard) {
+    for (let i = parts.length - 2; i >= 0; i--) {
+      const part = parts[i];
+      const lower = part.toLowerCase();
+      if (
+        lower.startsWith('quận') ||
+        lower.startsWith('quan') ||
+        lower.startsWith('q.') ||
+        lower.startsWith('q ') ||
+        lower.startsWith('huyện') ||
+        lower.startsWith('huyen') ||
+        lower.startsWith('h.') ||
+        lower.startsWith('h ') ||
+        lower.startsWith('thị xã') ||
+        lower.startsWith('thi xa') ||
+        lower.startsWith('tx.') ||
+        lower.startsWith('tx ') ||
+        lower.startsWith('thành phố') ||
+        lower.startsWith('thanh pho') ||
+        lower.startsWith('tp.') ||
+        lower.startsWith('tp ')
+      ) {
+        foundWard = part;
+        break;
+      }
+    }
+  }
+
+  // Nếu vẫn chưa có Ward, lấy phần tử thứ 2 (hoặc phần tử đầu)
   if (!foundWard) {
     if (parts.length >= 3) {
       foundWard = parts[1];

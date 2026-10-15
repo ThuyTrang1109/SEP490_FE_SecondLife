@@ -141,10 +141,60 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [isSuggestingTitle, setIsSuggestingTitle] = useState(false);
   const [sellerLocation, setSellerLocation] = useState<string>('');
 
+  // Lấy thông tin địa chỉ người bán đang hoạt động (Ưu tiên Profile người bán hiện tại)
+  const currentSellerFullAddress = useMemo(() => {
+    return (
+      currentUser?.pickupAddress ||
+      currentUser?.address ||
+      getSavedSellerAddress().address ||
+      ''
+    );
+  }, [currentUser]);
+
+  const currentSellerWard = useMemo(() => {
+    return (
+      currentUser?.wardName ||
+      currentUser?.ward ||
+      getSavedSellerAddress().wardName ||
+      ''
+    );
+  }, [currentUser]);
+
+  const currentSellerProv = useMemo(() => {
+    return (
+      currentUser?.provinceName ||
+      currentUser?.province ||
+      getSavedSellerAddress().provinceName ||
+      ''
+    );
+  }, [currentUser]);
+
+  // Khu vực hiển thị trên tin đăng: Luôn đồng bộ chuẩn xác với địa chỉ hiện tại của người bán
+  const effectiveDisplayLocation = useMemo(() => {
+    if (currentSellerFullAddress || currentSellerWard || currentSellerProv) {
+      const loc = extractWardAndCity(currentSellerFullAddress, currentSellerWard, currentSellerProv);
+      if (loc) return loc;
+    }
+    return sellerLocation || 'Hà Nội';
+  }, [currentSellerFullAddress, currentSellerWard, currentSellerProv, sellerLocation]);
+
   // Lấy địa chỉ của người bán (chỉ lấy phường và thành phố) từ hồ sơ hoặc địa chỉ kho đã lưu
   useEffect(() => {
     const resolveSellerLocation = async () => {
-      // 1. Thử lấy địa chỉ kho bưu tá từ BE shippingService
+      // 1. ƯU TIÊN HÀNG ĐẦU: Lấy từ currentUser profile hiện tại hoặc localStorage đã cập nhật của người bán
+      if (currentSellerFullAddress || currentSellerWard || currentSellerProv) {
+        const userLoc = extractWardAndCity(
+          currentSellerFullAddress,
+          currentSellerWard,
+          currentSellerProv
+        );
+        if (userLoc) {
+          setSellerLocation(userLoc);
+          return;
+        }
+      }
+
+      // 2. Dự phòng: Thử lấy địa chỉ kho bưu tá từ BE shippingService nếu chưa có profile
       try {
         const [obRes, pickupRes] = await Promise.allSettled([
           shippingService.getSellerOnboarding(),
@@ -166,28 +216,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       } catch (e) {
         // Fallback sang thông tin profile
       }
-
-      // 2. Thử lấy từ currentUser profile
-      const userLoc = extractWardAndCity(
-        currentUser?.pickupAddress || currentUser?.address,
-        currentUser?.wardName,
-        currentUser?.provinceName
-      );
-      if (userLoc) {
-        setSellerLocation(userLoc);
-        return;
-      }
-
-      // 3. Thử lấy từ localStorage đã lưu của seller
-      const saved = getSavedSellerAddress();
-      const savedLoc = extractWardAndCity(saved.address, saved.wardName, saved.provinceName);
-      if (savedLoc) {
-        setSellerLocation(savedLoc);
-      }
     };
 
     resolveSellerLocation();
-  }, [currentUser]);
+  }, [currentUser, currentSellerFullAddress, currentSellerWard, currentSellerProv]);
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
   const [purchaseYear, setPurchaseYear] = useState<number>(new Date().getFullYear());
@@ -396,7 +428,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         const p = initialDraft.photos;
         setPhotoPreviews([p.front, p.back, p.screenOrDetails, p.accessoriesOrBox, p.serialOrReceipt, p.extraDetail].filter(Boolean) as string[]);
       }
-      if (initialDraft.location) {
+      // Chỉ lấy location từ initialDraft nếu người bán chưa cập nhật địa chỉ cá nhân
+      if (!currentSellerFullAddress && initialDraft.location) {
         setSellerLocation(initialDraft.location);
       }
       // Note: Category and Item might need to be resolved by name since initialDraft only stores the string in FE mapping
@@ -1432,20 +1465,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     const catName = backendCategories.find((c) => c.id === selectedCategoryId)?.name || 'Thiết bị điện tử';
 
     // Địa chỉ của sản phẩm được cập nhật theo địa chỉ người bán (chỉ lấy phường và thành phố)
-    const saved = getSavedSellerAddress();
-    const finalLocation =
-      sellerLocation ||
-      extractWardAndCity(
-        currentUser?.pickupAddress || currentUser?.address || saved.address,
-        currentUser?.wardName || saved.wardName,
-        currentUser?.provinceName || saved.provinceName
-      ) ||
-      '';
-    const finalSellerAddress =
-      currentUser?.pickupAddress ||
-      currentUser?.address ||
-      saved.address ||
-      finalLocation;
+    const finalLocation = effectiveDisplayLocation;
+    const finalSellerAddress = currentSellerFullAddress || finalLocation;
 
     const newListing: Listing = {
       id: postId,
@@ -1466,7 +1487,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       sellerRating: currentUser?.sellerRating || 5.0,
       sellerCompletedOrders: currentUser?.completedOrdersCount || 1,
       sellerVerified: true,
-      status: (submitResult?.status === 'ACTIVE' ? 'active' : 'pending') as any,
+      status: (submitResult?.status === 'ACTIVE'
+        ? 'active'
+        : submitResult?.status === 'REJECTED'
+          ? 'rejected'
+          : 'pending'),
+      backendStatus: submitResult?.status || 'PENDING',
+      rejectionReason: submitResult?.reviewReason || submitResult?.message,
       createdAt: new Date().toISOString(),
       isInspectionGuaranteed: finalPriceVnd > 5000000,
       requiresInspection: finalPriceVnd > 5000000,
@@ -1768,12 +1795,12 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           </div>
 
           {/* Action Buttons: Tự Đăng Bài & Chat Với AI */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-gray-100">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pt-4 border-t border-gray-100">
             <div className="text-xs text-slate-500 font-medium">
               <span>Đã chọn: <strong>{photoPreviews.length}/6 ảnh</strong>. Bạn có thể chọn tự điền thông tin hoặc để AI hỗ trợ.</span>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3 justify-end">
               {/* Nút 1: Tự đăng bài */}
               <button
                 type="button"
@@ -1957,8 +1984,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           )}
 
           {postMode === 'ai' && effectiveQuestions.length > 0 && (
-            <div className="bg-gradient-to-br from-amber-50/90 via-orange-50/30 to-white rounded-3xl p-5 sm:p-6 border-2 border-amber-200/90 shadow-xs space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/70 pb-4">
+            <div className="bg-gradient-to-br from-amber-50/90 via-orange-50/30 to-white rounded-3xl p-4 sm:p-6 border-2 border-amber-200/90 shadow-xs space-y-5 overflow-hidden">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-amber-200/70 pb-4">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-500 to-[#c34c36] text-white font-black text-xs flex items-center gap-1.5 shadow-xs">
@@ -2107,22 +2134,22 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
 
               {/* Bottom Action Bar for Questionnaire */}
-              <div className="mt-4 pt-3.5 border-t border-amber-200/80 flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div className="text-xs text-slate-600 flex items-center gap-1.5 self-start sm:self-auto">
+              <div className="mt-4 pt-3.5 border-t border-amber-200/80 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-3.5">
+                <div className="text-xs text-slate-600 flex items-center gap-1.5 flex-1 min-w-0">
                   <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>
+                  <span className="leading-relaxed">
                     {answeredCount > 0
                       ? `Đã điền ${answeredCount}/${effectiveQuestions.length} câu trả lời. Bấm nút để AI viết bài mô tả hoàn chỉnh:`
                       : 'Hãy trả lời các câu hỏi phía trên để AI hỗ trợ viết bài mô tả chuẩn xác nhất.'}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="flex flex-wrap items-center gap-2.5 w-full xl:w-auto shrink-0 justify-start sm:justify-end">
                   <button
                     type="button"
                     onClick={handleApplyAnswersToDescription}
                     disabled={answeredCount === 0 || isApplyingAnswers}
-                    className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-xl border border-amber-300 bg-white hover:bg-amber-50 text-amber-900 text-xs font-bold transition disabled:opacity-40 cursor-pointer"
+                    className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-xl border border-amber-300 bg-white hover:bg-amber-50 text-amber-900 text-xs font-bold transition disabled:opacity-40 cursor-pointer whitespace-nowrap text-center"
                     title="Chèn nguyên văn câu trả lời vào mô tả"
                   >
                     {isApplyingAnswers ? 'Đang chèn...' : 'Chèn vào mô tả'}
@@ -2132,19 +2159,19 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     type="button"
                     onClick={handleSendAnswersToAi}
                     disabled={answeredCount === 0 || isSubmittingAnswersToAi || (credits?.chatCredits ?? 0) < 1}
-                    className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 text-white text-xs font-black flex items-center justify-center gap-2 shadow-sm transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 text-white text-xs font-black flex flex-wrap sm:flex-nowrap items-center justify-center gap-2 shadow-sm transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer max-w-full"
                     title="Gửi câu trả lời để AI tổng hợp bài mô tả hoàn chỉnh (-1 credit chat)"
                   >
                     {isSubmittingAnswersToAi ? (
                       <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>AI đang viết mô tả...</span>
+                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                        <span className="whitespace-nowrap">AI đang viết mô tả...</span>
                       </>
                     ) : (
                       <>
-                        <Sparkles className="w-4 h-4 text-amber-200" />
-                        <span>Gửi AI Hoàn Thiện Mô Tả</span>
-                        <span className="ml-1 px-1.5 py-0.5 rounded-md bg-black/30 text-[10px] font-bold text-amber-200">
+                        <Sparkles className="w-4 h-4 text-amber-200 shrink-0" />
+                        <span className="whitespace-nowrap">Gửi AI Hoàn Thiện Mô Tả</span>
+                        <span className="px-1.5 py-0.5 rounded-md bg-black/30 text-[10px] font-bold text-amber-200 whitespace-nowrap shrink-0">
                           -1 credit (còn {credits?.chatCredits ?? 0})
                         </span>
                       </>
@@ -2158,7 +2185,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           {/* Main Editing Fields */}
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <label className="text-xs font-bold text-[#24263e]">Tiêu đề bài đăng *</label>
                 <button
                   type="button"
@@ -2260,7 +2287,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
                 {/* Trọng lượng */}
                 <div className="space-y-1.5 flex flex-col justify-between">
                   <div className="h-7 flex items-center justify-between">
@@ -2403,10 +2430,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           </div>
 
           {/* Navigation Buttons */}
-          <div className="flex justify-between pt-4 border-t border-gray-100">
+          <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-gray-100">
             <button
               onClick={() => setCurrentStep(1)}
-              className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer w-full sm:w-auto"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Quay lại Bước 1</span>
@@ -2415,7 +2442,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             <button
               onClick={handleGoToStep3}
               disabled={isFinalizingChat}
-              className="px-6 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-black shadow-xs flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+              className="px-6 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-black shadow-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50 w-full sm:w-auto"
             >
               {isFinalizingChat ? (
                 <>
@@ -2531,10 +2558,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           </div>
 
           {/* Navigation Buttons */}
-          <div className="flex justify-between pt-4 border-t border-gray-100">
+          <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-gray-100">
             <button
               onClick={() => setCurrentStep(2)}
-              className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer w-full sm:w-auto"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Sửa lại mô tả</span>
@@ -2543,7 +2570,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             <button
               onClick={handleSaveAndAcceptDescription}
               disabled={isAcceptingDescription}
-              className="px-8 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+              className="px-8 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50 w-full sm:w-auto"
             >
               {isAcceptingDescription ? (
                 <>
@@ -2780,10 +2807,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           </div>
 
           {/* Navigation Buttons */}
-          <div className="flex justify-between pt-4 border-t border-gray-100">
+          <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-gray-100">
             <button
               onClick={() => setCurrentStep(3)}
-              className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer w-full sm:w-auto"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Quay lại Xác nhận mô tả</span>
@@ -2792,7 +2819,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             <button
               onClick={() => setCurrentStep(5)}
               disabled={!finalPriceVnd || finalPriceVnd < 1000}
-              className="px-6 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-black shadow-xs flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+              className="px-6 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-black shadow-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50 w-full sm:w-auto"
             >
               <span>Tiếp tục: Xem lại & Gửi đăng</span>
               <ArrowRight className="w-4 h-4" />
@@ -2882,12 +2909,12 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <div className="bg-white p-3.5 rounded-xl border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
                   <div className="text-xs font-bold text-[#24263e]">
-                    {currentUser?.pickupAddress || currentUser?.address || getSavedSellerAddress().address || (lang === 'vi' ? 'Kho hàng SecondLife' : 'SecondLife Warehouse')}
+                    {currentSellerFullAddress || (lang === 'vi' ? 'Kho hàng SecondLife' : 'SecondLife Warehouse')}
                   </div>
                   <div className="text-[11px] text-slate-500 mt-0.5">
                     {lang === 'vi' ? 'Khu vực hiển thị trên tin đăng: ' : 'Display region on listing: '}
                     <span className="font-semibold text-emerald-700">
-                      {sellerLocation || extractWardAndCity(currentUser?.pickupAddress || currentUser?.address || getSavedSellerAddress().address, currentUser?.wardName || getSavedSellerAddress().wardName, currentUser?.provinceName || getSavedSellerAddress().provinceName) || 'Hà Nội'}
+                      {effectiveDisplayLocation}
                     </span>
                   </div>
                 </div>
@@ -3049,10 +3076,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
           {/* Navigation & Submit Button */}
           {!submitResult && (
-            <div className="flex justify-between pt-4 border-t border-gray-100">
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-gray-100">
               <button
                 onClick={() => setCurrentStep(4)}
-                className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer w-full sm:w-auto"
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span>Quay lại Định giá</span>
@@ -3061,7 +3088,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <button
                 onClick={handleSubmitPostFinal}
                 disabled={isSubmittingPost || (credits?.postCredits ?? 0) < 1}
-                className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white font-black text-sm shadow-md flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+                className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white font-black text-sm shadow-md flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50 w-full sm:w-auto"
               >
                 {isSubmittingPost ? (
                   <>

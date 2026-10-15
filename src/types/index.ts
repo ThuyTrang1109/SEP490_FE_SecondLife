@@ -174,6 +174,10 @@ export interface EscrowOrder {
   shippingQuoteId?: string;
   shippingDeliveredAt?: string;
   deliveryAddress?: any;
+  sellerConfirmedAt?: string | null;
+  confirmationDeadline?: string | null;
+  confirmationCancelAt?: string | null;
+  confirmationStatus?: string | null;
 }
 
 export interface ProductReview {
@@ -286,7 +290,7 @@ export interface UserProfile {
   phone?: string;
   address?: string;
   avatar?: string;
-  gender?: 'male' | 'female' | 'other';
+  gender?: 'male' | 'female' | 'other' | 'MALE' | 'FEMALE' | 'OTHER' | '';
   birthday?: string;
   walletBalanceVnd?: number;
   walletBalance?: number;
@@ -429,6 +433,7 @@ export interface OrderRequestDTO {
   postId: string;
   shippingQuoteId: string;
   requestId: string;
+  paymentMethod?: 'WALLET' | 'BANK_TRANSFER';
   negotiationId?: string;
   agreedPrice?: number;
 }
@@ -449,6 +454,10 @@ export interface OrderBackend {
   status: OrderStatusBackend;
   escrowStatus: EscrowStatusBackend;
   createdAt: string;
+  sellerConfirmedAt?: string | null;
+  confirmationDeadline?: string | null;
+  confirmationCancelAt?: string | null;
+  confirmationStatus?: string | null;
 }
 
 // ==========================================

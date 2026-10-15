@@ -42,7 +42,7 @@ import {
 } from 'lucide-react';
 import { Listing, EscrowOrder, Language, UserProfile } from '../types';
 import { formatVND } from '../utils/translations';
-import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto } from '../services';
+import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto, staffReportService, ReportItemDto } from '../services';
 import { ListingComparisonModal } from '../components/staff/ListingComparisonModal';
 import logoImg from '../assets/logo.png';
 import { User, LogOut } from 'lucide-react';
@@ -174,7 +174,45 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
 
   // 4. Reports & Support Tickets
   const [reports, setReports] = useState<any[]>([]);
+  const [backendReports, setBackendReports] = useState<ReportItemDto[]>([]);
+  const [isLoadingReports, setIsLoadingReports] = useState(false);
   const [supportTickets, setSupportTickets] = useState<any[]>([]);
+
+  const loadBackendReports = async () => {
+    setIsLoadingReports(true);
+    try {
+      const res = await staffReportService.getReportQueue();
+      if (res?.items && Array.isArray(res.items)) {
+        setBackendReports(res.items);
+      }
+    } catch (err) {
+      console.warn('Load staff reports error:', err);
+    } finally {
+      setIsLoadingReports(false);
+    }
+  };
+
+  const handleResolveBackendReport = async (reportId: string, decision: 'CONFIRMED' | 'DISMISSED') => {
+    try {
+      await staffReportService.resolveReport(reportId, {
+        decision,
+        responsibleParty: decision === 'CONFIRMED' ? 'SELLER' : 'NONE',
+        reason: decision === 'CONFIRMED' ? 'Xử phạt vi phạm quy chế đăng bán của sàn SecondLife' : 'Bác bỏ do không đủ bằng chứng vi phạm',
+      });
+      triggerNotice(
+        decision === 'CONFIRMED'
+          ? `Đã xử phạt và xác nhận vi phạm báo cáo #${reportId.slice(0, 8)}`
+          : `Đã bác bỏ báo cáo #${reportId.slice(0, 8)}`
+      );
+      loadBackendReports();
+    } catch (err: any) {
+      triggerNotice(err?.message || 'Xử lý báo cáo thất bại');
+    }
+  };
+
+  useEffect(() => {
+    loadBackendReports();
+  }, []);
 
   // 5. Disputes & Evidence
   const [disputes, setDisputes] = useState<any[]>([]);
@@ -229,9 +267,11 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     },
     {
       id: 'reports-support' as StaffTab,
-      label: 'BÁO CÁO & HỖ TRỢ ❌',
+      label: 'BÁO CÁO VI PHẠM & HỖ TRỢ',
       icon: Flag,
-      badge: reports.filter((r) => r.status === 'PENDING').length + supportTickets.filter((t) => t.status === 'OPEN').length,
+      badge: (backendReports.length > 0
+        ? backendReports.filter((r) => r.status === 'OPEN' || r.status === 'IN_REVIEW').length
+        : reports.filter((r) => r.status === 'PENDING').length) + supportTickets.filter((t) => t.status === 'OPEN').length,
       badgeColor: 'bg-indigo-600 text-white'
     },
     {
@@ -1014,31 +1054,89 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
 
                 {reportSubTab === 'REPORTS' && (
                   <div className="space-y-3">
-                    {reports.map((rep) => (
-                      <div key={rep.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs space-y-2">
-                        <div className="flex justify-between font-bold text-slate-900">
-                          <span className="font-mono text-indigo-900">{rep.id} • {rep.target}</span>
-                          <span className="text-slate-400 font-mono text-[11px]">{rep.createdAt}</span>
-                        </div>
-                        <p className="text-slate-700">
-                          Lý do tố cáo: <strong>{rep.reason}</strong> (Bởi {rep.reporter})
-                        </p>
-                        <div className="flex gap-2 pt-2 border-t border-slate-200">
-                          <button
-                            onClick={() => triggerNotice(`Đã xử lý phạt đối tượng theo báo cáo ${rep.id}`)}
-                            className="px-3 py-1.5 bg-[#24263e] text-white rounded-lg font-bold hover:bg-[#c34c36] transition cursor-pointer"
-                          >
-                            Xử Phạt & Khóa Tin
-                          </button>
-                          <button
-                            onClick={() => triggerNotice(`Đã bác bỏ báo cáo ${rep.id} do không đủ căn cứ`)}
-                            className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold hover:bg-slate-100 transition cursor-pointer"
-                          >
-                            Bác Bỏ Báo Cáo
-                          </button>
-                        </div>
+                    {isLoadingReports ? (
+                      <div className="py-8 text-center text-slate-400">
+                        <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-indigo-600" />
+                        <span>Đang tải danh sách báo cáo vi phạm...</span>
                       </div>
-                    ))}
+                    ) : backendReports.length > 0 ? (
+                      backendReports.map((rep) => (
+                        <div key={rep.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs space-y-2">
+                          <div className="flex justify-between font-bold text-slate-900">
+                            <span className="font-mono text-indigo-900">
+                              #{rep.id.slice(0, 8)} • Lý do: {rep.reasonCode}
+                            </span>
+                            <span className="text-slate-400 font-mono text-[11px]">{new Date(rep.createdAt).toLocaleString('vi-VN')}</span>
+                          </div>
+                          <p className="text-slate-700">
+                            Nội dung: <strong>{rep.description}</strong>
+                          </p>
+                          {rep.evidenceUrls && rep.evidenceUrls.length > 0 && (
+                            <div className="flex items-center gap-2 pt-1">
+                              <span className="text-slate-500 font-semibold">Bằng chứng:</span>
+                              {rep.evidenceUrls.map((url, i) => (
+                                <a key={i} href={url} target="_blank" rel="noreferrer" className="text-indigo-600 underline font-mono text-[11px]">
+                                  [Ảnh {i + 1}]
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              rep.status === 'CONFIRMED'
+                                ? 'bg-rose-100 text-rose-800'
+                                : rep.status === 'DISMISSED'
+                                ? 'bg-slate-200 text-slate-700'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              Trạng thái: {rep.status}
+                            </span>
+                            {rep.status !== 'CONFIRMED' && rep.status !== 'DISMISSED' && (
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleResolveBackendReport(rep.id, 'CONFIRMED')}
+                                  className="px-3 py-1.5 bg-[#24263e] text-white rounded-lg font-bold hover:bg-[#c34c36] transition cursor-pointer"
+                                >
+                                  Xử Phạt & Khóa Tin
+                                </button>
+                                <button
+                                  onClick={() => handleResolveBackendReport(rep.id, 'DISMISSED')}
+                                  className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold hover:bg-slate-100 transition cursor-pointer"
+                                >
+                                  Bác Bỏ Báo Cáo
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      reports.map((rep) => (
+                        <div key={rep.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs space-y-2">
+                          <div className="flex justify-between font-bold text-slate-900">
+                            <span className="font-mono text-indigo-900">{rep.id} • {rep.target}</span>
+                            <span className="text-slate-400 font-mono text-[11px]">{rep.createdAt}</span>
+                          </div>
+                          <p className="text-slate-700">
+                            Lý do tố cáo: <strong>{rep.reason}</strong> (Bởi {rep.reporter})
+                          </p>
+                          <div className="flex gap-2 pt-2 border-t border-slate-200">
+                            <button
+                              onClick={() => triggerNotice(`Đã xử lý phạt đối tượng theo báo cáo ${rep.id}`)}
+                              className="px-3 py-1.5 bg-[#24263e] text-white rounded-lg font-bold hover:bg-[#c34c36] transition cursor-pointer"
+                            >
+                              Xử Phạt & Khóa Tin
+                            </button>
+                            <button
+                              onClick={() => triggerNotice(`Đã bác bỏ báo cáo ${rep.id} do không đủ căn cứ`)}
+                              className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold hover:bg-slate-100 transition cursor-pointer"
+                            >
+                              Bác Bỏ Báo Cáo
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 )}
 

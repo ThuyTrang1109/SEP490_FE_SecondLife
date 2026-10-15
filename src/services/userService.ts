@@ -8,6 +8,7 @@ export interface UserProfileDto {
   avatarUrl?: string;
   accountStatus: string;
   emailVerified: boolean;
+  gender?: string;
   roles: string[];
   permissions: string[];
   province?: string;
@@ -25,6 +26,7 @@ export interface UpdateProfileDto {
   fullName?: string;
   phone?: string;
   avatarUrl?: string;
+  gender?: 'MALE' | 'FEMALE' | 'OTHER' | null;
   province?: string;
   district?: string;
   ward?: string;

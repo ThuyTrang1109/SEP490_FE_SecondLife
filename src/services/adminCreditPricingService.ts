@@ -82,19 +82,6 @@ export const adminCreditPricingService = {
    * Lấy danh sách các bậc chiết khấu (Volume discount tiers)
    */
   async getDiscountTiers(): Promise<CreditDiscountTierResponseDto[]> {
-    try {
-      const res = await request<CreditDiscountTierResponseDto[]>('/admin/credit-discount-tiers', {
-        method: 'GET',
-        requiresAuth: true,
-      });
-      const data = (res as any)?.data || res;
-      if (Array.isArray(data) && data.length > 0) {
-        return data;
-      }
-    } catch (err) {
-      // Endpoint /admin/credit-discount-tiers is omitted in current backend
-    }
-
     // Check localStorage for admin created custom tiers
     try {
       const local = localStorage.getItem('secondlife_admin_discount_tiers');

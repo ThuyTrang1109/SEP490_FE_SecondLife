@@ -1,19 +1,72 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Listing, Language, UserRole } from '../types';
+import { Listing, Language, UserRole, UserProfile } from '../types';
 import { MessageSquare, Clock, ChevronRight, Loader2 } from 'lucide-react';
-import { chatService, ChatRoomDto, parseSystemMessage } from '../services';
+import { chatService, ChatRoomDto, parseSystemMessage, getStoredUser } from '../services';
 import { formatVND } from '../utils/translations';
 
 interface InboxViewProps {
   listings: Listing[];
   currentRole: UserRole;
   lang: Language;
-  onOpenChat: (listing: Listing, roomId?: string, partnerName?: string, partnerAvatar?: string) => void;
+  onOpenChat: (listing: Listing, roomId?: string, partnerName?: string, partnerAvatar?: string, room?: ChatRoomDto) => void;
+  currentUser?: UserProfile | null;
 }
 
-export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lang, onOpenChat }) => {
+export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lang, onOpenChat, currentUser }) => {
   const [rooms, setRooms] = useState<ChatRoomDto[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+
+  // Helper to determine role and partner information per room based on IDs
+  const getRoomPartnerInfo = useCallback((room: ChatRoomDto) => {
+    const activeUser = currentUser || getStoredUser();
+    const currentUserId = activeUser?.id ? String(activeUser.id) : null;
+    const isMeSeller = Boolean(currentUserId && room.sellerId && currentUserId === String(room.sellerId));
+    const isMeBuyer = Boolean(currentUserId && room.buyerId && currentUserId === String(room.buyerId));
+
+    let isRoomSeller = false;
+    if (isMeSeller) {
+      isRoomSeller = true;
+    } else if (isMeBuyer) {
+      isRoomSeller = false;
+    } else {
+      const foundListing = listings?.find((l) => l.id === room.postId);
+      if (foundListing?.sellerId && currentUserId && String(foundListing.sellerId) === currentUserId) {
+        isRoomSeller = true;
+      }
+    }
+
+    const isNameOfMe = (name?: string) => {
+      if (!name || !activeUser) return false;
+      const n = name.trim().toLowerCase();
+      const myName = (activeUser.fullName || activeUser.name || '').trim().toLowerCase();
+      const myEmail = (activeUser.email || '').trim().toLowerCase();
+      return (myName && n === myName) || (myEmail && n === myEmail);
+    };
+
+    let partnerName: string;
+    let partnerAvatar: string;
+    let roleLabel: string;
+
+    if (isRoomSeller) {
+      roleLabel = lang === 'vi' ? 'Người Mua' : 'Buyer';
+      partnerName =
+        (!isNameOfMe(room.buyerName) && room.buyerName) ||
+        (lang === 'vi' ? 'Khách Hàng' : 'Customer');
+      partnerAvatar =
+        room.buyerAvatar ||
+        'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200';
+    } else {
+      roleLabel = lang === 'vi' ? 'Người Bán' : 'Seller';
+      partnerName =
+        (!isNameOfMe(room.sellerName) && room.sellerName) ||
+        (lang === 'vi' ? 'Người Bán' : 'Seller');
+      partnerAvatar =
+        room.sellerAvatar ||
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200';
+    }
+
+    return { isRoomSeller, partnerName, partnerAvatar, roleLabel };
+  }, [currentUser, listings, lang]);
 
   // Fetch rooms from Backend API: GET /api/v1/chats
   const loadChatRooms = useCallback(async () => {
@@ -66,39 +119,39 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
   }, [loadChatRooms]);
 
   const handleSelectRoom = (room: ChatRoomDto) => {
-    // Check if listing already exists in prop
-    const found = listings.find((l) => l.id === room.postId);
-    const partnerName = currentRole === 'seller' ? (room.buyerName || 'Khách Hàng') : (room.sellerName || 'Người Bán');
-    const partnerAvatar = currentRole === 'seller' ? room.buyerAvatar : room.sellerAvatar;
-
-    if (found) {
-      onOpenChat(found, room.id, partnerName, partnerAvatar);
-      return;
-    }
+    const { partnerName, partnerAvatar } = getRoomPartnerInfo(room);
+    const found = listings?.find((l) => l.id === room.postId);
 
     // Otherwise create fallback Listing object from ChatRoom metadata
-    const fallbackListing = {
-      id: room.postId,
-      title: room.postTitle || 'Sản phẩm trao đổi',
-      brand: 'Chính hãng',
-      priceVnd: 500000,
-      description: 'Thông tin sản phẩm trong cuộc hội thoại',
-      category: 'Điều hòa & Máy lọc',
-      sellerId: room.sellerId,
-      sellerName: room.sellerName || 'Người bán',
-      location: 'Hồ Chí Minh',
-      status: 'active',
-      photos: {
-        front: room.postImageUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-        back: room.postImageUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-        screenOrDetails: '',
-        accessoriesOrBox: '',
-        serialOrReceipt: '',
-      },
-      createdAt: room.updatedAt || new Date().toISOString(),
-    } as unknown as Listing;
+    const targetListing: Listing = found
+      ? {
+          ...found,
+          sellerId: found.sellerId || room.sellerId,
+          sellerName: found.sellerName || room.sellerName || 'Người Bán',
+          sellerAvatar: found.sellerAvatar || room.sellerAvatar
+        }
+      : ({
+          id: room.postId,
+          title: room.postTitle || 'Sản phẩm trao đổi',
+          brand: 'Chính hãng',
+          priceVnd: 500000,
+          description: 'Thông tin sản phẩm trong cuộc hội thoại',
+          category: 'Điều hòa & Máy lọc',
+          sellerId: room.sellerId,
+          sellerName: room.sellerName || 'Người bán',
+          location: 'Hồ Chí Minh',
+          status: 'active',
+          photos: {
+            front: room.postImageUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+            back: room.postImageUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+            screenOrDetails: '',
+            accessoriesOrBox: '',
+            serialOrReceipt: '',
+          },
+          createdAt: room.updatedAt || new Date().toISOString(),
+        } as unknown as Listing);
 
-    onOpenChat(fallbackListing, room.id, partnerName, partnerAvatar);
+    onOpenChat(targetListing, room.id, partnerName, partnerAvatar, room);
   };
 
   const formatLastMessage = (rawText?: string) => {
@@ -177,15 +230,7 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
 
         <div className="divide-y divide-slate-100">
           {rooms.map((room) => {
-            const partnerName =
-              currentRole === 'seller'
-                ? room.buyerName || 'Khách Hàng'
-                : room.sellerName || 'Người Bán';
-
-            const partnerAvatar =
-              currentRole === 'seller'
-                ? room.buyerAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200'
-                : room.sellerAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200';
+            const { isRoomSeller, partnerName, partnerAvatar, roleLabel } = getRoomPartnerInfo(room);
 
             const timeStr = room.updatedAt
               ? new Date(room.updatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
@@ -222,8 +267,12 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
                   </div>
 
                   <div className="flex items-center gap-2 text-xs mb-1.5">
-                    <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-semibold truncate max-w-[140px]">
-                      {currentRole === 'seller' ? 'Người Mua' : 'Người Bán'}: {partnerName}
+                    <span className={`px-2 py-0.5 rounded-md font-semibold truncate max-w-[200px] ${
+                      isRoomSeller
+                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                        : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                    }`}>
+                      {roleLabel}: {partnerName}
                     </span>
                   </div>
 

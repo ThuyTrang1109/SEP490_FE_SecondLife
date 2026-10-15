@@ -28,7 +28,8 @@ import {
   MessageSquare,
   Truck,
   MapPin,
-  Eye
+  Eye,
+  Trash2
 } from 'lucide-react';
 import {
   ItemCategory,
@@ -37,7 +38,8 @@ import {
   Language,
   CategoryBackend,
   ItemBackend,
-  UserProfile
+  UserProfile,
+  UserCredit
 } from '../types';
 import { translations, formatVND } from '../utils/translations';
 import { numberToVietnameseWords, formatVndInput, cleanVndInput } from '../utils/numberToWords';
@@ -98,6 +100,9 @@ interface CreateListingViewProps {
   onCancel: () => void;
   currentUser?: UserProfile | null;
   initialDraft?: Listing;
+  onDeleteDraft?: (draftId: string) => void;
+  onOpenTopUp?: (defaultTab?: 'wallet' | 'packages') => void;
+  userCredits?: UserCredit;
 }
 
 export const CreateListingView: React.FC<CreateListingViewProps> = ({
@@ -105,7 +110,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   lang,
   onCancel,
   currentUser,
-  initialDraft
+  initialDraft,
+  onDeleteDraft,
+  onOpenTopUp,
+  userCredits
 }) => {
   const t = translations[lang];
 
@@ -386,6 +394,34 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [aiInitialMessage, setAiInitialMessage] = useState<string>('');
   const [aiVisualReport, setAiVisualReport] = useState<string>('');
   const [draftPost, setDraftPost] = useState<ListingDraftResponse | null>(null);
+  const [isDeletingDraft, setIsDeletingDraft] = useState(false);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+
+  const handleDeleteCurrentDraft = async () => {
+    const draftId = postId || initialDraft?.id;
+    if (!draftId) {
+      setIsConfirmDeleteOpen(false);
+      onCancel();
+      return;
+    }
+
+    setIsDeletingDraft(true);
+    try {
+      await postService.deleteDraft(String(draftId));
+      showToast(lang === 'vi' ? 'Đã xóa bản nháp thành công!' : 'Draft deleted successfully!');
+      onDeleteDraft?.(String(draftId));
+      setIsConfirmDeleteOpen(false);
+      setTimeout(() => {
+        onCancel();
+      }, 400);
+    } catch (err: any) {
+      console.error('Lỗi khi xóa bản nháp:', err);
+      const msg = err.response?.data?.message || err.message || (lang === 'vi' ? 'Không thể xóa bản nháp' : 'Failed to delete draft');
+      showToast(msg);
+    } finally {
+      setIsDeletingDraft(false);
+    }
+  };
 
   // Initialize from draft if provided
   useEffect(() => {
@@ -435,6 +471,100 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       // Note: Category and Item might need to be resolved by name since initialDraft only stores the string in FE mapping
     }
   }, [initialDraft]);
+
+  const LOCAL_FORM_DRAFT_KEY = `create_listing_active_draft_${currentUser?.id || 'guest'}`;
+
+  // Restore active form draft if user reloaded or navigated away while creating a new post
+  useEffect(() => {
+    if (initialDraft) return;
+    try {
+      const saved = localStorage.getItem(LOCAL_FORM_DRAFT_KEY);
+      if (saved) {
+        const d = JSON.parse(saved);
+        if (d.title) setTitle(d.title);
+        if (d.brand) setBrand(d.brand);
+        if (d.model) setModel(d.model);
+        if (d.purchaseYear) setPurchaseYear(d.purchaseYear);
+        if (d.selectedCategoryId) setSelectedCategoryId(d.selectedCategoryId);
+        if (d.selectedItemId) setSelectedItemId(d.selectedItemId);
+        if (d.originalPriceVnd) {
+          setOriginalPriceVnd(Number(d.originalPriceVnd));
+          setFinalPriceVnd(Number(d.originalPriceVnd));
+        }
+        if (d.shippingWeight) setShippingWeight(d.shippingWeight);
+        if (d.shippingLength) setShippingLength(d.shippingLength);
+        if (d.shippingWidth) setShippingWidth(d.shippingWidth);
+        if (d.shippingHeight) setShippingHeight(d.shippingHeight);
+        if (d.rawWeightInput) setRawWeightInput(d.rawWeightInput);
+        if (d.rawLengthInput) setRawLengthInput(d.rawLengthInput);
+        if (d.rawWidthInput) setRawWidthInput(d.rawWidthInput);
+        if (d.rawHeightInput) setRawHeightInput(d.rawHeightInput);
+        if (d.itemCondition) setItemCondition(d.itemCondition);
+        if (d.description) setDescription(d.description);
+        if (Array.isArray(d.photoPreviews) && d.photoPreviews.length > 0) {
+          setPhotoPreviews(d.photoPreviews);
+        }
+        if (d.currentStep && [1, 2, 3, 4, 5].includes(d.currentStep)) {
+          setCurrentStep(d.currentStep);
+        }
+      }
+    } catch (e) {
+      console.warn('Error restoring local active draft:', e);
+    }
+  }, [initialDraft, LOCAL_FORM_DRAFT_KEY]);
+
+  // Auto-save form draft so user never loses inputs when running out of credits or switching tabs
+  useEffect(() => {
+    if (initialDraft) return;
+    try {
+      const draft = {
+        title,
+        brand,
+        model,
+        purchaseYear,
+        selectedCategoryId,
+        selectedItemId,
+        originalPriceVnd,
+        shippingWeight,
+        shippingLength,
+        shippingWidth,
+        shippingHeight,
+        rawWeightInput,
+        rawLengthInput,
+        rawWidthInput,
+        rawHeightInput,
+        itemCondition,
+        description,
+        photoPreviews: photoPreviews.filter((p) => typeof p === 'string' && (p.startsWith('http') || p.startsWith('data:') || p.startsWith('blob:'))),
+        currentStep,
+      };
+      if (title.trim() || description.trim() || photoPreviews.length > 0) {
+        localStorage.setItem(LOCAL_FORM_DRAFT_KEY, JSON.stringify(draft));
+      }
+    } catch {}
+  }, [
+    initialDraft,
+    title,
+    brand,
+    model,
+    purchaseYear,
+    selectedCategoryId,
+    selectedItemId,
+    originalPriceVnd,
+    shippingWeight,
+    shippingLength,
+    shippingWidth,
+    shippingHeight,
+    rawWeightInput,
+    rawLengthInput,
+    rawWidthInput,
+    rawHeightInput,
+    itemCondition,
+    description,
+    photoPreviews,
+    currentStep,
+    LOCAL_FORM_DRAFT_KEY
+  ]);
 
   // Tự động loại bỏ các câu hỏi mẫu/gợi ý khảo sát nếu bị lọt vào ô mô tả sản phẩm ở bước 2
   useEffect(() => {
@@ -911,6 +1041,50 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
   useEffect(() => {
     loadCredits();
+  }, []);
+
+  // Sync real-time when userCredits prop updates from App.tsx (e.g. after purchasing in TopUpModal)
+  useEffect(() => {
+    if (userCredits) {
+      setCredits({
+        postCredits: userCredits.postCredits ?? 0,
+        valuationCredits: userCredits.valuationCredits ?? 0,
+        chatCredits: userCredits.chatCredits ?? 0,
+      });
+    }
+  }, [userCredits]);
+
+  // Real-time listener: window focus, tab visibility, and custom event seller_credits_updated
+  useEffect(() => {
+    const handleCreditsEvent = (e: any) => {
+      if (e?.detail) {
+        setCredits({
+          postCredits: e.detail.postCredits ?? 0,
+          valuationCredits: e.detail.valuationCredits ?? 0,
+          chatCredits: e.detail.chatCredits ?? 0,
+        });
+      }
+      loadCredits();
+    };
+
+    const handleFocusOrVisible = () => {
+      loadCredits();
+    };
+
+    window.addEventListener('seller_credits_updated', handleCreditsEvent);
+    window.addEventListener('focus', handleFocusOrVisible);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadCredits();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('seller_credits_updated', handleCreditsEvent);
+      window.removeEventListener('focus', handleFocusOrVisible);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
 
 
@@ -1507,6 +1681,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       },
       photoGallery: photoPreviews
     };
+    try {
+      localStorage.removeItem(LOCAL_FORM_DRAFT_KEY);
+    } catch {}
     onListingCreated(newListing);
   };
 
@@ -1545,11 +1722,43 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <span className="text-[10px] text-emerald-200/80 font-normal">{lang === 'vi' ? 'Trợ lý AI' : 'AI Chat'}</span>
                 </div>
               </div>
+              {onOpenTopUp && (
+                <button
+                  type="button"
+                  onClick={() => onOpenTopUp('packages')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-[#c34c36] hover:from-amber-600 hover:to-[#b03d29] text-white text-xs font-black shadow-sm transition cursor-pointer"
+                  title={lang === 'vi' ? 'Nạp thêm lượt đăng bài hoặc credit' : 'Top up credits'}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? 'Mua thêm lượt' : 'Top up'}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={loadCredits}
+                disabled={isLoadingCredits}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition cursor-pointer"
+                title={lang === 'vi' ? 'Làm mới số dư credit' : 'Refresh credits'}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingCredits ? 'animate-spin' : ''}`} />
+              </button>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {(postId || initialDraft?.id) && (
+            <button
+              type="button"
+              onClick={() => setIsConfirmDeleteOpen(true)}
+              disabled={isDeletingDraft}
+              className="px-3.5 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-xs font-bold text-rose-300 hover:text-white border border-rose-500/30 transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              title={lang === 'vi' ? 'Xóa bản nháp này vĩnh viễn' : 'Delete this draft permanently'}
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>{lang === 'vi' ? 'Xóa bản nháp' : 'Delete draft'}</span>
+            </button>
+          )}
           <button
             onClick={onCancel}
             className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-300 hover:text-white border border-white/10 transition cursor-pointer"
@@ -2633,8 +2842,14 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
-                onClick={handleRunAiValuation}
-                disabled={isEstimatingPrice || (credits?.valuationCredits ?? 0) < 1}
+                onClick={() => {
+                  if ((credits?.valuationCredits ?? 0) < 1) {
+                    setShowNoValuationModal(true);
+                    return;
+                  }
+                  handleRunAiValuation();
+                }}
+                disabled={isEstimatingPrice}
                 className="px-5 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs shadow-md flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
               >
                 {isEstimatingPrice ? (
@@ -3086,14 +3301,25 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </button>
 
               <button
-                onClick={handleSubmitPostFinal}
-                disabled={isSubmittingPost || (credits?.postCredits ?? 0) < 1}
+                onClick={() => {
+                  if ((credits?.postCredits ?? 0) < 1) {
+                    setShowNoCreditsModal(true);
+                    return;
+                  }
+                  handleSubmitPostFinal();
+                }}
+                disabled={isSubmittingPost}
                 className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white font-black text-sm shadow-md flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50 w-full sm:w-auto"
               >
                 {isSubmittingPost ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
                     <span>Đang gửi bài...</span>
+                  </>
+                ) : (credits?.postCredits ?? 0) < 1 ? (
+                  <>
+                    <AlertTriangle className="w-5 h-5 text-amber-400" />
+                    <span>Hết lượt đăng (Bấm mua thêm)</span>
                   </>
                 ) : (
                   <>
@@ -3131,12 +3357,26 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   ? 'Số lượt đăng bài của bạn đã hết. Vui lòng nạp thêm các gói dịch vụ để tiếp tục sử dụng tính năng này.' 
                   : 'You have run out of listing credits. Please top up your package to continue.'}
               </p>
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2.5">
+                {onOpenTopUp && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNoCreditsModal(false);
+                      onOpenTopUp('packages');
+                    }}
+                    className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-[#c34c36] to-[#dc4729] text-white hover:opacity-95 transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>{lang === 'vi' ? 'Mua Thêm Lượt Đăng Tin Ngay' : 'Buy Listing Credits Now'}</span>
+                  </button>
+                )}
                 <button
+                  type="button"
                   onClick={() => setShowNoCreditsModal(false)}
-                  className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-[#c34c36] to-[#dc4729] text-white hover:opacity-95 transition"
+                  className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
                 >
-                  {lang === 'vi' ? 'Đã hiểu' : 'Understood'}
+                  {lang === 'vi' ? 'Đóng' : 'Close'}
                 </button>
               </div>
             </div>
@@ -3356,14 +3596,73 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   ? 'Số lượt định giá AI của bạn đã hết. Vui lòng nạp thêm gói định giá để tiếp tục.' 
                   : 'You have run out of valuation credits. Please top up your package to continue.'}
               </p>
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2.5">
+                {onOpenTopUp && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNoValuationModal(false);
+                      onOpenTopUp('packages');
+                    }}
+                    className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-amber-600 text-white hover:opacity-95 transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>{lang === 'vi' ? 'Mua Thêm Gói Định Giá Ngay' : 'Buy Valuation Credits Now'}</span>
+                  </button>
+                )}
                 <button
+                  type="button"
                   onClick={() => setShowNoValuationModal(false)}
-                  className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-amber-600 text-white hover:opacity-95 transition"
+                  className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
                 >
-                  {lang === 'vi' ? 'Đã hiểu' : 'Understood'}
+                  {lang === 'vi' ? 'Đóng' : 'Close'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Custom Beautiful Confirmation Modal for Draft Deletion */}
+      {isConfirmDeleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-rose-100 flex flex-col items-center text-center animate-scaleUp">
+            <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4 ring-8 ring-rose-50/50 shadow-inner">
+              <Trash2 className="w-7 h-7 text-rose-600" />
+            </div>
+
+            <h3 className="text-lg font-black text-slate-900 mb-2">
+              {lang === 'vi' ? 'Xác nhận xóa bản nháp' : 'Confirm Draft Deletion'}
+            </h3>
+
+            <p className="text-xs text-slate-600 mb-6 leading-relaxed">
+              {lang === 'vi'
+                ? `Bạn có chắc chắn muốn xóa bản nháp "${title || 'này'}" không? Thao tác này sẽ xóa vĩnh viễn dữ liệu bản nháp và không thể hoàn tác.`
+                : `Are you sure you want to delete draft "${title || 'this'}"? This will permanently remove it from the system.`}
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 w-full">
+              <button
+                type="button"
+                onClick={() => setIsConfirmDeleteOpen(false)}
+                disabled={isDeletingDraft}
+                className="py-2.5 px-4 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
+              >
+                {lang === 'vi' ? 'Hủy bỏ' : 'Cancel'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDeleteCurrentDraft}
+                disabled={isDeletingDraft}
+                className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white font-bold text-xs shadow-md shadow-rose-200 transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                {isDeletingDraft ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                ) : (
+                  <Trash2 className="w-4 h-4 text-white" />
+                )}
+                <span>{lang === 'vi' ? 'Xóa vĩnh viễn' : 'Delete Draft'}</span>
+              </button>
             </div>
           </div>
         </div>

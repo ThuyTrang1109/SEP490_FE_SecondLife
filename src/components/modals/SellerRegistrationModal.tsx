@@ -96,6 +96,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   }
 
   const isAlreadySeller = currentUser.role === 'seller';
+  const isRegistered = isAlreadySeller;
 
   // Form State
   const [shopName, setShopName] = useState(
@@ -168,26 +169,22 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   // Verification state & registration check
   const [existingVerification, setExistingVerification] = useState<SellerVerificationResponseDto | null>(null);
 
-  const isRegistered = Boolean(
-    currentUser.isSellerRegistered ||
-    isAlreadySeller ||
-    currentUser.shopName ||
-    (currentUser.id && localStorage.getItem(`seller_registered_${currentUser.id}`) === 'true') ||
-    (currentUser.email && localStorage.getItem(`seller_registered_${currentUser.email}`) === 'true') ||
-    (existingVerification && ['APPROVED', 'SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(existingVerification.status))
+  const isApprovedSeller = currentUser.role === 'seller' || isAlreadySeller || existingVerification?.status === 'APPROVED';
+  const verStatus = existingVerification?.status || null;
+  const isPendingReview = Boolean(
+    existingVerification &&
+    ['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(verStatus)
   );
+  const isResubmitRequired = Boolean(verStatus === 'RESUBMIT_REQUIRED');
+  const isRejected = Boolean(verStatus === 'REJECTED');
+  const hasRegistered = Boolean(isApprovedSeller || isPendingReview || isResubmitRequired || isRejected);
 
   // UI state
-  const [showForm, setShowForm] = useState(!isRegistered);
+  const [showForm, setShowForm] = useState(!hasRegistered);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFaceScannerOpen, setIsFaceScannerOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-
-  const verStatus = existingVerification?.status || (currentUser.kycStatus === 'pending' ? 'NEEDS_REVIEW' : null);
-  const isPendingReview = verStatus === 'SUBMITTED' || verStatus === 'EKYC_PENDING' || verStatus === 'NEEDS_REVIEW' || verStatus === 'PENDING';
-  const isResubmitRequired = verStatus === 'RESUBMIT_REQUIRED';
-  const isRejected = verStatus === 'REJECTED';
 
   // BE Shipping & Pickup Address state
   const [pickupLatitude, setPickupLatitude] = useState<number | null>(null);
@@ -214,52 +211,55 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
       if (onboardingData.status === 'fulfilled' && onboardingData.value) {
         const ob = onboardingData.value;
-        if (ob.shopName) setShopName(ob.shopName);
-        if (ob.phone) setSellerPhone(ob.phone);
-        if (ob.email) setShopEmail(ob.email);
+        if (ob.shopName) setShopName((prev) => (prev && prev.trim() !== '' ? prev : ob.shopName));
+        if (ob.phone) setSellerPhone((prev) => (prev && prev.trim() !== '' ? prev : ob.phone));
+        if (ob.email) setShopEmail((prev) => (prev && prev.trim() !== '' ? prev : ob.email));
         if (ob.emailVerified) setIsEmailVerifiedForOnboarding(true);
 
         if (ob.pickupAddress) {
           const pa = ob.pickupAddress;
           if (pa.latitude && pa.longitude) {
-            setPickupLatitude(pa.latitude);
-            setPickupLongitude(pa.longitude);
+            setPickupLatitude((prev) => (prev !== null ? prev : pa.latitude));
+            setPickupLongitude((prev) => (prev !== null ? prev : pa.longitude));
           }
           const fullAddr = pa.address || [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
           if (fullAddr) {
-            setPickupAddress(fullAddr);
-            setStreetAddress(pa.address || '');
+            setPickupAddress((prev) => (prev && prev.trim() !== '' ? prev : fullAddr));
+            setStreetAddress((prev) => (prev && prev.trim() !== '' ? prev : (pa.address || '')));
             addressFound = true;
           }
         }
         if (ob.provinceId) {
-          setSelectedProvinceId(ob.provinceId);
-          shippingService.getWards(ob.provinceId)
-            .then((wList) => setWards(Array.isArray(wList) ? wList : []))
-            .catch(() => setWards([]));
+          setSelectedProvinceId((prev) => {
+            if (prev) return prev;
+            shippingService.getWards(ob.provinceId)
+              .then((wList) => setWards(Array.isArray(wList) ? wList : []))
+              .catch(() => setWards([]));
+            return ob.provinceId;
+          });
         }
         if (ob.wardId) {
-          setSelectedWardId(ob.wardId);
+          setSelectedWardId((prev) => (prev ? prev : ob.wardId));
         }
       }
 
       if (!addressFound && pickupData.status === 'fulfilled' && pickupData.value) {
         const pa = pickupData.value;
         if (pa.latitude && pa.longitude) {
-          setPickupLatitude(pa.latitude);
-          setPickupLongitude(pa.longitude);
+          setPickupLatitude((prev) => (prev !== null ? prev : pa.latitude));
+          setPickupLongitude((prev) => (prev !== null ? prev : pa.longitude));
         }
         const fullAddr = pa.address || [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
         if (fullAddr) {
-          setPickupAddress(fullAddr);
-          setStreetAddress(pa.address || '');
+          setPickupAddress((prev) => (prev && prev.trim() !== '' ? prev : fullAddr));
+          setStreetAddress((prev) => (prev && prev.trim() !== '' ? prev : (pa.address || '')));
           addressFound = true;
         }
       }
 
       if (!addressFound && currentUser?.address) {
-        setPickupAddress(currentUser.address);
-        setStreetAddress(currentUser.address);
+        setPickupAddress((prev) => (prev && prev.trim() !== '' ? prev : currentUser.address));
+        setStreetAddress((prev) => (prev && prev.trim() !== '' ? prev : currentUser.address));
       }
 
       if (showNotification) {
@@ -503,69 +503,118 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         })
         .catch((err) => console.warn('Load provinces fallback:', err));
       fetchAddressFromBackend(false);
+
+      sellerService.getMyVerification()
+        .then((verif) => {
+          if (verif) {
+            setExistingVerification(verif);
+            if (verif.status === 'APPROVED') {
+              setShowForm(false);
+            } else if (verif.status === 'RESUBMIT_REQUIRED' || verif.status === 'REJECTED') {
+              setShowForm(false);
+            } else if (['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(verif.status)) {
+              setShowForm(false);
+            }
+          } else {
+            setExistingVerification(null);
+            setShowForm(currentUser.role !== 'seller');
+          }
+        })
+        .catch(() => {
+          setExistingVerification(null);
+          setShowForm(currentUser.role !== 'seller');
+        });
     }
   }, [isOpen]);
 
   const DRAFT_KEY = `seller_reg_draft_${currentUser?.id || 'default'}`;
+  const isInitializedRef = useRef(false);
 
-  // Restore draft on open (or fallback to currentUser profile)
+  // Restore draft on open (or fallback to currentUser profile) - only run ONCE per modal open
   useEffect(() => {
-    if (isOpen && currentUser) {
-      // 1. Initial values from currentUser
-      setShopName(currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop'));
-      setSellerPhone(currentUser.phone || '');
-      setPickupAddress(currentUser.pickupAddress || currentUser.address || '');
-      if (currentUser.idCardNumber) setIdCardNumber(currentUser.idCardNumber);
-      if (currentUser.bankAccount?.bankName) setSellerBankName(currentUser.bankAccount.bankName);
-      if (currentUser.bankAccount?.accountNumber) setSellerAccountNumber(currentUser.bankAccount.accountNumber);
-      if (currentUser.bankAccount?.accountHolder) setSellerAccountHolder(currentUser.bankAccount.accountHolder);
-      setShowForm(!Boolean(currentUser.isSellerRegistered || currentUser.role === 'seller'));
-
-      // 2. Restore saved draft if user previously typed in the form
-      try {
-        const saved = localStorage.getItem(DRAFT_KEY);
-        if (saved) {
-          const d = JSON.parse(saved);
-          if (d.shopName) setShopName(d.shopName);
-          if (d.sellerPhone) setSellerPhone(d.sellerPhone);
-          if (d.pickupAddress) setPickupAddress(d.pickupAddress);
-          if (d.streetAddress) setStreetAddress(d.streetAddress);
-          if (d.selectedProvinceId) {
-            setSelectedProvinceId(d.selectedProvinceId);
-            shippingService.getWards(d.selectedProvinceId)
-              .then((wList) => setWards(Array.isArray(wList) ? wList : []))
-              .catch(() => {});
-          }
-          if (d.selectedWardId) setSelectedWardId(d.selectedWardId);
-          if (d.idCardNumber) setIdCardNumber(d.idCardNumber);
-          if (d.sellerBankName) setSellerBankName(d.sellerBankName);
-          if (d.sellerAccountNumber) setSellerAccountNumber(d.sellerAccountNumber);
-          if (d.sellerAccountHolder) setSellerAccountHolder(d.sellerAccountHolder);
-          if (d.docFrontUrl) {
-            setDocFrontUrl(d.docFrontUrl);
-            setFrontPreview(d.docFrontUrl);
-          } else if (d.frontPreview) {
-            setFrontPreview(d.frontPreview);
-          }
-          if (d.docBackUrl) {
-            setDocBackUrl(d.docBackUrl);
-            setBackPreview(d.docBackUrl);
-          } else if (d.backPreview) {
-            setBackPreview(d.backPreview);
-          }
-          if (d.selfieUrl) {
-            setSelfieUrl(d.selfieUrl);
-            setSelfiePreview(d.selfieUrl);
-          } else if (d.selfiePreview) {
-            setSelfiePreview(d.selfiePreview);
-          }
-          if (d.isEmailVerifiedForOnboarding) setIsEmailVerifiedForOnboarding(true);
-        }
-      } catch (e) {
-        console.warn('Error restoring seller draft:', e);
-      }
+    if (!isOpen) {
+      isInitializedRef.current = false;
+      return;
     }
-  }, [isOpen, currentUser, DRAFT_KEY]);
+    if (isInitializedRef.current) return;
+    isInitializedRef.current = true;
+
+    // 1. First check if a saved draft exists
+    let hasDraft = false;
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        const d = JSON.parse(saved);
+        if (d.shopName) { setShopName(d.shopName); hasDraft = true; }
+        if (d.sellerPhone) { setSellerPhone(d.sellerPhone); hasDraft = true; }
+        if (d.pickupAddress) { setPickupAddress(d.pickupAddress); hasDraft = true; }
+        if (d.streetAddress) setStreetAddress(d.streetAddress);
+        if (d.selectedProvinceId) {
+          setSelectedProvinceId(d.selectedProvinceId);
+          shippingService.getWards(d.selectedProvinceId)
+            .then((wList) => setWards(Array.isArray(wList) ? wList : []))
+            .catch(() => {});
+        }
+        if (d.selectedWardId) setSelectedWardId(d.selectedWardId);
+        if (d.idCardNumber) { setIdCardNumber(d.idCardNumber); hasDraft = true; }
+        if (d.sellerBankName) setSellerBankName(d.sellerBankName);
+        if (d.sellerAccountNumber) setSellerAccountNumber(d.sellerAccountNumber);
+        if (d.sellerAccountHolder) setSellerAccountHolder(d.sellerAccountHolder);
+        if (d.docFrontUrl) {
+          setDocFrontUrl(d.docFrontUrl);
+          setFrontPreview(d.docFrontUrl);
+          hasDraft = true;
+        } else if (d.frontPreview) {
+          setFrontPreview(d.frontPreview);
+          hasDraft = true;
+        }
+        if (d.docBackUrl) {
+          setDocBackUrl(d.docBackUrl);
+          setBackPreview(d.docBackUrl);
+          hasDraft = true;
+        } else if (d.backPreview) {
+          setBackPreview(d.backPreview);
+          hasDraft = true;
+        }
+        if (d.selfieUrl) {
+          setSelfieUrl(d.selfieUrl);
+          setSelfiePreview(d.selfieUrl);
+          hasDraft = true;
+        } else if (d.selfiePreview) {
+          setSelfiePreview(d.selfiePreview);
+          hasDraft = true;
+        }
+        if (d.isEmailVerifiedForOnboarding) setIsEmailVerifiedForOnboarding(true);
+      }
+    } catch (e) {
+      console.warn('Error restoring seller draft:', e);
+    }
+
+    // 2. Initial values from currentUser for any remaining empty fields
+    if (currentUser) {
+      setShopName((prev) => prev?.trim() ? prev : (currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop')));
+      setSellerPhone((prev) => prev?.trim() ? prev : (currentUser.phone || ''));
+      setPickupAddress((prev) => prev?.trim() ? prev : (currentUser.pickupAddress || currentUser.address || ''));
+      if (currentUser.idCardNumber) setIdCardNumber((prev) => prev?.trim() ? prev : currentUser.idCardNumber);
+      if (currentUser.bankAccount?.bankName) setSellerBankName((prev) => prev?.trim() ? prev : currentUser.bankAccount.bankName);
+      if (currentUser.bankAccount?.accountNumber) setSellerAccountNumber((prev) => prev?.trim() ? prev : currentUser.bankAccount.accountNumber);
+      if (currentUser.bankAccount?.accountHolder) setSellerAccountHolder((prev) => prev?.trim() ? prev : currentUser.bankAccount.accountHolder);
+    }
+
+    // 3. Set showForm: if user has a draft in progress, keep form open. Otherwise open form if not already a registered seller.
+    if (hasDraft) {
+      setShowForm(true);
+      setSuccessMsg(lang === 'vi' ? 'Đã khôi phục thông tin bản nháp bạn đang điền.' : 'Restored your draft in progress.');
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } else {
+      const isAlreadySellerOrRegistered = Boolean(
+        currentUser?.isSellerRegistered ||
+        currentUser?.role === 'seller' ||
+        (currentUser?.id && localStorage.getItem(`seller_registered_${currentUser.id}`) === 'true')
+      );
+      setShowForm(!isAlreadySellerOrRegistered);
+    }
+  }, [isOpen, DRAFT_KEY]);
 
   // Auto-save form draft whenever any field changes
   useEffect(() => {
@@ -615,59 +664,122 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   ]);
 
   useEffect(() => {
-    if (isOpen) {
-      sellerService.getMyVerification()
-        .then((verif) => {
-          if (verif) {
-            setExistingVerification(verif);
-            if (verif.documentNumber) setIdCardNumber(verif.documentNumber);
-            if (verif.documentFrontUrl) {
-              setDocFrontUrl(verif.documentFrontUrl);
-              setFrontPreview(verif.documentFrontUrl);
-            }
-            if (verif.documentBackUrl) {
-              setDocBackUrl(verif.documentBackUrl);
-              setBackPreview(verif.documentBackUrl);
-            }
-            if (verif.selfieUrl) {
-              setSelfieUrl(verif.selfieUrl);
-              setSelfiePreview(verif.selfieUrl);
-            }
-            if (verif.status === 'RESUBMIT_REQUIRED') {
-              setShowForm(true);
-            } else if (['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING', 'APPROVED'].includes(verif.status)) {
-              setShowForm(false);
-              if (currentUser?.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
-              if (currentUser?.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
-            }
+    if (!isOpen) return;
+    let isSubscribed = true;
+    sellerService.getMyVerification()
+      .then((verif) => {
+        if (!isSubscribed) return;
+        if (verif) {
+          setExistingVerification(verif);
+          if (verif.documentNumber) setIdCardNumber((prev) => prev?.trim() ? prev : verif.documentNumber);
+          if (verif.documentFrontUrl) {
+            setDocFrontUrl((prev) => prev || verif.documentFrontUrl);
+            setFrontPreview((prev) => prev || verif.documentFrontUrl);
           }
-        })
-        .catch(() => {
-          setExistingVerification(null);
-        });
-    }
-  }, [currentUser, isOpen]);
+          if (verif.documentBackUrl) {
+            setDocBackUrl((prev) => prev || verif.documentBackUrl);
+            setBackPreview((prev) => prev || verif.documentBackUrl);
+          }
+          if (verif.selfieUrl) {
+            setSelfieUrl((prev) => prev || verif.selfieUrl);
+            setSelfiePreview((prev) => prev || verif.selfieUrl);
+          }
+          if (verif.status === 'RESUBMIT_REQUIRED') {
+            setShowForm(true);
+          }
+          if (['APPROVED', 'SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(verif.status)) {
+            if (currentUser?.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
+            if (currentUser?.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
+          }
+        }
+      })
+      .catch(() => {
+        if (isSubscribed) setExistingVerification(null);
+      });
+    return () => {
+      isSubscribed = false;
+    };
+  }, [isOpen]);
 
-  const handleFileSelect = (
+  // Helper to convert an image file to a compressed base64 data URL for preview and draft persistence
+  const createCompressedDataUrl = (file: File, maxWidth = 1200, quality = 0.8): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        if (!result) return resolve('');
+        const img = new Image();
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          } else {
+            resolve(result);
+          }
+        };
+        img.onerror = () => resolve(result);
+        img.src = result;
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const dataURLtoFile = (dataurl: string, filename: string): File | null => {
+    try {
+      const arr = dataurl.split(',');
+      const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      return new File([u8arr], filename, { type: mime });
+    } catch (err) {
+      console.warn('Error converting dataURL to File:', err);
+      return null;
+    }
+  };
+
+  const handleFileSelect = async (
     e: React.ChangeEvent<HTMLInputElement>,
     field: 'front' | 'back' | 'selfie'
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const previewUrl = URL.createObjectURL(file);
     if (field === 'front') {
       setFrontFile(file);
-      setFrontPreview(previewUrl);
       setDocFrontUrl(''); // Reset remote url so batch upload will process this new file
     } else if (field === 'back') {
       setBackFile(file);
-      setBackPreview(previewUrl);
       setDocBackUrl('');
     } else if (field === 'selfie') {
       setSelfieFile(file);
-      setSelfiePreview(previewUrl);
       setSelfieUrl('');
+    }
+
+    try {
+      const dataUrl = await createCompressedDataUrl(file);
+      if (field === 'front') setFrontPreview(dataUrl);
+      else if (field === 'back') setBackPreview(dataUrl);
+      else if (field === 'selfie') setSelfiePreview(dataUrl);
+    } catch {
+      const fallbackUrl = URL.createObjectURL(file);
+      if (field === 'front') setFrontPreview(fallbackUrl);
+      else if (field === 'back') setBackPreview(fallbackUrl);
+      else if (field === 'selfie') setSelfiePreview(fallbackUrl);
     }
     setErrorMsg(null);
   };
@@ -687,25 +799,40 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     setErrorMsg(null);
   };
 
-  const handleMultipleFilesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMultipleFilesSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
     const files: File[] = Array.from(fileList);
 
     if (files[0]) {
       setFrontFile(files[0]);
-      setFrontPreview(URL.createObjectURL(files[0]));
       setDocFrontUrl('');
+      try {
+        const u = await createCompressedDataUrl(files[0]);
+        setFrontPreview(u);
+      } catch {
+        setFrontPreview(URL.createObjectURL(files[0]));
+      }
     }
     if (files[1]) {
       setBackFile(files[1]);
-      setBackPreview(URL.createObjectURL(files[1]));
       setDocBackUrl('');
+      try {
+        const u = await createCompressedDataUrl(files[1]);
+        setBackPreview(u);
+      } catch {
+        setBackPreview(URL.createObjectURL(files[1]));
+      }
     }
     if (files[2]) {
       setSelfieFile(files[2]);
-      setSelfiePreview(URL.createObjectURL(files[2]));
       setSelfieUrl('');
+      try {
+        const u = await createCompressedDataUrl(files[2]);
+        setSelfiePreview(u);
+      } catch {
+        setSelfiePreview(URL.createObjectURL(files[2]));
+      }
     }
     setErrorMsg(null);
   };
@@ -903,8 +1030,12 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
       setErrorMsg(lang === 'vi' ? 'Vui lòng nhập số CCCD để xác minh danh tính người bán.' : 'Please enter citizen ID.');
       return;
     }
-    const hasFront = Boolean(frontFile || docFrontUrl);
-    const hasBack = Boolean(backFile || docBackUrl);
+    const effectiveFrontFile = frontFile || (frontPreview?.startsWith('data:') ? dataURLtoFile(frontPreview, 'cccd_front.jpg') : null);
+    const effectiveBackFile = backFile || (backPreview?.startsWith('data:') ? dataURLtoFile(backPreview, 'cccd_back.jpg') : null);
+    const effectiveSelfieFile = selfieFile || (selfiePreview?.startsWith('data:') ? dataURLtoFile(selfiePreview, 'selfie.jpg') : null);
+
+    const hasFront = Boolean(effectiveFrontFile || docFrontUrl);
+    const hasBack = Boolean(effectiveBackFile || docBackUrl);
     if (!hasFront || !hasBack) {
       setErrorMsg(
         lang === 'vi'
@@ -938,9 +1069,9 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     try {
       // 1. Tối ưu: Tải lên nhiều ảnh cùng lúc bằng POST /media/upload-multiple thay vì 3 request rời rạc
       const filesToUpload: { field: 'front' | 'back' | 'selfie'; file: File }[] = [];
-      if (frontFile && !docFrontUrl) filesToUpload.push({ field: 'front', file: frontFile });
-      if (backFile && !docBackUrl) filesToUpload.push({ field: 'back', file: backFile });
-      if (selfieFile && !selfieUrl) filesToUpload.push({ field: 'selfie', file: selfieFile });
+      if (effectiveFrontFile && !docFrontUrl) filesToUpload.push({ field: 'front', file: effectiveFrontFile });
+      if (effectiveBackFile && !docBackUrl) filesToUpload.push({ field: 'back', file: effectiveBackFile });
+      if (effectiveSelfieFile && !selfieUrl) filesToUpload.push({ field: 'selfie', file: effectiveSelfieFile });
 
       let finalFrontUrl = docFrontUrl;
       let finalBackUrl = docBackUrl;
@@ -1246,21 +1377,25 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                 <h3 className="text-sm sm:text-base font-black text-[#24263e]">
                   {lang === 'vi' ? 'Đăng Ký Thành Người Bán' : 'Seller Hub Onboarding'}
                 </h3>
-                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${currentUser.role === 'seller'
+                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${isApprovedSeller
                   ? 'bg-white text-emerald-900 border-emerald-500'
-                  : existingVerification?.status === 'RESUBMIT_REQUIRED'
+                  : isResubmitRequired
                     ? 'bg-amber-100 text-amber-900 border-amber-500 animate-pulse'
-                    : currentUser.kycStatus === 'pending' || currentUser.isSellerRegistered
-                      ? 'bg-white text-amber-900 border-amber-500'
-                      : 'bg-white text-rose-900 border-rose-500'
+                    : isRejected
+                      ? 'bg-rose-100 text-rose-900 border-rose-500'
+                      : isPendingReview
+                        ? 'bg-white text-amber-900 border-amber-500'
+                        : 'bg-white text-rose-900 border-rose-500'
                   }`}>
-                  {currentUser.role === 'seller'
+                  {isApprovedSeller
                     ? (lang === 'vi' ? 'Đã Kích Hoạt Người Bán' : 'Seller Active')
-                    : existingVerification?.status === 'RESUBMIT_REQUIRED'
+                    : isResubmitRequired
                       ? (lang === 'vi' ? 'Cần Chụp Lại Ảnh eKYC' : 'Resubmission Required')
-                      : (currentUser.kycStatus === 'pending' || currentUser.isSellerRegistered)
-                        ? (lang === 'vi' ? 'Đang Chờ Duyệt eKYC' : 'Pending Review')
-                        : (lang === 'vi' ? 'Chưa Kích Hoạt' : 'Not Registered')}
+                      : isRejected
+                        ? (lang === 'vi' ? 'Hồ Sơ Bị Từ Chối' : 'Rejected')
+                        : isPendingReview
+                          ? (lang === 'vi' ? 'Đang Chờ Duyệt eKYC' : 'Pending Review')
+                          : (lang === 'vi' ? 'Chưa Kích Hoạt' : 'Not Registered')}
                 </span>
               </div>
               <p className="text-[11px] text-[#24263e]/80 font-bold mt-0.5">
@@ -1323,7 +1458,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
           )}
 
           {/* VIEW: THÔNG TIN GIAN HÀNG ĐÃ ĐĂNG KÝ */}
-          {isRegistered && !showForm && (
+          {!showForm && hasRegistered && (
             <div className="p-5 rounded-3xl bg-slate-50 border border-gray-200 space-y-4 animate-in fade-in">
               {/* Active Role Status Notification Banner */}
               <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
@@ -1357,37 +1492,35 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     </p>
                   </div>
                 </div>
-                <div className="shrink-0 flex items-center gap-2">
-                  {currentUser.role === 'seller' ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
-                        if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
-                        setShowForm(false);
-                        onRoleChange('buyer');
-                        onUpdateProfile({ ...currentUser, role: 'buyer', isSellerRegistered: true });
-                      }}
-                      className="px-3.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer shadow-xs whitespace-nowrap"
-                    >
-                      {lang === 'vi' ? 'Chuyển về Người Mua' : 'Switch to Buyer'}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
-                        if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
-                        setShowForm(false);
-                        onRoleChange('seller');
-                        onUpdateProfile({ ...currentUser, role: 'seller', isSellerRegistered: true });
-                      }}
-                      className="px-3.5 py-1.5 bg-[#24263e] hover:bg-[#343754] text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs whitespace-nowrap"
-                    >
-                      {lang === 'vi' ? 'Chuyển về Người Bán' : 'Switch to Seller'}
-                    </button>
-                  )}
-                </div>
+                {isApprovedSeller && (
+                  <div className="shrink-0 flex items-center gap-2">
+                    {currentUser.role === 'seller' ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowForm(false);
+                          onRoleChange('buyer');
+                          onUpdateProfile({ ...currentUser, role: 'buyer', isSellerRegistered: true });
+                        }}
+                        className="px-3.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer shadow-xs whitespace-nowrap"
+                      >
+                        {lang === 'vi' ? 'Chuyển về Người Mua' : 'Switch to Buyer'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowForm(false);
+                          onRoleChange('seller');
+                          onUpdateProfile({ ...currentUser, role: 'seller', isSellerRegistered: true });
+                        }}
+                        className="px-3.5 py-1.5 bg-[#24263e] hover:bg-[#343754] text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs whitespace-nowrap"
+                      >
+                        {lang === 'vi' ? 'Chuyển về Người Bán' : 'Switch to Seller'}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between border-b border-gray-200/80 pb-3">
@@ -1397,7 +1530,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     {lang === 'vi' ? 'Hồ Sơ Gian Hàng Của Bạn' : 'Your Seller Store Profile'}
                   </span>
                   <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                    currentUser.role === 'seller' || currentUser.kycStatus === 'verified' || existingVerification?.status === 'APPROVED'
+                    isApprovedSeller
                       ? 'bg-emerald-100 text-emerald-800'
                       : isRejected
                         ? 'bg-rose-100 text-rose-800'
@@ -1405,7 +1538,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                           ? 'bg-orange-100 text-orange-800'
                           : 'bg-amber-100 text-amber-800 border border-amber-200'
                   }`}>
-                    {currentUser.role === 'seller' || currentUser.kycStatus === 'verified' || existingVerification?.status === 'APPROVED'
+                    {isApprovedSeller
                       ? (lang === 'vi' ? 'Đã Kích Hoạt' : 'Active')
                       : isRejected
                         ? (lang === 'vi' ? 'Đã Bị Từ Chối' : 'Rejected')
@@ -1416,22 +1549,20 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                 </div>
 
                 <div className="flex items-center gap-3">
-                  {!isPendingReview && (
-                    <button
-                      type="button"
-                      onClick={() => setShowForm(true)}
-                      className="inline-flex items-center gap-1.5 text-xs font-bold text-[#24263e] hover:underline cursor-pointer"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span>
-                        {isResubmitRequired
-                          ? (lang === 'vi' ? 'Cập nhật & Nộp lại' : 'Update & Resubmit')
-                          : isRejected
-                            ? (lang === 'vi' ? 'Đăng ký lại hồ sơ mới' : 'Reapply')
-                            : (lang === 'vi' ? 'Chỉnh sửa thông tin' : 'Edit Info')}
-                      </span>
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowForm(true)}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#24263e] hover:underline cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>
+                      {isResubmitRequired
+                        ? (lang === 'vi' ? 'Cập nhật & Nộp lại' : 'Update & Resubmit')
+                        : isRejected
+                          ? (lang === 'vi' ? 'Đăng ký lại hồ sơ mới' : 'Reapply')
+                          : (lang === 'vi' ? 'Chỉnh sửa thông tin' : 'Edit Info')}
+                    </span>
+                  </button>
                 </div>
               </div>
 
@@ -1460,7 +1591,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
               {/* Status explanation */}
               <div className="text-xs space-y-2">
-                {currentUser.role === 'seller' || existingVerification?.status === 'APPROVED' ? (
+                {isApprovedSeller ? (
                   <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex items-center justify-between gap-3">
                     <div>
                       <span className="font-bold block text-emerald-800">{lang === 'vi' ? 'Tài khoản người bán đã kích hoạt!' : 'Seller account is active!'}</span>
@@ -1517,7 +1648,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       </button>
                     </div>
                   </div>
-                ) : (
+                ) : isPendingReview ? (
                   <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-900 space-y-1.5">
                     <div className="flex items-center gap-2 font-bold text-amber-800">
                       <Clock className="w-4 h-4 text-amber-600 shrink-0 animate-spin" />
@@ -1529,13 +1660,13 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                         : 'Your profile is awaiting review by SecondLife administrators. Please wait for approval within 24 working hours. You cannot edit or resubmit during this time.'}
                     </p>
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           )}
 
           {/* VIEW: FORM ĐĂNG KÝ NGƯỜI BÁN */}
-          {(showForm || !isRegistered) && !isPendingReview && (
+          {showForm && (
             <form
               onSubmit={handleSubmit}
               className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-white to-slate-50 border-2 border-[#c34c36]/30 shadow-md space-y-4 animate-in fade-in"

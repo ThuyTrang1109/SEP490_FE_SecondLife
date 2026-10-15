@@ -28,3 +28,5 @@ export * from './systemWalletService';
 export * from './adminCommissionService';
 export * from './notificationService';
 export * from './notificationWsClient';
+export * from './reputationService';
+export * from './staffReportService';

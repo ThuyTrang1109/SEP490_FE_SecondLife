@@ -81,8 +81,52 @@ export const walletService = {
   },
 
   /**
+   * Người dùng tạo yêu cầu rút tiền từ ví về tài khoản ngân hàng
+   * POST /api/v1/wallets/withdrawals
+   */
+  async requestWithdrawal(data: CreateWithdrawalRequestDto): Promise<WalletWithdrawalResponseDto> {
+    const res = await request<WalletWithdrawalResponseDto>('/wallets/withdrawals', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Người dùng xem lịch sử các yêu cầu rút tiền của mình
+   * GET /api/v1/wallets/withdrawals
+   */
+  async getMyWithdrawals(page = 0, size = 20): Promise<{
+    items: WalletWithdrawalResponseDto[];
+    page: number;
+    size: number;
+    totalElements: number;
+    totalPages: number;
+    isLast: boolean;
+  }> {
+    const params = new URLSearchParams();
+    params.append('page', String(page));
+    params.append('size', String(size));
+
+    const res = await request<any>(`/wallets/withdrawals?${params.toString()}`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data || res;
+    return {
+      items: Array.isArray(data?.items) ? data.items : Array.isArray(data?.content) ? data.content : [],
+      page: data?.page ?? page,
+      size: data?.size ?? size,
+      totalElements: data?.totalElements ?? 0,
+      totalPages: data?.totalPages ?? 1,
+      isLast: data?.isLast ?? true,
+    };
+  },
+
+  /**
    * Admin lấy danh sách tất cả yêu cầu rút tiền
-   * GET /api/v1/wallet/admin/withdrawals
+   * GET /api/v1/wallets/admin/withdrawals
    */
   async getAdminWithdrawals(status?: string, page = 0, size = 20): Promise<{
     items: WalletWithdrawalResponseDto[];
@@ -97,7 +141,7 @@ export const walletService = {
     params.append('page', String(page));
     params.append('size', String(size));
 
-    const res = await request<any>(`/wallet/admin/withdrawals?${params.toString()}`, {
+    const res = await request<any>(`/wallets/admin/withdrawals?${params.toString()}`, {
       method: 'GET',
       requiresAuth: true,
     });
@@ -114,10 +158,10 @@ export const walletService = {
 
   /**
    * Admin phê duyệt hoặc từ chối yêu cầu rút tiền
-   * POST /api/v1/wallet/admin/withdrawals/{id}/review
+   * POST /api/v1/wallets/admin/withdrawals/{id}/review
    */
   async reviewWithdrawal(id: string, action: 'APPROVE' | 'REJECT', adminNote?: string): Promise<WalletWithdrawalResponseDto> {
-    const res = await request<WalletWithdrawalResponseDto>(`/wallet/admin/withdrawals/${id}/review`, {
+    const res = await request<WalletWithdrawalResponseDto>(`/wallets/admin/withdrawals/${id}/review`, {
       method: 'POST',
       body: JSON.stringify({ action, adminNote: adminNote || '' }),
       requiresAuth: true,
@@ -125,6 +169,13 @@ export const walletService = {
     return (res as any)?.data || res;
   },
 };
+
+export interface CreateWithdrawalRequestDto {
+  amount: number;
+  bankCode: string;
+  accountNumber: string;
+  accountHolderName: string;
+}
 
 export interface WalletWithdrawalResponseDto {
   id: string;

@@ -103,7 +103,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [email, setEmail] = useState(currentUser.email || '');
   const [phone, setPhone] = useState(currentUser.phone || '');
   const [address, setAddress] = useState(currentUser.address || '');
-  const [gender, setGender] = useState<'male' | 'female' | 'other'>(currentUser.gender || 'male');
+  const [gender, setGender] = useState<'male' | 'female' | 'other' | ''>(
+    currentUser.gender ? (currentUser.gender.toLowerCase() as 'male' | 'female' | 'other') : ''
+  );
   const [birthday, setBirthday] = useState(currentUser.birthday || '');
   const [bankName, setBankName] = useState(currentUser.bankAccount?.bankName || '');
   const [accountNumber, setAccountNumber] = useState(
@@ -169,17 +171,20 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
   const [isSaved, setIsSaved] = useState(false);
 
-  // Seller registration & switching states
-  const [isSellerRegistered, setIsSellerRegistered] = useState<boolean>(
-    Boolean(
-      currentUser.isSellerRegistered ||
-      currentUser.role === 'seller' ||
-      currentUser.kycStatus === 'verified' ||
-      currentUser.shopName ||
-      (currentUser.id && localStorage.getItem(`seller_registered_${currentUser.id}`) === 'true') ||
-      (currentUser.email && localStorage.getItem(`seller_registered_${currentUser.email}`) === 'true')
-    )
+  // Seller verification & registration state
+  const [existingVerification, setExistingVerification] = useState<any>(null);
+  const isApprovedSeller = currentUser.role === 'seller' || existingVerification?.status === 'APPROVED';
+  const verStatus = existingVerification?.status || null;
+  const isPendingReview = Boolean(
+    existingVerification &&
+    ['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(verStatus)
   );
+  const isResubmitRequired = Boolean(verStatus === 'RESUBMIT_REQUIRED');
+  const isRejected = Boolean(verStatus === 'REJECTED');
+  const hasRegistered = Boolean(isApprovedSeller || isPendingReview || isResubmitRequired || isRejected);
+
+  // Seller registration & switching states
+  const [isSellerRegistered, setIsSellerRegistered] = useState<boolean>(currentUser.role === 'seller');
   const [shopName, setShopName] = useState(
     currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : '')
   );
@@ -205,7 +210,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   );
   const [sellerProductTypes, setSellerProductTypes] = useState(currentUser.productTypes || '');
   const [sellerTermsAgreed, setSellerTermsAgreed] = useState(true);
-  const [showSellerRegistrationForm, setShowSellerRegistrationForm] = useState(false);
+  const [showSellerRegistrationForm, setShowSellerRegistrationForm] = useState(currentUser.role !== 'seller');
   const [sellerFormSuccess, setSellerFormSuccess] = useState<string | null>(null);
   const [sellerFormError, setSellerFormError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -236,12 +241,6 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [vnptClientSession, setVnptClientSession] = useState<string>('');
   const [vnptToken, setVnptToken] = useState<string>('');
   const [vnptLivenessResult, setVnptLivenessResult] = useState<any>(null);
-
-  const [existingVerification, setExistingVerification] = useState<any>(null);
-  const verStatus = existingVerification?.status || (currentUser?.kycStatus === 'pending' ? 'NEEDS_REVIEW' : null);
-  const isPendingReview = verStatus === 'SUBMITTED' || verStatus === 'EKYC_PENDING' || verStatus === 'NEEDS_REVIEW' || verStatus === 'PENDING';
-  const isResubmitRequired = verStatus === 'RESUBMIT_REQUIRED';
-  const isRejected = verStatus === 'REJECTED';
 
   // Change password modal state
   const [isChangePassModalOpen, setIsChangePassModalOpen] = useState(false);
@@ -481,7 +480,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       setAddress(currentUser.address || '');
       setAvatarUrl(currentUser.avatar || '');
       setImgError(false);
-      if (currentUser.gender) setGender(currentUser.gender);
+      if (currentUser.gender) {
+        setGender(currentUser.gender.toLowerCase() as 'male' | 'female' | 'other');
+      } else {
+        setGender('');
+      }
       if (currentUser.birthday) setBirthday(currentUser.birthday);
       if (currentUser.bankAccount) {
         if (currentUser.bankAccount.bankName) setBankName(currentUser.bankAccount.bankName);
@@ -500,15 +503,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       if (currentUser.streetAddress) {
         setUserStreetAddress(currentUser.streetAddress || '');
       }
-      const isKnownSeller = Boolean(
-        currentUser.isSellerRegistered ||
-        currentUser.role === 'seller' ||
-        currentUser.kycStatus === 'verified' ||
-        currentUser.shopName ||
-        (currentUser.id && localStorage.getItem(`seller_registered_${currentUser.id}`) === 'true') ||
-        (currentUser.email && localStorage.getItem(`seller_registered_${currentUser.email}`) === 'true')
-      );
+      const isKnownSeller = currentUser.role === 'seller';
       setIsSellerRegistered(isKnownSeller);
+      if (currentUser.role !== 'seller' && !existingVerification) {
+        setShowSellerRegistrationForm(true);
+      }
       setShopName(currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop'));
       setSellerPhone(currentUser.phone || '');
       setPickupAddress(currentUser.pickupAddress || currentUser.address || '');
@@ -540,6 +539,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             if (fresh.district) setSelectedDistrictName(fresh.district);
             if (fresh.ward) setSelectedWardName(fresh.ward);
             if (fresh.streetAddress) setUserStreetAddress(fresh.streetAddress);
+            if (fresh.gender) {
+              setGender(fresh.gender.toLowerCase() as 'male' | 'female' | 'other');
+            } else if (!currentUser.gender) {
+              setGender('');
+            }
 
             syncOpenApiAddress(
               fresh.province || currentUser?.province || currentUser?.provinceName,
@@ -573,17 +577,30 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             if (verif.selfieUrl) {
               setSelfieUrl(verif.selfieUrl);
             }
-            if (verif.status === 'RESUBMIT_REQUIRED') {
-              setShowSellerRegistrationForm(true);
-            } else if (['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING', 'APPROVED'].includes(verif.status)) {
-              setShowSellerRegistrationForm(false);
+            if (verif.status === 'APPROVED') {
               setIsSellerRegistered(true);
-              if (currentUser?.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
-              if (currentUser?.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
+              setShowSellerRegistrationForm(false);
+            } else if (verif.status === 'RESUBMIT_REQUIRED') {
+              setIsSellerRegistered(false);
+              setShowSellerRegistrationForm(false);
+            } else if (verif.status === 'REJECTED') {
+              setIsSellerRegistered(false);
+              setShowSellerRegistrationForm(false);
+            } else if (['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(verif.status)) {
+              setIsSellerRegistered(false);
+              setShowSellerRegistrationForm(false);
             }
+          } else {
+            setExistingVerification(null);
+            setIsSellerRegistered(currentUser.role === 'seller');
+            setShowSellerRegistrationForm(currentUser.role !== 'seller');
           }
         })
-        .catch(() => setExistingVerification(null));
+        .catch(() => {
+          setExistingVerification(null);
+          setIsSellerRegistered(currentUser.role === 'seller');
+          setShowSellerRegistrationForm(currentUser.role !== 'seller');
+        });
     }
   }, [isOpen]);
 
@@ -1048,14 +1065,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
     // NẾU ĐÃ LÀ NGƯỜI BÁN ĐÃ XÁC THỰC (Cập nhật thông tin gian hàng & kho không cần gọi lại eKYC)
     const isAlreadySeller = Boolean(
-      isSellerRegistered ||
+      isApprovedSeller ||
       currentUser?.role === 'seller' ||
-      currentUser?.isSellerRegistered ||
-      currentUser?.kycStatus === 'verified' ||
       existingVerification?.status === 'APPROVED' ||
-      (existingVerification?.status as any) === 'VERIFIED' ||
-      (currentUser?.id && localStorage.getItem(`seller_registered_${currentUser.id}`) === 'true') ||
-      (currentUser?.email && localStorage.getItem(`seller_registered_${currentUser.email}`) === 'true')
+      (existingVerification?.status as any) === 'VERIFIED'
     );
 
     if (isAlreadySeller) {
@@ -1408,7 +1421,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       wardName: selectedWardName.trim() || undefined,
       streetAddress: userStreetAddress.trim() || undefined,
       avatar: avatarUrl || currentUser.avatar,
-      gender,
+      gender: gender || undefined,
       birthday,
       bankAccount: {
         bankName,
@@ -1428,6 +1441,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         fullName: name.trim(),
         phone: phone.trim() || undefined,
         avatarUrl: avatarUrl || undefined,
+        gender: gender ? (gender.toUpperCase() as 'MALE' | 'FEMALE' | 'OTHER') : null,
         province: selectedProvinceName.trim() || undefined,
         district: selectedDistrictName.trim() || undefined,
         ward: selectedWardName.trim() || undefined,
@@ -1792,35 +1806,42 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
               {currentRole !== 'admin' && (
                 <div>
-                <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                  {lang === 'vi' ? 'Giới Tính' : 'Gender'}
-                </label>
-                <div className="grid grid-cols-3 gap-2.5 max-w-sm">
-                  {(['male', 'female', 'other'] as const).map((g) => {
-                    const isSelected = gender === g;
-                    const labels = {
-                      male: lang === 'vi' ? 'Nam' : 'Male',
-                      female: lang === 'vi' ? 'Nữ' : 'Female',
-                      other: lang === 'vi' ? 'Khác' : 'Other',
-                    };
-                    return (
-                      <button
-                        key={g}
-                        type="button"
-                        onClick={() => setGender(g)}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                          isSelected
-                            ? 'bg-[#c34c36]/10 border-[#c34c36] text-[#c34c36] shadow-2xs font-black'
-                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                        }`}
-                      >
-                        <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-[#c34c36]' : 'bg-slate-300'}`} />
-                        <span>{labels[g]}</span>
-                      </button>
-                    );
-                  })}
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-700">
+                      {lang === 'vi' ? 'Giới Tính' : 'Gender'}
+                    </label>
+                    {!gender && (
+                      <span className="text-[11px] text-slate-400 italic">
+                        {lang === 'vi' ? '(Chưa chọn)' : '(Unspecified)'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2.5 max-w-sm">
+                    {(['male', 'female', 'other'] as const).map((g) => {
+                      const isSelected = gender?.toLowerCase() === g;
+                      const labels = {
+                        male: lang === 'vi' ? 'Nam' : 'Male',
+                        female: lang === 'vi' ? 'Nữ' : 'Female',
+                        other: lang === 'vi' ? 'Khác' : 'Other',
+                      };
+                      return (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() => setGender(isSelected ? '' : g)}
+                          className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                            isSelected
+                              ? 'bg-[#c34c36]/10 border-[#c34c36] text-[#c34c36] shadow-2xs font-black'
+                              : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-[#c34c36]' : 'bg-slate-300'}`} />
+                          <span>{labels[g]}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
               )}
 
               {/* Địa Chỉ Hành Chính 3 Cấp & Chi Tiết (Open API) */}
@@ -2380,14 +2401,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     </p>
                   </div>
                 </div>
-                {isSellerRegistered && (
+                {isApprovedSeller && (
                   <div className="shrink-0 flex items-center gap-2">
                     {currentUser.role === 'seller' ? (
                       <button
                         type="button"
                         onClick={() => {
-                          if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
-                          if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
                           setIsSellerRegistered(true);
                           setShowSellerRegistrationForm(false);
                           onRoleChange('buyer');
@@ -2407,8 +2426,6 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
-                          if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
                           setIsSellerRegistered(true);
                           setShowSellerRegistrationForm(false);
                           onRoleChange('seller');
@@ -2446,7 +2463,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               )}
 
               {/* THÔNG TIN GIAN HÀNG ĐÃ ĐĂNG KÝ (HIỂN THỊ KHI ĐÃ LÀ SELLER HOẶC ĐÃ ĐĂNG KÝ) */}
-              {isSellerRegistered && !showSellerRegistrationForm && (
+              {hasRegistered && !showSellerRegistrationForm && (
                 <div className="p-4 rounded-2xl bg-slate-50 border border-gray-200 space-y-3 animate-in fade-in">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -2455,7 +2472,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         {lang === 'vi' ? 'Hồ Sơ Gian Hàng Của Bạn' : 'Your Seller Store Profile'}
                       </span>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        currentUser.role === 'seller' || currentUser.kycStatus === 'verified' || existingVerification?.status === 'APPROVED'
+                        isApprovedSeller
                           ? 'bg-emerald-100 text-emerald-800'
                           : isRejected
                             ? 'bg-rose-100 text-rose-800'
@@ -2463,9 +2480,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                               ? 'bg-orange-100 text-orange-800'
                               : 'bg-amber-100 text-amber-800 border border-amber-200'
                       }`}>
-                        {currentUser.kycStatus === 'pending'
-                          ? (lang === 'vi' ? 'Đang Chờ Quản Trị Viên Duyệt' : 'Pending Review')
-                          : (currentUser.role === 'seller' || currentUser.kycStatus === 'verified')
+                        {isApprovedSeller
                           ? (lang === 'vi' ? 'Đã Kích Hoạt' : 'Active')
                           : isRejected
                             ? (lang === 'vi' ? 'Đã Bị Từ Chối' : 'Rejected')
@@ -2475,48 +2490,42 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       </span>
                     </div>
                     <div className="flex items-center gap-3">
-                      {currentUser.role === 'seller' ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
-                            if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
-                            setIsSellerRegistered(true);
-                            setShowSellerRegistrationForm(false);
-                            onRoleChange('buyer');
-                            onUpdateProfile({ ...currentUser, role: 'buyer', isSellerRegistered: true });
-                            setSellerFormSuccess(
-                              lang === 'vi'
-                                ? 'Đã chuyển sang vai trò Người Mua (Buyer).'
-                                : 'Switched to Buyer role.'
-                            );
-                            setTimeout(() => setSellerFormSuccess(null), 3000);
-                          }}
-                          className="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
-                        >
-                          {lang === 'vi' ? 'Chuyển về Người Mua' : 'Switch to Buyer'}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
-                            if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
-                            setIsSellerRegistered(true);
-                            setShowSellerRegistrationForm(false);
-                            onRoleChange('seller');
-                            onUpdateProfile({ ...currentUser, role: 'seller', isSellerRegistered: true });
-                            setSellerFormSuccess(
-                              lang === 'vi'
-                                ? 'Đã chuyển sang vai trò Người Bán (Seller).'
-                                : 'Switched to Seller role.'
-                            );
-                            setTimeout(() => setSellerFormSuccess(null), 3000);
-                          }}
-                          className="text-xs font-bold text-[#c34c36] hover:text-[#24263e] cursor-pointer"
-                        >
-                          {lang === 'vi' ? 'Chuyển về Người Bán' : 'Switch to Seller'}
-                        </button>
+                      {isApprovedSeller && (
+                        currentUser.role === 'seller' ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onRoleChange('buyer');
+                              onUpdateProfile({ ...currentUser, role: 'buyer', isSellerRegistered: true });
+                              setSellerFormSuccess(
+                                lang === 'vi'
+                                  ? 'Đã chuyển sang vai trò Người Mua (Buyer).'
+                                  : 'Switched to Buyer role.'
+                              );
+                              setTimeout(() => setSellerFormSuccess(null), 3000);
+                            }}
+                            className="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
+                          >
+                            {lang === 'vi' ? 'Chuyển về Người Mua' : 'Switch to Buyer'}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onRoleChange('seller');
+                              onUpdateProfile({ ...currentUser, role: 'seller', isSellerRegistered: true });
+                              setSellerFormSuccess(
+                                lang === 'vi'
+                                  ? 'Đã chuyển sang vai trò Người Bán (Seller).'
+                                  : 'Switched to Seller role.'
+                              );
+                              setTimeout(() => setSellerFormSuccess(null), 3000);
+                            }}
+                            className="text-xs font-bold text-[#c34c36] hover:text-[#24263e] cursor-pointer"
+                          >
+                            {lang === 'vi' ? 'Chuyển về Người Bán' : 'Switch to Seller'}
+                          </button>
+                        )
                       )}
                       {!isPendingReview && (
                         <button
@@ -2581,7 +2590,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                   {/* Status explanation */}
                   <div className="text-xs space-y-2 pt-1">
-                    {currentUser.role === 'seller' || existingVerification?.status === 'APPROVED' ? (
+                    {isApprovedSeller ? (
                       <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex items-center justify-between gap-3">
                         <div>
                           <span className="font-bold block text-emerald-800">{lang === 'vi' ? 'Tài khoản người bán đã kích hoạt!' : 'Seller account is active!'}</span>
@@ -2626,7 +2635,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           </button>
                         </div>
                       </div>
-                    ) : (
+                    ) : isPendingReview ? (
                       <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-900 space-y-1.5">
                         <div className="flex items-center gap-2 font-bold text-amber-800">
                           <Clock className="w-4 h-4 text-amber-600 shrink-0 animate-spin" />
@@ -2638,13 +2647,13 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             : 'Your profile is awaiting review by SecondLife administrators. Please wait for approval within 24 working hours. You cannot edit or resubmit during this time.'}
                         </p>
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               )}
 
               {/* FORM ĐĂNG KÝ CHUYỂN TÀI KHOẢN NGƯỜI BÁN */}
-              {(showSellerRegistrationForm || (!isSellerRegistered && currentUser.role !== 'seller')) && !isPendingReview && (
+              {(!hasRegistered || showSellerRegistrationForm) && !isPendingReview && (
                 <form
                   onSubmit={handleRegisterSeller}
                   className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-white to-slate-50 border-2 border-[#c34c36]/30 shadow-md space-y-4 animate-in fade-in"
@@ -2656,7 +2665,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       </div>
                       <div>
                         <h5 className="text-xs font-black text-slate-900 uppercase tracking-wide">
-                          {isSellerRegistered
+                          {isApprovedSeller
                             ? (lang === 'vi' ? 'Cập Nhật Thông Tin Gian Hàng' : 'Update Store Information')
                             : (lang === 'vi' ? 'Đơn Đăng Ký Chuyển Tài Khoản Người Bán' : 'Seller Registration Form')}
                         </h5>
@@ -2667,7 +2676,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         </p>
                       </div>
                     </div>
-                    {isSellerRegistered && (
+                    {hasRegistered && (
                       <button
                         type="button"
                         onClick={() => setShowSellerRegistrationForm(false)}
@@ -3163,7 +3172,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                   {/* Action Buttons */}
                   <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-gray-100">
-                    {isSellerRegistered && (
+                    {hasRegistered && (
                       <button
                         type="button"
                         onClick={() => setShowSellerRegistrationForm(false)}
@@ -3181,7 +3190,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <span>
                         {isSubmittingSeller
                           ? (lang === 'vi' ? 'Đang Gửi Hồ Sơ...' : 'Submitting...')
-                          : isSellerRegistered
+                          : isApprovedSeller
                             ? (lang === 'vi' ? 'Cập Nhật Hồ Sơ Gian Hàng' : 'Update Store Profile')
                             : (lang === 'vi' ? 'Xác Nhận Đăng Ký & Gửi Duyệt eKYC' : 'Confirm Registration & Submit eKYC')}
                       </span>

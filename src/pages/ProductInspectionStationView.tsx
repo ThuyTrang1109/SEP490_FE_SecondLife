@@ -48,6 +48,9 @@ import {
 } from 'lucide-react';
 import { inspectorService, InspectionOrderDto } from '../services';
 import { BarcodeScannerModal, playScanBeep } from '../components/modals/BarcodeScannerModal';
+import { PrintTamperSealModal } from '../components/modals/PrintTamperSealModal';
+import { InspectionSealVerificationModal } from '../components/modals/InspectionSealVerificationModal';
+import { ScannableQRCode } from '../components/common/ScannableQRCode';
 
 interface ProductInspectionStationViewProps {
   orders: EscrowOrder[];
@@ -60,6 +63,9 @@ interface ProductInspectionStationViewProps {
   ) => void;
   lang: Language;
   onNavigateToHub?: () => void;
+  hideTopBar?: boolean;
+  selectedOrderId?: string;
+  onSelectOrder?: (orderId: string) => void;
 }
 
 export type InspectionStep = 'intake' | 'exterior' | 'technical' | 'proofs' | 'verdict';
@@ -70,19 +76,28 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   onCompleteInspection,
   lang,
   onNavigateToHub,
+  hideTopBar = false,
+  selectedOrderId: externalSelectedOrderId,
+  onSelectOrder,
 }) => {
   // Current active technician
   const inspectorName = currentUser?.name || 'Kỹ thuật viên kiểm định';
   const inspectorCode = currentUser?.id ? `INS-${currentUser.id}` : 'INS-STAFF';
 
   // State: Task Queue
-  const [selectedOrderId, setSelectedOrderId] = useState<string>(orders[0]?.id || '');
+  const [selectedOrderId, setSelectedOrderId] = useState<string>(externalSelectedOrderId || orders[0]?.id || '');
   const [taskFilter, setTaskFilter] = useState<'ALL' | 'AT_CENTER' | 'AT_HOME' | 'DONE'>('ALL');
   const [taskSearch, setTaskSearch] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   const [barcodeScanInput, setBarcodeScanInput] = useState('');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannerMode, setScannerMode] = useState<'intake' | 'serial' | 'tamper'>('intake');
+
+  useEffect(() => {
+    if (externalSelectedOrderId) {
+      setSelectedOrderId(externalSelectedOrderId);
+    }
+  }, [externalSelectedOrderId]);
 
   // Active Order
   const activeOrder = useMemo(() => {
@@ -125,6 +140,9 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const [videoProofUrl, setVideoProofUrl] = useState('');
   const [unboxingVideoUrl, setUnboxingVideoUrl] = useState('');
   const [sealConfirmed, setSealConfirmed] = useState(false);
+  const [isPrintSealModalOpen, setIsPrintSealModalOpen] = useState(false);
+  const [isVerifySealModalOpen, setIsVerifySealModalOpen] = useState(false);
+  const [verifySealId, setVerifySealId] = useState<string>('');
 
   // --- STEP 5: VERDICT & SUMMARY ---
   const [overallVerdict, setOverallVerdict] = useState<'PASS' | 'FAIL'>('PASS');
@@ -353,62 +371,64 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   return (
     <div className={`space-y-6 pb-20 text-[#24263e] ${isFocusMode ? 'fixed inset-0 z-50 bg-[#faf8f5] p-6 overflow-y-auto' : ''}`}>
       {/* Station Top Bar */}
-      <div className="bg-[#24263e] text-white rounded-3xl p-5 sm:p-7 shadow-xl border border-[#24263e]/20 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1.5">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-[#fce5da] text-xs font-bold border border-white/10">
-            <Cpu className="w-3.5 h-3.5 text-[#fce5da]" />
-            <span>TRẠM KIỂM ĐỊNH THỰC TẾ SECONDLIFE • LAB TIÊU CHUẨN ISO/IEC 17025</span>
+      {!hideTopBar && (
+        <div className="bg-[#24263e] text-white rounded-3xl p-5 sm:p-7 shadow-xl border border-[#24263e]/20 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-[#fce5da] text-xs font-bold border border-white/10">
+              <Cpu className="w-3.5 h-3.5 text-[#fce5da]" />
+              <span>TRẠM KIỂM ĐỊNH THỰC TẾ SECONDLIFE • LAB TIÊU CHUẨN ISO/IEC 17025</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2">
+              <span>Bàn Kiểm Định Thiết Bị</span>
+              <span className="text-xs bg-[#c34c36] text-white px-2.5 py-0.5 rounded-full font-bold">
+                Station #{inspectorCode}
+              </span>
+            </h1>
+            <p className="text-xs sm:text-sm text-gray-300 font-medium flex flex-wrap items-center gap-3">
+              <span className="flex items-center gap-1 text-[#fce5da] font-bold">
+                <UserCheck className="w-3.5 h-3.5" />
+                Kỹ thuật viên: {inspectorName}
+              </span>
+              <span>•</span>
+              <span className="flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                Ca trực: 08:00 - 17:30 (Đang trực ca)
+              </span>
+            </p>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2">
-            <span>Bàn Kiểm Định Thiết Bị</span>
-            <span className="text-xs bg-[#c34c36] text-white px-2.5 py-0.5 rounded-full font-bold">
-              Station #{inspectorCode}
-            </span>
-          </h1>
-          <p className="text-xs sm:text-sm text-gray-300 font-medium flex flex-wrap items-center gap-3">
-            <span className="flex items-center gap-1 text-[#fce5da] font-bold">
-              <UserCheck className="w-3.5 h-3.5" />
-              Kỹ thuật viên: {inspectorName}
-            </span>
-            <span>•</span>
-            <span className="flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5 text-emerald-400" />
-              Ca trực: 08:00 - 17:30 (Đang trực ca)
-            </span>
-          </p>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          {onNavigateToHub && (
+          <div className="flex flex-wrap items-center gap-2.5">
+            {onNavigateToHub && (
+              <button
+                type="button"
+                onClick={onNavigateToHub}
+                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-white/15"
+              >
+                <Building2 className="w-3.5 h-3.5 text-[#fce5da]" />
+                <span>Về Hub Quản Lý</span>
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={onNavigateToHub}
-              className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-white/15"
+              onClick={() => setIsFocusMode(!isFocusMode)}
+              className="px-4 py-2.5 rounded-xl bg-white text-[#24263e] hover:bg-gray-100 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm"
             >
-              <Building2 className="w-3.5 h-3.5 text-[#fce5da]" />
-              <span>Về Hub Quản Lý</span>
+              {isFocusMode ? (
+                <>
+                  <Minimize2 className="w-3.5 h-3.5 text-[#c34c36]" />
+                  <span>Thoát Toàn Màn Hình</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-3.5 h-3.5 text-[#c34c36]" />
+                  <span>Chế Độ Tập Trung (Focus)</span>
+                </>
+              )}
             </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setIsFocusMode(!isFocusMode)}
-            className="px-4 py-2.5 rounded-xl bg-white text-[#24263e] hover:bg-gray-100 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm"
-          >
-            {isFocusMode ? (
-              <>
-                <Minimize2 className="w-3.5 h-3.5 text-[#c34c36]" />
-                <span>Thoát Toàn Màn Hình</span>
-              </>
-            ) : (
-              <>
-                <Maximize2 className="w-3.5 h-3.5 text-[#c34c36]" />
-                <span>Chế Độ Tập Trung (Focus)</span>
-              </>
-            )}
-          </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Notifications */}
       {noticeMessage && (
@@ -1051,12 +1071,12 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   </button>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <input
                     type="text"
                     value={tamperSealInput}
                     onChange={(e) => setTamperSealInput(e.target.value)}
-                    className="flex-1 px-3.5 py-2.5 bg-white border border-orange-200 rounded-xl font-mono font-bold text-slate-800 text-sm outline-none focus:border-[#c34c36]"
+                    className="flex-1 min-w-[200px] px-3.5 py-2.5 bg-white border border-orange-200 rounded-xl font-mono font-bold text-slate-800 text-sm outline-none focus:border-[#c34c36]"
                   />
                   <button
                     type="button"
@@ -1064,11 +1084,32 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       setScannerMode('tamper');
                       setIsScannerOpen(true);
                     }}
-                    className="px-3.5 py-2 bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
+                    className="px-3 py-2 bg-slate-800 hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
                     title="Quét Barcode / QR tem niêm phong"
                   >
                     <Camera className="w-3.5 h-3.5" />
                     <span>Quét Tem</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsPrintSealModalOpen(true)}
+                    className="px-3.5 py-2 bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
+                    title="Tạo mã in tem niêm phong chuẩn dán máy"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>In Tem QR</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVerifySealId(tamperSealInput);
+                      setIsVerifySealModalOpen(true);
+                    }}
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
+                    title="Tra cứu trạng thái xác thực tem trên Backend"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>Xác Thực Tem</span>
                   </button>
                 </div>
 
@@ -1385,7 +1426,10 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   </div>
                   <div>
                     <span className="text-gray-500">Mã tem niêm phong:</span>
-                    <div className="font-bold font-mono text-orange-900">{tamperSealInput}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <ScannableQRCode value={tamperSealInput} size={48} />
+                      <div className="font-bold font-mono text-orange-900">{tamperSealInput}</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1458,6 +1502,30 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         onScanSuccess={handleScanCode}
         orders={orders}
         lang={lang}
+      />
+
+      {/* Modal In Tem Niêm Phong Chống Bóc Tách */}
+      <PrintTamperSealModal
+        isOpen={isPrintSealModalOpen}
+        onClose={() => setIsPrintSealModalOpen(false)}
+        tamperSealId={tamperSealInput}
+        orderId={activeOrder?.id}
+        productTitle={activeOrder?.listing?.title}
+        conditionGrade={selectedGrade}
+        conditionScore={conditionScore}
+        inspectorName={inspectorName}
+      />
+
+      {/* Modal Tra Cứu & Xác Thực Tem Niêm Phong */}
+      <InspectionSealVerificationModal
+        isOpen={isVerifySealModalOpen}
+        onClose={() => setIsVerifySealModalOpen(false)}
+        initialSealId={verifySealId}
+        onOpenScanner={() => {
+          setIsVerifySealModalOpen(false);
+          setScannerMode('tamper');
+          setIsScannerOpen(true);
+        }}
       />
     </div>
   );

@@ -11,6 +11,7 @@ import {
   Star,
   TrendingUp,
   AlertCircle,
+  AlertTriangle,
   RefreshCw,
   X,
   Loader2,
@@ -18,7 +19,8 @@ import {
   Award,
   Upload,
   Coins,
-  History
+  History,
+  Trash2
 } from 'lucide-react';
 import { Listing, Language, UserProfile } from '../types';
 import { formatVND } from '../utils/translations';
@@ -36,6 +38,7 @@ interface SellerDashboardViewProps {
   onViewOrders?: () => void;
   lang: Language;
   currentUser?: UserProfile | null;
+  onDeleteListing?: (listingId: string) => void;
 }
 
 export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
@@ -45,8 +48,37 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   onViewOrders,
   lang,
   currentUser,
+  onDeleteListing,
 }) => {
-  const [filterStatus, setFilterStatus] = useState<'ALL' | 'active' | 'pending' | 'rejected' | 'reserved' | 'sold'>('ALL');
+  const [filterStatus, setFilterStatus] = useState<'ALL' | 'active' | 'draft' | 'pending' | 'rejected' | 'reserved' | 'sold'>('ALL');
+  const [draftToDelete, setDraftToDelete] = useState<{ id: string; title: string } | null>(null);
+  const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
+  const [toastNotice, setToastNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const showToastNotice = (type: 'success' | 'error', message: string) => {
+    setToastNotice({ type, message });
+    setTimeout(() => setToastNotice(null), 4000);
+  };
+
+  const executeDeleteDraft = async () => {
+    if (!draftToDelete) return;
+    const postId = draftToDelete.id;
+    try {
+      setDeletingDraftId(postId);
+      await postService.deleteDraft(postId);
+      setMyServerPosts((prev) => prev.filter((p) => p.id !== postId));
+      onDeleteListing?.(postId);
+      showToastNotice('success', lang === 'vi' ? 'Đã xóa bản nháp thành công!' : 'Draft deleted successfully!');
+      setDraftToDelete(null);
+      fetchSellerData();
+    } catch (err: any) {
+      const msg = err?.message || (lang === 'vi' ? 'Không thể xóa bản nháp' : 'Failed to delete draft');
+      showToastNotice('error', msg);
+    } finally {
+      setDeletingDraftId(null);
+    }
+  };
+
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
   const [bankName, setBankName] = useState(currentUser?.bankAccount?.bankName || '');
   const [accountNumber, setAccountNumber] = useState(currentUser?.bankAccount?.accountNumber || '');
@@ -264,8 +296,14 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   const filteredListings = combinedListings.filter((l) => {
     if (filterStatus === 'ALL') return true;
+    if (filterStatus === 'draft') {
+      return l.backendStatus === 'DRAFT' || l.status === 'draft';
+    }
     if (filterStatus === 'pending') {
-      return l.backendStatus === 'PENDING' || l.backendStatus === 'PENDING_INSPECTION' || l.backendStatus === 'PENDING_REVIEW' || l.status === 'draft';
+      return (
+        (l.backendStatus === 'PENDING' || l.backendStatus === 'PENDING_INSPECTION' || l.backendStatus === 'PENDING_REVIEW') &&
+        l.status !== 'draft'
+      );
     }
     if (filterStatus === 'rejected') {
       return l.backendStatus === 'REJECTED';
@@ -562,7 +600,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             </button>
 
             <div className="flex items-center gap-1.5 bg-[#faf8f5] p-1 rounded-xl border border-gray-200">
-              {(['ALL', 'active', 'pending', 'rejected', 'reserved', 'sold'] as const).map((st) => (
+              {(['ALL', 'active', 'draft', 'pending', 'rejected', 'reserved', 'sold'] as const).map((st) => (
                 <button
                   key={st}
                   onClick={() => setFilterStatus(st)}
@@ -574,6 +612,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                     ? (lang === 'vi' ? 'Tất cả' : 'All')
                     : st === 'active'
                     ? (lang === 'vi' ? 'Đang bán' : 'Active')
+                    : st === 'draft'
+                    ? (lang === 'vi' ? 'Bản nháp' : 'Drafts')
                     : st === 'pending'
                     ? (lang === 'vi' ? 'Chờ duyệt / Hub' : 'Pending')
                     : st === 'rejected'
@@ -656,10 +696,27 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 <button
                   onClick={() => onCreateListing(item)}
                   className="py-1.5 px-2 bg-[#FFFFFF] hover:bg-[#faf8f5] border border-gray-200 text-[#24263e] rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
-                  title={lang === 'vi' ? 'Sửa tin đăng' : 'Edit listing'}
+                  title={
+                    item.backendStatus === 'DRAFT' || item.status === 'draft'
+                      ? (lang === 'vi' ? 'Tiếp tục soạn bản nháp' : 'Resume draft')
+                      : (lang === 'vi' ? 'Sửa tin đăng' : 'Edit listing')
+                  }
                 >
                   <Edit3 className="w-3.5 h-3.5 text-[#24263e]" />
                 </button>
+                {(item.backendStatus === 'DRAFT' || item.status === 'draft') && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDraftToDelete({ id: item.id, title: item.title });
+                    }}
+                    disabled={deletingDraftId === item.id}
+                    className="py-1.5 px-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition disabled:opacity-50"
+                    title={lang === 'vi' ? 'Xóa bản nháp này' : 'Delete draft'}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -1095,6 +1152,69 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 Đóng
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Custom Beautiful Confirmation Modal for Draft Deletion */}
+      {draftToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-rose-100 flex flex-col items-center text-center animate-scaleUp">
+            <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4 ring-8 ring-rose-50/50 shadow-inner">
+              <Trash2 className="w-7 h-7 text-rose-600" />
+            </div>
+
+            <h3 className="text-lg font-black text-slate-900 mb-2">
+              {lang === 'vi' ? 'Xác nhận xóa bản nháp' : 'Confirm Draft Deletion'}
+            </h3>
+
+            <p className="text-xs text-slate-600 mb-6 leading-relaxed">
+              {lang === 'vi'
+                ? `Bạn có chắc chắn muốn xóa bản nháp "${draftToDelete.title || 'bài đăng'}" không? Thao tác này sẽ xóa vĩnh viễn dữ liệu và không thể hoàn tác.`
+                : `Are you sure you want to delete draft "${draftToDelete.title || 'post'}"? This action is permanent and cannot be undone.`}
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 w-full">
+              <button
+                type="button"
+                onClick={() => setDraftToDelete(null)}
+                disabled={deletingDraftId !== null}
+                className="py-2.5 px-4 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
+              >
+                {lang === 'vi' ? 'Hủy bỏ' : 'Cancel'}
+              </button>
+
+              <button
+                type="button"
+                onClick={executeDeleteDraft}
+                disabled={deletingDraftId !== null}
+                className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white font-bold text-xs shadow-md shadow-rose-200 transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                {deletingDraftId !== null ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                ) : (
+                  <Trash2 className="w-4 h-4 text-white" />
+                )}
+                <span>{lang === 'vi' ? 'Xóa vĩnh viễn' : 'Delete Draft'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Modern Toast Notification */}
+      {toastNotice && (
+        <div className="fixed bottom-6 right-6 z-50 animate-bounce">
+          <div className={`px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 text-xs font-bold border ${
+            toastNotice.type === 'success'
+              ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-200/50'
+              : 'bg-rose-600 text-white border-rose-500 shadow-rose-200/50'
+          }`}>
+            {toastNotice.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-white shrink-0" />
+            )}
+            <span>{toastNotice.message}</span>
           </div>
         </div>
       )}

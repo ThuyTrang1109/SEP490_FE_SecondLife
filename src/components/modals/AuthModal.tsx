@@ -38,6 +38,7 @@ interface AuthModalProps {
     phone?: string;
     address?: string;
     avatar?: string;
+    gender?: 'male' | 'female' | 'other' | '';
   }) => void;
   lang: Language;
 }
@@ -89,6 +90,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [registerGender, setRegisterGender] = useState<'MALE' | 'FEMALE' | 'OTHER' | ''>('');
   const [agreedTerms, setAgreedTerms] = useState(true);
 
   // Form states - Email Verification (/auth/verify-email & /auth/resend-verification)
@@ -294,6 +296,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const res = await authService.googleLogin(idToken);
       soundFx.playChime();
       const mappedRole = mapBackendRole(res.roles);
+      let normalizedGender: 'male' | 'female' | 'other' | '' = '';
+      if (res.user.gender) {
+        const g = res.user.gender.toLowerCase();
+        if (g === 'male' || g === 'female' || g === 'other') {
+          normalizedGender = g as 'male' | 'female' | 'other';
+        }
+      }
       onLoginSuccess({
         id: res.user.id,
         name: res.user.fullName || res.user.email,
@@ -301,7 +310,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         role: mappedRole,
         phone: res.user.phone || '',
         avatar: res.user.avatarUrl || undefined,
-        address: ''
+        address: '',
+        gender: normalizedGender || undefined,
       });
       onClose();
     } catch (err: any) {
@@ -399,6 +409,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setPassword('');
       soundFx.playChime();
       const mappedRole = mapBackendRole(res.roles);
+      let normalizedGender: 'male' | 'female' | 'other' | '' = '';
+      if (res.user.gender) {
+        const g = res.user.gender.toLowerCase();
+        if (g === 'male' || g === 'female' || g === 'other') {
+          normalizedGender = g as 'male' | 'female' | 'other';
+        }
+      }
       onLoginSuccess({
         id: res.user.id,
         name: res.user.fullName || res.user.email,
@@ -406,7 +423,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         role: mappedRole,
         phone: res.user.phone || '',
         avatar: res.user.avatarUrl || undefined,
-        address: ''
+        address: '',
+        gender: normalizedGender || undefined,
       });
       setEmailOrPhone('');
       onClose();
@@ -445,11 +463,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         email: registerEmail.trim(),
         password: registerPassword,
         fullName: fullName.trim(),
-        phone: phoneNumber.trim() || undefined
+        phone: phoneNumber.trim() || undefined,
+        gender: registerGender ? registerGender : undefined,
       });
       // FE-01: Wipe registration passwords from state
       setRegisterPassword('');
       setConfirmPassword('');
+      setRegisterGender('');
       soundFx.playChime();
       setVerifyEmailAddress(registerEmail.trim());
       setVerifyOtpCode('');
@@ -968,6 +988,48 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     </div>
                   )}
                 </div>
+
+                {/* Demo Accounts Quick-Fill */}
+                <div className="pt-2 border-t border-gray-100 space-y-1.5">
+                  <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider text-center">
+                    {lang === 'vi' ? 'Tài khoản thử nghiệm' : 'Demo Test Accounts'}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmailOrPhone('center@secondlife.com');
+                        setPassword('123456');
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-[#c34c36] text-[11px] font-bold border border-rose-200 transition cursor-pointer"
+                      title="center@secondlife.com / 123456"
+                    >
+                      🏢 Trưởng TT Kiểm Định
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmailOrPhone('inspector@secondlife.com');
+                        setPassword('123456');
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold border border-blue-200 transition cursor-pointer"
+                      title="inspector@secondlife.com / 123456"
+                    >
+                      🔧 Kỹ Thuật Viên
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmailOrPhone('staff@secondlife.com');
+                        setPassword('staff@123456');
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-700 text-[11px] font-semibold border border-gray-200 transition cursor-pointer"
+                      title="staff@secondlife.com / staff@123456"
+                    >
+                      Staff
+                    </button>
+                  </div>
+                </div>
               </form>
             )}
 
@@ -1069,6 +1131,40 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         <span>{getRegisterPhoneError()}</span>
                       </div>
                     )}
+                  </div>
+                </div>
+
+                {/* Giới tính (Gender Selection) */}
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#24263e] flex items-center justify-between">
+                    <span>{lang === 'vi' ? 'Giới tính' : 'Gender'}</span>
+                    <span className="text-[11px] font-normal text-slate-400">
+                      {lang === 'vi' ? '(Không bắt buộc)' : '(Optional)'}
+                    </span>
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { value: 'MALE' as const, vi: 'Nam', en: 'Male' },
+                      { value: 'FEMALE' as const, vi: 'Nữ', en: 'Female' },
+                      { value: 'OTHER' as const, vi: 'Khác', en: 'Other' },
+                    ].map((item) => {
+                      const isSelected = registerGender === item.value;
+                      return (
+                        <button
+                          key={item.value}
+                          type="button"
+                          onClick={() => setRegisterGender(isSelected ? '' : item.value)}
+                          className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                            isSelected
+                              ? 'bg-[#c34c36]/10 border-[#c34c36] text-[#c34c36] shadow-2xs font-black'
+                              : 'bg-[#faf8f5] border-gray-200 text-slate-600 hover:border-gray-300 hover:bg-white'
+                          }`}
+                        >
+                          <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-[#c34c36]' : 'bg-slate-300'}`} />
+                          <span>{lang === 'vi' ? item.vi : item.en}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 

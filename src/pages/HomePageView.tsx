@@ -10,7 +10,8 @@ import {
   Cpu,
   Award,
   RefreshCw,
-  Move3d
+  Move3d,
+  Store
 } from 'lucide-react';
 import { Language, UserRole } from '../types';
 import { CountUp } from '../components/react-bits/CountUp';
@@ -151,8 +152,17 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 }}
                 className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white hover:bg-[#faf8f5] text-[#24263e] font-extrabold text-xs sm:text-sm border border-[#24263e]/15 transition cursor-pointer shadow-md"
               >
-                <Sparkles className="w-4 h-4 text-[#c34c36]" />
-                <span>{lang === 'vi' ? 'Thử Định Giá & Đăng Bán' : 'AI Valuation & Sell'}</span>
+                {currentUser && currentUser.role !== 'seller' && currentUser.role !== 'staff' ? (
+                  <>
+                    <Store className="w-4 h-4 text-[#c34c36]" />
+                    <span>{lang === 'vi' ? 'Đăng Ký Người Bán Để Đăng Bài' : 'Register Seller to Post'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 text-[#c34c36]" />
+                    <span>{lang === 'vi' ? 'Thử Định Giá & Đăng Bán' : 'AI Valuation & Sell'}</span>
+                  </>
+                )}
               </button>
             </div>
 

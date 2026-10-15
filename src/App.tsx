@@ -10,6 +10,7 @@ import { CreateListingView } from './pages/CreateListingView';
 import { SellerDashboardView } from './pages/SellerDashboardView';
 import { EscrowOrdersView } from './pages/EscrowOrdersView';
 import { InspectorPortalView } from './pages/InspectorPortalView';
+import { InspectionCenterDashboardView } from './pages/InspectionCenterDashboardView';
 import { StaffWorkspaceView } from './pages/StaffWorkspaceView';
 import { AdminDashboardView } from './pages/AdminDashboardView';
 import { InboxView } from './pages/InboxView';
@@ -28,7 +29,7 @@ import { SellerReviewsModal } from './components/modals/SellerReviewsModal';
 import { NotificationCenterView } from './pages/NotificationCenterView';
 import { RealtimeNotificationToast } from './components/common/RealtimeNotificationToast';
 import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
-import { authService, userService, topupService, walletService, orderService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser } from './services';
+import { authService, userService, topupService, walletService, orderService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser, ChatRoomDto } from './services';
 
 export default function App() {
   // Global State - Default to 'marketplace' so visitors enter directly into the marketplace
@@ -39,7 +40,8 @@ export default function App() {
     if (token && stored && stored.role) {
       const r = String(stored.role).toLowerCase();
       if (r === 'admin') return 'admin-dashboard';
-      if (r === 'inspector' || r === 'inspection_center') return 'inspection-hub';
+      if (r === 'inspection_center') return 'inspection-center';
+      if (r === 'inspector') return 'inspection-hub';
     }
     return 'home';
   });
@@ -120,13 +122,15 @@ export default function App() {
             email: profile.email,
             role: (profile.roles?.includes('ADMIN') || profile.roles?.includes('ROLE_ADMIN'))
               ? 'admin'
-              : (profile.roles?.includes('INSPECTOR') || profile.roles?.includes('ROLE_INSPECTOR') || profile.roles?.includes('HUB_INSPECTOR'))
-                ? 'inspector'
-                : (profile.roles?.includes('STAFF') || profile.roles?.includes('ROLE_STAFF'))
-                  ? 'staff'
-                  : (profile.roles?.includes('SELLER') || profile.roles?.includes('ROLE_SELLER'))
-                    ? 'seller'
-                    : 'buyer',
+              : (profile.roles?.includes('INSPECTION_CENTER') || profile.roles?.includes('ROLE_INSPECTION_CENTER'))
+                ? 'inspection_center'
+                : (profile.roles?.includes('INSPECTOR') || profile.roles?.includes('ROLE_INSPECTOR') || profile.roles?.includes('HUB_INSPECTOR'))
+                  ? 'inspector'
+                  : (profile.roles?.includes('STAFF') || profile.roles?.includes('ROLE_STAFF'))
+                    ? 'staff'
+                    : (profile.roles?.includes('SELLER') || profile.roles?.includes('ROLE_SELLER'))
+                      ? 'seller'
+                      : 'buyer',
             phone: profile.phone || '',
             address: resolvedAddress,
             pickupAddress: resolvedPickup,
@@ -151,6 +155,8 @@ export default function App() {
           );
           if (syncedUser.role === 'admin') {
             setActiveTab('admin-dashboard');
+          } else if (syncedUser.role === 'inspection_center') {
+            setActiveTab('inspection-center');
           } else if (syncedUser.role === 'inspector') {
             setActiveTab('inspection-hub');
           }
@@ -182,6 +188,7 @@ export default function App() {
   const [verifyEmailTarget, setVerifyEmailTarget] = useState('');
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
+  const [topUpInitialTab, setTopUpInitialTab] = useState<'wallet' | 'packages'>('packages');
   const [userCreditBalance, setUserCreditBalance] = useState<number>(500);
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [checkoutNegotiationId, setCheckoutNegotiationId] = useState<string | undefined>(undefined);
@@ -275,6 +282,7 @@ export default function App() {
   const [chatPredefinedRoomId, setChatPredefinedRoomId] = useState<string | undefined>(undefined);
   const [chatPartnerName, setChatPartnerName] = useState<string | undefined>(undefined);
   const [chatPartnerAvatar, setChatPartnerAvatar] = useState<string | undefined>(undefined);
+  const [chatRoom, setChatRoom] = useState<ChatRoomDto | undefined>(undefined);
   const [sellerReviewsModalData, setSellerReviewsModalData] = useState<{ sellerId: string; sellerName: string } | null>(null);
 
   // Flash Toast
@@ -340,7 +348,7 @@ export default function App() {
   }, [currentUser]);
 
   // Auth Guard Helper
-  const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'admin-dashboard', 'staff-workspace', 'chat', 'notifications'];
+  const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'inspection-center', 'admin-dashboard', 'staff-workspace', 'chat', 'notifications'];
 
   const requireAuth = (onSuccessAction?: () => void, customMsg?: string): boolean => {
     if (!currentUser) {
@@ -363,7 +371,12 @@ export default function App() {
       return;
     }
 
-    if ((currentUser?.role === 'inspector' || currentUser?.role === 'inspection_center') && tab !== 'inspection-hub') {
+    if (currentUser?.role === 'inspection_center' && tab !== 'inspection-center' && tab !== 'inspection-hub' && tab !== 'notifications') {
+      showToast(lang === 'vi' ? 'Tài khoản Trưởng trung tâm kiểm định chỉ truy cập Bàn Điều Phối & Quản Trị.' : 'Inspection center account only accesses Center Management Portal.');
+      return;
+    }
+
+    if (currentUser?.role === 'inspector' && tab !== 'inspection-hub' && tab !== 'notifications') {
       showToast(lang === 'vi' ? 'Tài khoản Kiểm định chỉ truy cập Trung Tâm Kiểm Định.' : 'Inspection account only accesses Inspection Hub.');
       return;
     }
@@ -478,13 +491,15 @@ export default function App() {
     handleTabChange('notifications');
   }, [currentRole, currentUser]);
 
-  // Guard activeTab if logged out or if internal roles (admin / inspector)
+  // Guard activeTab if logged out or if internal roles (admin / inspector / inspection_center)
   React.useEffect(() => {
     if (!currentUser && protectedTabs.includes(activeTab)) {
       setActiveTab('marketplace');
     } else if (currentUser?.role === 'admin' && activeTab !== 'admin-dashboard') {
       setActiveTab('admin-dashboard');
-    } else if ((currentUser?.role === 'inspector' || currentUser?.role === 'inspection_center') && activeTab !== 'inspection-hub') {
+    } else if (currentUser?.role === 'inspection_center' && activeTab !== 'inspection-center') {
+      setActiveTab('inspection-center');
+    } else if (currentUser?.role === 'inspector' && activeTab !== 'inspection-hub') {
       setActiveTab('inspection-hub');
     }
   }, [currentUser, activeTab]);
@@ -501,12 +516,14 @@ export default function App() {
       seller: 'Người Bán (Seller)',
       staff: 'Nhân Viên (Staff)',
       inspector: 'Kỹ Sư Hub (Inspector)',
-      inspection_center: 'Quản Lý Trung Tâm (Inspection Center)',
+      inspection_center: 'Trưởng Trung Tâm Kiểm Định (Manager)',
       admin: 'Quản Trị Viên (Admin)'
     };
     showToast(`Đã chuyển góc nhìn sang ${roleLabels[newRole]}.`);
 
-    if (newRole === 'inspector' || newRole === 'inspection_center') {
+    if (newRole === 'inspection_center') {
+      handleTabChange('inspection-center');
+    } else if (newRole === 'inspector') {
       handleTabChange('inspection-hub');
     } else if (newRole === 'staff') {
       handleTabChange('home');
@@ -815,6 +832,9 @@ export default function App() {
           const myRes = await postService.getMyPosts(0, 50);
           const myItems = Array.isArray(myRes) ? myRes : (myRes?.content || myRes?.items || []);
           if (myItems && myItems.length > 0) {
+            try {
+              localStorage.setItem('all_seller_posts_cache', JSON.stringify(myItems));
+            } catch {}
             const existingIds = new Set(postsData.map((p: any) => p.postId || p.id));
             for (const myItem of myItems) {
               const myId = myItem.postId || myItem.id;
@@ -828,6 +848,16 @@ export default function App() {
 
       if (postsData.length > 0) {
         const mapped = postsData.map(mapBackendPostToListing);
+        mapped.forEach((l) => {
+          if (l?.id) {
+            try {
+              localStorage.setItem(`cached_post_${l.id}`, JSON.stringify(l));
+              if (l.title) {
+                localStorage.setItem(`cached_post_title_${l.title.toLowerCase().trim()}`, JSON.stringify(l));
+              }
+            } catch {}
+          }
+        });
         setListings(mapped);
       } else {
         setListings([]);
@@ -881,16 +911,18 @@ export default function App() {
       return;
     }
     try {
-      const [res, chatRooms] = await Promise.all([
-        currentRole === 'seller'
-          ? orderService.getSellerOrders(0, 50)
-          : orderService.getBuyerOrders(0, 50),
+      const [buyerRes, sellerRes, chatRooms] = await Promise.all([
+        orderService.getBuyerOrders(0, 50).catch(() => ({ content: [] })),
+        orderService.getSellerOrders(0, 50).catch(() => ({ content: [] })),
         chatService.getChatRooms().catch(() => [] as any[])
       ]);
 
       const buyerNameMap = new Map<string, string>();
       const buyerPhoneMap = new Map<string, string>();
       const sellerNameMap = new Map<string, string>();
+
+      const postImageMap = new Map<string, string>();
+      const postTitleMap = new Map<string, string>();
 
       (chatRooms || []).forEach((room: any) => {
         if (room.buyerId && room.buyerName) {
@@ -902,20 +934,84 @@ export default function App() {
         if (room.sellerId && room.sellerName) {
           sellerNameMap.set(room.sellerId, room.sellerName);
         }
+        if (room.postId && room.postImageUrl) {
+          postImageMap.set(room.postId, room.postImageUrl);
+        }
+        if (room.postId && room.postTitle) {
+          postTitleMap.set(room.postId, room.postTitle);
+        }
       });
 
-      const items = res?.content || (res as any)?.items || (Array.isArray(res) ? res : []);
+      let allSellerPostsCached: any[] = [];
+      try {
+        const rawSellerPosts = localStorage.getItem('all_seller_posts_cache');
+        if (rawSellerPosts) allSellerPostsCached = JSON.parse(rawSellerPosts);
+      } catch {}
+
+      const rawBuyerItems = (buyerRes as any)?.content || (buyerRes as any)?.items || (Array.isArray(buyerRes) ? buyerRes : []);
+      const rawSellerItems = (sellerRes as any)?.content || (sellerRes as any)?.items || (Array.isArray(sellerRes) ? sellerRes : []);
+
+      // Deduplicate by order id
+      const orderMap = new Map<string, any>();
+      rawBuyerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, item); });
+      rawSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, item); });
+      const items = Array.from(orderMap.values());
       if (items && items.length > 0) {
         const mappedOrders: EscrowOrder[] = items.map((bOrd: any) => {
-          const matchedListing = listings.find(l => l.id === bOrd.postId) || {
+          let cachedListing: any = null;
+          try {
+            const rawOrderListing = localStorage.getItem(`order_listing_${bOrd.id}`);
+            if (rawOrderListing) cachedListing = JSON.parse(rawOrderListing);
+            if (!cachedListing && bOrd.postId) {
+              const rawPost = localStorage.getItem(`cached_post_${bOrd.postId}`);
+              if (rawPost) cachedListing = JSON.parse(rawPost);
+            }
+            if (!cachedListing && bOrd.postTitle) {
+              const rawPostByTitle = localStorage.getItem(`cached_post_title_${bOrd.postTitle.toLowerCase().trim()}`);
+              if (rawPostByTitle) cachedListing = JSON.parse(rawPostByTitle);
+            }
+            if (!cachedListing && allSellerPostsCached.length > 0) {
+              const matchedFromSellerCache = allSellerPostsCached.find((p: any) =>
+                (p.postId && p.postId === bOrd.postId) ||
+                (p.id && p.id === bOrd.postId) ||
+                (bOrd.postTitle && p.title && p.title.toLowerCase().trim() === bOrd.postTitle.toLowerCase().trim())
+              );
+              if (matchedFromSellerCache) {
+                cachedListing = mapBackendPostToListing(matchedFromSellerCache);
+              }
+            }
+          } catch {}
+
+          const directMatched = listings.find(l => l.id === bOrd.postId || (bOrd.postTitle && l.title === bOrd.postTitle));
+          const baseListing = directMatched || cachedListing;
+
+          const resolvedPostTitle = bOrd.postTitle || baseListing?.title || postTitleMap.get(bOrd.postId) || 'Thiết bị gia dụng SecondLife';
+          const resolvedImage = baseListing?.photos?.front
+            || postImageMap.get(bOrd.postId)
+            || baseListing?.photoGallery?.[0]
+            || 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=800';
+
+          const matchedListing = baseListing ? {
+            ...baseListing,
+            title: resolvedPostTitle,
+            photos: {
+              ...baseListing.photos,
+              front: resolvedImage,
+              back: baseListing.photos?.back || resolvedImage,
+              screenOrDetails: baseListing.photos?.screenOrDetails || resolvedImage,
+              accessoriesOrBox: baseListing.photos?.accessoriesOrBox || resolvedImage,
+              serialOrReceipt: baseListing.photos?.serialOrReceipt || resolvedImage,
+            },
+            photoGallery: (baseListing.photoGallery && baseListing.photoGallery.length > 0) ? baseListing.photoGallery : [resolvedImage],
+          } : {
             id: bOrd.postId,
-            title: bOrd.postTitle || 'Thiết bị gia dụng SecondLife',
-            category: 'Tủ lạnh & Tủ đông',
+            title: resolvedPostTitle,
+            category: 'Nội thất & Gia dụng',
             brand: 'SecondLife',
             model: 'Verified Model',
             purchaseYear: 2024,
             priceVnd: bOrd.finalPrice,
-            conditionGrade: 'Like New',
+            conditionGrade: 'Good',
             declaredConditionText: 'Sản phẩm đã qua kiểm định cơ bản',
             description: 'Giao dịch bảo lãnh qua Quỹ Escrow SecondLife.',
             location: 'Đà Nẵng, Việt Nam',
@@ -929,13 +1025,13 @@ export default function App() {
             isInspectionGuaranteed: true,
             requiresInspection: true,
             photos: {
-              front: 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800',
-              back: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&q=80&w=800',
-              screenOrDetails: 'https://images.unsplash.com/photo-1550009158-9ebf69173e03?auto=format&fit=crop&q=80&w=800',
-              accessoriesOrBox: 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800',
-              serialOrReceipt: 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800'
+              front: resolvedImage,
+              back: resolvedImage,
+              screenOrDetails: resolvedImage,
+              accessoriesOrBox: resolvedImage,
+              serialOrReceipt: resolvedImage
             },
-            photoGallery: ['https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800'],
+            photoGallery: [resolvedImage],
           };
 
           let mappedEscrowStatus: EscrowOrder['escrowStatus'] = 'HELD_IN_ESCROW';
@@ -1037,6 +1133,10 @@ export default function App() {
             shippingQuoteId: bOrd.shippingQuoteId,
             shippingDeliveredAt: bOrd.shippingDeliveredAt,
             deliveryAddress: bOrd.deliveryAddress,
+            sellerConfirmedAt: bOrd.sellerConfirmedAt || null,
+            confirmationDeadline: bOrd.confirmationDeadline || null,
+            confirmationCancelAt: bOrd.confirmationCancelAt || null,
+            confirmationStatus: bOrd.confirmationStatus || (bOrd.sellerConfirmedAt ? 'CONFIRMED' : 'PENDING'),
             hasInspectionService: true,
             shippingLegs: [
               {
@@ -1086,6 +1186,15 @@ export default function App() {
 
   const handleOrderPlaced = (newOrder: EscrowOrder) => {
     try {
+      if (newOrder.listing) {
+        localStorage.setItem(`order_listing_${newOrder.id}`, JSON.stringify(newOrder.listing));
+        if (newOrder.listing.id) {
+          localStorage.setItem(`cached_post_${newOrder.listing.id}`, JSON.stringify(newOrder.listing));
+        }
+        if (newOrder.listing.title) {
+          localStorage.setItem(`cached_post_title_${newOrder.listing.title.toLowerCase().trim()}`, JSON.stringify(newOrder.listing));
+        }
+      }
       localStorage.setItem(`order_buyer_info_${newOrder.id}`, JSON.stringify({
         buyerName: newOrder.buyerName,
         buyerPhone: newOrder.buyerPhone,
@@ -1140,19 +1249,35 @@ export default function App() {
     showToast(lang === 'vi' ? 'Đã xác nhận gửi hàng! Bưu tá đang vận chuyển đến người mua.' : 'Marked as shipped!');
   };
 
-  const handleCancelOrder = async (orderId: string) => {
+  const handleCancelOrder = async (
+    orderId: string,
+    cancelData?: { reasonCode: 'BUYER_REQUESTED' | 'SELLER_OUT_OF_STOCK' | 'SELLER_CANNOT_FULFILL'; reason: string }
+  ) => {
     try {
-      await orderService.cancelOrder(orderId);
+      const targetOrder = orders.find((o) => o.id === orderId);
+      const isSellerCancel = targetOrder?.sellerId === currentUser?.id || currentRole === 'seller';
+      const effectiveCancelData = cancelData || (isSellerCancel ? {
+        reasonCode: 'SELLER_OUT_OF_STOCK' as const,
+        reason: 'Người bán hết hàng hoặc không thể chuẩn bị đơn hàng này.',
+      } : {
+        reasonCode: 'BUYER_REQUESTED' as const,
+        reason: 'Người mua yêu cầu hủy đơn hàng.',
+      });
+
+      await orderService.cancelOrder(orderId, effectiveCancelData);
+      setOrders((prev) =>
+        prev.map((ord) =>
+          ord.id === orderId ? { ...ord, escrowStatus: 'REFUNDED_TO_BUYER', backendStatus: 'CANCELLED' } : ord
+        )
+      );
+      loadUserOrders();
+      loadUserWallet();
+      showToast(lang === 'vi' ? 'Đã hủy đơn hàng! Tiền ký quỹ Escrow đã được hoàn lại 100% vào ví người mua.' : 'Order cancelled and refunded to buyer.');
     } catch (err: any) {
-      console.warn('Backend cancelOrder fallback:', err);
+      console.error('Lỗi khi hủy đơn hàng:', err);
+      const msg = err?.response?.data?.message || err?.message || 'Không thể hủy đơn hàng trên hệ thống.';
+      showToast(lang === 'vi' ? `Lỗi hủy đơn: ${msg}` : `Failed to cancel: ${msg}`);
     }
-    setOrders((prev) =>
-      prev.map((ord) =>
-        ord.id === orderId ? { ...ord, escrowStatus: 'REFUNDED_TO_BUYER' } : ord
-      )
-    );
-    loadUserWallet();
-    showToast(lang === 'vi' ? 'Đã hủy đơn hàng! Tiền ký quỹ Escrow đã được hoàn lại 100% vào ví người mua.' : 'Order cancelled and refunded to buyer.');
   };
 
   const handleOpenDispute = (order: EscrowOrder) => {
@@ -1240,7 +1365,9 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col font-sans bg-[#faf8f5] text-[#24263e] selection:bg-[#c34c36] selection:text-white">
       {/* Navigation */}
-      {activeTab !== 'admin-dashboard' && (
+      {activeTab !== 'admin-dashboard' &&
+        activeTab !== 'inspection-center' &&
+        activeTab !== 'inspection-hub' && (
         <Navbar
           currentRole={currentRole}
           onRoleChange={handleRoleChange}
@@ -1315,7 +1442,16 @@ export default function App() {
       )}
 
       {/* Main Content Area */}
-      <main className={activeTab === 'admin-dashboard' || activeTab === 'staff-workspace' ? 'flex-1 w-full' : 'flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6'}>
+      <main
+        className={
+          activeTab === 'admin-dashboard' ||
+          activeTab === 'inspection-center' ||
+          activeTab === 'inspection-hub' ||
+          activeTab === 'staff-workspace'
+            ? 'flex-1 w-full p-0 m-0'
+            : 'flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6'
+        }
+      >
         {activeTab === 'home' && (
           <HomePageView
             lang={lang}
@@ -1364,6 +1500,9 @@ export default function App() {
               setEditingDraft(draft && draft.id ? draft : null);
               setCreateListingReturnTab('seller-dashboard');
               handleTabChange('create-listing');
+            }}
+            onDeleteListing={(listingId) => {
+              setListings((prev) => prev.filter((l) => l.id !== listingId));
             }}
             onViewOrders={() => handleTabChange('orders')}
             currentUser={currentUser}
@@ -1417,8 +1556,16 @@ export default function App() {
                 setEditingDraft(null);
                 setActiveTab(targetTab as any);
               }}
+              onDeleteDraft={(draftId) => {
+                setListings((prev) => prev.filter((l) => l.id !== draftId));
+              }}
               currentUser={currentUser}
               initialDraft={editingDraft || undefined}
+              onOpenTopUp={(tab) => {
+                setTopUpInitialTab(tab || 'packages');
+                setIsTopUpModalOpen(true);
+              }}
+              userCredits={userCredit}
             />
           )
         )}
@@ -1426,6 +1573,7 @@ export default function App() {
         {activeTab === 'orders' && (
           <EscrowOrdersView
             orders={orders}
+            currentUser={currentUser}
             onConfirmReceipt={handleConfirmReceipt}
             onOpenDispute={handleOpenDispute}
             onMarkShipped={handleMarkShipped}
@@ -1437,13 +1585,41 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'inspection-hub' && (
-          <InspectorPortalView
-            orders={orders}
+        {activeTab === 'inspection-center' && (
+          <InspectionCenterDashboardView
+            initialOrders={orders}
             currentUser={currentUser}
-            onCompleteInspection={handleCompleteInspection}
             lang={lang}
+            onNavigate={setActiveTab}
+            onOpenProfile={() => setIsProfileDialogOpen(true)}
+            onLogout={() => setIsLogoutModalOpen(true)}
+            onViewWebsite={() => setActiveTab('home')}
           />
+        )}
+
+        {activeTab === 'inspection-hub' && (
+          (currentUser?.role === 'inspection_center' || currentRole === 'inspection_center') ? (
+            <InspectionCenterDashboardView
+              initialOrders={orders}
+              currentUser={currentUser}
+              lang={lang}
+              onNavigate={setActiveTab}
+              onOpenProfile={() => setIsProfileDialogOpen(true)}
+              onLogout={() => setIsLogoutModalOpen(true)}
+              onViewWebsite={() => setActiveTab('home')}
+            />
+          ) : (
+            <InspectorPortalView
+              orders={orders}
+              currentUser={currentUser}
+              onCompleteInspection={handleCompleteInspection}
+              lang={lang}
+              onNavigate={setActiveTab}
+              onOpenProfile={() => setIsProfileDialogOpen(true)}
+              onLogout={() => setIsLogoutModalOpen(true)}
+              onViewWebsite={() => setActiveTab('home')}
+            />
+          )
         )}
 
         {activeTab === 'staff-workspace' && (
@@ -1476,8 +1652,9 @@ export default function App() {
           <InboxView
             listings={listings}
             currentRole={currentRole}
+            currentUser={currentUser}
             lang={lang}
-            onOpenChat={(listing, roomId, partnerName, partnerAvatar) => {
+            onOpenChat={(listing, roomId, partnerName, partnerAvatar, room) => {
               if (!currentUser) {
                 requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để sử dụng tính năng Chat & Đàm phán.' : 'Please log in to chat.');
                 return;
@@ -1486,6 +1663,7 @@ export default function App() {
               setChatPredefinedRoomId(roomId);
               setChatPartnerName(partnerName);
               setChatPartnerAvatar(partnerAvatar);
+              setChatRoom(room);
             }}
           />
         )}
@@ -1510,6 +1688,7 @@ export default function App() {
       {selectedListing && (
         <ListingDetailModal
           listing={selectedListing}
+          currentUser={currentUser}
           onClose={() => setSelectedListing(null)}
           isAdmin={currentRole === 'admin'}
           onBuyClick={(item) => {
@@ -1518,6 +1697,10 @@ export default function App() {
               requireAuth(undefined, lang === 'vi'
                 ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
                 : 'Please log in to purchase with Escrow protection.');
+              return;
+            }
+            if (currentUser.id === item.sellerId) {
+              showToast(lang === 'vi' ? 'Bạn không thể tự mua sản phẩm của chính mình.' : 'You cannot buy your own product.');
               return;
             }
             setSelectedListing(null);
@@ -1532,7 +1715,15 @@ export default function App() {
                 : 'Please log in to chat and negotiate with seller.');
               return;
             }
+            if (currentUser.id === item.sellerId) {
+              showToast(lang === 'vi' ? 'Bạn không thể tự chat hoặc thương lượng với chính mình.' : 'You cannot chat with yourself.');
+              return;
+            }
             setChatListing(item);
+            setChatPredefinedRoomId(undefined);
+            setChatPartnerName(undefined);
+            setChatPartnerAvatar(undefined);
+            setChatRoom(undefined);
           }}
           onOpenSellerReviews={(sellerId, sellerName) => {
             setSellerReviewsModalData({ sellerId, sellerName });
@@ -1566,12 +1757,15 @@ export default function App() {
           predefinedRoomId={chatPredefinedRoomId}
           partnerName={chatPartnerName}
           partnerAvatar={chatPartnerAvatar}
+          initialRoom={chatRoom}
+          currentUser={currentUser}
           currentRole={currentRole}
           onClose={() => {
             setChatListing(null);
             setChatPredefinedRoomId(undefined);
             setChatPartnerName(undefined);
             setChatPartnerAvatar(undefined);
+            setChatRoom(undefined);
           }}
           onBuyClick={(item, agreedPrice, negotiationId) => {
             if (!currentUser) {
@@ -1582,6 +1776,10 @@ export default function App() {
               return;
             }
             setChatListing(null);
+            setChatPredefinedRoomId(undefined);
+            setChatPartnerName(undefined);
+            setChatPartnerAvatar(undefined);
+            setChatRoom(undefined);
             setCheckoutAgreedPrice(agreedPrice);
             setCheckoutNegotiationId(negotiationId);
             setCheckoutListing(item);
@@ -1617,9 +1815,10 @@ export default function App() {
             phone: user.phone || '',
             address: user.address || '',
             role: user.role,
-            avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
+            avatar: user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
             kycStatus: 'verified',
             emailVerified: true,
+            gender: user.gender || undefined,
           };
           setCurrentUser(profileUser);
           setCurrentRole(user.role);
@@ -1745,11 +1944,15 @@ export default function App() {
         currentUser={currentUser}
         currentRole={currentRole}
         lang={lang}
+        initialTab={topUpInitialTab}
         currentCredit={userCreditBalance}
         userCredit={userCredit}
         walletBalance={walletBalance}
         onCreditUpdated={(newBal) => setUserCreditBalance(newBal)}
-        onUserCreditUpdated={(newCredit) => setUserCredit(newCredit)}
+        onUserCreditUpdated={(newCredit) => {
+          setUserCredit(newCredit);
+          window.dispatchEvent(new CustomEvent('seller_credits_updated', { detail: newCredit }));
+        }}
         onWalletUpdated={(newBal) => setWalletBalance(newBal)}
       />
       {/* Logout Confirmation Modal Popup */}
@@ -1769,7 +1972,7 @@ export default function App() {
       />
 
       {/* E-Commerce Footer */}
-      {activeTab !== 'admin-dashboard' && activeTab !== 'inspection-hub' && activeTab !== 'staff-workspace' && (
+      {activeTab !== 'admin-dashboard' && activeTab !== 'inspection-hub' && activeTab !== 'inspection-center' && activeTab !== 'staff-workspace' && (
         <Footer
           lang={lang}
           currentRole={currentRole}

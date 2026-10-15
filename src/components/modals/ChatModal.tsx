@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChatMessage, Listing, Language, UserRole, UserCredit } from '../../types';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { ChatMessage, Listing, Language, UserRole, UserCredit, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import {
   Sparkles,
@@ -27,8 +27,11 @@ import {
   getStoredUser,
   parseSystemMessage,
   ChatMessageDto,
+  ChatRoomDto,
   SystemOfferPayload,
-  topupService
+  topupService,
+  reputationService,
+  SellerReputationDto,
 } from '../../services';
 import { SystemInspectionProposalPayload } from '../../types';
 
@@ -42,6 +45,8 @@ interface ChatModalProps {
   predefinedRoomId?: string;
   partnerName?: string;
   partnerAvatar?: string;
+  initialRoom?: ChatRoomDto;
+  currentUser?: UserProfile | null;
 }
 
 export const ChatModal: React.FC<ChatModalProps> = ({
@@ -53,12 +58,87 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   onOpenSellerReviews,
   predefinedRoomId,
   partnerName,
-  partnerAvatar
+  partnerAvatar,
+  initialRoom,
+  currentUser: propCurrentUser
 }) => {
   const t = translations[lang];
-  const currentUser = getStoredUser();
+  const currentUser = propCurrentUser || getStoredUser();
+  const effectiveUserId = currentUser?.id ? String(currentUser.id) : null;
+
+  const [activeRoom, setActiveRoom] = useState<ChatRoomDto | null>(initialRoom || null);
+
+  // Role detection scoped to this specific listing / chat room
+  // Priority: 1. activeRoom IDs, 2. listing.sellerId
+  const isSeller = Boolean(
+    effectiveUserId && (
+      (activeRoom?.sellerId && effectiveUserId === String(activeRoom.sellerId)) ||
+      (!activeRoom?.sellerId && listing.sellerId && effectiveUserId === String(listing.sellerId))
+    )
+  );
+  const isBuyer = !isSeller;
+  const chatRole: 'seller' | 'buyer' = isSeller ? 'seller' : 'buyer';
+
+  const isNameOfCurrentUser = useCallback((name?: string) => {
+    if (!name || !currentUser) return false;
+    const n = name.trim().toLowerCase();
+    const myName = (currentUser.fullName || currentUser.name || '').trim().toLowerCase();
+    const myEmail = (currentUser.email || '').trim().toLowerCase();
+    return (myName && n === myName) || (myEmail && n === myEmail);
+  }, [currentUser]);
+
+  const resolvedPartnerName = useMemo(() => {
+    if (isSeller) {
+      if (activeRoom?.buyerName && !isNameOfCurrentUser(activeRoom.buyerName)) {
+        return activeRoom.buyerName;
+      }
+      if (partnerName && !isNameOfCurrentUser(partnerName)) {
+        return partnerName;
+      }
+      return lang === 'vi' ? 'Người Mua' : 'Buyer';
+    } else {
+      if (activeRoom?.sellerName && !isNameOfCurrentUser(activeRoom.sellerName)) {
+        return activeRoom.sellerName;
+      }
+      if (listing.sellerName && !isNameOfCurrentUser(listing.sellerName)) {
+        return listing.sellerName;
+      }
+      if (partnerName && !isNameOfCurrentUser(partnerName)) {
+        return partnerName;
+      }
+      return lang === 'vi' ? 'Người Bán' : 'Seller';
+    }
+  }, [isSeller, activeRoom, partnerName, listing.sellerName, isNameOfCurrentUser, lang]);
+
+  const resolvedPartnerAvatar = useMemo(() => {
+    const defaultBuyerAvatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200";
+    const defaultSellerAvatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200";
+
+    if (isSeller) {
+      return activeRoom?.buyerAvatar || partnerAvatar || defaultBuyerAvatar;
+    } else {
+      return activeRoom?.sellerAvatar || listing.sellerAvatar || partnerAvatar || defaultSellerAvatar;
+    }
+  }, [isSeller, activeRoom, partnerAvatar, listing.sellerAvatar]);
 
   const sellerTrust = reviewService.getSellerTrustProfile(listing.sellerId, listing.sellerName);
+  const [sellerReputation, setSellerReputation] = useState<SellerReputationDto | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (listing.sellerId) {
+      reputationService.getSellerReputation(listing.sellerId)
+        .then((rep) => {
+          if (isMounted) setSellerReputation(rep);
+        })
+        .catch((err) => {
+          console.warn('Could not fetch seller reputation:', err);
+        });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [listing.sellerId]);
 
   const [roomId, setRoomId] = useState<string | null>(null);
   const [loadingRoom, setLoadingRoom] = useState(true);
@@ -85,7 +165,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
   // Fetch User Credit (only for sellers/admins, buyers do not use credit system)
   useEffect(() => {
-    if (currentRole === 'buyer') {
+    if (isBuyer) {
       setLoadingCredit(false);
       return;
     }
@@ -105,7 +185,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [currentRole]);
+  }, [isBuyer]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -114,23 +194,27 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   // Convert ChatMessageDto from backend to ChatMessage for UI
   const mapDtoToChatMessage = useCallback(
     (dto: ChatMessageDto): ChatMessage => {
-      const isSenderMe = currentUser?.id ? dto.senderId === currentUser.id : false;
+      const isSenderMe = Boolean(effectiveUserId && dto.senderId && String(dto.senderId) === effectiveUserId);
       const parsedSys = parseSystemMessage(dto.messageContent);
 
       const isSystem = parsedSys.isSystem;
       const senderRole: 'buyer' | 'seller' | 'system' = isSystem
         ? 'system'
         : isSenderMe
-        ? currentRole === 'staff' ? 'seller' : currentRole as ('buyer' | 'seller')
-        : currentRole === 'buyer'
+        ? chatRole
+        : (activeRoom?.sellerId && String(dto.senderId) === String(activeRoom.sellerId))
+        ? 'seller'
+        : (activeRoom?.buyerId && String(dto.senderId) === String(activeRoom.buyerId))
+        ? 'buyer'
+        : isBuyer
         ? 'seller'
         : 'buyer';
 
       const senderName = isSystem
         ? 'SecondLife System'
         : isSenderMe
-        ? 'Bạn'
-        : (partnerName || (currentRole === 'buyer' ? listing.sellerName : 'Khách Hàng'));
+        ? (lang === 'vi' ? 'Bạn' : 'You')
+        : resolvedPartnerName;
 
       const timeStr = dto.sentAt
         ? new Date(dto.sentAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
@@ -175,7 +259,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         inspectionProposal,
       };
     },
-    [currentUser?.id, currentRole, listing.sellerName, partnerName]
+    [effectiveUserId, chatRole, activeRoom, isBuyer, lang, resolvedPartnerName]
   );
 
   // Initialize or fetch Chat Room from Backend
@@ -186,7 +270,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       setLoadingRoom(true);
       try {
         let finalRoomId = predefinedRoomId;
-        console.log('[ChatModal] initRoom - predefinedRoomId:', predefinedRoomId, 'partnerName:', partnerName, 'currentRole:', currentRole);
+        console.log('[ChatModal] initRoom - predefinedRoomId:', predefinedRoomId, 'partnerName:', partnerName, 'chatRole:', chatRole);
         
         if (!finalRoomId) {
           // API: POST /api/v1/chats/rooms?postId={postId}
@@ -194,6 +278,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           const room = await chatService.getOrCreateRoom(listing.id);
           if (room?.id) {
             finalRoomId = room.id;
+            if (isMounted) setActiveRoom(room);
+          }
+        } else if (!activeRoom) {
+          // Fetch room details if only predefinedRoomId was passed
+          const room = await chatService.getRoom(listing.id).catch(() => null);
+          if (room && isMounted) {
+            setActiveRoom(room);
           }
         }
 
@@ -305,8 +396,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     adviceText: string;
     warningMessage: string | null;
   }>({
-    counterOfferVnd: Math.round((listing.priceVnd * (currentRole === 'buyer' ? 0.95 : 0.98)) / 100000) * 100000,
-    adviceText: currentRole === 'buyer' 
+    counterOfferVnd: Math.round((listing.priceVnd * (isBuyer ? 0.95 : 0.98)) / 100000) * 100000,
+    adviceText: isBuyer 
       ? 'Mức giá đề xuất của người mua (-5% đến -8%) nằm trong biên độ thanh khoản cao của thị trường đồ cũ tại Việt Nam.' 
       : 'Khách hàng này có lịch sử chốt đơn nhanh. Chủ động đề xuất giảm nhẹ (2%) để tăng khả năng chốt đơn ngay!',
     warningMessage: null
@@ -323,9 +414,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     const tempId = `msg-${Date.now()}`;
     const newMsg: ChatMessage = {
       id: tempId,
-      senderId: currentUser?.id || currentRole,
+      senderId: currentUser?.id || chatRole,
       senderName: 'Bạn',
-      senderRole: currentRole === 'buyer' ? 'buyer' : 'seller',
+      senderRole: chatRole,
       text,
       timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
       safetyWarning: hasScam
@@ -380,8 +471,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       if (res?.id) {
         const localOfferMsg: ChatMessage = {
           id: `nego-${res.id}`,
-          senderId: currentUser?.id || currentRole,
-          senderName: currentRole === 'buyer' ? 'Bạn' : listing.sellerName,
+          senderId: currentUser?.id || chatRole,
+          senderName: isBuyer ? 'Bạn' : listing.sellerName,
           senderRole: 'system',
           text: `SYSTEM: {"type":"OFFER","status":"PENDING","price":${offerInput},"negotiationId":"${res.id}"}`,
           timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
@@ -470,7 +561,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         method: inspectionMethod,
         feeSplit: inspectionFeeSplit,
         estimatedFeeVnd: inspectionFeeAmount,
-        proposedByRole: currentRole === 'seller' ? 'seller' : 'buyer',
+        proposedByRole: isSeller ? 'seller' : 'buyer',
         proposalId: `insp-prop-${Date.now()}`,
         note: inspectionNote.trim() || undefined,
       };
@@ -482,8 +573,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
       const localMsg: ChatMessage = {
         id: `msg-${Date.now()}`,
-        senderId: currentUser?.id || currentRole,
-        senderName: currentRole === 'buyer' ? 'Bạn' : listing.sellerName,
+        senderId: currentUser?.id || chatRole,
+        senderName: isBuyer ? 'Bạn' : listing.sellerName,
         senderRole: 'system',
         text: systemText,
         timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
@@ -562,56 +653,64 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       <div className="bg-[#FFFFFF] rounded-3xl max-w-2xl w-full h-[88vh] shadow-2xl border border-gray-200 flex flex-col overflow-hidden text-[#24263e]">
         {/* Header with Seller Trust Score & Buy Now button */}
         <div className={`px-5 py-3.5 border-b flex items-center justify-between shrink-0 ${
-          currentRole === 'seller' 
+          isSeller 
             ? 'bg-gradient-to-r from-[#24263e] to-slate-800 text-white border-slate-700' 
             : 'bg-gradient-to-r from-[#fce5da] to-white border-[#24263e]/15 text-[#24263e]'
         }`}>
           <div className="flex items-center gap-3 overflow-hidden">
             <img
-              src={partnerAvatar || (currentRole === 'buyer' && listing.sellerAvatar ? listing.sellerAvatar : "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200")}
-              alt={partnerName || (currentRole === 'buyer' ? listing.sellerName : 'Khách Hàng')}
-              className={`w-11 h-11 rounded-xl object-cover shrink-0 ${currentRole === 'seller' ? 'border-2 border-white/20' : 'border border-[#24263e]/20'}`}
+              src={resolvedPartnerAvatar}
+              alt={resolvedPartnerName}
+              className={`w-11 h-11 rounded-xl object-cover shrink-0 ${isSeller ? 'border-2 border-white/20' : 'border border-[#24263e]/20'}`}
             />
             <div className="overflow-hidden">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className={`font-extrabold text-xs truncate ${currentRole === 'seller' ? 'text-white' : 'text-[#24263e]'}`}>
-                  {partnerName || (currentRole === 'buyer' ? listing.sellerName : 'Khách Hàng')}
+                <span className={`font-extrabold text-xs truncate ${isSeller ? 'text-white' : 'text-[#24263e]'}`}>
+                  {resolvedPartnerName}
                 </span>
                 
-                {currentRole === 'seller' && (
+                {isSeller ? (
                   <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-200 rounded text-[9px] font-bold border border-blue-400/30">
-                    Người mua
+                    {lang === 'vi' ? 'Người mua' : 'Buyer'}
+                  </span>
+                ) : (
+                  <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[9px] font-bold border border-emerald-300">
+                    {lang === 'vi' ? 'Người bán' : 'Seller'}
                   </span>
                 )}
 
-                {/* Seller Trust Score Pill */}
-                {currentRole === 'buyer' && (
+                {/* Seller Reputation Score Pill */}
+                {isBuyer && (
                   <button
                     type="button"
                     onClick={() => onOpenSellerReviews?.(listing.sellerId, listing.sellerName)}
-                    className="inline-flex items-center gap-1 px-2 py-0.2 rounded-md bg-white border border-amber-300 text-[10px] font-black text-amber-800 shadow-2xs hover:bg-amber-50 cursor-pointer transition"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-amber-300 text-[10px] font-black text-amber-800 shadow-2xs hover:bg-amber-50 cursor-pointer transition"
                     title="Bấm để xem chi tiết uy tín và đánh giá từ người mua khác"
                   >
                     <Award className="w-3 h-3 text-amber-600" />
-                    <span>{sellerTrust.trustScore} điểm uy tín</span>
+                    <span>{sellerReputation?.score ?? sellerTrust.trustScore} điểm uy tín</span>
                     <span className="text-slate-400">|</span>
                     <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
                     <span>{sellerTrust.rating}</span>
-                    <span className="ml-1 text-[9px] text-rose-600 font-extrabold bg-rose-50 px-1 rounded border border-rose-200">❌ [Chỉ số mẫu]</span>
+                    {sellerReputation?.assessmentStatus && (
+                      <span className="ml-1 text-[9px] text-emerald-700 font-bold bg-emerald-50 px-1 rounded border border-emerald-200">
+                        {sellerReputation.assessmentStatus}
+                      </span>
+                    )}
                   </button>
                 )}
               </div>
 
-              <div className={`text-[11px] truncate mt-0.5 ${currentRole === 'seller' ? 'text-slate-300' : 'text-slate-600'}`}>
-                <span className={`font-semibold ${currentRole === 'seller' ? 'text-white' : 'text-slate-800'}`}>{listing.title}</span> •{' '}
-                <span className={`font-bold ${currentRole === 'seller' ? 'text-[#e36a54]' : 'text-[#c34c36]'}`}>{formatVND(listing.priceVnd)}</span>
+              <div className={`text-[11px] truncate mt-0.5 ${isSeller ? 'text-slate-300' : 'text-slate-600'}`}>
+                <span className={`font-semibold ${isSeller ? 'text-white' : 'text-slate-800'}`}>{listing.title}</span> •{' '}
+                <span className={`font-bold ${isSeller ? 'text-[#e36a54]' : 'text-[#c34c36]'}`}>{formatVND(listing.priceVnd)}</span>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
             {/* Direct Buy Now button in header */}
-            {currentRole === 'buyer' && (
+            {isBuyer && (
               <button
                 onClick={() => handleBuyNow(latestAcceptedOffer || listing.priceVnd)}
                 className="px-3.5 py-2 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer transition-all"
@@ -628,7 +727,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             <button
               onClick={onClose}
               className={`p-2 rounded-xl text-xs font-bold cursor-pointer transition ${
-                currentRole === 'seller' 
+                isSeller 
                   ? 'text-slate-300 hover:text-white hover:bg-white/10' 
                   : 'text-slate-500 hover:text-slate-900 hover:bg-white/60'
               }`}
@@ -639,7 +738,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         </div>
 
         {/* Accepted Offer Sticky Banner */}
-        {latestAcceptedOffer && currentRole === 'buyer' && (
+        {latestAcceptedOffer && isBuyer && (
           <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2 flex items-center justify-between text-xs shrink-0 animate-fadeIn">
             <div className="flex items-center gap-2 text-emerald-800 font-bold">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -662,17 +761,17 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
         {/* AI Smart Negotiation Advisor Pill */}
         <div className={`border-b px-4 py-2.5 flex items-center justify-between text-xs shrink-0 ${
-          currentRole === 'seller' ? 'bg-blue-50/60 border-blue-100' : 'bg-[#faf8f5] border-gray-200'
+          isSeller ? 'bg-blue-50/60 border-blue-100' : 'bg-[#faf8f5] border-gray-200'
         }`}>
           <div className="flex items-center gap-2 text-[#24263e]">
-            <Sparkles className={`w-4 h-4 shrink-0 ${currentRole === 'seller' ? 'text-blue-600' : 'text-[#c34c36]'}`} />
+            <Sparkles className={`w-4 h-4 shrink-0 ${isSeller ? 'text-blue-600' : 'text-[#c34c36]'}`} />
             <span className="text-[11px] font-medium leading-snug">
-              <span className={`font-bold ${currentRole === 'seller' ? 'text-blue-900' : 'text-[#24263e]'}`}>
+              <span className={`font-bold ${isSeller ? 'text-blue-900' : 'text-[#24263e]'}`}>
                 {lang === 'vi' 
-                  ? (currentRole === 'seller' ? 'Insight bán hàng: ' : 'AI Gợi ý thương lượng: ') 
+                  ? (isSeller ? 'Insight bán hàng: ' : 'AI Gợi ý thương lượng: ') 
                   : 'AI Advisor: '}
               </span>
-              <span className={currentRole === 'seller' ? 'text-blue-800' : ''}>
+              <span className={isSeller ? 'text-blue-800' : ''}>
                 {aiAdvice.adviceText}
               </span>
             </span>
@@ -682,15 +781,15 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             onClick={() =>
               handleSendMessage(
                 lang === 'vi'
-                  ? (currentRole === 'seller' ? `Mình có thể giảm một chút, chốt giá ${formatVND(aiAdvice.counterOfferVnd)} qua kiểm định Hub nhé!` : `Mình đề xuất chốt mức ${formatVND(aiAdvice.counterOfferVnd)} qua kiểm định Hub nhé!`)
+                  ? (isSeller ? `Mình có thể giảm một chút, chốt giá ${formatVND(aiAdvice.counterOfferVnd)} qua kiểm định Hub nhé!` : `Mình đề xuất chốt mức ${formatVND(aiAdvice.counterOfferVnd)} qua kiểm định Hub nhé!`)
                   : `I propose a deal at ${formatVND(aiAdvice.counterOfferVnd)} through Hub inspection!`
               )
             }
             className={`shrink-0 ml-2 px-2.5 py-1 text-white rounded-lg text-[10px] font-bold cursor-pointer transition shadow-2xs ${
-              currentRole === 'seller' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#24263e] hover:bg-black'
+              isSeller ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#24263e] hover:bg-black'
             }`}
           >
-            {lang === 'vi' ? (currentRole === 'seller' ? 'Gửi đề xuất:' : 'Dùng giá gợi ý:') : 'Use suggestion:'} {formatVND(aiAdvice.counterOfferVnd)}
+            {lang === 'vi' ? (isSeller ? 'Gửi đề xuất:' : 'Dùng giá gợi ý:') : 'Use suggestion:'} {formatVND(aiAdvice.counterOfferVnd)}
           </button>
         </div>
 
@@ -711,10 +810,10 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             </div>
           ) : messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 p-6 space-y-2">
-              <ShoppingBag className={`w-10 h-10 ${currentRole === 'seller' ? 'text-blue-200' : 'text-slate-300'}`} />
+              <ShoppingBag className={`w-10 h-10 ${isSeller ? 'text-blue-200' : 'text-slate-300'}`} />
               <p className="text-xs font-semibold text-slate-500">
                 {lang === 'vi'
-                  ? (currentRole === 'seller' 
+                  ? (isSeller 
                       ? 'Người mua đang quan tâm đến sản phẩm của bạn. Hãy gửi tin nhắn chào hỏi!' 
                       : 'Chưa có tin nhắn nào. Hãy gửi tin nhắn hoặc đề xuất giá đầu tiên!')
                   : 'No messages yet. Send a message or make an offer!'}
@@ -738,7 +837,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   const isExpired = false; // Note: EXPIRED is not in SystemOfferPayload
                   const isPending = offer.status === 'PENDING';
                   
-                  const isOfferSenderMe = currentUser?.id ? msg.senderId === currentUser.id : msg.senderId === currentRole;
+                  const isOfferSenderMe = currentUser?.id ? msg.senderId === currentUser.id : msg.senderId === chatRole;
 
                   return (
                     <div key={msg.id} className="flex justify-center my-3 animate-fadeIn">
@@ -790,18 +889,24 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
                         <p className="text-[11px] text-slate-600 mb-2">
                           {isAccepted
-                            ? 'Người bán đã chấp nhận mức giá này. Người mua có thể tiến hành đặt cọc qua Escrow ngay bây giờ!'
+                            ? (isBuyer
+                                ? (lang === 'vi' ? 'Người bán đã chấp nhận mức giá này. Bạn có thể tiến hành đặt cọc qua Escrow ngay bây giờ!' : 'Seller accepted this offer. You can checkout now!')
+                                : (lang === 'vi' ? 'Bạn đã chấp nhận mức giá này. Đang chờ người mua tiến hành thanh toán qua Escrow.' : 'You accepted this offer. Waiting for buyer to checkout.'))
                             : isRejected
-                            ? 'Mức giá đề xuất chưa phù hợp với người bán. Bạn có thể gửi lại mức giá khác hợp lý hơn.'
+                            ? (isBuyer
+                                ? (lang === 'vi' ? 'Mức giá đề xuất chưa phù hợp với người bán. Bạn có thể gửi lại mức giá khác hợp lý hơn.' : 'Offer was declined by seller. You can send another offer.')
+                                : (lang === 'vi' ? 'Bạn đã từ chối mức giá đề xuất này.' : 'You declined this offer.'))
                             : isCancelled
-                            ? 'Người mua đã hủy yêu cầu thương lượng giá này.'
-                            : currentRole === 'seller'
-                            ? 'Người mua gửi đề xuất giá cho sản phẩm của bạn. Vui lòng phản hồi:'
-                            : 'Đề xuất đã được gửi tới người bán, đang chờ phản hồi...'}
+                            ? (isBuyer
+                                ? (lang === 'vi' ? 'Bạn đã hủy yêu cầu thương lượng giá này.' : 'You cancelled this offer.')
+                                : (lang === 'vi' ? 'Người mua đã hủy yêu cầu thương lượng giá này.' : 'Buyer cancelled this offer.'))
+                            : isSeller
+                            ? (lang === 'vi' ? 'Người mua gửi đề xuất giá cho sản phẩm của bạn. Vui lòng phản hồi:' : 'Buyer made an offer. Please respond:')
+                            : (lang === 'vi' ? 'Đề xuất đã được gửi tới người bán, đang chờ phản hồi...' : 'Offer sent to seller, waiting for response...')}
                         </p>
 
                         {/* Action buttons inside System Offer Banner */}
-                        {isPending && currentRole === 'seller' && (
+                        {isPending && isSeller && (
                           <div className="flex items-center justify-center gap-2 mt-2 pt-2 border-t border-amber-200/60">
                             <button
                               onClick={() => handleRespondOffer(offer.negotiationId, 'accepted')}
@@ -820,7 +925,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                           </div>
                         )}
 
-                        {isPending && currentRole === 'buyer' && (
+                        {isPending && isBuyer && (
                           <div className="mt-2 pt-2 border-t border-amber-200/60 flex justify-center">
                             <button
                               onClick={() => handleCancelOffer(offer.negotiationId)}
@@ -832,7 +937,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                           </div>
                         )}
 
-                        {isAccepted && currentRole === 'buyer' && (
+                        {isAccepted && isBuyer && (
                           <div className="mt-2 pt-2 border-t border-emerald-200 flex justify-center">
                             <button
                               onClick={() => handleBuyNow(offer.price, offer.negotiationId)}
@@ -859,7 +964,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   const isAccepted = prop.status === 'ACCEPTED';
                   const isRejected = prop.status === 'REJECTED';
                   const isCancelled = prop.status === 'CANCELLED';
-                  const isProposerMe = prop.proposedByRole === currentRole;
+                  const isProposerMe = prop.proposedByRole === chatRole;
 
                   return (
                     <div key={msg.id} className="flex justify-center my-3 animate-fadeIn">
@@ -965,7 +1070,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               }
 
               // Standard User Chat Bubble (Left/Right)
-              const isMe = msg.senderRole === currentRole;
+              const isMe = Boolean(
+                (effectiveUserId && msg.senderId && String(msg.senderId) === effectiveUserId) ||
+                msg.senderName === 'Bạn' ||
+                msg.senderName === 'You'
+              );
 
               return (
                 <div
@@ -1036,7 +1145,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
                             <div className="mt-3 pt-2 border-t border-white/10 flex flex-col gap-2">
                               {msg.offerStatus === 'pending' ? (
-                                !isMe ? (
+                                isSeller ? (
                                   <div className="flex items-center gap-2">
                                     <button
                                       onClick={() => msg.negotiationId && handleRespondOffer(msg.negotiationId, 'accepted')}
@@ -1059,11 +1168,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                                       <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                                       <span>
                                         {lang === 'vi'
-                                          ? (currentRole === 'buyer' ? 'Đang chờ người bán phản hồi...' : 'Đang chờ người mua phản hồi...')
-                                          : 'Waiting for response...'}
+                                          ? 'Đang chờ người bán phản hồi...'
+                                          : 'Waiting for seller response...'}
                                       </span>
                                     </div>
-                                    {msg.negotiationId && (
+                                    {isBuyer && msg.negotiationId && (
                                       <button
                                         type="button"
                                         onClick={() => handleCancelOffer(msg.negotiationId!)}
@@ -1082,11 +1191,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                                     <span>
                                       {isMe
                                         ? (lang === 'vi' ? '✓ Bạn đã chấp thuận mức giá này!' : '✓ You accepted this offer!')
-                                        : (lang === 'vi' ? (currentRole === 'buyer' ? '✓ Người bán đã chấp thuận mức giá này!' : '✓ Người mua đã chấp thuận!') : '✓ Accepted!')}
+                                        : (lang === 'vi' ? (isBuyer ? '✓ Người bán đã chấp thuận mức giá này!' : '✓ Người mua đã chấp thuận!') : '✓ Accepted!')}
                                     </span>
                                   </div>
 
-                                  {currentRole === 'buyer' && (
+                                  {isBuyer && (
                                     <button
                                       type="button"
                                       onClick={() => handleBuyNow(msg.offerAmountVnd, msg.negotiationId)}
@@ -1128,7 +1237,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         </div>
 
         {/* Quick Offer Popup */}
-        {showOfferForm && currentRole === 'buyer' && !hasPendingOffer && (
+        {showOfferForm && isBuyer && !hasPendingOffer && (
           <div className={`p-3.5 border-t flex items-center gap-3 animate-fadeIn shrink-0 bg-[#FFFFFF] border-gray-200`}>
             <div className="flex-1">
               <div className="flex items-center justify-between">
@@ -1326,9 +1435,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         )}
 
         <div className={`p-3 border-t flex items-center gap-2 shrink-0 ${
-          currentRole === 'seller' ? 'bg-slate-50 border-slate-200' : 'bg-[#FFFFFF] border-gray-200'
+          isSeller ? 'bg-slate-50 border-slate-200' : 'bg-[#FFFFFF] border-gray-200'
         }`}>
-          {currentRole === 'buyer' && !hasPendingOffer && (
+          {isBuyer && !hasPendingOffer && (
             <button
               onClick={() => {
                 setShowOfferForm(!showOfferForm);
@@ -1362,11 +1471,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
             placeholder={
               lang === 'vi'
-                ? (currentRole === 'seller' ? 'Tư vấn cho người mua...' : 'Nhắn tin thương lượng (an toàn 100% qua Escrow)...')
+                ? (isSeller ? 'Tư vấn cho người mua...' : 'Nhắn tin thương lượng (an toàn 100% qua Escrow)...')
                 : 'Chat & negotiate safely via Escrow...'
             }
             className={`flex-1 px-3.5 py-2 border rounded-xl text-xs text-[#24263e] focus:outline-none ${
-              currentRole === 'seller' 
+              isSeller 
                 ? 'bg-white border-slate-200 focus:border-blue-500' 
                 : 'bg-[#faf8f5] border-gray-200 focus:border-[#c34c36]'
             }`}
@@ -1376,7 +1485,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             onClick={() => handleSendMessage()}
             disabled={isSending}
             className={`p-2.5 text-white rounded-xl cursor-pointer transition shadow-xs flex items-center justify-center ${
-              currentRole === 'seller' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#24263e] hover:bg-black'
+              isSeller ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#24263e] hover:bg-black'
             }`}
           >
             {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}

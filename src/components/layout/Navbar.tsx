@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Phone, Coins, FileCheck, Wallet, Wrench, Bell } from 'lucide-react';
+import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Phone, Coins, FileCheck, Wallet, Wrench, Bell, Store } from 'lucide-react';
 import { UserRole, Language, UserCredit } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import logoImg from '../../assets/logo.png';
@@ -109,7 +109,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           className="flex items-center gap-2.5 cursor-pointer select-none group shrink-0"
           onClick={() => {
             if (currentUser?.role === 'admin' || currentRole === 'admin') onTabChange('admin-dashboard');
-            else if (currentUser?.role === 'inspector' || currentRole === 'inspector' || currentUser?.role === 'inspection_center' || currentRole === 'inspection_center') onTabChange('inspection-hub');
+            else if (currentUser?.role === 'inspection_center' || currentRole === 'inspection_center') onTabChange('inspection-center');
+            else if (currentUser?.role === 'inspector' || currentRole === 'inspector') onTabChange('inspection-hub');
             else onTabChange('home');
           }}
         >
@@ -153,15 +154,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           ) : currentUser && (currentRole === 'inspector' || currentRole === 'inspection_center') ? (
             /* Inspector & Inspection Center Manager role: Single Inspection Center Portal */
             <button
-              onClick={() => onTabChange('inspection-hub')}
+              onClick={() => onTabChange(currentRole === 'inspection_center' ? 'inspection-center' : 'inspection-hub')}
               className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'inspection-hub'
+                activeTab === 'inspection-center' || activeTab === 'inspection-hub'
                   ? 'bg-[#c34c36] text-white shadow-sm'
                   : 'text-white/80 hover:text-white hover:bg-white/10'
               }`}
             >
               <Building2 className="w-4 h-4" />
-              <span>{lang === 'vi' ? (currentRole === 'inspection_center' ? 'Quản Lý Trung Tâm KĐ' : 'Trung Tâm Kiểm Định') : 'Inspection Center'}</span>
+              <span>{lang === 'vi' ? (currentRole === 'inspection_center' ? 'Dashboard Trưởng Trung Tâm' : 'Trung Tâm Kiểm Định') : 'Inspection Center'}</span>
             </button>
           ) : (
             /* Buyer, Seller, Staff & Public roles: Full Marketplace Navigation */
@@ -312,8 +313,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               }}
               className="hidden sm:inline-flex items-center gap-1.5 bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 text-white px-4 py-2 rounded-xl font-black text-xs shadow-md hover:shadow-lg transition cursor-pointer"
             >
-              <Sparkles className="w-3.5 h-3.5 fill-white" />
-              <span>{lang === 'vi' ? 'Đăng Bán AI' : 'Post Listing'}</span>
+              {currentUser && currentRole !== 'seller' && currentRole !== 'staff' ? (
+                <>
+                  <Store className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? 'Đăng Ký Người Bán Để Đăng Bài' : 'Register Seller to Post'}</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5 fill-white" />
+                  <span>{lang === 'vi' ? 'Đăng Bán AI' : 'Post Listing'}</span>
+                </>
+              )}
             </button>
           )}
 
@@ -397,13 +407,13 @@ export const Navbar: React.FC<NavbarProps> = ({
         ) : currentUser && (currentRole === 'inspector' || currentRole === 'inspection_center') ? (
           <>
             <button
-              onClick={() => onTabChange('inspection-hub')}
+              onClick={() => onTabChange(currentRole === 'inspection_center' ? 'inspection-center' : 'inspection-hub')}
               className={`flex items-center gap-1 py-1 px-2 rounded-md ${
-                activeTab === 'inspection-hub' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
+                activeTab === 'inspection-center' || activeTab === 'inspection-hub' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
               }`}
             >
               <Building2 className="w-3.5 h-3.5" />
-              <span>{currentRole === 'inspection_center' ? 'Quản Lý KĐ' : 'Trung Tâm KĐ'}</span>
+              <span>{currentRole === 'inspection_center' ? 'Trưởng Trạm KĐ' : 'Trung Tâm KĐ'}</span>
             </button>
             <button
               onClick={onOpenProfile}

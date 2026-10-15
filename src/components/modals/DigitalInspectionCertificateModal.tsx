@@ -17,6 +17,7 @@ import {
   Sparkles,
   ExternalLink
 } from 'lucide-react';
+import { ScannableQRCode } from '../common/ScannableQRCode';
 
 interface DigitalInspectionCertificateModalProps {
   order: EscrowOrder;
@@ -157,9 +158,9 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
                 <div className="font-mono font-black text-xs text-slate-900">{certId}</div>
                 <div className="text-[10px] text-slate-400">{new Date(inspectionDate).toLocaleDateString('vi-VN')}</div>
               </div>
-              {/* QR Code Simulation */}
-              <div className="p-1.5 bg-white border border-slate-300 rounded-xl shadow-xs">
-                <QrCode className="w-12 h-12 text-[#24263e]" />
+              {/* Real Scannable QR Code */}
+              <div className="p-1 bg-white border border-slate-300 rounded-xl shadow-xs shrink-0 flex flex-col items-center">
+                <ScannableQRCode value={order.inspectionReport?.tamperSealId || `SL-SEAL-${order.id.slice(0, 8).toUpperCase()}`} size={54} />
               </div>
             </div>
           </div>

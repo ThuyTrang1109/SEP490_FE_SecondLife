@@ -321,6 +321,16 @@ export const postService = {
     }
   },
 
+  /**
+   * Xóa bản nháp bài đăng chưa xuất bản (DELETE /api/v1/posts/{postId}/draft)
+   */
+  async deleteDraft(postId: string): Promise<void> {
+    await request<void>(`/v1/posts/${postId}/draft`, {
+      method: 'DELETE',
+      requiresAuth: true,
+    });
+  },
+
   async estimatePrice(postId: string, requestId?: string): Promise<AiPriceEstimationResponse> {
     const reqId =
       requestId ||

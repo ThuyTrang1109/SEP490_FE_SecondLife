@@ -8,6 +8,7 @@ export interface UserSummaryDto {
   avatarUrl?: string;
   accountStatus?: string;
   emailVerified?: boolean;
+  gender?: string;
 }
 
 export interface AuthResponseDto {
@@ -35,6 +36,7 @@ export interface RegisterRequestDto {
   password: string;
   fullName: string;
   phone?: string;
+  gender?: 'MALE' | 'FEMALE' | 'OTHER' | null;
 }
 
 export interface VerifyEmailRequestDto {

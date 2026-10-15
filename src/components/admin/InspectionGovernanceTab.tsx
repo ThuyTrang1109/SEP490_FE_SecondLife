@@ -107,7 +107,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
     try {
       await inspectorService.reviewFeeProposal(selectedProposal.id, {
         approved: reviewAction === 'APPROVE',
-        note: reviewNote.trim() || undefined,
+        reason: reviewNote.trim() || undefined,
       });
 
       setFeedback({

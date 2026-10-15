@@ -240,8 +240,13 @@ export interface InspectionStaffDto {
   email: string;
   fullName: string;
   phone?: string;
-  role: string;
+  avatarUrl?: string;
+  accountStatus?: string;
+  emailVerified?: boolean;
+  gender?: string;
+  role?: string;
   createdAt?: string;
+  assignedOrdersCount?: number;
 }
 
 export interface CreateInspectionStaffRequest {
@@ -528,13 +533,17 @@ export const inspectorService = {
   /**
    * Manager tạo tài khoản kỹ thuật viên mới cho trung tâm
    */
-  async createStaff(data: CreateInspectionStaffRequest): Promise<InspectionStaffDto> {
-    const res = await request<InspectionStaffDto>('/inspector-center/staff', {
+  async createStaff(data: CreateInspectionStaffRequest): Promise<any> {
+    const res = await request<any>('/inspector-center/staff', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        email: data.email?.trim(),
+        fullName: data.fullName?.trim(),
+        password: data.password,
+      }),
       requiresAuth: true,
     });
-    return (res as any)?.data || res;
+    return (res as any)?.data || (res as any)?.message || res;
   },
 
   /**
@@ -637,11 +646,16 @@ export const inspectorService = {
 
   /**
    * Admin duyệt hoặc từ chối đề xuất biểu phí
+   * POST /api/v1/admin/inspection/fee-proposals/{id}/review
    */
-  async reviewFeeProposal(id: string, data: { approved: boolean; note?: string }): Promise<InspectionFeeProposalResponse> {
+  async reviewFeeProposal(id: string, data: { approved: boolean; reason?: string; note?: string }): Promise<InspectionFeeProposalResponse> {
+    const payload = {
+      approved: data.approved,
+      reason: data.reason || data.note,
+    };
     const res = await request<InspectionFeeProposalResponse>(`/admin/inspection/fee-proposals/${id}/review`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
       requiresAuth: true,
     });
     return (res as any)?.data || res;

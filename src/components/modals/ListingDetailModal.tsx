@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   ShieldCheck,
@@ -15,13 +15,15 @@ import {
   ChevronRight,
   UserCheck
 } from 'lucide-react';
-import { Listing, Language, ProductReview } from '../../types';
+import { Listing, Language, ProductReview, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import { soundFx } from '../../utils/soundEffects';
 import { reviewService } from '../../data/mockReviews';
+import { reputationService, SellerReputationDto, getStoredUser } from '../../services';
 
 interface ListingDetailModalProps {
   listing: Listing | null;
+  currentUser?: UserProfile | null;
   onClose: () => void;
   onBuyClick: (listing: Listing) => void;
   onChatClick: (listing: Listing) => void;
@@ -32,6 +34,7 @@ interface ListingDetailModalProps {
 
 export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   listing,
+  currentUser: propCurrentUser,
   onClose,
   onBuyClick,
   onChatClick,
@@ -41,6 +44,10 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
 }) => {
   if (!listing) return null;
   const t = translations[lang];
+  const user = propCurrentUser || getStoredUser();
+  const isOwnListing = Boolean(
+    user?.id && listing.sellerId && String(user.id) === String(listing.sellerId)
+  );
 
   const photoKeys: Array<{ key: keyof typeof listing.photos; labelVi: string; labelEn: string }> = [
     { key: 'front', labelVi: '1. Mặt trước', labelEn: '1. Front' },
@@ -57,6 +64,15 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const productReviews = reviewService.getReviewsByListing(listing.id);
   const sellerReviews = reviewService.getReviewsBySeller(listing.sellerId);
   const sellerTrust = reviewService.getSellerTrustProfile(listing.sellerId, listing.sellerName);
+  const [realReputation, setRealReputation] = useState<SellerReputationDto | null>(null);
+
+  useEffect(() => {
+    if (listing.sellerId) {
+      reputationService.getSellerReputation(listing.sellerId).then((rep) => {
+        if (rep) setRealReputation(rep);
+      });
+    }
+  }, [listing.sellerId]);
 
   const displayReviews = reviewsTab === 'product' ? productReviews : sellerReviews;
   const avgProductRating = productReviews.length > 0
@@ -213,11 +229,11 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                       <div className="text-right shrink-0">
                         <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#24263e] text-white shadow-xs">
                           <Award className="w-3 h-3 text-amber-300" />
-                          <span className="text-[11px] font-black">{sellerTrust.trustScore}</span>
+                          <span className="text-[11px] font-black">{realReputation?.score ?? sellerTrust.trustScore}</span>
                           <span className="text-[9px] text-white/70">/100</span>
                         </div>
                         <div className="text-[9px] font-bold text-amber-700 mt-0.2">
-                          {sellerTrust.tier}
+                          {realReputation?.assessmentStatus || sellerTrust.tier}
                         </div>
                       </div>
                     </div>
@@ -242,7 +258,18 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                 </div>
 
                 {/* Action Buttons */}
-                {isAdmin ? (
+                {isOwnListing ? (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="w-full py-2.5 px-3 bg-blue-50 text-blue-800 rounded-xl font-bold text-xs text-center border border-blue-200 flex items-center justify-center gap-1.5">
+                      <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span>
+                        {lang === 'vi'
+                          ? 'Đây là sản phẩm do chính bạn đăng bán'
+                          : 'This is your own listing'}
+                      </span>
+                    </div>
+                  </div>
+                ) : isAdmin ? (
                   <div className="space-y-1.5 pt-1">
                     <div className="w-full py-2.5 px-3 bg-slate-100 text-slate-500 rounded-xl font-bold text-xs text-center border border-slate-200">
                       {lang === 'vi' ? 'Quản trị viên không thể mua hàng hoặc chat' : 'Admin cannot purchase or chat'}

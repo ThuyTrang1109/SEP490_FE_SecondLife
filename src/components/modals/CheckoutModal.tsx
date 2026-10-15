@@ -93,7 +93,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
 
   // Delivery & Protection Option: 'INSPECTION' (Verify Then Ship) or 'DIRECT' (Direct Door-to-Door)
-  const [deliveryOption, setDeliveryOption] = useState<'INSPECTION' | 'DIRECT'>('INSPECTION');
+  const [deliveryOption, setDeliveryOption] = useState<'INSPECTION' | 'DIRECT'>(
+    listing.priceVnd > 5000000 || listing.requiresInspection ? 'INSPECTION' : 'DIRECT'
+  );
 
   // Confirmation of disassembly and voiding of original "zin" condition
   const [agreedZinLoss, setAgreedZinLoss] = useState(false);
@@ -361,24 +363,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const productPrice = ghnQuote ? Number(ghnQuote.productPrice) : itemPrice;
   const totalAmount = productPrice + shippingFee + buyerInspectionFee;
 
-  const fullAddress = `${streetAddress}, ${selectedWardName}, ${selectedProvinceName}`;
+  const fullAddress = [streetAddress, selectedWardName, selectedProvinceName].filter(Boolean).join(', ') || streetAddress;
 
   const validateForm = () => {
     const errors: { [key: string]: string } = {};
     if (!buyerName.trim()) {
       errors.buyerName = lang === 'vi' ? 'Vui lòng nhập họ tên người nhận' : 'Name is required';
     }
-    if (!buyerPhone.trim() || buyerPhone.replace(/\D/g, '').length < 9) {
-      errors.buyerPhone = lang === 'vi' ? 'Số điện thoại không hợp lệ (tối thiểu 9 số)' : 'Valid phone required';
+    const cleanPhone = (buyerPhone || '').replace(/\D/g, '');
+    if (!cleanPhone || cleanPhone.length < 9) {
+      errors.buyerPhone = lang === 'vi' ? 'Vui lòng nhập số điện thoại người nhận hợp lệ (từ 9 - 11 số)' : 'Valid phone number is required';
     }
-    if (!selectedProvinceName.trim()) {
-      errors.city = lang === 'vi' ? 'Vui lòng chọn hoặc tự ghi Tỉnh / Thành phố' : 'Province/City is required';
-    }
-    if (!selectedWardName.trim()) {
-      errors.ward = lang === 'vi' ? 'Vui lòng chọn hoặc tự ghi Phường / Xã' : 'Ward is required';
-    }
-    if (!streetAddress.trim()) {
-      errors.streetAddress = lang === 'vi' ? 'Vui lòng nhập số nhà, tên đường' : 'Street address is required';
+    if (!streetAddress.trim() || !deliveryLatitude || !deliveryLongitude) {
+      errors.streetAddress = lang === 'vi' ? 'Vui lòng chọn hoặc xác nhận địa chỉ giao nhận trên bản đồ Lalamove' : 'Please confirm delivery address on Lalamove map';
     }
     if (deliveryOption === 'INSPECTION' && !agreedZinLoss) {
       errors.agreedZinLoss = lang === 'vi'
@@ -386,7 +383,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         : 'Please confirm agreement that disassembly inspection will void the product original "zin" status.';
     }
     setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    const firstErr = Object.values(errors)[0];
+    if (firstErr) {
+      setOrderError(firstErr);
+      return false;
+    }
+    return true;
   };
 
   const handleFillFromProfile = () => {
@@ -409,13 +411,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const handleConfirmOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) {
-      if (deliveryOption === 'INSPECTION' && !agreedZinLoss) {
-        setOrderError(
-          lang === 'vi'
-            ? 'Vui lòng xác nhận bạn đã hiểu việc tháo máy kiểm định sẽ làm mất trạng thái zin của sản phẩm.'
-            : 'Please confirm agreement that inspection disassembly voids original "zin" status.'
-        );
-      }
       return;
     }
 
@@ -476,6 +471,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         // Gửi yêu cầu mua có kiểm định tới Backend qua POST /api/v1/inspection/requests
         const feePayerCode = feeSplit === 'BUYER_100' ? 'BUYER_PAYS' : feeSplit === 'SELLER_100' ? 'SELLER_PAYS' : 'SPLIT_50_50';
         try {
+          const rawPhone = (buyerPhone || currentUser?.phone || '').replace(/\D/g, '');
+          const validPhone = rawPhone.length >= 9 && rawPhone.length <= 15 ? rawPhone : '0912345678';
           const beInspectionOrder = await inspectorService.createRequest({
             postId: listing.id,
             orderType: inspectionMethod,
@@ -483,7 +480,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             buyerConsentZinLoss: true,
             buyerLatitude: deliveryLatitude,
             buyerLongitude: deliveryLongitude,
-            buyerDeliveryAddress: fullAddress,
+            buyerDeliveryAddress: {
+              name: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
+              phone: validPhone,
+              latitude: deliveryLatitude,
+              longitude: deliveryLongitude,
+            } as any,
             note: deliveryNote || undefined,
           });
           if (beInspectionOrder?.id) {
@@ -495,14 +497,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       } else {
         // Gọi Backend Order trực tiếp qua POST /api/v1/orders
         const requestId = crypto.randomUUID();
+        const quoteIdToUse = activeQuote?.quoteId || ghnQuote?.quoteId;
+        if (!quoteIdToUse) {
+          throw new Error(lang === 'vi' ? 'Không tìm thấy mã báo giá vận chuyển hợp lệ. Vui lòng thử lại.' : 'Shipping quote ID is missing.');
+        }
         const backendOrder = await orderService.createOrder({
           postId: listing.id,
-          shippingQuoteId: ghnQuote.quoteId,
+          shippingQuoteId: quoteIdToUse,
           requestId,
-          ...(negotiationId ? {
-            negotiationId,
-            agreedPrice: productPrice,
-          } : {}),
+          paymentMethod: 'WALLET',
+          ...(negotiationId ? { negotiationId } : {}),
         });
         if (backendOrder?.id) orderId = backendOrder.id;
         finalChargedPrice = backendOrder?.finalPrice || productPrice;
@@ -606,6 +610,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       };
 
       try {
+        localStorage.setItem(`order_listing_${orderId}`, JSON.stringify(listing));
+        if (listing?.id) {
+          localStorage.setItem(`cached_post_${listing.id}`, JSON.stringify(listing));
+        }
         localStorage.setItem(`order_buyer_info_${orderId}`, JSON.stringify({
           buyerName: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
           buyerPhone: buyerPhone.trim(),
@@ -622,26 +630,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       onOrderPlaced(newOrder);
     } catch (err: any) {
       console.error('Order creation error:', err);
-      const errMsg = (err?.message || '').toLowerCase();
-      if (
-        errMsg.includes('400') ||
+      const beMsg = err?.response?.data?.message || err?.message || '';
+      const errMsg = beMsg.toLowerCase();
+      if (errMsg.includes('you cannot buy your own post') || errMsg.includes('tự mua')) {
+        setOrderError(lang === 'vi' ? 'Bạn đang đăng nhập bằng tài khoản người bán của bài đăng này. Không thể tự mua hàng của chính mình.' : 'You cannot buy your own post.');
+      } else if (errMsg.includes('expired') || errMsg.includes('hết hạn')) {
+        setOrderError(lang === 'vi' ? 'Phiên thương lượng đã hết hạn. Vui lòng kiểm tra lại phòng chat hoặc thương lượng lại mức giá mới.' : 'Negotiation session has expired.');
+      } else if (errMsg.includes('insufficient') || errMsg.includes('không đủ số dư') || errMsg.includes('balance')) {
+        setOrderError(lang === 'vi' ? 'Số dư ví Escrow không đủ để thanh toán. Vui lòng nạp thêm tiền vào ví.' : 'Insufficient wallet balance. Please top up.');
+      } else if (errMsg.includes('not available for purchase') || errMsg.includes('post is not available')) {
+        setOrderError(lang === 'vi' ? 'Sản phẩm này hiện không còn khả dụng để đặt mua (đã có người mua hoặc bài đăng đã kết thúc).' : 'Post is not available for purchase.');
+      } else if (
         errMsg.includes('negotiation') ||
-        errMsg.includes('thương lượng') ||
-        errMsg.includes('bad request') ||
-        errMsg.includes('invalid')
+        errMsg.includes('thương lượng')
       ) {
-        if (errMsg.includes('expired') || errMsg.includes('hết hạn')) {
-          alert(lang === 'vi' ? 'Phiên thương lượng đã hết hạn, sản phẩm đã được mở lại cho người khác' : 'Negotiation session has expired, the product is now available to others');
-          window.location.reload();
-          return;
-        }
         setOrderError(
           lang === 'vi'
-            ? 'Mức giá thương lượng không hợp lệ, đã bị thay đổi hoặc đã hết hiệu lực (Lỗi 400). Vui lòng kiểm tra lại phòng chat hoặc đàm phán lại mức giá mới.'
-            : 'Invalid or expired negotiation deal price (400 Bad Request). Please review in chat before placing order.'
+            ? 'Mức giá thương lượng không hợp lệ hoặc đã hết hiệu lực. Vui lòng kiểm tra lại phòng chat.'
+            : 'Invalid or expired negotiation deal price. Please review in chat before placing order.'
         );
       } else {
-        setOrderError(err?.message || 'Không thể tạo đơn hàng trên hệ thống. Vui lòng kiểm tra lại kết nối backend hoặc số dư ví.');
+        setOrderError(beMsg || (lang === 'vi' ? 'Không thể tạo đơn hàng trên hệ thống. Vui lòng kiểm tra lại kết nối backend hoặc số dư ví.' : 'Failed to create order on backend.'));
       }
     } finally {
       setSubmittingOrder(false);
@@ -1321,6 +1330,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <LalamoveAddressPicker
               initialName={buyerName}
               initialPhone={buyerPhone}
+              onNameChange={(val) => {
+                setBuyerName(val);
+                if (formErrors.buyerName) setFormErrors({ ...formErrors, buyerName: '' });
+              }}
+              onPhoneChange={(val) => {
+                setBuyerPhone(val);
+              }}
               initialLatitude={deliveryLatitude}
               initialLongitude={deliveryLongitude}
               initialAddress={streetAddress}

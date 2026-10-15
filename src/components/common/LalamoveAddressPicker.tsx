@@ -22,6 +22,8 @@ interface LalamoveAddressPickerProps {
   sellerCity?: string;
   sellerLocation?: string;
   onAddressConfirmed: (data: SelectedLocationData) => void;
+  onNameChange?: (name: string) => void;
+  onPhoneChange?: (phone: string) => void;
   lang?: 'vi' | 'en';
   title?: string;
   description?: string;
@@ -70,6 +72,8 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
   sellerCity,
   sellerLocation,
   onAddressConfirmed,
+  onNameChange,
+  onPhoneChange,
   lang = 'vi',
   title,
   description,
@@ -98,13 +102,17 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
   const leafletMarkerRef = useRef<any>(null);
   const lookupSeqRef = useRef<number>(0);
 
-  // Sync prop changes
+  // Two-way synchronization with parent props
   useEffect(() => {
-    if (initialName && !contactName) setContactName(initialName);
+    if (initialName !== undefined && initialName !== contactName) {
+      setContactName(initialName);
+    }
   }, [initialName]);
 
   useEffect(() => {
-    if (initialPhone && !contactPhone) setContactPhone(initialPhone);
+    if (initialPhone !== undefined && initialPhone !== contactPhone) {
+      setContactPhone(initialPhone);
+    }
   }, [initialPhone]);
 
   // Fallback reverse geocoding via OpenStreetMap Nominatim or heuristic
@@ -200,9 +208,10 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
           zoomControl: true,
         });
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: '&copy; OpenStreetMap contributors | Lalamove Delivery',
+        L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+          maxZoom: 20,
+          subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+          attribution: '&copy; Google Maps | Lalamove Delivery',
         }).addTo(map);
 
         // Custom pin icon
@@ -342,14 +351,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
 
   // Confirm address button
   const handleConfirmLocation = () => {
-    if (!contactName.trim()) {
-      setLookupError(lang === 'vi' ? 'Vui lòng nhập tên người liên hệ.' : 'Please enter contact name.');
-      return;
-    }
-    if (!contactPhone.trim() || contactPhone.replace(/\D/g, '').length < 9) {
-      setLookupError(lang === 'vi' ? 'Vui lòng nhập số điện thoại hợp lệ (tối thiểu 9 số).' : 'Valid phone required (min 9 digits).');
-      return;
-    }
+    // Không validate số điện thoại: nhập 9 số hay bất kỳ số nào vẫn bình thường không báo lỗi
     const finalLat = latitude ?? defaultCityObj.lat;
     const finalLng = longitude ?? defaultCityObj.lng;
     const finalCity = resolvedCity || detectCityFromCoords(finalLat, finalLng);
@@ -428,7 +430,9 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
             type="text"
             value={contactName}
             onChange={(e) => {
-              setContactName(e.target.value);
+              const val = e.target.value;
+              setContactName(val);
+              onNameChange?.(val);
               setIsConfirmed(false);
             }}
             placeholder={lang === 'vi' ? 'VD: Nguyễn Văn A' : 'Full name'}
@@ -445,7 +449,9 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
             type="tel"
             value={contactPhone}
             onChange={(e) => {
-              setContactPhone(e.target.value);
+              const val = e.target.value;
+              setContactPhone(val);
+              onPhoneChange?.(val);
               setIsConfirmed(false);
             }}
             placeholder={lang === 'vi' ? 'VD: 0912345678' : '0912345678'}

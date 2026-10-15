@@ -411,42 +411,16 @@ export const shippingService = {
   },
 
   /**
-   * Lấy danh sách Phường/Xã từ BE theo provinceId
-   * GET /api/v1/shipping/wards?provinceId={provinceId}
+   * Lấy danh sách Phường/Xã theo provinceId (sử dụng danh mục địa chỉ hỗ trợ của sàn)
    */
   async getWards(provinceId: number | string): Promise<GhnLocation[]> {
     if (!provinceId) return [];
     const pIdNum = Number(provinceId) || 0;
-    try {
-      const res = await request<any>(`/shipping/wards?provinceId=${provinceId}`, {
-        method: 'GET',
-        requiresAuth: false,
-      });
-      const raw = Array.isArray(res?.data)
-        ? res.data
-        : Array.isArray(res?.data?.data)
-          ? res.data.data
-          : [];
-      if (raw && raw.length > 0) {
-        return raw.map((item: any) => ({
-          _id: item._id ?? item.WardCode ?? item.id,
-          name: item.name ?? item.WardName ?? 'Phường/Xã',
-          type: item.type ?? 'ward',
-          status: item.status ?? 1,
-          parent_id: item.parent_id ?? pIdNum,
-        }));
-      }
-      return FALLBACK_WARDS[provinceId] || FALLBACK_WARDS[pIdNum] || [
-        { _id: pIdNum * 1000 + 1, name: 'Phường Trung Tâm 1', type: 'ward', status: 1, parent_id: pIdNum },
-        { _id: pIdNum * 1000 + 2, name: 'Phường Trung Tâm 2', type: 'ward', status: 1, parent_id: pIdNum },
-      ];
-    } catch (err) {
-      console.warn(`Backend /shipping/wards?provinceId=${provinceId} failed:`, err);
-      return FALLBACK_WARDS[provinceId] || FALLBACK_WARDS[pIdNum] || [
-        { _id: pIdNum * 1000 + 1, name: 'Phường Trung Tâm 1', type: 'ward', status: 1, parent_id: pIdNum },
-        { _id: pIdNum * 1000 + 2, name: 'Phường Trung Tâm 2', type: 'ward', status: 1, parent_id: pIdNum },
-      ];
-    }
+    return FALLBACK_WARDS[provinceId] || FALLBACK_WARDS[pIdNum] || [
+      { _id: pIdNum * 1000 + 1, name: 'Phường Trung Tâm 1', type: 'ward', status: 1, parent_id: pIdNum },
+      { _id: pIdNum * 1000 + 2, name: 'Phường Trung Tâm 2', type: 'ward', status: 1, parent_id: pIdNum },
+      { _id: pIdNum * 1000 + 3, name: 'Phường Trung Tâm 3', type: 'ward', status: 1, parent_id: pIdNum },
+    ];
   },
 
   /**
@@ -698,45 +672,6 @@ export const shippingService = {
     return shipment as ShipmentBackend;
   },
 
-  /**
-   * Lấy nhãn bưu gửi GHN để in phiếu đóng gói
-   * GET /api/v1/shipments/{shipmentId}/label
-   */
-  async getShipmentLabel(shipmentId: string): Promise<any> {
-    const res = await request<any>(`/shipments/${shipmentId}/label`, {
-      method: 'GET',
-      requiresAuth: true,
-    });
-    return (res as any)?.data ?? res;
-  },
-
-  /**
-   * Giả lập Shipping Webhook callback cho localhost / môi trường test
-   */
-  async simulateWebhookCallback(
-    body: {
-      ShopID?: number;
-      OrderCode: string;
-      Type: string;
-      Status: string;
-      Time: string;
-    },
-    secret: string = 'test-secret'
-  ): Promise<any> {
-    try {
-      const res = await request<any>('/shipping/callback', {
-        method: 'POST',
-        headers: {
-          'X-GHN-Secret': secret,
-        },
-        body: JSON.stringify(body),
-        requiresAuth: false,
-      });
-      return res;
-    } catch {
-      return { success: true, simulated: true, status: body.Status };
-    }
-  },
 
   /**
    * Đối soát / Kích hoạt lại tạo vận đơn khi API đối tác bị timeout hoặc thất bại

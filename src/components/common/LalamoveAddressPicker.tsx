@@ -97,6 +97,33 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
   const [isConfirmed, setIsConfirmed] = useState(Boolean(initialAddress && initialLatitude && initialLongitude));
   const [isLocatingDevice, setIsLocatingDevice] = useState(false);
 
+  // Dynamic Cities from Backend (GET /api/v1/shipping/cities)
+  const [supportedCities, setSupportedCities] = useState(ALLOWED_CITIES);
+
+  useEffect(() => {
+    let active = true;
+    shippingService.getCities().then((res: any) => {
+      if (!active || !res) return;
+      const rawList = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : (Array.isArray(res?.cities) ? res.cities : []));
+      if (rawList && rawList.length > 0) {
+        const parsed = rawList.map((c: any) => {
+          if (typeof c === 'string') {
+            const matched = ALLOWED_CITIES.find(ac => ac.name.toLowerCase() === c.toLowerCase());
+            return matched || { name: c, lat: 21.0285, lng: 105.8542, label: c };
+          }
+          const name = c.name || c.cityName || c.label || String(c);
+          const lat = typeof c.lat === 'number' ? c.lat : (typeof c.latitude === 'number' ? c.latitude : 21.0285);
+          const lng = typeof c.lng === 'number' ? c.lng : (typeof c.longitude === 'number' ? c.longitude : 105.8542);
+          return { name, lat, lng, label: c.label || name };
+        });
+        setSupportedCities(parsed);
+      }
+    }).catch((err) => {
+      console.warn('Cannot fetch dynamic /shipping/cities:', err);
+    });
+    return () => { active = false; };
+  }, []);
+
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);
   const leafletMarkerRef = useRef<any>(null);
@@ -460,15 +487,31 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
         </div>
       </div>
 
-      {/* Preset supported cities quick buttons */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
-          <span>{lang === 'vi' ? 'Chọn nhanh thành phố được hỗ trợ:' : 'Supported cities:'}</span>
+      {/* Preset supported cities quick buttons & dropdown */}
+      <div className="space-y-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-600 font-medium">
+          <div className="flex items-center gap-2">
+            <span className="font-bold">{lang === 'vi' ? 'Địa bàn hỗ trợ:' : 'Supported Area:'}</span>
+            <select
+              value={resolvedCity}
+              onChange={(e) => {
+                const selected = supportedCities.find((c) => c.name.toLowerCase() === e.target.value.toLowerCase());
+                if (selected) handleSelectCityPreset(selected);
+              }}
+              className="px-2.5 py-1 text-xs font-bold rounded-lg border border-gray-300 bg-white text-slate-800 focus:outline-none focus:border-orange-500 shadow-2xs cursor-pointer"
+            >
+              {supportedCities.map((c) => (
+                <option key={c.name} value={c.name}>
+                  {c.label || c.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <button
             type="button"
             onClick={handleGetCurrentLocation}
             disabled={isLocatingDevice}
-            className="text-orange-600 hover:text-orange-700 font-bold flex items-center gap-1 cursor-pointer transition disabled:opacity-50"
+            className="text-orange-600 hover:text-orange-700 font-bold flex items-center gap-1 cursor-pointer transition disabled:opacity-50 self-start sm:self-auto"
           >
             {isLocatingDevice ? (
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -479,20 +522,23 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
           </button>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {ALLOWED_CITIES.map((c) => {
+          {supportedCities.map((c) => {
             const isMatchedSeller = sellerCity && c.name.toLowerCase().includes(sellerCity.toLowerCase());
+            const isSelected = resolvedCity && c.name.toLowerCase().includes(resolvedCity.toLowerCase());
             return (
               <button
                 key={c.name}
                 type="button"
                 onClick={() => handleSelectCityPreset(c)}
                 className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1 border ${
-                  isMatchedSeller
-                    ? 'bg-amber-100 text-amber-900 border-amber-300 ring-1 ring-amber-400'
-                    : 'bg-white hover:bg-orange-50 border-gray-200 hover:border-orange-300 text-slate-700'
+                  isSelected
+                    ? 'bg-orange-600 text-white border-orange-700 shadow-sm'
+                    : isMatchedSeller
+                      ? 'bg-amber-100 text-amber-900 border-amber-300 ring-1 ring-amber-400'
+                      : 'bg-white hover:bg-orange-50 border-gray-200 hover:border-orange-300 text-slate-700'
                 }`}
               >
-                <Building2 className="w-3 h-3 text-orange-600" />
+                <Building2 className={`w-3 h-3 ${isSelected ? 'text-white' : 'text-orange-600'}`} />
                 <span>{c.name}</span>
                 {isMatchedSeller && <span className="text-[9px] bg-amber-600 text-white px-1 rounded-sm">Kho người bán</span>}
               </button>

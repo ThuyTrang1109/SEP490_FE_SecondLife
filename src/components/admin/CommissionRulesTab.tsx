@@ -15,7 +15,9 @@ import {
   PowerOff,
   ChevronLeft,
   ChevronRight,
-  Info
+  Info,
+  Eye,
+  Loader2
 } from 'lucide-react';
 import {
   adminCommissionService,
@@ -55,6 +57,24 @@ export const CommissionRulesTab: React.FC = () => {
   const [historyRule, setHistoryRule] = useState<CommissionRuleResponse | null>(null);
   const [auditList, setAuditList] = useState<CommissionAuditResponse[]>([]);
   const [isLoadingAudit, setIsLoadingAudit] = useState(false);
+
+  // Modal: View Rule Detail by ID (GET /api/v1/admin/commission-rules/{id})
+  const [detailRule, setDetailRule] = useState<CommissionRuleResponse | null>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+
+  const handleOpenDetailModal = async (ruleId: string) => {
+    setIsLoadingDetail(true);
+    try {
+      const full = await adminCommissionService.getCommissionRuleById(ruleId);
+      setDetailRule(full);
+    } catch (err: any) {
+      console.warn('Failed to load commission rule detail by ID, using fallback:', err);
+      const fallback = rules.find((r) => r.id === ruleId) || null;
+      setDetailRule(fallback);
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  };
 
   const fetchRules = useCallback(async (page = 0) => {
     setIsLoading(true);
@@ -409,6 +429,14 @@ export const CommissionRulesTab: React.FC = () => {
 
                       <td className="px-4 py-3.5 text-center">
                         <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => handleOpenDetailModal(rule.id)}
+                            className="p-1.5 text-slate-700 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
+                            title="Xem chi tiết chính sách (GET /commission-rules/{id})"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+
                           <button
                             onClick={() => handleOpenEditModal(rule)}
                             className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
@@ -778,6 +806,120 @@ export const CommissionRulesTab: React.FC = () => {
               <button
                 onClick={() => setHistoryRule(null)}
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold cursor-pointer text-xs"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 8. MODAL: XEM CHI TIẾT QUY TẮC HOA HỒNG (GET /commission-rules/{id}) */}
+      {(detailRule || isLoadingDetail) && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold">
+                  <Percent className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">Chi Tiết Chính Sách Hoa Hồng</h3>
+                  <p className="text-[11px] text-slate-400 font-mono">Endpoint: GET /api/v1/admin/commission-rules/{detailRule?.id || '...'}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDetailRule(null)}
+                className="text-slate-400 hover:text-slate-700 text-sm font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {isLoadingDetail ? (
+              <div className="py-10 flex flex-col items-center justify-center gap-2 text-slate-400">
+                <Loader2 className="w-6 h-6 animate-spin text-[#c34c36]" />
+                <span className="text-xs">Đang tải chi tiết chính sách từ máy chủ...</span>
+              </div>
+            ) : detailRule ? (
+              <div className="space-y-3.5 text-xs">
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-medium">Tên chính sách:</span>
+                    <strong className="text-slate-900 text-sm font-black">{detailRule.name}</strong>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-medium">Mã định danh (ID):</span>
+                    <span className="font-mono text-[11px] text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200 select-all">
+                      {detailRule.id}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-medium">Trạng thái vận hành:</span>
+                    {detailRule.active ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        Đang Kích Hoạt
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-300">
+                        Đã Vô Hiệu Hóa
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200">
+                    <span className="text-[10px] uppercase font-bold text-emerald-800 block mb-0.5">Tỷ lệ chiết khấu sàn</span>
+                    <div className="text-lg font-black text-emerald-700">
+                      {(Number(detailRule.rate) * 100).toFixed(2)}%
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block mb-0.5">Phiên bản Revision</span>
+                    <div className="text-lg font-black font-mono text-slate-800">
+                      r{detailRule.revision}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block mb-0.5">Phí tối thiểu</span>
+                    <div className="text-sm font-bold text-slate-900">
+                      {formatVND(detailRule.minCommission)}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block mb-0.5">Trần tối đa</span>
+                    <div className="text-sm font-bold text-slate-900">
+                      {detailRule.maxCommission ? formatVND(detailRule.maxCommission) : 'Không giới hạn'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl border border-slate-200 bg-white space-y-1.5 text-[11px] text-slate-500">
+                  <div className="flex justify-between">
+                    <span>Thời điểm khởi tạo:</span>
+                    <strong className="text-slate-700 font-mono">
+                      {detailRule.createdAt ? new Date(detailRule.createdAt).toLocaleString('vi-VN') : '—'}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Cập nhật gần nhất:</span>
+                    <strong className="text-slate-700 font-mono">
+                      {detailRule.updatedAt ? new Date(detailRule.updatedAt).toLocaleString('vi-VN') : '—'}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDetailRule(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
               >
                 Đóng
               </button>

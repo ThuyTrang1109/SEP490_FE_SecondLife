@@ -129,15 +129,34 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      const payload: CreateReportRequestDto = {
-        postId: postId || undefined,
-        orderId: orderId || undefined,
-        reasonCode,
-        description: description.trim(),
-        evidenceUrls,
-      };
+      if (postId && !orderId) {
+        // Sử dụng sub-route chuyên dụng của Backend: POST /api/v1/reports/listings/{postId}
+        let listingReason = 'OTHER';
+        const rCode = String(reasonCode);
+        if (rCode === 'FRAUD' || rCode === 'MISLEADING_DESCRIPTION' || rCode === 'DUPLICATE_LISTING' || rCode === 'OTHER') {
+          listingReason = rCode;
+        } else if (rCode === 'COUNTERFEIT') {
+          listingReason = 'FRAUD';
+        } else {
+          listingReason = 'OTHER';
+        }
 
-      await userReportService.createReport(payload);
+        await userReportService.reportListing(postId, {
+          reasonCode: listingReason,
+          description: description.trim(),
+          evidenceUrls,
+        });
+      } else {
+        const payload: CreateReportRequestDto = {
+          postId: postId || undefined,
+          orderId: orderId || undefined,
+          reasonCode,
+          description: description.trim(),
+          evidenceUrls,
+        };
+        await userReportService.createReport(payload);
+      }
+
       setSuccessMessage('Khiếu nại của bạn đã được ghi nhận vào hệ thống. Bộ phận Trust & Safety sẽ xem xét và phản hồi trong vòng 24 giờ.');
       setTimeout(() => {
         if (onSuccess) onSuccess();

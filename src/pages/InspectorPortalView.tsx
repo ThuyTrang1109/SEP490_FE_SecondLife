@@ -230,8 +230,12 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     setIsBarcodeScannerOpen(false);
     showNotice(lang === 'vi' ? `Quét thành công mã: ${code}` : `Scanned code: ${code}`);
 
+    const clean = code.replace(/^(sl-insp-|inspection-|order-)/i, '').trim().toLowerCase();
     // Try finding order by ID or code
-    const found = orders.find((o) => o.id.toLowerCase().includes(code.toLowerCase()));
+    const found = orders.find((o) => {
+      const oId = o.id.toLowerCase();
+      return oId === clean || oId.includes(clean) || clean.includes(oId);
+    });
     if (found) {
       setSelectedOrderId(found.id);
       setInspectorTab('workbench');
@@ -241,7 +245,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
           : `Found order #${found.id}. Loaded into workbench.`
       );
     } else {
-      setTaskSearchTerm(code);
+      setTaskSearchTerm(clean || code);
       setInspectorTab('tasks');
     }
   };

@@ -232,6 +232,9 @@ export interface InspectionOrderDto {
   finalItemPrice?: number;
   finalShippingFee?: number;
 
+  address?: string;
+  sellerAddress?: string;
+  sellerPhone?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -481,7 +484,7 @@ export const inspectorService = {
       checklistResults: formattedChecklistResults,
     };
 
-    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/submit-report`, {
+    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/result`, {
       method: 'POST',
       body: JSON.stringify(payload),
       requiresAuth: true,

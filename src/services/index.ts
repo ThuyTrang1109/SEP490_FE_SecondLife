@@ -33,6 +33,7 @@ export * from './staffReportService';
 export {
   userReportService,
   type CreateReportRequestDto,
+  type CreateListingReportRequestDto,
   type ReportEvidenceUploadResponse,
   type UserReportResponseDto
 } from './userReportService';

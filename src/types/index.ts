@@ -178,6 +178,9 @@ export interface EscrowOrder {
   confirmationDeadline?: string | null;
   confirmationCancelAt?: string | null;
   confirmationStatus?: string | null;
+  sellerReadyAt?: string | null;
+  carrierPickedUpAt?: string | null;
+  handoverDeadline?: string | null;
   appointmentScheduledAt?: string | null;
   appointmentNote?: string | null;
 }
@@ -460,6 +463,9 @@ export interface OrderBackend {
   confirmationDeadline?: string | null;
   confirmationCancelAt?: string | null;
   confirmationStatus?: string | null;
+  sellerReadyAt?: string | null;
+  carrierPickedUpAt?: string | null;
+  handoverDeadline?: string | null;
 }
 
 // ==========================================
@@ -531,6 +537,15 @@ export interface ShipmentBackend {
   lastError?: string | null;
   podUrl?: string | null;
   driverId?: string | null;
+  driverName?: string | null;
+  driverPhone?: string | null;
+  driverPlateNumber?: string | null;
+  senderName?: string | null;
+  senderPhone?: string | null;
+  senderAddress?: string | null;
+  receiverName?: string | null;
+  receiverPhone?: string | null;
+  receiverAddress?: string | null;
   shareLink?: string | null;
 }
 

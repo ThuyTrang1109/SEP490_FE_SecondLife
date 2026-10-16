@@ -28,6 +28,8 @@ import { PolicyModal, PolicyTabKey } from './components/modals/PolicyModal';
 import { SellerReviewsModal } from './components/modals/SellerReviewsModal';
 import { NotificationCenterView } from './pages/NotificationCenterView';
 import { RealtimeNotificationToast } from './components/common/RealtimeNotificationToast';
+import { GlobalPopupModal } from './components/common/GlobalPopupModal';
+import './utils/dialogService';
 import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
 import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser, ChatRoomDto } from './services';
 
@@ -1260,6 +1262,9 @@ export default function App() {
             confirmationDeadline: bOrd.confirmationDeadline || null,
             confirmationCancelAt: bOrd.confirmationCancelAt || null,
             confirmationStatus: bOrd.confirmationStatus || (bOrd.sellerConfirmedAt ? 'CONFIRMED' : 'PENDING'),
+            sellerReadyAt: (bOrd as any).sellerReadyAt || null,
+            carrierPickedUpAt: (bOrd as any).carrierPickedUpAt || null,
+            handoverDeadline: (bOrd as any).handoverDeadline || null,
             appointmentScheduledAt: bOrd.appointmentScheduledAt || bOrd.scheduledAt || null,
             appointmentNote: bOrd.appointmentNote || bOrd.note || null,
             hasInspectionService: isInspectionOrder,
@@ -2138,6 +2143,9 @@ export default function App() {
         onClose={() => setIsPolicyModalOpen(false)}
         lang={lang}
       />
+
+      {/* Global In-App Popup Modal (Replaces all native browser localhost alerts & confirms) */}
+      <GlobalPopupModal />
 
       {/* E-Commerce Footer */}
       {activeTab !== 'admin-dashboard' && activeTab !== 'inspection-hub' && activeTab !== 'inspection-center' && activeTab !== 'staff-workspace' && (

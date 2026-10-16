@@ -20,7 +20,7 @@ import { Listing, Language, ProductReview, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import { soundFx } from '../../utils/soundEffects';
 import { reviewService } from '../../data/mockReviews';
-import { reputationService, SellerReputationDto, getStoredUser } from '../../services';
+import { reputationService, postService, SellerReputationDto, getStoredUser } from '../../services';
 import { UserReportModal } from './UserReportModal';
 
 interface ListingDetailModalProps {
@@ -68,6 +68,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const sellerReviews = reviewService.getReviewsBySeller(listing.sellerId);
   const sellerTrust = reviewService.getSellerTrustProfile(listing.sellerId, listing.sellerName);
   const [realReputation, setRealReputation] = useState<SellerReputationDto | null>(null);
+  const [aiEstimate, setAiEstimate] = useState<any>(null);
 
   useEffect(() => {
     if (listing.sellerId) {
@@ -76,6 +77,14 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
       });
     }
   }, [listing.sellerId]);
+
+  useEffect(() => {
+    if (listing.id) {
+      postService.getLatestPriceEstimate(listing.id).then((est) => {
+        if (est) setAiEstimate(est);
+      }).catch(() => {});
+    }
+  }, [listing.id]);
 
   const displayReviews = reviewsTab === 'product' ? productReviews : sellerReviews;
   const avgProductRating = productReviews.length > 0
@@ -192,6 +201,31 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                       <span>{lang === 'vi' ? 'Bảo lãnh Escrow 100%: Kiểm tra 48h mới giải ngân' : '100% Escrow Protection'}</span>
                     </div>
                   </div>
+
+                  {/* AI Suggested Price Range Widget (GET /posts/{postId}/ai-price-estimation) */}
+                  {aiEstimate && (aiEstimate.suggestedPriceMin || aiEstimate.suggestedPriceMax) && (
+                    <div className="p-2.5 rounded-xl bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200/80 space-y-1">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="font-extrabold text-purple-900 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-purple-600" />
+                          <span>Khoảng Giá Gợi Ý Bởi AI:</span>
+                        </span>
+                        {aiEstimate.confidenceScore && (
+                          <span className="px-1.5 py-0.2 rounded bg-purple-200/70 text-purple-900 font-bold text-[9px]">
+                            Độ tin cậy: {Math.round(aiEstimate.confidenceScore * 100)}%
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs font-black text-purple-950 font-mono">
+                        {formatVND(aiEstimate.suggestedPriceMin)} ~ {formatVND(aiEstimate.suggestedPriceMax)}
+                      </div>
+                      {aiEstimate.reasoningNotes && (
+                        <p className="text-[10px] text-purple-800/80 leading-tight italic">
+                          "{aiEstimate.reasoningNotes}"
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {/* Seller Card */}
                   <div className="p-2.5 rounded-xl bg-gradient-to-br from-[#faf8f5] to-amber-50/40 border border-amber-200/80 space-y-1.5">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   X,
   User,
@@ -35,10 +35,12 @@ import {
   AlertTriangle,
   Copy,
   PlusCircle,
+  Eye,
 } from 'lucide-react';
 import { UserProfile, UserRole, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
 import { WithdrawalModal } from './WithdrawalModal';
+import { dialogService } from '../../utils/dialogService';
 import {
   userService,
   sellerService,
@@ -54,12 +56,14 @@ import {
   OpenApiWard,
   walletService,
   orderService,
+  userReportService,
+  UserReportResponseDto,
 } from '../../services';
 import { LiveFaceScannerModal, VnptEkycResultData } from './LiveFaceScannerModal';
 import { saveSellerAddress } from '../../utils/addressUtils';
 import { LalamoveAddressPicker } from '../common/LalamoveAddressPicker';
 
-export type ProfileTab = 'info' | 'wallet' | 'kyc' | 'security' | 'settings';
+export type ProfileTab = 'info' | 'wallet' | 'kyc' | 'reports' | 'security' | 'settings';
 
 const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 const isStrongPassword = (pass: string): boolean => {
@@ -170,6 +174,67 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       fetchWalletAndEscrow();
     }
   }, [isOpen, fetchWalletAndEscrow]);
+
+  // Reports State (GET /api/v1/reports/me & GET /api/v1/reports/{id})
+  const [myReports, setMyReports] = useState<UserReportResponseDto[]>([]);
+  const [isLoadingReports, setIsLoadingReports] = useState(false);
+  const [reportPage, setReportPage] = useState(0);
+  const [reportTotalPages, setReportTotalPages] = useState(1);
+  const [selectedReportDetail, setSelectedReportDetail] = useState<UserReportResponseDto | null>(null);
+  const [isLoadingReportDetail, setIsLoadingReportDetail] = useState(false);
+  const [detailEvidenceUrls, setDetailEvidenceUrls] = useState<string[]>([]);
+  const [reportStatusFilter, setReportStatusFilter] = useState<'ALL' | 'OPEN' | 'IN_REVIEW' | 'CONFIRMED' | 'DISMISSED'>('ALL');
+
+  const fetchMyReports = useCallback(async (page = 0) => {
+    setIsLoadingReports(true);
+    try {
+      const res = await userReportService.getMyReports(page, 10);
+      setMyReports(res.items || []);
+      setReportPage(res.page || 0);
+      setReportTotalPages(res.totalPages || 1);
+    } catch (err) {
+      console.warn('Lỗi tải danh sách khiếu nại cá nhân:', err);
+    } finally {
+      setIsLoadingReports(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'reports') {
+      fetchMyReports(0);
+    }
+  }, [activeTab, fetchMyReports]);
+
+  const handleOpenReportDetail = async (reportId: string) => {
+    setIsLoadingReportDetail(true);
+    setSelectedReportDetail(null);
+    setDetailEvidenceUrls([]);
+    try {
+      const detail = await userReportService.getReportById(reportId);
+      setSelectedReportDetail(detail);
+
+      if (detail.evidenceUrls && detail.evidenceUrls.length > 0) {
+        const loadedUrls: string[] = [];
+        for (const ev of detail.evidenceUrls) {
+          if (!ev.startsWith('http://') && !ev.startsWith('https://')) {
+            try {
+              const bUrl = await userReportService.getEvidenceBlobUrl(ev);
+              loadedUrls.push(bUrl);
+            } catch {
+              loadedUrls.push(ev);
+            }
+          } else {
+            loadedUrls.push(ev);
+          }
+        }
+        setDetailEvidenceUrls(loadedUrls);
+      }
+    } catch (err) {
+      console.warn('Lỗi lấy chi tiết khiếu nại:', err);
+    } finally {
+      setIsLoadingReportDetail(false);
+    }
+  };
 
   const [isSaved, setIsSaved] = useState(false);
 
@@ -933,7 +998,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       if (field === 'back') setDocBackUrl(uploaded.url);
       if (field === 'selfie') setSelfieUrl(uploaded.url);
     } catch (err: any) {
-      alert(err.message || 'Tải ảnh lên không thành công');
+      dialogService.error(err.message || 'Tải ảnh lên không thành công', 'Lỗi Tải Ảnh');
     } finally {
       setUploadingField(null);
     }
@@ -1694,6 +1759,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               >
                 <Shield className={`w-4 h-4 shrink-0 ${activeTab === 'security' || activeTab === 'kyc' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
                 <span>{lang === 'vi' ? 'Bảo Mật' : 'Security'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('reports')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  activeTab === 'reports'
+                    ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                }`}
+              >
+                <AlertTriangle className={`w-4 h-4 shrink-0 ${activeTab === 'reports' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                <span>{lang === 'vi' ? 'Khiếu Nại' : 'Reports'}</span>
               </button>
 
               {!['admin', 'staff', 'inspector'].includes(currentUser.role) && (
@@ -3210,6 +3288,253 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               )}
             </div>
             )
+          )}
+
+          {/* TAB: KHIẾU NẠI & BÁO CÁO CỦA TÔI (MY REPORTS) */}
+          {activeTab === 'reports' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              {/* Header Box */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 via-[#24263e] to-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-amber-400 shrink-0">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-sm uppercase tracking-wide">
+                      {lang === 'vi' ? 'Khiếu Nại & Tố Cáo Của Tôi' : 'My Reports & Disputes'}
+                    </h4>
+                    <p className="text-[11px] text-slate-300">
+                      {lang === 'vi'
+                        ? 'Theo dõi tiến trình giải quyết vi phạm của Ban Quản Trị & Trust Team'
+                        : 'Track resolution progress of your reports with Trust & Safety Team'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => fetchMyReports(reportPage)}
+                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 self-start sm:self-auto shrink-0"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingReports ? 'animate-spin' : ''}`} />
+                  <span>{lang === 'vi' ? 'Làm mới' : 'Refresh'}</span>
+                </button>
+              </div>
+
+              {/* Status Filter Tabs */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs">
+                {(['ALL', 'OPEN', 'IN_REVIEW', 'CONFIRMED', 'DISMISSED'] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setReportStatusFilter(st)}
+                    className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer shrink-0 ${
+                      reportStatusFilter === st
+                        ? 'bg-[#24263e] text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {st === 'ALL' && (lang === 'vi' ? 'Tất cả' : 'All')}
+                    {st === 'OPEN' && (lang === 'vi' ? 'Chờ tiếp nhận' : 'Open')}
+                    {st === 'IN_REVIEW' && (lang === 'vi' ? 'Đang thẩm định' : 'In Review')}
+                    {st === 'CONFIRMED' && (lang === 'vi' ? 'Đã xác nhận' : 'Confirmed')}
+                    {st === 'DISMISSED' && (lang === 'vi' ? 'Đã bác bỏ' : 'Dismissed')}
+                  </button>
+                ))}
+              </div>
+
+              {/* Reports List */}
+              {isLoadingReports ? (
+                <div className="py-12 text-center text-slate-400">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-[#c34c36]" />
+                  <span className="text-xs">{lang === 'vi' ? 'Đang tải danh sách khiếu nại...' : 'Loading reports...'}</span>
+                </div>
+              ) : myReports.length === 0 ? (
+                <div className="py-12 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mx-auto mb-2">
+                    <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                  </div>
+                  <h5 className="font-bold text-slate-800 text-sm">
+                    {lang === 'vi' ? 'Bạn chưa gửi khiếu nại nào' : 'No reports submitted'}
+                  </h5>
+                  <p className="text-slate-500 text-xs mt-1 max-w-sm mx-auto">
+                    {lang === 'vi'
+                      ? 'Nếu phát hiện bài đăng vi phạm hoặc sản phẩm nhận được có dấu hiệu bất thường, bạn có thể gửi tố cáo trực tiếp.'
+                      : 'You can report suspicious listings or disputed orders anytime.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {myReports
+                    .filter((r) => reportStatusFilter === 'ALL' || r.status === reportStatusFilter)
+                    .map((rep) => (
+                      <div
+                        key={rep.id}
+                        className="p-4 rounded-2xl border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/50 transition shadow-2xs space-y-2.5"
+                      >
+                        <div className="flex items-start justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-md font-mono text-[11px] font-black bg-slate-100 text-slate-800 border border-slate-200">
+                              #{rep.id.slice(0, 8)}
+                            </span>
+                            <span className="text-xs font-bold text-slate-900">
+                              {rep.postId ? `Bài đăng #${rep.postId.slice(0, 8)}` : rep.orderId ? `Đơn hàng #${rep.orderId.slice(0, 8)}` : 'Báo cáo chung'}
+                            </span>
+                          </div>
+
+                          {/* Status Badge */}
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                              rep.status === 'CONFIRMED'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : rep.status === 'DISMISSED'
+                                ? 'bg-slate-100 text-slate-600 border border-slate-300'
+                                : rep.status === 'IN_REVIEW'
+                                ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                                : 'bg-amber-100 text-amber-800 border border-amber-300'
+                            }`}
+                          >
+                            {rep.status === 'OPEN' && (lang === 'vi' ? '● Chờ tiếp nhận' : '● Open')}
+                            {rep.status === 'IN_REVIEW' && (lang === 'vi' ? '⚡ Đang thẩm định' : '⚡ In Review')}
+                            {rep.status === 'CONFIRMED' && (lang === 'vi' ? '✓ Đã xác nhận' : '✓ Confirmed')}
+                            {rep.status === 'DISMISSED' && (lang === 'vi' ? '✕ Đã bác bỏ' : '✕ Dismissed')}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                          <div className="font-semibold text-slate-900 mb-0.5">
+                            Lý do: <span className="font-bold text-[#c34c36]">{rep.reasonCode}</span>
+                          </div>
+                          <p className="line-clamp-2 text-slate-600">{rep.description}</p>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
+                          <span>Ngày tạo: {new Date(rep.createdAt).toLocaleString('vi-VN')}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenReportDetail(rep.id)}
+                            className="px-3 py-1 rounded-lg bg-[#24263e] hover:bg-[#c34c36] text-white font-bold text-xs transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>{lang === 'vi' ? 'Xem Kết Quả' : 'View Detail'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+
+              {/* Report Detail Modal */}
+              {selectedReportDetail && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+                  <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 border border-slate-200 shadow-2xl text-[#24263e]">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-black">
+                          <AlertTriangle className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm text-slate-900">Chi Tiết Khiếu Nại #{selectedReportDetail.id.slice(0, 8)}</h4>
+                          <span className="text-[10px] text-slate-400 font-mono">Request: {selectedReportDetail.requestId}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedReportDetail(null)}
+                        className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-3 text-xs max-h-[60vh] overflow-y-auto pr-1">
+                      <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <div>
+                          <span className="text-slate-400 block text-[10px] uppercase font-bold">Trạng Thái</span>
+                          <span className="font-bold text-slate-900">{selectedReportDetail.status}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px] uppercase font-bold">Lý Do Vi Phạm</span>
+                          <span className="font-bold text-[#c34c36]">{selectedReportDetail.reasonCode}</span>
+                        </div>
+                        {selectedReportDetail.postId && (
+                          <div className="col-span-2">
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Mã Bài Đăng Tố Cáo</span>
+                            <span className="font-mono text-slate-700 font-bold">{selectedReportDetail.postId}</span>
+                          </div>
+                        )}
+                        {selectedReportDetail.orderId && (
+                          <div className="col-span-2">
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Mã Đơn Hàng</span>
+                            <span className="font-mono text-slate-700 font-bold">{selectedReportDetail.orderId}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <span className="text-[11px] font-bold text-slate-600 block mb-1">Mô tả khiếu nại của bạn:</span>
+                        <p className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 leading-relaxed font-medium">
+                          {selectedReportDetail.description}
+                        </p>
+                      </div>
+
+                      {/* Evidence Images */}
+                      {detailEvidenceUrls.length > 0 && (
+                        <div>
+                          <span className="text-[11px] font-bold text-slate-600 block mb-1.5">Bằng chứng đính kèm:</span>
+                          <div className="grid grid-cols-3 gap-2">
+                            {detailEvidenceUrls.map((url, i) => (
+                              <a
+                                key={i}
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block h-20 rounded-xl overflow-hidden border border-slate-200 hover:opacity-90 relative group"
+                              >
+                                <img src={url} alt={`Evidence ${i + 1}`} className="w-full h-full object-cover" />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-[10px] font-bold">
+                                  Xem ảnh
+                                </div>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Resolution Box */}
+                      {selectedReportDetail.decisionReason && (
+                        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 space-y-1">
+                          <span className="font-bold block text-emerald-800 text-[11px] uppercase tracking-wide">
+                            Kết luận xử lý từ Ban Quản Trị:
+                          </span>
+                          <p className="text-slate-800 leading-relaxed">{selectedReportDetail.decisionReason}</p>
+                          {selectedReportDetail.responsibleParty && (
+                            <div className="text-[10px] text-slate-500 pt-1">
+                              Bên chịu trách nhiệm: <strong className="text-slate-800">{selectedReportDetail.responsibleParty}</strong>
+                            </div>
+                          )}
+                          {selectedReportDetail.resolvedAt && (
+                            <div className="text-[10px] text-slate-400">
+                              Ngày giải quyết: {new Date(selectedReportDetail.resolvedAt).toLocaleString('vi-VN')}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedReportDetail(null)}
+                        className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                      >
+                        Đóng
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

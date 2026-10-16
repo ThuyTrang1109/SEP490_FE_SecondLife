@@ -29,7 +29,9 @@ import {
   Truck,
   MapPin,
   Eye,
-  Trash2
+  Trash2,
+  RotateCcw,
+  PlayCircle
 } from 'lucide-react';
 import {
   ItemCategory,
@@ -388,6 +390,12 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
+  // Video state (POST /api/v1/media/upload-video)
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
+  const [isUploadingVideo, setIsUploadingVideo] = useState(false);
+  const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
+
   // Post & AI Session IDs from Backend
   const [postId, setPostId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -420,6 +428,47 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       showToast(msg);
     } finally {
       setIsDeletingDraft(false);
+    }
+  };
+
+  // Load Draft from Backend (GET /api/v1/posts/{postId}/draft)
+  const [isLoadDraftModalOpen, setIsLoadDraftModalOpen] = useState(false);
+  const [draftIdInput, setDraftIdInput] = useState('');
+  const [isLoadingDraft, setIsLoadingDraft] = useState(false);
+
+  const handleLoadDraftFromBackend = async (draftIdToLoad: string) => {
+    const cleanId = draftIdToLoad.trim();
+    if (!cleanId) {
+      showToast(lang === 'vi' ? 'Vui lòng nhập mã bài đăng nháp!' : 'Please enter draft ID!');
+      return;
+    }
+    setIsLoadingDraft(true);
+    try {
+      const draft = await postService.getDraft(cleanId);
+      if (draft) {
+        setPostId(draft.postId || draft.id || cleanId);
+        setDraftPost(draft);
+        if (draft.title) setTitle(draft.title);
+        if (draft.description) setDescription(draft.description);
+        if (draft.price) {
+          setOriginalPriceVnd(draft.price);
+          setFinalPriceVnd(draft.price);
+          setIsManualPricingInStep3(true);
+        }
+        if (draft.itemCondition) setItemCondition(draft.itemCondition);
+        if (draft.categoryId) setSelectedCategoryId(draft.categoryId);
+        if (draft.itemId) setSelectedItemId(draft.itemId);
+        if (draft.imageUrls && draft.imageUrls.length > 0) {
+          setPhotoPreviews(draft.imageUrls);
+        }
+        showToast(lang === 'vi' ? `Đã tải lại bản nháp #${cleanId.slice(0, 8)} thành công!` : 'Draft loaded successfully!');
+        setIsLoadDraftModalOpen(false);
+      }
+    } catch (err: any) {
+      console.warn('Lỗi tải bản nháp:', err);
+      showToast(err?.message || (lang === 'vi' ? 'Không tìm thấy bản nháp với mã này.' : 'Draft not found.'));
+    } finally {
+      setIsLoadingDraft(false);
     }
   };
 
@@ -1139,6 +1188,38 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     setPhotoFiles((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const handleVideoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 100 * 1024 * 1024) {
+      showToast(lang === 'vi' ? 'Video không được vượt quá 100MB' : 'Video must not exceed 100MB');
+      return;
+    }
+    setVideoFile(file);
+    setVideoPreviewUrl(URL.createObjectURL(file));
+
+    // Upload video directly via mediaService.uploadVideo
+    setIsUploadingVideo(true);
+    try {
+      const res = await mediaService.uploadVideo(file, 'listings/videos');
+      if (res?.url) {
+        setUploadedVideoUrl(res.url);
+        showToast(lang === 'vi' ? 'Tải video vận hành thiết bị thành công!' : 'Operation video uploaded!');
+      }
+    } catch (err: any) {
+      console.warn('Video upload error:', err);
+      showToast(err?.message || (lang === 'vi' ? 'Không thể tải video lên máy chủ' : 'Failed to upload video'));
+    } finally {
+      setIsUploadingVideo(false);
+    }
+  };
+
+  const handleRemoveVideo = () => {
+    setVideoFile(null);
+    setVideoPreviewUrl(null);
+    setUploadedVideoUrl(null);
+  };
+
   // Convert URLs or files into Blob array for postService.initPost
   const prepareImageBlobs = async (): Promise<(File | Blob)[]> => {
     if (photoFiles.length >= 3) {
@@ -1812,14 +1893,26 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       {/* ========================================================================= */}
       {currentStep === 1 && (
         <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
-          <div>
-            <h3 className="text-lg font-black text-[#24263e] flex items-center gap-2">
-              <Camera className="w-5 h-5 text-[#c34c36]" />
-              <span>{lang === 'vi' ? 'Bước 1: Chọn Danh Mục Sản Phẩm & Tải 3-6 Ảnh' : 'Step 1: Select Category & Upload 3-6 Photos'}</span>
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              AI sẽ phân tích toàn bộ ảnh cùng danh mục sản phẩm để tạo mô tả và gợi ý định giá chuẩn xác.
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100">
+            <div>
+              <h3 className="text-lg font-black text-[#24263e] flex items-center gap-2">
+                <Camera className="w-5 h-5 text-[#c34c36]" />
+                <span>{lang === 'vi' ? 'Bước 1: Chọn Danh Mục Sản Phẩm & Tải 3-6 Ảnh' : 'Step 1: Select Category & Upload 3-6 Photos'}</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                AI sẽ phân tích toàn bộ ảnh cùng danh mục sản phẩm để tạo mô tả và gợi ý định giá chuẩn xác.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsLoadDraftModalOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer border border-slate-200 shrink-0"
+              title={lang === 'vi' ? 'Tải lại bản nháp đã lưu trên hệ thống' : 'Reload saved draft'}
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-[#c34c36]" />
+              <span>{lang === 'vi' ? 'Tải lại bản nháp đã lưu' : 'Load saved draft'}</span>
+            </button>
           </div>
 
           {/* Category & Item Dropdowns */}
@@ -1997,6 +2090,64 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     accept="image/jpeg,image/png,image/webp"
                     className="hidden"
                     onChange={handleFileChange}
+                  />
+                </label>
+              )}
+            </div>
+
+            {/* Video Upload Section (POST /api/v1/media/upload-video) */}
+            <div className="pt-3 border-t border-gray-100 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h4 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+                    <PlayCircle className="w-4 h-4 text-orange-600" />
+                    <span>Video quay vận hành thiết bị thực tế (Khuyến nghị)</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Tải video kiểm tra chức năng (bật nguồn, cắm điện, thử máy) tối đa 100MB (MP4, MOV, WEBM)
+                  </p>
+                </div>
+                {isUploadingVideo && (
+                  <span className="text-[11px] font-bold text-orange-600 flex items-center gap-1">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Đang tải video lên máy chủ...</span>
+                  </span>
+                )}
+              </div>
+
+              {videoPreviewUrl ? (
+                <div className="relative rounded-2xl overflow-hidden border border-gray-200 bg-black max-w-sm">
+                  <video src={videoPreviewUrl} controls className="w-full max-h-48 object-contain" />
+                  <button
+                    type="button"
+                    onClick={handleRemoveVideo}
+                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-rose-600/90 text-white flex items-center justify-center hover:bg-rose-700 transition cursor-pointer shadow-md"
+                    title="Xóa video"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  {uploadedVideoUrl && (
+                    <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-emerald-600/90 text-white text-[10px] font-bold flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
+                      <span>Đã tải lên hệ thống</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <label className="border border-dashed border-gray-300 hover:border-orange-500 rounded-2xl p-3.5 flex items-center gap-3 bg-slate-50/70 hover:bg-orange-50/40 transition cursor-pointer max-w-md">
+                  <div className="w-10 h-10 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-orange-600 shadow-2xs shrink-0">
+                    <PlayCircle className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-bold text-slate-800 block">+ Tải Video Vận Hành Máy</span>
+                    <span className="text-[10px] text-slate-400">Định dạng MP4, WEBM, MOV (Tối đa 100MB)</span>
+                  </div>
+                  <input
+                    type="file"
+                    accept="video/mp4,video/quicktime,video/webm"
+                    className="hidden"
+                    onChange={handleVideoChange}
+                    disabled={isUploadingVideo}
                   />
                 </label>
               )}
@@ -3338,6 +3489,84 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 bg-slate-900/95 text-white text-sm font-bold rounded-full shadow-2xl flex items-center gap-2 animate-fadeIn border border-slate-700/50 backdrop-blur-sm">
           <AlertTriangle className="w-4 h-4 text-amber-400" />
           <span>{toastMsg}</span>
+        </div>
+      )}
+
+      {/* Modal: Tải Lại Bản Nháp Đã Lưu (GET /api/v1/posts/{postId}/draft) */}
+      {isLoadDraftModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 space-y-5 shadow-2xl border border-slate-200 animate-scaleIn text-[#24263e]">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-orange-50 text-[#c34c36] flex items-center justify-center font-black">
+                  <RotateCcw className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-sm text-slate-900">
+                    {lang === 'vi' ? 'Tải Lại Bản Nháp Đã Lưu' : 'Load Saved Draft'}
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    {lang === 'vi' ? 'Nhập mã bài đăng để khôi phục toàn bộ tiến trình' : 'Enter Post ID to restore draft progress'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsLoadDraftModalOpen(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  {lang === 'vi' ? 'Mã Bài Đăng Nháp (Post ID / Draft UUID)' : 'Draft Post ID'}
+                </label>
+                <input
+                  type="text"
+                  value={draftIdInput}
+                  onChange={(e) => setDraftIdInput(e.target.value)}
+                  placeholder="VD: 550e8400-e29b-41d4-a716-446655440000"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs font-mono text-slate-900"
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-150 text-[11px] text-slate-600 space-y-1">
+                <span className="font-bold text-slate-800 block">💡 Mẹo tìm lại bản nháp:</span>
+                <p>Bạn có thể xem lại mã bài đăng nháp trong mục <strong>Kênh Người Bán &gt; Tin Đăng Của Tôi &gt; Bản Nháp</strong> hoặc trong URL làm việc trước đó.</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsLoadDraftModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                {lang === 'vi' ? 'Đóng' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                disabled={isLoadingDraft || !draftIdInput.trim()}
+                onClick={() => handleLoadDraftFromBackend(draftIdInput)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-[#c34c36] hover:bg-[#a63f2d] text-white transition flex items-center gap-1.5 cursor-pointer shadow-md disabled:opacity-50"
+              >
+                {isLoadingDraft ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>{lang === 'vi' ? 'Đang tải...' : 'Loading...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>{lang === 'vi' ? 'Tải Bản Nháp' : 'Load Draft'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

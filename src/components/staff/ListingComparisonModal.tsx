@@ -18,6 +18,7 @@ import {
 import { staffListingService } from '../../services/staffListingService';
 import { StaffListingItemDTO } from '../../types';
 import { formatVND } from '../../utils/translations';
+import { dialogService } from '../../utils/dialogService';
 
 interface ListingComparisonModalProps {
   postId: string;
@@ -146,7 +147,7 @@ export const ListingComparisonModal: React.FC<ListingComparisonModalProps> = ({
       onActionSuccess(`Đã phê duyệt bài đăng "${currentPost.title}" thành công!`);
       onClose();
     } catch (err: any) {
-      alert(err?.message || 'Lỗi khi phê duyệt bài đăng. Vui lòng thử lại.');
+      dialogService.error(err?.message || 'Lỗi khi phê duyệt bài đăng. Vui lòng thử lại.', 'Lỗi Phê Duyệt');
     } finally {
       setIsApproving(false);
     }

@@ -22,10 +22,13 @@ import {
   Radio,
   RotateCcw,
   Sparkles,
-  ShieldCheck
+  ShieldCheck,
+  CreditCard,
+  Loader2
 } from 'lucide-react';
 import { shippingService } from '../../services/shippingService';
 import { orderService } from '../../services/orderService';
+import { dialogService } from '../../utils/dialogService';
 
 interface OrderTrackingModalProps {
   order: EscrowOrder;
@@ -87,6 +90,70 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   // Test simulation state (Sandbox for Localhost / Dev)
   const [showSandbox, setShowSandbox] = useState(false);
   const [simulatingStatus, setSimulatingStatus] = useState<string | null>(null);
+
+  // Backend Order Extra States (GET /orders/{id}/confirmation, /fulfillment, /payment)
+  const [orderConfirmation, setOrderConfirmation] = useState<any>(null);
+  const [orderFulfillment, setOrderFulfillment] = useState<any>(null);
+  const [orderPayment, setOrderPayment] = useState<any>(null);
+  const [isLoadingPayment, setIsLoadingPayment] = useState<boolean>(false);
+  const [paymentNotice, setPaymentNotice] = useState<string | null>(null);
+  const [countdownText, setCountdownText] = useState<string>('');
+
+  const loadOrderExtraDetails = useCallback(async () => {
+    try {
+      const [confRes, fulfRes] = await Promise.allSettled([
+        orderService.getOrderConfirmation(order.id),
+        orderService.getOrderFulfillment(order.id),
+      ]);
+      if (confRes.status === 'fulfilled') setOrderConfirmation(confRes.value);
+      if (fulfRes.status === 'fulfilled') setOrderFulfillment(fulfRes.value);
+    } catch (e) {
+      console.warn('Failed to load confirmation or fulfillment extra details:', e);
+    }
+  }, [order.id]);
+
+  useEffect(() => {
+    loadOrderExtraDetails();
+  }, [loadOrderExtraDetails]);
+
+  // Countdown timer for seller confirmation deadline
+  useEffect(() => {
+    const deadlineStr = orderConfirmation?.confirmationDeadline || orderFulfillment?.confirmationDeadline;
+    if (!deadlineStr || orderConfirmation?.sellerConfirmedAt || orderFulfillment?.sellerConfirmedAt) {
+      setCountdownText('');
+      return;
+    }
+
+    const updateCountdown = () => {
+      const diff = new Date(deadlineStr).getTime() - Date.now();
+      if (diff <= 0) {
+        setCountdownText('Đã quá hạn xác nhận bàn giao');
+        return;
+      }
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const secs = Math.floor((diff % (1000 * 60)) / 1000);
+      setCountdownText(`${hours}h ${mins}m ${secs}s`);
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [orderConfirmation?.confirmationDeadline, orderConfirmation?.sellerConfirmedAt, orderFulfillment?.confirmationDeadline, orderFulfillment?.sellerConfirmedAt]);
+
+  const handleLookupPayment = async () => {
+    setIsLoadingPayment(true);
+    setPaymentNotice(null);
+    try {
+      const res = await orderService.getOrderPayment(order.id);
+      setOrderPayment(res);
+      setPaymentNotice('Đã cập nhật trạng thái thanh toán từ cổng SePay thành công!');
+    } catch (err: any) {
+      setPaymentNotice(err?.message || 'Không thể tra cứu trạng thái thanh toán.');
+    } finally {
+      setIsLoadingPayment(false);
+    }
+  };
 
   const mapInstanceRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
@@ -268,7 +335,11 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   // Handle Cancel Shipment with Auto-Refund
   const handleCancelShipment = async () => {
     if (!activeShipment) return;
-    if (!window.confirm('Bạn có chắc chắn muốn hủy vận đơn Lalamove này trước khi tài xế đến lấy hàng?')) return;
+    const confirmed = await dialogService.confirm(
+      'Bạn có chắc chắn muốn hủy vận đơn Lalamove này trước khi tài xế đến lấy hàng?',
+      { title: 'Hủy Vận Đơn', type: 'warning' }
+    );
+    if (!confirmed) return;
     setIsCancelling(true);
     try {
       await shippingService.cancelShipment(activeShipment.shipmentId);
@@ -308,7 +379,11 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   // Handle Manual Refund Shipment Fee
   const handleRefundShipment = async () => {
     if (!activeShipment) return;
-    if (!window.confirm('Xác nhận hoàn cước vận chuyển của vận đơn này về Ví SecondLife?')) return;
+    const confirmed = await dialogService.confirm(
+      'Xác nhận hoàn cước vận chuyển của vận đơn này về Ví SecondLife?',
+      { title: 'Hoàn Cước Vận Chuyển', type: 'confirm' }
+    );
+    if (!confirmed) return;
     setIsRefunding(true);
     setErrorMsg(null);
     try {
@@ -325,7 +400,11 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
   // Handle Buyer Confirm Delivery
   const handleConfirmReceived = async () => {
-    if (!window.confirm('Xác nhận bạn đã nhận được hàng và nghiệm thu thiết bị? Tiền sẽ được giải ngân cho người bán.')) return;
+    const confirmed = await dialogService.confirm(
+      'Xác nhận bạn đã nhận được hàng và nghiệm thu thiết bị? Tiền sẽ được giải ngân cho người bán.',
+      { title: 'Xác Nhận Đã Nhận Hàng', type: 'success' }
+    );
+    if (!confirmed) return;
     setIsConfirmingDelivered(true);
     try {
       await orderService.confirmDelivery(order.id);
@@ -656,6 +735,126 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
               <div className="flex items-center justify-between mt-1 text-slate-600 text-[11px]">
                 <span>Người bán: <strong className="text-slate-900">{order.sellerName}</strong></span>
                 <span>Tiền hàng: <strong className="text-orange-600 font-bold">{formatVND(order.itemPriceVnd)}</strong></span>
+              </div>
+            </div>
+          </div>
+
+          {/* ======================================================== */}
+          {/* WIDGET 1: COUNTDOWN CAM KẾT BÀN GIAO HÀNG & FULFILLMENT  */}
+          {/* ======================================================== */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            {/* Box 1: Cam kết giao hàng của Seller (GET /orders/{id}/confirmation) */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/70 to-orange-50/60 border border-amber-200/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                  <Clock className="w-4 h-4 text-orange-600" />
+                  <span>Cam Kết Bàn Giao Hàng</span>
+                </div>
+                {orderConfirmation?.sellerConfirmedAt ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    Đã Xác Nhận
+                  </span>
+                ) : countdownText ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-orange-500 text-white animate-pulse">
+                    Còn {countdownText}
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                    {orderConfirmation?.confirmationStatus || 'Chờ xác nhận'}
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-1 text-[11px] text-slate-700">
+                {orderConfirmation?.confirmationDeadline && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Hạn chót người bán xác nhận:</span>
+                    <strong className="font-mono text-slate-800">
+                      {new Date(orderConfirmation.confirmationDeadline).toLocaleString('vi-VN')}
+                    </strong>
+                  </div>
+                )}
+                {orderConfirmation?.sellerConfirmedAt && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Người bán đã chốt lúc:</span>
+                    <strong className="font-mono text-emerald-700">
+                      {new Date(orderConfirmation.sellerConfirmedAt).toLocaleString('vi-VN')}
+                    </strong>
+                  </div>
+                )}
+                {orderFulfillment?.handoverDeadline && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Hạn chót tài xế nhận kiện:</span>
+                    <strong className="font-mono text-slate-800">
+                      {new Date(orderFulfillment.handoverDeadline).toLocaleString('vi-VN')}
+                    </strong>
+                  </div>
+                )}
+                {orderFulfillment?.lateHandoverCandidate && (
+                  <div className="p-1.5 rounded-lg bg-rose-100/70 border border-rose-200 text-rose-700 text-[10px] font-bold flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
+                    <span>Đơn hàng có nguy cơ trễ hạn bàn giao Lalamove</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Box 2: Tra cứu trạng thái thanh toán SePay (GET /orders/{id}/payment) */}
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-2 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                  <CreditCard className="w-4 h-4 text-indigo-600" />
+                  <span>Trạng Thái Thanh Toán SePay</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleLookupPayment}
+                  disabled={isLoadingPayment}
+                  className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="Tra cứu trực tiếp trạng thái thanh toán đơn qua API SePay"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isLoadingPayment ? 'animate-spin' : ''}`} />
+                  <span>Tra cứu</span>
+                </button>
+              </div>
+
+              {paymentNotice && (
+                <div className="p-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800 text-[10px] font-medium">
+                  {paymentNotice}
+                </div>
+              )}
+
+              <div className="space-y-1 text-[11px] text-slate-600">
+                <div className="flex justify-between">
+                  <span>Trạng thái thanh toán:</span>
+                  <span className="font-bold text-slate-900">
+                    {orderPayment?.status || order.escrowStatus || 'Đang xử lý'}
+                  </span>
+                </div>
+                {orderPayment?.receivedAmount !== undefined && (
+                  <div className="flex justify-between">
+                    <span>Số tiền đã nhận:</span>
+                    <strong className="text-emerald-700 font-mono">
+                      {formatVND(orderPayment.receivedAmount)}
+                    </strong>
+                  </div>
+                )}
+                {orderPayment?.transferContent && (
+                  <div className="flex justify-between">
+                    <span>Nội dung CK:</span>
+                    <span className="font-mono font-bold text-slate-800 bg-slate-100 px-1 rounded text-[10px]">
+                      {orderPayment.transferContent}
+                    </span>
+                  </div>
+                )}
+                {orderPayment?.bankName && (
+                  <div className="flex justify-between">
+                    <span>Ngân hàng thụ hưởng:</span>
+                    <span className="text-slate-800 text-[10px]">
+                      {orderPayment.bankName} - {orderPayment.bankAccountNumber}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>

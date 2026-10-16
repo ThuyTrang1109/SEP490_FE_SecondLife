@@ -20,7 +20,8 @@ import {
   Upload,
   Coins,
   History,
-  Trash2
+  Trash2,
+  FileText
 } from 'lucide-react';
 import { Listing, Language, UserProfile } from '../types';
 import { formatVND } from '../utils/translations';
@@ -29,9 +30,11 @@ import { sellerCreditService, CreditBalanceResponseDto, CreditLedgerResponseDto,
 import { mediaService } from '../services/mediaService';
 import { postService } from '../services/postService';
 import { walletService } from '../services/walletService';
+import { reputationService, SellerReputationDto, ReputationHistoryDto } from '../services/reputationService';
 import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
 import { WithdrawalModal } from '../components/modals/WithdrawalModal';
 import { extractWardAndCity, getSavedSellerAddress } from '../utils/addressUtils';
+import { dialogService } from '../utils/dialogService';
 
 interface SellerDashboardViewProps {
   listings: Listing[];
@@ -122,6 +125,134 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [myServerPosts, setMyServerPosts] = useState<Listing[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
 
+  // Seller Reputation State (GET /api/v1/seller/reputation/me & /history)
+  const [myReputation, setMyReputation] = useState<SellerReputationDto | null>(null);
+  const [isReputationHistoryOpen, setIsReputationHistoryOpen] = useState(false);
+  const [reputationHistoryItems, setReputationHistoryItems] = useState<ReputationHistoryDto[]>([]);
+  const [isLoadingReputationHistory, setIsLoadingReputationHistory] = useState(false);
+
+  const handleOpenReputationHistory = async () => {
+    setIsReputationHistoryOpen(true);
+    setIsLoadingReputationHistory(true);
+    try {
+      const res = await reputationService.getMyReputationHistory(0, 30);
+      setReputationHistoryItems(res.items || []);
+    } catch (err) {
+      console.warn('Lỗi tải lịch sử uy tín:', err);
+    } finally {
+      setIsLoadingReputationHistory(false);
+    }
+  };
+
+  // Seller Verification History State (GET /api/v1/seller-verifications/me/history & /status/{status})
+  const [isVerificationHistoryOpen, setIsVerificationHistoryOpen] = useState(false);
+  const [verificationHistoryList, setVerificationHistoryList] = useState<SellerVerificationResponseDto[]>([]);
+  const [isLoadingVerificationHistory, setIsLoadingVerificationHistory] = useState(false);
+  const [verificationFilterStatus, setVerificationFilterStatus] = useState<string>('ALL');
+  const [selectedVerificationPreview, setSelectedVerificationPreview] = useState<SellerVerificationResponseDto | null>(null);
+
+  const loadVerificationHistory = async () => {
+    setIsLoadingVerificationHistory(true);
+    try {
+      const data = await sellerService.getVerificationHistory();
+      if (Array.isArray(data) && data.length > 0) {
+        setVerificationHistoryList(data);
+      } else if (myVerification) {
+        setVerificationHistoryList([myVerification]);
+      } else {
+        setVerificationHistoryList([]);
+      }
+    } catch (err) {
+      console.warn('Lỗi tải lịch sử eKYC:', err);
+      if (myVerification) {
+        setVerificationHistoryList([myVerification]);
+      } else {
+        setVerificationHistoryList([]);
+      }
+    } finally {
+      setIsLoadingVerificationHistory(false);
+    }
+  };
+
+  const handleOpenVerificationHistory = () => {
+    setIsVerificationHistoryOpen(true);
+    setVerificationFilterStatus('ALL');
+    setSelectedVerificationPreview(null);
+    loadVerificationHistory();
+  };
+
+  const handleFilterVerificationStatus = async (status: string) => {
+    setVerificationFilterStatus(status);
+    setSelectedVerificationPreview(null);
+    if (status === 'ALL') {
+      await loadVerificationHistory();
+    } else {
+      setIsLoadingVerificationHistory(true);
+      try {
+        const item = await sellerService.getVerificationByStatus(status);
+        if (item) {
+          setVerificationHistoryList([item]);
+        } else {
+          setVerificationHistoryList([]);
+        }
+      } catch (err) {
+        console.warn('Lỗi lọc eKYC theo trạng thái:', err);
+        try {
+          const all = await sellerService.getVerificationHistory();
+          const filtered = all.filter((v) => v.status === status);
+          setVerificationHistoryList(filtered);
+        } catch {
+          setVerificationHistoryList([]);
+        }
+      } finally {
+        setIsLoadingVerificationHistory(false);
+      }
+    }
+  };
+
+  const getVerificationStatusInfo = (status: string) => {
+    switch (status) {
+      case 'APPROVED':
+        return {
+          bg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+          label: lang === 'vi' ? 'Đã Phê Duyệt' : 'Approved',
+          icon: CheckCircle2,
+        };
+      case 'NEEDS_REVIEW':
+        return {
+          bg: 'bg-blue-50 text-blue-700 border-blue-200',
+          label: lang === 'vi' ? 'Chờ Thẩm Định' : 'Needs Review',
+          icon: Clock,
+        };
+      case 'SUBMITTED':
+      case 'EKYC_PENDING':
+      case 'PENDING':
+        return {
+          bg: 'bg-amber-50 text-amber-700 border-amber-200',
+          label: lang === 'vi' ? 'Đang Xử Lý eKYC' : 'eKYC Pending',
+          icon: Loader2,
+        };
+      case 'RESUBMIT_REQUIRED':
+        return {
+          bg: 'bg-orange-50 text-orange-700 border-orange-200',
+          label: lang === 'vi' ? 'Yêu Cầu Nộp Lại' : 'Resubmit Required',
+          icon: AlertCircle,
+        };
+      case 'REJECTED':
+        return {
+          bg: 'bg-rose-50 text-rose-700 border-rose-200',
+          label: lang === 'vi' ? 'Bị Từ Chối' : 'Rejected',
+          icon: XCircle,
+        };
+      default:
+        return {
+          bg: 'bg-slate-100 text-slate-700 border-slate-200',
+          label: status,
+          icon: Clock,
+        };
+    }
+  };
+
   const fetchSellerData = React.useCallback(async () => {
     setIsLoadingPosts(true);
     try {
@@ -146,6 +277,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       walletService.getMyWallet()
         .then((w) => {
           if (w) setSellerWalletBalance(Number(w.balance || 0));
+        })
+        .catch(() => {});
+
+      reputationService.getMyReputation()
+        .then((rep) => {
+          if (rep) setMyReputation(rep);
         })
         .catch(() => {});
 
@@ -253,7 +390,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       else if (type === 'back') setResubmitBackUrl(res.url);
       else setResubmitSelfieUrl(res.url);
     } catch (err: any) {
-      alert('Tải ảnh thất bại: ' + (err.message || 'Lỗi hệ thống'));
+      dialogService.error('Tải ảnh thất bại: ' + (err.message || 'Lỗi hệ thống'), 'Lỗi Tải Ảnh');
     } finally {
       setIsUploading(false);
     }
@@ -387,25 +524,39 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             </div>
           </div>
 
-          {myVerification.status === 'RESUBMIT_REQUIRED' && (
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
             <button
-              onClick={() => setIsResubmitModalOpen(true)}
-              className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs transition cursor-pointer shrink-0 flex items-center gap-1.5 shadow-xs"
+              type="button"
+              onClick={handleOpenVerificationHistory}
+              className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-xs border border-slate-200"
+              title="Xem lịch sử các lần nộp hồ sơ eKYC"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? 'Chụp / Nộp Lại Ảnh' : 'Resubmit Photos'}</span>
+              <History className="w-3.5 h-3.5 text-blue-600" />
+              <span>{lang === 'vi' ? 'Lịch Sử eKYC' : 'eKYC History'}</span>
             </button>
-          )}
 
-          {myVerification.status === 'REJECTED' && (
-            <button
-              onClick={() => setIsResubmitModalOpen(true)}
-              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition cursor-pointer shrink-0 flex items-center gap-1.5 shadow-xs"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? 'Tạo Hồ Sơ Xác Thực Mới' : 'Create New Verification'}</span>
-            </button>
-          )}
+            {myVerification.status === 'RESUBMIT_REQUIRED' && (
+              <button
+                type="button"
+                onClick={() => setIsResubmitModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>{lang === 'vi' ? 'Chụp / Nộp Lại Ảnh' : 'Resubmit Photos'}</span>
+              </button>
+            )}
+
+            {myVerification.status === 'REJECTED' && (
+              <button
+                type="button"
+                onClick={() => setIsResubmitModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>{lang === 'vi' ? 'Tạo Hồ Sơ Xác Thực Mới' : 'Create New Verification'}</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -443,10 +594,31 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   <CheckCircle2 className={`w-3 h-3 ${myVerification?.status === 'APPROVED' ? 'text-emerald-600' : 'text-amber-500'}`} />
                   {myVerification?.status === 'APPROVED' ? (lang === 'vi' ? 'Đã xác minh eKYC' : 'eKYC Verified') : (lang === 'vi' ? 'Chưa xác minh eKYC' : 'Unverified')}
                 </span>
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#24263e] text-white text-[11px] font-black shadow-xs">
-                  <Award className="w-3 h-3 text-amber-300" />
-                  {currentUser?.trustScore ? `${currentUser.trustScore} Điểm Uy Tín` : '100 Điểm Uy Tín'}
-                </span>
+                <button
+                  type="button"
+                  onClick={handleOpenReputationHistory}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-black shadow-xs transition cursor-pointer"
+                  title="Bấm để xem lịch sử biến động điểm uy tín"
+                >
+                  <Award className="w-3.5 h-3.5 text-amber-300" />
+                  <span>
+                    {myReputation?.score !== undefined && myReputation?.score !== null
+                      ? `${myReputation.score} Điểm Uy Tín`
+                      : currentUser?.trustScore
+                      ? `${currentUser.trustScore} Điểm Uy Tín`
+                      : '100 Điểm Uy Tín'}
+                  </span>
+                  <History className="w-3 h-3 text-slate-300 ml-0.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenVerificationHistory}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/90 hover:bg-white text-[#24263e] text-[11px] font-black shadow-xs transition cursor-pointer border border-[#24263e]/15"
+                  title="Bấm để xem lịch sử nộp hồ sơ eKYC"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#c34c36]" />
+                  <span>{lang === 'vi' ? 'Lịch Sử eKYC' : 'eKYC History'}</span>
+                </button>
               </div>
               <p className="text-xs text-[#24263e]/80 mt-1 flex items-center gap-3 font-semibold flex-wrap">
                 <span className="flex items-center gap-1 text-[#24263e] font-bold">
@@ -1121,6 +1293,378 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   <Trash2 className="w-4 h-4 text-white" />
                 )}
                 <span>{lang === 'vi' ? 'Xóa vĩnh viễn' : 'Delete Draft'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Lịch Sử Điểm Uy Tín Người Bán (GET /api/v1/seller/reputation/me/history) */}
+      {isReputationHistoryOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-5 border border-slate-200 shadow-2xl text-[#24263e]">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-black">
+                  <Award className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-sm text-slate-900">
+                    {lang === 'vi' ? 'Hồ Sơ & Lịch Sử Điểm Uy Tín' : 'Seller Reputation & Trust Score History'}
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    {lang === 'vi' ? 'Đánh giá độ tin cậy dựa trên chất lượng đóng gói và thời gian giao hàng' : 'Trust metrics based on fulfillment quality and promptness'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsReputationHistoryOpen(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Reputation Overview Metrics */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-center">
+                <span className="text-[10px] text-slate-500 font-bold block uppercase tracking-wider">Điểm Hiện Tại</span>
+                <span className="text-xl font-black text-[#c34c36] font-mono">
+                  {myReputation?.score ?? 100}/100
+                </span>
+              </div>
+              <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-center">
+                <span className="text-[10px] text-emerald-800 font-bold block uppercase tracking-wider">Đơn Hàng Tốt</span>
+                <span className="text-xl font-black text-emerald-700 font-mono">
+                  {myReputation?.goodTransactions ?? 0}
+                </span>
+              </div>
+              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-center">
+                <span className="text-[10px] text-amber-800 font-bold block uppercase tracking-wider">Trễ Hạn Bàn Giao</span>
+                <span className="text-xl font-black text-amber-700 font-mono">
+                  {myReputation?.lateHandoverOrders ?? 0}
+                </span>
+              </div>
+              <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-center">
+                <span className="text-[10px] text-rose-800 font-bold block uppercase tracking-wider">Sự Cố Vi Phạm</span>
+                <span className="text-xl font-black text-rose-700 font-mono">
+                  {myReputation?.confirmedIncidents ?? 0}
+                </span>
+              </div>
+            </div>
+
+            {/* History Table */}
+            <div className="space-y-2">
+              <span className="text-xs font-bold text-slate-800 block">
+                {lang === 'vi' ? 'Nhật Ký Biến Động Điểm (Mới nhất)' : 'Score Audit Trail'}
+              </span>
+
+              {isLoadingReputationHistory ? (
+                <div className="py-8 text-center text-slate-400">
+                  <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-[#c34c36]" />
+                  <span className="text-xs">{lang === 'vi' ? 'Đang tải lịch sử...' : 'Loading history...'}</span>
+                </div>
+              ) : reputationHistoryItems.length === 0 ? (
+                <div className="py-8 text-center border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                  <Award className="w-8 h-8 text-slate-300 mx-auto mb-1.5" />
+                  <span className="text-xs font-bold text-slate-600 block">
+                    {lang === 'vi' ? 'Chưa có biến động điểm nào' : 'No reputation score changes yet'}
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    {lang === 'vi' ? 'Tài khoản của bạn giữ trọn vẹn 100 điểm uy tín khởi tạo.' : 'Your account maintains full 100 starting trust score.'}
+                  </span>
+                </div>
+              ) : (
+                <div className="max-h-60 overflow-y-auto space-y-2 pr-1 text-xs">
+                  {reputationHistoryItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-between gap-3"
+                    >
+                      <div>
+                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-700">
+                            {item.eventType}
+                          </span>
+                          <span className="text-slate-600">{item.reason || 'Biến động theo đơn hàng'}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 mt-0.5 block">
+                          {new Date(item.createdAt).toLocaleString('vi-VN')}
+                        </span>
+                      </div>
+
+                      <div className="text-right shrink-0 font-mono font-bold">
+                        {item.scoreBefore !== undefined && item.scoreAfter !== undefined && (
+                          <div className="flex items-center gap-1 text-xs">
+                            <span className="text-slate-400">{item.scoreBefore}</span>
+                            <span className="text-slate-400">→</span>
+                            <span className={item.scoreAfter >= (item.scoreBefore || 0) ? 'text-emerald-600' : 'text-rose-600'}>
+                              {item.scoreAfter}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsReputationHistoryOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                {lang === 'vi' ? 'Đóng' : 'Close'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Lịch Sử Nộp eKYC (GET /api/v1/seller-verifications/me/history & /status/{status}) */}
+      {isVerificationHistoryOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-5 border border-slate-200 shadow-2xl text-[#24263e] max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-black">
+                  <ShieldCheck className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-base text-slate-900">
+                    {lang === 'vi' ? 'Lịch Sử Nộp Hồ Sơ Xác Minh eKYC' : 'Seller eKYC Verification History'}
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    {lang === 'vi'
+                      ? 'Theo dõi toàn bộ lịch sử gửi hồ sơ định danh, đối soát VNPT eKYC và phê duyệt của hệ thống'
+                      : 'Track all identity submissions, VNPT eKYC automated checks, and admin approvals'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsVerificationHistoryOpen(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 shrink-0 text-xs font-bold">
+              {[
+                { id: 'ALL', label: lang === 'vi' ? 'Tất Cả' : 'All' },
+                { id: 'APPROVED', label: lang === 'vi' ? 'Đã Duyệt' : 'Approved' },
+                { id: 'NEEDS_REVIEW', label: lang === 'vi' ? 'Chờ Thẩm Định' : 'Pending' },
+                { id: 'RESUBMIT_REQUIRED', label: lang === 'vi' ? 'Yêu Cầu Nộp Lại' : 'Resubmit' },
+                { id: 'REJECTED', label: lang === 'vi' ? 'Bị Từ Chối' : 'Rejected' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => handleFilterVerificationStatus(tab.id)}
+                  className={`px-3 py-1.5 rounded-xl transition cursor-pointer shrink-0 ${
+                    verificationFilterStatus === tab.id
+                      ? 'bg-[#24263e] text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Content List */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {isLoadingVerificationHistory ? (
+                <div className="py-12 text-center text-slate-400">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-[#c34c36]" />
+                  <span className="text-xs">{lang === 'vi' ? 'Đang truy xuất hồ sơ eKYC...' : 'Loading eKYC records...'}</span>
+                </div>
+              ) : verificationHistoryList.length === 0 ? (
+                <div className="py-12 text-center border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                  <FileText className="w-9 h-9 text-slate-300 mx-auto mb-2" />
+                  <span className="text-xs font-bold text-slate-600 block">
+                    {lang === 'vi' ? 'Không tìm thấy hồ sơ nào phù hợp' : 'No verification records found'}
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    {lang === 'vi'
+                      ? 'Bạn chưa có hồ sơ xác minh nào trong danh mục trạng thái này.'
+                      : 'You do not have any verification records under this filter.'}
+                  </span>
+                </div>
+              ) : (
+                verificationHistoryList.map((item, idx) => {
+                  const statusInfo = getVerificationStatusInfo(item.status);
+                  const StatusIcon = statusInfo.icon;
+                  const maskedNumber =
+                    item.documentNumberMasked ||
+                    (item.documentNumber
+                      ? item.documentNumber.length > 6
+                        ? item.documentNumber.slice(0, 3) + '******' + item.documentNumber.slice(-3)
+                        : item.documentNumber
+                      : 'N/A');
+
+                  return (
+                    <div
+                      key={item.id || idx}
+                      className="p-4 rounded-2xl border border-slate-200 bg-white hover:border-slate-300 transition space-y-3 shadow-xs"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black border ${statusInfo.bg}`}>
+                            <StatusIcon className="w-3.5 h-3.5" />
+                            <span>{statusInfo.label}</span>
+                          </span>
+                          <span className="text-xs font-bold text-slate-700">
+                            {item.verificationType === 'CITIZEN_ID'
+                              ? (lang === 'vi' ? 'Căn cước công dân (CCCD)' : 'Citizen ID Card')
+                              : (lang === 'vi' ? 'Hộ chiếu (Passport)' : 'Passport')}
+                          </span>
+                          {item.resubmissionCount > 0 && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                              {lang === 'vi' ? `Lần nộp ${item.resubmissionCount + 1}` : `Attempt #${item.resubmissionCount + 1}`}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-[11px] text-slate-400 font-mono">
+                          {item.submittedAt
+                            ? new Date(item.submittedAt).toLocaleString('vi-VN')
+                            : item.reviewedAt
+                            ? new Date(item.reviewedAt).toLocaleString('vi-VN')
+                            : ''}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <span className="text-slate-400 text-[11px] block">Số định danh giấy tờ:</span>
+                          <span className="font-mono font-bold text-slate-800 text-sm">{maskedNumber}</span>
+                        </div>
+
+                        {(item.faceMatchScore !== undefined || item.livenessScore !== undefined) && (
+                          <div>
+                            <span className="text-slate-400 text-[11px] block">Độ khớp khuôn mặt & Liveness (AI):</span>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {item.faceMatchScore !== undefined && (
+                                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono font-bold text-[11px]">
+                                  Match: {Math.round(item.faceMatchScore * 100)}%
+                                </span>
+                              )}
+                              {item.livenessScore !== undefined && (
+                                <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-mono font-bold text-[11px]">
+                                  Liveness: {Math.round(item.livenessScore * 100)}%
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Reason if rejected or needs resubmit */}
+                      {(item.rejectionReason || item.reasonCodeDescription) && (
+                        <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+                          <span className="font-bold block mb-0.5">
+                            {lang === 'vi' ? 'Ghi chú thẩm định / Lý do:' : 'Review Note / Reason:'}
+                          </span>
+                          <span>{item.rejectionReason || item.reasonCodeDescription}</span>
+                        </div>
+                      )}
+
+                      {/* Attached images toggle or preview */}
+                      <div className="pt-1 flex items-center justify-between flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSelectedVerificationPreview(
+                              selectedVerificationPreview?.id === item.id ? null : item
+                            )
+                          }
+                          className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 transition cursor-pointer"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>
+                            {selectedVerificationPreview?.id === item.id
+                              ? (lang === 'vi' ? 'Thu gọn ảnh giấy tờ' : 'Hide documents')
+                              : (lang === 'vi' ? 'Xem ảnh giấy tờ đã gửi' : 'View submitted documents')}
+                          </span>
+                        </button>
+
+                        {(item.status === 'RESUBMIT_REQUIRED' || item.status === 'REJECTED') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsVerificationHistoryOpen(false);
+                              setIsResubmitModalOpen(true);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs transition cursor-pointer flex items-center gap-1 shadow-xs"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>{lang === 'vi' ? 'Nộp Lại Ngay' : 'Resubmit Now'}</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Photo preview drawer */}
+                      {selectedVerificationPreview?.id === item.id && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200 mt-2">
+                          {item.documentFrontUrl && (
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-500 block mb-1">Mặt trước CCCD:</span>
+                              <img
+                                src={item.documentFrontUrl}
+                                alt="CCCD Front"
+                                className="w-full h-28 object-cover rounded-lg border border-slate-200"
+                              />
+                            </div>
+                          )}
+                          {item.documentBackUrl && (
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-500 block mb-1">Mặt sau CCCD:</span>
+                              <img
+                                src={item.documentBackUrl}
+                                alt="CCCD Back"
+                                className="w-full h-28 object-cover rounded-lg border border-slate-200"
+                              />
+                            </div>
+                          )}
+                          {item.selfieUrl && (
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-500 block mb-1">Ảnh selfie chân dung:</span>
+                              <img
+                                src={item.selfieUrl}
+                                alt="Selfie"
+                                className="w-full h-28 object-cover rounded-lg border border-slate-200"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between shrink-0">
+              <span className="text-[11px] text-slate-400">
+                {lang === 'vi'
+                  ? `Tổng số: ${verificationHistoryList.length} hồ sơ`
+                  : `Total: ${verificationHistoryList.length} records`}
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsVerificationHistoryOpen(false)}
+                className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer transition"
+              >
+                {lang === 'vi' ? 'Đóng' : 'Close'}
               </button>
             </div>
           </div>

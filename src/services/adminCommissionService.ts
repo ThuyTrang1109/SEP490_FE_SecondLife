@@ -133,4 +133,17 @@ export const adminCommissionService = {
       isLast: d?.isLast ?? true,
     };
   },
+
+  /**
+   * Chốt và chụp ảnh bằng chứng tỷ lệ hoa hồng đơn hàng để lưu vết kế toán
+   * POST /api/v1/admin/orders/{orderId}/commission-snapshot
+   */
+  async captureCommissionSnapshot(orderId: string, reason: string): Promise<any> {
+    const res = await request<any>(`/v1/admin/orders/${orderId}/commission-snapshot`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
 };

@@ -40,6 +40,7 @@ import {
   RolePermissionAuditResponseDto,
   CreatePermissionRequestDto
 } from '../../services/adminRbacService';
+import { dialogService } from '../../utils/dialogService';
 
 interface PermissionsTabProps {
   triggerNotice?: (msg: string) => void;
@@ -692,13 +693,11 @@ export const PermissionsTab: React.FC<PermissionsTabProps> = ({
 
   // Delete Permission
   const handleDeletePermission = async (permCode: string) => {
-    if (
-      !window.confirm(
-        `Bạn có chắc chắn muốn xóa quyền "${permCode}" khỏi hệ thống không? Chỉ có thể xóa quyền chưa được gán vào vai trò nào.`
-      )
-    ) {
-      return;
-    }
+    const confirmed = await dialogService.confirm(
+      `Bạn có chắc chắn muốn xóa quyền "${permCode}" khỏi hệ thống không? Chỉ có thể xóa quyền chưa được gán vào vai trò nào.`,
+      { title: 'Xác Nhận Xóa Quyền', type: 'warning' }
+    );
+    if (!confirmed) return;
 
     try {
       await adminRbacService.deletePermission(permCode);

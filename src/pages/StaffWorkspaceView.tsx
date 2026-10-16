@@ -43,6 +43,7 @@ import {
 import { Listing, EscrowOrder, Language, UserProfile } from '../types';
 import { formatVND } from '../utils/translations';
 import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto, staffReportService, ReportItemDto, StaffOrderConfirmationResponse } from '../services';
+import { dialogService } from '../utils/dialogService';
 import { ListingComparisonModal } from '../components/staff/ListingComparisonModal';
 import logoImg from '../assets/logo.png';
 import { User, LogOut } from 'lucide-react';
@@ -232,6 +233,16 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     }
   };
 
+  const handleStartReviewReport = async (reportId: string) => {
+    try {
+      await staffReportService.startReview(reportId);
+      triggerNotice(`Đã tiếp nhận và khóa thẩm định báo cáo #${reportId.slice(0, 8)}`);
+      loadBackendReports();
+    } catch (err: any) {
+      triggerNotice(err?.message || 'Không thể bắt đầu xử lý báo cáo');
+    }
+  };
+
   useEffect(() => {
     loadBackendReports();
   }, []);
@@ -363,7 +374,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   const handleSendEvidenceRequest = (e: React.FormEvent) => {
     e.preventDefault();
     if (!evidenceContent.trim()) {
-      alert('Vui lòng nhập nội dung yêu cầu bổ sung bằng chứng');
+      dialogService.warning('Vui lòng nhập nội dung yêu cầu bổ sung bằng chứng', 'Thiếu Thông Tin');
       return;
     }
     triggerNotice(
@@ -1115,18 +1126,30 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                             </span>
                             {rep.status !== 'CONFIRMED' && rep.status !== 'DISMISSED' && (
                               <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleResolveBackendReport(rep.id, 'CONFIRMED')}
-                                  className="px-3 py-1.5 bg-[#24263e] text-white rounded-lg font-bold hover:bg-[#c34c36] transition cursor-pointer"
-                                >
-                                  Xử Phạt & Khóa Tin
-                                </button>
-                                <button
-                                  onClick={() => handleResolveBackendReport(rep.id, 'DISMISSED')}
-                                  className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold hover:bg-slate-100 transition cursor-pointer"
-                                >
-                                  Bác Bỏ Báo Cáo
-                                </button>
+                                {rep.status === 'OPEN' ? (
+                                  <button
+                                    onClick={() => handleStartReviewReport(rep.id)}
+                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
+                                  >
+                                    <Lock className="w-3.5 h-3.5" />
+                                    <span>Bắt Đầu Xử Lý Khiếu Nại</span>
+                                  </button>
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => handleResolveBackendReport(rep.id, 'CONFIRMED')}
+                                      className="px-3 py-1.5 bg-[#24263e] text-white rounded-lg font-bold hover:bg-[#c34c36] transition cursor-pointer shadow-xs"
+                                    >
+                                      Xử Phạt & Khóa Tin
+                                    </button>
+                                    <button
+                                      onClick={() => handleResolveBackendReport(rep.id, 'DISMISSED')}
+                                      className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg font-bold hover:bg-slate-100 transition cursor-pointer"
+                                    >
+                                      Bác Bỏ Báo Cáo
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             )}
                           </div>

@@ -11,6 +11,7 @@ import {
   Layers,
   ChevronRight,
   Package,
+  PackageCheck,
   Store,
   Eye,
   X,
@@ -45,6 +46,8 @@ import { ShipmentBackend, OrderSettlementDTO } from '../types';
 import { orderService } from '../services/orderService';
 import { inspectorService } from '../services/inspectorService';
 import { UserReportModal } from '../components/modals/UserReportModal';
+import { InspectionProductQRModal } from '../components/modals/InspectionProductQRModal';
+import { dialogService } from '../utils/dialogService';
 
 interface EscrowOrdersViewProps {
   orders: EscrowOrder[];
@@ -134,8 +137,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   const [verifySealId, setVerifySealId] = useState<string>('');
   const [isVerifySealModalOpen, setIsVerifySealModalOpen] = useState(false);
   const [printSealOrder, setPrintSealOrder] = useState<EscrowOrder | null>(null);
+  const [printInspectionQrOrder, setPrintInspectionQrOrder] = useState<EscrowOrder | null>(null);
   const [inspectionActionNotice, setInspectionActionNotice] = useState<string | null>(null);
   const [reportingOrder, setReportingOrder] = useState<EscrowOrder | null>(null);
+  const [localReadyOrderIds, setLocalReadyOrderIds] = useState<Set<string>>(new Set());
 
   const handleRespondInspection = async (orderId: string, action: 'ACCEPT' | 'REJECT') => {
     try {
@@ -144,7 +149,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       onRefreshOrders?.();
       setTimeout(() => setInspectionActionNotice(null), 4000);
     } catch (err: any) {
-      alert(err?.message || 'Không thể phản hồi yêu cầu kiểm định');
+      dialogService.error(err?.message || 'Không thể phản hồi yêu cầu kiểm định', 'Lỗi Kiểm Định');
     }
   };
 
@@ -155,7 +160,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       onRefreshOrders?.();
       setTimeout(() => setInspectionActionNotice(null), 4000);
     } catch (err: any) {
-      alert(err?.message || 'Không thể thanh toán phí kiểm định');
+      dialogService.error(err?.message || 'Không thể thanh toán phí kiểm định', 'Lỗi Thanh Toán');
     }
   };
 
@@ -205,14 +210,29 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   };
 
   const handleSellerConfirmOrder = (orderId: string) => {
+    const targetOrder = orders.find((o) => o.id === orderId) || (detailModalOrder?.id === orderId ? detailModalOrder : null);
+    const orderHasInspection = targetOrder ? Boolean(
+      targetOrder.hasInspectionService ||
+      (targetOrder.inspectionFeeVnd && targetOrder.inspectionFeeVnd > 0) ||
+      targetOrder.inspectionCenterId ||
+      targetOrder.inspectionMethod ||
+      (targetOrder as any).inspectionStatus ||
+      targetOrder.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
+      targetOrder.escrowStatus === 'INSPECTION_PASSED'
+    ) : false;
+
     setConfirmDialog({
       isOpen: true,
       title: lang === 'vi' ? 'Xác Nhận Chuẩn Bị Đơn Hàng' : 'Confirm Order Preparation',
       message: lang === 'vi'
-        ? 'Xác nhận bạn chấp nhận chuẩn bị đơn hàng này cho người mua?'
+        ? (orderHasInspection
+            ? 'Xác nhận đơn hàng có kiểm định chất lượng! Hệ thống sẽ tạo mã QR kiểm định để bạn dán lên sản phẩm gửi sang Trung tâm kiểm định.'
+            : 'Xác nhận bạn chấp nhận chuẩn bị đơn hàng này cho người mua?')
         : 'Do you confirm preparing this order for the buyer?',
       subMessage: lang === 'vi'
-        ? 'Sau khi xác nhận, người bán cam kết đóng gói sản phẩm cẩn thận theo quy chuẩn và chuẩn bị sẵn sàng để bưu tá / tài xế Lalamove đến lấy.'
+        ? (orderHasInspection
+            ? 'Sau khi xác nhận, vui lòng in hoặc dán mã QR kiểm định lên mặt ngoài kiện hàng. Kỹ thuật viên Hub sẽ quét mã QR này khi tiếp nhận sản phẩm.'
+            : 'Sau khi xác nhận, người bán cam kết đóng gói sản phẩm cẩn thận theo quy chuẩn và chuẩn bị sẵn sàng để bưu tá / tài xế Lalamove đến lấy.')
         : 'After confirmation, you commit to packing the item safely for pickup.',
       confirmText: lang === 'vi' ? 'Xác Nhận Đơn' : 'Confirm Order',
       cancelText: lang === 'vi' ? 'Đóng' : 'Cancel',
@@ -222,13 +242,30 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         try {
           setOrderActionLoading(orderId);
           await orderService.confirmOrder(orderId);
-          setInspectionActionNotice('Đã xác nhận đơn hàng thành công! Vui lòng đóng gói và báo sẵn sàng giao.');
+          const confirmedAt = new Date().toISOString();
+          const updatedOrder: EscrowOrder | null = targetOrder ? {
+            ...targetOrder,
+            sellerConfirmedAt: confirmedAt,
+            confirmationStatus: 'CONFIRMED'
+          } : null;
+
+          setInspectionActionNotice(
+            orderHasInspection
+              ? (lang === 'vi' ? 'Đã xác nhận đơn hàng! Mã QR kiểm định dán sản phẩm đã sẵn sàng.' : 'Order confirmed! Inspection QR label is ready.')
+              : (lang === 'vi' ? 'Đã xác nhận đơn hàng thành công! Vui lòng đóng gói và báo sẵn sàng giao.' : 'Order confirmed successfully!')
+          );
           onRefreshOrders?.();
           setDetailModalOrder((prev) =>
             prev && prev.id === orderId
-              ? { ...prev, sellerConfirmedAt: new Date().toISOString(), confirmationStatus: 'CONFIRMED' }
+              ? { ...prev, sellerConfirmedAt: confirmedAt, confirmationStatus: 'CONFIRMED' }
               : prev
           );
+
+          // TỰ ĐỘNG MỞ MODAL TEM MÃ QR KIỂM ĐỊNH CHO NGƯỜI BÁN NẾU LÀ HÀNG KIỂM ĐỊNH
+          if (orderHasInspection && updatedOrder) {
+            setPrintInspectionQrOrder(updatedOrder);
+          }
+
           setTimeout(() => setInspectionActionNotice(null), 4000);
         } catch (err: any) {
           setInspectionActionNotice(err?.message || 'Không thể xác nhận đơn hàng');
@@ -244,27 +281,36 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   const handleSellerMarkReadyForPickup = (orderId: string) => {
     setConfirmDialog({
       isOpen: true,
-      title: lang === 'vi' ? 'Sẵn Sàng Giao Hàng' : 'Ready for Pickup',
+      title: lang === 'vi' ? 'Xác nhận đã đóng gói kiện hàng?' : 'Confirm Package Packed & Ready?',
       message: lang === 'vi'
-        ? 'Xác nhận kiện hàng đã được đóng gói cẩn thận và sẵn sàng để đơn vị vận chuyển đến lấy?'
-        : 'Confirm that the package is packed and ready for carrier pickup?',
+        ? 'Kiện hàng đã được đóng gói an toàn theo quy chuẩn và sẵn sàng bàn giao?'
+        : 'Has the package been securely packed according to standards and ready for handover?',
       subMessage: lang === 'vi'
-        ? 'Hệ thống sẽ cập nhật trạng thái SLA và thông báo cho tài xế đến địa chỉ kho lấy hàng.'
-        : 'The carrier will be notified to collect the package.',
-      confirmText: lang === 'vi' ? 'Sẵn Sàng Giao' : 'Ready',
-      cancelText: lang === 'vi' ? 'Đóng' : 'Cancel',
+        ? 'Sau khi bạn xác nhận, hệ thống sẽ ghi nhận mốc thời gian hoàn tất (SLA) và phát tín hiệu điều phối tài xế Lalamove đến địa chỉ kho lấy hàng.'
+        : 'Upon confirmation, the system records SLA completion timestamp and signals Lalamove driver dispatch to your warehouse.',
+      confirmText: lang === 'vi' ? '✓ Sẵn Sàng Giao' : '✓ Ready for Pickup',
+      cancelText: lang === 'vi' ? 'Đóng' : 'Close',
       variant: 'primary',
       iconType: 'truck',
       onConfirm: async () => {
         try {
           setOrderActionLoading(orderId);
-          await orderService.markReadyForPickup(orderId);
-          setInspectionActionNotice('Đã ghi nhận trạng thái sẵn sàng giao hàng (SLA)! Đơn vị vận chuyển sẽ liên hệ lấy hàng.');
+          const res = await orderService.markReadyForPickup(orderId);
+          const readyAt = res?.sellerReadyAt || new Date().toISOString();
+          setLocalReadyOrderIds((prev) => new Set(prev).add(orderId));
+          if (detailModalOrder && detailModalOrder.id === orderId) {
+            setDetailModalOrder((prev) => (prev ? { ...prev, sellerReadyAt: readyAt } : null));
+          }
+          setInspectionActionNotice(
+            lang === 'vi'
+              ? 'Đã ghi nhận kiện hàng sẵn sàng! Tài xế Lalamove đang được điều phối đến kho lấy hàng.'
+              : 'Package marked ready! Lalamove driver is being dispatched to your warehouse.'
+          );
           onRefreshOrders?.();
-          setTimeout(() => setInspectionActionNotice(null), 4000);
+          setTimeout(() => setInspectionActionNotice(null), 5000);
         } catch (err: any) {
           setInspectionActionNotice(err?.message || 'Không thể cập nhật trạng thái sẵn sàng giao hàng');
-          setTimeout(() => setInspectionActionNotice(null), 4000);
+          setTimeout(() => setInspectionActionNotice(null), 5000);
         } finally {
           setOrderActionLoading(null);
           setConfirmDialog(null);
@@ -1065,124 +1111,199 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                       {/* Seller Actions */}
                       {orderIsSeller ? (
                         <>
-                          {/* Cancel Order */}
-                          {onCancelOrder && !ord.sellerConfirmedAt && ord.confirmationStatus !== 'CONFIRMED' && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handlePromptCancelOrder(ord);
-                              }}
-                              className="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
-                              title="Hủy đơn hàng"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              <span>{lang === 'vi' ? 'Hủy Đơn' : 'Cancel'}</span>
-                            </button>
+                          {/* GIAI ĐOẠN 1: CHỜ XÁC NHẬN ĐƠN */}
+                          {!ord.sellerConfirmedAt && ord.confirmationStatus !== 'CONFIRMED' && ord.backendStatus !== 'CANCELLED' && ord.escrowStatus !== 'REFUNDED_TO_BUYER' && (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSellerConfirmOrder(ord.id);
+                                }}
+                                disabled={orderActionLoading === ord.id}
+                                className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 animate-pulse whitespace-nowrap shrink-0"
+                                title="Người bán kiểm tra còn hàng và cam kết chuẩn bị hàng theo hạn chót SLA"
+                              >
+                                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>
+                                  {orderActionLoading === ord.id
+                                    ? (lang === 'vi' ? 'Đang xác nhận...' : 'Confirming...')
+                                    : (lang === 'vi' ? 'Xác Nhận Đơn Hàng' : 'Confirm Order')}
+                                </span>
+                              </button>
+
+                              {onCancelOrder && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePromptCancelOrder(ord);
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
+                                  title="Hủy đơn hàng nếu hết hàng hoặc không thể đáp ứng"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  <span>{lang === 'vi' ? 'Hủy Đơn' : 'Cancel'}</span>
+                                </button>
+                              )}
+                            </>
                           )}
 
-                          {/* Lalamove Tracking */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setTrackingOrder(ord);
-                            }}
-                            className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                          >
-                            <Truck className="w-3.5 h-3.5 text-blue-600" />
-                            <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
-                          </button>
-
-                          {/* Schedule Inspection Appointment Button for Seller (ONLY if order actually has inspection) */}
-                          {hasInspection &&
-                            ord.backendStatus !== 'CANCELLED' &&
-                            ord.escrowStatus !== 'REFUNDED_TO_BUYER' &&
-                            ord.escrowStatus !== 'COMPLETED_RELEASED' && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSchedulingOrder(ord);
-                                setSchedulingReadOnly(false);
-                              }}
-                              className="px-3 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-900 border border-orange-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                              title={lang === 'vi' ? 'Người bán lên lịch hẹn ngày giờ kỹ thuật viên đến kiểm định' : 'Schedule inspection appointment with Hub technician'}
-                            >
-                              <Calendar className="w-3.5 h-3.5 text-orange-600" />
-                              <span>
-                                {savedAppointment?.scheduledAt
-                                  ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Inspect')
-                                  : (lang === 'vi' ? 'Hẹn Giờ Kiểm Định' : 'Schedule Inspect')}
-                              </span>
-                            </button>
-                          )}
-
-                          {/* Create GHN / Lalamove Shipment */}
-                          {(ord.escrowStatus === 'AWAITING_PAYMENT' || ord.escrowStatus === 'HELD_IN_ESCROW' || ord.escrowStatus === 'INSPECTION_IN_PROGRESS') && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setCreateShipmentOrder(ord);
-                              }}
-                              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-90 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                            >
-                              <Truck className="w-3.5 h-3.5" />
-                              <span>{lang === 'vi' ? 'Tạo Vận Đơn Lalamove' : 'Create Lalamove'}</span>
-                            </button>
-                          )}
-
-                          {/* Seller Confirmed Badge */}
-                          {(ord.sellerConfirmedAt || ord.confirmationStatus === 'CONFIRMED') && (
-                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-200 whitespace-nowrap shrink-0">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>{lang === 'vi' ? 'Đã Xác Nhận Đơn' : 'Order Confirmed'}</span>
-                            </span>
-                          )}
-
-                          {/* Ready for Pickup Button */}
+                          {/* GIAI ĐOẠN 2: ĐÃ XÁC NHẬN • ĐANG ĐÓNG GÓI */}
                           {(ord.sellerConfirmedAt || ord.confirmationStatus === 'CONFIRMED') &&
+                            !ord.sellerReadyAt &&
+                            !localReadyOrderIds.has(ord.id) &&
                             ord.backendStatus !== 'SHIPPED' &&
                             ord.backendStatus !== 'DELIVERED' &&
                             ord.escrowStatus !== 'SHIPPED_TO_BUYER' &&
                             ord.escrowStatus !== 'DELIVERED_INSPECTION_WINDOW' &&
                             ord.escrowStatus !== 'COMPLETED_RELEASED' && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSellerMarkReadyForPickup(ord.id);
-                              }}
-                              disabled={orderActionLoading === ord.id}
-                              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50 whitespace-nowrap shrink-0"
-                              title="Báo hệ thống kiện hàng đã đóng gói xong và sẵn sàng cho bưu tá đến lấy"
-                            >
-                              <Package className="w-3.5 h-3.5" />
-                              <span>
-                                {orderActionLoading === ord.id
-                                  ? (lang === 'vi' ? 'Đang cập nhật...' : 'Updating...')
-                                  : (lang === 'vi' ? 'Đã Đóng Gói (Sẵn Sàng Giao)' : 'Ready For Pickup')}
+                            <>
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-200 whitespace-nowrap shrink-0">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>{lang === 'vi' ? 'Đã Xác Nhận Đơn' : 'Order Confirmed'}</span>
                               </span>
-                            </button>
+
+                              {/* Nút Đóng Gói (Báo Shipper) */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSellerMarkReadyForPickup(ord.id);
+                                }}
+                                disabled={orderActionLoading === ord.id}
+                                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50 whitespace-nowrap shrink-0"
+                                title="Báo hệ thống kiện hàng đã đóng gói an toàn và phát tín hiệu điều phối tài xế Lalamove"
+                              >
+                                <Package className="w-3.5 h-3.5" />
+                                <span>
+                                  {orderActionLoading === ord.id
+                                    ? (lang === 'vi' ? 'Đang cập nhật...' : 'Updating...')
+                                    : (lang === 'vi' ? 'Đã Đóng Gói (Báo Shipper)' : 'Packed (Call Shipper)')}
+                                </span>
+                              </button>
+
+                              {/* In Tem QR Kiểm Định nếu là đơn kiểm định */}
+                              {hasInspection && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPrintInspectionQrOrder(ord);
+                                  }}
+                                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:opacity-90 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0 animate-fadeIn"
+                                  title="Xem và In mã QR dán lên kiện hàng kiểm định để Trung tâm quét tiếp nhận"
+                                >
+                                  <QrCode className="w-3.5 h-3.5" />
+                                  <span>{lang === 'vi' ? 'Mã QR Kiểm Định' : 'Inspection QR'}</span>
+                                </button>
+                              )}
+
+                              {/* Nút Hẹn Giờ Kiểm Định (nếu có kiểm định tận nơi) */}
+                              {hasInspection && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSchedulingOrder(ord);
+                                    setSchedulingReadOnly(false);
+                                  }}
+                                  className="px-3 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-900 border border-orange-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                                  title={lang === 'vi' ? 'Người bán lên lịch hẹn ngày giờ kỹ thuật viên đến kiểm định' : 'Schedule inspection appointment with Hub technician'}
+                                >
+                                  <Calendar className="w-3.5 h-3.5 text-orange-600" />
+                                  <span>
+                                    {savedAppointment?.scheduledAt
+                                      ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Inspect')
+                                      : (lang === 'vi' ? 'Hẹn Giờ Kiểm Định' : 'Schedule Inspect')}
+                                  </span>
+                                </button>
+                              )}
+
+                              {/* Nút Theo Dõi Lalamove */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTrackingOrder(ord);
+                                }}
+                                className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                              >
+                                <Truck className="w-3.5 h-3.5 text-blue-600" />
+                                <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
+                              </button>
+                            </>
                           )}
 
-                          {/* Seller Confirm Order Button */}
-                          {!ord.sellerConfirmedAt &&
-                            ord.confirmationStatus !== 'CONFIRMED' &&
-                            ord.backendStatus !== 'CANCELLED' &&
-                            ord.escrowStatus !== 'REFUNDED_TO_BUYER' && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSellerConfirmOrder(ord.id);
-                              }}
-                              disabled={orderActionLoading === ord.id}
-                              className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 animate-pulse whitespace-nowrap shrink-0"
-                              title="Người bán bấm để xác nhận đơn hàng của người mua"
-                            >
-                              <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                              <span>
-                                {orderActionLoading === ord.id
-                                  ? (lang === 'vi' ? 'Đang xác nhận...' : 'Confirming...')
-                                  : (lang === 'vi' ? 'Xác Nhận Đơn Hàng' : 'Confirm Order')}
+                          {/* GIAI ĐOẠN 3: ĐÃ ĐÓNG GÓI • CHỜ SHIPPER ĐẾN LẤY */}
+                          {(ord.sellerReadyAt || localReadyOrderIds.has(ord.id)) &&
+                            !ord.carrierPickedUpAt &&
+                            ord.backendStatus !== 'SHIPPED' &&
+                            ord.backendStatus !== 'DELIVERED' &&
+                            ord.escrowStatus !== 'SHIPPED_TO_BUYER' &&
+                            ord.escrowStatus !== 'DELIVERED_INSPECTION_WINDOW' &&
+                            ord.escrowStatus !== 'COMPLETED_RELEASED' && (
+                            <>
+                              {/* Nhãn Tĩnh (Không phải nút bấm, triệt tiêu vòng lặp vô tận) */}
+                              <span
+                                className="inline-flex items-center gap-1.5 text-xs font-bold text-teal-800 bg-teal-50 px-3 py-1.5 rounded-xl border border-teal-200 whitespace-nowrap shrink-0 shadow-xs"
+                                title="Hệ thống đang điều phối tài xế Lalamove tới địa chỉ kho của bạn để lấy kiện hàng"
+                              >
+                                <PackageCheck className="w-4 h-4 text-teal-600" />
+                                <span>{lang === 'vi' ? 'Đã Đóng Gói • Chờ Tài Xế Lấy' : 'Packed • Waiting for Carrier'}</span>
                               </span>
-                            </button>
+
+                              {/* In Tem QR Kiểm Định nếu là đơn kiểm định */}
+                              {hasInspection && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPrintInspectionQrOrder(ord);
+                                  }}
+                                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:opacity-90 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0 animate-fadeIn"
+                                  title="Xem và In mã QR dán lên kiện hàng kiểm định để Trung tâm quét tiếp nhận"
+                                >
+                                  <QrCode className="w-3.5 h-3.5" />
+                                  <span>{lang === 'vi' ? 'Mã QR Kiểm Định' : 'Inspection QR'}</span>
+                                </button>
+                              )}
+
+                              {/* Nút Theo Dõi Lalamove */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTrackingOrder(ord);
+                                }}
+                                className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                              >
+                                <Truck className="w-3.5 h-3.5 text-blue-600" />
+                                <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
+                              </button>
+                            </>
+                          )}
+
+                          {/* GIAI ĐOẠN 4: ĐANG GIAO HÀNG (Hoặc đã hoàn thành) */}
+                          {(ord.carrierPickedUpAt ||
+                            ord.backendStatus === 'SHIPPED' ||
+                            ord.backendStatus === 'DELIVERED' ||
+                            ord.escrowStatus === 'SHIPPED_TO_BUYER' ||
+                            ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
+                            ord.escrowStatus === 'COMPLETED_RELEASED') && (
+                            <>
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1.5 rounded-xl border border-blue-200 whitespace-nowrap shrink-0">
+                                <Truck className="w-3.5 h-3.5 text-blue-600" />
+                                <span>
+                                  {ord.backendStatus === 'DELIVERED' || ord.escrowStatus === 'COMPLETED_RELEASED'
+                                    ? (lang === 'vi' ? 'Đã Giao Thành Công' : 'Delivered')
+                                    : (lang === 'vi' ? 'Đang Giao Hàng' : 'In Transit')}
+                                </span>
+                              </span>
+
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTrackingOrder(ord);
+                                }}
+                                className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                              >
+                                <Truck className="w-3.5 h-3.5 text-white" />
+                                <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
+                              </button>
+                            </>
                           )}
 
                           {/* Seller Accept / Reject Inspection Proposal */}
@@ -1839,46 +1960,169 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                       {/* Seller Action Buttons */}
                       {isOrderSeller(detailModalOrder) && (
                         <>
+                          {/* GIAI ĐOẠN 1: Chờ xác nhận đơn */}
                           {!detailModalOrder.sellerConfirmedAt &&
                             detailModalOrder.confirmationStatus !== 'CONFIRMED' &&
                             detailModalOrder.backendStatus !== 'CANCELLED' &&
                             detailModalOrder.escrowStatus !== 'REFUNDED_TO_BUYER' && (
-                            <button
-                              onClick={() => {
-                                handleSellerConfirmOrder(detailModalOrder.id);
-                              }}
-                              disabled={orderActionLoading === detailModalOrder.id}
-                              className="flex-1 py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                            >
-                              <Check className="w-4 h-4 stroke-[2.5]" />
-                              <span>
-                                {orderActionLoading === detailModalOrder.id
-                                  ? (lang === 'vi' ? 'Đang xác nhận...' : 'Confirming...')
-                                  : (lang === 'vi' ? 'Xác Nhận Đơn Hàng' : 'Confirm Order')}
-                              </span>
-                            </button>
+                            <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">
+                              <button
+                                onClick={() => {
+                                  handleSellerConfirmOrder(detailModalOrder.id);
+                                }}
+                                disabled={orderActionLoading === detailModalOrder.id}
+                                className="flex-1 py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                              >
+                                <Check className="w-4 h-4 stroke-[2.5]" />
+                                <span>
+                                  {orderActionLoading === detailModalOrder.id
+                                    ? (lang === 'vi' ? 'Đang xác nhận...' : 'Confirming...')
+                                    : (lang === 'vi' ? 'Xác Nhận Đơn Hàng' : 'Confirm Order')}
+                                </span>
+                              </button>
+
+                              {onCancelOrder && (
+                                <button
+                                  onClick={() => {
+                                    handlePromptCancelOrder(detailModalOrder);
+                                  }}
+                                  className="py-3 px-4 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-xl font-bold text-xs sm:text-sm transition cursor-pointer flex items-center justify-center gap-1.5"
+                                >
+                                  <X className="w-4 h-4" />
+                                  <span>{lang === 'vi' ? 'Hủy Đơn' : 'Cancel'}</span>
+                                </button>
+                              )}
+                            </div>
                           )}
 
+                          {/* GIAI ĐOẠN 2: Đã xác nhận • Đang đóng gói */}
                           {(detailModalOrder.sellerConfirmedAt || detailModalOrder.confirmationStatus === 'CONFIRMED') &&
+                            !detailModalOrder.sellerReadyAt &&
+                            !localReadyOrderIds.has(detailModalOrder.id) &&
                             detailModalOrder.backendStatus !== 'SHIPPED' &&
                             detailModalOrder.backendStatus !== 'DELIVERED' &&
                             (detailModalOrder.escrowStatus as string) !== 'SHIPPED_TO_BUYER' &&
                             (detailModalOrder.escrowStatus as string) !== 'DELIVERED_INSPECTION_WINDOW' &&
                             (detailModalOrder.escrowStatus as string) !== 'COMPLETED_RELEASED' && (
-                            <button
-                              onClick={() => {
-                                handleSellerMarkReadyForPickup(detailModalOrder.id);
-                              }}
-                              disabled={orderActionLoading === detailModalOrder.id}
-                              className="flex-1 py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                            >
-                              <Package className="w-4 h-4" />
-                              <span>
-                                {orderActionLoading === detailModalOrder.id
-                                  ? (lang === 'vi' ? 'Đang cập nhật...' : 'Updating...')
-                                  : (lang === 'vi' ? 'Đã Đóng Gói (Sẵn Sàng Giao)' : 'Ready For Pickup')}
+                            <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">
+                              <button
+                                onClick={() => {
+                                  handleSellerMarkReadyForPickup(detailModalOrder.id);
+                                }}
+                                disabled={orderActionLoading === detailModalOrder.id}
+                                className="flex-1 py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                              >
+                                <Package className="w-4 h-4" />
+                                <span>
+                                  {orderActionLoading === detailModalOrder.id
+                                    ? (lang === 'vi' ? 'Đang cập nhật...' : 'Updating...')
+                                    : (lang === 'vi' ? 'Đã Đóng Gói (Báo Shipper)' : 'Packed (Call Shipper)')}
+                                </span>
+                              </button>
+
+                              {/* Nút Xem / In Mã QR Dán Sản Phẩm trong Modal Chi Tiết */}
+                              {Boolean(
+                                detailModalOrder.hasInspectionService ||
+                                (detailModalOrder.inspectionFeeVnd && detailModalOrder.inspectionFeeVnd > 0) ||
+                                detailModalOrder.inspectionCenterId ||
+                                detailModalOrder.inspectionMethod ||
+                                (detailModalOrder as any).inspectionStatus ||
+                                detailModalOrder.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
+                                detailModalOrder.escrowStatus === 'INSPECTION_PASSED'
+                              ) && (
+                                <button
+                                  onClick={() => setPrintInspectionQrOrder(detailModalOrder)}
+                                  className="py-3 px-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:opacity-90 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                                  title="Xem và In mã QR dán lên sản phẩm gửi sang Trung tâm kiểm định"
+                                >
+                                  <QrCode className="w-4 h-4" />
+                                  <span>{lang === 'vi' ? 'Tem Mã QR Kiểm Định (Dán Sản Phẩm)' : 'Inspection Intake QR Label'}</span>
+                                </button>
+                              )}
+
+                              <button
+                                onClick={() => setTrackingOrder(detailModalOrder)}
+                                className="py-3 px-4 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-bold text-xs sm:text-sm shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                              >
+                                <Truck className="w-4 h-4 text-blue-600" />
+                                <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
+                              </button>
+                            </div>
+                          )}
+
+                          {/* GIAI ĐOẠN 3: Đã đóng gói • Chờ Shipper đến lấy */}
+                          {(detailModalOrder.sellerReadyAt || localReadyOrderIds.has(detailModalOrder.id)) &&
+                            !detailModalOrder.carrierPickedUpAt &&
+                            detailModalOrder.backendStatus !== 'SHIPPED' &&
+                            detailModalOrder.backendStatus !== 'DELIVERED' &&
+                            (detailModalOrder.escrowStatus as string) !== 'SHIPPED_TO_BUYER' &&
+                            (detailModalOrder.escrowStatus as string) !== 'DELIVERED_INSPECTION_WINDOW' &&
+                            (detailModalOrder.escrowStatus as string) !== 'COMPLETED_RELEASED' && (
+                            <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">
+                              {/* Nhãn Tĩnh (Không phải nút bấm, triệt tiêu vòng lặp vô tận) */}
+                              <div
+                                className="flex-1 py-3 px-4 bg-teal-50 border border-teal-200 text-teal-800 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs"
+                                title="Hệ thống đang điều phối tài xế Lalamove tới địa chỉ kho của bạn để lấy kiện hàng"
+                              >
+                                <PackageCheck className="w-4 h-4 text-teal-600" />
+                                <span>{lang === 'vi' ? 'Đã Đóng Gói • Chờ Tài Xế Lấy' : 'Packed • Waiting for Carrier'}</span>
+                              </div>
+
+                              {/* In Tem QR Kiểm Định nếu là đơn kiểm định */}
+                              {Boolean(
+                                detailModalOrder.hasInspectionService ||
+                                (detailModalOrder.inspectionFeeVnd && detailModalOrder.inspectionFeeVnd > 0) ||
+                                detailModalOrder.inspectionCenterId ||
+                                detailModalOrder.inspectionMethod ||
+                                (detailModalOrder as any).inspectionStatus ||
+                                detailModalOrder.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
+                                detailModalOrder.escrowStatus === 'INSPECTION_PASSED'
+                              ) && (
+                                <button
+                                  onClick={() => setPrintInspectionQrOrder(detailModalOrder)}
+                                  className="py-3 px-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:opacity-90 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                                  title="Xem và In mã QR dán lên sản phẩm gửi sang Trung tâm kiểm định"
+                                >
+                                  <QrCode className="w-4 h-4" />
+                                  <span>{lang === 'vi' ? 'Mã QR Kiểm Định' : 'Inspection QR'}</span>
+                                </button>
+                              )}
+
+                              <button
+                                onClick={() => setTrackingOrder(detailModalOrder)}
+                                className="py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                              >
+                                <Truck className="w-4 h-4 text-white" />
+                                <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
+                              </button>
+                            </div>
+                          )}
+
+                          {/* GIAI ĐOẠN 4: Đang giao hàng */}
+                          {(detailModalOrder.carrierPickedUpAt ||
+                            detailModalOrder.backendStatus === 'SHIPPED' ||
+                            detailModalOrder.backendStatus === 'DELIVERED' ||
+                            (detailModalOrder.escrowStatus as string) === 'SHIPPED_TO_BUYER' ||
+                            (detailModalOrder.escrowStatus as string) === 'DELIVERED_INSPECTION_WINDOW' ||
+                            (detailModalOrder.escrowStatus as string) === 'COMPLETED_RELEASED') && (
+                            <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">
+                              <span className="py-3 px-4 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shrink-0">
+                                <Truck className="w-4 h-4 text-blue-600" />
+                                <span>
+                                  {detailModalOrder.backendStatus === 'DELIVERED' || (detailModalOrder.escrowStatus as string) === 'COMPLETED_RELEASED'
+                                    ? (lang === 'vi' ? 'Đã Giao Thành Công' : 'Delivered')
+                                    : (lang === 'vi' ? 'Đang Giao Hàng' : 'In Transit')}
+                                </span>
                               </span>
-                            </button>
+
+                              <button
+                                onClick={() => setTrackingOrder(detailModalOrder)}
+                                className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                              >
+                                <Truck className="w-4 h-4 text-white" />
+                                <span>{lang === 'vi' ? 'Theo Dõi Vận Đơn Lalamove' : 'Lalamove Tracking'}</span>
+                              </button>
+                            </div>
                           )}
                         </>
                       )}
@@ -2113,6 +2357,16 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           conditionGrade={printSealOrder.listing?.conditionGrade || 'A'}
           conditionScore={printSealOrder.inspectionReport?.conditionScore || 95}
           inspectorName={printSealOrder.inspectionReport?.inspectorName || 'KTV SecondLife Center'}
+        />
+      )}
+
+      {/* Modal In Tem Mã QR Kiểm Định Dán Sản Phẩm (Dành cho Người Bán sau khi xác nhận đơn) */}
+      {printInspectionQrOrder && (
+        <InspectionProductQRModal
+          isOpen={!!printInspectionQrOrder}
+          onClose={() => setPrintInspectionQrOrder(null)}
+          order={printInspectionQrOrder}
+          lang={lang}
         />
       )}
 

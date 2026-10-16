@@ -9,6 +9,7 @@ import {
   TopupPackage
 } from '../types';
 import { translations, formatVND } from '../utils/translations';
+import { dialogService } from '../utils/dialogService';
 import {
   adminService,
   adminPostService,
@@ -24,7 +25,9 @@ import {
   UserRolesResponseDto,
   UserRoleAuditResponseDto,
   CreditPricingRuleResponseDto,
-  CreatePermissionRequestDto
+  CreatePermissionRequestDto,
+  reputationService,
+  staffService
 } from '../services';
 import logoImg from '../assets/logo.png';
 import {
@@ -42,6 +45,7 @@ import {
   TrendingUp,
   Wallet,
   Lock,
+  Unlock,
   Search,
   Filter,
   Eye,
@@ -309,6 +313,77 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       setUserDetailError(err?.message || 'Không thể tải thông tin chi tiết người dùng');
     } finally {
       setIsLoadingUserDetail(false);
+    }
+  };
+
+  // =========================================================================
+  // GỠ BỎ HẠN CHẾ BÁN HÀNG (POST /admin/sellers/{id}/reputation/lift-restriction)
+  // =========================================================================
+  const [liftRestrictionModal, setLiftRestrictionModal] = useState<{
+    isOpen: boolean;
+    sellerId: string;
+    sellerName: string;
+    reason: string;
+    isSubmitting: boolean;
+    error: string | null;
+  }>({
+    isOpen: false,
+    sellerId: '',
+    sellerName: '',
+    reason: '',
+    isSubmitting: false,
+    error: null,
+  });
+
+  const handleOpenLiftRestrictionModal = (sellerId: string, sellerName: string) => {
+    setLiftRestrictionModal({
+      isOpen: true,
+      sellerId,
+      sellerName,
+      reason: 'Người bán đã hoàn thành trách nhiệm khắc phục sự cố và cam kết tiêu chuẩn dịch vụ',
+      isSubmitting: false,
+      error: null,
+    });
+  };
+
+  const handleConfirmLiftRestriction = async () => {
+    if (!liftRestrictionModal.sellerId || !liftRestrictionModal.reason.trim()) {
+      setLiftRestrictionModal((prev) => ({ ...prev, error: 'Vui lòng nhập lý do gỡ bỏ hạn chế bán hàng' }));
+      return;
+    }
+    setLiftRestrictionModal((prev) => ({ ...prev, isSubmitting: true, error: null }));
+    try {
+      await reputationService.liftRestriction(liftRestrictionModal.sellerId, liftRestrictionModal.reason.trim());
+      triggerNotice(`Đã gỡ bỏ hạn chế bán hàng cho tài khoản ${liftRestrictionModal.sellerName} thành công!`);
+      setLiftRestrictionModal((prev) => ({ ...prev, isOpen: false }));
+    } catch (err: any) {
+      setLiftRestrictionModal((prev) => ({
+        ...prev,
+        isSubmitting: false,
+        error: err?.message || 'Không thể gỡ hạn chế bán hàng.',
+      }));
+    }
+  };
+
+  // Tra cứu hồ sơ eKYC nhanh theo User ID (GET /api/v1/staff/seller-verifications/user/{userId})
+  const [userIdSearchInput, setUserIdSearchInput] = useState('');
+  const [isSearchingByUserId, setIsSearchingByUserId] = useState(false);
+
+  const handleLookupVerificationByUserId = async () => {
+    if (!userIdSearchInput.trim()) return;
+    setIsSearchingByUserId(true);
+    try {
+      const ver = await staffService.getVerificationByUserId(userIdSearchInput.trim());
+      if (ver) {
+        setSelectedVerificationDetail(ver);
+        triggerNotice(`Đã tìm thấy hồ sơ eKYC của User #${userIdSearchInput.trim().slice(0, 8)}`);
+      } else {
+        triggerNotice('Không tìm thấy hồ sơ eKYC nào cho User ID này');
+      }
+    } catch (err: any) {
+      triggerNotice(err?.message || 'Không tìm thấy hồ sơ eKYC theo User ID này');
+    } finally {
+      setIsSearchingByUserId(false);
     }
   };
 
@@ -789,7 +864,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       const res = await adminService.getAdminUsers({ page: 0, size: 20 });
       if (res?.items) setBackendUsers(res.items);
     } catch (err: any) {
-      alert(err.message || 'Cập nhật trạng thái người dùng thất bại');
+      dialogService.error(err.message || 'Cập nhật trạng thái người dùng thất bại', 'Lỗi Cập Nhật');
     }
   };
 
@@ -816,7 +891,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         address: '',
       });
     } catch (err: any) {
-      alert(err.message || 'Tạo tài khoản Trạm Hub thất bại');
+      dialogService.error(err.message || 'Tạo tài khoản Trạm Hub thất bại', 'Lỗi Tạo Trạm Hub');
     }
   };
 
@@ -2259,25 +2334,48 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       </button>
                     </div>
 
-                    {/* Search Input Bar */}
-                    <div className="relative w-full lg:w-72 shrink-0">
-                      <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                      <input
-                        type="text"
-                        value={verificationSearchTerm}
-                        onChange={(e) => setVerificationSearchTerm(e.target.value)}
-                        placeholder="Tìm Shop, Tên, CCCD, SĐT..."
-                        className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 bg-white transition shadow-2xs"
-                      />
-                      {verificationSearchTerm && (
+                    {/* Search Bars: Text filter and Fast User ID lookup */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
+                      <div className="relative w-full lg:w-60 shrink-0">
+                        <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                        <input
+                          type="text"
+                          value={verificationSearchTerm}
+                          onChange={(e) => setVerificationSearchTerm(e.target.value)}
+                          placeholder="Tìm Shop, Tên, CCCD, SĐT..."
+                          className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 bg-white transition shadow-2xs"
+                        />
+                        {verificationSearchTerm && (
+                          <button
+                            type="button"
+                            onClick={() => setVerificationSearchTerm('')}
+                            className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Fast lookup by User ID (GET /staff/seller-verifications/user/{userId}) */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <input
+                          type="text"
+                          value={userIdSearchInput}
+                          onChange={(e) => setUserIdSearchInput(e.target.value)}
+                          placeholder="User ID..."
+                          className="w-32 sm:w-36 px-2.5 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-indigo-500 bg-white font-mono shadow-2xs"
+                        />
                         <button
                           type="button"
-                          onClick={() => setVerificationSearchTerm('')}
-                          className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                          onClick={handleLookupVerificationByUserId}
+                          disabled={isSearchingByUserId || !userIdSearchInput.trim()}
+                          className="px-3 py-2 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs disabled:opacity-50 shrink-0"
+                          title="Tra cứu hồ sơ eKYC theo User ID (GET /staff/seller-verifications/user/{userId})"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          {isSearchingByUserId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                          <span>Tìm ID</span>
                         </button>
-                      )}
+                      </div>
                     </div>
                   </div>
 
@@ -2547,6 +2645,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             </td>
                             <td className="py-3 px-4 text-right">
                               <div className="flex items-center justify-end gap-1.5">
+                                {user.roles?.includes('SELLER') && (
+                                  <button
+                                    onClick={() => handleOpenLiftRestrictionModal(user.id, user.fullName || user.email)}
+                                    className="px-2 py-1 rounded-lg text-[10px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 flex items-center gap-1 transition cursor-pointer"
+                                    title="Gỡ bỏ hạn chế bán hàng (POST /admin/sellers/{id}/reputation/lift-restriction)"
+                                  >
+                                    <Unlock className="w-3 h-3 text-amber-600" />
+                                    <span>Gỡ hạn chế</span>
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => handleOpenUserRolesModal(user.id, user.fullName || user.email)}
                                   className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 flex items-center gap-1 transition cursor-pointer"
@@ -4204,6 +4312,76 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
               >
                 Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: GỠ BỎ HẠN CHẾ BÁN HÀNG CHO SELLER (POST /admin/sellers/{id}/reputation/lift-restriction) */}
+      {liftRestrictionModal.isOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+                  <Unlock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">Gỡ Bỏ Hạn Chế Bán Hàng</h3>
+                  <p className="text-[11px] text-slate-400 font-mono">POST /api/v1/admin/sellers/{'{id}'}/reputation/lift-restriction</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLiftRestrictionModal((prev) => ({ ...prev, isOpen: false }))}
+                className="text-slate-400 hover:text-slate-700 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {liftRestrictionModal.error && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+                {liftRestrictionModal.error}
+              </div>
+            )}
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <div>Người bán: <strong className="text-slate-900">{liftRestrictionModal.sellerName}</strong></div>
+                <div className="text-[11px] font-mono text-slate-500">ID: {liftRestrictionModal.sellerId}</div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Lý do gỡ hạn chế & bảo chứng uy tín:</label>
+                <textarea
+                  rows={3}
+                  required
+                  value={liftRestrictionModal.reason}
+                  onChange={(e) => setLiftRestrictionModal((prev) => ({ ...prev, reason: e.target.value }))}
+                  placeholder="Nhập lý do gỡ bỏ hạn chế bán hàng..."
+                  className="w-full p-2.5 rounded-xl border border-slate-200 text-xs focus:border-amber-500 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setLiftRestrictionModal((prev) => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmLiftRestriction}
+                disabled={liftRestrictionModal.isSubmitting}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white transition flex items-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
+              >
+                {liftRestrictionModal.isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Xác Nhận Gỡ Hạn Chế</span>
               </button>
             </div>
           </div>

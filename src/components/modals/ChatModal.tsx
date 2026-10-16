@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ChatMessage, Listing, Language, UserRole, UserCredit, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
+import { dialogService } from '../../utils/dialogService';
 import {
   Sparkles,
   AlertTriangle,
@@ -526,7 +527,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       );
     } catch (err: any) {
       console.warn('Backend respond negotiation error:', err);
-      alert(err?.message || 'Thao tác không thành công. Vui lòng thử lại.');
+      dialogService.error(err?.message || 'Thao tác không thành công. Vui lòng thử lại.', 'Lỗi Phản Hồi Trả Giá');
     }
   };
 

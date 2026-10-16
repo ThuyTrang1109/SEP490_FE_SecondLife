@@ -447,4 +447,27 @@ export const postService = {
     });
     return (response as any)?.data || response;
   },
+
+  /**
+   * Thẩm định giá sản phẩm bằng AI độc lập trực tiếp (không bắt buộc có draft)
+   * POST /api/v1/ai/estimate-price
+   */
+  async estimatePriceDirect(payload: {
+    title: string;
+    category?: string;
+    brand?: string;
+    model?: string;
+    condition?: string;
+    accessories?: string;
+    notes?: string;
+    originalPrice?: number;
+    imageUrls?: string[];
+  }): Promise<AiPriceEstimationResponse> {
+    const res = await request<any>('/v1/ai/estimate-price', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
 };

@@ -23,6 +23,7 @@ import {
 import { NotificationItem, NotificationType } from '../types/notification';
 import { notificationService } from '../services/notificationService';
 import { Language } from '../types';
+import { dialogService } from '../utils/dialogService';
 
 interface NotificationCenterViewProps {
   lang: Language;
@@ -193,7 +194,11 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
   // Delete 1 notification
   const handleDeleteOne = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm(lang === 'vi' ? 'Bạn có chắc muốn xóa thông báo này?' : 'Delete this notification?')) return;
+    const confirmed = await dialogService.confirm(
+      lang === 'vi' ? 'Bạn có chắc muốn xóa thông báo này không?' : 'Delete this notification?',
+      { title: lang === 'vi' ? 'Xác Nhận Xóa' : 'Confirm Delete', type: 'warning' }
+    );
+    if (!confirmed) return;
     try {
       await notificationService.deleteNotification(id).catch(() => {});
     } catch {}
@@ -216,7 +221,11 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
 
   // Clear read notifications
   const handleClearRead = async () => {
-    if (!window.confirm(lang === 'vi' ? 'Xóa toàn bộ các thông báo đã đọc?' : 'Clear all read notifications?')) return;
+    const confirmed = await dialogService.confirm(
+      lang === 'vi' ? 'Bạn có chắc muốn xóa toàn bộ các thông báo đã đọc?' : 'Clear all read notifications?',
+      { title: lang === 'vi' ? 'Dọn Dẹp Thông Báo' : 'Clear Read Notifications', type: 'warning' }
+    );
+    if (!confirmed) return;
     setIsProcessing(true);
     try {
       await notificationService.clearReadNotifications().catch(() => {});
@@ -242,7 +251,11 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
 
   // Clear all notifications
   const handleClearAll = async () => {
-    if (!window.confirm(lang === 'vi' ? 'Cảnh báo: Bạn muốn xóa TOÀN BỘ mọi thông báo trong hộp thư?' : 'Clear ALL notifications?')) return;
+    const confirmed = await dialogService.confirm(
+      lang === 'vi' ? 'Cảnh báo: Bạn có chắc chắn muốn xóa TOÀN BỘ mọi thông báo trong hộp thư không?' : 'Clear ALL notifications?',
+      { title: lang === 'vi' ? 'Xóa Toàn Bộ Thông Báo' : 'Clear All Notifications', type: 'error' }
+    );
+    if (!confirmed) return;
     setIsProcessing(true);
     try {
       await notificationService.clearAllNotifications().catch(() => {});

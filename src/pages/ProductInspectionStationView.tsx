@@ -245,14 +245,18 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     playScanBeep();
 
     const normalized = code.toLowerCase();
+    const cleanCode = normalized.replace(/^(sl-insp-|inspection-|order-)/i, '').trim();
+
     const match = orders.find((o) => {
-      if (o.id.toLowerCase().includes(normalized)) return true;
-      if (o.listingId && o.listingId.toLowerCase().includes(normalized)) return true;
-      if (o.listing?.title && o.listing.title.toLowerCase().includes(normalized)) return true;
-      if (o.inspectionReport?.tamperSealId && o.inspectionReport.tamperSealId.toLowerCase().includes(normalized)) return true;
+      const oId = o.id.toLowerCase();
+      if (oId === normalized || oId === cleanCode) return true;
+      if (oId.includes(cleanCode) || cleanCode.includes(oId)) return true;
+      if (o.listingId && (o.listingId.toLowerCase().includes(cleanCode) || cleanCode.includes(o.listingId.toLowerCase()))) return true;
+      if (o.listing?.title && o.listing.title.toLowerCase().includes(cleanCode)) return true;
+      if (o.inspectionReport?.tamperSealId && (o.inspectionReport.tamperSealId.toLowerCase().includes(cleanCode) || cleanCode.includes(o.inspectionReport.tamperSealId.toLowerCase()))) return true;
       if (
         o.shippingLegs?.some(
-          (leg) => leg.trackingNumber && leg.trackingNumber.toLowerCase().includes(normalized)
+          (leg) => leg.trackingNumber && (leg.trackingNumber.toLowerCase().includes(cleanCode) || cleanCode.includes(leg.trackingNumber.toLowerCase()))
         )
       ) {
         return true;

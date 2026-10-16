@@ -22,6 +22,14 @@ export interface CreateReportRequestDto {
   evidenceUrls?: string[];
 }
 
+export interface CreateListingReportRequestDto {
+  requestId?: string;
+  reasonCode: 'FRAUD' | 'MISLEADING_DESCRIPTION' | 'DUPLICATE_LISTING' | 'OTHER' | string;
+  description: string;
+  evidenceUrls?: string[];
+  relatedPostId?: string | null;
+}
+
 export interface ReportEvidenceUploadResponse {
   id: string;
   evidenceUrl: string;
@@ -135,5 +143,46 @@ export const userReportService = {
 
     const resJson = await response.json();
     return resJson?.data || resJson;
+  },
+
+  /**
+   * Báo cáo vi phạm bài đăng trực tiếp (không bắt buộc mua hàng)
+   * POST /api/v1/reports/listings/{postId}
+   */
+  async reportListing(postId: string, data: CreateListingReportRequestDto): Promise<UserReportResponseDto> {
+    const payload = {
+      requestId: data.requestId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `req-${Date.now()}`),
+      reasonCode: data.reasonCode,
+      description: data.description.trim(),
+      evidenceUrls: Array.isArray(data.evidenceUrls) ? data.evidenceUrls : [],
+      relatedPostId: data.relatedPostId || null,
+    };
+
+    const res = await request<UserReportResponseDto>(`/v1/reports/listings/${postId}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Tải / xem file bằng chứng riêng tư (byte[]) kèm Bearer token
+   * GET /api/v1/reports/evidence/{id}
+   */
+  async getEvidenceBlobUrl(evidenceId: string): Promise<string> {
+    const token = getAccessToken();
+    const url = resolveApiUrl(`/v1/reports/evidence/${evidenceId}`);
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Không thể tải bằng chứng (HTTP ${response.status})`);
+    }
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
   },
 };

@@ -13,13 +13,15 @@ import {
   Camera,
   ThumbsUp,
   ChevronRight,
-  UserCheck
+  UserCheck,
+  Flag
 } from 'lucide-react';
 import { Listing, Language, ProductReview, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import { soundFx } from '../../utils/soundEffects';
 import { reviewService } from '../../data/mockReviews';
 import { reputationService, SellerReputationDto, getStoredUser } from '../../services';
+import { UserReportModal } from './UserReportModal';
 
 interface ListingDetailModalProps {
   listing: Listing | null;
@@ -59,6 +61,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
 
   const [activePhotoKey, setActivePhotoKey] = useState<keyof typeof listing.photos>('front');
   const [reviewsTab, setReviewsTab] = useState<'product' | 'seller'>('product');
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   // Load reviews & trust profile
   const productReviews = reviewService.getReviewsByListing(listing.id);
@@ -298,6 +301,15 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                       <MessageSquare className="w-3.5 h-3.5 text-[#c34c36]" />
                       <span>{lang === 'vi' ? 'Chat & Đàm Phán Trả Giá Với Người Bán' : 'Chat & Make Counter Offer'}</span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsReportModalOpen(true)}
+                      className="w-full py-1.5 px-3 text-slate-400 hover:text-rose-600 font-bold text-[11px] transition flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <Flag className="w-3 h-3" />
+                      <span>{lang === 'vi' ? 'Báo cáo bài đăng vi phạm' : 'Report this listing'}</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -503,6 +515,14 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Modal Báo Cáo Bài Đăng */}
+      <UserReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        postId={listing.id}
+        itemTitle={listing.title}
+      />
     </div>
   );
 };

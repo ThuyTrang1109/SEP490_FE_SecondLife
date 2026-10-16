@@ -82,7 +82,8 @@ export interface InspectionSellerRespondRequest {
 export interface ChecklistResultItem {
   itemId: string;
   itemTitle: string;
-  isPassed: boolean;
+  isPassed?: boolean;
+  passed?: boolean;
   inspectorNote?: string;
 }
 
@@ -469,9 +470,20 @@ export const inspectorService = {
    * KTV nộp báo cáo kết quả kiểm định chuyên sâu kèm video và checklist
    */
   async submitReport(orderId: string, data: SubmitInspectionReportRequest): Promise<InspectionOrderDto> {
+    const formattedChecklistResults = (data.checklistResults || []).map((item) => ({
+      ...item,
+      passed: Boolean((item as any).passed ?? item.isPassed),
+      isPassed: Boolean(item.isPassed ?? (item as any).passed),
+    }));
+
+    const payload = {
+      ...data,
+      checklistResults: formattedChecklistResults,
+    };
+
     const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/submit-report`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
       requiresAuth: true,
     });
     return (res as any)?.data || res;
@@ -482,6 +494,18 @@ export const inspectorService = {
    */
   async submitResult(orderId: string, data: SubmitInspectionReportRequest): Promise<InspectionOrderDto> {
     return this.submitReport(orderId, data);
+  },
+
+  /**
+   * Kỹ thuật viên yêu cầu hệ thống tự sinh mã tem niêm phong số chuẩn kèm checksum
+   * POST /api/v1/inspector/orders/{orderId}/generate-seal
+   */
+  async generateSeal(orderId: string): Promise<string> {
+    const res = await request<any>(`/inspector/orders/${orderId}/generate-seal`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || (res as any)?.message || String(res);
   },
 
   // --------------------------------------------------------------------------
@@ -556,6 +580,18 @@ export const inspectorService = {
     });
     const data = (res as any)?.data || res;
     return Array.isArray(data) ? data : [];
+  },
+
+  /**
+   * Manager xem chi tiết một bộ checklist kiểm định theo ID
+   * GET /api/v1/inspector-center/checklists/{id}
+   */
+  async getChecklistById(id: string): Promise<InspectionChecklistResponse> {
+    const res = await request<InspectionChecklistResponse>(`/inspector-center/checklists/${id}`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
   },
 
   /**

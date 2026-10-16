@@ -29,7 +29,7 @@ import { SellerReviewsModal } from './components/modals/SellerReviewsModal';
 import { NotificationCenterView } from './pages/NotificationCenterView';
 import { RealtimeNotificationToast } from './components/common/RealtimeNotificationToast';
 import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
-import { authService, userService, topupService, walletService, orderService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser, ChatRoomDto } from './services';
+import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser, ChatRoomDto } from './services';
 
 export default function App() {
   // Global State - Default to 'marketplace' so visitors enter directly into the marketplace
@@ -269,9 +269,98 @@ export default function App() {
     });
   };
 
+  // Helper to recover locally placed or cached orders from localStorage
+  const getLocalStoredOrders = React.useCallback((): EscrowOrder[] => {
+    const result: EscrowOrder[] = [];
+    const seenIds = new Set<string>();
+
+    // 1. Check recent_placed_orders
+    try {
+      const raw = localStorage.getItem('recent_placed_orders');
+      if (raw) {
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          list.forEach((o) => {
+            if (o?.id && !seenIds.has(o.id)) {
+              seenIds.add(o.id);
+              result.push(o);
+            }
+          });
+        }
+      }
+    } catch {}
+
+    // 2. Scan localStorage for any order_listing_* keys
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('order_listing_')) {
+          const orderId = key.replace('order_listing_', '');
+          if (orderId && !seenIds.has(orderId)) {
+            try {
+              const rawListing = localStorage.getItem(key);
+              const listing = rawListing ? JSON.parse(rawListing) : null;
+              let buyerInfo: any = {};
+              const rawBuyer = localStorage.getItem(`order_buyer_info_${orderId}`);
+              if (rawBuyer) buyerInfo = JSON.parse(rawBuyer);
+
+              if (listing) {
+                seenIds.add(orderId);
+                result.push({
+                  id: orderId,
+                  listingId: listing.id,
+                  listing,
+                  buyerId: 'buyer-current',
+                  buyerName: buyerInfo.buyerName || 'Khách Hàng',
+                  buyerPhone: buyerInfo.buyerPhone || '',
+                  buyerAddress: buyerInfo.buyerAddress || 'Địa chỉ nhận hàng',
+                  sellerId: listing.sellerId || '',
+                  sellerName: listing.sellerName || 'Người Bán SecondLife',
+                  itemPriceVnd: listing.priceVnd || 0,
+                  inspectionFeeVnd: 0,
+                  shippingFeeVnd: 0,
+                  platformFeeVnd: 0,
+                  totalPaidVnd: listing.priceVnd || 0,
+                  escrowStatus: 'HELD_IN_ESCROW',
+                  hasInspectionService: Boolean(listing.requiresInspection),
+                  shippingLegs: [
+                    {
+                      id: 'LEG-1',
+                      legType: 'SELLER_TO_BUYER',
+                      carrier: 'Lalamove / GHN',
+                      trackingNumber: `TRACK-${orderId.slice(0, 8).toUpperCase()}`,
+                      status: 'PICKED_UP',
+                      origin: listing.sellerAddress || listing.location || 'Địa chỉ người bán',
+                      destination: buyerInfo.buyerAddress || 'Địa chỉ nhận hàng',
+                      estimatedDelivery: 'Giao trong ngày',
+                      timeline: [
+                        {
+                          timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                          description: 'Đã thanh toán Escrow thành công. Đang điều phối tài xế lấy hàng.',
+                          location: 'SecondLife Hub'
+                        }
+                      ]
+                    }
+                  ],
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  multiStagePhotos: {
+                    listingPhotos: [listing.photos?.front, listing.photos?.back].filter(Boolean)
+                  }
+                });
+              }
+            } catch {}
+          }
+        }
+      }
+    } catch {}
+
+    return result;
+  }, []);
+
   // Core Data State
   const [listings, setListings] = useState<Listing[]>([]);
-  const [orders, setOrders] = useState<EscrowOrder[]>([]);
+  const [orders, setOrders] = useState<EscrowOrder[]>(() => getLocalStoredOrders());
   const [disputes, setDisputes] = useState<DisputeCase[]>([]);
 
   // Modals
@@ -911,9 +1000,11 @@ export default function App() {
       return;
     }
     try {
-      const [buyerRes, sellerRes, chatRooms] = await Promise.all([
+      const [buyerRes, sellerRes, inspBuyerRes, inspSellerRes, chatRooms] = await Promise.all([
         orderService.getBuyerOrders(0, 50).catch(() => ({ content: [] })),
         orderService.getSellerOrders(0, 50).catch(() => ({ content: [] })),
+        inspectorService.getMyBuyerOrders(0, 50).catch(() => ({ items: [] } as any)),
+        inspectorService.getMySellerOrders(0, 50).catch(() => ({ items: [] } as any)),
         chatService.getChatRooms().catch(() => [] as any[])
       ]);
 
@@ -950,11 +1041,15 @@ export default function App() {
 
       const rawBuyerItems = (buyerRes as any)?.content || (buyerRes as any)?.items || (Array.isArray(buyerRes) ? buyerRes : []);
       const rawSellerItems = (sellerRes as any)?.content || (sellerRes as any)?.items || (Array.isArray(sellerRes) ? sellerRes : []);
+      const rawInspBuyerItems = (inspBuyerRes as any)?.data?.items || (inspBuyerRes as any)?.items || (inspBuyerRes as any)?.content || (Array.isArray(inspBuyerRes) ? inspBuyerRes : []);
+      const rawInspSellerItems = (inspSellerRes as any)?.data?.items || (inspSellerRes as any)?.items || (inspSellerRes as any)?.content || (Array.isArray(inspSellerRes) ? inspSellerRes : []);
 
       // Deduplicate by order id
       const orderMap = new Map<string, any>();
-      rawBuyerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, item); });
-      rawSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, item); });
+      rawBuyerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: false }); });
+      rawSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: false }); });
+      rawInspBuyerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
+      rawInspSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
       const items = Array.from(orderMap.values());
       if (items && items.length > 0) {
         const mappedOrders: EscrowOrder[] = items.map((bOrd: any) => {
@@ -1035,16 +1130,37 @@ export default function App() {
           };
 
           let mappedEscrowStatus: EscrowOrder['escrowStatus'] = 'HELD_IN_ESCROW';
-          if (bOrd.escrowStatus === 'RELEASED') {
-            mappedEscrowStatus = 'COMPLETED_RELEASED';
-          } else if (bOrd.escrowStatus === 'REFUNDED' || bOrd.status === 'CANCELLED') {
-            mappedEscrowStatus = 'REFUNDED_TO_BUYER';
-          } else if (bOrd.status === 'DELIVERED') {
-            mappedEscrowStatus = 'DELIVERED_INSPECTION_WINDOW';
-          } else if (bOrd.status === 'SHIPPED') {
-            mappedEscrowStatus = 'SHIPPED_TO_BUYER';
-          } else if (bOrd.status === 'PROCESSING' || bOrd.status === 'PENDING') {
-            mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
+          if (bOrd.__isInspection) {
+            const s = String(bOrd.status || '');
+            if (s === 'WAITING_SELLER_APPROVAL' || s === 'WAITING_BUYER_APPROVAL' || s === 'WAITING_FEE_PAYMENT') {
+              mappedEscrowStatus = 'AWAITING_PAYMENT';
+            } else if (s === 'CONFIRMED_PENDING_DISPATCH' || s === 'DISPATCHED' || s === 'SCHEDULED' || s === 'SHIPPING_TO_CENTER' || s === 'INSPECTING') {
+              mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
+            } else if (s === 'PASSED') {
+              mappedEscrowStatus = 'INSPECTION_PASSED';
+            } else if (s === 'DELIVERING_TO_BUYER') {
+              mappedEscrowStatus = 'SHIPPED_TO_BUYER';
+            } else if (s === 'COMPLETED') {
+              mappedEscrowStatus = 'COMPLETED_RELEASED';
+            } else if (s === 'DISPUTED') {
+              mappedEscrowStatus = 'DISPUTED';
+            } else if (s === 'CANCELLED' || s === 'FAILED' || s === 'PAYMENT_EXPIRED') {
+              mappedEscrowStatus = 'REFUNDED_TO_BUYER';
+            } else {
+              mappedEscrowStatus = 'HELD_IN_ESCROW';
+            }
+          } else {
+            if (bOrd.escrowStatus === 'RELEASED') {
+              mappedEscrowStatus = 'COMPLETED_RELEASED';
+            } else if (bOrd.escrowStatus === 'REFUNDED' || bOrd.status === 'CANCELLED') {
+              mappedEscrowStatus = 'REFUNDED_TO_BUYER';
+            } else if (bOrd.status === 'DELIVERED') {
+              mappedEscrowStatus = 'DELIVERED_INSPECTION_WINDOW';
+            } else if (bOrd.status === 'SHIPPED') {
+              mappedEscrowStatus = 'SHIPPED_TO_BUYER';
+            } else if (bOrd.status === 'PROCESSING' || bOrd.status === 'PENDING') {
+              mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
+            }
           }
 
           let parsedAddressObj: any = null;
@@ -1113,6 +1229,11 @@ export default function App() {
               ? `${bOrd.deliveryAddress.detailAddress}, ${bOrd.deliveryAddress.wardName || ''}, ${bOrd.deliveryAddress.provinceName || ''}`
               : (cachedBuyer?.buyerAddress || 'SecondLife Hub Address');
 
+          const itemPrice = Number(bOrd.finalPrice || bOrd.finalItemPrice || bOrd.postPrice || 0);
+          const inspFee = Number(bOrd.buyerFeeShare || bOrd.inspectionFee || 0);
+          const shipFee = Number(bOrd.shippingFee || bOrd.finalShippingFee || 0);
+          const totalPaid = Number(bOrd.totalPaid || (itemPrice + inspFee + shipFee));
+
           return {
             id: bOrd.id,
             listingId: bOrd.postId,
@@ -1123,11 +1244,11 @@ export default function App() {
             buyerAddress: buyerAddr,
             sellerId: bOrd.sellerId,
             sellerName: resolvedSellerName,
-            itemPriceVnd: bOrd.finalPrice || 0,
-            inspectionFeeVnd: 0,
-            shippingFeeVnd: bOrd.shippingFee || 0,
+            itemPriceVnd: itemPrice,
+            inspectionFeeVnd: inspFee,
+            shippingFeeVnd: shipFee,
             platformFeeVnd: 0,
-            totalPaidVnd: bOrd.totalPaid || (bOrd.finalPrice + (bOrd.shippingFee || 0)),
+            totalPaidVnd: totalPaid,
             escrowStatus: mappedEscrowStatus,
             backendStatus: bOrd.status,
             shippingQuoteId: bOrd.shippingQuoteId,
@@ -1137,7 +1258,8 @@ export default function App() {
             confirmationDeadline: bOrd.confirmationDeadline || null,
             confirmationCancelAt: bOrd.confirmationCancelAt || null,
             confirmationStatus: bOrd.confirmationStatus || (bOrd.sellerConfirmedAt ? 'CONFIRMED' : 'PENDING'),
-            hasInspectionService: true,
+            hasInspectionService: Boolean(bOrd.__isInspection || bOrd.hasInspectionService || inspFee > 0),
+            inspectionMethod: bOrd.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER',
             shippingLegs: [
               {
                 id: 'LEG-1',
@@ -1150,8 +1272,8 @@ export default function App() {
                 estimatedDelivery: '1 - 2 ngày',
                 timeline: [
                   {
-                    timestamp: new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-                    description: `Khởi tạo đơn hàng qua Escrow. Trạng thái: ${bOrd.status}.`,
+                    timestamp: bOrd.createdAt ? new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
+                    description: `Khởi tạo đơn hàng qua Escrow. Trạng thái: ${bOrd.status || 'PROCESSING'}.`,
                     location: 'Hệ thống SecondLife GHN'
                   }
                 ]
@@ -1164,15 +1286,27 @@ export default function App() {
           };
         });
 
-        setOrders(mappedOrders);
+        // Merge with recent locally placed orders so newly placed orders are never lost
+        const localRecentOrders = getLocalStoredOrders();
+        const combined = [...mappedOrders];
+        localRecentOrders.forEach((locOrd) => {
+          if (!combined.some((o) => o.id === locOrd.id)) {
+            combined.unshift(locOrd);
+          }
+        });
+
+        setOrders(combined);
       } else {
-        setOrders([]);
+        // Even if server returns 0, retain all local recent orders
+        const localRecentOrders = getLocalStoredOrders();
+        setOrders(localRecentOrders);
       }
     } catch (err) {
       console.warn('Could not load orders from backend:', err);
-      setOrders([]);
+      const localRecentOrders = getLocalStoredOrders();
+      setOrders(localRecentOrders);
     }
-  }, [currentUser, currentRole, listings]);
+  }, [currentUser, currentRole, listings, getLocalStoredOrders]);
 
   // Refresh listings when their query inputs or the active tab change.
   React.useEffect(() => {
@@ -1206,8 +1340,18 @@ export default function App() {
           phone: newOrder.buyerPhone,
         }));
       }
+
+      // Persist to recent_placed_orders
+      let existingRecent: EscrowOrder[] = [];
+      try {
+        const stored = localStorage.getItem('recent_placed_orders');
+        if (stored) existingRecent = JSON.parse(stored);
+      } catch {}
+      const updatedRecent = [newOrder, ...existingRecent.filter((o) => o.id !== newOrder.id)].slice(0, 30);
+      localStorage.setItem('recent_placed_orders', JSON.stringify(updatedRecent));
     } catch {}
-    setOrders((prev) => [newOrder, ...prev]);
+
+    setOrders((prev) => [newOrder, ...prev.filter((o) => o.id !== newOrder.id)]);
     setCheckoutListing(null);
     setCheckoutAgreedPrice(undefined);
     setCheckoutNegotiationId(undefined);

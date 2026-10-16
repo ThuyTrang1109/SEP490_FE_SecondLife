@@ -207,9 +207,30 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   // Submitting & Feedback states
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGeneratingSeal, setIsGeneratingSeal] = useState(false);
   const [noticeMessage, setNoticeMessage] = useState<{ text: string; isError?: boolean } | null>(null);
   const [showCertificateModal, setShowCertificateModal] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
+
+  const handleGenerateBackendSeal = async () => {
+    if (!activeOrder?.id) return;
+    setIsGeneratingSeal(true);
+    try {
+      const res = await inspectorService.generateSeal(activeOrder.id);
+      const sealId = typeof res === 'string' ? res : (res as any)?.tamperSealId || (res as any)?.data?.tamperSealId;
+      if (sealId) {
+        setTamperSealInput(sealId);
+        notify(`Đã sinh mã tem niêm phong chuẩn từ hệ thống: ${sealId}`);
+      }
+    } catch (err: any) {
+      console.warn('Backend generate-seal failed, falling back:', err);
+      const fallbackSeal = 'SL-SEAL-' + Math.floor(1000000 + Math.random() * 9000000);
+      setTamperSealInput(fallbackSeal);
+      notify(`Đã cấp mã tem dự phòng: ${fallbackSeal}`);
+    } finally {
+      setIsGeneratingSeal(false);
+    }
+  };
 
   const notify = (text: string, isError = false) => {
     setNoticeMessage({ text, isError });
@@ -1062,12 +1083,12 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   </span>
                   <button
                     type="button"
-                    onClick={() =>
-                      setTamperSealInput('SL-SEAL-' + Math.floor(1000000 + Math.random() * 9000000))
-                    }
-                    className="text-xs text-[#c34c36] font-bold hover:underline cursor-pointer"
+                    onClick={handleGenerateBackendSeal}
+                    disabled={isGeneratingSeal}
+                    className="text-xs text-[#c34c36] font-bold hover:underline cursor-pointer flex items-center gap-1 disabled:opacity-50"
                   >
-                    Đổi mã tem
+                    {isGeneratingSeal && <Loader2 className="w-3 h-3 animate-spin" />}
+                    <span>Sinh mã tem từ hệ thống</span>
                   </button>
                 </div>
 

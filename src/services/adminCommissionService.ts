@@ -25,20 +25,36 @@ export interface CommissionRuleRequest {
 export interface CommissionAuditResponse {
   id: string;
   ruleId: string;
-  name: string;
-  rate: number;
-  minCommission: number;
-  maxCommission?: number | null;
-  active: boolean;
-  revision: number;
+  actorId?: string;
   action: string;
+  oldValue?: string | null;
+  newValue?: string | null;
   reason?: string;
+  changedAt?: string;
+  // Aliases for compatibility
   changedBy?: string;
-  createdAt: string;
+  createdAt?: string;
+  name?: string;
+  rate?: number;
+  minCommission?: number;
+  maxCommission?: number | null;
+  active?: boolean;
+  revision?: number;
 }
 
-
 export const adminCommissionService = {
+  /**
+   * Lấy chi tiết quy tắc hoa hồng sàn
+   * GET /api/v1/admin/commission-rules/{id}
+   */
+  async getCommissionRuleById(id: string): Promise<CommissionRuleResponse> {
+    const res = await request<CommissionRuleResponse>(`/v1/admin/commission-rules/${id}`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
   /**
    * Lấy danh sách quy tắc hoa hồng sàn
    * GET /api/v1/admin/commission-rules

@@ -251,7 +251,23 @@ export const postService = {
   },
 
   /**
-   * Lấy chi tiết thông tin draft bài đăng (GET /api/v1/posts/{postId})
+   * Lấy chi tiết thông tin draft bài đăng của người dùng (GET /api/v1/posts/{postId}/draft)
+   */
+  async getDraft(postId: string): Promise<ListingDraftResponse> {
+    try {
+      const response = await request<ListingDraftResponse>(`/v1/posts/${postId}/draft`, {
+        method: 'GET',
+        requiresAuth: true,
+      });
+      return (response as any)?.data || response;
+    } catch {
+      // Fallback nếu bài đăng đã duyệt / xuất bản thành post công khai
+      return this.getPost(postId);
+    }
+  },
+
+  /**
+   * Lấy chi tiết bài đăng (GET /api/v1/posts/{postId})
    */
   async getPost(postId: string): Promise<ListingDraftResponse> {
     try {
@@ -272,6 +288,7 @@ export const postService = {
       };
     }
   },
+
 
   /**
    * Lưu thông tin draft bài đăng (PUT /api/v1/posts/{postId}/draft)

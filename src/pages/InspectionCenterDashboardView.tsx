@@ -37,7 +37,11 @@ import {
   Menu,
   Home,
   LogOut,
-  Sliders
+  Sliders,
+  Plus,
+  Trash2,
+  Edit3,
+  FileCheck
 } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 import { Language, UserProfile, EscrowOrder } from '../types';
@@ -45,7 +49,10 @@ import { formatVND } from '../utils/translations';
 import {
   inspectorService,
   InspectionOrderDto,
-  InspectionStaffDto
+  InspectionStaffDto,
+  InspectionChecklistResponse,
+  InspectionTravelTierDto,
+  InspectionFeeProposalResponse
 } from '../services';
 
 interface InspectionCenterDashboardViewProps {
@@ -58,7 +65,7 @@ interface InspectionCenterDashboardViewProps {
   onViewWebsite?: () => void;
 }
 
-export type CenterTab = 'overview' | 'dispatch' | 'staff' | 'orders';
+export type CenterTab = 'overview' | 'dispatch' | 'staff' | 'orders' | 'checklists' | 'pricing';
 
 export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardViewProps> = ({
   initialOrders = [],
@@ -210,10 +217,77 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     loadStaff();
   }, [orderStatusFilter]);
 
+  // Checklists State
+  const [checklists, setChecklists] = useState<InspectionChecklistResponse[]>([]);
+  const [isLoadingChecklists, setIsLoadingChecklists] = useState(false);
+  const [isCreateChecklistModalOpen, setIsCreateChecklistModalOpen] = useState(false);
+  const [checklistTitle, setChecklistTitle] = useState('');
+  const [checklistCategory, setChecklistCategory] = useState('Đồ gia dụng');
+  const [checklistDesc, setChecklistDesc] = useState('');
+  const [checklistItems, setChecklistItems] = useState<{ title: string; desc: string; mandatory: boolean }[]>([
+    { title: 'Kiểm tra nguồn & khởi động máy', desc: 'Kiểm tra bo nguồn, điện áp cấp và phản hồi khi bật nguồn', mandatory: true },
+    { title: 'Kiểm tra ngoại quan & ốc vít', desc: 'Soi dấu hiệu cạy mở, trầy xước vỏ và chân đế', mandatory: false },
+    { title: 'Test tải vận hành liên tục 30 phút', desc: 'Kiểm tra nhiệt độ, độ ồn và tính ổn định linh kiện', mandatory: true },
+  ]);
+
+  // Pricing & Travel Tiers State
+  const [travelTiers, setTravelTiers] = useState<InspectionTravelTierDto[]>([]);
+  const [tierProposals, setTierProposals] = useState<InspectionFeeProposalResponse[]>([]);
+  const [isLoadingPricing, setIsLoadingPricing] = useState(false);
+  const [isProposeModalOpen, setIsProposeModalOpen] = useState(false);
+  const [proposeBaseFee, setProposeBaseFee] = useState<number>(250000);
+  const [proposeTiers, setProposeTiers] = useState<{ tierNumber: number; name: string; fromKm: number; toKm: number; pricePerKm: number }[]>([
+    { tierNumber: 1, name: 'Nội thành gần (0 - 5 km)', fromKm: 0, toKm: 5, pricePerKm: 10000 },
+    { tierNumber: 2, name: 'Trung bình (5 - 15 km)', fromKm: 5, toKm: 15, pricePerKm: 15000 },
+    { tierNumber: 3, name: 'Xa / Ngoại thành (> 15 km)', fromKm: 15, toKm: 35, pricePerKm: 20000 },
+  ]);
+
+  const loadChecklists = async () => {
+    setIsLoadingChecklists(true);
+    try {
+      const data = await inspectorService.getChecklists();
+      setChecklists(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.warn('Lỗi tải checklists:', err);
+    } finally {
+      setIsLoadingChecklists(false);
+    }
+  };
+
+  const loadPricing = async () => {
+    setIsLoadingPricing(true);
+    try {
+      const [tiers, props] = await Promise.allSettled([
+        inspectorService.getTravelTiers(),
+        inspectorService.getTierProposals(),
+      ]);
+      if (tiers.status === 'fulfilled') {
+        setTravelTiers(Array.isArray(tiers.value) ? (tiers.value as any) : []);
+      }
+      if (props.status === 'fulfilled') {
+        setTierProposals(Array.isArray(props.value) ? (props.value as any) : []);
+      }
+    } catch (err) {
+      console.warn('Lỗi tải bảng cước:', err);
+    } finally {
+      setIsLoadingPricing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'checklists') {
+      loadChecklists();
+    } else if (activeTab === 'pricing') {
+      loadPricing();
+    }
+  }, [activeTab]);
+
   // Refresh all data
   const handleRefreshAll = () => {
     loadOrders();
     loadStaff();
+    if (activeTab === 'checklists') loadChecklists();
+    if (activeTab === 'pricing') loadPricing();
     showNotice(lang === 'vi' ? 'Đã làm mới dữ liệu trung tâm kiểm định' : 'Center data refreshed successfully');
   };
 
@@ -466,6 +540,20 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       icon: ClipboardList,
       badge: stats.total > 0 ? stats.total : null,
       badgeColor: 'bg-[#24263e] text-white',
+    },
+    {
+      id: 'checklists' as CenterTab,
+      label: 'TIÊU CHUẨN & CHECKLIST',
+      icon: Layers,
+      badge: null,
+      badgeColor: '',
+    },
+    {
+      id: 'pricing' as CenterTab,
+      label: 'CƯỚC DI CHUYỂN & BẬC GIÁ',
+      icon: Sliders,
+      badge: null,
+      badgeColor: '',
     },
   ];
 
@@ -1448,8 +1536,474 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               </div>
             </div>
           )}
+
+          {/* =================================================================== */}
+          {/* TAB 5: CHECKLISTS & KỸ THUẬT TIÊU CHUẨN                            */}
+          {/* =================================================================== */}
+          {activeTab === 'checklists' && (
+            <div className="space-y-4 animate-fadeIn">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                <div>
+                  <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                    <Layers className="w-5 h-5 text-[#c34c36]" />
+                    <span>Bộ Tiêu Chuẩn Kỹ Thuật & Checklist Động</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Quản lý quy trình kiểm định chuyên sâu từng dòng sản phẩm gia dụng theo chuẩn SecondLife Hub
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateChecklistModalOpen(true)}
+                  className="px-4 py-2 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ Tạo Bộ Tiêu Chuẩn Mới</span>
+                </button>
+              </div>
+
+              {/* Checklists Table */}
+              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
+                        <th className="py-2.5 px-4 w-12">#</th>
+                        <th className="py-2.5 px-4">Tên Bộ Tiêu Chuẩn</th>
+                        <th className="py-2.5 px-4">Danh Mục</th>
+                        <th className="py-2.5 px-4 text-center">Số Tiêu Chí</th>
+                        <th className="py-2.5 px-4 text-center">Trạng Thái</th>
+                        <th className="py-2.5 px-4 text-right">Thao Tác</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {isLoadingChecklists ? (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-slate-400">
+                            <Loader2 className="w-6 h-6 animate-spin mx-auto text-[#24263e] mb-2" />
+                            <span>Đang tải danh sách bộ checklist...</span>
+                          </td>
+                        </tr>
+                      ) : checklists.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-slate-400">
+                            Chưa có bộ tiêu chuẩn nào. Nhấn "+ Tạo Bộ Tiêu Chuẩn Mới" để thiết lập.
+                          </td>
+                        </tr>
+                      ) : (
+                        checklists.map((chk, idx) => (
+                          <tr key={chk.id} className="hover:bg-slate-50/60 transition">
+                            <td className="py-3 px-4 font-mono text-slate-400 text-[11px]">{idx + 1}</td>
+                            <td className="py-3 px-4">
+                              <div className="font-bold text-slate-900">{chk.title}</div>
+                              {chk.description && (
+                                <div className="text-[11px] text-slate-500 line-clamp-1">{chk.description}</div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-bold text-[10px]">
+                                {chk.categoryName || chk.categoryCode || 'Tất cả danh mục'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center font-bold text-slate-800">
+                              {chk.items?.length || 0} mục
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                chk.active !== false
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-slate-100 text-slate-500'
+                              }`}>
+                                {chk.active !== false ? 'Kích hoạt' : 'Tạm dừng'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (confirm(`Bạn có chắc muốn xóa bộ checklist "${chk.title}"?`)) {
+                                    try {
+                                      await inspectorService.deleteChecklist(chk.id);
+                                      showNotice(`Đã xóa bộ tiêu chuẩn "${chk.title}" thành công!`);
+                                      loadChecklists();
+                                    } catch (err: any) {
+                                      alert(err?.message || 'Không thể xóa checklist');
+                                    }
+                                  }
+                                }}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                title="Xóa bộ tiêu chuẩn"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================== */}
+          {/* TAB 6: TRAVEL TIERS & BẢNG GIÁ DI CHUYỂN                            */}
+          {/* =================================================================== */}
+          {activeTab === 'pricing' && (
+            <div className="space-y-5 animate-fadeIn">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                <div>
+                  <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                    <Sliders className="w-5 h-5 text-[#c34c36]" />
+                    <span>Bảng Cước Phí Di Chuyển & Đề Xuất Giá</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Cấu hình phụ phí di chuyển theo km cho kỹ thuật viên kiểm định tại nhà (AT_HOME) và gửi đề xuất duyệt lên Admin
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsProposeModalOpen(true)}
+                  className="px-4 py-2 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ Đề Xuất Bậc Giá Mới</span>
+                </button>
+              </div>
+
+              {/* Active Travel Tiers Overview Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Bậc 1: Cự Ly Gần</span>
+                  <div className="text-xl font-black text-slate-900">0 - 5 km</div>
+                  <div className="text-xs font-bold text-emerald-600">10.000₫ / km</div>
+                  <p className="text-[10px] text-slate-400">Áp dụng cho các địa chỉ kiểm định nội thành liền kề trạm</p>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Bậc 2: Cự Ly Trung Bình</span>
+                  <div className="text-xl font-black text-slate-900">5 - 15 km</div>
+                  <div className="text-xs font-bold text-blue-600">15.000₫ / km</div>
+                  <p className="text-[10px] text-slate-400">Áp dụng cho các quận nội thành mở rộng</p>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Bậc 3: Cự Ly Xa</span>
+                  <div className="text-xl font-black text-slate-900">&gt; 15 km</div>
+                  <div className="text-xs font-bold text-amber-600">20.000₫ / km</div>
+                  <p className="text-[10px] text-slate-400">Áp dụng cho ngoại thành hoặc giáp ranh tỉnh lân cận</p>
+                </div>
+              </div>
+
+              {/* Proposals History Table */}
+              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                  <h4 className="font-bold text-xs text-slate-800">Lịch Sử Các Đề Xuất Giá Đã Gửi Admin</h4>
+                  <button
+                    onClick={loadPricing}
+                    disabled={isLoadingPricing}
+                    className="text-xs text-slate-400 hover:text-slate-700 cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPricing ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
+                        <th className="py-2.5 px-4 w-12">#</th>
+                        <th className="py-2.5 px-4">Mã Đề Xuất</th>
+                        <th className="py-2.5 px-4">Phí Kiểm Định Gốc</th>
+                        <th className="py-2.5 px-4">Người Đề Xuất</th>
+                        <th className="py-2.5 px-4 text-center">Trạng Thái</th>
+                        <th className="py-2.5 px-4">Thời Gian</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {isLoadingPricing ? (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-slate-400">
+                            <Loader2 className="w-5 h-5 animate-spin mx-auto text-[#24263e] mb-1" />
+                            <span>Đang tải lịch sử đề xuất...</span>
+                          </td>
+                        </tr>
+                      ) : tierProposals.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-slate-400">
+                            Chưa có đề xuất giá nào. Nhấn "+ Đề Xuất Bậc Giá Mới" để gửi biểu phí.
+                          </td>
+                        </tr>
+                      ) : (
+                        tierProposals.map((prop, idx) => (
+                          <tr key={prop.id} className="hover:bg-slate-50/60 transition">
+                            <td className="py-3 px-4 font-mono text-slate-400 text-[11px]">{idx + 1}</td>
+                            <td className="py-3 px-4 font-mono font-bold text-slate-800">#{prop.id.slice(0, 8)}</td>
+                            <td className="py-3 px-4 font-bold text-[#c34c36]">
+                              {formatVND(prop.baseInspectionFee || 0)}
+                            </td>
+                            <td className="py-3 px-4 text-slate-600">
+                              {prop.proposedByName || prop.proposedByEmail || 'Trưởng trung tâm'}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                prop.status === 'APPROVED'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : prop.status === 'REJECTED'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                {prop.status === 'APPROVED' ? 'Đã Phê Duyệt' : prop.status === 'REJECTED' ? 'Bị Từ Chối' : 'Chờ Admin Duyệt'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-slate-400 text-[11px]">
+                              {prop.createdAt ? new Date(prop.createdAt).toLocaleString('vi-VN') : '—'}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
         </main>
       </div>
+
+      {/* Modal Tạo Bộ Tiêu Chuẩn Checklist */}
+      {isCreateChecklistModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-gray-100 max-h-[90vh] flex flex-col text-xs">
+            <div className="flex items-center justify-between pb-2 border-b border-gray-100 shrink-0">
+              <div className="flex items-center gap-2">
+                <Layers className="w-5 h-5 text-[#c34c36]" />
+                <h3 className="font-black text-sm text-slate-900">Tạo Bộ Tiêu Chuẩn Kiểm Định Mới</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateChecklistModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 flex-1 overflow-y-auto pr-1">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Tên bộ tiêu chuẩn *</label>
+                <input
+                  type="text"
+                  required
+                  value={checklistTitle}
+                  onChange={(e) => setChecklistTitle(e.target.value)}
+                  placeholder="VD: Kiểm định Tủ Lạnh & Tủ Đông cao cấp..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Danh mục áp dụng</label>
+                <input
+                  type="text"
+                  value={checklistCategory}
+                  onChange={(e) => setChecklistCategory(e.target.value)}
+                  placeholder="VD: Tủ lạnh, Máy giặt, Điều hòa..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Mô tả quy trình</label>
+                <textarea
+                  rows={2}
+                  value={checklistDesc}
+                  onChange={(e) => setChecklistDesc(e.target.value)}
+                  placeholder="Mô tả tóm tắt quy trình kiểm tra bo mạch, máy nén, cảm biến..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-2 pt-1 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-700">Các hạng mục kiểm tra ({checklistItems.length})</span>
+                  <button
+                    type="button"
+                    onClick={() => setChecklistItems((prev) => [...prev, { title: '', desc: '', mandatory: false }])}
+                    className="text-[#c34c36] font-bold hover:underline cursor-pointer"
+                  >
+                    + Thêm mục
+                  </button>
+                </div>
+
+                {checklistItems.map((item, idx) => (
+                  <div key={idx} className="p-2.5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={item.title}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setChecklistItems((prev) => prev.map((it, i) => i === idx ? { ...it, title: val } : it));
+                        }}
+                        placeholder={`Tiêu chí #${idx + 1}...`}
+                        className="flex-1 p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold"
+                      />
+                      <label className="flex items-center gap-1 cursor-pointer shrink-0 text-[11px] font-bold text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={item.mandatory}
+                          onChange={(e) => {
+                            const val = e.target.checked;
+                            setChecklistItems((prev) => prev.map((it, i) => i === idx ? { ...it, mandatory: val } : it));
+                          }}
+                        />
+                        <span>Bắt buộc</span>
+                      </label>
+                      {checklistItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setChecklistItems((prev) => prev.filter((_, i) => i !== idx))}
+                          className="text-slate-400 hover:text-rose-600 cursor-pointer p-0.5"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsCreateChecklistModalOpen(false)}
+                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 font-bold"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={!checklistTitle.trim() || checklistItems.length === 0}
+                onClick={async () => {
+                  try {
+                    await inspectorService.createChecklist({
+                      title: checklistTitle.trim(),
+                      categoryName: checklistCategory.trim(),
+                      description: checklistDesc.trim(),
+                      items: checklistItems.filter(i => i.title.trim()).map((it, idx) => ({
+                        itemTitle: it.title.trim(),
+                        description: it.desc.trim(),
+                        mandatory: it.mandatory,
+                        orderIndex: idx,
+                      }))
+                    });
+                    showNotice(`Đã tạo bộ tiêu chuẩn "${checklistTitle}" thành công!`);
+                    setIsCreateChecklistModalOpen(false);
+                    setChecklistTitle('');
+                    loadChecklists();
+                  } catch (err: any) {
+                    alert(err?.message || 'Không thể tạo bộ tiêu chuẩn');
+                  }
+                }}
+                className="px-5 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl font-black shadow-xs disabled:opacity-50 cursor-pointer"
+              >
+                Lưu Bộ Tiêu Chuẩn
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Đề Xuất Bậc Giá Mới */}
+      {isProposeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-gray-100 text-xs">
+            <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-[#c34c36]" />
+                <h3 className="font-black text-sm text-slate-900">Đề Xuất Biểu Phí Di Chuyển Mới</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsProposeModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Phí kiểm định cơ sở (VND) *</label>
+                <input
+                  type="number"
+                  min={50000}
+                  step={10000}
+                  value={proposeBaseFee}
+                  onChange={(e) => setProposeBaseFee(Number(e.target.value))}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-900 text-sm"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block font-bold text-slate-700">Các bậc tính phí theo khoảng cách:</label>
+                {proposeTiers.map((tier, idx) => (
+                  <div key={idx} className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 space-y-1">
+                    <div className="font-bold text-slate-800">{tier.name}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-slate-500">Đơn giá:</span>
+                      <input
+                        type="number"
+                        min={1000}
+                        step={1000}
+                        value={tier.pricePerKm}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setProposeTiers((prev) => prev.map((t, i) => i === idx ? { ...t, pricePerKm: val } : t));
+                        }}
+                        className="w-28 p-1 bg-white border border-slate-200 rounded-lg font-bold text-xs"
+                      />
+                      <span className="text-[11px] text-slate-500">₫ / km</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsProposeModalOpen(false)}
+                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 font-bold"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await inspectorService.proposeTravelTiers({
+                      baseInspectionFee: proposeBaseFee,
+                      tiers: proposeTiers,
+                    });
+                    showNotice('Đã gửi đề xuất bảng giá lên Admin thành công!');
+                    setIsProposeModalOpen(false);
+                    loadPricing();
+                  } catch (err: any) {
+                    alert(err?.message || 'Gửi đề xuất giá thất bại');
+                  }
+                }}
+                className="px-5 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl font-black shadow-xs cursor-pointer"
+              >
+                Gửi Đề Xuất Duyệt
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* MODAL 1: GIAO TASK CHO KỸ THUẬT VIÊN (ASSIGN TASK MODAL)                 */}

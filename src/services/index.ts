@@ -30,3 +30,10 @@ export * from './notificationService';
 export * from './notificationWsClient';
 export * from './reputationService';
 export * from './staffReportService';
+export {
+  userReportService,
+  type CreateReportRequestDto,
+  type ReportEvidenceUploadResponse,
+  type UserReportResponseDto
+} from './userReportService';
+

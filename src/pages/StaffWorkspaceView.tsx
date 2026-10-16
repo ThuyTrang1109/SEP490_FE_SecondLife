@@ -42,7 +42,7 @@ import {
 } from 'lucide-react';
 import { Listing, EscrowOrder, Language, UserProfile } from '../types';
 import { formatVND } from '../utils/translations';
-import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto, staffReportService, ReportItemDto } from '../services';
+import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto, staffReportService, ReportItemDto, StaffOrderConfirmationResponse } from '../services';
 import { ListingComparisonModal } from '../components/staff/ListingComparisonModal';
 import logoImg from '../assets/logo.png';
 import { User, LogOut } from 'lucide-react';
@@ -177,6 +177,28 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   const [backendReports, setBackendReports] = useState<ReportItemDto[]>([]);
   const [isLoadingReports, setIsLoadingReports] = useState(false);
   const [supportTickets, setSupportTickets] = useState<any[]>([]);
+
+  // 9. Staff Orders Monitoring (GET /api/v1/staff/orders)
+  const [monitoredOrders, setMonitoredOrders] = useState<StaffOrderConfirmationResponse[]>([]);
+  const [isLoadingMonitoredOrders, setIsLoadingMonitoredOrders] = useState(false);
+
+  const loadMonitoredOrders = async () => {
+    setIsLoadingMonitoredOrders(true);
+    try {
+      const res = await staffService.getStaffOrderQueue({ page: 0, size: 50 });
+      setMonitoredOrders(res?.items || []);
+    } catch (err) {
+      console.warn('Load staff monitored orders error:', err);
+    } finally {
+      setIsLoadingMonitoredOrders(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'monitor-transactions') {
+      loadMonitoredOrders();
+    }
+  }, [activeTab]);
 
   const loadBackendReports = async () => {
     setIsLoadingReports(true);
@@ -1454,40 +1476,98 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                   </div>
                 </div>
 
+                {/* Real Monitored Orders Queue from Backend */}
                 <div className="overflow-x-auto">
+                  <div className="flex items-center justify-between pb-2">
+                    <span className="font-bold text-xs text-slate-800">
+                      Hàng Đợi Đơn Hàng Cần Người Bán Xác Nhận ({monitoredOrders.length})
+                    </span>
+                    <button
+                      onClick={loadMonitoredOrders}
+                      disabled={isLoadingMonitoredOrders}
+                      className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer font-bold"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingMonitoredOrders ? 'animate-spin' : ''}`} />
+                      <span>Làm mới hàng đợi</span>
+                    </button>
+                  </div>
+
                   <table className="w-full text-left text-xs">
                     <thead>
-                      <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                        <th className="py-2.5 px-3">Mã GD</th>
-                        <th className="py-2.5 px-3">Thời Gian</th>
-                        <th className="py-2.5 px-3">Loại Giao Dịch</th>
-                        <th className="py-2.5 px-3">Cổng Thanh Toán</th>
-                        <th className="py-2.5 px-3">Số Tiền</th>
-                        <th className="py-2.5 px-3">Mức Độ An Toàn</th>
-                        <th className="py-2.5 px-3">Nội Dung</th>
+                      <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold uppercase">
+                        <th className="py-2.5 px-3">Mã Đơn & Bài Đăng</th>
+                        <th className="py-2.5 px-3">Trạng Thái Đơn</th>
+                        <th className="py-2.5 px-3">Xác Nhận Của Seller</th>
+                        <th className="py-2.5 px-3">Hạn Chót Xác Nhận</th>
+                        <th className="py-2.5 px-3">Điểm Phạt Quá Hạn</th>
+                        <th className="py-2.5 px-3">Thời Điểm Trả Tiền</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {transactions.map((t) => (
-                        <tr key={t.id} className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 px-3 font-mono font-bold text-slate-900">{t.id}</td>
-                          <td className="py-3 px-3 font-mono text-slate-500">{t.timestamp}</td>
-                          <td className="py-3 px-3 font-bold text-slate-800">{t.type}</td>
-                          <td className="py-3 px-3 text-slate-600">{t.gateway}</td>
-                          <td className="py-3 px-3 font-black text-slate-900">{formatVND(t.amount)}</td>
-                          <td className="py-3 px-3">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${t.riskLevel === 'SAFE' || t.riskLevel === 'LOW'
-                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                  : 'bg-amber-50 text-amber-800 border border-amber-200'
-                                }`}
-                            >
-                              {t.riskLevel === 'SAFE' || t.riskLevel === 'LOW' ? '✓ An Toàn' : '⚠ Cần Lưu Ý'}
-                            </span>
+                      {isLoadingMonitoredOrders ? (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-slate-400">
+                            <Loader2 className="w-5 h-5 animate-spin mx-auto text-[#24263e] mb-1" />
+                            <span>Đang kiểm tra hàng đợi đơn hàng từ máy chủ...</span>
                           </td>
-                          <td className="py-3 px-3 text-slate-600 max-w-xs truncate">{t.note}</td>
                         </tr>
-                      ))}
+                      ) : monitoredOrders.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-slate-400">
+                            Hiện không có đơn hàng nào chờ seller xác nhận hoặc cần giám sát đặc biệt.
+                          </td>
+                        </tr>
+                      ) : (
+                        monitoredOrders.map((ord) => (
+                          <tr key={ord.orderId} className="hover:bg-slate-50/70 transition">
+                            <td className="py-3 px-3">
+                              <div className="font-mono font-bold text-slate-900 text-[11px]">#{ord.orderId.slice(0, 8)}</div>
+                              <div className="font-semibold text-slate-700 truncate max-w-xs">{ord.postTitle}</div>
+                            </td>
+                            <td className="py-3 px-3">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800">
+                                {ord.status}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                  ord.confirmationStatus === 'CONFIRMED'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : ord.confirmationStatus === 'PENDING'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : ord.confirmationStatus === 'CANCELLED'
+                                    ? 'bg-rose-100 text-rose-800'
+                                    : 'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                {ord.confirmationStatus === 'CONFIRMED'
+                                  ? 'Đã Xác Nhận'
+                                  : ord.confirmationStatus === 'PENDING'
+                                  ? 'Đang Chờ Seller'
+                                  : ord.confirmationStatus === 'CANCELLED'
+                                  ? 'Đã Hủy Đơn'
+                                  : 'Không Yêu Cầu'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 font-mono text-slate-600 text-[11px]">
+                              {ord.confirmationDeadline
+                                ? new Date(ord.confirmationDeadline).toLocaleString('vi-VN')
+                                : '—'}
+                            </td>
+                            <td className="py-3 px-3">
+                              {ord.latePenaltyPoints ? (
+                                <span className="font-bold text-rose-600">-{ord.latePenaltyPoints} điểm</span>
+                              ) : (
+                                <span className="text-slate-400">0</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 font-mono text-slate-500 text-[11px]">
+                              {ord.paidAt ? new Date(ord.paidAt).toLocaleString('vi-VN') : '—'}
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>

@@ -44,6 +44,7 @@ import { ScheduleAppointmentModal } from '../components/modals/ScheduleAppointme
 import { ShipmentBackend, OrderSettlementDTO } from '../types';
 import { orderService } from '../services/orderService';
 import { inspectorService } from '../services/inspectorService';
+import { UserReportModal } from '../components/modals/UserReportModal';
 
 interface EscrowOrdersViewProps {
   orders: EscrowOrder[];
@@ -68,7 +69,8 @@ type OrderFilterTab =
   | 'shipping'
   | 'delivered'
   | 'completed'
-  | 'disputed';
+  | 'disputed'
+  | 'with_inspection';
 
 export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   orders,
@@ -133,6 +135,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   const [isVerifySealModalOpen, setIsVerifySealModalOpen] = useState(false);
   const [printSealOrder, setPrintSealOrder] = useState<EscrowOrder | null>(null);
   const [inspectionActionNotice, setInspectionActionNotice] = useState<string | null>(null);
+  const [reportingOrder, setReportingOrder] = useState<EscrowOrder | null>(null);
 
   const handleRespondInspection = async (orderId: string, action: 'ACCEPT' | 'REJECT') => {
     try {
@@ -398,6 +401,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         return ord.escrowStatus === 'COMPLETED_RELEASED';
       case 'disputed':
         return ord.escrowStatus === 'DISPUTED' || ord.escrowStatus === 'REFUNDED_TO_BUYER';
+      case 'with_inspection':
+        return Boolean(ord.hasInspectionService || ord.inspectionReport || ord.inspectionCenterId || (ord as any).inspectionStatus);
       case 'all':
       default:
         return true;
@@ -424,6 +429,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       case 'disputed':
         return orders.filter(
           (o) => o.escrowStatus === 'DISPUTED' || o.escrowStatus === 'REFUNDED_TO_BUYER'
+        ).length;
+      case 'with_inspection':
+        return orders.filter(
+          (o) => Boolean(o.hasInspectionService || o.inspectionReport || o.inspectionCenterId || (o as any).inspectionStatus)
         ).length;
       case 'all':
       default:
@@ -510,6 +519,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         { key: 'delivered', label: lang === 'vi' ? 'Chờ nghiệm thu (48h)' : 'Review (48h)' },
         { key: 'completed', label: lang === 'vi' ? 'Đã nhận tiền' : 'Funds Released' },
         { key: 'disputed', label: lang === 'vi' ? 'Khiếu nại / Trả hàng' : 'Disputes / Returns' },
+        { key: 'with_inspection', label: lang === 'vi' ? '🛡️ Có kiểm định Hub' : '🛡️ With Inspection' },
       ]
     : [
         { key: 'all', label: lang === 'vi' ? 'Tất cả' : 'All Orders' },
@@ -519,6 +529,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         { key: 'delivered', label: lang === 'vi' ? 'Đã nhận hàng' : 'Delivered' },
         { key: 'completed', label: lang === 'vi' ? 'Hoàn thành' : 'Completed' },
         { key: 'disputed', label: lang === 'vi' ? 'Trả hàng / Tranh chấp' : 'Disputes / Refunds' },
+        { key: 'with_inspection', label: lang === 'vi' ? '🛡️ Có kiểm định Hub' : '🛡️ With Inspection' },
       ];
 
   return (
@@ -1760,7 +1771,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
                       <button
                         onClick={() => {
-                          onOpenDispute(detailModalOrder);
+                          setReportingOrder(detailModalOrder);
                           setDetailModalOrder(null);
                         }}
                         className="py-3 px-4 bg-white hover:bg-gray-100 text-[#24263e] border border-[#24263e]/30 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
@@ -1951,6 +1962,19 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           conditionGrade={printSealOrder.listing?.conditionGrade || 'A'}
           conditionScore={printSealOrder.inspectionReport?.conditionScore || 95}
           inspectorName={printSealOrder.inspectionReport?.inspectorName || 'KTV SecondLife Center'}
+        />
+      )}
+
+      {/* Modal Khiếu Nại Đơn Hàng (Bảo Vệ Người Dùng) */}
+      {reportingOrder && (
+        <UserReportModal
+          isOpen={!!reportingOrder}
+          onClose={() => setReportingOrder(null)}
+          orderId={reportingOrder.id}
+          itemTitle={reportingOrder.listing?.title}
+          onSuccess={() => {
+            onRefreshOrders?.();
+          }}
         />
       )}
     </div>

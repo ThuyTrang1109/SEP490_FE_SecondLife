@@ -28,7 +28,9 @@ import { sellerService, SellerVerificationResponseDto } from '../services/seller
 import { sellerCreditService, CreditBalanceResponseDto, CreditLedgerResponseDto, CreditPurchaseResponseDto } from '../services/sellerCreditService';
 import { mediaService } from '../services/mediaService';
 import { postService } from '../services/postService';
+import { walletService } from '../services/walletService';
 import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
+import { WithdrawalModal } from '../components/modals/WithdrawalModal';
 import { extractWardAndCity, getSavedSellerAddress } from '../utils/addressUtils';
 
 interface SellerDashboardViewProps {
@@ -83,6 +85,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [bankName, setBankName] = useState(currentUser?.bankAccount?.bankName || '');
   const [accountNumber, setAccountNumber] = useState(currentUser?.bankAccount?.accountNumber || '');
   const [accountHolder, setAccountHolder] = useState(currentUser?.bankAccount?.accountHolder || currentUser?.name || '');
+  const [sellerWalletBalance, setSellerWalletBalance] = useState<number>(currentUser?.walletBalanceVnd ?? currentUser?.walletBalance ?? 0);
   const [payoutAmount, setPayoutAmount] = useState<number>(currentUser?.walletBalanceVnd ?? currentUser?.walletBalance ?? 0);
   const [payoutSuccessMsg, setPayoutSuccessMsg] = useState<string | null>(null);
   const [isSellerReviewsOpen, setIsSellerReviewsOpen] = useState(false);
@@ -137,6 +140,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       sellerCreditService.getCredits()
         .then((bal) => {
           if (bal) setCreditBalance(bal);
+        })
+        .catch(() => {});
+
+      walletService.getMyWallet()
+        .then((w) => {
+          if (w) setSellerWalletBalance(Number(w.balance || 0));
         })
         .catch(() => {});
 
@@ -723,103 +732,20 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Payout Modal */}
-      {isPayoutModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fadeIn">
-          <div className="bg-[#FFFFFF] rounded-3xl max-w-md w-full p-6 space-y-5 border border-gray-200 shadow-2xl text-[#24263e]">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <div className="flex items-center gap-2 font-bold text-base text-[#24263e]">
-                <Wallet className="w-5 h-5 text-[#24263e]" />
-                <span>{lang === 'vi' ? 'Rút Tiền Ví Doanh Thu Ngay' : 'Instant Revenue Withdrawal'}</span>
-              </div>
-              <button
-                onClick={() => setIsPayoutModalOpen(false)}
-                className="text-gray-400 hover:text-[#24263e] text-sm font-bold cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              <div className="bg-[#faf8f5] p-3 rounded-2xl border border-gray-200">
-                <div className="text-[#24263e]/70">
-                  {lang === 'vi' ? 'Số dư ví khả dụng có thể rút:' : 'Available balance eligible for withdrawal:'}
-                </div>
-                <div className="text-xl font-extrabold text-[#24263e] mt-0.5">
-                  {formatVND(totalEarnings)}
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="font-semibold text-[#24263e]">
-                  {lang === 'vi' ? 'Ngân hàng thụ hưởng *' : 'Beneficiary Bank *'}
-                </label>
-                <select
-                  value={bankName}
-                  onChange={(e) => setBankName(e.target.value)}
-                  className="w-full p-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs font-medium text-[#24263e]"
-                >
-                  <option value="Vietcombank - Ngân hàng TMCP Ngoại Thương Việt Nam">Vietcombank - Ngân hàng VCB</option>
-                  <option value="MBBank - Ngân hàng Quân Đội">MBBank - Ngân hàng Quân Đội</option>
-                  <option value="Techcombank - Ngân hàng Kỹ Thương">Techcombank - Ngân hàng Kỹ Thương</option>
-                  <option value="VPBank - Ngân hàng Việt Nam Thịnh Vượng">VPBank - Ngân hàng VPBank</option>
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="font-semibold text-[#24263e]">
-                  {lang === 'vi' ? 'Số tài khoản *' : 'Account Number *'}
-                </label>
-                <input
-                  type="text"
-                  value={accountNumber}
-                  onChange={(e) => setAccountNumber(e.target.value)}
-                  className="w-full p-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs font-semibold text-[#24263e]"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="font-semibold text-[#24263e]">
-                  {lang === 'vi' ? 'Tên chủ tài khoản (Viết hoa không dấu) *' : 'Account Holder Name (Uppercase) *'}
-                </label>
-                <input
-                  type="text"
-                  value={accountHolder}
-                  onChange={(e) => setAccountHolder(e.target.value.toUpperCase())}
-                  className="w-full p-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs font-bold text-[#24263e]"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="font-semibold text-[#24263e]">
-                  {lang === 'vi' ? 'Số tiền cần rút (VND) *' : 'Amount to withdraw (VND) *'}
-                </label>
-                <input
-                  type="number"
-                  value={payoutAmount}
-                  onChange={(e) => setPayoutAmount(Number(e.target.value))}
-                  className="w-full p-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs font-bold text-[#24263e]"
-                />
-              </div>
-            </div>
-
-            <div className="pt-2 flex items-center justify-end gap-2">
-              <button
-                onClick={() => setIsPayoutModalOpen(false)}
-                className="px-4 py-2 bg-[#faf8f5] hover:bg-gray-200 text-[#24263e] rounded-xl text-xs font-semibold transition cursor-pointer border border-gray-200"
-              >
-                {lang === 'vi' ? 'Hủy bỏ' : 'Cancel'}
-              </button>
-              <button
-                onClick={handleRequestPayout}
-                className="px-5 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl text-xs font-black shadow-md transition cursor-pointer"
-              >
-                {lang === 'vi' ? 'Xác Nhận Rút Tiền Ngay' : 'Confirm Instant Withdrawal'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Payout / Withdrawal Modal */}
+      <WithdrawalModal
+        isOpen={isPayoutModalOpen}
+        onClose={() => setIsPayoutModalOpen(false)}
+        availableBalance={sellerWalletBalance || totalEarnings}
+        initialBankName={bankName}
+        initialAccountNumber={accountNumber}
+        initialAccountHolder={accountHolder}
+        onSuccess={() => {
+          fetchSellerData();
+          setPayoutSuccessMsg(lang === 'vi' ? 'Đã tạo yêu cầu rút tiền thành công!' : 'Withdrawal request created successfully!');
+          setTimeout(() => setPayoutSuccessMsg(null), 5000);
+        }}
+      />
 
       {/* ======================================================== */}
       {/* MODAL: RESUBMIT eKYC VERIFICATION                         */}

@@ -127,4 +127,36 @@ export const notificationService = {
     });
     return ((res as any)?.data ?? res) as NotificationActionResponse;
   },
+
+  /**
+   * Đăng ký hoặc cập nhật FCM device token cho thiết bị di động / web push
+   * POST /api/v1/notifications/devices
+   */
+  async registerDeviceToken(token: string, deviceType = 'WEB'): Promise<void> {
+    try {
+      await request<void>('/notifications/devices', {
+        method: 'POST',
+        body: JSON.stringify({ token, deviceType }),
+        requiresAuth: true,
+      });
+    } catch (err) {
+      console.warn('Failed to register device token:', err);
+    }
+  },
+
+  /**
+   * Hủy đăng ký FCM device token khi đăng xuất
+   * DELETE /api/v1/notifications/devices/{token}
+   */
+  async unregisterDeviceToken(token: string): Promise<void> {
+    try {
+      await request<void>(`/notifications/devices/${encodeURIComponent(token)}`, {
+        method: 'DELETE',
+        requiresAuth: true,
+      });
+    } catch (err) {
+      console.warn('Failed to unregister device token:', err);
+    }
+  },
 };
+

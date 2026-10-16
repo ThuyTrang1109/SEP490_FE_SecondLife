@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, UserRole, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
+import { WithdrawalModal } from './WithdrawalModal';
 import {
   userService,
   sellerService,
@@ -123,6 +124,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     currentUser.escrowLockedVnd ?? 0
   );
   const [isLoadingWallet, setIsLoadingWallet] = useState<boolean>(false);
+  const [isWithdrawalModalOpen, setIsWithdrawalModalOpen] = useState(false);
 
   const fetchWalletAndEscrow = React.useCallback(async () => {
     setIsLoadingWallet(true);
@@ -2037,8 +2039,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       ? 'Tiền trong ví dùng để thanh toán mua hàng an toàn qua Quỹ Escrow hoặc rút về tài khoản ngân hàng.'
                       : 'Funds in your wallet used for secure Escrow transactions or bank withdrawal.'}
                   </p>
-                  {onOpenTopUp && (
-                    <div className="pt-1">
+                  <div className="pt-1 flex flex-wrap items-center gap-2">
+                    {onOpenTopUp && (
                       <button
                         type="button"
                         onClick={onOpenTopUp}
@@ -2047,8 +2049,16 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         <PlusCircle className="w-3.5 h-3.5" />
                         <span>{lang === 'vi' ? 'Nạp Tiền Vào Ví (VietQR)' : 'Top Up Wallet (VietQR)'}</span>
                       </button>
-                    </div>
-                  )}
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsWithdrawalModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-[#24263e] border border-[#24263e]/20 text-xs font-black shadow-sm transition cursor-pointer"
+                    >
+                      <ArrowUpRight className="w-3.5 h-3.5 text-[#c34c36]" />
+                      <span>{lang === 'vi' ? 'Rút Tiền Về Ngân Hàng' : 'Withdraw to Bank'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-[#faf8f5] to-[#faf8f5] border border-[#c34c36]/30 text-[#24263e] space-y-2 relative overflow-hidden shadow-xs">
@@ -3368,6 +3378,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           setSellerFormError(null);
         }}
         lang={lang}
+      />
+
+      {/* Modal Rút Tiền Về Ngân Hàng */}
+      <WithdrawalModal
+        isOpen={isWithdrawalModalOpen}
+        onClose={() => setIsWithdrawalModalOpen(false)}
+        availableBalance={walletBalance}
+        initialBankName={bankName}
+        initialAccountNumber={accountNumber}
+        initialAccountHolder={accountHolder}
+        onSuccess={() => {
+          fetchWalletAndEscrow();
+        }}
       />
     </div>
   );

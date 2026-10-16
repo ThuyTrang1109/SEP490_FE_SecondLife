@@ -112,6 +112,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const [transactionsLoading, setTransactionsLoading] = useState<boolean>(false);
 
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const preDepositBalanceRef = useRef<number>(0);
 
   // Load wallet & packages when modal opens
   useEffect(() => {
@@ -195,12 +196,17 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   // Polling wallet balance when a deposit request is pending
   useEffect(() => {
     if (depositRequest && depositRequest.status === 'PENDING') {
-      const initialBalance = wallet?.balance ?? 0;
+      const baselineBalance = preDepositBalanceRef.current;
       pollingRef.current = setInterval(async () => {
         try {
           const freshWallet = await walletService.getMyWallet();
-          if (freshWallet && freshWallet.balance > initialBalance) {
+          const hasBalanceIncreased = freshWallet && (
+            freshWallet.balance > baselineBalance ||
+            (baselineBalance === 0 && freshWallet.balance >= depositRequest.amount)
+          );
+          if (hasBalanceIncreased) {
             setWallet(freshWallet);
+            preDepositBalanceRef.current = freshWallet.balance;
             if (onWalletUpdated) onWalletUpdated(freshWallet.balance);
             if (pollingRef.current) {
               clearInterval(pollingRef.current);
@@ -248,6 +254,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   const finalWallet = await walletService.getMyWallet().catch(() => null);
                   if (finalWallet) {
                     setWallet(finalWallet);
+                    preDepositBalanceRef.current = finalWallet.balance;
                     if (onWalletUpdated) onWalletUpdated(finalWallet.balance);
                   }
 
@@ -280,7 +287,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         }
       };
     }
-  }, [depositRequest, wallet?.balance, pendingPackage, userCredit]);
+  }, [depositRequest, pendingPackage, userCredit]);
 
   const loadWallet = async () => {
     setWalletLoading(true);
@@ -288,6 +295,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       const w = await walletService.getMyWallet();
       if (w) {
         setWallet(w);
+        preDepositBalanceRef.current = w.balance;
         if (onWalletUpdated) onWalletUpdated(w.balance);
 
         // Nếu đang có pendingPackage và số dư ví đã đủ
@@ -383,6 +391,14 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     setDepositError(null);
     setCreatingDeposit(true);
     try {
+      const freshW = await walletService.getMyWallet().catch(() => null);
+      if (freshW) {
+        setWallet(freshW);
+        preDepositBalanceRef.current = freshW.balance;
+        if (onWalletUpdated) onWalletUpdated(freshW.balance);
+      } else {
+        preDepositBalanceRef.current = wallet?.balance ?? 0;
+      }
       const res = await walletService.createDepositRequest(amountNum);
       setDepositRequest(res);
     } catch (err: any) {
@@ -418,6 +434,14 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       setPurchaseError(null);
       setDepositError(null);
       try {
+        const freshW = await walletService.getMyWallet().catch(() => null);
+        if (freshW) {
+          setWallet(freshW);
+          preDepositBalanceRef.current = freshW.balance;
+          if (onWalletUpdated) onWalletUpdated(freshW.balance);
+        } else {
+          preDepositBalanceRef.current = wallet?.balance ?? 0;
+        }
         const res = await walletService.createDepositRequest(neededAmount);
         setDepositRequest(res);
         setActiveTab('wallet');
@@ -746,7 +770,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   )}
 
                   {depositRequest.status === 'SUCCESS' ? (
-                    <div className="py-5 text-center space-y-3 bg-emerald-50 rounded-2xl border border-emerald-200 p-5">
+                    <div className="py-5 text-center space-y-3 bg-emerald-50 rounded-2xl border border-emerald-200 p-5 animate-fadeIn">
                       <div className="w-12 h-12 mx-auto rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-md">
                         <CheckCircle2 className="w-7 h-7" />
                       </div>
@@ -756,8 +780,27 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                           : 'Nạp Tiền Thành Công!'}
                       </h4>
                       <p className="text-xs text-emerald-700">
-                        Hệ thống đã nhận được khoản thanh toán <strong>{formatVND(depositRequest.amount)}</strong>. Số dư ví của bạn hiện tại: <strong>{formatVND(wallet?.balance ?? 0)}</strong>.
+                        Hệ thống đã nhận được khoản thanh toán <strong>{formatVND(depositRequest.amount)}</strong>. Số dư ví của bạn hiện tại: <strong className="text-emerald-950 font-black">{formatVND(wallet?.balance ?? 0)}</strong>.
                       </p>
+                      
+                      <div className="flex items-center justify-center gap-2 pt-0.5 pb-1">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const fresh = await walletService.getMyWallet().catch(() => null);
+                            if (fresh) {
+                              setWallet(fresh);
+                              preDepositBalanceRef.current = fresh.balance;
+                              if (onWalletUpdated) onWalletUpdated(fresh.balance);
+                            }
+                          }}
+                          className="px-3.5 py-1.5 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${walletLoading ? 'animate-spin' : ''}`} />
+                          <span>Làm Mới Số Dư Live</span>
+                        </button>
+                      </div>
+
                       {pendingPackage ? (
                         <div className="pt-1.5 flex items-center justify-center gap-2.5">
                           <button
@@ -779,10 +822,19 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                           </button>
                         </div>
                       ) : (
-                        <div className="pt-1.5 flex items-center justify-center gap-2.5">
+                        <div className="pt-1.5 flex flex-wrap items-center justify-center gap-2.5">
+                          <button
+                            onClick={() => {
+                              setDepositRequest(null);
+                              onClose();
+                            }}
+                            className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-extrabold transition cursor-pointer shadow-sm"
+                          >
+                            Xác Nhận & Quay Lại Mua Hàng
+                          </button>
                           <button
                             onClick={() => setDepositRequest(null)}
-                            className="px-4 py-2 bg-white text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold hover:bg-emerald-100 transition cursor-pointer"
+                            className="px-4 py-2.5 bg-white text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold hover:bg-emerald-100 transition cursor-pointer"
                           >
                             Nạp Thêm Lần Nữa
                           </button>

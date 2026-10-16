@@ -155,4 +155,54 @@ export const mediaService = {
       throw new Error(err.message || 'Không thể tải danh sách ảnh lên máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại.');
     }
   },
+
+  /**
+   * Upload single video file (MP4, MOV, WEBM <= 100MB) to Cloudinary
+   * Swagger: POST /api/v1/media/upload-video
+   */
+  async uploadVideo(file: File, folder?: string): Promise<CloudinaryUploadResponseDto> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const query = folder ? `?folder=${encodeURIComponent(folder)}` : '';
+    const url = resolveApiUrl(`/v1/media/upload-video${query}`);
+
+    const doUpload = async (headers: Record<string, string>) => {
+      return fetch(url, { method: 'POST', headers, body: formData });
+    };
+
+    try {
+      let headers = await getAuthHeaders();
+      let response = await doUpload(headers);
+
+      if (response.status === 401 || response.status === 403) {
+        const newToken = await tryRefreshToken();
+        if (newToken) {
+          headers = { Authorization: `Bearer ${newToken}` };
+          response = await doUpload(headers);
+        } else {
+          clearAuthTokens();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('unauthorized_session'));
+          }
+          throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+        }
+      }
+
+      if (!response.ok) {
+        let errMsg = `Tải video thất bại (HTTP ${response.status})`;
+        try {
+          const errData = await response.json();
+          errMsg = errData?.message || errMsg;
+        } catch {}
+        throw new Error(errMsg);
+      }
+
+      const resData = await response.json();
+      return resData?.data ?? resData;
+    } catch (err: any) {
+      console.error('Backend video upload error:', err);
+      throw new Error(err.message || 'Không thể tải video lên máy chủ. Vui lòng kiểm tra kết nối mạng và kích thước file <= 100MB.');
+    }
+  },
 };
+

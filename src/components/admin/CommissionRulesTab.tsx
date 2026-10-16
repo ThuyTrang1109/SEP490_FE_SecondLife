@@ -702,33 +702,75 @@ export const CommissionRulesTab: React.FC = () => {
                   <span>Chưa ghi nhận bản ghi kiểm toán nào cho quy tắc này.</span>
                 </div>
               ) : (
-                auditList.map((audit) => (
-                  <div key={audit.id} className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/70 space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-slate-800 uppercase text-[10px] bg-white px-2 py-0.5 rounded border border-slate-200">
-                        {audit.action}
-                      </span>
-                      <span className="text-[10px] text-slate-400">
-                        {new Date(audit.createdAt).toLocaleString('vi-VN')}
-                      </span>
-                    </div>
+                auditList.map((audit) => {
+                  let parsedNew: any = null;
+                  let parsedOld: any = null;
+                  try {
+                    if (audit.newValue) parsedNew = JSON.parse(audit.newValue);
+                  } catch {
+                    // silent fallback
+                  }
+                  try {
+                    if (audit.oldValue) parsedOld = JSON.parse(audit.oldValue);
+                  } catch {
+                    // silent fallback
+                  }
 
-                    <div className="text-slate-700">
-                      <strong>Lý do:</strong> {audit.reason || 'Không ghi nhận lý do'}
-                    </div>
+                  const rateVal = parsedNew?.rate ?? audit.rate;
+                  const revisionVal = parsedNew?.revision ?? audit.revision;
+                  const dateStr = audit.changedAt || audit.createdAt;
+                  const actor = audit.actorId || audit.changedBy;
 
-                    <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-200/60 mt-1">
-                      <div>
-                        <span className="text-slate-400">Tỷ lệ:</span>{' '}
-                        <strong className="text-emerald-700">{(Number(audit.rate) * 100).toFixed(2)}%</strong>
+                  return (
+                    <div key={audit.id} className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/70 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-black text-slate-800 uppercase text-[10px] bg-white px-2 py-0.5 rounded border border-slate-200">
+                          {audit.action}
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          {dateStr ? new Date(dateStr).toLocaleString('vi-VN') : '—'}
+                        </span>
                       </div>
-                      <div>
-                        <span className="text-slate-400">Revision:</span>{' '}
-                        <span className="font-mono font-bold">r{audit.revision}</span>
+
+                      <div className="text-slate-700">
+                        <strong>Lý do:</strong> {audit.reason || 'Không ghi nhận lý do'}
                       </div>
+
+                      {actor && (
+                        <div className="text-[11px] text-slate-500">
+                          <span>Thực hiện bởi: </span>
+                          <span className="font-mono text-[10px] bg-slate-200/60 px-1.5 py-0.5 rounded text-slate-700">
+                            {actor}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-200/60 mt-1">
+                        <div>
+                          <span className="text-slate-400">Tỷ lệ:</span>{' '}
+                          <strong className="text-emerald-700">
+                            {rateVal !== undefined ? `${(Number(rateVal) * 100).toFixed(2)}%` : '—'}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Revision:</span>{' '}
+                          <span className="font-mono font-bold">
+                            {revisionVal !== undefined ? `r${revisionVal}` : '—'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {parsedOld && (
+                        <div className="text-[10px] text-slate-400 pt-1 border-t border-dashed border-slate-200">
+                          <span>Trước đó: </span>
+                          <span className="line-through text-slate-500">
+                            {(Number(parsedOld.rate) * 100).toFixed(2)}% (r{parsedOld.revision})
+                          </span>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 

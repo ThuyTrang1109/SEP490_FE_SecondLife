@@ -448,7 +448,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
     }
 
-    const currentBal = wallet?.balance ?? 0;
+    // Fresh live wallet check to account for recent top-ups
+    let currentBal = wallet?.balance ?? 0;
+    try {
+      const freshW = await walletService.getMyWallet();
+      if (freshW && typeof freshW.balance === 'number') {
+        setWallet(freshW);
+        currentBal = freshW.balance;
+      }
+    } catch {}
+
     if (currentBal < totalAmount) {
       setOrderError(
         lang === 'vi'
@@ -625,6 +634,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             phone: buyerPhone.trim(),
           }));
         }
+
+        // Always save order to recent_placed_orders
+        let existingRecent: EscrowOrder[] = [];
+        try {
+          const stored = localStorage.getItem('recent_placed_orders');
+          if (stored) existingRecent = JSON.parse(stored);
+        } catch {}
+        const updatedRecent = [newOrder, ...existingRecent.filter((o) => o.id !== newOrder.id)].slice(0, 30);
+        localStorage.setItem('recent_placed_orders', JSON.stringify(updatedRecent));
       } catch {}
 
       onOrderPlaced(newOrder);

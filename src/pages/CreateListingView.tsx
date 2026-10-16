@@ -1663,7 +1663,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       height: Math.round(Number(shippingHeight)),
     };
     if (parcel.weight < 1 || parcel.weight > 50000) {
-      showToast(lang === 'vi' ? 'Trọng lượng phải từ 1 đến 50.000 gram (tối đa 50kg theo Lalamove)' : 'Weight must be 1–50000 grams');
+      showToast(lang === 'vi' ? 'Trọng lượng kiện hàng phải từ 1 đến 50.000 gram (tối đa 50kg)' : 'Package weight must be 1–50000 grams (max 50kg)');
       return;
     }
     if ([parcel.length, parcel.width, parcel.height].some((v) => v < 1 || v > 200)) {
@@ -2681,7 +2681,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <div className="h-5 flex items-center pl-1 text-[10px]">
                     {shippingWeight ? (
                       <span className="font-bold text-emerald-600 truncate">
-                        = {Number(shippingWeight).toLocaleString('vi-VN')} gram (chuẩn Lalamove)
+                        = {Number(shippingWeight).toLocaleString('vi-VN')} gram
                       </span>
                     ) : (
                       <span className="text-slate-400 truncate">Nhập cân nặng ({weightUnit})</span>

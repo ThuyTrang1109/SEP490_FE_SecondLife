@@ -33,23 +33,36 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [leg, setLeg] = useState<'SELLER_TO_BUYER' | 'SELLER_TO_CENTER'>('SELLER_TO_BUYER');
 
+  const [requestId, setRequestId] = useState<string>(() => crypto.randomUUID());
+
   const handleCreateShipment = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setErrorMsg(null);
 
     try {
-      const requestId = crypto.randomUUID();
       const shipment = await shippingService.createShipment(order.id, {
         requestId,
         leg,
       });
 
+      // Kiểm tra trạng thái vận đơn trả về theo mục 10
+      if (shipment.lastError && !shipment.orderCode) {
+        setErrorMsg(`Lalamove từ chối tạo chuyến: ${shipment.lastError}`);
+        // Tạo requestId mới cho lần tạo lại sau khi đã sửa lỗi
+        setRequestId(crypto.randomUUID());
+        return;
+      }
+
       onShipmentCreated(shipment);
     } catch (err: any) {
       console.error('Failed to create Lalamove shipment:', err);
-      const rawMsg = err?.message || '';
-      if (rawMsg.toLowerCase().includes('disabled') || rawMsg.includes('503')) {
+      const status = err?.response?.status || err?.status;
+      const rawMsg = err?.response?.data?.message || err?.message || '';
+      
+      if (status === 409 || rawMsg.toLowerCase().includes('fee') || rawMsg.toLowerCase().includes('phí') || rawMsg.toLowerCase().includes('tăng')) {
+        setErrorMsg('Cước phí vận chuyển Lalamove hiện tại đã tăng so với số tiền phí người mua đã thanh toán lúc đặt hàng. Hệ thống không thể tự trừ thêm tiền của người mua. Vui lòng kiểm tra lại đơn hàng hoặc hỗ trợ hủy đơn theo quy định.');
+      } else if (rawMsg.toLowerCase().includes('disabled') || rawMsg.includes('503')) {
         setErrorMsg('Lalamove chưa được kích hoạt trên máy chủ (LALAMOVE_ENABLED=false). Vui lòng cấu hình API Key đối tác trên Backend hoặc kiểm tra thông tin kho.');
       } else {
         setErrorMsg(rawMsg || 'Không thể tạo vận đơn Lalamove. Vui lòng kiểm tra lại cấu hình kho lấy hàng hoặc thử lại.');

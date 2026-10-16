@@ -32,6 +32,64 @@ import {
 import { orderService, walletService, shippingService, GhnLocation, inspectorService, InspectionQuoteResponse, InspectionTravelTierDto } from '../../services';
 import { LalamoveAddressPicker, getCityCoordinates } from '../common/LalamoveAddressPicker';
 
+export const formatLalamoveVehicle = (serviceType?: string): { name: string; icon: string; desc: string } => {
+  if (!serviceType) {
+    return {
+      name: 'Phương tiện tối ưu tự chọn',
+      icon: '🚚',
+      desc: 'Hệ thống tự động chọn phương tiện có phí thấp nhất phù hợp kích thước kiện hàng',
+    };
+  }
+  const code = serviceType.toUpperCase();
+  if (code === 'MOTORCYCLE' || code === 'BIKE') {
+    return {
+      name: 'Xe máy',
+      icon: '🏍️',
+      desc: 'Giao nhanh hàng nhỏ gọn nội thành',
+    };
+  }
+  if (code === 'VAN' || code === 'VAN500' || code.includes('VAN')) {
+    return {
+      name: 'Xe bán tải / Van',
+      icon: '🚐',
+      desc: 'Chở hàng cồng kềnh, tải trọng lớn che chắn mưa nắng',
+    };
+  }
+  if (code === 'TRUCK500' || code === 'TRUCK_500KG') {
+    return {
+      name: 'Xe tải 500kg',
+      icon: '🚚',
+      desc: 'Chở hàng nặng, kích thước lớn an toàn',
+    };
+  }
+  if (code === 'TRUCK1000' || code === 'TRUCK_1000KG' || code === 'TRUCK_1T') {
+    return {
+      name: 'Xe tải 1 tấn',
+      icon: '🚛',
+      desc: 'Xe tải trọng tải lớn',
+    };
+  }
+  if (code === 'TRUCK1500' || code === 'TRUCK_1500KG') {
+    return {
+      name: 'Xe tải 1.5 tấn',
+      icon: '🚛',
+      desc: 'Xe tải trọng tải lớn',
+    };
+  }
+  if (code === 'TRUCK2000' || code === 'TRUCK_2000KG' || code === 'TRUCK_2T') {
+    return {
+      name: 'Xe tải 2 tấn',
+      icon: '🚛',
+      desc: 'Xe tải hạng nặng',
+    };
+  }
+  return {
+    name: serviceType,
+    icon: '🚚',
+    desc: 'Phương tiện Lalamove do hệ thống tự động báo giá',
+  };
+};
+
 interface CheckoutModalProps {
   listing: Listing;
   onClose: () => void;
@@ -67,6 +125,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [walletLoading, setWalletLoading] = useState(false);
   const [submittingOrder, setSubmittingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'WALLET' | 'BANK_TRANSFER'>('WALLET');
+  const [currentRequestId, setCurrentRequestId] = useState<string>(() => crypto.randomUUID());
+  const [bankPaymentInfo, setBankPaymentInfo] = useState<any | null>(null);
+  const [createdOrder, setCreatedOrder] = useState<EscrowOrder | null>(null);
+  const [checkingBankPayment, setCheckingBankPayment] = useState<boolean>(false);
+  const [copiedBankField, setCopiedBankField] = useState<string | null>(null);
 
   // GHN Address & Catalogue States
   const [provinces, setProvinces] = useState<GhnLocation[]>([]);
@@ -258,7 +322,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     const rawPhone = (phone || buyerPhone || currentUser?.phone || '').replace(/\D/g, '');
     const validPhone = rawPhone.length >= 9 && rawPhone.length <= 15 ? rawPhone : '0912345678';
     const validName = (name || buyerName || currentUser?.name || 'Khách Hàng').trim() || 'Khách Hàng';
-    const validAddress = (addr || streetAddress || 'Địa chỉ nhận hàng').trim() || 'Địa chỉ nhận hàng';
 
     setQuoteLoading(true);
     setQuoteError(null);
@@ -271,7 +334,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           phone: validPhone,
           latitude: currentLat,
           longitude: currentLng,
-          address: validAddress,
         },
       });
       setGhnQuote(quote);
@@ -479,7 +541,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               phone: validPhone,
               latitude: deliveryLatitude,
               longitude: deliveryLongitude,
-              address: (streetAddress || 'Địa chỉ nhận hàng').trim(),
             },
           });
           setGhnQuote(activeQuote);
@@ -498,23 +559,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
     }
 
-    // Fresh live wallet check to account for recent top-ups
-    let currentBal = wallet?.balance ?? 0;
-    try {
-      const freshW = await walletService.getMyWallet();
-      if (freshW && typeof freshW.balance === 'number') {
-        setWallet(freshW);
-        currentBal = freshW.balance;
-      }
-    } catch {}
+    // Kiểm tra số dư ví nếu thanh toán bằng WALLET
+    if (paymentMethod === 'WALLET') {
+      let currentBal = wallet?.balance ?? 0;
+      try {
+        const freshW = await walletService.getMyWallet();
+        if (freshW && typeof freshW.balance === 'number') {
+          setWallet(freshW);
+          currentBal = freshW.balance;
+        }
+      } catch {}
 
-    if (currentBal < totalAmount) {
-      setOrderError(
-        lang === 'vi'
-          ? `Số dư ví của bạn (${formatVND(currentBal)}) không đủ để thanh toán đơn hàng (${formatVND(totalAmount)}). Vui lòng nạp thêm tiền vào ví để hoàn tất đặt hàng.`
-          : `Your wallet balance (${formatVND(currentBal)}) is insufficient for order checkout (${formatVND(totalAmount)}). Please deposit funds to continue.`
-      );
-      return;
+      if (currentBal < totalAmount) {
+        setOrderError(
+          lang === 'vi'
+            ? `Số dư ví của bạn (${formatVND(currentBal)}) không đủ để thanh toán đơn hàng (${formatVND(totalAmount)}). Vui lòng nạp thêm tiền vào ví hoặc chọn hình thức 'Chuyển Khoản Trực Tiếp'.`
+            : `Your wallet balance (${formatVND(currentBal)}) is insufficient for order checkout (${formatVND(totalAmount)}). Please top up or choose Direct Bank Transfer.`
+        );
+        return;
+      }
     }
 
     setOrderError(null);
@@ -556,7 +619,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         }
       } else {
         // Gọi Backend Order trực tiếp qua POST /api/v1/orders
-        const requestId = crypto.randomUUID();
         const quoteIdToUse = activeQuote?.quoteId || ghnQuote?.quoteId;
         if (!quoteIdToUse) {
           throw new Error(lang === 'vi' ? 'Không tìm thấy mã báo giá vận chuyển hợp lệ. Vui lòng thử lại.' : 'Shipping quote ID is missing.');
@@ -564,8 +626,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         const backendOrder = await orderService.createOrder({
           postId: listing.id,
           shippingQuoteId: quoteIdToUse,
-          requestId,
-          paymentMethod: 'WALLET',
+          requestId: currentRequestId,
+          paymentMethod,
           ...(negotiationId ? { negotiationId } : {}),
         });
         if (backendOrder?.id) orderId = backendOrder.id;
@@ -718,17 +780,44 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         } catch {}
       } catch {}
 
+      if (!isInspected && paymentMethod === 'BANK_TRANSFER') {
+        try {
+          const payRes = await orderService.getOrderPayment(orderId);
+          setBankPaymentInfo(payRes);
+          setCreatedOrder(newOrder);
+          setSubmittingOrder(false);
+          return;
+        } catch (pErr) {
+          console.warn('Could not fetch bank transfer payment instructions:', pErr);
+        }
+      }
+
       onOrderPlaced(newOrder);
     } catch (err: any) {
       console.error('Order creation error:', err);
+      const status = err?.response?.status || err?.status;
       const beMsg = err?.response?.data?.message || err?.message || '';
       const errMsg = beMsg.toLowerCase();
+
+      // Mục 8.3: Bắt lỗi 409 khi quote hết hạn hoặc dữ liệu kiện hàng/giá bị thay đổi
+      if (status === 409 || errMsg.includes('quote') || errMsg.includes('expired') || errMsg.includes('hết hạn')) {
+        setGhnQuote(null);
+        setOrderError(
+          lang === 'vi'
+            ? 'Báo giá vận chuyển đã hết hạn hoặc thông tin đơn hàng đã thay đổi. Hệ thống đang tự động cập nhật báo giá mới nhất, vui lòng xác nhận lại tổng tiền trước khi đặt hàng.'
+            : 'Shipping quote expired or order details changed. Refreshing quote, please reconfirm total before ordering.'
+        );
+        calculateLalamoveQuote(deliveryLatitude, deliveryLongitude);
+        setCurrentRequestId(crypto.randomUUID());
+        return;
+      }
+
       if (errMsg.includes('you cannot buy your own post') || errMsg.includes('tự mua')) {
         setOrderError(lang === 'vi' ? 'Bạn đang đăng nhập bằng tài khoản người bán của bài đăng này. Không thể tự mua hàng của chính mình.' : 'You cannot buy your own post.');
       } else if (errMsg.includes('expired') || errMsg.includes('hết hạn')) {
         setOrderError(lang === 'vi' ? 'Phiên thương lượng đã hết hạn. Vui lòng kiểm tra lại phòng chat hoặc thương lượng lại mức giá mới.' : 'Negotiation session has expired.');
       } else if (errMsg.includes('insufficient') || errMsg.includes('không đủ số dư') || errMsg.includes('balance')) {
-        setOrderError(lang === 'vi' ? 'Số dư ví Escrow không đủ để thanh toán. Vui lòng nạp thêm tiền vào ví.' : 'Insufficient wallet balance. Please top up.');
+        setOrderError(lang === 'vi' ? 'Số dư ví Escrow không đủ để thanh toán. Vui lòng nạp thêm tiền vào ví hoặc chọn phương thức Chuyển khoản ngân hàng.' : 'Insufficient wallet balance. Please top up or choose bank transfer.');
       } else if (errMsg.includes('not available for purchase') || errMsg.includes('post is not available')) {
         setOrderError(lang === 'vi' ? 'Sản phẩm này hiện không còn khả dụng để đặt mua (đã có người mua hoặc bài đăng đã kết thúc).' : 'Post is not available for purchase.');
       } else if (
@@ -748,6 +837,181 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
+
+  if (bankPaymentInfo && createdOrder) {
+    const remainingToPay = bankPaymentInfo.remainingAmount ?? bankPaymentInfo.totalAmount ?? totalAmount;
+    const vietQrUrl = `https://img.vietqr.io/image/${bankPaymentInfo.bankName || 'MB'}-${bankPaymentInfo.bankAccountNumber || '0000000000'}-compact2.png?amount=${remainingToPay}&addInfo=${encodeURIComponent(bankPaymentInfo.transferContent || createdOrder.id)}&accountName=${encodeURIComponent(bankPaymentInfo.bankAccountName || 'SECONDLIFE ESCROW')}`;
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto">
+        <div className="bg-[#FFFFFF] rounded-3xl max-w-xl w-full max-h-[92vh] overflow-hidden shadow-2xl border border-gray-200 flex flex-col my-auto text-[#24263e]">
+          {/* Header */}
+          <div className="p-5 border-b border-[#24263e]/15 flex items-center justify-between bg-gradient-to-r from-blue-50 to-[#faf8f5] text-[#24263e] shrink-0 rounded-t-3xl">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md">
+                <QrCode className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-[#24263e]">
+                  {lang === 'vi' ? 'Chuyển Khoản Ngân Hàng VietQR (SePay)' : 'Bank Transfer Payment via VietQR'}
+                </h3>
+                <p className="text-[11px] text-slate-600 font-bold">
+                  Đơn hàng: #{createdOrder.id} • Ký quỹ Escrow bảo vệ người mua
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                onOrderPlaced(createdOrder);
+                onClose();
+              }}
+              className="text-[#24263e] hover:bg-white/40 p-1.5 rounded-xl cursor-pointer transition font-bold"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="p-5 sm:p-6 space-y-4 text-xs flex-1 overflow-y-auto subtle-scrollbar">
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-900 font-semibold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Đơn hàng đã được tạo thành công! Vui lòng chuyển khoản theo thông tin dưới đây để kích hoạt đơn.</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center bg-[#faf8f5] p-4 rounded-2xl border border-slate-200">
+              {/* QR Image */}
+              <div className="flex flex-col items-center justify-center bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
+                <img
+                  src={vietQrUrl}
+                  alt="VietQR Code"
+                  className="w-48 h-48 object-contain rounded-xl"
+                />
+                <span className="text-[10px] text-slate-500 font-bold mt-1.5 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-[#c34c36]" />
+                  <span>Quét bằng app ngân hàng bất kỳ</span>
+                </span>
+              </div>
+
+              {/* Bank Details */}
+              <div className="space-y-2.5">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Số tiền thanh toán:</span>
+                  <div className="flex items-center justify-between mt-0.5">
+                    <strong className="text-base font-black text-[#c34c36] font-mono">{formatVND(remainingToPay)}</strong>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(String(remainingToPay));
+                        setCopiedBankField('amount');
+                        setTimeout(() => setCopiedBankField(null), 2000);
+                      }}
+                      className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition cursor-pointer"
+                    >
+                      {copiedBankField === 'amount' ? '✓ Đã chép' : 'Sao chép'}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Nội dung CK (Bắt buộc chính xác):</span>
+                  <div className="flex items-center justify-between mt-0.5 bg-amber-50 p-1.5 rounded-xl border border-amber-200">
+                    <strong className="text-xs font-black text-amber-950 font-mono">{bankPaymentInfo.transferContent || createdOrder.id}</strong>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(bankPaymentInfo.transferContent || createdOrder.id);
+                        setCopiedBankField('content');
+                        setTimeout(() => setCopiedBankField(null), 2000);
+                      }}
+                      className="px-2 py-0.5 rounded bg-amber-200 hover:bg-amber-300 text-amber-950 font-bold text-[10px] transition cursor-pointer"
+                    >
+                      {copiedBankField === 'content' ? '✓ Đã chép' : 'Sao chép'}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Ngân hàng thụ hưởng:</span>
+                  <strong className="text-xs text-slate-900 block mt-0.5">{bankPaymentInfo.bankName || 'Ngân hàng đối tác'}</strong>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Số tài khoản:</span>
+                  <div className="flex items-center justify-between mt-0.5">
+                    <strong className="text-xs font-mono text-slate-900">{bankPaymentInfo.bankAccountNumber || 'Chưa cấu hình'}</strong>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(bankPaymentInfo.bankAccountNumber || '');
+                        setCopiedBankField('account');
+                        setTimeout(() => setCopiedBankField(null), 2000);
+                      }}
+                      className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition cursor-pointer"
+                    >
+                      {copiedBankField === 'account' ? '✓ Đã chép' : 'Sao chép'}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Chủ tài khoản:</span>
+                  <strong className="text-xs text-slate-900 block mt-0.5">{bankPaymentInfo.bankAccountName || 'SECONDLIFE ESCROW'}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl text-[11px] text-blue-900 space-y-1">
+              <div className="font-bold flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-blue-600" />
+                <span>Cơ chế bảo vệ Escrow:</span>
+              </div>
+              <p className="text-slate-600 leading-snug">
+                Sau khi chuyển khoản, cổng SePay sẽ tự động đối soát trong vòng 5 - 30 giây. Tiền được phong tỏa an toàn tại quỹ Escrow và người bán sẽ tiến hành chuẩn bị hàng giao cho bạn.
+              </p>
+            </div>
+
+            <div className="pt-2 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={async () => {
+                  setCheckingBankPayment(true);
+                  try {
+                    const freshPayment = await orderService.getOrderPayment(createdOrder.id);
+                    setBankPaymentInfo(freshPayment);
+                    if (freshPayment.status === 'PAID' || freshPayment.remainingAmount === 0 || freshPayment.orderStatus === 'PROCESSING') {
+                      onOrderPlaced(createdOrder);
+                      onClose();
+                    }
+                  } catch (e) {
+                    console.warn('Check payment failed:', e);
+                  } finally {
+                    setCheckingBankPayment(false);
+                  }
+                }}
+                disabled={checkingBankPayment}
+                className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${checkingBankPayment ? 'animate-spin' : ''}`} />
+                <span>{checkingBankPayment ? 'Đang kiểm tra...' : 'Kiểm tra trạng thái'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onOrderPlaced(createdOrder);
+                  onClose();
+                }}
+                className="px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#dc4729] text-white font-black text-xs cursor-pointer shadow-md transition"
+              >
+                Tôi Đã Chuyển Khoản • Xem Đơn Hàng
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto">
@@ -1612,98 +1876,240 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             )}
 
             {ghnQuote && (
-              <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xl space-y-1.5 text-xs text-emerald-950 animate-fadeIn">
-                <div className="flex items-center justify-between font-bold text-emerald-900">
-                  <div className="flex items-center gap-1.5">
+              <div className="p-4 bg-emerald-50/90 border border-emerald-300 rounded-2xl space-y-3 text-xs text-emerald-950 animate-fadeIn">
+                <div className="flex items-center justify-between font-bold text-emerald-900 border-b border-emerald-200/80 pb-2">
+                  <div className="flex items-center gap-2">
                     <Truck className="w-4 h-4 text-emerald-700" />
-                    <span>Báo giá Lalamove hợp lệ</span>
+                    <span className="font-extrabold">Báo Giá Vận Chuyển Lalamove</span>
                   </div>
                   <span className="font-mono text-[11px] bg-emerald-200/80 px-2 py-0.5 rounded text-emerald-900 font-semibold">
                     Chặng: {ghnQuote.leg || 'SELLER_TO_BUYER'}
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
-                  <div>
-                    <span className="text-emerald-700">Phí giao Lalamove: </span>
-                    <strong className="text-emerald-950">{formatVND(ghnQuote.shippingFee)}</strong>
+
+                {/* Thẻ hiển thị loại xe BE tự chọn (Chỉ đọc - Mục 7) */}
+                {(() => {
+                  const vehicle = formatLalamoveVehicle(ghnQuote.serviceType);
+                  return (
+                    <div className="p-3 bg-white/95 border border-emerald-200 rounded-xl flex items-start justify-between gap-3 shadow-2xs">
+                      <div className="flex items-start gap-2.5">
+                        <span className="text-2xl shrink-0 mt-0.5">{vehicle.icon}</span>
+                        <div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-extrabold text-xs text-slate-900">
+                              Phương tiện: {vehicle.name}
+                            </span>
+                            {ghnQuote.serviceType && (
+                              <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-semibold border border-slate-200">
+                                {ghnQuote.serviceType}
+                              </span>
+                            )}
+                            <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded-full font-bold">
+                              BE Tự Chọn Tối Ưu
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                            {vehicle.desc}
+                          </p>
+                          <span className="text-[10px] text-slate-400 italic block mt-0.5">
+                            * BE tự động lọc theo kích thước kiện hàng người bán đã lưu và chọn xe cước thấp nhất (Chỉ đọc, người mua không sửa).
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                  <div className="p-2.5 bg-white/70 rounded-xl border border-emerald-100 space-y-0.5">
+                    <span className="text-emerald-700 font-medium block">Phí giao Lalamove (Người mua trả):</span>
+                    <strong className="text-emerald-950 text-sm font-black">{formatVND(ghnQuote.shippingFee)}</strong>
                   </div>
-                  <div>
-                    <span className="text-emerald-700">Thời gian dự kiến: </span>
-                    <strong className="text-emerald-950">
+                  <div className="p-2.5 bg-white/70 rounded-xl border border-emerald-100 space-y-0.5">
+                    <span className="text-emerald-700 font-medium block">Thời gian dự kiến:</span>
+                    <strong className="text-emerald-950 text-xs font-bold">
                       {ghnQuote.expectedDeliveryTime
-                        ? new Date(ghnQuote.expectedDeliveryTime).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
-                        : 'Giao ngay trong ngày'}
+                        ? new Date(ghnQuote.expectedDeliveryTime).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
+                        : 'Chưa có dự kiến giao hàng'}
                     </strong>
                   </div>
                 </div>
+
+                {ghnQuote.expiresAt && (
+                  <div className="flex items-center justify-between text-[10px] text-emerald-800 pt-1 border-t border-emerald-200/60">
+                    <span className="flex items-center gap-1 font-medium">
+                      <Clock className="w-3 h-3 text-emerald-600" />
+                      <span>Thời hạn báo giá:</span>
+                    </span>
+                    <span className="font-bold">
+                      {new Date(ghnQuote.expiresAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ({new Date(ghnQuote.expiresAt).toLocaleDateString('vi-VN')})
+                    </span>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* Payment Method Selector & Wallet Balance */}
-          <div className="space-y-2">
+          {/* Payment Method Selector: WALLET vs BANK_TRANSFER (Mục 8) */}
+          <div className="space-y-3">
             <label className="font-extrabold text-[#24263e] uppercase tracking-wider text-[11px] flex items-center justify-between">
-              <span>{lang === 'vi' ? 'Phương thức thanh toán bằng ví điện tử:' : 'Payment Method:'}</span>
+              <span>{lang === 'vi' ? 'Phương thức thanh toán bảo lãnh Escrow:' : 'Payment Method:'}</span>
               <span className="text-emerald-700 font-bold lowercase">
-                {lang === 'vi' ? 'Trừ trực tiếp số dư ví' : 'Direct wallet debit'}
+                {paymentMethod === 'WALLET'
+                  ? (lang === 'vi' ? 'Trừ trực tiếp số dư ví' : 'Direct wallet debit')
+                  : (lang === 'vi' ? 'Quét mã VietQR chuyển khoản' : 'VietQR Bank Transfer')}
               </span>
             </label>
 
-            {/* Wallet Balance Card */}
-            <div className={`p-4 rounded-2xl border transition-all ${
-              (wallet?.balance ?? 0) >= totalAmount
-                ? 'bg-gradient-to-r from-emerald-50 via-teal-50 to-white border-emerald-300'
-                : 'bg-gradient-to-r from-amber-50 via-orange-50 to-white border-amber-300'
-            }`}>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
-                    (wallet?.balance ?? 0) >= totalAmount ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
-                  }`}>
-                    <Wallet className="w-5 h-5" />
+            {/* Selection Tabs */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Option 1: Ví SecondLife Escrow */}
+              <div
+                onClick={() => setPaymentMethod('WALLET')}
+                className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                  paymentMethod === 'WALLET'
+                    ? 'border-[#c34c36] bg-[#faf8f5] shadow-xs'
+                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                      <Wallet className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 className="font-extrabold text-xs text-slate-900 leading-tight">
+                        {lang === 'vi' ? 'Ví Điện Tử SecondLife' : 'SecondLife Wallet'}
+                      </h5>
+                      <span className="text-[10px] text-emerald-700 font-bold block">
+                        {lang === 'vi' ? 'Ký quỹ Escrow tức thì' : 'Instant Escrow hold'}
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-xs font-black text-slate-900 block leading-tight">
-                      {lang === 'vi' ? 'Ví Tiền SecondLife (Ký Quỹ Escrow)' : 'SecondLife Wallet Escrow'}
-                    </span>
-                    <span className="text-xs text-slate-600 font-medium">
-                      {lang === 'vi' ? 'Số dư hiện có: ' : 'Available Balance: '}
-                      <strong className="font-mono text-slate-900 text-sm">{formatVND(wallet?.balance ?? 0)}</strong>
-                    </span>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                    paymentMethod === 'WALLET' ? 'border-[#c34c36] bg-[#c34c36]' : 'border-slate-300'
+                  }`}>
+                    {paymentMethod === 'WALLET' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                   </div>
                 </div>
-
-                {onOpenDeposit && (wallet?.balance ?? 0) < totalAmount ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenDeposit();
-                    }}
-                    className="px-3.5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#dc4729] text-white text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5 shrink-0"
-                  >
-                    <QrCode className="w-3.5 h-3.5" />
-                    <span>{lang === 'vi' ? 'Nạp Tiền Ví' : 'Top Up Wallet'}</span>
-                  </button>
-                ) : (wallet?.balance ?? 0) >= totalAmount ? (
-                  <span className="px-2.5 py-1 rounded-lg bg-emerald-100/90 text-emerald-800 text-[11px] font-bold flex items-center gap-1 shrink-0">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>{lang === 'vi' ? 'Đủ số dư' : 'Sufficient'}</span>
-                  </span>
-                ) : null}
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">Số dư khả dụng:</span>
+                  <strong className="font-mono text-slate-900">{formatVND(wallet?.balance ?? 0)}</strong>
+                </div>
               </div>
 
-              {(wallet?.balance ?? 0) < totalAmount && (
-                <div className="mt-2.5 pt-2 border-t border-amber-200/80 text-[11px] text-amber-800 font-medium flex items-center gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                  <span>
-                    {lang === 'vi'
-                      ? `Số dư ví còn thiếu ${formatVND(totalAmount - (wallet?.balance ?? 0))}. Vui lòng nạp tiền vào ví trước khi xác nhận đặt hàng.`
-                      : `Wallet is short by ${formatVND(totalAmount - (wallet?.balance ?? 0))}. Please top up before ordering.`}
-                  </span>
+              {/* Option 2: Chuyển khoản ngân hàng trực tiếp VietQR */}
+              <div
+                onClick={() => setPaymentMethod('BANK_TRANSFER')}
+                className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                  paymentMethod === 'BANK_TRANSFER'
+                    ? 'border-[#c34c36] bg-[#faf8f5] shadow-xs'
+                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                      <QrCode className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 className="font-extrabold text-xs text-slate-900 leading-tight">
+                        {lang === 'vi' ? 'Chuyển Khoản Trực Tiếp' : 'Direct Bank Transfer'}
+                      </h5>
+                      <span className="text-[10px] text-blue-700 font-bold block">
+                        {lang === 'vi' ? 'Quét mã VietQR (SePay)' : 'VietQR / SePay'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                    paymentMethod === 'BANK_TRANSFER' ? 'border-[#c34c36] bg-[#c34c36]' : 'border-slate-300'
+                  }`}>
+                    {paymentMethod === 'BANK_TRANSFER' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </div>
                 </div>
-              )}
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">Đối soát tự động:</span>
+                  <span className="text-emerald-700 font-bold">24/7 tức thì</span>
+                </div>
+              </div>
             </div>
+
+            {/* Wallet Details Card if WALLET is selected */}
+            {paymentMethod === 'WALLET' && (
+              <div className={`p-4 rounded-2xl border transition-all ${
+                (wallet?.balance ?? 0) >= totalAmount
+                  ? 'bg-gradient-to-r from-emerald-50 via-teal-50 to-white border-emerald-300'
+                  : 'bg-gradient-to-r from-amber-50 via-orange-50 to-white border-amber-300'
+              }`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
+                      (wallet?.balance ?? 0) >= totalAmount ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+                    }`}>
+                      <Wallet className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-black text-slate-900 block leading-tight">
+                        {lang === 'vi' ? 'Ví Tiền SecondLife (Ký Quỹ Escrow)' : 'SecondLife Wallet Escrow'}
+                      </span>
+                      <span className="text-xs text-slate-600 font-medium">
+                        {lang === 'vi' ? 'Số dư hiện có: ' : 'Available Balance: '}
+                        <strong className="font-mono text-slate-900 text-sm">{formatVND(wallet?.balance ?? 0)}</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  {onOpenDeposit && (wallet?.balance ?? 0) < totalAmount ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenDeposit();
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#dc4729] text-white text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5 shrink-0"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>{lang === 'vi' ? 'Nạp Tiền Ví' : 'Top Up Wallet'}</span>
+                    </button>
+                  ) : (wallet?.balance ?? 0) >= totalAmount ? (
+                    <span className="px-2.5 py-1 rounded-lg bg-emerald-100/90 text-emerald-800 text-[11px] font-bold flex items-center gap-1 shrink-0">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{lang === 'vi' ? 'Đủ số dư' : 'Sufficient'}</span>
+                    </span>
+                  ) : null}
+                </div>
+
+                {(wallet?.balance ?? 0) < totalAmount && (
+                  <div className="mt-2.5 pt-2 border-t border-amber-200/80 text-[11px] text-amber-800 font-medium flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>
+                      {lang === 'vi'
+                        ? `Số dư ví còn thiếu ${formatVND(totalAmount - (wallet?.balance ?? 0))}. Bạn có thể nạp tiền vào ví hoặc chọn phương thức 'Chuyển Khoản Trực Tiếp'.`
+                        : `Wallet is short by ${formatVND(totalAmount - (wallet?.balance ?? 0))}. Please top up or choose Direct Bank Transfer.`}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Bank Transfer Details Card if BANK_TRANSFER is selected */}
+            {paymentMethod === 'BANK_TRANSFER' && (
+              <div className="p-4 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-white text-xs space-y-2">
+                <div className="flex items-center gap-2.5 text-blue-900 font-bold">
+                  <QrCode className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>Thanh toán quét mã VietQR tự động qua SePay</span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  {lang === 'vi'
+                    ? 'Sau khi bấm "Đặt Hàng & Lấy Mã VietQR", hệ thống sẽ hiển thị mã QR kèm nội dung chuyển tiền định danh. Bạn mở app ngân hàng bất kỳ để quét mã và chuyển tiền. Tiền sẽ được đối soát tự động và đưa vào ký quỹ Escrow bảo vệ bạn.'
+                    : 'After clicking Place Order, a dynamic VietQR will be generated with your unique order code. Funds will be verified and held in Escrow.'}
+                </p>
+                <div className="flex items-center gap-1.5 text-[10px] text-blue-700 font-bold pt-1 border-t border-blue-100">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Bảo lãnh Escrow 100% • Người bán chỉ nhận tiền sau khi bạn xác nhận đã nhận hàng</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Financial Breakdown */}
@@ -1818,7 +2224,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             )}
 
             <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm text-[#24263e]">
-              <span>{lang === 'vi' ? 'Tổng số tiền trừ ví:' : 'Total Payable from Wallet:'}</span>
+              <span>
+                {paymentMethod === 'WALLET'
+                  ? (lang === 'vi' ? 'Tổng số tiền trừ ví:' : 'Total Payable from Wallet:')
+                  : (lang === 'vi' ? 'Tổng thanh toán qua VietQR:' : 'Total Payable via VietQR:')}
+              </span>
               <span className="text-base sm:text-lg font-black text-[#c34c36]">
                 {formatVND(totalAmount)}
               </span>
@@ -1863,20 +2273,33 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             {submittingOrder ? (
               <>
                 <Loader2 className="w-4 h-4 text-white animate-spin" />
-                <span>{lang === 'vi' ? 'Đang kết nối Escrow & trừ tiền ví...' : 'Connecting Escrow & deducting wallet...'}</span>
+                <span>
+                  {paymentMethod === 'WALLET'
+                    ? (lang === 'vi' ? 'Đang kết nối Escrow & trừ tiền ví...' : 'Connecting Escrow & deducting wallet...')
+                    : (lang === 'vi' ? 'Đang tạo đơn & lấy mã VietQR...' : 'Creating order & generating VietQR...')}
+                </span>
               </>
             ) : !ghnQuote ? (
               <>
                 <Truck className="w-4 h-4 text-white" />
                 <span>{lang === 'vi' ? 'Vui lòng xác nhận địa chỉ để lấy báo giá Lalamove' : 'Please confirm location for Lalamove quote'}</span>
               </>
-            ) : (
+            ) : paymentMethod === 'WALLET' ? (
               <>
                 <Lock className="w-4 h-4 text-white" />
                 <span>
                   {lang === 'vi'
                     ? `Xác Nhận Đặt Hàng & Thanh Toán Ví (${formatVND(totalAmount)})`
                     : `Confirm Order & Pay with Wallet (${formatVND(totalAmount)})`}
+                </span>
+              </>
+            ) : (
+              <>
+                <QrCode className="w-4 h-4 text-white" />
+                <span>
+                  {lang === 'vi'
+                    ? `Đặt Hàng & Nhận Mã VietQR (${formatVND(totalAmount)})`
+                    : `Place Order & Get VietQR Code (${formatVND(totalAmount)})`}
                 </span>
               </>
             )}

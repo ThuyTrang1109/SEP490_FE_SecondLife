@@ -233,14 +233,26 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     }
   }, [activeShipmentId]);
 
-  // Polumi / Polling Effect (12 seconds)
+  // Polling Effect (12 seconds, tạm dừng khi tab ẩn hoặc khi chuyến đã hoàn tất/hủy)
   useEffect(() => {
     if (!pollingActive) return;
+
+    // Nếu đơn/chuyến đã hoàn tất hoặc hủy thì dừng polling
+    const terminalStatuses = ['DELIVERED', 'COMPLETED', 'CANCELLED', 'FAILED'];
+    const isTerminal = activeShipment && (
+      terminalStatuses.includes(activeShipment.status) ||
+      terminalStatuses.includes(activeShipment.providerStatus || '')
+    );
+    if (isTerminal) return;
+
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        return; // Tạm dừng khi tab ẩn
+      }
       loadShipmentData(true);
     }, 12000);
     return () => clearInterval(interval);
-  }, [pollingActive, loadShipmentData]);
+  }, [pollingActive, loadShipmentData, activeShipment?.status, activeShipment?.providerStatus]);
 
   // Render Leaflet map when driver GPS coordinates are AVAILABLE
   useEffect(() => {
@@ -1263,10 +1275,20 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                   )}
                 </div>
 
-                {/* Confirm Receipt for Buyer when Delivered (Section 11) */}
+                {/* Confirm Receipt for Buyer when Delivered (Section 12) */}
                 {!isSeller && (
                   <div>
-                    {activeShipment.providerStatus === 'COMPLETED' || activeShipment.status === 'DELIVERED' || activeShipment.deliveredAt || order.shippingDeliveredAt ? (
+                    {String(order.escrowStatus) === 'COMPLETED_RELEASED' || String(order.escrowStatus) === 'RELEASED' || (order as any).status === 'COMPLETED' ? (
+                      <span className="px-3.5 py-2 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>Đơn hàng đã hoàn tất & giải ngân thành công</span>
+                      </span>
+                    ) : String(order.escrowStatus) === 'DISPUTED' || String(order.escrowStatus) === 'FROZEN' ? (
+                      <span className="px-3.5 py-2 rounded-xl bg-amber-50 text-amber-800 text-xs font-bold border border-amber-200 flex items-center gap-1.5">
+                        <AlertTriangle className="w-4 h-4 text-amber-600" />
+                        <span>Quỹ Escrow đang tạm đóng băng do khiếu nại / tranh chấp</span>
+                      </span>
+                    ) : activeShipment.providerStatus === 'COMPLETED' || activeShipment.status === 'DELIVERED' || activeShipment.deliveredAt || order.shippingDeliveredAt ? (
                       <button
                         onClick={handleConfirmReceived}
                         disabled={isConfirmingDelivered}
@@ -1277,7 +1299,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                       </button>
                     ) : (
                       <span className="text-[11px] text-slate-500 italic">
-                        (Nút xác nhận nhận hàng sẽ mở sau khi Lalamove hoàn tất giao hàng)
+                        (Nút xác nhận nhận hàng sẽ mở sau khi Lalamove hoàn tất giao hàng và quỹ Escrow đang giữ)
                       </span>
                     )}
                   </div>

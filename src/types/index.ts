@@ -178,6 +178,8 @@ export interface EscrowOrder {
   confirmationDeadline?: string | null;
   confirmationCancelAt?: string | null;
   confirmationStatus?: string | null;
+  appointmentScheduledAt?: string | null;
+  appointmentNote?: string | null;
 }
 
 export interface ProductReview {

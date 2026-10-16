@@ -58,23 +58,43 @@ export const RealtimeNotificationToast: React.FC<RealtimeNotificationToastProps>
   const [currentToast, setCurrentToast] = useState<NotificationItem | null>(null);
 
   useEffect(() => {
-    const unsubscribe = notificationWsClient.subscribeListener((item: NotificationItem) => {
-      // Play audio chime
+    const handleItem = (item: NotificationItem) => {
+      if (!item) return;
       playNotificationChime();
-
-      // Show toast
       setCurrentToast(item);
-
-      // Auto dismiss after 6 seconds
       const timer = setTimeout(() => {
         setCurrentToast((prev) => (prev?.id === item.id ? null : prev));
-      }, 6000);
+      }, 7000);
+      return timer;
+    };
 
-      return () => clearTimeout(timer);
+    const unsubscribe = notificationWsClient.subscribeListener((item: NotificationItem) => {
+      handleItem(item);
     });
+
+    const handleCustom = (e: any) => {
+      if (e.detail) {
+        handleItem(e.detail);
+      }
+    };
+    window.addEventListener('secondlife_notification', handleCustom);
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'secondlife_local_notifications' && e.newValue) {
+        try {
+          const list: NotificationItem[] = JSON.parse(e.newValue);
+          if (Array.isArray(list) && list.length > 0) {
+            handleItem(list[0]);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorage);
 
     return () => {
       unsubscribe();
+      window.removeEventListener('secondlife_notification', handleCustom);
+      window.removeEventListener('storage', handleStorage);
     };
   }, []);
 

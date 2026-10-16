@@ -59,21 +59,62 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
   const loadData = useCallback(async (targetPage = 0) => {
     setIsLoading(true);
     try {
-      const [listRes, countRes] = await Promise.all([
-        notificationService.getNotifications({
-          page: targetPage,
-          size: 10,
-          unreadOnly: unreadOnly ? true : undefined,
-          type: selectedType,
-        }),
-        notificationService.getUnreadCount(),
-      ]);
+      let listContent: NotificationItem[] = [];
+      let pageNum = targetPage;
+      let totalP = 1;
+      let totalEl = 0;
+      let backendUnread = 0;
 
-      setNotifications(listRes.content || []);
-      setPage(listRes.page);
-      setTotalPages(listRes.totalPages || 1);
-      setTotalElements(listRes.totalElements || 0);
-      setUnreadCount(countRes);
+      try {
+        const [listRes, countRes] = await Promise.all([
+          notificationService.getNotifications({
+            page: targetPage,
+            size: 10,
+            unreadOnly: unreadOnly ? true : undefined,
+            type: selectedType,
+          }),
+          notificationService.getUnreadCount(),
+        ]);
+        listContent = listRes.content || [];
+        pageNum = listRes.page;
+        totalP = listRes.totalPages || 1;
+        totalEl = listRes.totalElements || 0;
+        backendUnread = countRes || 0;
+      } catch (beErr) {
+        console.warn('Backend notification fetch fallback:', beErr);
+      }
+
+      // Merge local notifications (e.g. from checkout / inspection)
+      let localNotifs: NotificationItem[] = [];
+      try {
+        const raw = localStorage.getItem('secondlife_local_notifications');
+        if (raw) localNotifs = JSON.parse(raw);
+      } catch {}
+
+      if (selectedType && selectedType !== 'ALL') {
+        localNotifs = localNotifs.filter(
+          (n) => (n.type || '').toUpperCase() === selectedType.toUpperCase()
+        );
+      }
+      if (unreadOnly) {
+        localNotifs = localNotifs.filter((n) => !n.isRead);
+      }
+
+      const combined = [...localNotifs, ...listContent];
+      const seen = new Set<string>();
+      const unique = combined.filter((n) => {
+        if (!n?.id || seen.has(n.id)) return false;
+        seen.add(n.id);
+        return true;
+      });
+
+      const localUnread = localNotifs.filter((n) => !n.isRead).length;
+
+      setNotifications(unique);
+      setPage(pageNum);
+      setTotalPages(Math.max(1, Math.ceil(unique.length / 10), totalP));
+      setTotalElements(unique.length);
+      setUnreadCount(backendUnread + localUnread);
     } catch (err: any) {
       console.warn('Failed to load notifications in center view:', err);
       showNotice(err?.message || 'Không thể tải danh sách thông báo.', true);
@@ -86,30 +127,62 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
     loadData(0);
   }, [loadData]);
 
+  // Listen for real-time and storage updates
+  useEffect(() => {
+    const handleUpdate = () => loadData(0);
+    window.addEventListener('secondlife_notification', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('secondlife_notification', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, [loadData]);
+
   // Mark 1 as read
   const handleMarkOneRead = async (item: NotificationItem, e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (item.isRead) return;
     try {
-      await notificationService.markAsRead(item.id);
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === item.id ? { ...n, isRead: true, readAt: new Date().toISOString() } : n))
-      );
-      setUnreadCount((prev) => Math.max(0, prev - 1));
-      showNotice(lang === 'vi' ? 'Đã đánh dấu thông báo là đã đọc.' : 'Marked as read.');
-    } catch (err: any) {
-      showNotice(err?.message || 'Lỗi khi cập nhật trạng thái.', true);
-    }
+      await notificationService.markAsRead(item.id).catch(() => {});
+    } catch {}
+
+    try {
+      const raw = localStorage.getItem('secondlife_local_notifications');
+      if (raw) {
+        const list: NotificationItem[] = JSON.parse(raw);
+        localStorage.setItem(
+          'secondlife_local_notifications',
+          JSON.stringify(list.map((n) => (n.id === item.id ? { ...n, isRead: true, readAt: new Date().toISOString() } : n)))
+        );
+      }
+    } catch {}
+
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === item.id ? { ...n, isRead: true, readAt: new Date().toISOString() } : n))
+    );
+    setUnreadCount((prev) => Math.max(0, prev - 1));
+    showNotice(lang === 'vi' ? 'Đã đánh dấu thông báo là đã đọc.' : 'Marked as read.');
   };
 
   // Mark all as read
   const handleMarkAllRead = async () => {
     setIsProcessing(true);
     try {
-      const res = await notificationService.markAllAsRead();
+      await notificationService.markAllAsRead().catch(() => {});
+      try {
+        const raw = localStorage.getItem('secondlife_local_notifications');
+        if (raw) {
+          const list: NotificationItem[] = JSON.parse(raw);
+          localStorage.setItem(
+            'secondlife_local_notifications',
+            JSON.stringify(list.map((n) => ({ ...n, isRead: true, readAt: new Date().toISOString() })))
+          );
+        }
+      } catch {}
+
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true, readAt: new Date().toISOString() })));
       setUnreadCount(0);
-      showNotice(res.message || (lang === 'vi' ? 'Đã đánh dấu tất cả thông báo là đã đọc!' : 'Marked all as read!'));
+      showNotice(lang === 'vi' ? 'Đã đánh dấu tất cả thông báo là đã đọc!' : 'Marked all as read!');
     } catch (err: any) {
       showNotice(err?.message || 'Không thể đánh dấu tất cả.', true);
     } finally {
@@ -122,13 +195,23 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
     e.stopPropagation();
     if (!window.confirm(lang === 'vi' ? 'Bạn có chắc muốn xóa thông báo này?' : 'Delete this notification?')) return;
     try {
-      await notificationService.deleteNotification(id);
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
-      setTotalElements((prev) => Math.max(0, prev - 1));
-      showNotice(lang === 'vi' ? 'Đã xóa thông báo.' : 'Notification deleted.');
-    } catch (err: any) {
-      showNotice(err?.message || 'Không thể xóa thông báo.', true);
-    }
+      await notificationService.deleteNotification(id).catch(() => {});
+    } catch {}
+
+    try {
+      const raw = localStorage.getItem('secondlife_local_notifications');
+      if (raw) {
+        const list: NotificationItem[] = JSON.parse(raw);
+        localStorage.setItem(
+          'secondlife_local_notifications',
+          JSON.stringify(list.filter((n) => n.id !== id))
+        );
+      }
+    } catch {}
+
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    setTotalElements((prev) => Math.max(0, prev - 1));
+    showNotice(lang === 'vi' ? 'Đã xóa thông báo.' : 'Notification deleted.');
   };
 
   // Clear read notifications
@@ -136,8 +219,19 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
     if (!window.confirm(lang === 'vi' ? 'Xóa toàn bộ các thông báo đã đọc?' : 'Clear all read notifications?')) return;
     setIsProcessing(true);
     try {
-      const res = await notificationService.clearReadNotifications();
-      showNotice(res.message || (lang === 'vi' ? 'Đã dọn dẹp các thông báo đã đọc!' : 'Cleared read notifications!'));
+      await notificationService.clearReadNotifications().catch(() => {});
+      try {
+        const raw = localStorage.getItem('secondlife_local_notifications');
+        if (raw) {
+          const list: NotificationItem[] = JSON.parse(raw);
+          localStorage.setItem(
+            'secondlife_local_notifications',
+            JSON.stringify(list.filter((n) => !n.isRead))
+          );
+        }
+      } catch {}
+
+      showNotice(lang === 'vi' ? 'Đã dọn dẹp các thông báo đã đọc!' : 'Cleared read notifications!');
       await loadData(0);
     } catch (err: any) {
       showNotice(err?.message || 'Không thể xóa thông báo đã đọc.', true);
@@ -151,8 +245,12 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
     if (!window.confirm(lang === 'vi' ? 'Cảnh báo: Bạn muốn xóa TOÀN BỘ mọi thông báo trong hộp thư?' : 'Clear ALL notifications?')) return;
     setIsProcessing(true);
     try {
-      const res = await notificationService.clearAllNotifications();
-      showNotice(res.message || (lang === 'vi' ? 'Đã dọn sạch toàn bộ hộp thư thông báo!' : 'Cleared all notifications!'));
+      await notificationService.clearAllNotifications().catch(() => {});
+      try {
+        localStorage.removeItem('secondlife_local_notifications');
+      } catch {}
+
+      showNotice(lang === 'vi' ? 'Đã dọn sạch toàn bộ hộp thư thông báo!' : 'Cleared all notifications!');
       setNotifications([]);
       setTotalElements(0);
       setUnreadCount(0);

@@ -365,14 +365,43 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const fullAddress = [streetAddress, selectedWardName, selectedProvinceName].filter(Boolean).join(', ') || streetAddress;
 
+  const validatePhoneNumber = (phone: string, currentLang: Language = 'vi'): string => {
+    const trimmed = (phone || '').trim();
+    if (!trimmed) {
+      return currentLang === 'vi' ? 'Vui lòng nhập số điện thoại nhận hàng' : 'Phone number is required';
+    }
+    const cleanPhone = trimmed.replace(/\D/g, '');
+    if (/[^\d\s.-]/.test(trimmed)) {
+      return currentLang === 'vi'
+        ? 'Số điện thoại chỉ được chứa các chữ số'
+        : 'Phone number can only contain digits';
+    }
+    if (!cleanPhone.startsWith('0')) {
+      return currentLang === 'vi'
+        ? 'Số điện thoại phải bắt đầu bằng số 0 (ví dụ: 0987...)'
+        : 'Phone number must start with 0';
+    }
+    if (cleanPhone.length < 10) {
+      return currentLang === 'vi'
+        ? `Số điện thoại phải có đúng 10 chữ số (bạn đang nhập thiếu: ${cleanPhone.length}/10 số)`
+        : `Phone number must be exactly 10 digits (currently ${cleanPhone.length}/10)`;
+    }
+    if (cleanPhone.length > 10) {
+      return currentLang === 'vi'
+        ? `Số điện thoại chỉ được đúng 10 chữ số (bạn đang nhập dư: ${cleanPhone.length}/10 số)`
+        : `Phone number must be exactly 10 digits (exceeded: ${cleanPhone.length}/10)`;
+    }
+    return '';
+  };
+
   const validateForm = () => {
     const errors: { [key: string]: string } = {};
     if (!buyerName.trim()) {
       errors.buyerName = lang === 'vi' ? 'Vui lòng nhập họ tên người nhận' : 'Name is required';
     }
-    const cleanPhone = (buyerPhone || '').replace(/\D/g, '');
-    if (!cleanPhone || cleanPhone.length < 9) {
-      errors.buyerPhone = lang === 'vi' ? 'Vui lòng nhập số điện thoại người nhận hợp lệ (từ 9 - 11 số)' : 'Valid phone number is required';
+    const phoneErr = validatePhoneNumber(buyerPhone, lang);
+    if (phoneErr) {
+      errors.buyerPhone = phoneErr;
     }
     if (!streetAddress.trim() || !deliveryLatitude || !deliveryLongitude) {
       errors.streetAddress = lang === 'vi' ? 'Vui lòng chọn hoặc xác nhận địa chỉ giao nhận trên bản đồ Lalamove' : 'Please confirm delivery address on Lalamove map';
@@ -388,13 +417,34 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setOrderError(firstErr);
       return false;
     }
+    setOrderError(null);
     return true;
   };
 
+  // Automatically clear general order error banner as soon as user types or fixes any field
+  useEffect(() => {
+    if (orderError) {
+      setOrderError(null);
+    }
+  }, [buyerPhone, buyerName, buyerEmail, streetAddress, deliveryLatitude, deliveryLongitude, agreedZinLoss, deliveryOption]);
+
   const handleFillFromProfile = () => {
+    setOrderError(null);
     if (currentUser) {
       if (currentUser.name) setBuyerName(currentUser.name);
-      if (currentUser.phone) setBuyerPhone(currentUser.phone);
+      if (currentUser.phone) {
+        setBuyerPhone(currentUser.phone);
+        const err = validatePhoneNumber(currentUser.phone, lang);
+        if (err) {
+          setFormErrors(prev => ({ ...prev, buyerPhone: err }));
+        } else {
+          setFormErrors(prev => {
+            const updated = { ...prev };
+            delete updated.buyerPhone;
+            return updated;
+          });
+        }
+      }
       if (currentUser.email) setBuyerEmail(currentUser.email);
       if (currentUser.address) setStreetAddress(currentUser.address);
       const userProv = (currentUser as any).provinceName || (currentUser as any).province || '';
@@ -489,12 +539,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             buyerConsentZinLoss: true,
             buyerLatitude: deliveryLatitude,
             buyerLongitude: deliveryLongitude,
-            buyerDeliveryAddress: {
+            buyerDeliveryAddress: fullAddress || JSON.stringify({
               name: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
               phone: validPhone,
+              address: fullAddress,
               latitude: deliveryLatitude,
               longitude: deliveryLongitude,
-            } as any,
+            }),
             note: deliveryNote || undefined,
           });
           if (beInspectionOrder?.id) {
@@ -602,7 +653,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         shippingFeeVnd: finalShippingFee,
         platformFeeVnd: 0,
         totalPaidVnd: finalTotalPaid,
-        escrowStatus: 'HELD_IN_ESCROW',
+        escrowStatus: isInspected ? 'INSPECTION_IN_PROGRESS' : 'HELD_IN_ESCROW',
         hasInspectionService: isInspected,
         inspectionCenterId: isInspected ? selectedCenter?.id : undefined,
         inspectionCenterName: isInspected ? selectedCenter?.name : undefined,
@@ -643,6 +694,28 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         } catch {}
         const updatedRecent = [newOrder, ...existingRecent.filter((o) => o.id !== newOrder.id)].slice(0, 30);
         localStorage.setItem('recent_placed_orders', JSON.stringify(updatedRecent));
+
+        // Dispatch notification specifically for seller (and buyer)
+        const sellerNotifItem = {
+          id: `notif-seller-inspection-${orderId}`,
+          title: isInspected ? 'Yêu cầu kiểm định Hub mới' : 'Đơn đặt hàng mới',
+          message: isInspected
+            ? `Khách mua ${buyerName || 'Khách Hàng'} vừa gửi yêu cầu kiểm định cho sản phẩm "${listing.title}". Người bán vui lòng kiểm tra và hẹn lịch KTV!`
+            : `Khách mua ${buyerName || 'Khách Hàng'} vừa đặt mua sản phẩm "${listing.title}". Vui lòng xác nhận đơn hàng!`,
+          type: isInspected ? 'INSPECTION' : 'ORDER',
+          referenceId: orderId,
+          referenceType: isInspected ? 'INSPECTION_ORDER' : 'ORDER',
+          actionUrl: '/orders?tab=inspecting',
+          isRead: false,
+          readAt: null,
+          createdAt: new Date().toISOString(),
+        };
+        try {
+          const rawNotifs = localStorage.getItem('secondlife_local_notifications');
+          const existingNotifs = rawNotifs ? JSON.parse(rawNotifs) : [];
+          localStorage.setItem('secondlife_local_notifications', JSON.stringify([sellerNotifItem, ...existingNotifs.filter((n: any) => n.id !== sellerNotifItem.id)].slice(0, 50)));
+          window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: sellerNotifItem }));
+        } catch {}
       } catch {}
 
       onOrderPlaced(newOrder);
@@ -1289,6 +1362,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     value={buyerName}
                     onChange={(e) => {
                       setBuyerName(e.target.value);
+                      if (orderError) setOrderError(null);
                       if (formErrors.buyerName) setFormErrors({ ...formErrors, buyerName: '' });
                     }}
                     placeholder="Nguyễn Văn A"
@@ -1303,26 +1377,94 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  {lang === 'vi' ? 'Số điện thoại nhận hàng *' : 'Phone Number *'}
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold text-slate-700">
+                    {lang === 'vi' ? 'Số điện thoại nhận hàng *' : 'Phone Number *'}
+                  </label>
+                  {buyerPhone.trim() && (
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                      buyerPhone.replace(/\D/g, '').length === 10 && buyerPhone.trim().startsWith('0')
+                        ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                        : buyerPhone.replace(/\D/g, '').length < 10
+                        ? 'text-amber-700 bg-amber-50 border border-amber-200'
+                        : 'text-rose-700 bg-rose-50 border border-rose-200'
+                    }`}>
+                      {buyerPhone.replace(/\D/g, '').length}/10 số
+                    </span>
+                  )}
+                </div>
                 <div className="relative">
                   <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="tel"
                     value={buyerPhone}
                     onChange={(e) => {
-                      setBuyerPhone(e.target.value);
-                      if (formErrors.buyerPhone) setFormErrors({ ...formErrors, buyerPhone: '' });
+                      const val = e.target.value;
+                      setBuyerPhone(val);
+                      if (orderError) setOrderError(null);
+                      const clean = val.replace(/\D/g, '');
+                      if (!val.trim()) {
+                        setFormErrors(prev => ({
+                          ...prev,
+                          buyerPhone: lang === 'vi' ? 'Vui lòng nhập số điện thoại nhận hàng' : 'Phone number is required'
+                        }));
+                      } else if (/[^\d\s.-]/.test(val)) {
+                        setFormErrors(prev => ({
+                          ...prev,
+                          buyerPhone: lang === 'vi' ? 'Số điện thoại chỉ được chứa các chữ số' : 'Phone number can only contain digits'
+                        }));
+                      } else if (!clean.startsWith('0')) {
+                        setFormErrors(prev => ({
+                          ...prev,
+                          buyerPhone: lang === 'vi' ? 'Số điện thoại phải bắt đầu bằng số 0 (ví dụ: 0987...)' : 'Phone number must start with 0'
+                        }));
+                      } else if (clean.length < 10) {
+                        setFormErrors(prev => ({
+                          ...prev,
+                          buyerPhone: lang === 'vi'
+                            ? `Số điện thoại phải có đúng 10 chữ số (bạn đang nhập thiếu: ${clean.length}/10 số)`
+                            : `Phone number must be exactly 10 digits (currently ${clean.length}/10)`
+                        }));
+                      } else if (clean.length > 10) {
+                        setFormErrors(prev => ({
+                          ...prev,
+                          buyerPhone: lang === 'vi'
+                            ? `Số điện thoại chỉ được đúng 10 chữ số (bạn đang nhập dư: ${clean.length}/10 số)`
+                            : `Phone number must be exactly 10 digits (exceeded: ${clean.length}/10)`
+                        }));
+                      } else {
+                        // Exactly 10 digits and starts with 0
+                        setFormErrors(prev => {
+                          const updated = { ...prev };
+                          delete updated.buyerPhone;
+                          return updated;
+                        });
+                      }
+                    }}
+                    onBlur={() => {
+                      const err = validatePhoneNumber(buyerPhone, lang);
+                      if (err) {
+                        setFormErrors(prev => ({ ...prev, buyerPhone: err }));
+                      } else {
+                        setFormErrors(prev => {
+                          const updated = { ...prev };
+                          delete updated.buyerPhone;
+                          return updated;
+                        });
+                      }
                     }}
                     placeholder="0912 345 678"
+                    maxLength={15}
                     className={`w-full pl-9 pr-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition ${
                       formErrors.buyerPhone ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
                     }`}
                   />
                 </div>
                 {formErrors.buyerPhone && (
-                  <span className="text-[10px] text-rose-500 font-semibold mt-0.5 block">{formErrors.buyerPhone}</span>
+                  <span className="text-[10px] text-rose-500 font-semibold mt-1 flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    {formErrors.buyerPhone}
+                  </span>
                 )}
               </div>
             </div>
@@ -1696,9 +1838,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
           {/* Order Error Alert */}
           {orderError && (
-            <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 font-semibold flex items-center gap-2.5 animate-fadeIn">
-              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-              <span>{orderError}</span>
+            <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 font-semibold flex items-center justify-between gap-2.5 animate-fadeIn">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                <span className="break-words">{orderError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOrderError(null)}
+                className="text-red-400 hover:text-red-700 p-1 rounded-lg transition shrink-0 cursor-pointer"
+                title={lang === 'vi' ? 'Đóng thông báo' : 'Dismiss notice'}
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           )}
 

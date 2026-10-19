@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Listing, EscrowOrder, Language, UserWallet, ShippingQuoteResponseDto, ShippingLeg, InspectionCenter } from '../../types';
+import { Listing, EscrowOrder, Language, UserWallet, ShippingQuoteResponseDto, ShippingLeg, InspectionCenter, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import { mockInspectionCenters } from '../../data/mockData';
 import {
@@ -95,7 +95,7 @@ interface CheckoutModalProps {
   onClose: () => void;
   onOrderPlaced: (order: EscrowOrder) => void;
   lang: Language;
-  currentUser?: { id: string; name: string; email?: string; phone?: string; address?: string } | null;
+  currentUser?: UserProfile | null;
   agreedPrice?: number;
   negotiationId?: string;
   onOpenDeposit?: () => void;
@@ -146,12 +146,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Buyer Form Information
   const sellerCityInfo = getCityCoordinates(listing.sellerAddress || listing.location);
+  const hasProfileAddress = Boolean(currentUser?.address?.trim() || currentUser?.streetAddress?.trim());
+  const initialDeliveryLat = (hasProfileAddress && typeof currentUser?.latitude === 'number')
+    ? currentUser.latitude
+    : sellerCityInfo.lat;
+  const initialDeliveryLng = (hasProfileAddress && typeof currentUser?.longitude === 'number')
+    ? currentUser.longitude
+    : sellerCityInfo.lng;
+
   const [buyerName, setBuyerName] = useState(currentUser?.name || '');
   const [buyerPhone, setBuyerPhone] = useState(currentUser?.phone || '');
   const [buyerEmail, setBuyerEmail] = useState(currentUser?.email || '');
-  const [streetAddress, setStreetAddress] = useState(currentUser?.address || '');
-  const [deliveryLatitude, setDeliveryLatitude] = useState<number>(sellerCityInfo.lat);
-  const [deliveryLongitude, setDeliveryLongitude] = useState<number>(sellerCityInfo.lng);
+  const [streetAddress, setStreetAddress] = useState(currentUser?.address || currentUser?.streetAddress || '');
+  const [deliveryLatitude, setDeliveryLatitude] = useState<number>(initialDeliveryLat);
+  const [deliveryLongitude, setDeliveryLongitude] = useState<number>(initialDeliveryLng);
   const [addressType, setAddressType] = useState<'home' | 'office'>('home');
   const [deliveryNote, setDeliveryNote] = useState('');
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
@@ -424,6 +432,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const shippingFee = ghnQuote ? Number(ghnQuote.shippingFee) : 30000;
   const productPrice = ghnQuote ? Number(ghnQuote.productPrice) : itemPrice;
   const totalAmount = productPrice + shippingFee + buyerInspectionFee;
+  // Khi mua có kiểm định: CHỈ trả trước phí kiểm định và tiền ship; Tiền sản phẩm trả ở Giai đoạn 2 sau khi kiểm định ĐẠT
+  const upfrontAmount = isInspected ? (shippingFee + buyerInspectionFee) : totalAmount;
+  const stage2ProductAmount = isInspected ? productPrice : 0;
 
   const fullAddress = [streetAddress, selectedWardName, selectedProvinceName].filter(Boolean).join(', ') || streetAddress;
 
@@ -508,7 +519,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         }
       }
       if (currentUser.email) setBuyerEmail(currentUser.email);
-      if (currentUser.address) setStreetAddress(currentUser.address);
+      const profileAddr = currentUser.address || currentUser.streetAddress || '';
+      if (profileAddr) setStreetAddress(profileAddr);
+      if (typeof currentUser.latitude === 'number' && typeof currentUser.longitude === 'number') {
+        setDeliveryLatitude(currentUser.latitude);
+        setDeliveryLongitude(currentUser.longitude);
+        calculateLalamoveQuote(
+          currentUser.latitude,
+          currentUser.longitude,
+          profileAddr,
+          currentUser.name || buyerName,
+          currentUser.phone || buyerPhone
+        );
+      }
       const userProv = (currentUser as any).provinceName || (currentUser as any).province || '';
       const userWard = (currentUser as any).wardName || (currentUser as any).ward || '';
       if (userProv) {
@@ -570,11 +593,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         }
       } catch {}
 
-      if (currentBal < totalAmount) {
+      if (currentBal < upfrontAmount) {
         setOrderError(
           lang === 'vi'
-            ? `Số dư ví của bạn (${formatVND(currentBal)}) không đủ để thanh toán đơn hàng (${formatVND(totalAmount)}). Vui lòng nạp thêm tiền vào ví hoặc chọn hình thức 'Chuyển Khoản Trực Tiếp'.`
-            : `Your wallet balance (${formatVND(currentBal)}) is insufficient for order checkout (${formatVND(totalAmount)}). Please top up or choose Direct Bank Transfer.`
+            ? `Số dư ví của bạn (${formatVND(currentBal)}) không đủ để thanh toán ${isInspected ? 'tiền cọc kiểm định & tiền ship' : 'đơn hàng'} (${formatVND(upfrontAmount)}). Vui lòng nạp thêm tiền vào ví hoặc chọn hình thức 'Chuyển Khoản Trực Tiếp'.`
+            : `Your wallet balance (${formatVND(currentBal)}) is insufficient for ${isInspected ? 'inspection deposit & shipping' : 'order checkout'} (${formatVND(upfrontAmount)}). Please top up or choose Direct Bank Transfer.`
         );
         return;
       }
@@ -587,28 +610,31 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       let orderId = `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`;
       let finalChargedPrice = productPrice;
       let finalShippingFee = shippingFee;
-      let finalTotalPaid = totalAmount;
+      let finalTotalPaid = upfrontAmount;
 
       if (isInspected) {
         // Gửi yêu cầu mua có kiểm định tới Backend qua POST /api/v1/inspection/requests
         const feePayerCode = feeSplit === 'BUYER_100' ? 'BUYER_PAYS' : feeSplit === 'SELLER_100' ? 'SELLER_PAYS' : 'SPLIT_50_50';
         try {
-          const rawPhone = (buyerPhone || currentUser?.phone || '').replace(/\D/g, '');
-          const validPhone = rawPhone.length >= 9 && rawPhone.length <= 15 ? rawPhone : '0912345678';
+          let validPhone = (buyerPhone || currentUser?.phone || '').replace(/\D/g, '');
+          if (!validPhone.startsWith('0') && !validPhone.startsWith('84')) validPhone = '0' + validPhone;
+          if (validPhone.length < 10 || validPhone.length > 11) validPhone = '0912345678';
+          const buyerLat = Number(deliveryLatitude) || 10.762622;
+          const buyerLng = Number(deliveryLongitude) || 106.660172;
+
           const beInspectionOrder = await inspectorService.createRequest({
             postId: listing.id,
             orderType: inspectionMethod,
             feePayer: feePayerCode,
             buyerConsentZinLoss: true,
-            buyerLatitude: deliveryLatitude,
-            buyerLongitude: deliveryLongitude,
-            buyerDeliveryAddress: fullAddress || JSON.stringify({
-              name: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
+            buyerLatitude: buyerLat,
+            buyerLongitude: buyerLng,
+            buyerDeliveryAddress: {
+              name: (buyerName || currentUser?.name || 'Khách Hàng').trim().slice(0, 100),
               phone: validPhone,
-              address: fullAddress,
-              latitude: deliveryLatitude,
-              longitude: deliveryLongitude,
-            }),
+              latitude: buyerLat,
+              longitude: buyerLng,
+            },
             note: deliveryNote || undefined,
           });
           if (beInspectionOrder?.id) {
@@ -1777,7 +1803,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               }}
               lang={lang}
               title={lang === 'vi' ? 'Địa Chỉ Giao Nhận Hàng Lalamove' : 'Lalamove Delivery Address'}
-              description={lang === 'vi' ? 'Định vị GPS chính xác để tài xế Lalamove tính phí và giao hàng tận nơi.' : 'Precise GPS coordinates for Lalamove couriers.'}
+              description={
+                hasProfileAddress
+                  ? (lang === 'vi' ? 'Đã tự động đồng bộ từ địa chỉ hồ sơ của bạn. Bạn có thể kéo ghim nếu điểm nhận hàng khác.' : 'Auto-synced from your profile address. Drag pin to adjust if needed.')
+                  : (lang === 'vi' ? 'Hồ sơ chưa có địa chỉ. Bấm "Dùng Vị Trí Hiện Tại" hoặc nhấp vào bản đồ để chọn điểm giao hàng.' : 'No profile address. Click "Use Current Location" or pick on the map.')
+              }
             />
 
             {/* Address Type Selector */}
@@ -2037,14 +2067,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             {/* Wallet Details Card if WALLET is selected */}
             {paymentMethod === 'WALLET' && (
               <div className={`p-4 rounded-2xl border transition-all ${
-                (wallet?.balance ?? 0) >= totalAmount
+                (wallet?.balance ?? 0) >= upfrontAmount
                   ? 'bg-gradient-to-r from-emerald-50 via-teal-50 to-white border-emerald-300'
                   : 'bg-gradient-to-r from-amber-50 via-orange-50 to-white border-amber-300'
               }`}>
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
-                      (wallet?.balance ?? 0) >= totalAmount ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+                      (wallet?.balance ?? 0) >= upfrontAmount ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
                     }`}>
                       <Wallet className="w-5 h-5" />
                     </div>
@@ -2059,7 +2089,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </div>
                   </div>
 
-                  {onOpenDeposit && (wallet?.balance ?? 0) < totalAmount ? (
+                  {onOpenDeposit && (wallet?.balance ?? 0) < upfrontAmount ? (
                     <button
                       type="button"
                       onClick={() => {
@@ -2071,7 +2101,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <QrCode className="w-3.5 h-3.5" />
                       <span>{lang === 'vi' ? 'Nạp Tiền Ví' : 'Top Up Wallet'}</span>
                     </button>
-                  ) : (wallet?.balance ?? 0) >= totalAmount ? (
+                  ) : (wallet?.balance ?? 0) >= upfrontAmount ? (
                     <span className="px-2.5 py-1 rounded-lg bg-emerald-100/90 text-emerald-800 text-[11px] font-bold flex items-center gap-1 shrink-0">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                       <span>{lang === 'vi' ? 'Đủ số dư' : 'Sufficient'}</span>
@@ -2079,13 +2109,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   ) : null}
                 </div>
 
-                {(wallet?.balance ?? 0) < totalAmount && (
+                {(wallet?.balance ?? 0) < upfrontAmount && (
                   <div className="mt-2.5 pt-2 border-t border-amber-200/80 text-[11px] text-amber-800 font-medium flex items-center gap-1.5">
                     <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                     <span>
                       {lang === 'vi'
-                        ? `Số dư ví còn thiếu ${formatVND(totalAmount - (wallet?.balance ?? 0))}. Bạn có thể nạp tiền vào ví hoặc chọn phương thức 'Chuyển Khoản Trực Tiếp'.`
-                        : `Wallet is short by ${formatVND(totalAmount - (wallet?.balance ?? 0))}. Please top up or choose Direct Bank Transfer.`}
+                        ? `Số dư ví còn thiếu ${formatVND(upfrontAmount - (wallet?.balance ?? 0))}. Bạn có thể nạp tiền vào ví hoặc chọn phương thức 'Chuyển Khoản Trực Tiếp'.`
+                        : `Wallet is short by ${formatVND(upfrontAmount - (wallet?.balance ?? 0))}. Please top up or choose Direct Bank Transfer.`}
                     </span>
                   </div>
                 )}
@@ -2223,16 +2253,50 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             )}
 
-            <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm text-[#24263e]">
-              <span>
-                {paymentMethod === 'WALLET'
-                  ? (lang === 'vi' ? 'Tổng số tiền trừ ví:' : 'Total Payable from Wallet:')
-                  : (lang === 'vi' ? 'Tổng thanh toán qua VietQR:' : 'Total Payable via VietQR:')}
-              </span>
-              <span className="text-base sm:text-lg font-black text-[#c34c36]">
-                {formatVND(totalAmount)}
-              </span>
-            </div>
+            {isInspected ? (
+              <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                <div className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 space-y-1 text-xs">
+                  <div className="flex justify-between font-bold text-slate-800">
+                    <span className="flex items-center gap-1.5 text-amber-900">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{lang === 'vi' ? 'Giai đoạn 1 (Trả trước): Phí kiểm định + Ship' : 'Stage 1 (Upfront): Inspection + Shipping'}</span>
+                    </span>
+                    <span className="text-[#c34c36] font-extrabold">{formatVND(upfrontAmount)}</span>
+                  </div>
+                  <div className="flex justify-between text-[11px] text-slate-600">
+                    <span>{lang === 'vi' ? 'Giai đoạn 2 (Sau khi máy ĐẠT kiểm định): Tiền sản phẩm' : 'Stage 2 (After PASSED inspection): Product Price'}</span>
+                    <span className="font-semibold text-slate-700">{formatVND(stage2ProductAmount)}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 italic pt-0.5 border-t border-amber-100">
+                    {lang === 'vi'
+                      ? '* Tiền sản phẩm chỉ thanh toán sau khi bạn xem biên bản kiểm định và đồng ý mua tiếp.'
+                      : '* Product price is paid only after you review inspection report and confirm purchase.'}
+                  </p>
+                </div>
+
+                <div className="flex justify-between font-bold text-sm text-[#24263e] pt-1">
+                  <span>
+                    {paymentMethod === 'WALLET'
+                      ? (lang === 'vi' ? 'Tổng tiền cọc trừ ví ngay:' : 'Total Deposit Payable from Wallet:')
+                      : (lang === 'vi' ? 'Tổng cọc thanh toán VietQR ngay:' : 'Total Deposit Payable via VietQR:')}
+                  </span>
+                  <span className="text-base sm:text-lg font-black text-[#c34c36]">
+                    {formatVND(upfrontAmount)}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm text-[#24263e]">
+                <span>
+                  {paymentMethod === 'WALLET'
+                    ? (lang === 'vi' ? 'Tổng số tiền trừ ví:' : 'Total Payable from Wallet:')
+                    : (lang === 'vi' ? 'Tổng thanh toán qua VietQR:' : 'Total Payable via VietQR:')}
+                </span>
+                <span className="text-base sm:text-lg font-black text-[#c34c36]">
+                  {formatVND(totalAmount)}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Escrow Guarantee Notice */}
@@ -2240,9 +2304,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
             <span className="leading-snug">
               <strong>{lang === 'vi' ? 'Cam kết Escrow:' : 'Escrow Custody Guarantee:'}</strong>{' '}
-              {lang === 'vi'
-                ? 'Tiền sẽ được trừ vào ví và phong tỏa an toàn tại quỹ Escrow. Sau khi tài xế Lalamove giao hàng và bạn xác nhận đã nhận hàng thành công, tiền hàng mới được giải ngân cho người bán.'
-                : 'Payment is securely held in Escrow custody. Seller receives funds only after Lalamove delivers and you confirm receipt.'}
+              {isInspected
+                ? (lang === 'vi'
+                    ? 'Bạn chỉ trả trước phí kiểm định và tiền ship. Sau khi có kết quả kiểm định đạt chuẩn, bạn sẽ có quyền xem biên bản để xác nhận mua tiếp (trả tiền máy) hoặc từ chối hủy đơn bảo lãnh.'
+                    : 'You only pay inspection & shipping deposit upfront. You will review the inspection report to confirm purchase or cancel.')
+                : (lang === 'vi'
+                    ? 'Tiền sẽ được trừ vào ví và phong tỏa an toàn tại quỹ Escrow. Sau khi tài xế Lalamove giao hàng và bạn xác nhận đã nhận hàng thành công, tiền hàng mới được giải ngân cho người bán.'
+                    : 'Payment is securely held in Escrow custody. Seller receives funds only after Lalamove delivers and you confirm receipt.')}
             </span>
           </div>
 
@@ -2288,18 +2356,26 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <>
                 <Lock className="w-4 h-4 text-white" />
                 <span>
-                  {lang === 'vi'
-                    ? `Xác Nhận Đặt Hàng & Thanh Toán Ví (${formatVND(totalAmount)})`
-                    : `Confirm Order & Pay with Wallet (${formatVND(totalAmount)})`}
+                  {isInspected
+                    ? (lang === 'vi'
+                        ? `Xác Nhận Đặt Cọc Kiểm Định & Ship (${formatVND(upfrontAmount)})`
+                        : `Confirm Inspection Deposit & Ship (${formatVND(upfrontAmount)})`)
+                    : (lang === 'vi'
+                        ? `Xác Nhận Đặt Hàng & Thanh Toán Ví (${formatVND(totalAmount)})`
+                        : `Confirm Order & Pay with Wallet (${formatVND(totalAmount)})`)}
                 </span>
               </>
             ) : (
               <>
                 <QrCode className="w-4 h-4 text-white" />
                 <span>
-                  {lang === 'vi'
-                    ? `Đặt Hàng & Nhận Mã VietQR (${formatVND(totalAmount)})`
-                    : `Place Order & Get VietQR Code (${formatVND(totalAmount)})`}
+                  {isInspected
+                    ? (lang === 'vi'
+                        ? `Đặt Cọc Kiểm Định & Nhận VietQR (${formatVND(upfrontAmount)})`
+                        : `Inspection Deposit & Get VietQR (${formatVND(upfrontAmount)})`)
+                    : (lang === 'vi'
+                        ? `Đặt Hàng & Nhận Mã VietQR (${formatVND(totalAmount)})`
+                        : `Place Order & Get VietQR Code (${formatVND(totalAmount)})`)}
                 </span>
               </>
             )}

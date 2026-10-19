@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, Send, Bot, User, CheckCircle2, Loader2, ShieldCheck, AlertCircle, FileText, ArrowRight } from 'lucide-react';
+import { Sparkles, Send, Bot, User, CheckCircle2, Loader2, ShieldCheck, AlertCircle, FileText, ArrowRight, RotateCcw } from 'lucide-react';
 import { Language } from '../../types';
 import { aiChatService, postService, topupService } from '../../services';
 
@@ -133,6 +133,27 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
     } catch (err: any) {
       setErrorMsg(err?.message || (lang === 'vi' ? 'Gửi duyệt bài đăng thất bại.' : 'Failed to submit post.'));
       setIsSubmitting(false);
+    }
+  };
+
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  const handleRegenerateChat = async () => {
+    setIsRegenerating(true);
+    setErrorMsg(null);
+    try {
+      const res = await aiChatService.regenerate(sessionId);
+      setIsFinalized(true);
+      const desc = res?.description || (res as any)?.message || '';
+      setFinalizeNotice(
+        desc
+          ? (lang === 'vi' ? `AI đã tạo lại bản nháp mô tả mới:\n\n${desc}` : `AI regenerated new draft description:\n\n${desc}`)
+          : (lang === 'vi' ? 'Đã viết lại bản nháp bằng AI thành công!' : 'Successfully regenerated draft with AI!')
+      );
+    } catch (err: any) {
+      setErrorMsg(err?.message || (lang === 'vi' ? 'Lỗi khi viết lại mô tả AI.' : 'Failed to regenerate description.'));
+    } finally {
+      setIsRegenerating(false);
     }
   };
 
@@ -288,25 +309,46 @@ export const AiListingAssistant: React.FC<AiListingAssistantProps> = ({
                 )}
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={handleSubmitPost}
-                disabled={isSubmitting}
-                className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-95 text-white text-xs font-bold shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>{lang === 'vi' ? 'Đang gửi duyệt...' : 'Submitting...'}</span>
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>{lang === 'vi' ? 'Gửi duyệt bài đăng' : 'Submit Post'}</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </>
-                )}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleRegenerateChat}
+                  disabled={isRegenerating || isSubmitting}
+                  className="px-4 py-2 rounded-xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-900 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition"
+                  title="Tạo lại bản nháp mô tả khác bằng AI"
+                >
+                  {isRegenerating ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-700" />
+                      <span>{lang === 'vi' ? 'Đang viết lại...' : 'Regenerating...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="w-3.5 h-3.5 text-indigo-700" />
+                      <span>{lang === 'vi' ? 'Viết lại bằng AI' : 'Regenerate Draft'}</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitPost}
+                  disabled={isSubmitting || isRegenerating}
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-95 text-white text-xs font-bold shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>{lang === 'vi' ? 'Đang gửi duyệt...' : 'Submitting...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>{lang === 'vi' ? 'Gửi duyệt bài đăng' : 'Submit Post'}</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </>
+                  )}
+                </button>
+              </div>
             )}
           </div>
         </div>

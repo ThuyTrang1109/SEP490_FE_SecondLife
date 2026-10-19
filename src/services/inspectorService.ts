@@ -68,12 +68,18 @@ export interface CreateInspectionRequest {
   buyerConsentZinLoss: boolean;
   buyerLatitude?: number;
   buyerLongitude?: number;
-  buyerDeliveryAddress?: string;
+  buyerDeliveryAddress?: {
+    name: string;
+    phone: string;
+    latitude: number;
+    longitude: number;
+  } | string;
   note?: string;
 }
 
 export interface InspectionSellerRespondRequest {
   action: 'ACCEPT' | 'COUNTER' | 'REJECT';
+  counterOrderType?: 'AT_HOME' | 'AT_CENTER';
   counterFeePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
   sellerConsentZinLoss?: boolean;
   rejectionReason?: string;
@@ -232,6 +238,9 @@ export interface InspectionOrderDto {
   finalItemPrice?: number;
   finalShippingFee?: number;
 
+  initialDepositPaid?: number;
+  finalPaymentRequired?: boolean;
+
   address?: string;
   sellerAddress?: string;
   sellerPhone?: string;
@@ -333,9 +342,14 @@ export const inspectorService = {
    * Seller phản hồi yêu cầu: ACCEPT, COUNTER hoặc REJECT
    */
   async respondRequest(orderId: string, data: InspectionSellerRespondRequest): Promise<InspectionOrderDto> {
+    const payload = {
+      ...data,
+      sellerConsentZinLoss: data.sellerConsentZinLoss ?? (data.action === 'ACCEPT'),
+      sellerConsentZin: data.sellerConsentZinLoss ?? (data.action === 'ACCEPT'),
+    };
     const res = await request<InspectionOrderDto>(`/inspection/requests/${orderId}/respond`, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
       requiresAuth: true,
     });
     return (res as any)?.data || res;
@@ -391,6 +405,18 @@ export const inspectorService = {
   async confirmPurchase(orderId: string): Promise<InspectionOrderDto> {
     const res = await request<InspectionOrderDto>(`/inspection/orders/${orderId}/confirm-purchase`, {
       method: 'POST',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Buyer từ chối mua tiếp sau khi có kết quả kiểm định (Hủy đơn & thông báo cho Người bán)
+   */
+  async rejectPurchase(orderId: string, reason?: string): Promise<any> {
+    const res = await request<any>(`/inspection/orders/${orderId}/reject-purchase`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || 'Người mua từ chối mua tiếp sau kiểm định' }),
       requiresAuth: true,
     });
     return (res as any)?.data || res;

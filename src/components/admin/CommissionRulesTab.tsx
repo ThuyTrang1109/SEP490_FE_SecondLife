@@ -62,6 +62,36 @@ export const CommissionRulesTab: React.FC = () => {
   const [detailRule, setDetailRule] = useState<CommissionRuleResponse | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
 
+  // Modal: Capture Commission Snapshot for old orders (POST /api/v1/admin/orders/{orderId}/commission-snapshot)
+  const [isSnapshotModalOpen, setIsSnapshotModalOpen] = useState(false);
+  const [snapshotOrderId, setSnapshotOrderId] = useState('');
+  const [snapshotReason, setSnapshotReason] = useState('Bổ sung snapshot lưu vết kế toán cho đơn hàng cũ');
+  const [isCapturingSnapshot, setIsCapturingSnapshot] = useState(false);
+  const [snapshotResult, setSnapshotResult] = useState<any>(null);
+
+  const handleCaptureSnapshot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!snapshotOrderId.trim()) {
+      setErrorMessage('Vui lòng nhập Order ID cần chốt snapshot hoa hồng.');
+      return;
+    }
+    setIsCapturingSnapshot(true);
+    setErrorMessage(null);
+    try {
+      const res = await adminCommissionService.captureCommissionSnapshot(
+        snapshotOrderId.trim(),
+        snapshotReason.trim() || 'Bổ sung snapshot lưu vết kế toán'
+      );
+      setSnapshotResult(res);
+      setSuccessMessage(`Đã chụp snapshot hoa hồng cho đơn #${snapshotOrderId.trim()} thành công!`);
+    } catch (err: any) {
+      console.error('Error capturing commission snapshot:', err);
+      setErrorMessage(err?.response?.data?.message || err?.message || 'Lỗi chụp snapshot hoa hồng cho đơn hàng.');
+    } finally {
+      setIsCapturingSnapshot(false);
+    }
+  };
+
   const handleOpenDetailModal = async (ruleId: string) => {
     setIsLoadingDetail(true);
     try {
@@ -237,6 +267,18 @@ export const CommissionRulesTab: React.FC = () => {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-[#c34c36]' : ''}`} />
             <span>Làm mới</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setIsSnapshotModalOpen(true);
+              setSnapshotResult(null);
+            }}
+            className="px-3.5 py-2 text-xs font-bold bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+            title="Chốt snapshot hoa hồng lưu vết kế toán cho đơn hàng cũ"
+          >
+            <ShieldCheck className="w-4 h-4 text-indigo-600" />
+            <span>Snapshot Đơn Cũ</span>
           </button>
 
           <button
@@ -927,6 +969,107 @@ export const CommissionRulesTab: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal: Chụp Snapshot Hoa Hồng Cho Đơn Hàng Cũ */}
+      {isSnapshotModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 border border-slate-200 shadow-2xl text-[#24263e]">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center">
+                  <ShieldCheck className="w-5 h-5 text-indigo-700" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-sm text-slate-900">
+                    Bổ Sung Snapshot Hoa Hồng Đơn Cũ
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    POST /api/v1/admin/orders/{'{orderId}'}/commission-snapshot
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSnapshotModalOpen(false)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCaptureSnapshot} className="space-y-3.5 text-xs">
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700 block">Mã đơn hàng (Order ID) *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="VD: 550e8400-e29b-41d4-a716-446655440000"
+                  value={snapshotOrderId}
+                  onChange={(e) => setSnapshotOrderId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:border-indigo-600 outline-none"
+                />
+                <span className="text-[10px] text-slate-400">
+                  Dành cho đơn hàng cũ chưa có snapshot hoặc cần chốt lưu vết trước khi quyết toán.
+                </span>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700 block">Lý do bổ sung snapshot *</label>
+                <textarea
+                  rows={2}
+                  required
+                  value={snapshotReason}
+                  onChange={(e) => setSnapshotReason(e.target.value)}
+                  placeholder="Nhập lý do nghiệp vụ..."
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:border-indigo-600 outline-none"
+                />
+              </div>
+
+              {snapshotResult && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Đã ghi nhận snapshot hoa hồng thành công!</span>
+                  </div>
+                  <div className="text-[11px] font-mono pl-5">
+                    {snapshotResult.commissionAmount !== undefined && (
+                      <p>Hoa hồng: {formatVND(snapshotResult.commissionAmount)}</p>
+                    )}
+                    {snapshotResult.rate !== undefined && (
+                      <p>Tỷ lệ: {(Number(snapshotResult.rate) * 100).toFixed(1)}%</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsSnapshotModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer"
+                >
+                  Đóng
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCapturingSnapshot || !snapshotOrderId.trim()}
+                  className="px-4 py-2 bg-indigo-700 hover:bg-indigo-800 text-white font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {isCapturingSnapshot ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Đang chụp...</span>
+                    </>
+                  ) : (
+                    <span>Chốt Snapshot</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

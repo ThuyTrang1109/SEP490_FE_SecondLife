@@ -340,6 +340,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [selectedWardCode, setSelectedWardCode] = useState<number | ''>('');
   const [selectedWardName, setSelectedWardName] = useState<string>(currentUser.ward || currentUser.wardName || '');
   const [userStreetAddress, setUserStreetAddress] = useState<string>(currentUser.streetAddress || '');
+  const [userLatitude, setUserLatitude] = useState<number | null>(currentUser.latitude ?? null);
+  const [userLongitude, setUserLongitude] = useState<number | null>(currentUser.longitude ?? null);
 
   const [isLoadingUserProvinces, setIsLoadingUserProvinces] = useState(false);
   const [isLoadingUserDistricts, setIsLoadingUserDistricts] = useState(false);
@@ -580,6 +582,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       setPickupAddress(currentUser.pickupAddress || currentUser.address || '');
       setPickupLatitude(currentUser.latitude ?? null);
       setPickupLongitude(currentUser.longitude ?? null);
+      setUserLatitude(currentUser.latitude ?? null);
+      setUserLongitude(currentUser.longitude ?? null);
       const isInternalRole = ['admin', 'staff', 'inspector'].includes(currentUser.role);
       if (initialTab && !(isInternalRole && initialTab === 'settings')) {
         setActiveTab(initialTab);
@@ -606,6 +610,14 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             if (fresh.district) setSelectedDistrictName(fresh.district);
             if (fresh.ward) setSelectedWardName(fresh.ward);
             if (fresh.streetAddress) setUserStreetAddress(fresh.streetAddress);
+            if (fresh.latitude !== undefined && fresh.latitude !== null) {
+              setUserLatitude(fresh.latitude);
+              setPickupLatitude(fresh.latitude);
+            }
+            if (fresh.longitude !== undefined && fresh.longitude !== null) {
+              setUserLongitude(fresh.longitude);
+              setPickupLongitude(fresh.longitude);
+            }
             if (fresh.gender) {
               setGender(fresh.gender.toLowerCase() as 'male' | 'female' | 'other');
             } else if (!currentUser.gender) {
@@ -1473,7 +1485,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     setSaveError(null);
     setIsSaving(true);
 
-    const fullAddr = computeFullAddress() || address.trim();
+    const fullAddr = address || userStreetAddress.trim() || computeFullAddress();
 
     const updated: UserProfile = {
       ...currentUser,
@@ -1486,7 +1498,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       district: selectedDistrictName.trim() || undefined,
       ward: selectedWardName.trim() || undefined,
       wardName: selectedWardName.trim() || undefined,
-      streetAddress: userStreetAddress.trim() || undefined,
+      streetAddress: userStreetAddress.trim() || fullAddr || undefined,
+      latitude: userLatitude ?? pickupLatitude ?? currentUser?.latitude,
+      longitude: userLongitude ?? pickupLongitude ?? currentUser?.longitude,
+      pickupAddress: pickupAddress || fullAddr,
       avatar: avatarUrl || currentUser.avatar,
       gender: gender || undefined,
       birthday,
@@ -1512,9 +1527,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         province: selectedProvinceName.trim() || undefined,
         district: selectedDistrictName.trim() || undefined,
         ward: selectedWardName.trim() || undefined,
-        streetAddress: userStreetAddress.trim() || undefined,
-        latitude: pickupLatitude ?? null,
-        longitude: pickupLongitude ?? null,
+        streetAddress: userStreetAddress.trim() || fullAddr || undefined,
+        latitude: userLatitude ?? pickupLatitude ?? currentUser?.latitude ?? null,
+        longitude: userLongitude ?? pickupLongitude ?? currentUser?.longitude ?? null,
       });
 
       if (pickupLatitude && pickupLongitude) {
@@ -1583,26 +1598,25 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-2xl max-h-[92vh] overflow-hidden rounded-3xl bg-[#FFFFFF] border border-gray-200 shadow-2xl text-[#24263e] flex flex-col my-auto"
+        className="relative w-full max-w-5xl lg:max-w-6xl xl:max-w-7xl h-[95vh] sm:h-[92vh] max-h-[96vh] overflow-hidden rounded-3xl bg-[#FFFFFF] border border-gray-200/80 shadow-2xl text-[#24263e] flex flex-col my-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header Profile Cover */}
-        <div className="relative">
-          {/* Cover gradient banner */}
-          <div className="h-28 sm:h-32 bg-gradient-to-r from-[#1e2238] via-[#2d2a45] to-[#c34c36] rounded-t-3xl relative overflow-hidden">
-            {/* Ambient glows */}
-            <div className="absolute -top-12 -right-12 w-48 h-48 bg-[#c34c36]/30 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute -bottom-10 left-1/4 w-36 h-36 bg-[#fce5da]/20 rounded-full blur-2xl pointer-events-none" />
-
-            {/* Top Bar inside Cover */}
-            <div className="relative z-10 p-4 sm:p-5 flex items-center justify-between">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/40 backdrop-blur-md text-white text-[11px] font-semibold border border-white/15 shadow-xs">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span className="font-mono">
+        {/* Header Profile Section - Clean Modern White Design */}
+        <div className="bg-white rounded-t-3xl border-b border-slate-100 shrink-0">
+          {/* Top Bar: Title & Member ID on Left, Close on Right */}
+          <div className="px-6 sm:px-8 pt-4 pb-3 flex items-center justify-between border-b border-slate-100/80">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
+                {lang === 'vi' ? 'Hồ Sơ Tài Khoản' : 'Account Profile'}
+              </span>
+              <span className="text-slate-300 hidden sm:inline">•</span>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-50 text-slate-700 text-xs font-semibold border border-slate-200 shadow-2xs">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="font-mono text-[11px] text-slate-800">
                   {currentUser.id.length > 16
                     ? `ID: ${currentUser.id.slice(0, 8)}...${currentUser.id.slice(-6)}`
                     : `ID: ${currentUser.id}`}
@@ -1615,434 +1629,398 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     setTimeout(() => setCopiedId(false), 2000);
                   }}
                   title={lang === 'vi' ? 'Sao chép Member ID' : 'Copy Member ID'}
-                  className="ml-1 p-0.5 rounded hover:bg-white/20 text-white/80 hover:text-white transition cursor-pointer"
+                  className="ml-0.5 p-0.5 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition cursor-pointer"
                 >
-                  {copiedId ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  {copiedId ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
               </div>
-
-              {/* Close Button */}
-              <button
-                onClick={onClose}
-                aria-label="Close"
-                className="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white backdrop-blur-md transition cursor-pointer hover:rotate-90 duration-200"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
+
+            {/* Close Button */}
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition cursor-pointer hover:rotate-90 duration-200 border border-slate-200/60"
+            >
+              <X className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+            </button>
           </div>
-        </div>
 
-        {/* Profile Identity Bar - 100% on White Background (Zero Overlap Issues) */}
-        <div className="px-6 sm:px-8 pt-0 pb-2 bg-white">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          {/* Profile Identity Bar */}
+          <div className="px-6 sm:px-8 lg:px-10 py-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              {/* Left: Avatar + User Name & Role */}
+              <div className="flex items-center gap-4 sm:gap-5">
+                {/* Avatar with Camera upload overlay */}
+                <div className="relative group shrink-0">
+                  <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-2xl bg-gradient-to-tr from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center font-black text-2xl sm:text-3xl shadow-md border-2 border-white ring-2 ring-slate-100 overflow-hidden relative">
+                    {(avatarUrl || currentUser.avatar) && !imgError ? (
+                      <img
+                        src={avatarUrl || currentUser.avatar}
+                        alt={name || currentUser.name}
+                        className="w-full h-full object-cover"
+                        onError={() => setImgError(true)}
+                      />
+                    ) : (
+                      ((name && name !== 'string' ? name : currentUser.name && currentUser.name !== 'string' ? currentUser.name : 'U').charAt(0).toUpperCase())
+                    )}
+                  </div>
 
-            {/* Left: Avatar (overlaps banner cleanly) + User Name & Role */}
-            <div className="flex items-end gap-3.5 sm:gap-4">
-              {/* Avatar overlapping banner */}
-              <div className="relative group shrink-0 -mt-12 sm:-mt-14 z-20">
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-tr from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center font-black text-2xl sm:text-3xl shadow-xl ring-4 ring-white overflow-hidden bg-white relative">
-                  {(avatarUrl || currentUser.avatar) && !imgError ? (
-                    <img
-                      src={avatarUrl || currentUser.avatar}
-                      alt={name || currentUser.name}
-                      className="w-full h-full object-cover"
-                      onError={() => setImgError(true)}
-                    />
-                  ) : (
-                    ((name && name !== 'string' ? name : currentUser.name && currentUser.name !== 'string' ? currentUser.name : 'U').charAt(0).toUpperCase())
-                  )}
-                </div>
-
-                {/* Hidden File Input for Avatar upload */}
-                <input
-                  ref={avatarInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => handleFileUpload(e, 'avatar')}
-                />
-                <button
-                  type="button"
-                  onClick={() => avatarInputRef.current?.click()}
-                  disabled={uploadingField === 'avatar'}
-                  title={lang === 'vi' ? 'Thay đổi ảnh đại diện' : 'Change avatar'}
-                  className="absolute -bottom-1 -right-1 p-2 rounded-xl bg-white shadow-md border border-slate-200 text-slate-700 hover:text-[#c34c36] hover:scale-105 active:scale-95 transition cursor-pointer"
-                >
-                  {uploadingField === 'avatar' ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[#c34c36]" />
-                  ) : (
-                    <Camera className="w-3.5 h-3.5" />
-                  )}
-                </button>
-              </div>
-
-              {/* Name & Role Badge - completely readable on clean white */}
-              <div className="space-y-1.5 pb-0.5">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                    {name || currentUser.name}
-                  </h2>
-                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${roleInfo.className}`}
+                  {/* Hidden File Input for Avatar upload */}
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleFileUpload(e, 'avatar')}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={uploadingField === 'avatar'}
+                    title={lang === 'vi' ? 'Thay đổi ảnh đại diện' : 'Change avatar'}
+                    className="absolute -bottom-1 -right-1 p-1.5 rounded-lg bg-white shadow-md border border-slate-200 text-slate-700 hover:text-[#c34c36] hover:scale-105 active:scale-95 transition cursor-pointer"
                   >
-                    <span>{roleInfo.label}</span>
-                  </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                    SecondLife Member
-                  </span>
+                    {uploadingField === 'avatar' ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#c34c36]" />
+                    ) : (
+                      <Camera className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Name & Role Badges */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                      {name || currentUser.name}
+                    </h2>
+                    <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold border ${roleInfo.className}`}
+                    >
+                      <span>{roleInfo.label}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                      SecondLife Member
+                    </span>
+                  </div>
                 </div>
               </div>
+
+              {/* Right: Trust Badges */}
+              {currentUser.role !== 'buyer' && (
+                <div className="flex flex-row sm:flex-col items-start sm:items-end gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('security')}
+                    title={lang === 'vi' ? 'Xem chứng nhận định danh eKYC' : 'View eKYC certificate'}
+                    className="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-3.5 py-1.5 rounded-xl border border-emerald-200/80 font-bold text-xs shadow-2xs cursor-pointer transition active:scale-95"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span>{lang === 'vi' ? 'eKYC: Đã Xác Thực CCCD' : 'eKYC: ID Verified'}</span>
+                  </button>
+                  <div className="inline-flex items-center gap-1.5 bg-amber-50/90 text-slate-800 px-3.5 py-1.5 rounded-xl border border-amber-200/80 text-xs shadow-2xs">
+                    <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                    <span>{lang === 'vi' ? 'Điểm Uy Tín: ' : 'Trust Score: '}</span>
+                    <strong className="font-black text-amber-700">99/100</strong>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Right: Trust Badges */}
-            {currentUser.role !== 'buyer' && (
-              <div className="flex flex-row sm:flex-col items-start sm:items-end gap-1.5 w-full sm:w-auto pt-1 sm:pt-0">
+            {/* Tab Navigation - Pill Segmented Control Layout */}
+            <div className="mt-4">
+              <div className="p-1.5 bg-slate-100/90 rounded-2xl flex items-center justify-between gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none border border-slate-200/60">
                 <button
                   type="button"
-                  onClick={() => setActiveTab('security')}
-                  title={lang === 'vi' ? 'Xem chứng nhận định danh eKYC' : 'View eKYC certificate'}
-                  className="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-3 py-1 rounded-xl border border-emerald-200/80 font-bold text-xs shadow-xs cursor-pointer transition active:scale-95"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>{lang === 'vi' ? 'eKYC: Đã Xác Thực CCCD' : 'eKYC: ID Verified'}</span>
-                </button>
-                <div className="inline-flex items-center gap-1 bg-amber-50/90 text-slate-800 px-3 py-1 rounded-xl border border-amber-200/80 text-xs shadow-xs">
-                  <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                  <span>{lang === 'vi' ? 'Điểm Uy Tín: ' : 'Trust Score: '}</span>
-                  <strong className="font-black text-amber-700">99/100</strong>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Tab Navigation - Pill Segmented Control Layout: 4 Tabs */}
-          <div className="px-6 sm:px-8 mt-5">
-            <div className="p-1 sm:p-1.5 bg-slate-100/90 rounded-2xl flex items-center justify-between gap-1 sm:gap-1.5 overflow-x-auto scrollbar-none border border-slate-200/50">
-              <button
-                type="button"
-                onClick={() => setActiveTab('info')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                  activeTab === 'info'
-                    ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <User className={`w-4 h-4 shrink-0 ${activeTab === 'info' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                <span>{lang === 'vi' ? 'Cá Nhân' : 'Profile'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('wallet')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                  activeTab === 'wallet'
-                    ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <Wallet className={`w-4 h-4 shrink-0 ${activeTab === 'wallet' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                <span>{lang === 'vi' ? 'Ví Escrow' : 'Wallet'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('security')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                  activeTab === 'security' || activeTab === 'kyc'
-                    ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <Shield className={`w-4 h-4 shrink-0 ${activeTab === 'security' || activeTab === 'kyc' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                <span>{lang === 'vi' ? 'Bảo Mật' : 'Security'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('reports')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                  activeTab === 'reports'
-                    ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <AlertTriangle className={`w-4 h-4 shrink-0 ${activeTab === 'reports' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                <span>{lang === 'vi' ? 'Khiếu Nại' : 'Reports'}</span>
-              </button>
-
-              {!['admin', 'staff', 'inspector'].includes(currentUser.role) && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('settings')}
-                  className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                    activeTab === 'settings'
+                  onClick={() => setActiveTab('info')}
+                  className={`flex-1 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+                    activeTab === 'info'
                       ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                   }`}
                 >
-                  <Store className={`w-4 h-4 shrink-0 ${activeTab === 'settings' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                  <span>{lang === 'vi' ? 'Gian Hàng' : 'Store'}</span>
+                  <User className={`w-4 h-4 shrink-0 ${activeTab === 'info' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                  <span>{lang === 'vi' ? 'Cá Nhân' : 'Profile'}</span>
                 </button>
-              )}
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('wallet')}
+                  className={`flex-1 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+                    activeTab === 'wallet'
+                      ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                  }`}
+                >
+                  <Wallet className={`w-4 h-4 shrink-0 ${activeTab === 'wallet' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                  <span>{lang === 'vi' ? 'Ví Escrow' : 'Wallet'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('security')}
+                  className={`flex-1 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+                    activeTab === 'security' || activeTab === 'kyc'
+                      ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                  }`}
+                >
+                  <Shield className={`w-4 h-4 shrink-0 ${activeTab === 'security' || activeTab === 'kyc' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                  <span>{lang === 'vi' ? 'Bảo Mật' : 'Security'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('reports')}
+                  className={`flex-1 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+                    activeTab === 'reports'
+                      ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                  }`}
+                >
+                  <AlertTriangle className={`w-4 h-4 shrink-0 ${activeTab === 'reports' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                  <span>{lang === 'vi' ? 'Khiếu Nại' : 'Reports'}</span>
+                </button>
+
+                {!['admin', 'staff', 'inspector'].includes(currentUser.role) && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('settings')}
+                    className={`flex-1 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+                      activeTab === 'settings'
+                        ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                    }`}
+                  >
+                    <Store className={`w-4 h-4 shrink-0 ${activeTab === 'settings' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                    <span>{lang === 'vi' ? 'Gian Hàng' : 'Store'}</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
         {/* Tab Content Body */}
-        <div className="p-6 sm:p-8 flex-1 overflow-y-auto subtle-scrollbar">
+        <div className="p-6 sm:p-8 lg:p-10 flex-1 overflow-y-auto subtle-scrollbar">
           {/* TAB 1: THÔNG TIN CÁ NHÂN */}
           {activeTab === 'info' && (
-            <form onSubmit={handleSave} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                    {lang === 'vi' ? 'Họ và Tên' : 'Full Name'}
-                  </label>
-                  <div className="relative">
-                    <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      required
-                      placeholder={lang === 'vi' ? 'Nhập họ và tên' : 'Enter full name'}
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
-                    />
-                  </div>
-                </div>
+            <form onSubmit={handleSave} className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                {/* Left Column: Personal Information & Bank Card Preview (lg:col-span-5) */}
+                <div className="lg:col-span-5 space-y-4">
+                  <div className="bg-slate-50/70 p-4 sm:p-5 rounded-2xl border border-slate-200/90 space-y-4 shadow-2xs">
+                    <div className="border-b border-slate-200/80 pb-2">
+                      <h3 className="font-extrabold text-[#24263e] text-sm flex items-center gap-2">
+                        <User className="w-4 h-4 text-[#c34c36]" />
+                        <span>{lang === 'vi' ? 'Thông Tin Cá Nhân Cơ Bản' : 'Personal Information'}</span>
+                      </h3>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {lang === 'vi' ? 'Thông tin dùng để định danh tài khoản và liên hệ khi có giao dịch' : 'Details used for identification and transactions'}
+                      </p>
+                    </div>
 
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold text-slate-700 block">
-                      {lang === 'vi' ? 'Địa Chỉ Email' : 'Email Address'}
-                    </label>
-                    {currentUser.emailVerified ? (
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 inline-flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> {lang === 'vi' ? 'Đã xác thực' : 'Verified'}
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => onOpenVerifyEmail?.(email || currentUser.email)}
-                        className="text-[10px] font-bold text-[#c34c36] bg-[#fce5da]/50 hover:bg-[#fce5da] px-2 py-0.5 rounded-md border border-[#c34c36]/20 inline-flex items-center gap-1 cursor-pointer transition shadow-2xs"
-                      >
-                        <Mail className="w-3 h-3" /> {lang === 'vi' ? 'Xác thực OTP ngay' : 'Verify OTP now'}
-                      </button>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      placeholder="email@example.com"
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
-                    />
-                  </div>
-                </div>
+                    <div className="space-y-3.5">
+                      {/* Name */}
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 mb-1.5 block">
+                          {lang === 'vi' ? 'Họ và Tên' : 'Full Name'}
+                        </label>
+                        <div className="relative">
+                          <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            required
+                            placeholder={lang === 'vi' ? 'Nhập họ và tên' : 'Enter full name'}
+                            className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
+                          />
+                        </div>
+                      </div>
 
-                {currentRole !== 'admin' && (
-                  <>
-                    <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                    {lang === 'vi' ? 'Số Điện Thoại (Nhận mã OTP / Bưu tá gọi)' : 'Phone Number (OTP / Courier)'}
-                  </label>
-                  <div className="relative">
-                    <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      required
-                      placeholder="0912 345 678"
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
-                    />
-                  </div>
-                </div>
+                      {/* Email */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-xs font-bold text-slate-700 block">
+                            {lang === 'vi' ? 'Địa Chỉ Email' : 'Email Address'}
+                          </label>
+                          {currentUser.emailVerified ? (
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 inline-flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" /> {lang === 'vi' ? 'Đã xác thực' : 'Verified'}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => onOpenVerifyEmail?.(email || currentUser.email)}
+                              className="text-[10px] font-bold text-[#c34c36] bg-[#fce5da]/50 hover:bg-[#fce5da] px-2 py-0.5 rounded-md border border-[#c34c36]/20 inline-flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                            >
+                              <Mail className="w-3 h-3" /> {lang === 'vi' ? 'Xác thực OTP ngay' : 'Verify OTP now'}
+                            </button>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                            placeholder="email@example.com"
+                            className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
+                          />
+                        </div>
+                      </div>
 
-                <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                    {lang === 'vi' ? 'Ngày Sinh' : 'Date of Birth'}
-                  </label>
-                  <div className="relative">
-                    <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="date"
-                      value={birthday}
-                      onChange={(e) => setBirthday(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
-                    />
-                  </div>
-                </div>
-                </>
-                )}
-              </div>
+                      {/* Phone & Birthday */}
+                      {currentRole !== 'admin' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs font-bold text-slate-700 mb-1.5 block">
+                              {lang === 'vi' ? 'Số Điện Thoại' : 'Phone Number'}
+                            </label>
+                            <div className="relative">
+                              <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                              <input
+                                type="text"
+                                value={phone}
+                                onChange={(e) => setPhone(e.target.value)}
+                                required
+                                placeholder="0912 345 678"
+                                className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
+                              />
+                            </div>
+                          </div>
 
-              {currentRole !== 'admin' && (
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold text-slate-700">
-                      {lang === 'vi' ? 'Giới Tính' : 'Gender'}
-                    </label>
-                    {!gender && (
-                      <span className="text-[11px] text-slate-400 italic">
-                        {lang === 'vi' ? '(Chưa chọn)' : '(Unspecified)'}
-                      </span>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-3 gap-2.5 max-w-sm">
-                    {(['male', 'female', 'other'] as const).map((g) => {
-                      const isSelected = gender?.toLowerCase() === g;
-                      const labels = {
-                        male: lang === 'vi' ? 'Nam' : 'Male',
-                        female: lang === 'vi' ? 'Nữ' : 'Female',
-                        other: lang === 'vi' ? 'Khác' : 'Other',
-                      };
-                      return (
-                        <button
-                          key={g}
-                          type="button"
-                          onClick={() => setGender(isSelected ? '' : g)}
-                          className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                            isSelected
-                              ? 'bg-[#c34c36]/10 border-[#c34c36] text-[#c34c36] shadow-2xs font-black'
-                              : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                          }`}
-                        >
-                          <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-[#c34c36]' : 'bg-slate-300'}`} />
-                          <span>{labels[g]}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                          <div>
+                            <label className="text-xs font-bold text-slate-700 mb-1.5 block">
+                              {lang === 'vi' ? 'Ngày Sinh' : 'Date of Birth'}
+                            </label>
+                            <div className="relative">
+                              <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                              <input
+                                type="date"
+                                value={birthday}
+                                onChange={(e) => setBirthday(e.target.value)}
+                                className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
-              {/* Địa Chỉ Hành Chính 3 Cấp & Chi Tiết (Open API) */}
-              {currentRole !== 'admin' && (
-                <div className="p-3.5 bg-gradient-to-br from-[#faf8f5] to-orange-50/20 border border-slate-200 rounded-2xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <MapPin className="w-4 h-4 text-[#c34c36]" />
-                    <span>{lang === 'vi' ? 'Địa Chỉ Cư Trú / Nhận Hàng' : 'Residential / Delivery Address'}</span>
-                  </label>
-                  <span className="text-[10px] text-slate-400 font-medium">
-                    {lang === 'vi' ? 'Dữ liệu hành chính chuẩn (Open API)' : 'Standard administrative data'}
-                  </span>
-                </div>
-
-                {/* 3 Dropdown: Tỉnh / Quận / Phường */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      {lang === 'vi' ? 'Tỉnh / Thành Phố' : 'Province / City'} <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={selectedProvinceCode}
-                      onChange={handleUserProvinceChange}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition cursor-pointer"
-                    >
-                      <option value="">
-                        {isLoadingUserProvinces
-                          ? (lang === 'vi' ? 'Đang tải tỉnh/thành...' : 'Loading provinces...')
-                          : `-- ${lang === 'vi' ? 'Chọn Tỉnh / Thành' : 'Select Province'} --`}
-                      </option>
-                      {userProvinces.map((p) => (
-                        <option key={p.code} value={p.code}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      {lang === 'vi' ? 'Quận / Huyện' : 'District'} <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={selectedDistrictCode}
-                      onChange={handleUserDistrictChange}
-                      disabled={!selectedProvinceCode || isLoadingUserDistricts}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
-                    >
-                      <option value="">
-                        {isLoadingUserDistricts
-                          ? (lang === 'vi' ? 'Đang tải quận/huyện...' : 'Loading districts...')
-                          : !selectedProvinceCode
-                            ? (lang === 'vi' ? '-- Chọn tỉnh trước --' : '-- Select province first --')
-                            : `-- ${lang === 'vi' ? 'Chọn Quận / Huyện' : 'Select District'} --`}
-                      </option>
-                      {userDistricts.map((d) => (
-                        <option key={d.code} value={d.code}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      {lang === 'vi' ? 'Phường / Xã' : 'Ward / Commune'} <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={selectedWardCode}
-                      onChange={handleUserWardChange}
-                      disabled={!selectedDistrictCode || isLoadingUserWards}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
-                    >
-                      <option value="">
-                        {isLoadingUserWards
-                          ? (lang === 'vi' ? 'Đang tải phường/xã...' : 'Loading wards...')
-                          : !selectedDistrictCode
-                            ? (lang === 'vi' ? '-- Chọn quận trước --' : '-- Select district first --')
-                            : `-- ${lang === 'vi' ? 'Chọn Phường / Xã' : 'Select Ward'} --`}
-                      </option>
-                      {userWards.map((w) => (
-                        <option key={w.code} value={w.code}>
-                          {w.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Input Text: Số nhà, tên đường chi tiết */}
-                <div>
-                  <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                    {lang === 'vi' ? 'Số nhà, tên đường, ngõ ngách chi tiết' : 'Street address / House number'}
-                  </label>
-                  <input
-                    type="text"
-                    value={userStreetAddress}
-                    onChange={handleUserStreetAddressChange}
-                    placeholder={lang === 'vi' ? 'Ví dụ: Số 202, Đường số 8, Khu phố 6' : 'e.g. 202 Street 8'}
-                    className="w-full px-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
-                  />
-                </div>
-
-                {/* Xem trước địa chỉ hoàn chỉnh */}
-                {(computeFullAddress() || address) && (
-                  <div className="p-2.5 bg-white/80 rounded-xl border border-orange-200/60 flex items-start gap-2 text-xs">
-                    <MapPin className="w-3.5 h-3.5 text-[#c34c36] shrink-0 mt-0.5" />
-                    <div className="text-slate-700">
-                      <span className="font-bold text-slate-800">{lang === 'vi' ? 'Địa chỉ đầy đủ: ' : 'Full Address: '}</span>
-                      <span>{computeFullAddress() || address}</span>
+                      {/* Gender */}
+                      {currentRole !== 'admin' && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="text-xs font-bold text-slate-700">
+                              {lang === 'vi' ? 'Giới Tính' : 'Gender'}
+                            </label>
+                            {!gender && (
+                              <span className="text-[11px] text-slate-400 italic">
+                                {lang === 'vi' ? '(Chưa chọn)' : '(Unspecified)'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            {(['male', 'female', 'other'] as const).map((g) => {
+                              const isSelected = gender?.toLowerCase() === g;
+                              const labels = {
+                                male: lang === 'vi' ? 'Nam' : 'Male',
+                                female: lang === 'vi' ? 'Nữ' : 'Female',
+                                other: lang === 'vi' ? 'Khác' : 'Other',
+                              };
+                              return (
+                                <button
+                                  key={g}
+                                  type="button"
+                                  onClick={() => setGender(isSelected ? '' : g)}
+                                  className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                                    isSelected
+                                      ? 'bg-[#c34c36]/10 border-[#c34c36] text-[#c34c36] shadow-2xs font-black'
+                                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-[#c34c36]' : 'bg-slate-300'}`} />
+                                  <span>{labels[g]}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                )}
+
+                  {/* Quick Card: Bank & Wallet Status Summary */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/70 to-orange-50/50 border border-amber-200/80 flex items-center justify-between gap-3 shadow-2xs">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-orange-100 text-[#c34c36] flex items-center justify-center font-bold shrink-0">
+                        <Wallet className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 block">
+                          {lang === 'vi' ? 'Ví & Tài Khoản Ngân Hàng' : 'Wallet & Bank Account'}
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          {bankName && accountNumber
+                            ? `${bankName} •••• ${accountNumber.slice(-4)}`
+                            : (lang === 'vi' ? 'Chưa liên kết tài khoản nhận tiền' : 'No payout account linked')}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('wallet')}
+                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-orange-50 text-[#c34c36] border border-orange-200 font-bold text-xs shadow-2xs transition cursor-pointer shrink-0"
+                    >
+                      {lang === 'vi' ? 'Chi tiết ví →' : 'View wallet →'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right Column: Lalamove Leaflet Map Address Picker (lg:col-span-7) */}
+                <div className="lg:col-span-7 space-y-4">
+                  {currentRole !== 'admin' && (
+                    <div className="space-y-2">
+                      <LalamoveAddressPicker
+                        initialName={name || currentUser?.name || ''}
+                        initialPhone={phone || currentUser?.phone || ''}
+                        onNameChange={(val) => setName(val)}
+                        onPhoneChange={(val) => setPhone(val)}
+                        initialLatitude={userLatitude ?? undefined}
+                        initialLongitude={userLongitude ?? undefined}
+                        initialAddress={address || userStreetAddress || currentUser?.address || ''}
+                        onAddressConfirmed={(data) => {
+                          setUserLatitude(data.latitude);
+                          setUserLongitude(data.longitude);
+                          setAddress(data.address);
+                          setUserStreetAddress(data.address);
+                          setPickupLatitude(data.latitude);
+                          setPickupLongitude(data.longitude);
+                          setPickupAddress(data.address);
+                          if (data.city) {
+                            setSelectedProvinceName(data.city);
+                          }
+                          if (data.name && !name) setName(data.name);
+                          if (data.phone && !phone) setPhone(data.phone);
+                          saveSellerAddress(data.address, undefined, data.city);
+                        }}
+                        lang={lang}
+                        title={lang === 'vi' ? 'Địa Chỉ Cư Trú / Nhận Hàng Của Bạn' : 'Your Residential / Delivery Address'}
+                        description={lang === 'vi' ? 'Định vị GPS và ghim trên bản đồ để tự động đồng bộ khi mua hàng hoặc đăng ký bán hàng.' : 'Set GPS coordinates to auto-sync for checkout and selling.'}
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
-              )}
-
-
 
               {/* Action Buttons inside Tab 1 */}
-              <div className="pt-3 flex items-center justify-between border-t border-slate-100">
+              <div className="pt-4 flex items-center justify-between border-t border-slate-100">
                 <div>
                   {isSaved && (
                     <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 animate-in fade-in">

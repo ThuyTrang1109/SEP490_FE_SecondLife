@@ -102,7 +102,9 @@ export type EscrowStatus =
   | 'DELIVERED_INSPECTION_WINDOW'
   | 'COMPLETED_RELEASED'
   | 'DISPUTED'
-  | 'REFUNDED_TO_BUYER';
+  | 'REFUNDED_TO_BUYER'
+  | 'CANCELLED'
+  | 'CANCELED';
 
 export interface InspectionReport {
   id: string;

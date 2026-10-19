@@ -55,6 +55,9 @@ import {
   FolderPlus,
   Truck,
   Package,
+  CreditCard,
+  AlertTriangle,
+  XCircle,
 } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 import { Language, UserProfile, EscrowOrder, CategoryBackend, ItemBackend, ShipmentBackend } from '../types';
@@ -467,6 +470,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   const [assignEstimatedSlot, setAssignEstimatedSlot] = useState<string>('09:00 - 11:30 Sáng');
   const [assignNote, setAssignNote] = useState<string>('');
   const [isAssigning, setIsAssigning] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
 
   // --- Create Staff Modal State ---
   const [isCreateStaffModalOpen, setIsCreateStaffModalOpen] = useState(false);
@@ -977,7 +981,13 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   const stats = useMemo(() => {
     const total = orders.length;
     const pendingDispatch = orders.filter(
-      (o) => !o.inspectorId || o.status === 'CONFIRMED_PENDING_DISPATCH' || o.status === 'PENDING'
+      (o) =>
+        (!o.inspectorId || o.status === 'CONFIRMED_PENDING_DISPATCH' || o.status === 'PENDING') &&
+        o.status !== 'WAITING_FEE_PAYMENT' &&
+        o.status !== 'WAITING_SELLER_APPROVAL' &&
+        o.status !== 'WAITING_BUYER_APPROVAL' &&
+        o.status !== 'CANCELLED' &&
+        o.status !== 'CANCELED'
     ).length;
     const inspecting = orders.filter(
       (o) => o.status === 'INSPECTING' || o.status === 'DISPATCHED' || o.status === 'SCHEDULED'
@@ -1032,8 +1042,16 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     );
   }, [staffList, staffSearchTerm]);
 
+  // Auto-select first inspector if none selected when modal is open
+  useEffect(() => {
+    if (assignModalOrder && !selectedInspectorId && staffList.length > 0) {
+      setSelectedInspectorId(assignModalOrder.inspectorId || staffList[0].id);
+    }
+  }, [assignModalOrder, selectedInspectorId, staffList]);
+
   // Helper: Open Assign Modal
   const handleOpenAssign = (order: InspectionOrderDto) => {
+    setAssignError(null);
     setAssignModalOrder(order);
     setSelectedInspectorId(order.inspectorId || staffList[0]?.id || '');
     setAssignEstimatedSlot(
@@ -1046,8 +1064,24 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
   // Action: Submit Assign Inspector
   const handleConfirmAssign = async () => {
-    if (!assignModalOrder || !selectedInspectorId) {
-      showNotice('Vui lòng chọn kỹ thuật viên kiểm định');
+    setAssignError(null);
+    if (!assignModalOrder) return;
+
+    if (!selectedInspectorId) {
+      setAssignError('Vui lòng chọn kỹ thuật viên kiểm định từ danh sách trước khi xác nhận.');
+      return;
+    }
+
+    if (assignModalOrder.status !== 'CONFIRMED_PENDING_DISPATCH' && assignModalOrder.status !== 'PENDING') {
+      if (assignModalOrder.status === 'WAITING_FEE_PAYMENT') {
+        setAssignError(
+          'Đơn kiểm định này đang ở trạng thái "Chờ Người Mua Đóng Phí KĐ". Người mua cần vào mục Đơn hàng (/orders) bấm nút "Nộp Phí Kiểm Định" để nộp tiền cọc trước khi trung tâm có thể giao task.'
+        );
+      } else if (assignModalOrder.status === 'WAITING_SELLER_APPROVAL') {
+        setAssignError('Đơn kiểm định đang chờ Người bán xác nhận đồng ý yêu cầu kiểm định.');
+      } else {
+        setAssignError(`Đơn kiểm định đang ở trạng thái "${assignModalOrder.status}", chưa sẵn sàng để phân công KTV.`);
+      }
       return;
     }
 
@@ -1057,15 +1091,18 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       const inspectorObj = staffList.find((s) => s.id === selectedInspectorId);
       const inspectorName = inspectorObj?.fullName || 'Kỹ thuật viên';
 
-      showNotice(`Đã phân công đơn #${assignModalOrder.id.slice(0, 8)} cho KTV ${inspectorName} thành công!`);
+      showNotice(`Đã phân công đơn #${(assignModalOrder.id || '').slice(0, 8)} cho KTV ${inspectorName} thành công!`);
 
       setAssignModalOrder(null);
       setSelectedInspectorId('');
       setAssignNote('');
+      setAssignError(null);
       loadOrders();
       loadStaff();
     } catch (err: any) {
-      showNotice(err?.message || 'Giao task kiểm định thất bại. Vui lòng thử lại.');
+      console.error('Lỗi khi phân công KTV:', err);
+      const msg = err?.message || 'Giao task kiểm định thất bại. Vui lòng thử lại.';
+      setAssignError(msg);
     } finally {
       setIsAssigning(false);
     }
@@ -1139,6 +1176,64 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   // Status Badge Component
   const renderStatusBadge = (status: string) => {
     switch (status) {
+      case 'WAITING_SELLER_APPROVAL':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+            <Clock className="w-3 h-3 text-purple-600" />
+            Chờ Bán Duyệt
+          </span>
+        );
+      case 'WAITING_BUYER_APPROVAL':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+            <Clock className="w-3 h-3 text-purple-600" />
+            Chờ Mua Duyệt
+          </span>
+        );
+      case 'WAITING_FEE_PAYMENT':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+            <CreditCard className="w-3 h-3 text-amber-700" />
+            Chờ Đóng Phí KĐ
+          </span>
+        );
+      case 'PAYMENT_EXPIRED':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+            <AlertCircle className="w-3 h-3 text-slate-500" />
+            Hết Hạn Nộp Phí
+          </span>
+        );
+      case 'CONFIRMED_PENDING_DISPATCH':
+      case 'PENDING':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-orange-100 text-orange-900 border border-orange-300 animate-pulse">
+            <Clock className="w-3 h-3 text-orange-700" />
+            Sẵn Sàng Giao KTV
+          </span>
+        );
+      case 'DISPATCHED':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300">
+            <UserCheck className="w-3 h-3 text-indigo-600" />
+            Đã Giao KTV
+          </span>
+        );
+      case 'SHIPPING_TO_CENTER':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-300">
+            <Truck className="w-3 h-3 text-cyan-600" />
+            Đang Ship Về Hub
+          </span>
+        );
+      case 'INSPECTING':
+      case 'SCHEDULED':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
+            <Wrench className="w-3 h-3 text-blue-600" />
+            Đang Kiểm Tra
+          </span>
+        );
       case 'PASSED':
       case 'COMPLETED':
         return (
@@ -1155,28 +1250,33 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             Từ Chối / Fail
           </span>
         );
-      case 'INSPECTING':
-      case 'SCHEDULED':
+      case 'DELIVERING_TO_BUYER':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
-            <Wrench className="w-3 h-3 text-blue-600" />
-            Đang Kiểm Tra
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-100 text-teal-800 border border-teal-300">
+            <Truck className="w-3 h-3 text-teal-600" />
+            Đang Giao Cho Người Mua
           </span>
         );
-      case 'DISPATCHED':
+      case 'DISPUTED':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300">
-            <UserCheck className="w-3 h-3 text-indigo-600" />
-            Đã Giao KTV
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-yellow-100 text-yellow-800 border border-yellow-300">
+            <AlertTriangle className="w-3 h-3 text-yellow-600" />
+            Đang Khiếu Nại
           </span>
         );
-      case 'CONFIRMED_PENDING_DISPATCH':
-      case 'PENDING':
+      case 'CANCELLED':
+      case 'CANCELED':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-300">
+            <XCircle className="w-3 h-3 text-slate-500" />
+            Đã Hủy
+          </span>
+        );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-            <Clock className="w-3 h-3 text-amber-600" />
-            Chờ Giao Việc
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+            <Clock className="w-3 h-3 text-slate-500" />
+            {status || 'Chờ Xử Lý'}
           </span>
         );
     }
@@ -1766,7 +1866,15 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {orders
-                        .filter((o) => !o.inspectorId || o.status === 'CONFIRMED_PENDING_DISPATCH' || o.status === 'PENDING')
+                        .filter(
+                          (o) =>
+                            (!o.inspectorId || o.status === 'CONFIRMED_PENDING_DISPATCH' || o.status === 'PENDING') &&
+                            o.status !== 'CANCELLED' &&
+                            o.status !== 'CANCELED' &&
+                            o.status !== 'PASSED' &&
+                            o.status !== 'FAILED' &&
+                            o.status !== 'COMPLETED'
+                        )
                         .slice(0, 5).length === 0 ? (
                         <tr>
                           <td colSpan={6} className="py-8 text-center text-slate-400">
@@ -1775,35 +1883,64 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                         </tr>
                       ) : (
                         orders
-                          .filter((o) => !o.inspectorId || o.status === 'CONFIRMED_PENDING_DISPATCH' || o.status === 'PENDING')
+                          .filter(
+                            (o) =>
+                              (!o.inspectorId || o.status === 'CONFIRMED_PENDING_DISPATCH' || o.status === 'PENDING') &&
+                              o.status !== 'CANCELLED' &&
+                              o.status !== 'CANCELED' &&
+                              o.status !== 'PASSED' &&
+                              o.status !== 'FAILED' &&
+                              o.status !== 'COMPLETED'
+                          )
                           .slice(0, 5)
-                          .map((order, idx) => (
-                            <tr key={order.id} className="hover:bg-slate-50/60 transition">
-                              <td className="py-3 px-4 font-mono text-slate-400 text-[11px]">{idx + 1}</td>
-                              <td className="py-3 px-4">
-                                <div className="font-bold text-slate-900 truncate max-w-xs">{order.postTitle}</div>
-                                <div className="text-[10px] font-mono text-slate-400">ID: #{order.id.slice(0, 8)}</div>
-                              </td>
-                              <td className="py-3 px-4">
-                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700">
-                                  {order.orderType === 'AT_HOME' ? 'Tại Nhà Khách' : 'Tại Lab Hub'}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4 text-[11px] text-slate-600">
-                                <div>Bán: {order.sellerName || 'Người bán'}</div>
-                                <div>Mua: {order.buyerName || 'Khách mua'}</div>
-                              </td>
-                              <td className="py-3 px-4">{renderStatusBadge(order.status)}</td>
-                              <td className="py-3 px-4 text-right">
-                                <button
-                                  onClick={() => handleOpenAssign(order)}
-                                  className="px-3 py-1.5 rounded-lg bg-[#c34c36] hover:bg-[#a63f2d] text-white font-bold text-xs shadow-xs transition cursor-pointer"
-                                >
-                                  Giao Task Ngay
-                                </button>
-                              </td>
-                            </tr>
-                          ))
+                          .map((order, idx) => {
+                            const isReady = order.status === 'CONFIRMED_PENDING_DISPATCH' || order.status === 'PENDING';
+                            return (
+                              <tr key={order.id} className="hover:bg-slate-50/60 transition">
+                                <td className="py-3 px-4 font-mono text-slate-400 text-[11px]">{idx + 1}</td>
+                                <td className="py-3 px-4">
+                                  <div className="font-bold text-slate-900 truncate max-w-xs">{order.postTitle}</div>
+                                  <div className="text-[10px] font-mono text-slate-400">ID: #{(order.id || '').slice(0, 8)}</div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700">
+                                    {order.orderType === 'AT_HOME' ? 'Tại Nhà Khách' : 'Tại Lab Hub'}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-[11px] text-slate-600">
+                                  <div>Bán: {order.sellerName || 'Người bán'}</div>
+                                  <div>Mua: {order.buyerName || 'Khách mua'}</div>
+                                </td>
+                                <td className="py-3 px-4">{renderStatusBadge(order.status)}</td>
+                                <td className="py-3 px-4 text-right">
+                                  {isReady ? (
+                                    <button
+                                      onClick={() => handleOpenAssign(order)}
+                                      className="px-3 py-1.5 rounded-lg bg-[#c34c36] hover:bg-[#a63f2d] text-white font-bold text-xs shadow-xs transition cursor-pointer"
+                                    >
+                                      Giao Task Ngay
+                                    </button>
+                                  ) : order.status === 'WAITING_FEE_PAYMENT' ? (
+                                    <button
+                                      onClick={() => handleOpenAssign(order)}
+                                      className="px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-bold text-xs hover:bg-amber-100 transition cursor-pointer flex items-center gap-1 ml-auto"
+                                      title="Chờ người mua đóng phí cọc kiểm định"
+                                    >
+                                      <CreditCard className="w-3 h-3 text-amber-600" />
+                                      <span>Chờ Đóng Phí KĐ</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleOpenAssign(order)}
+                                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 font-semibold text-xs hover:bg-slate-200 transition cursor-pointer ml-auto"
+                                    >
+                                      Chi Tiết
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
                       )}
                     </tbody>
                   </table>
@@ -1887,11 +2024,14 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   >
                     <option value="ALL">-- Tất cả trạng thái --</option>
                     <option value="CONFIRMED_PENDING_DISPATCH">Chờ phân công KTV</option>
+                    <option value="WAITING_FEE_PAYMENT">Chờ nộp phí kiểm định</option>
+                    <option value="WAITING_SELLER_APPROVAL">Chờ người bán duyệt</option>
                     <option value="DISPATCHED">Đã phân công KTV</option>
                     <option value="INSPECTING">Đang kiểm tra</option>
                     <option value="PASSED">Đạt chuẩn (Passed)</option>
                     <option value="FAILED">Từ chối (Failed)</option>
                     <option value="COMPLETED">Đã hoàn tất</option>
+                    <option value="CANCELLED">Đã hủy</option>
                   </select>
                 </div>
               </div>
@@ -1987,18 +2127,38 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                 <Truck className="w-3.5 h-3.5 text-orange-600" />
                                 <span>Vận Đơn Hub</span>
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenAssign(ord)}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs ${
-                                  !ord.inspectorId
-                                    ? 'bg-[#c34c36] hover:bg-[#a63f2d] text-white'
-                                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                                }`}
-                              >
-                                <UserPlus className="w-3.5 h-3.5" />
-                                <span>{!ord.inspectorId ? 'Giao Task Ngay' : 'Đổi KTV'}</span>
-                              </button>
+                              {ord.status === 'CONFIRMED_PENDING_DISPATCH' || ord.status === 'PENDING' || ord.status === 'DISPATCHED' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAssign(ord)}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                                    !ord.inspectorId
+                                      ? 'bg-[#c34c36] hover:bg-[#a63f2d] text-white'
+                                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <UserPlus className="w-3.5 h-3.5" />
+                                  <span>{!ord.inspectorId ? 'Giao Task Ngay' : 'Đổi KTV'}</span>
+                                </button>
+                              ) : ord.status === 'WAITING_FEE_PAYMENT' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAssign(ord)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                                  title="Chờ người mua hoàn tất thanh toán cọc phí kiểm định"
+                                >
+                                  <CreditCard className="w-3.5 h-3.5 text-amber-600" />
+                                  <span>Chờ Đóng Phí KĐ</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAssign(ord)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold hover:bg-slate-200 transition cursor-pointer"
+                                >
+                                  <span>Chi Tiết</span>
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -2050,6 +2210,19 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     <UserPlus className="w-3.5 h-3.5" />
                     <span>+ Cấp Tài Khoản Mới</span>
                   </button>
+                </div>
+              </div>
+
+              {/* Informative Notice */}
+              <div className="mx-4 p-3 bg-blue-50/70 rounded-xl border border-blue-200/80 text-xs text-blue-900 flex items-start gap-2.5">
+                <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-bold text-blue-950">
+                    Phạm vi quản lý nhân sự ({filteredStaff.length} KTV trực thuộc Trung tâm)
+                  </div>
+                  <p className="text-[11px] text-blue-800 leading-relaxed">
+                    Hệ thống phân quyền hiển thị các Kỹ thuật viên do chính Trung tâm của bạn quản lý. Để thêm kỹ thuật viên mới cho trạm, vui lòng bấm nút <strong>"+ Cấp Tài Khoản Mới"</strong> bên trên.
+                  </p>
                 </div>
               </div>
 
@@ -3298,6 +3471,30 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               </div>
             </div>
 
+            {/* Warning if order is not ready for dispatch */}
+            {assignModalOrder.status === 'WAITING_FEE_PAYMENT' && (
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-300 text-xs text-amber-950 flex items-start gap-2.5">
+                <CreditCard className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-bold">Đơn hàng chưa hoàn tất nộp phí kiểm định</div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    Người mua cần thanh toán tiền cọc phí kiểm định & tiền ship trước khi trung tâm có thể giao task cho KTV. Khi người mua nộp phí thành công, đơn sẽ tự động chuyển sang trạng thái <strong>"Sẵn Sàng Giao KTV"</strong>.
+                  </p>
+                </div>
+              </div>
+            )}
+            {assignModalOrder.status === 'WAITING_SELLER_APPROVAL' && (
+              <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 text-xs text-purple-950 flex items-start gap-2.5">
+                <Clock className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-bold">Chờ người bán đồng ý kiểm định</div>
+                  <p className="text-[11px] text-purple-800 leading-relaxed">
+                    Người bán chưa xác nhận đồng ý yêu cầu kiểm định từ người mua.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Assign Fields */}
             <div className="space-y-4">
               {/* Select Inspector */}
@@ -3307,7 +3504,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     Chọn Kỹ Thuật Viên Phụ Trách: <strong className="text-rose-500">*</strong>
                   </span>
                   <span className="text-[11px] font-normal text-gray-500">
-                    ({staffList.length} nhân sự khả dụng)
+                    ({staffList.length} nhân sự trạm)
                   </span>
                 </label>
 
@@ -3326,21 +3523,29 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     trước.
                   </div>
                 ) : (
-                  <select
-                    value={selectedInspectorId}
-                    onChange={(e) => setSelectedInspectorId(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-semibold focus:outline-none focus:border-[#c34c36] bg-gray-50/50"
-                  >
-                    <option value="">-- Chọn kỹ thuật viên --</option>
-                    {staffList.map((st) => {
-                      const count = staffWorkloadMap[st.id] || 0;
-                      return (
-                        <option key={st.id} value={st.id}>
-                          {st.fullName} ({st.email}) — Đang có {count} task
-                        </option>
-                      );
-                    })}
-                  </select>
+                  <>
+                    <select
+                      value={selectedInspectorId}
+                      onChange={(e) => setSelectedInspectorId(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-semibold focus:outline-none focus:border-[#c34c36] bg-gray-50/50"
+                    >
+                      <option value="">-- Chọn kỹ thuật viên --</option>
+                      {staffList.map((st) => {
+                        const count = staffWorkloadMap[st.id] || 0;
+                        return (
+                          <option key={st.id} value={st.id}>
+                            {st.fullName} ({st.email}) — Đang có {count} task
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <p className="text-[11px] text-slate-500 flex items-center gap-1">
+                      <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>
+                        Danh sách hiển thị các KTV trực thuộc Trung tâm quản lý.
+                      </span>
+                    </p>
+                  </>
                 )}
               </div>
 
@@ -3370,27 +3575,73 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:outline-none focus:border-[#c34c36]"
                 />
               </div>
+              {/* Error Alert inside Modal */}
+              {assignError && (
+                <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-800 flex items-start gap-2.5 animate-in fade-in">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <div className="font-bold">Không Thể Xác Nhận Giao Task</div>
+                    <p className="text-[11px] leading-relaxed text-rose-700">{assignError}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Footer Buttons */}
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={() => setAssignModalOrder(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-100 transition cursor-pointer"
-              >
-                Hủy
-              </button>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-gray-100">
+              <div className="text-[11px] text-gray-500 font-medium">
+                {assignModalOrder.status === 'WAITING_FEE_PAYMENT' ? (
+                  <span className="text-amber-700 font-semibold flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    Chờ người mua nộp phí kiểm định
+                  </span>
+                ) : !selectedInspectorId ? (
+                  <span className="text-rose-600 font-semibold">
+                    * Vui lòng chọn KTV trước
+                  </span>
+                ) : (
+                  <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Sẵn sàng phân công
+                  </span>
+                )}
+              </div>
 
-              <button
-                type="button"
-                onClick={handleConfirmAssign}
-                disabled={isAssigning || !selectedInspectorId}
-                className="px-5 py-2.5 rounded-xl text-xs font-extrabold bg-[#c34c36] hover:bg-[#a63f2d] text-white transition flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
-              >
-                {isAssigning && <Loader2 className="w-4 h-4 animate-spin" />}
-                <span>Xác Nhận Giao Task Cho KTV</span>
-              </button>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssignModalOrder(null);
+                    setAssignError(null);
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-100 transition cursor-pointer"
+                >
+                  Hủy
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConfirmAssign}
+                  disabled={isAssigning}
+                  className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 cursor-pointer shadow-md ${
+                    isAssigning
+                      ? 'bg-gray-400 text-white cursor-not-allowed'
+                      : assignModalOrder.status !== 'CONFIRMED_PENDING_DISPATCH' && assignModalOrder.status !== 'PENDING'
+                      ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                      : !selectedInspectorId
+                      ? 'bg-gray-400 hover:bg-gray-500 text-white'
+                      : 'bg-[#c34c36] hover:bg-[#a63f2d] text-white'
+                  }`}
+                  title={
+                    assignModalOrder.status !== 'CONFIRMED_PENDING_DISPATCH' && assignModalOrder.status !== 'PENDING'
+                      ? 'Bấm để xem hướng dẫn hoàn tất nộp phí'
+                      : 'Xác nhận phân công KTV'
+                  }
+                >
+                  {isAssigning && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <span>Xác Nhận Giao Task Cho KTV</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

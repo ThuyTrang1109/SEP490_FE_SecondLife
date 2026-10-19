@@ -187,8 +187,8 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // BE Shipping & Pickup Address state
-  const [pickupLatitude, setPickupLatitude] = useState<number | null>(null);
-  const [pickupLongitude, setPickupLongitude] = useState<number | null>(null);
+  const [pickupLatitude, setPickupLatitude] = useState<number | null>(currentUser.latitude ?? null);
+  const [pickupLongitude, setPickupLongitude] = useState<number | null>(currentUser.longitude ?? null);
   const [provinces, setProvinces] = useState<GhnLocation[]>(FALLBACK_PROVINCES);
   const [wards, setWards] = useState<GhnLocation[]>([]);
   const [selectedProvinceId, setSelectedProvinceId] = useState<number | string | ''>('');
@@ -1885,7 +1885,11 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                   }}
                   lang={lang}
                   title={lang === 'vi' ? 'Địa Chỉ Kho Lấy Hàng Lalamove' : 'Lalamove Pickup Location'}
-                  description={lang === 'vi' ? 'Tài xế Lalamove sẽ đến địa chỉ này để nhận hàng vận chuyển đến Hub kiểm định hoặc người mua.' : 'Lalamove driver will pick up items at this location.'}
+                  description={
+                    currentUser.address || currentUser.pickupAddress || currentUser.streetAddress
+                      ? (lang === 'vi' ? 'Đã tự động đồng bộ từ địa chỉ hồ sơ của bạn. Có thể kéo ghim nếu kho lấy hàng ở vị trí khác.' : 'Synced from your profile. Drag pin if warehouse location is different.')
+                      : (lang === 'vi' ? 'Hồ sơ chưa có địa chỉ. Bấm "Dùng Vị Trí Hiện Tại" hoặc nhấp vào bản đồ để định vị kho lấy hàng.' : 'No profile address. Click "Use Current Location" or pick on map.')
+                  }
                 />
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

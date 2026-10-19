@@ -1041,6 +1041,40 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
   };
 
+  const [isRegeneratingAi, setIsRegeneratingAi] = useState(false);
+
+  const handleRegenerateWithAi = async () => {
+    if (!sessionId) {
+      showToast(lang === 'vi' ? 'Chưa có phiên hội thoại AI để viết lại.' : 'No active AI session to regenerate.');
+      return;
+    }
+    if ((credits?.chatCredits ?? 0) < 1) {
+      showToast(lang === 'vi' ? 'Bạn đã hết lượt dùng AI (cần 1 credit chat). Vui lòng nạp thêm credit.' : 'Out of AI chat credits.');
+      return;
+    }
+
+    setIsRegeneratingAi(true);
+    try {
+      const res = await aiChatService.regenerate(sessionId);
+      const newDesc = res?.description || (res as any)?.message || '';
+      if (newDesc) {
+        setDescription(cleanDescriptionFromQuestionTemplate(newDesc));
+      }
+      const newTitle = (res as any)?.title;
+      if (newTitle && newTitle.trim()) {
+        setTitle(newTitle.trim());
+      }
+      await loadCredits();
+      setApplySuccessNotice(lang === 'vi' ? '✨ Đã viết lại bài mô tả & tiêu đề mới bằng AI (-1 credit)!' : '✨ AI regenerated new title and description!');
+      setTimeout(() => setApplySuccessNotice(null), 5000);
+    } catch (err: any) {
+      console.warn('Lỗi AI viết lại bản nháp:', err);
+      showToast(err?.message || (lang === 'vi' ? 'Không thể viết lại bản nháp bằng AI' : 'Failed to regenerate with AI'));
+    } finally {
+      setIsRegeneratingAi(false);
+    }
+  };
+
   const [userChatCount, setUserChatCount] = useState<number>(0);
   const [isSessionCompleted, setIsSessionCompleted] = useState<boolean>(false);
 
@@ -2537,6 +2571,28 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                       </>
                     )}
                   </button>
+
+                  {sessionId && (
+                    <button
+                      type="button"
+                      onClick={handleRegenerateWithAi}
+                      disabled={isRegeneratingAi || isSubmittingAnswersToAi || (credits?.chatCredits ?? 0) < 1}
+                      className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-xl border border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-900 text-xs font-bold flex items-center justify-center gap-1.5 transition disabled:opacity-40 cursor-pointer whitespace-nowrap"
+                      title="Yêu cầu AI viết lại bản nháp mô tả theo phong cách khác (-1 credit AI)"
+                    >
+                      {isRegeneratingAi ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-700" />
+                          <span>Đang viết lại...</span>
+                        </>
+                      ) : (
+                        <>
+                          <RotateCcw className="w-3.5 h-3.5 text-indigo-700" />
+                          <span>Viết lại bản nháp AI</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -2581,7 +2637,25 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-[#24263e]">Mô tả chi tiết sản phẩm *</label>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-bold text-[#24263e]">Mô tả chi tiết sản phẩm *</label>
+                  {sessionId && (
+                    <button
+                      type="button"
+                      onClick={handleRegenerateWithAi}
+                      disabled={isRegeneratingAi || (credits?.chatCredits ?? 0) < 1}
+                      className="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-md border border-indigo-200 flex items-center gap-1 transition cursor-pointer disabled:opacity-40"
+                      title="AI viết lại bản nháp mô tả khác (-1 credit AI)"
+                    >
+                      {isRegeneratingAi ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <RotateCcw className="w-3 h-3" />
+                      )}
+                      <span>Viết lại bằng AI</span>
+                    </button>
+                  )}
+                </div>
                 <span className="text-[10px] text-slate-400">{description.length}/10.000 ký tự</span>
               </div>
               <textarea

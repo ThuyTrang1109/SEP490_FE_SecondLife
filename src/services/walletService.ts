@@ -1,6 +1,8 @@
 import { request } from './apiClient';
 import { UserWallet, DepositResponseDTO, DepositCreateRequestDTO, WalletTransaction } from '../types';
 
+export type WalletBackend = UserWallet;
+
 export const walletService = {
   /**
    * Lấy số dư và thông tin ví hiện tại của người dùng đang đăng nhập

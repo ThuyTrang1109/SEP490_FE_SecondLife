@@ -69,14 +69,39 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
   const [activeRoom, setActiveRoom] = useState<ChatRoomDto | null>(initialRoom || null);
 
-  // Role detection scoped to this specific listing / chat room
-  // Priority: 1. activeRoom IDs, 2. listing.sellerId
-  const isSeller = Boolean(
-    effectiveUserId && (
-      (activeRoom?.sellerId && effectiveUserId === String(activeRoom.sellerId)) ||
-      (!activeRoom?.sellerId && listing.sellerId && effectiveUserId === String(listing.sellerId))
-    )
+  // Sync activeRoom whenever initialRoom prop changes
+  useEffect(() => {
+    if (initialRoom) {
+      setActiveRoom(initialRoom);
+    }
+  }, [initialRoom]);
+
+  // Role detection scoped to this specific listing / chat room:
+  // An account with system role 'seller' can still be the BUYER when inquiring/buying another seller's listing!
+  const isExplicitBuyer = Boolean(
+    effectiveUserId && activeRoom?.buyerId && effectiveUserId === String(activeRoom.buyerId)
   );
+
+  const isExplicitSeller = Boolean(
+    effectiveUserId && activeRoom?.sellerId && effectiveUserId === String(activeRoom.sellerId)
+  );
+
+  const isListingSeller = Boolean(
+    effectiveUserId && listing?.sellerId && effectiveUserId === String(listing.sellerId)
+  );
+
+  const isListingBuyer = Boolean(
+    effectiveUserId && listing?.sellerId && effectiveUserId !== String(listing.sellerId)
+  );
+
+  // If user is explicitly the room's buyer, they CANNOT be seller!
+  // If user is inquiring on another seller's listing (listing.sellerId !== effectiveUserId), they are buyer!
+  const isSeller = isExplicitBuyer
+    ? false
+    : isExplicitSeller
+    ? true
+    : isListingSeller && !isListingBuyer;
+
   const isBuyer = !isSeller;
   const chatRole: 'seller' | 'buyer' = isSeller ? 'seller' : 'buyer';
 
@@ -281,11 +306,19 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             finalRoomId = room.id;
             if (isMounted) setActiveRoom(room);
           }
-        } else if (!activeRoom) {
-          // Fetch room details if only predefinedRoomId was passed
+        } else if (!activeRoom || !activeRoom.sellerId || !activeRoom.buyerId) {
+          // Fetch room details if only predefinedRoomId was passed or room lacks party IDs
           const room = await chatService.getRoom(listing.id).catch(() => null);
           if (room && isMounted) {
             setActiveRoom(room);
+          } else {
+            try {
+              const allRooms = await chatService.getChatRooms();
+              const matched = allRooms.find((r) => r.id === finalRoomId || r.postId === listing.id);
+              if (matched && isMounted) {
+                setActiveRoom(matched);
+              }
+            } catch {}
           }
         }
 
@@ -838,7 +871,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   const isExpired = false; // Note: EXPIRED is not in SystemOfferPayload
                   const isPending = offer.status === 'PENDING';
                   
-                  const isOfferSenderMe = currentUser?.id ? msg.senderId === currentUser.id : msg.senderId === chatRole;
+                  const isOfferSenderMe = Boolean(
+                    (effectiveUserId && msg.senderId && String(msg.senderId) === effectiveUserId) ||
+                    isBuyer
+                  );
+                  const showBuyerPerspective = isOfferSenderMe || isBuyer;
 
                   return (
                     <div key={msg.id} className="flex justify-center my-3 animate-fadeIn">
@@ -890,24 +927,24 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
                         <p className="text-[11px] text-slate-600 mb-2">
                           {isAccepted
-                            ? (isBuyer
+                            ? (showBuyerPerspective
                                 ? (lang === 'vi' ? 'Người bán đã chấp nhận mức giá này. Bạn có thể tiến hành đặt cọc qua Escrow ngay bây giờ!' : 'Seller accepted this offer. You can checkout now!')
                                 : (lang === 'vi' ? 'Bạn đã chấp nhận mức giá này. Đang chờ người mua tiến hành thanh toán qua Escrow.' : 'You accepted this offer. Waiting for buyer to checkout.'))
                             : isRejected
-                            ? (isBuyer
+                            ? (showBuyerPerspective
                                 ? (lang === 'vi' ? 'Mức giá đề xuất chưa phù hợp với người bán. Bạn có thể gửi lại mức giá khác hợp lý hơn.' : 'Offer was declined by seller. You can send another offer.')
                                 : (lang === 'vi' ? 'Bạn đã từ chối mức giá đề xuất này.' : 'You declined this offer.'))
                             : isCancelled
-                            ? (isBuyer
+                            ? (showBuyerPerspective
                                 ? (lang === 'vi' ? 'Bạn đã hủy yêu cầu thương lượng giá này.' : 'You cancelled this offer.')
                                 : (lang === 'vi' ? 'Người mua đã hủy yêu cầu thương lượng giá này.' : 'Buyer cancelled this offer.'))
-                            : isSeller
+                            : (!showBuyerPerspective && isSeller)
                             ? (lang === 'vi' ? 'Người mua gửi đề xuất giá cho sản phẩm của bạn. Vui lòng phản hồi:' : 'Buyer made an offer. Please respond:')
                             : (lang === 'vi' ? 'Đề xuất đã được gửi tới người bán, đang chờ phản hồi...' : 'Offer sent to seller, waiting for response...')}
                         </p>
 
                         {/* Action buttons inside System Offer Banner */}
-                        {isPending && isSeller && (
+                        {isPending && isSeller && !showBuyerPerspective && (
                           <div className="flex items-center justify-center gap-2 mt-2 pt-2 border-t border-amber-200/60">
                             <button
                               onClick={() => handleRespondOffer(offer.negotiationId, 'accepted')}
@@ -926,7 +963,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                           </div>
                         )}
 
-                        {isPending && isBuyer && (
+                        {isPending && showBuyerPerspective && (
                           <div className="mt-2 pt-2 border-t border-amber-200/60 flex justify-center">
                             <button
                               onClick={() => handleCancelOffer(offer.negotiationId)}
@@ -938,7 +975,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                           </div>
                         )}
 
-                        {isAccepted && isBuyer && (
+                        {isAccepted && showBuyerPerspective && (
                           <div className="mt-2 pt-2 border-t border-emerald-200 flex justify-center">
                             <button
                               onClick={() => handleBuyNow(offer.price, offer.negotiationId)}

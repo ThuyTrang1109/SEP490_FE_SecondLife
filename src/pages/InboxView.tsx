@@ -1,92 +1,136 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Listing, Language, UserRole, UserProfile } from '../types';
-import { MessageSquare, Clock, ChevronRight, Loader2 } from 'lucide-react';
-import { chatService, ChatRoomDto, parseSystemMessage, getStoredUser } from '../services';
+import { Listing, Language, UserRole, UserProfile, Negotiation } from '../types';
+import {
+  MessageSquare,
+  Clock,
+  ChevronRight,
+  Loader2,
+  Tag,
+  Check,
+  X,
+  RefreshCw,
+  ShoppingBag,
+  ArrowUpRight,
+  ArrowDownLeft,
+  CheckCircle2,
+  XCircle,
+  AlertCircle
+} from 'lucide-react';
+import {
+  chatService,
+  ChatRoomDto,
+  parseSystemMessage,
+  getStoredUser,
+  negotiationService
+} from '../services';
 import { formatVND } from '../utils/translations';
 
 interface InboxViewProps {
   listings: Listing[];
   currentRole: UserRole;
   lang: Language;
-  onOpenChat: (listing: Listing, roomId?: string, partnerName?: string, partnerAvatar?: string, room?: ChatRoomDto) => void;
+  onOpenChat: (
+    listing: Listing,
+    roomId?: string,
+    partnerName?: string,
+    partnerAvatar?: string,
+    room?: ChatRoomDto
+  ) => void;
   currentUser?: UserProfile | null;
 }
 
-export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lang, onOpenChat, currentUser }) => {
+export const InboxView: React.FC<InboxViewProps> = ({
+  listings,
+  currentRole,
+  lang,
+  onOpenChat,
+  currentUser,
+}) => {
+  const [activeTab, setActiveTab] = useState<'chats' | 'negotiations'>('chats');
   const [rooms, setRooms] = useState<ChatRoomDto[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Helper to determine role and partner information per room based on IDs
-  const getRoomPartnerInfo = useCallback((room: ChatRoomDto) => {
+  // Negotiations state
+  const [negotiationTab, setNegotiationTab] = useState<'seller' | 'buyer'>('seller');
+  const [sellerNegotiations, setSellerNegotiations] = useState<Negotiation[]>([]);
+  const [buyerNegotiations, setBuyerNegotiations] = useState<Negotiation[]>([]);
+  const [loadingNegotiations, setLoadingNegotiations] = useState<boolean>(false);
+  const [actionInProgressId, setActionInProgressId] = useState<string | null>(null);
+  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+
+  const showNotice = (msg: string) => {
+    setNoticeMessage(msg);
+    setTimeout(() => setNoticeMessage(null), 4000);
+  };
+
+  const isNameOfMe = useCallback((name?: string) => {
     const activeUser = currentUser || getStoredUser();
-    const currentUserId = activeUser?.id ? String(activeUser.id) : null;
-    const isMeSeller = Boolean(currentUserId && room.sellerId && currentUserId === String(room.sellerId));
-    const isMeBuyer = Boolean(currentUserId && room.buyerId && currentUserId === String(room.buyerId));
+    if (!name || !activeUser) return false;
+    const n = name.trim().toLowerCase();
+    const myName = (activeUser.fullName || activeUser.name || '').trim().toLowerCase();
+    const myEmail = (activeUser.email || '').trim().toLowerCase();
+    return (myName && n === myName) || (myEmail && n === myEmail);
+  }, [currentUser]);
 
-    let isRoomSeller = false;
-    if (isMeSeller) {
-      isRoomSeller = true;
-    } else if (isMeBuyer) {
-      isRoomSeller = false;
-    } else {
-      const foundListing = listings?.find((l) => l.id === room.postId);
-      if (foundListing?.sellerId && currentUserId && String(foundListing.sellerId) === currentUserId) {
+  // Helper to determine role and partner information per room based on IDs
+  const getRoomPartnerInfo = useCallback(
+    (room: ChatRoomDto) => {
+      const activeUser = currentUser || getStoredUser();
+      const currentUserId = activeUser?.id ? String(activeUser.id) : null;
+      const isMeSeller = Boolean(currentUserId && room.sellerId && currentUserId === String(room.sellerId));
+      const isMeBuyer = Boolean(currentUserId && room.buyerId && currentUserId === String(room.buyerId));
+
+      let isRoomSeller = false;
+      if (isMeSeller) {
         isRoomSeller = true;
+      } else if (isMeBuyer) {
+        isRoomSeller = false;
+      } else {
+        const foundListing = listings?.find((l) => l.id === room.postId);
+        if (foundListing?.sellerId && currentUserId && String(foundListing.sellerId) === currentUserId) {
+          isRoomSeller = true;
+        }
       }
-    }
 
-    const isNameOfMe = (name?: string) => {
-      if (!name || !activeUser) return false;
-      const n = name.trim().toLowerCase();
-      const myName = (activeUser.fullName || activeUser.name || '').trim().toLowerCase();
-      const myEmail = (activeUser.email || '').trim().toLowerCase();
-      return (myName && n === myName) || (myEmail && n === myEmail);
-    };
+      let partnerName: string;
+      let partnerAvatar: string;
+      let roleLabel: string;
 
-    let partnerName: string;
-    let partnerAvatar: string;
-    let roleLabel: string;
+      if (isRoomSeller) {
+        roleLabel = lang === 'vi' ? 'Người Mua' : 'Buyer';
+        partnerName =
+          (!isNameOfMe(room.buyerName) && room.buyerName) ||
+          (lang === 'vi' ? 'Khách Hàng' : 'Customer');
+        partnerAvatar =
+          room.buyerAvatar ||
+          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200';
+      } else {
+        roleLabel = lang === 'vi' ? 'Người Bán' : 'Seller';
+        partnerName =
+          (!isNameOfMe(room.sellerName) && room.sellerName) ||
+          (lang === 'vi' ? 'Người Bán' : 'Seller');
+        partnerAvatar =
+          room.sellerAvatar ||
+          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200';
+      }
 
-    if (isRoomSeller) {
-      roleLabel = lang === 'vi' ? 'Người Mua' : 'Buyer';
-      partnerName =
-        (!isNameOfMe(room.buyerName) && room.buyerName) ||
-        (lang === 'vi' ? 'Khách Hàng' : 'Customer');
-      partnerAvatar =
-        room.buyerAvatar ||
-        'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200';
-    } else {
-      roleLabel = lang === 'vi' ? 'Người Bán' : 'Seller';
-      partnerName =
-        (!isNameOfMe(room.sellerName) && room.sellerName) ||
-        (lang === 'vi' ? 'Người Bán' : 'Seller');
-      partnerAvatar =
-        room.sellerAvatar ||
-        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200';
-    }
-
-    return { isRoomSeller, partnerName, partnerAvatar, roleLabel };
-  }, [currentUser, listings, lang]);
+      return { isRoomSeller, partnerName, partnerAvatar, roleLabel };
+    },
+    [currentUser, listings, lang]
+  );
 
   // Fetch rooms from Backend API: GET /api/v1/chats
   const loadChatRooms = useCallback(async () => {
     try {
       const data = await chatService.getChatRooms();
       const rawRooms = Array.isArray(data) ? data : [];
-      // Deduplicate by composite key (postId + buyerId + sellerId) to prevent duplicated popups/lists
       const uniqueRooms = [];
       const seen = new Set();
       for (const r of rawRooms) {
-        // Filter out rooms that have no messages yet
         if (!r.lastMessage || r.lastMessage.trim() === '') {
           continue;
         }
-
-        // Fallback to room.id if any essential field is missing, though they shouldn't be
-        const key = r.postId && r.buyerId && r.sellerId 
-          ? `${r.postId}_${r.buyerId}_${r.sellerId}` 
-          : r.id;
-          
+        const key = r.postId && r.buyerId && r.sellerId ? `${r.postId}_${r.buyerId}_${r.sellerId}` : r.id;
         if (!seen.has(key)) {
           seen.add(key);
           uniqueRooms.push(r);
@@ -100,35 +144,54 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
     }
   }, []);
 
+  // Fetch negotiations from Backend API: GET /api/v1/negotiations/seller & buyer
+  const loadNegotiations = useCallback(async () => {
+    setLoadingNegotiations(true);
+    try {
+      const [sellerRes, buyerRes] = await Promise.allSettled([
+        negotiationService.getSellerNegotiations(0, 50),
+        negotiationService.getBuyerNegotiations(0, 50),
+      ]);
+      if (sellerRes.status === 'fulfilled') {
+        setSellerNegotiations(sellerRes.value.content || []);
+      }
+      if (buyerRes.status === 'fulfilled') {
+        setBuyerNegotiations(buyerRes.value.content || []);
+      }
+    } catch (err) {
+      console.warn('Failed to load negotiations:', err);
+    } finally {
+      setLoadingNegotiations(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadChatRooms();
+    loadNegotiations();
 
-    // Subscribe to WebSocket for incoming messages to refresh inbox in real-time
     chatService.connectWebSocket();
     const unsubscribe = chatService.subscribeToMessages(() => {
       loadChatRooms();
     });
 
-    // Also poll gently every 10 seconds as backup
-    const intervalId = setInterval(loadChatRooms, 10000);
+    const intervalId = setInterval(loadChatRooms, 15000);
 
     return () => {
       unsubscribe();
       clearInterval(intervalId);
     };
-  }, [loadChatRooms]);
+  }, [loadChatRooms, loadNegotiations]);
 
   const handleSelectRoom = (room: ChatRoomDto) => {
     const { partnerName, partnerAvatar } = getRoomPartnerInfo(room);
     const found = listings?.find((l) => l.id === room.postId);
 
-    // Otherwise create fallback Listing object from ChatRoom metadata
     const targetListing: Listing = found
       ? {
           ...found,
-          sellerId: found.sellerId || room.sellerId,
-          sellerName: found.sellerName || room.sellerName || 'Người Bán',
-          sellerAvatar: found.sellerAvatar || room.sellerAvatar
+          sellerId: room.sellerId || found.sellerId,
+          sellerName: (room.sellerName && !isNameOfMe(room.sellerName) ? room.sellerName : found.sellerName) || 'Người Bán',
+          sellerAvatar: room.sellerAvatar || found.sellerAvatar,
         }
       : ({
           id: room.postId,
@@ -136,14 +199,18 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
           brand: 'Chính hãng',
           priceVnd: 500000,
           description: 'Thông tin sản phẩm trong cuộc hội thoại',
-          category: 'Điều hòa & Máy lọc',
+          category: 'Thiết bị gia dụng',
           sellerId: room.sellerId,
           sellerName: room.sellerName || 'Người bán',
           location: 'Hồ Chí Minh',
           status: 'active',
           photos: {
-            front: room.postImageUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-            back: room.postImageUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+            front:
+              room.postImageUrl ||
+              'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+            back:
+              room.postImageUrl ||
+              'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
             screenOrDetails: '',
             accessoriesOrBox: '',
             serialOrReceipt: '',
@@ -152,6 +219,108 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
         } as unknown as Listing);
 
     onOpenChat(targetListing, room.id, partnerName, partnerAvatar, room);
+  };
+
+  const handleOpenChatForNegotiation = (neg: Negotiation) => {
+    const found = listings?.find((l) => l.id === neg.postId);
+    const targetListing: Listing = found
+      ? {
+          ...found,
+          sellerId: neg.sellerId || found.sellerId,
+          sellerName: found.sellerName || 'Người Bán',
+          priceVnd: found.priceVnd || neg.offeredPrice,
+        }
+      : ({
+          id: neg.postId,
+          title: neg.postTitle || 'Sản phẩm thương lượng',
+          brand: 'Chính hãng',
+          priceVnd: neg.offeredPrice,
+          description: 'Sản phẩm đang được trao đổi thương lượng giá',
+          category: 'Thiết bị gia dụng',
+          sellerId: neg.sellerId,
+          status: 'active',
+          photos: {
+            front: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+            back: '',
+            screenOrDetails: '',
+            accessoriesOrBox: '',
+            serialOrReceipt: '',
+          },
+          createdAt: neg.createdAt || new Date().toISOString(),
+        } as unknown as Listing);
+
+    const matchedRoom = rooms.find((r) =>
+      r.postId === neg.postId &&
+      (neg.buyerId ? String(r.buyerId) === String(neg.buyerId) : true) &&
+      (neg.sellerId ? String(r.sellerId) === String(neg.sellerId) : true)
+    ) || rooms.find((r) => r.postId === neg.postId);
+
+    const activeUser = currentUser || getStoredUser();
+    const currentUserId = activeUser?.id ? String(activeUser.id) : null;
+    const isMeSeller = Boolean(currentUserId && neg.sellerId && currentUserId === String(neg.sellerId));
+    const partnerName = isMeSeller ? 'Người Mua' : (matchedRoom?.sellerName || targetListing.sellerName || 'Người Bán');
+    const partnerAvatar = isMeSeller ? matchedRoom?.buyerAvatar : (matchedRoom?.sellerAvatar || targetListing.sellerAvatar);
+
+    const roomToPass: ChatRoomDto | undefined = matchedRoom || (neg.sellerId && neg.buyerId ? {
+      id: '',
+      postId: neg.postId,
+      postTitle: neg.postTitle,
+      buyerId: neg.buyerId,
+      sellerId: neg.sellerId,
+      lastMessage: '',
+      updatedAt: neg.createdAt
+    } : undefined);
+
+    onOpenChat(targetListing, matchedRoom?.id, partnerName, partnerAvatar, roomToPass);
+  };
+
+  const handleAcceptNegotiation = async (id: string) => {
+    setActionInProgressId(id);
+    try {
+      const updated = await negotiationService.acceptNegotiation(id);
+      setSellerNegotiations((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, status: updated?.status || 'ACCEPTED' } : item))
+      );
+      showNotice(
+        lang === 'vi'
+          ? '🎉 Đã chấp thuận đề xuất giá! Người mua có thể thanh toán theo mức giá này.'
+          : '🎉 Accepted price offer!'
+      );
+    } catch (err: any) {
+      showNotice(err?.message || (lang === 'vi' ? 'Có lỗi khi chấp thuận đề xuất' : 'Failed to accept offer'));
+    } finally {
+      setActionInProgressId(null);
+    }
+  };
+
+  const handleRejectNegotiation = async (id: string) => {
+    setActionInProgressId(id);
+    try {
+      const updated = await negotiationService.rejectNegotiation(id);
+      setSellerNegotiations((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, status: updated?.status || 'REJECTED' } : item))
+      );
+      showNotice(lang === 'vi' ? '❌ Đã từ chối đề xuất giá.' : 'Rejected price offer.');
+    } catch (err: any) {
+      showNotice(err?.message || (lang === 'vi' ? 'Có lỗi khi từ chối đề xuất' : 'Failed to reject offer'));
+    } finally {
+      setActionInProgressId(null);
+    }
+  };
+
+  const handleCancelNegotiation = async (id: string) => {
+    setActionInProgressId(id);
+    try {
+      const updated = await negotiationService.cancelNegotiation(id);
+      setBuyerNegotiations((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, status: updated?.status || 'CANCELLED' } : item))
+      );
+      showNotice(lang === 'vi' ? 'Đã hủy bỏ yêu cầu thương lượng giá.' : 'Cancelled price offer.');
+    } catch (err: any) {
+      showNotice(err?.message || (lang === 'vi' ? 'Có lỗi khi hủy đề xuất' : 'Failed to cancel offer'));
+    } finally {
+      setActionInProgressId(null);
+    }
   };
 
   const formatLastMessage = (rawText?: string) => {
@@ -176,119 +345,390 @@ export const InboxView: React.FC<InboxViewProps> = ({ listings, currentRole, lan
     return rawText;
   };
 
-  if (loading) {
-    return (
-      <div className="max-w-3xl mx-auto py-16 text-center flex flex-col items-center justify-center gap-3">
-        <Loader2 className="w-8 h-8 text-[#c34c36] animate-spin" />
-        <p className="text-sm font-semibold text-slate-500">
-          {lang === 'vi' ? 'Đang tải hộp thư trò chuyện...' : 'Loading inbox messages...'}
-        </p>
-      </div>
-    );
-  }
-
-  if (rooms.length === 0) {
-    return (
-      <div className="max-w-3xl mx-auto pb-16">
-        <div className="bg-[#FFFFFF] rounded-3xl p-12 border border-slate-200 shadow-sm text-center flex flex-col items-center justify-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-slate-50 text-slate-300 flex items-center justify-center">
-            <MessageSquare className="w-8 h-8" />
-          </div>
-          <h2 className="text-xl font-bold text-[#24263e]">
-            {lang === 'vi' ? 'Hộp thư trống' : 'Empty Inbox'}
-          </h2>
-          <p className="text-sm text-slate-500 max-w-sm mx-auto">
-            {lang === 'vi'
-              ? 'Bạn chưa có cuộc trò chuyện nào. Khi bạn liên hệ người bán hoặc có người gửi tin nhắn về bài đăng của bạn, tin nhắn sẽ xuất hiện tại đây theo thời gian thực.'
-              : 'You have no conversations yet. When someone messages you or you contact a seller, messages will appear here in real-time.'}
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const pendingSellerCount = sellerNegotiations.filter((n) => n.status === 'PENDING').length;
+  const pendingBuyerCount = buyerNegotiations.filter((n) => n.status === 'PENDING').length;
+  const currentNegotiationList = negotiationTab === 'seller' ? sellerNegotiations : buyerNegotiations;
 
   return (
     <div className="max-w-4xl mx-auto pb-16">
+      {noticeMessage && (
+        <div className="mb-4 p-3.5 rounded-2xl bg-slate-900 text-white text-xs font-bold shadow-lg animate-in fade-in flex items-center justify-between">
+          <span>{noticeMessage}</span>
+          <button onClick={() => setNoticeMessage(null)} className="text-slate-400 hover:text-white cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       <div className="bg-[#FFFFFF] rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-6 border-b border-slate-100 bg-[#faf8f5] flex items-center justify-between">
+        {/* Main Header with Navigation Tabs */}
+        <div className="p-6 border-b border-slate-100 bg-[#faf8f5] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-[#24263e] flex items-center gap-2">
               <MessageSquare className="w-5 h-5 text-[#c34c36]" />
-              {lang === 'vi' ? 'Hộp thư đàm phán & Chat' : 'Negotiation & Chat Inbox'}
+              {lang === 'vi' ? 'Hộp thư đàm phán & Trò chuyện' : 'Negotiation & Chat Inbox'}
             </h2>
-            <p className="text-sm text-slate-500 mt-1">
+            <p className="text-xs text-slate-500 mt-1">
               {lang === 'vi'
-                ? 'Quản lý các cuộc trao đổi và tiến trình đàm phán giá qua WebSocket thời gian thực.'
-                : 'Manage real-time conversations and price negotiation progress.'}
+                ? 'Theo dõi trao đổi tin nhắn trực tiếp và các đề xuất mặc cả giá sản phẩm.'
+                : 'Track direct conversations and buyer price negotiations.'}
             </p>
           </div>
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Real-time</span>
+
+          {/* Tab Switcher: Chats vs Negotiations */}
+          <div className="flex items-center bg-slate-200/70 p-1 rounded-2xl shrink-0 self-start sm:self-center">
+            <button
+              onClick={() => setActiveTab('chats')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                activeTab === 'chats'
+                  ? 'bg-white text-[#24263e] shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>{lang === 'vi' ? 'Cuộc trò chuyện' : 'Conversations'}</span>
+              {rooms.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-slate-100 text-[10px] text-slate-700">
+                  {rooms.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('negotiations')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                activeTab === 'negotiations'
+                  ? 'bg-white text-[#c34c36] shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Tag className="w-4 h-4" />
+              <span>{lang === 'vi' ? 'Đàm phán giá' : 'Negotiations'}</span>
+              {pendingSellerCount + pendingBuyerCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-[#c34c36] text-white text-[10px] font-black">
+                  {pendingSellerCount + pendingBuyerCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
-        <div className="divide-y divide-slate-100">
-          {rooms.map((room) => {
-            const { isRoomSeller, partnerName, partnerAvatar, roleLabel } = getRoomPartnerInfo(room);
-
-            const timeStr = room.updatedAt
-              ? new Date(room.updatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-              : '';
-
-            return (
-              <div
-                key={room.id}
-                onClick={() => handleSelectRoom(room)}
-                className="p-4 sm:p-6 hover:bg-slate-50 transition cursor-pointer flex flex-col sm:flex-row gap-4 items-start sm:items-center group"
-              >
-                <div className="relative shrink-0">
-                  <img
-                    src={partnerAvatar}
-                    alt={partnerName || 'User Avatar'}
-                    className="w-16 h-16 rounded-xl object-cover border border-slate-200"
-                  />
-                  <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-[#c34c36] text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ring-2 ring-white">
-                    <MessageSquare className="w-3 h-3" />
-                  </div>
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <h3 className="text-sm font-bold text-[#24263e] truncate">
-                      {room.postTitle || 'Sản phẩm đăng bán'}
-                    </h3>
-                    {timeStr && (
-                      <span className="text-[10px] font-medium text-slate-400 shrink-0 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {timeStr}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2 text-xs mb-1.5">
-                    <span className={`px-2 py-0.5 rounded-md font-semibold truncate max-w-[200px] ${
-                      isRoomSeller
-                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                        : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                    }`}>
-                      {roleLabel}: {partnerName}
-                    </span>
-                  </div>
-
-                  <p className="text-sm text-slate-500 truncate">
-                    {formatLastMessage(room.lastMessage)}
-                  </p>
-                </div>
-
-                <div className="shrink-0 text-slate-300 group-hover:text-[#c34c36] transition-colors">
-                  <ChevronRight className="w-5 h-5" />
-                </div>
+        {/* TAB 1: CHATS LIST */}
+        {activeTab === 'chats' && (
+          <div>
+            {loading ? (
+              <div className="py-16 text-center flex flex-col items-center justify-center gap-3">
+                <Loader2 className="w-8 h-8 text-[#c34c36] animate-spin" />
+                <p className="text-sm font-semibold text-slate-500">
+                  {lang === 'vi' ? 'Đang tải hộp thư trò chuyện...' : 'Loading inbox messages...'}
+                </p>
               </div>
-            );
-          })}
-        </div>
+            ) : rooms.length === 0 ? (
+              <div className="p-12 text-center flex flex-col items-center justify-center space-y-3">
+                <div className="w-16 h-16 rounded-full bg-slate-50 text-slate-300 flex items-center justify-center">
+                  <MessageSquare className="w-8 h-8" />
+                </div>
+                <h3 className="text-base font-bold text-[#24263e]">
+                  {lang === 'vi' ? 'Chưa có cuộc trò chuyện nào' : 'No conversations yet'}
+                </h3>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  {lang === 'vi'
+                    ? 'Khi bạn nhắn tin với người bán hoặc có khách hỏi mua sản phẩm của bạn, tin nhắn sẽ hiển thị tại đây theo thời gian thực.'
+                    : 'When you message a seller or buyers ask about your items, conversations will appear here.'}
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {rooms.map((room) => {
+                  const { isRoomSeller, partnerName, partnerAvatar, roleLabel } = getRoomPartnerInfo(room);
+                  const timeStr = room.updatedAt
+                    ? new Date(room.updatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                    : '';
+
+                  return (
+                    <div
+                      key={room.id}
+                      onClick={() => handleSelectRoom(room)}
+                      className="p-4 sm:p-5 hover:bg-slate-50 transition cursor-pointer flex flex-col sm:flex-row gap-4 items-start sm:items-center group"
+                    >
+                      <div className="relative shrink-0">
+                        <img
+                          src={partnerAvatar}
+                          alt={partnerName || 'User Avatar'}
+                          className="w-14 h-14 rounded-2xl object-cover border border-slate-200"
+                        />
+                        <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-[#c34c36] text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ring-2 ring-white">
+                          <MessageSquare className="w-3 h-3" />
+                        </div>
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <h3 className="text-sm font-bold text-[#24263e] truncate">
+                            {room.postTitle || 'Sản phẩm đăng bán'}
+                          </h3>
+                          {timeStr && (
+                            <span className="text-[10px] font-medium text-slate-400 shrink-0 flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {timeStr}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 text-xs mb-1">
+                          <span
+                            className={`px-2 py-0.5 rounded-md font-bold text-[11px] truncate max-w-[200px] ${
+                              isRoomSeller
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                            }`}
+                          >
+                            {roleLabel}: {partnerName}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-slate-500 truncate">{formatLastMessage(room.lastMessage)}</p>
+                      </div>
+
+                      <div className="shrink-0 text-slate-300 group-hover:text-[#c34c36] transition-colors">
+                        <ChevronRight className="w-5 h-5" />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 2: NEGOTIATIONS LIST */}
+        {activeTab === 'negotiations' && (
+          <div>
+            {/* Sub-bar: Seller vs Buyer */}
+            <div className="px-6 py-3 bg-slate-50/80 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setNegotiationTab('seller')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    negotiationTab === 'seller'
+                      ? 'bg-[#24263e] text-white shadow-2xs'
+                      : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
+                  }`}
+                >
+                  <ArrowDownLeft className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? 'Đề xuất nhận được (Người bán)' : 'Received Offers (Seller)'}</span>
+                  {pendingSellerCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] font-black">
+                      {pendingSellerCount}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setNegotiationTab('buyer')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    negotiationTab === 'buyer'
+                      ? 'bg-[#24263e] text-white shadow-2xs'
+                      : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
+                  }`}
+                >
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? 'Đề xuất đã gửi (Người mua)' : 'Sent Offers (Buyer)'}</span>
+                  {pendingBuyerCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] font-black">
+                      {pendingBuyerCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              <button
+                onClick={loadNegotiations}
+                disabled={loadingNegotiations}
+                className="px-2.5 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                title="Tải lại danh sách đàm phán"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingNegotiations ? 'animate-spin' : ''}`} />
+                <span>{lang === 'vi' ? 'Làm mới' : 'Refresh'}</span>
+              </button>
+            </div>
+
+            {loadingNegotiations ? (
+              <div className="py-16 text-center flex flex-col items-center justify-center gap-3">
+                <Loader2 className="w-8 h-8 text-[#c34c36] animate-spin" />
+                <p className="text-sm font-semibold text-slate-500">
+                  {lang === 'vi' ? 'Đang tải danh sách thương lượng...' : 'Loading negotiations...'}
+                </p>
+              </div>
+            ) : currentNegotiationList.length === 0 ? (
+              <div className="p-12 text-center flex flex-col items-center justify-center space-y-3">
+                <div className="w-16 h-16 rounded-full bg-slate-50 text-slate-300 flex items-center justify-center">
+                  <Tag className="w-8 h-8" />
+                </div>
+                <h3 className="text-base font-bold text-[#24263e]">
+                  {negotiationTab === 'seller'
+                    ? lang === 'vi'
+                      ? 'Chưa có đề xuất mặc cả nào gửi đến bạn'
+                      : 'No offers received'
+                    : lang === 'vi'
+                      ? 'Bạn chưa gửi đề xuất giá nào cho người bán'
+                      : 'You have not made any price offers'}
+                </h3>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  {lang === 'vi'
+                    ? 'Tính năng mặc cả cho phép hai bên thỏa thuận mức giá hợp lý trước khi tiến hành đặt hàng.'
+                    : 'Negotiations allow buyers and sellers to agree on a fair price before ordering.'}
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {currentNegotiationList.map((neg) => {
+                  const foundListing = listings?.find((l) => l.id === neg.postId);
+                  const isActionLoading = actionInProgressId === neg.id;
+
+                  const statusConfig = {
+                    PENDING: {
+                      label: lang === 'vi' ? 'Chờ phản hồi' : 'Pending',
+                      color: 'bg-amber-50 text-amber-800 border-amber-200',
+                      icon: Clock,
+                    },
+                    ACCEPTED: {
+                      label: lang === 'vi' ? 'Đã đồng ý giá' : 'Accepted',
+                      color: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+                      icon: CheckCircle2,
+                    },
+                    REJECTED: {
+                      label: lang === 'vi' ? 'Đã từ chối' : 'Rejected',
+                      color: 'bg-rose-50 text-rose-800 border-rose-200',
+                      icon: XCircle,
+                    },
+                    CANCELLED: {
+                      label: lang === 'vi' ? 'Đã hủy' : 'Cancelled',
+                      color: 'bg-slate-100 text-slate-600 border-slate-200',
+                      icon: AlertCircle,
+                    },
+                  }[neg.status] || {
+                    label: neg.status,
+                    color: 'bg-slate-100 text-slate-600 border-slate-200',
+                    icon: AlertCircle,
+                  };
+
+                  const StatusIcon = statusConfig.icon;
+
+                  return (
+                    <div
+                      key={neg.id}
+                      className="p-4 sm:p-5 hover:bg-slate-50/70 transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+                    >
+                      <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                        <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center shrink-0">
+                          <ShoppingBag className="w-6 h-6" />
+                        </div>
+
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="text-sm font-bold text-[#24263e] truncate">
+                              {neg.postTitle || foundListing?.title || `Sản phẩm #${neg.postId}`}
+                            </h4>
+                            <span
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold border flex items-center gap-1 ${statusConfig.color}`}
+                            >
+                              <StatusIcon className="w-3 h-3" />
+                              <span>{statusConfig.label}</span>
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-3 text-xs">
+                            <div>
+                              <span className="text-slate-400">Giá đề xuất: </span>
+                              <span className="font-mono font-black text-sm text-[#c34c36]">
+                                {formatVND(neg.offeredPrice)}
+                              </span>
+                            </div>
+                            {foundListing?.priceVnd && (
+                              <div>
+                                <span className="text-slate-400">Giá niêm yết: </span>
+                                <span className="line-through text-slate-500 font-mono">
+                                  {formatVND(foundListing.priceVnd)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {neg.createdAt && (
+                            <p className="text-[10px] text-slate-400">
+                              Thời gian: {new Date(neg.createdAt).toLocaleString('vi-VN')}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenChatForNegotiation(neg)}
+                          className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span>{lang === 'vi' ? 'Nhắn tin' : 'Chat'}</span>
+                        </button>
+
+                        {/* Seller Actions on PENDING */}
+                        {negotiationTab === 'seller' && neg.status === 'PENDING' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleRejectNegotiation(neg.id)}
+                              disabled={isActionLoading}
+                              className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>{lang === 'vi' ? 'Từ chối' : 'Reject'}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleAcceptNegotiation(neg.id)}
+                              disabled={isActionLoading}
+                              className="px-3.5 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition cursor-pointer disabled:opacity-50"
+                            >
+                              {isActionLoading ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Check className="w-3.5 h-3.5" />
+                              )}
+                              <span>{lang === 'vi' ? 'Đồng ý giá' : 'Accept'}</span>
+                            </button>
+                          </>
+                        )}
+
+                        {/* Buyer Actions on PENDING */}
+                        {negotiationTab === 'buyer' && neg.status === 'PENDING' && (
+                          <button
+                            type="button"
+                            onClick={() => handleCancelNegotiation(neg.id)}
+                            disabled={isActionLoading}
+                            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
+                          >
+                            {isActionLoading ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <X className="w-3.5 h-3.5" />
+                            )}
+                            <span>{lang === 'vi' ? 'Hủy đề xuất' : 'Cancel'}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
 };
+

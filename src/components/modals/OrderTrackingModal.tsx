@@ -174,7 +174,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   const loadShipmentData = useCallback(async (isBackground = false) => {
     if (!isBackground) setIsLoading(true);
     try {
-      const shipList = await shippingService.getOrderShipments(order.id);
+      let shipList = await shippingService.getOrderShipments(order.id);
       setShipments(shipList);
 
       if (shipList.length > 0) {
@@ -184,6 +184,23 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
         if (!activeShipmentId || activeShipmentId !== targetId) {
           setActiveShipmentId(targetId);
+        }
+
+        const currentShipment = shipList.find((s) => s.shipmentId === targetId) || shipList[0];
+        const isTerminal = ['COMPLETED', 'DELIVERED', 'CANCELLED', 'FAILED'].includes(currentShipment.status) ||
+          ['COMPLETED', 'CANCELED', 'EXPIRED', 'REJECTED'].includes(currentShipment.providerStatus || '');
+
+        // Tự động gọi sync để kéo trạng thái mới nhất từ Lalamove (đặc biệt cần thiết khi thử nghiệm trên Sandbox hoặc khi chưa nối webhook public)
+        if (!isTerminal && currentShipment.orderCode) {
+          try {
+            const synced = await shippingService.syncShipment(targetId);
+            if (synced) {
+              shipList = shipList.map((s) => (s.shipmentId === targetId ? { ...s, ...synced } : s));
+              setShipments(shipList);
+            }
+          } catch (syncErr) {
+            console.debug('Background auto-sync shipment ignored:', syncErr);
+          }
         }
 
         // Parallel load tracking and events
@@ -334,7 +351,13 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     setErrorMsg(null);
     try {
       const updated = await shippingService.syncShipment(activeShipment.shipmentId);
-      showNotification(`Đã đồng bộ trạng thái thật từ Lalamove: ${updated.providerStatus || updated.status}`);
+      const provStatus = (updated.providerStatus || updated.status || '').toUpperCase();
+      let statusDesc = provStatus;
+      if (provStatus === 'ON_GOING') statusDesc = 'Tài xế đã nhận đơn & đang đến lấy hàng';
+      else if (provStatus === 'PICKED_UP') statusDesc = 'Tài xế đã lấy hàng & đang giao';
+      else if (provStatus === 'COMPLETED') statusDesc = 'Đã giao hàng thành công';
+      else if (provStatus === 'ASSIGNING_DRIVER') statusDesc = 'Đang tìm tài xế gần điểm lấy hàng';
+      showNotification(`Đã đồng bộ thành công từ Lalamove: ${statusDesc}`);
       await loadShipmentData();
       onOrderUpdated?.();
     } catch (err: any) {
@@ -617,8 +640,15 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     return 0; // ASSIGNING_DRIVER, READY_TO_PICK, PENDING
   };
 
+  const effectiveProviderStatus =
+    (trackingData?.driver || activeShipment?.driverId) &&
+    (!trackingData?.providerStatus || trackingData?.providerStatus === 'ASSIGNING_DRIVER') &&
+    (!activeShipment?.providerStatus || activeShipment?.providerStatus === 'ASSIGNING_DRIVER')
+      ? 'ON_GOING'
+      : (trackingData?.providerStatus || activeShipment?.providerStatus);
+
   const currentStep = getStepIndex(
-    trackingData?.providerStatus || activeShipment?.providerStatus,
+    effectiveProviderStatus,
     activeShipment?.status || '',
     order.backendStatus === 'COMPLETED' || order.escrowStatus === 'COMPLETED_RELEASED'
   );
@@ -930,7 +960,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
                   <div className="flex flex-col items-end gap-1.5">
                     <span className="text-[10px] text-slate-400 uppercase font-black">Trạng thái vận đơn</span>
-                    {getProviderStatusBadge(trackingData?.providerStatus || activeShipment.providerStatus)}
+                    {getProviderStatusBadge(effectiveProviderStatus)}
                   </div>
                 </div>
 
@@ -1003,8 +1033,8 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                 )}
 
                 {/* Searching / Assigning Driver Card */}
-                {!trackingData?.driver && (activeShipment.providerStatus === 'ASSIGNING_DRIVER' || activeShipment.status === 'READY_TO_PICK' || !activeShipment.providerStatus) && (
-                  <div className="p-4 bg-gradient-to-r from-amber-50 via-orange-50/50 to-amber-50 border border-amber-200/90 rounded-2xl space-y-2.5 animate-fadeIn">
+                {!trackingData?.driver && (effectiveProviderStatus === 'ASSIGNING_DRIVER' || activeShipment.status === 'READY_TO_PICK' || !activeShipment.providerStatus) && (
+                  <div className="p-4 bg-gradient-to-r from-amber-50 via-orange-50/50 to-amber-50 border border-amber-200/90 rounded-2xl space-y-3 animate-fadeIn">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="relative flex h-2.5 w-2.5">
@@ -1023,6 +1053,54 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                       Hệ thống đang tự động chỉ định tài xế xe máy Lalamove trong bán kính gần kho Người Bán nhất.
                       Ngay khi tài xế nhận chuyến, <strong>Họ tên, SĐT, Biển số xe và Vị trí GPS</strong> sẽ tự động cập nhật lên màn hình.
                     </p>
+
+                    <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-amber-200/70">
+                      <span className="text-[11px] text-amber-800">
+                        ⚡ Thử nghiệm Sandbox: Nếu vừa bấm cử tài xế trên cổng Lalamove Partner Portal, bạn có thể bấm cập nhật ngay:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleSyncLalamove}
+                        disabled={isSyncing}
+                        className="px-3 py-1.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-xs disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                        <span>Đồng bộ từ Lalamove ngay</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Driver Assigned - Loading details fallback */}
+                {!trackingData?.driver && effectiveProviderStatus === 'ON_GOING' && (
+                  <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-2xl flex items-center justify-between gap-3 animate-fadeIn">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+                        <Truck className="w-5 h-5 animate-pulse" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase bg-indigo-200 text-indigo-900 px-2 py-0.5 rounded">
+                            Tài xế đã nhận chuyến
+                          </span>
+                          {activeShipment.driverId && (
+                            <span className="text-xs font-mono font-bold text-slate-700">#{activeShipment.driverId}</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-indigo-950 font-semibold mt-0.5">
+                          Tài xế Lalamove đang trên đường đến điểm lấy hàng. Đang kết nối tín hiệu tài xế...
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSyncLalamove}
+                      disabled={isSyncing}
+                      className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                      <span>Cập nhật</span>
+                    </button>
                   </div>
                 )}
 

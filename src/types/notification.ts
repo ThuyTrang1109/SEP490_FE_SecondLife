@@ -31,6 +31,9 @@ export interface NotificationItem {
   isRead: boolean;                 // Trạng thái đã đọc
   readAt: string | null;           // ISO Timestamp thời điểm đọc
   createdAt: string;               // ISO Timestamp thời điểm tạo
+  userId?: string | null;          // ID người dùng nhận thông báo
+  recipientId?: string | null;     // ID người dùng nhận thông báo
+  recipientRole?: 'BUYER' | 'SELLER' | string | null; // Vai trò người nhận
 }
 
 export interface UnreadCountResponse {

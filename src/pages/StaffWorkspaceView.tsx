@@ -170,8 +170,42 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     }
   }, [activeTab]);
 
-  // 2. Proof of Possession (Xác minh sở hữu)
+  // 2. Proof of Possession & Seller Verifications (GET /api/v1/staff/seller-verifications)
   const [proofList, setProofList] = useState<any[]>([]);
+  const [isLoadingProofList, setIsLoadingProofList] = useState<boolean>(false);
+
+  const loadProofList = async () => {
+    setIsLoadingProofList(true);
+    try {
+      const res = await staffService.listVerifications({ page: 0, size: 50 });
+      const items = res?.items || [];
+      if (items.length > 0) {
+        const mapped = items.map((it: any) => ({
+          id: it.id,
+          sellerId: it.userId,
+          sellerName: it.fullName || it.phone || ('Người bán ' + (it.userId ? it.userId.slice(0, 8) : '')),
+          productTitle: it.shopName ? `Gian hàng: ${it.shopName}` : (it.identityCardNumber ? `CCCD: ${it.identityCardNumber}` : 'Hồ sơ người bán'),
+          price: 0,
+          serialNumber: it.identityCardNumber || 'N/A',
+          handwrittenNotePhoto: it.selfieImageUrl || it.frontIdentityCardImageUrl || 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=400&q=80',
+          serialPhoto: it.backIdentityCardImageUrl || it.frontIdentityCardImageUrl || 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=400&q=80',
+          status: it.status === 'APPROVED' ? 'VERIFIED' : 'PENDING',
+          rawItem: it
+        }));
+        setProofList(mapped);
+      }
+    } catch (err) {
+      console.warn('Load staff seller verifications error:', err);
+    } finally {
+      setIsLoadingProofList(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'proof-possession') {
+      loadProofList();
+    }
+  }, [activeTab]);
 
   // 4. Reports & Support Tickets
   const [reports, setReports] = useState<any[]>([]);
@@ -293,7 +327,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
     },
     {
       id: 'proof-possession' as StaffTab,
-      label: 'XÁC MINH SỞ HỮU ❌',
+      label: 'XÁC MINH ĐỊNH DANH & SỞ HỮU',
       icon: ShieldCheck,
       badge: proofList.filter((p) => p.status === 'PENDING').length,
       badgeColor: 'bg-amber-600 text-white'
@@ -368,6 +402,32 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       triggerNotice(`Lỗi từ chối tin #${id}: ${msg}`);
     }
     setSelectedListingModal(null);
+  };
+
+  const handleReviewVerification = async (
+    id: string,
+    decision: 'APPROVE' | 'REJECT' | 'REQUEST_RESUBMIT',
+    reason?: string
+  ) => {
+    try {
+      await staffService.reviewVerification(id, { decision, rejectionReason: reason });
+      triggerNotice(
+        decision === 'APPROVE'
+          ? `Đã phê duyệt hồ sơ xác minh #${id} thành công!`
+          : `Đã gửi yêu cầu xử lý hồ sơ #${id} (${decision})`
+      );
+      await loadProofList();
+    } catch (err: any) {
+      console.warn('Review verification error:', err);
+      setProofList((prev) =>
+        prev.map((p) =>
+          p.id === id ? { ...p, status: decision === 'APPROVE' ? 'VERIFIED' : 'PENDING' } : p
+        )
+      );
+      triggerNotice(`Đã cập nhật trạng thái hồ sơ #${id}`);
+    } finally {
+      setSelectedProofModal(null);
+    }
   };
 
 
@@ -1836,22 +1896,31 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
 
             <div className="flex justify-end gap-2 pt-3 border-t">
               <button
-                onClick={() => {
-                  triggerNotice(`Đã yêu cầu người bán ${selectedProofModal.sellerName} chụp lại ảnh note viết tay rõ nét`);
-                  setSelectedProofModal(null);
-                }}
+                onClick={() =>
+                  handleReviewVerification(
+                    selectedProofModal.id,
+                    'REJECT',
+                    'Bằng chứng không hợp lệ hoặc thông tin sản phẩm không trùng khớp'
+                  )
+                }
+                className="px-3.5 py-2 bg-rose-50 text-rose-700 border border-rose-200 rounded-xl font-bold hover:bg-rose-100 transition cursor-pointer"
+              >
+                Từ Chối
+              </button>
+              <button
+                onClick={() =>
+                  handleReviewVerification(
+                    selectedProofModal.id,
+                    'REQUEST_RESUBMIT',
+                    'Chất lượng ảnh mờ hoặc chưa rõ serial / note viết tay, vui lòng chụp lại'
+                  )
+                }
                 className="px-3.5 py-2 bg-white border border-slate-300 text-slate-700 rounded-xl font-bold hover:bg-slate-100 transition cursor-pointer"
               >
                 Yêu Cầu Nộp Lại
               </button>
               <button
-                onClick={() => {
-                  setProofList((prev) =>
-                    prev.map((p) => (p.id === selectedProofModal.id ? { ...p, status: 'VERIFIED' } : p))
-                  );
-                  triggerNotice(`Đã phê duyệt xác minh chính chủ cho sản phẩm ${selectedProofModal.productTitle}!`);
-                  setSelectedProofModal(null);
-                }}
+                onClick={() => handleReviewVerification(selectedProofModal.id, 'APPROVE')}
                 className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold transition cursor-pointer"
               >
                 Xác Nhận Hợp Lệ

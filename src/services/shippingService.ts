@@ -461,7 +461,7 @@ export const shippingService = {
     try {
       const res = await request<any>('/shipping/cities', {
         method: 'GET',
-        requiresAuth: false,
+        requiresAuth: true,
       });
       return (res as any)?.data ?? res;
     } catch (err) {

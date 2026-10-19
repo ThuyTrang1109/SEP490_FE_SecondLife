@@ -118,8 +118,54 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [isCreditLedgerOpen, setIsCreditLedgerOpen] = useState(false);
   const [creditLedgerItems, setCreditLedgerItems] = useState<CreditLedgerResponseDto[]>([]);
   const [creditPurchases, setCreditPurchases] = useState<CreditPurchaseResponseDto[]>([]);
-  const [creditModalTab, setCreditModalTab] = useState<'ledger' | 'purchases'>('ledger');
+  const [creditModalTab, setCreditModalTab] = useState<'ledger' | 'purchases' | 'buy'>('ledger');
   const [isLoadingLedger, setIsLoadingLedger] = useState(false);
+  const [buyListingQty, setBuyListingQty] = useState<number>(5);
+  const [buyValuationQty, setBuyValuationQty] = useState<number>(5);
+  const [buyChatQty, setBuyChatQty] = useState<number>(5);
+  const [calculatedPricing, setCalculatedPricing] = useState<any>(null);
+  const [isCalculatingPricing, setIsCalculatingPricing] = useState<boolean>(false);
+  const [isSubmittingPurchase, setIsSubmittingPurchase] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (creditModalTab === 'buy') {
+      setIsCalculatingPricing(true);
+      sellerCreditService
+        .getPricing(buyListingQty, buyValuationQty)
+        .then((res) => setCalculatedPricing(res))
+        .catch((err) => console.warn('Lỗi tính giá credit:', err))
+        .finally(() => setIsCalculatingPricing(false));
+    }
+  }, [creditModalTab, buyListingQty, buyValuationQty]);
+
+  const handleCreateCreditPurchase = async () => {
+    setIsSubmittingPurchase(true);
+    try {
+      const res = await sellerCreditService.createPurchase({
+        listingQuantity: buyListingQty,
+        valuationQuantity: buyValuationQty,
+        aiChatQuantity: buyChatQty,
+      });
+      showToastNotice('success', `Đã tạo đơn mua #${res?.id ? res.id.slice(0, 8) : ''} thành công!`);
+      const [bal, purchases] = await Promise.all([
+        sellerCreditService.getCredits(),
+        sellerCreditService.getPurchases(0, 30),
+      ]);
+      if (bal) setCreditBalance(bal);
+      const purchaseItems =
+        (purchases as any)?.items ||
+        (purchases as any)?.content ||
+        (purchases as any)?.data?.items ||
+        (purchases as any)?.data ||
+        (Array.isArray(purchases) ? purchases : []);
+      setCreditPurchases(purchaseItems);
+      setCreditModalTab('purchases');
+    } catch (err: any) {
+      showToastNotice('error', err?.message || 'Không thể tạo đơn mua tín dụng');
+    } finally {
+      setIsSubmittingPurchase(false);
+    }
+  };
 
   // Real Backend Posts State
   const [myServerPosts, setMyServerPosts] = useState<Listing[]>([]);
@@ -1126,6 +1172,17 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               >
                 Lịch Sử Đơn Mua ({creditPurchases.length})
               </button>
+              <button
+                onClick={() => setCreditModalTab('buy')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  creditModalTab === 'buy'
+                    ? 'bg-[#c34c36] text-white shadow-xs'
+                    : 'text-[#c34c36] hover:bg-rose-50'
+                }`}
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>Mua Thêm Tín Dụng</span>
+              </button>
             </div>
 
             {isLoadingLedger ? (
@@ -1186,7 +1243,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   </tbody>
                 </table>
               </div>
-            ) : (
+            ) : creditModalTab === 'purchases' ? (
               <div className="overflow-x-auto max-h-96">
                 <table className="w-full text-left text-xs">
                   <thead>
@@ -1238,6 +1295,162 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                     )}
                   </tbody>
                 </table>
+              </div>
+            ) : (
+              <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Gói Tin Đăng */}
+                  <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-2">
+                    <span className="text-[11px] font-bold text-slate-600 block uppercase">Lượt Đăng Bài (Listing)</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setBuyListingQty((q) => Math.max(1, q - 5))}
+                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 font-bold hover:bg-slate-100 cursor-pointer"
+                      >
+                        -
+                      </button>
+                      <span className="font-mono font-black text-base text-slate-900">{buyListingQty}</span>
+                      <button
+                        type="button"
+                        onClick={() => setBuyListingQty((q) => q + 5)}
+                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 font-bold hover:bg-slate-100 cursor-pointer"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <div className="flex gap-1 justify-center">
+                      {[5, 10, 20].map((num) => (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => setBuyListingQty(num)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
+                            buyListingQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
+                          }`}
+                        >
+                          {num}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Gói Định Giá AI */}
+                  <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-2">
+                    <span className="text-[11px] font-bold text-slate-600 block uppercase">Định Giá AI (Valuation)</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setBuyValuationQty((q) => Math.max(0, q - 5))}
+                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 font-bold hover:bg-slate-100 cursor-pointer"
+                      >
+                        -
+                      </button>
+                      <span className="font-mono font-black text-base text-slate-900">{buyValuationQty}</span>
+                      <button
+                        type="button"
+                        onClick={() => setBuyValuationQty((q) => q + 5)}
+                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 font-bold hover:bg-slate-100 cursor-pointer"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <div className="flex gap-1 justify-center">
+                      {[0, 5, 10, 20].map((num) => (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => setBuyValuationQty(num)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
+                            buyValuationQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
+                          }`}
+                        >
+                          {num}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Gói AI Chat */}
+                  <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-2">
+                    <span className="text-[11px] font-bold text-slate-600 block uppercase">Trợ Lý AI Chat</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setBuyChatQty((q) => Math.max(0, q - 5))}
+                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 font-bold hover:bg-slate-100 cursor-pointer"
+                      >
+                        -
+                      </button>
+                      <span className="font-mono font-black text-base text-slate-900">{buyChatQty}</span>
+                      <button
+                        type="button"
+                        onClick={() => setBuyChatQty((q) => q + 5)}
+                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 font-bold hover:bg-slate-100 cursor-pointer"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <div className="flex gap-1 justify-center">
+                      {[0, 5, 10, 20].map((num) => (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => setBuyChatQty(num)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
+                            buyChatQty === num ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border'
+                          }`}
+                        >
+                          {num}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bảng tạm tính */}
+                <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-2 text-xs">
+                  <div className="flex justify-between items-center text-slate-600">
+                    <span>Đơn giá niêm yết:</span>
+                    <span className="font-mono">
+                      {formatVND(
+                        calculatedPricing?.quote?.totalBaseFee ||
+                          buyListingQty * 5000 + buyValuationQty * 5000 + buyChatQty * 2000
+                      )}
+                    </span>
+                  </div>
+                  {calculatedPricing?.quote?.discountAmount ? (
+                    <div className="flex justify-between items-center text-emerald-700 font-bold">
+                      <span>Chiết khấu ưu đãi:</span>
+                      <span className="font-mono">-{formatVND(calculatedPricing.quote.discountAmount)}</span>
+                    </div>
+                  ) : null}
+                  <div className="flex justify-between items-center pt-2 border-t border-amber-200/80 font-black text-sm text-[#c34c36]">
+                    <span>Tổng thanh toán:</span>
+                    <span className="font-mono text-base">
+                      {formatVND(
+                        calculatedPricing?.quote?.finalFee ||
+                          buyListingQty * 5000 + buyValuationQty * 5000 + buyChatQty * 2000
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCreateCreditPurchase}
+                  disabled={isSubmittingPurchase || (buyListingQty <= 0 && buyValuationQty <= 0 && buyChatQty <= 0)}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 text-white font-bold text-xs shadow-md transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-40"
+                >
+                  {isSubmittingPurchase ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Đang tạo đơn mua...</span>
+                    </>
+                  ) : (
+                    <span>Xác Nhận Tạo Đơn Mua Tín Dụng</span>
+                  )}
+                </button>
               </div>
             )}
 

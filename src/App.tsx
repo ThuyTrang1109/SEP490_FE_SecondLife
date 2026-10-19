@@ -27,6 +27,7 @@ import { TopUpModal } from './components/modals/TopUpModal';
 import { PolicyModal, PolicyTabKey } from './components/modals/PolicyModal';
 import { SellerReviewsModal } from './components/modals/SellerReviewsModal';
 import { NotificationCenterView } from './pages/NotificationCenterView';
+import { BuyerInspectionDecisionView } from './pages/BuyerInspectionDecisionView';
 import { RealtimeNotificationToast } from './components/common/RealtimeNotificationToast';
 import { GlobalPopupModal } from './components/common/GlobalPopupModal';
 import './utils/dialogService';
@@ -74,6 +75,8 @@ export default function App() {
   const [pendingCheckoutItem, setPendingCheckoutItem] = useState<Listing | null>(null);
   const [editingDraft, setEditingDraft] = useState<Listing | null>(null);
   const [createListingReturnTab, setCreateListingReturnTab] = useState<string>('marketplace');
+  const [inspectionDecisionOrder, setInspectionDecisionOrder] = useState<EscrowOrder | null>(null);
+  const [inspectionDecisionOrderId, setInspectionDecisionOrderId] = useState<string | null>(null);
 
   // Restore & verify session for THIS browser from Backend /me on startup/refresh
   React.useEffect(() => {
@@ -140,6 +143,8 @@ export default function App() {
             district: profile.district,
             ward: profile.ward,
             streetAddress: profile.streetAddress,
+            latitude: profile.latitude ?? stored?.latitude,
+            longitude: profile.longitude ?? stored?.longitude,
             wardName: resolvedWard,
             provinceName: resolvedProv,
             avatar: profile.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
@@ -515,6 +520,16 @@ export default function App() {
       }
     }
 
+    if (tab === 'wallet') {
+      setIsTopUpModalOpen(true);
+      return;
+    }
+
+    if (['about', 'rules', 'terms', 'privacy', 'security', 'info'].includes(tab)) {
+      showToast('Nội dung Điều khoản, Quy chế hoạt động và Chính sách bảo mật của Sàn SecondLife đã được niêm yết và bảo vệ bởi quỹ ký quỹ Escrow.');
+      return;
+    }
+
     setActiveTab(tab);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -528,18 +543,35 @@ export default function App() {
 
     const url = actionUrl.toLowerCase();
 
+    // 0. Inspection Center portal routing: /inspector-center, /inspection-center
+    if (url.includes('/inspector-center') || url.includes('/inspection-center') || (currentRole === 'inspection_center' && url.includes('/orders'))) {
+      handleTabChange('inspection-center');
+      return;
+    }
+
     // 1. Order routing: /buyer/orders, /seller/orders, /orders
     if (url.includes('/orders') || url.includes('/order')) {
       handleTabChange('orders');
       return;
     }
 
-    // 2. Inspection routing: /inspections, /inspector
+    // 2. Inspection routing: /inspections, /inspector, /buyer/inspections
     if (url.includes('/inspections') || url.includes('/inspection')) {
-      if (currentRole === 'inspector' || currentRole === 'inspection_center' || currentUser?.role === 'inspector') {
+      if (currentRole === 'inspection_center') {
+        handleTabChange('inspection-center');
+      } else if (currentRole === 'inspector' || currentUser?.role === 'inspector') {
         handleTabChange('inspection-hub');
       } else {
-        handleTabChange('orders');
+        const parts = url.split('/');
+        const id = parts[parts.length - 1]?.split('?')[0];
+        if (id && id !== 'inspections' && id !== 'inspection') {
+          setInspectionDecisionOrderId(id);
+          const found = orders.find((o) => o.id === id);
+          setInspectionDecisionOrder(found || null);
+          handleTabChange('buyer-inspection-decision');
+        } else {
+          handleTabChange('orders');
+        }
       }
       return;
     }
@@ -794,7 +826,6 @@ export default function App() {
         (post.userId && String(post.userId) === String(currentUser.id)) ||
         (post.sellerId && String(post.sellerId) === String(currentUser.id)) ||
         (post.user?.id && String(post.user.id) === String(currentUser.id)) ||
-        (post.sellerName && currentUser.name && post.sellerName.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
         (post.user?.email && currentUser.email && post.user.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase())
       )
     );
@@ -848,7 +879,7 @@ export default function App() {
       description: post.description || post.aiDescription || 'Đã qua thẩm định và xác thực trên hệ thống SecondLife.',
       location: postLocation,
       sellerAddress: postSellerAddress,
-      sellerId: post.sellerId || post.user?.id || post.userId || (isOwner && currentUser ? currentUser.id : '1e338576-457a-4371-9822-52ca04e31546'),
+      sellerId: post.sellerId || post.user?.id || post.userId || (isOwner && currentUser ? currentUser.id : ''),
       sellerName: isOwner && currentUser?.name ? currentUser.name : (post.sellerName || post.user?.profile?.fullName || post.user?.fullName || post.user?.email || 'Người bán SecondLife'),
       sellerAvatar: post.sellerAvatar || post.user?.profile?.avatarUrl || post.user?.avatarUrl || undefined,
       sellerRating: 5.0,
@@ -1306,10 +1337,27 @@ export default function App() {
           }
         });
 
+        // Sắp xếp đơn mới nhất trên cùng
+        combined.sort((a, b) => {
+          const dateA = a.createdAt || (a as any).createdDate || (a as any).created_at || (a as any).timestamp;
+          const dateB = b.createdAt || (b as any).createdDate || (b as any).created_at || (b as any).timestamp;
+          const timeA = dateA ? new Date(dateA).getTime() : 0;
+          const timeB = dateB ? new Date(dateB).getTime() : 0;
+          const validTimeA = isNaN(timeA) ? 0 : timeA;
+          const validTimeB = isNaN(timeB) ? 0 : timeB;
+          if (validTimeB !== validTimeA) return validTimeB - validTimeA;
+          return (b.id || '').localeCompare(a.id || '');
+        });
+
         setOrders(combined);
       } else {
         // Even if server returns 0, retain all local recent orders
         const localRecentOrders = getLocalStoredOrders();
+        localRecentOrders.sort((a, b) => {
+          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+        });
         setOrders(localRecentOrders);
       }
     } catch (err) {
@@ -1620,7 +1668,8 @@ export default function App() {
           activeTab === 'admin-dashboard' ||
           activeTab === 'inspection-center' ||
           activeTab === 'inspection-hub' ||
-          activeTab === 'staff-workspace'
+          activeTab === 'staff-workspace' ||
+          activeTab === 'buyer-inspection-decision'
             ? 'flex-1 w-full p-0 m-0'
             : 'flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6'
         }
@@ -1754,6 +1803,26 @@ export default function App() {
             onRefreshOrders={loadUserOrders}
             lang={lang}
             userRole={currentRole}
+            onOpenChat={(listing) => setChatListing(listing)}
+            onOpenInspectionDecision={(ord) => {
+              setInspectionDecisionOrder(ord);
+              setInspectionDecisionOrderId(ord.id);
+              handleTabChange('buyer-inspection-decision');
+            }}
+          />
+        )}
+
+        {activeTab === 'buyer-inspection-decision' && (
+          <BuyerInspectionDecisionView
+            orderId={inspectionDecisionOrderId || inspectionDecisionOrder?.id}
+            order={inspectionDecisionOrder}
+            currentUser={currentUser}
+            lang={lang}
+            onBack={() => handleTabChange('orders')}
+            onSuccess={() => {
+              loadUserOrders();
+              handleTabChange('orders');
+            }}
             onOpenChat={(listing) => setChatListing(listing)}
           />
         )}

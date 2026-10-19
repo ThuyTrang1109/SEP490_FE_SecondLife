@@ -80,6 +80,9 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
 
   useEffect(() => {
     if (listing.id) {
+      // Gọi API lấy dữ liệu chi tiết bài đăng mới nhất từ server (GET /api/v1/posts/{postId})
+      postService.getListingDetail(listing.id).catch(() => {});
+
       postService.getLatestPriceEstimate(listing.id).then((est) => {
         if (est) setAiEstimate(est);
       }).catch(() => {});

@@ -36,6 +36,28 @@ export const ALLOWED_CITIES = [
   { name: 'TP. Hồ Chí Minh', lat: 10.7769, lng: 106.7009, label: 'TP. Hồ Chí Minh (Quận 1 / Bến Nghé)' },
 ];
 
+export const normalizeCityKey = (cityStr?: string): 'HANOI' | 'DANANG' | 'HO_CHI_MINH' | 'OTHER' => {
+  if (!cityStr) return 'OTHER';
+  const clean = cityStr
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+
+  if (clean.includes('hanoi')) return 'HANOI';
+  if (clean.includes('hochiminh') || clean.includes('saigon') || clean.includes('sgn') || clean.includes('hcm')) return 'HO_CHI_MINH';
+  if (clean.includes('danang') || clean.includes('dad')) return 'DANANG';
+  return 'OTHER';
+};
+
+export const getShortCityName = (fullName: string): string => {
+  const key = normalizeCityKey(fullName);
+  if (key === 'HANOI') return 'Hà Nội';
+  if (key === 'HO_CHI_MINH') return 'TP. Hồ Chí Minh';
+  if (key === 'DANANG') return 'Đà Nẵng';
+  return fullName.replace(/\([^)]*\)/g, '').trim() || fullName;
+};
+
 export const detectCityFromCoords = (lat: number, lng: number): string => {
   if (lat >= 20.0 && lat <= 22.0 && lng >= 105.0 && lng <= 107.0) return 'Hà Nội';
   if (lat >= 15.5 && lat <= 16.8 && lng >= 107.5 && lng <= 109.0) return 'Đà Nẵng';
@@ -45,22 +67,10 @@ export const detectCityFromCoords = (lat: number, lng: number): string => {
 
 export const getCityCoordinates = (locationStr?: string) => {
   if (!locationStr) return ALLOWED_CITIES[0];
-  const lower = locationStr.toLowerCase();
-  if (
-    lower.includes('hồ chí minh') ||
-    lower.includes('ho chi minh') ||
-    lower.includes('sài gòn') ||
-    lower.includes('sai gon') ||
-    lower.includes('hcm') ||
-    lower.includes('bình dương') ||
-    lower.includes('binh duong')
-  ) {
-    return ALLOWED_CITIES[2]; // TP. Hồ Chí Minh
-  }
-  if (lower.includes('đà nẵng') || lower.includes('da nang') || lower.includes('huế') || lower.includes('quảng')) {
-    return ALLOWED_CITIES[1]; // Đà Nẵng
-  }
-  return ALLOWED_CITIES[0]; // Hà Nội
+  const key = normalizeCityKey(locationStr);
+  if (key === 'HO_CHI_MINH') return ALLOWED_CITIES[2]; // TP. Hồ Chí Minh
+  if (key === 'DANANG') return ALLOWED_CITIES[1];      // Đà Nẵng
+  return ALLOWED_CITIES[0];                            // Hà Nội
 };
 
 export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
@@ -107,14 +117,15 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
       const rawList = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : (Array.isArray(res?.cities) ? res.cities : []));
       if (rawList && rawList.length > 0) {
         const parsed = rawList.map((c: any) => {
-          if (typeof c === 'string') {
-            const matched = ALLOWED_CITIES.find(ac => ac.name.toLowerCase() === c.toLowerCase());
-            return matched || { name: c, lat: 21.0285, lng: 105.8542, label: c };
-          }
-          const name = c.name || c.cityName || c.label || String(c);
-          const lat = typeof c.lat === 'number' ? c.lat : (typeof c.latitude === 'number' ? c.latitude : 21.0285);
-          const lng = typeof c.lng === 'number' ? c.lng : (typeof c.longitude === 'number' ? c.longitude : 105.8542);
-          return { name, lat, lng, label: c.label || name };
+          const rawName = typeof c === 'string' ? c : (c.name || c.cityName || c.label || String(c));
+          const coordFallback = getCityCoordinates(rawName);
+          const lat = (typeof c === 'object' && typeof c.lat === 'number') ? c.lat 
+            : (typeof c === 'object' && typeof c.latitude === 'number') ? c.latitude 
+            : coordFallback.lat;
+          const lng = (typeof c === 'object' && typeof c.lng === 'number') ? c.lng 
+            : (typeof c === 'object' && typeof c.longitude === 'number') ? c.longitude 
+            : coordFallback.lng;
+          return { name: rawName, lat, lng, label: getShortCityName(rawName) };
         });
         setSupportedCities(parsed);
       }
@@ -186,7 +197,8 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
 
       if (res && res.address) {
         setResolvedAddress(res.address);
-        setResolvedCity(res.city || detectCityFromCoords(lat, lng));
+        const cityCandidate = res.city ? getShortCityName(res.city) : detectCityFromCoords(lat, lng);
+        setResolvedCity(cityCandidate);
         setPlaceId(res.placeId);
         setLookupError(null);
         return;
@@ -329,7 +341,9 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
   }, [executeLookup, initialAddress]);
 
   // Handle preset city click
-  const handleSelectCityPreset = (city: typeof ALLOWED_CITIES[0]) => {
+  const handleSelectCityPreset = (city: { name: string; lat: number; lng: number; label?: string }) => {
+    const shortName = getShortCityName(city.name);
+    setResolvedCity(shortName);
     setLatitude(city.lat);
     setLongitude(city.lng);
     if (leafletMapRef.current && leafletMarkerRef.current) {
@@ -349,30 +363,39 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
     setIsLocatingDevice(true);
     setLookupError(null);
 
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        setIsLocatingDevice(false);
-        const lat = coords.latitude;
-        const lng = coords.longitude;
-        setLatitude(lat);
-        setLongitude(lng);
+    const onLocationSuccess = ({ coords }: GeolocationPosition) => {
+      setIsLocatingDevice(false);
+      const lat = coords.latitude;
+      const lng = coords.longitude;
+      setLatitude(lat);
+      setLongitude(lng);
 
-        if (leafletMapRef.current && leafletMarkerRef.current) {
-          leafletMapRef.current.setView([lat, lng], 16);
-          leafletMarkerRef.current.setLatLng([lat, lng]);
-        }
-        executeLookup(lat, lng);
+      if (leafletMapRef.current && leafletMarkerRef.current) {
+        leafletMapRef.current.setView([lat, lng], 16);
+        leafletMarkerRef.current.setLatLng([lat, lng]);
+      }
+      executeLookup(lat, lng);
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      onLocationSuccess,
+      () => {
+        // Fallback with standard accuracy for desktop Wi-Fi / IP geocoding
+        navigator.geolocation.getCurrentPosition(
+          onLocationSuccess,
+          (err) => {
+            setIsLocatingDevice(false);
+            console.warn('Geolocation error:', err);
+            let msg = lang === 'vi' ? 'Không lấy được vị trí GPS. Bạn hãy nhấp chọn điểm trên bản đồ.' : 'Could not get device location. Please pick on the map.';
+            if (err.code === 1) {
+              msg = lang === 'vi' ? 'Quyền truy cập vị trí bị từ chối. Vui lòng chọn trên bản đồ.' : 'Location permission denied. Please choose on the map.';
+            }
+            setLookupError(msg);
+          },
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+        );
       },
-      (err) => {
-        setIsLocatingDevice(false);
-        console.warn('Geolocation error:', err);
-        let msg = lang === 'vi' ? 'Không lấy được vị trí. Bạn hãy chọn điểm trên bản đồ.' : 'Could not get device location. Please pick on the map.';
-        if (err.code === 1) {
-          msg = lang === 'vi' ? 'Quyền truy cập vị trí bị từ chối. Vui lòng chọn trên bản đồ.' : 'Location permission denied. Please choose on the map.';
-        }
-        setLookupError(msg);
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 }
     );
   };
 
@@ -487,65 +510,94 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
         </div>
       </div>
 
-      {/* Preset supported cities quick buttons & dropdown */}
-      <div className="space-y-2">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-600 font-medium">
-          <div className="flex items-center gap-2">
-            <span className="font-bold">{lang === 'vi' ? 'Địa bàn hỗ trợ:' : 'Supported Area:'}</span>
-            <select
-              value={resolvedCity}
-              onChange={(e) => {
-                const selected = supportedCities.find((c) => c.name.toLowerCase() === e.target.value.toLowerCase());
-                if (selected) handleSelectCityPreset(selected);
-              }}
-              className="px-2.5 py-1 text-xs font-bold rounded-lg border border-gray-300 bg-white text-slate-800 focus:outline-none focus:border-orange-500 shadow-2xs cursor-pointer"
-            >
-              {supportedCities.map((c) => (
-                <option key={c.name} value={c.name}>
-                  {c.label || c.name}
-                </option>
-              ))}
-            </select>
+      {/* Current Location & Quick Region Toolbar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-gradient-to-r from-orange-50/90 via-amber-50/40 to-white p-2.5 rounded-2xl border border-orange-200/80 shadow-2xs">
+        {/* Prominent GPS button */}
+        <button
+          type="button"
+          onClick={handleGetCurrentLocation}
+          disabled={isLocatingDevice}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500 hover:from-orange-700 hover:to-amber-600 text-white rounded-xl font-bold text-xs shadow-sm hover:shadow transition-all active:scale-[0.99] disabled:opacity-60 cursor-pointer"
+        >
+          {isLocatingDevice ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>{lang === 'vi' ? 'Đang dò tọa độ GPS thiết bị...' : 'Locating your device GPS...'}</span>
+            </>
+          ) : (
+            <>
+              <Navigation className="w-4 h-4 fill-white" />
+              <span>{lang === 'vi' ? '📍 Dùng Vị Trí Hiện Tại Của Tôi' : '📍 Use My Current Location'}</span>
+            </>
+          )}
+        </button>
+
+        {/* Quick city presets with short readable names */}
+        {supportedCities && supportedCities.length > 0 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0 scrollbar-none">
+            <span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap hidden md:inline">
+              {lang === 'vi' ? 'Khu vực:' : 'Area:'}
+            </span>
+            {supportedCities.map((c) => {
+              const shortName = getShortCityName(c.name);
+              const isMatchedSeller = Boolean(sellerCity && normalizeCityKey(sellerCity) === normalizeCityKey(c.name));
+              const isSelected = Boolean(resolvedCity && normalizeCityKey(resolvedCity) === normalizeCityKey(c.name));
+              return (
+                <button
+                  key={c.name}
+                  type="button"
+                  onClick={() => handleSelectCityPreset(c)}
+                  title={c.name}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition shadow-2xs cursor-pointer flex items-center gap-1 border whitespace-nowrap ${
+                    isSelected
+                      ? 'bg-orange-600 text-white border-orange-700 shadow-xs'
+                      : isMatchedSeller
+                        ? 'bg-amber-100 text-amber-900 border-amber-300 ring-1 ring-amber-400'
+                        : 'bg-white hover:bg-orange-50 border-gray-200 hover:border-orange-300 text-slate-700'
+                  }`}
+                >
+                  <Building2 className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-orange-600'}`} />
+                  <span>{shortName}</span>
+                  {isMatchedSeller && (
+                    <span className="text-[9px] bg-amber-600 text-white px-1.5 py-0.5 rounded-sm font-semibold">
+                      Kho
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-          <button
-            type="button"
-            onClick={handleGetCurrentLocation}
-            disabled={isLocatingDevice}
-            className="text-orange-600 hover:text-orange-700 font-bold flex items-center gap-1 cursor-pointer transition disabled:opacity-50 self-start sm:self-auto"
-          >
-            {isLocatingDevice ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <Navigation className="w-3 h-3" />
-            )}
-            <span>{lang === 'vi' ? 'Dùng vị trí hiện tại' : 'Use Current Location'}</span>
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {supportedCities.map((c) => {
-            const isMatchedSeller = sellerCity && c.name.toLowerCase().includes(sellerCity.toLowerCase());
-            const isSelected = resolvedCity && c.name.toLowerCase().includes(resolvedCity.toLowerCase());
-            return (
-              <button
-                key={c.name}
-                type="button"
-                onClick={() => handleSelectCityPreset(c)}
-                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1 border ${
-                  isSelected
-                    ? 'bg-orange-600 text-white border-orange-700 shadow-sm'
-                    : isMatchedSeller
-                      ? 'bg-amber-100 text-amber-900 border-amber-300 ring-1 ring-amber-400'
-                      : 'bg-white hover:bg-orange-50 border-gray-200 hover:border-orange-300 text-slate-700'
-                }`}
-              >
-                <Building2 className={`w-3 h-3 ${isSelected ? 'text-white' : 'text-orange-600'}`} />
-                <span>{c.name}</span>
-                {isMatchedSeller && <span className="text-[9px] bg-amber-600 text-white px-1 rounded-sm">Kho người bán</span>}
-              </button>
-            );
-          })}
-        </div>
+        )}
       </div>
+
+      {/* Notice if buyer selects a different city from seller warehouse */}
+      {sellerCity && resolvedCity && normalizeCityKey(resolvedCity) !== normalizeCityKey(sellerCity) && (
+        <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 animate-fadeIn">
+          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1 space-y-1">
+            <p className="font-bold">
+              {lang === 'vi'
+                ? `Kho người bán tại ${sellerCity}, bạn đang chọn điểm giao tại ${getShortCityName(resolvedCity)}.`
+                : `Seller warehouse is in ${sellerCity}, you selected ${getShortCityName(resolvedCity)}.`}
+            </p>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              {lang === 'vi'
+                ? `Lalamove là dịch vụ giao hàng nội thành (không hỗ trợ giao liên tỉnh giữa ${sellerCity} và ${getShortCityName(resolvedCity)}). Để đặt đơn hàng thành công, vui lòng chọn điểm giao trong cùng khu vực ${sellerCity}.`
+                : `Lalamove is an intra-city delivery service. Please choose an address within ${sellerCity}.`}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                const matched = supportedCities.find(sc => normalizeCityKey(sc.name) === normalizeCityKey(sellerCity)) || ALLOWED_CITIES[0];
+                handleSelectCityPreset(matched);
+              }}
+              className="mt-1 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs cursor-pointer transition shadow-2xs inline-flex items-center gap-1"
+            >
+              <span>{lang === 'vi' ? `Quay lại khu vực ${sellerCity}` : `Back to ${sellerCity}`}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Map container with draggable marker */}
       <div className="relative rounded-2xl overflow-hidden border border-gray-300 shadow-xs bg-slate-100">
@@ -560,6 +612,22 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
           <MapPin className="w-3.5 h-3.5 text-orange-600" />
           <span>{lang === 'vi' ? 'Kéo ghim hoặc nhấp vào bản đồ để chọn vị trí chính xác' : 'Drag pin or click map to select spot'}</span>
         </div>
+
+        {/* Floating Quick GPS button directly on the map */}
+        <button
+          type="button"
+          onClick={handleGetCurrentLocation}
+          disabled={isLocatingDevice}
+          title={lang === 'vi' ? 'Định vị lại vị trí hiện tại' : 'Recenter to current location'}
+          className="absolute bottom-3 right-3 z-20 p-2.5 bg-white/95 hover:bg-orange-50 border border-gray-300 hover:border-orange-400 text-orange-600 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50 flex items-center gap-1.5 text-xs font-bold"
+        >
+          {isLocatingDevice ? (
+            <Loader2 className="w-4 h-4 animate-spin text-orange-600" />
+          ) : (
+            <Navigation className="w-4 h-4 fill-orange-600 text-orange-600" />
+          )}
+          <span className="hidden sm:inline">{lang === 'vi' ? 'Vị trí của tôi' : 'My location'}</span>
+        </button>
 
         {/* Loading overlay during reverse geocoding */}
         {isLookingUp && (

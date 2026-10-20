@@ -687,14 +687,18 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const fetchAddressFromBackend = async (showNotification = false) => {
     setIsLoadingAddressFromBe(true);
     try {
-      const [onboardingData, pickupData] = await Promise.allSettled([
-        shippingService.getSellerOnboarding(),
-        shippingService.getPickupAddress(),
-      ]);
+      const isSeller = currentUser?.role === 'seller' || (currentUser as any)?.roles?.some((r: string) => r === 'SELLER' || r === 'ROLE_SELLER');
+      const tasks: Promise<any>[] = [shippingService.getSellerOnboarding()];
+      if (isSeller) {
+        tasks.push(shippingService.getPickupAddress());
+      }
+      const results = await Promise.allSettled(tasks);
+      const onboardingData = results[0];
+      const pickupData = isSeller ? results[1] : null;
 
       let addressFound = false;
 
-      if (onboardingData.status === 'fulfilled' && onboardingData.value) {
+      if (onboardingData && onboardingData.status === 'fulfilled' && onboardingData.value) {
         const ob = onboardingData.value;
         if (ob.shopName) setShopName(ob.shopName);
         if (ob.phone) setSellerPhone(ob.phone);
@@ -723,7 +727,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         }
       }
 
-      if (!addressFound && pickupData.status === 'fulfilled' && pickupData.value) {
+      if (!addressFound && pickupData && pickupData.status === 'fulfilled' && pickupData.value) {
         const pa = pickupData.value;
         const fullAddr = [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
         if (fullAddr) {

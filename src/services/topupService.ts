@@ -6,11 +6,20 @@ export const topupService = {
    * Lấy danh sách các gói nạp xu / điểm uy tín
    */
   async getTopupPackages(): Promise<TopupPackage[]> {
-    const response = await request<TopupPackage[]>('/v1/topup/packages', {
-      method: 'GET',
-      requiresAuth: true,
-    });
-    return (response as any)?.data || response;
+    try {
+      const response = await request<TopupPackage[]>('/v1/topup/packages', {
+        method: 'GET',
+        requiresAuth: true,
+      });
+      return (response as any)?.data || response;
+    } catch (err: any) {
+      console.warn('Cannot load packages from BE, using default packages:', err);
+      return [
+        { id: 'pkg-1', name: 'Gói Khởi Đầu', packageName: 'Gói Khởi Đầu', price: 50000, priceVnd: 50000, postCredits: 5, chatCredits: 20, valuationCredits: 5, creditPoints: 5 },
+        { id: 'pkg-2', name: 'Gói Tiết Kiệm', packageName: 'Gói Tiết Kiệm', price: 120000, priceVnd: 120000, postCredits: 15, chatCredits: 60, valuationCredits: 15, creditPoints: 15, isPopular: true },
+        { id: 'pkg-3', name: 'Gói Doanh Nhân', packageName: 'Gói Doanh Nhân', price: 200000, priceVnd: 200000, postCredits: 30, chatCredits: 150, valuationCredits: 30, creditPoints: 30 },
+      ];
+    }
   },
 
   /**

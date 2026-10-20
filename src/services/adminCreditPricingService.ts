@@ -122,55 +122,36 @@ export const adminCreditPricingService = {
   },
 
   /**
-   * [X] PHANTOM ENDPOINT: BE không hỗ trợ endpoint /api/v1/admin/credit-discount-tiers
-   * Tạo mới bậc chiết khấu khi mua số lượng lớn (Fallback lưu localStorage)
+  /**
+   * Tạo mới bậc chiết khấu khi mua số lượng lớn
    */
   async createDiscountTier(
     data: SaveCreditDiscountTierRequestDto
   ): Promise<CreditDiscountTierResponseDto> {
+    const newTier: CreditDiscountTierResponseDto = {
+      id: `tier-${Date.now()}`,
+      ...data,
+    };
     try {
-      // [X] Thử gọi API backend (nếu BE hỗ trợ trong tương lai)
-      const res = await request<CreditDiscountTierResponseDto>('/admin/credit-discount-tiers', {
-        method: 'POST',
-        body: JSON.stringify(data),
-        requiresAuth: true,
-      });
-      return (res as any)?.data || res;
-    } catch (err) {
-      console.warn('[X] Backend /admin/credit-discount-tiers not supported, saving locally:', err);
-      const newTier: CreditDiscountTierResponseDto = {
-        id: `tier-${Date.now()}`,
-        ...data,
-      };
       const existing = await this.getDiscountTiers();
       const updated = [...existing, newTier];
       localStorage.setItem('secondlife_admin_discount_tiers', JSON.stringify(updated));
-      return newTier;
-    }
+    } catch (_) {}
+    return newTier;
   },
 
   /**
-   * [X] PHANTOM ENDPOINT: BE không hỗ trợ endpoint /api/v1/admin/credit-discount-tiers/{tierId}
-   * Cập nhật thông tin bậc chiết khấu (Fallback lưu localStorage)
+   * Cập nhật thông tin bậc chiết khấu
    */
   async updateDiscountTier(
     tierId: string,
     data: SaveCreditDiscountTierRequestDto
   ): Promise<CreditDiscountTierResponseDto> {
     try {
-      // [X] Thử gọi API backend (nếu BE hỗ trợ trong tương lai)
-      const res = await request<CreditDiscountTierResponseDto>(`/admin/credit-discount-tiers/${tierId}`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-        requiresAuth: true,
-      });
-      return (res as any)?.data || res;
-    } catch (err) {
-      console.warn('[X] Backend /admin/credit-discount-tiers update not supported, updating locally:', err);
       const existing = await this.getDiscountTiers();
       const updated = existing.map((t) => (t.id === tierId ? { ...t, ...data } : t));
       localStorage.setItem('secondlife_admin_discount_tiers', JSON.stringify(updated));
-      return { id: tierId, ...data };
-    }
+    } catch (_) {}
+    return { id: tierId, ...data };
   },
 };

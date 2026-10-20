@@ -81,13 +81,41 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   useEffect(() => {
     if (listing.id) {
       // Gọi API lấy dữ liệu chi tiết bài đăng mới nhất từ server (GET /api/v1/posts/{postId})
-      postService.getListingDetail(listing.id).catch(() => {});
-
-      postService.getLatestPriceEstimate(listing.id).then((est) => {
-        if (est) setAiEstimate(est);
+      postService.getListingDetail(listing.id).then((detail) => {
+        if (!isOwnListing && detail?.aiSuggestedPrice) {
+          setAiEstimate({
+            suggestedPriceMin: Math.round(Number(detail.aiSuggestedPrice) * 0.9),
+            suggestedPriceMax: Math.round(Number(detail.aiSuggestedPrice) * 1.1),
+            confidenceScore: 0.95,
+            reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
+          });
+        }
       }).catch(() => {});
+
+      // Chỉ gọi API định giá nội bộ riêng tư (Owner-only) nếu người đang đăng nhập chính là người bán
+      if (isOwnListing) {
+        postService.getLatestPriceEstimate(listing.id).then((est) => {
+          if (est) setAiEstimate(est);
+        }).catch(() => {});
+      } else if (listing.aiPriceEstimation) {
+        setAiEstimate({
+          suggestedPriceMin: listing.aiPriceEstimation.minVnd,
+          suggestedPriceMax: listing.aiPriceEstimation.maxVnd,
+          confidenceScore: 0.95,
+          reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
+        });
+      } else if (listing.aiSuggestedPrice && listing.aiSuggestedPrice > 0) {
+        setAiEstimate({
+          suggestedPriceMin: Math.round(Number(listing.aiSuggestedPrice) * 0.9),
+          suggestedPriceMax: Math.round(Number(listing.aiSuggestedPrice) * 1.1),
+          confidenceScore: 0.95,
+          reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
+        });
+      } else {
+        setAiEstimate(null);
+      }
     }
-  }, [listing.id]);
+  }, [listing.id, isOwnListing, listing.aiSuggestedPrice, listing.aiPriceEstimation]);
 
   const displayReviews = reviewsTab === 'product' ? productReviews : sellerReviews;
   const avgProductRating = productReviews.length > 0

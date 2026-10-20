@@ -202,15 +202,12 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   const fetchAddressFromBackend = async (showNotification = false) => {
     setIsLoadingAddressFromBe(true);
     try {
-      const [onboardingData, pickupData] = await Promise.allSettled([
-        shippingService.getSellerOnboarding(),
-        shippingService.getPickupAddress(),
-      ]);
+      const onboardingData = await Promise.resolve(shippingService.getSellerOnboarding()).catch(() => null);
 
       let addressFound = false;
 
-      if (onboardingData.status === 'fulfilled' && onboardingData.value) {
-        const ob = onboardingData.value;
+      if (onboardingData) {
+        const ob = onboardingData;
         if (ob.shopName) setShopName((prev) => (prev && prev.trim() !== '' ? prev : ob.shopName));
         if (ob.phone) setSellerPhone((prev) => (prev && prev.trim() !== '' ? prev : ob.phone));
         if (ob.email) setShopEmail((prev) => (prev && prev.trim() !== '' ? prev : ob.email));
@@ -240,20 +237,6 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         }
         if (ob.wardId) {
           setSelectedWardId((prev) => (prev ? prev : ob.wardId));
-        }
-      }
-
-      if (!addressFound && pickupData.status === 'fulfilled' && pickupData.value) {
-        const pa = pickupData.value;
-        if (pa.latitude && pa.longitude) {
-          setPickupLatitude((prev) => (prev !== null ? prev : pa.latitude));
-          setPickupLongitude((prev) => (prev !== null ? prev : pa.longitude));
-        }
-        const fullAddr = pa.address || [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
-        if (fullAddr) {
-          setPickupAddress((prev) => (prev && prev.trim() !== '' ? prev : fullAddr));
-          setStreetAddress((prev) => (prev && prev.trim() !== '' ? prev : (pa.address || '')));
-          addressFound = true;
         }
       }
 

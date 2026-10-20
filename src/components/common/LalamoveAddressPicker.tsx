@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MapPin, Navigation, Loader2, CheckCircle2, AlertCircle, Phone, User, Building2 } from 'lucide-react';
+import { MapPin, Navigation, Loader2, CheckCircle2, AlertCircle, Phone, User, Building2, Search } from 'lucide-react';
 import { shippingService } from '../../services/shippingService';
 import { GeocodedAddressDto } from '../../types';
 
@@ -152,6 +152,106 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
       setContactPhone(initialPhone);
     }
   }, [initialPhone]);
+
+  // Address search with coordinate validation state
+  const [searchAddressText, setSearchAddressText] = useState('');
+  const [isSearchingAddress, setIsSearchingAddress] = useState(false);
+  const [searchValidationError, setSearchValidationError] = useState<string | null>(null);
+
+  const handleSearchAddressToPin = async () => {
+    const query = searchAddressText.trim();
+    setSearchValidationError(null);
+
+    // 1. Validate empty / length
+    if (!query) {
+      setSearchValidationError(lang === 'vi' ? 'Vui lòng nhập địa chỉ cần xác định vị trí trên bản đồ.' : 'Please enter an address to locate on the map.');
+      return;
+    }
+    if (query.length < 4) {
+      setSearchValidationError(lang === 'vi' ? 'Địa chỉ quá ngắn. Vui lòng nhập tối thiểu 4 ký tự.' : 'Address too short. Please enter at least 4 characters.');
+      return;
+    }
+
+    setIsSearchingAddress(true);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6500);
+
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&countrycodes=vn&addressdetails=1`;
+      const res = await fetch(url, {
+        headers: { 'Accept-Language': 'vi,en;q=0.9' },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        throw new Error('Dịch vụ bản đồ tạm thời gián đoạn.');
+      }
+
+      const results = await res.json();
+
+      // 2. Validate coordinates existence and structure
+      if (!Array.isArray(results) || results.length === 0) {
+        setSearchValidationError(
+          lang === 'vi'
+            ? 'Không tìm thấy tọa độ GPS cho địa chỉ này. Vui lòng nhập chi tiết hơn (số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành) hoặc nhấp trực tiếp trên bản đồ.'
+            : 'Could not resolve GPS coordinates. Please be more specific with street, district, city or pick directly on map.'
+        );
+        return;
+      }
+
+      const item = results[0];
+      const parsedLat = parseFloat(item.lat);
+      const parsedLng = parseFloat(item.lon);
+
+      // 3. Strict Coordinate Validation
+      if (
+        isNaN(parsedLat) ||
+        isNaN(parsedLng) ||
+        !isFinite(parsedLat) ||
+        !isFinite(parsedLng) ||
+        parsedLat < -90 ||
+        parsedLat > 90 ||
+        parsedLng < -180 ||
+        parsedLng > 180
+      ) {
+        setSearchValidationError(lang === 'vi' ? 'Tọa độ trả về không hợp lệ. Vui lòng thử lại với tên địa chỉ khác.' : 'Invalid coordinates returned. Please try another address.');
+        return;
+      }
+
+      // Check Vietnam approximate bounding box
+      if (parsedLat < 8.0 || parsedLat > 24.5 || parsedLng < 101.5 || parsedLng > 111.0) {
+        setSearchValidationError(lang === 'vi' ? 'Tọa độ tìm thấy nằm ngoài lãnh thổ Việt Nam. Vui lòng nhập địa chỉ trong nước.' : 'Coordinates found outside Vietnam. Please enter an address in Vietnam.');
+        return;
+      }
+
+      // 4. Update map, pin, coordinates and address state
+      setLatitude(parsedLat);
+      setLongitude(parsedLng);
+      setResolvedAddress(item.display_name || query);
+      const detectedCity = detectCityFromCoords(parsedLat, parsedLng);
+      setResolvedCity(detectedCity);
+      setIsConfirmed(false);
+      setLookupError(null);
+
+      // Move Leaflet map & marker
+      if (leafletMarkerRef.current) {
+        leafletMarkerRef.current.setLatLng([parsedLat, parsedLng]);
+      }
+      if (leafletMapRef.current) {
+        leafletMapRef.current.setView([parsedLat, parsedLng], 16);
+      }
+    } catch (err: any) {
+      console.warn('Geocoding search error:', err);
+      setSearchValidationError(
+        err?.name === 'AbortError'
+          ? (lang === 'vi' ? 'Quá thời gian tìm kiếm địa chỉ. Vui lòng kiểm tra mạng và thử lại.' : 'Search timeout. Please check network and retry.')
+          : (err?.message || (lang === 'vi' ? 'Không thể xác định tọa độ từ địa chỉ đã nhập.' : 'Could not resolve coordinates.'))
+      );
+    } finally {
+      setIsSearchingAddress(false);
+    }
+  };
 
   // Fallback reverse geocoding via OpenStreetMap Nominatim or heuristic
   const fallbackReverseGeocode = useCallback(async (lat: number, lng: number): Promise<{ address: string; city: string }> => {
@@ -401,11 +501,15 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
 
   // Confirm address button
   const handleConfirmLocation = () => {
-    // Không validate số điện thoại: nhập 9 số hay bất kỳ số nào vẫn bình thường không báo lỗi
-    const finalLat = latitude ?? defaultCityObj.lat;
-    const finalLng = longitude ?? defaultCityObj.lng;
+    // Validate that coordinates are valid numbers before confirming
+    const finalLat = latitude;
+    const finalLng = longitude;
+    if (finalLat === null || finalLng === null || isNaN(finalLat) || isNaN(finalLng) || !isFinite(finalLat) || !isFinite(finalLng)) {
+      setLookupError(lang === 'vi' ? 'Vui lòng chọn vị trí trên bản đồ hoặc tìm kiếm địa chỉ để có tọa độ GPS hợp lệ.' : 'Please select a spot on the map or search address for valid GPS coordinates.');
+      return;
+    }
     const finalCity = resolvedCity || detectCityFromCoords(finalLat, finalLng);
-    const finalAddr = (resolvedAddress || '').trim() || `Khu vực ${finalCity} (Tọa độ GPS: ${finalLat.toFixed(5)}, ${finalLng.toFixed(5)})`;
+    const finalAddr = (resolvedAddress || '').trim() || `Tọa độ GPS: ${finalLat.toFixed(5)}, ${finalLng.toFixed(5)}`;
 
     setIsConfirmed(true);
     setLookupError(null);
@@ -447,27 +551,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
         </div>
       </div>
 
-      {/* Seller warehouse city notice banner */}
-      {sellerCity && (
-        <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2.5 animate-fadeIn">
-          <div className="flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-amber-700 shrink-0" />
-            <span className="leading-snug">
-              Kho người bán tại: <strong className="text-slate-900 font-extrabold">{sellerCity}</strong>. Lalamove là dịch vụ giao nhanh nội thành, vui lòng chọn điểm giao trong cùng khu vực <strong>{sellerCity}</strong>.
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              const matched = ALLOWED_CITIES.find(c => c.name.toLowerCase().includes(sellerCity.toLowerCase())) || ALLOWED_CITIES[0];
-              handleSelectCityPreset(matched);
-            }}
-            className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition text-[11px] shrink-0 cursor-pointer shadow-xs"
-          >
-            Đến {sellerCity}
-          </button>
-        </div>
-      )}
+
 
       {/* Contact inputs: Name & Phone */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -510,14 +594,14 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
         </div>
       </div>
 
-      {/* Current Location & Quick Region Toolbar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-gradient-to-r from-orange-50/90 via-amber-50/40 to-white p-2.5 rounded-2xl border border-orange-200/80 shadow-2xs">
+      {/* Current Location & Address Search Toolbar */}
+      <div className="space-y-2.5">
         {/* Prominent GPS button */}
         <button
           type="button"
           onClick={handleGetCurrentLocation}
           disabled={isLocatingDevice}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500 hover:from-orange-700 hover:to-amber-600 text-white rounded-xl font-bold text-xs shadow-sm hover:shadow transition-all active:scale-[0.99] disabled:opacity-60 cursor-pointer"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500 hover:from-orange-700 hover:to-amber-600 text-white rounded-xl font-bold text-xs shadow-sm hover:shadow transition-all active:scale-[0.99] disabled:opacity-60 cursor-pointer"
         >
           {isLocatingDevice ? (
             <>
@@ -532,72 +616,75 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
           )}
         </button>
 
-        {/* Quick city presets with short readable names */}
-        {supportedCities && supportedCities.length > 0 && (
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0 scrollbar-none">
-            <span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap hidden md:inline">
-              {lang === 'vi' ? 'Khu vực:' : 'Area:'}
+        {/* Search input to pinpoint location on map with coordinate validation */}
+        <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-2xs space-y-1.5">
+          <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <Search className="w-3.5 h-3.5 text-orange-600" />
+              {lang === 'vi' ? 'Nhập địa chỉ để định vị trên bản đồ' : 'Search address to pin on map'}
             </span>
-            {supportedCities.map((c) => {
-              const shortName = getShortCityName(c.name);
-              const isMatchedSeller = Boolean(sellerCity && normalizeCityKey(sellerCity) === normalizeCityKey(c.name));
-              const isSelected = Boolean(resolvedCity && normalizeCityKey(resolvedCity) === normalizeCityKey(c.name));
-              return (
+            <span className="text-[10px] text-slate-400 font-normal">
+              {lang === 'vi' ? '(Hệ thống sẽ chuyển thành tọa độ GPS)' : '(Converts to GPS coordinates)'}
+            </span>
+          </label>
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={searchAddressText}
+                onChange={(e) => {
+                  setSearchAddressText(e.target.value);
+                  setSearchValidationError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSearchAddressToPin();
+                  }
+                }}
+                placeholder={lang === 'vi' ? 'Nhập số nhà, tên đường, phường, quận, tỉnh/thành...' : 'Enter street address, ward, district, city...'}
+                className={`w-full h-10 px-3.5 pl-9 bg-slate-50/80 border rounded-xl text-xs font-medium text-slate-800 placeholder:text-slate-400 shadow-2xs focus:outline-none transition ${
+                  searchValidationError ? 'border-rose-400 ring-2 ring-rose-100 bg-white' : 'border-gray-200 focus:border-orange-500 focus:ring-2 focus:ring-orange-100 focus:bg-white'
+                }`}
+              />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+              {searchAddressText && (
                 <button
-                  key={c.name}
                   type="button"
-                  onClick={() => handleSelectCityPreset(c)}
-                  title={c.name}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition shadow-2xs cursor-pointer flex items-center gap-1 border whitespace-nowrap ${
-                    isSelected
-                      ? 'bg-orange-600 text-white border-orange-700 shadow-xs'
-                      : isMatchedSeller
-                        ? 'bg-amber-100 text-amber-900 border-amber-300 ring-1 ring-amber-400'
-                        : 'bg-white hover:bg-orange-50 border-gray-200 hover:border-orange-300 text-slate-700'
-                  }`}
+                  onClick={() => setSearchAddressText('')}
+                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
                 >
-                  <Building2 className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-orange-600'}`} />
-                  <span>{shortName}</span>
-                  {isMatchedSeller && (
-                    <span className="text-[9px] bg-amber-600 text-white px-1.5 py-0.5 rounded-sm font-semibold">
-                      Kho
-                    </span>
-                  )}
+                  ✕
                 </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Notice if buyer selects a different city from seller warehouse */}
-      {sellerCity && resolvedCity && normalizeCityKey(resolvedCity) !== normalizeCityKey(sellerCity) && (
-        <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 animate-fadeIn">
-          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-          <div className="flex-1 space-y-1">
-            <p className="font-bold">
-              {lang === 'vi'
-                ? `Kho người bán tại ${sellerCity}, bạn đang chọn điểm giao tại ${getShortCityName(resolvedCity)}.`
-                : `Seller warehouse is in ${sellerCity}, you selected ${getShortCityName(resolvedCity)}.`}
-            </p>
-            <p className="text-[11px] text-amber-800 leading-relaxed">
-              {lang === 'vi'
-                ? `Lalamove là dịch vụ giao hàng nội thành (không hỗ trợ giao liên tỉnh giữa ${sellerCity} và ${getShortCityName(resolvedCity)}). Để đặt đơn hàng thành công, vui lòng chọn điểm giao trong cùng khu vực ${sellerCity}.`
-                : `Lalamove is an intra-city delivery service. Please choose an address within ${sellerCity}.`}
-            </p>
+              )}
+            </div>
             <button
               type="button"
-              onClick={() => {
-                const matched = supportedCities.find(sc => normalizeCityKey(sc.name) === normalizeCityKey(sellerCity)) || ALLOWED_CITIES[0];
-                handleSelectCityPreset(matched);
-              }}
-              className="mt-1 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs cursor-pointer transition shadow-2xs inline-flex items-center gap-1"
+              onClick={handleSearchAddressToPin}
+              disabled={isSearchingAddress}
+              className="h-10 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer disabled:opacity-60"
             >
-              <span>{lang === 'vi' ? `Quay lại khu vực ${sellerCity}` : `Back to ${sellerCity}`}</span>
+              {isSearchingAddress ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="hidden sm:inline">Đang tìm...</span>
+                </>
+              ) : (
+                <>
+                  <MapPin className="w-4 h-4" />
+                  <span>Tìm vị trí</span>
+                </>
+              )}
             </button>
           </div>
+          {searchValidationError && (
+            <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1 mt-1 animate-fadeIn">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+              <span>{searchValidationError}</span>
+            </p>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Map container with draggable marker */}
       <div className="relative rounded-2xl overflow-hidden border border-gray-300 shadow-xs bg-slate-100">

@@ -44,6 +44,8 @@ export interface MultiStagePhotos {
 
 export interface Listing {
   id: string;
+  categoryId?: string;
+  itemId?: string;
   title: string;
   category: ItemCategory;
   brand: string;
@@ -83,6 +85,7 @@ export interface Listing {
     confidence: number;
     daysToSell: number;
   };
+  aiSuggestedPrice?: number;
   aiFraudCheck?: {
     anomaly: boolean;
     trustScore: number;

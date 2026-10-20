@@ -352,18 +352,24 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           const loc = extractWardAndCity(rawPostAddr, currentSellerWard, currentSellerProv) || 'Hà Nội';
           const sellerAddr = rawPostAddr || (currentSellerWard && currentSellerProv ? `${currentSellerWard}, ${currentSellerProv}` : loc);
 
+          const isDraft = p.status === 'DRAFT';
+          const draftTitle = p.title || (isDraft ? 'Bản nháp sản phẩm' : 'Thiết bị gia dụng SecondLife');
+          const draftDesc = p.description || p.aiDescription || '';
+
           return {
             id: p.id || `post-${Date.now()}`,
-            title: p.title || 'Thiết bị gia dụng SecondLife',
+            categoryId: p.categoryId,
+            itemId: p.itemId,
+            title: draftTitle,
             category: (p.category || 'Tủ lạnh & Tủ đông') as any,
-            brand: p.brand || 'SecondLife',
-            model: p.model || 'Model',
+            brand: p.brand || '',
+            model: p.model || '',
             purchaseYear: 2024,
             priceVnd: Number(p.price || p.aiSuggestedPrice || 0),
             originalPriceVnd: Number(p.aiSuggestedPrice || p.price || 0),
             conditionGrade: (p.itemCondition || 'Like New') as any,
             declaredConditionText: p.itemCondition || 'Tình trạng tốt',
-            description: p.description || p.aiDescription || 'Đã qua thẩm định SecondLife.',
+            description: draftDesc,
             location: loc,
             sellerAddress: sellerAddr,
             sellerId: p.user?.id || p.userId || currentUser?.id || 'me',
@@ -385,7 +391,16 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               serialOrReceipt: rawImages[4] || primaryImage,
             },
             photoGallery: rawImages.length > 0 ? rawImages : [primaryImage],
+            shippingWeight: p.shippingWeight,
+            shippingLength: p.shippingLength,
+            shippingWidth: p.shippingWidth,
+            shippingHeight: p.shippingHeight,
           };
+        });
+        mapped.sort((a, b) => {
+          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
         });
         setMyServerPosts(mapped);
       }

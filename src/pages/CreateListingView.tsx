@@ -517,7 +517,63 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       if (!currentSellerFullAddress && initialDraft.location) {
         setSellerLocation(initialDraft.location);
       }
-      // Note: Category and Item might need to be resolved by name since initialDraft only stores the string in FE mapping
+      if (initialDraft.categoryId) {
+        setSelectedCategoryId(initialDraft.categoryId);
+      }
+      if (initialDraft.itemId) {
+        setSelectedItemId(initialDraft.itemId);
+      }
+
+      setDraftPost({
+        postId: initialDraft.id,
+        id: initialDraft.id,
+        title: initialDraft.title || '',
+        description: initialDraft.description || '',
+        imageUrls: initialDraft.photoGallery || [],
+        descriptionAccepted: !!initialDraft.description,
+        status: 'DRAFT',
+      });
+
+      // Nếu bản nháp đã có ảnh, tự động chuyển ngay sang Bước 2 để người dùng tiếp tục chỉnh sửa bài
+      if ((initialDraft.photoGallery && initialDraft.photoGallery.length > 0) || (initialDraft.photos && initialDraft.photos.front)) {
+        setCurrentStep(2);
+      }
+
+      // Tải bổ sung thông tin chi tiết nhất từ backend nếu có
+      if (initialDraft.id) {
+        postService.getPost(initialDraft.id).then((freshDraft: any) => {
+          if (freshDraft) {
+            if (freshDraft.title) setTitle(freshDraft.title);
+            if (freshDraft.description) setDescription(cleanDescriptionFromQuestionTemplate(freshDraft.description));
+            if (freshDraft.price) {
+              setOriginalPriceVnd(Number(freshDraft.price));
+              setFinalPriceVnd(Number(freshDraft.price));
+              setIsManualPricingInStep3(true);
+            }
+            if (freshDraft.itemCondition) setItemCondition(freshDraft.itemCondition);
+            if (freshDraft.categoryId) setSelectedCategoryId(freshDraft.categoryId);
+            if (freshDraft.itemId) setSelectedItemId(freshDraft.itemId);
+            if (freshDraft.shippingWeight) {
+              setShippingWeight(freshDraft.shippingWeight);
+              setRawWeightInput((Number(freshDraft.shippingWeight) / 1000).toString());
+            }
+            if (freshDraft.shippingLength) {
+              setShippingLength(freshDraft.shippingLength);
+              setRawLengthInput(freshDraft.shippingLength.toString());
+            }
+            if (freshDraft.shippingWidth) {
+              setShippingWidth(freshDraft.shippingWidth);
+              setRawWidthInput(freshDraft.shippingWidth.toString());
+            }
+            if (freshDraft.shippingHeight) {
+              setShippingHeight(freshDraft.shippingHeight);
+              setRawHeightInput(freshDraft.shippingHeight.toString());
+            }
+          }
+        }).catch((err) => {
+          console.warn('Lỗi lấy chi tiết bản nháp từ server:', err);
+        });
+      }
     }
   }, [initialDraft]);
 
@@ -1178,12 +1234,20 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       .then((catList) => {
         if (Array.isArray(catList) && catList.length > 0) {
           setBackendCategories(catList);
-          setSelectedCategoryId(catList[0].id);
+          setSelectedCategoryId((prev) => {
+            if (prev) return prev;
+            if (initialDraft?.categoryId) return initialDraft.categoryId;
+            if (initialDraft?.category) {
+              const matched = catList.find(c => c.name.toLowerCase() === (initialDraft.category as string).toLowerCase());
+              if (matched) return matched.id;
+            }
+            return catList[0].id;
+          });
         }
       })
       .catch((err) => console.error('Lỗi tải danh mục:', err))
       .finally(() => setIsLoadingCategories(false));
-  }, []);
+  }, [initialDraft?.categoryId, initialDraft?.category]);
 
   // Load Items when category changes
   useEffect(() => {
@@ -1193,7 +1257,15 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         .then((itemList) => {
           if (Array.isArray(itemList) && itemList.length > 0) {
             setBackendItems(itemList);
-            setSelectedItemId(itemList[0].id);
+            setSelectedItemId((prev) => {
+              if (initialDraft?.itemId && itemList.some(i => i.id === initialDraft.itemId)) {
+                return initialDraft.itemId;
+              }
+              if (prev && itemList.some(i => i.id === prev)) {
+                return prev;
+              }
+              return itemList[0].id;
+            });
           } else {
             setBackendItems([]);
             setSelectedItemId('');
@@ -1202,7 +1274,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         .catch((err) => console.error('Lỗi tải items:', err))
         .finally(() => setIsLoadingItems(false));
     }
-  }, [selectedCategoryId]);
+  }, [selectedCategoryId, initialDraft?.itemId]);
 
   // Handle Photo File selection (multi-file or single-file)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1280,6 +1352,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // STEP 1: Init Post (POST /api/v1/posts/init with multipart/form-data)
   // =========================================================================
   const handleTriggerAiChat = () => {
+    if (postId || initialDraft?.id) {
+      handleInitPost('ai');
+      return;
+    }
     if (!selectedCategoryId) {
       showToast(lang === 'vi' ? 'Vui lòng chọn Danh mục sản phẩm trước khi quét AI' : 'Please select a Category');
       return;
@@ -1299,6 +1375,20 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   };
 
   const handleInitPost = async (mode: 'ai' | 'manual' = 'ai') => {
+    // Nếu bản nháp đã tồn tại (đã có postId hoặc initialDraft.id):
+    // KHÔNG gọi postService.initPost nữa để tránh tạo bản nháp trùng lặp trong DB và xóa trắng mô tả của người dùng!
+    if (postId || initialDraft?.id) {
+      const activePostId = postId || initialDraft!.id;
+      setPostId(activePostId);
+      setInitMode(mode);
+      setPostMode(mode);
+      if (mode === 'ai') {
+        setShowAiChatDrawer(true);
+      }
+      setCurrentStep(2);
+      return;
+    }
+
     if (!selectedCategoryId) {
       showToast(lang === 'vi' ? 'Vui lòng chọn Danh mục sản phẩm' : 'Please select a Category');
       return;
@@ -1601,27 +1691,28 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
     setIsAcceptingDescription(true);
     try {
-      // 1. PUT /api/v1/posts/{postId}/draft
-      await postService.updateDraft(postId, {
-        title: title.trim(),
-        description: description.trim(),
-        itemCondition: itemCondition || 'USED',
-        price: isManualPricingInStep3 ? finalPriceVnd : null,
-        shippingWeight: shippingWeight ? Number(shippingWeight) : undefined,
-        shippingLength: shippingLength ? Number(shippingLength) : undefined,
-        shippingWidth: shippingWidth ? Number(shippingWidth) : undefined,
-        shippingHeight: shippingHeight ? Number(shippingHeight) : undefined,
-      });
+      // 1 & 2. Chạy song song updateDraft và acceptDescription bằng Promise.all để giảm 50% thời gian chờ ở Bước 3
+      const [, acceptRes] = await Promise.all([
+        postService.updateDraft(postId, {
+          title: title.trim(),
+          description: description.trim(),
+          itemCondition: itemCondition || 'USED',
+          price: isManualPricingInStep3 ? finalPriceVnd : null,
+          shippingWeight: shippingWeight ? Number(shippingWeight) : undefined,
+          shippingLength: shippingLength ? Number(shippingLength) : undefined,
+          shippingWidth: shippingWidth ? Number(shippingWidth) : undefined,
+          shippingHeight: shippingHeight ? Number(shippingHeight) : undefined,
+        }),
+        postService.acceptDescription(postId, description.trim()),
+      ]);
 
-      // 2. POST /api/v1/posts/{postId}/accept-description
-      const acceptRes = await postService.acceptDescription(postId, description.trim());
       setDescriptionAccepted(true);
       setDraftPost(acceptRes);
 
       if (isManualPricingInStep3) {
         setCurrentStep(5);
       } else {
-        // Successfully confirmed description -> Advance to Step 4
+        // Chuyển sang Bước 4 ngay lập tức
         setCurrentStep(4);
         if (credits?.valuationCredits !== undefined && credits.valuationCredits > 0) {
           handleRunAiValuation();
@@ -2195,45 +2286,45 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-3 justify-end">
-              {/* Nút 1: Tự đăng bài */}
+              {/* Nút 1: Tự đăng bài / Tiếp tục bản nháp */}
               <button
                 type="button"
                 onClick={() => handleInitPost('manual')}
-                disabled={isInitializingPost || photoPreviews.length < 3 || photoPreviews.length > 6}
+                disabled={isInitializingPost || (!postId && !initialDraft?.id && (photoPreviews.length < 3 || photoPreviews.length > 6))}
                 className="px-6 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xs flex items-center justify-center gap-2 transition cursor-pointer border-2 border-[#24263e]/20 bg-white text-[#24263e] hover:bg-slate-50 hover:border-[#24263e] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Tự nhập tiêu đề, mô tả và đăng bài nhanh chóng"
+                title={postId || initialDraft?.id ? 'Tiếp tục chỉnh sửa thông tin bản nháp' : 'Tự nhập tiêu đề, mô tả và đăng bài nhanh chóng'}
               >
                 {isInitializingPost && initMode === 'manual' ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-[#c34c36]" />
-                    <span>Đang khởi tạo...</span>
+                    <span>Đang tải...</span>
                   </>
                 ) : (
                   <>
                     <PenLine className="w-4 h-4 text-[#c34c36]" />
-                    <span>Tự Đăng Bài</span>
+                    <span>{postId || initialDraft?.id ? 'Tiếp Tục Soạn Bản Nháp' : 'Tự Đăng Bài'}</span>
                     <ArrowRight className="w-3.5 h-3.5 opacity-60" />
                   </>
                 )}
               </button>
 
-              {/* Nút 2: Chat với AI */}
+              {/* Nút 2: Chat với AI / Nhờ AI bổ sung */}
               <button
                 type="button"
                 onClick={handleTriggerAiChat}
-                disabled={isInitializingPost || photoPreviews.length < 3 || photoPreviews.length > 6}
+                disabled={isInitializingPost || (!postId && !initialDraft?.id && (photoPreviews.length < 3 || photoPreviews.length > 6))}
                 className="px-7 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-md flex items-center justify-center gap-2.5 transition cursor-pointer bg-gradient-to-r from-[#c34c36] to-[#24263e] text-white hover:opacity-95 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Sử dụng trí tuệ nhân tạo để phân tích ảnh và hoàn thiện mô tả"
+                title={postId || initialDraft?.id ? 'Nhờ AI tối ưu mô tả cho bản nháp này' : 'Sử dụng trí tuệ nhân tạo để phân tích ảnh và hoàn thiện mô tả'}
               >
                 {isInitializingPost && initMode === 'ai' ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
-                    <span>AI đang quét hình ảnh...</span>
+                    <span>AI đang phân tích...</span>
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4 text-amber-300" />
-                    <span>Chat Với AI</span>
+                    <span>{postId || initialDraft?.id ? 'Nhờ AI Bổ Sung Mô Tả' : 'Chat Với AI'}</span>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-amber-200 font-bold">
                       -1 credit ({credits?.chatCredits ?? 0})
                     </span>
@@ -2947,8 +3038,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
           {/* Manual Pricing Option */}
           <div className="pt-4 border-t border-gray-100 space-y-4">
-            <div className="flex items-center gap-6">
-              <label className="flex items-center gap-2 cursor-pointer">
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-2 cursor-pointer p-2 rounded-xl border border-transparent hover:bg-slate-50 transition">
                 <input 
                   type="radio" 
                   name="pricingMethod" 
@@ -2958,15 +3049,21 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 />
                 <span className="text-sm font-bold text-slate-700">Dùng AI Định Giá (Đề xuất)</span>
               </label>
-              <label className="flex items-center gap-2 cursor-pointer">
+              <label className="flex items-center gap-2 cursor-pointer p-2 px-3 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100/70 transition shadow-2xs">
                 <input 
                   type="radio" 
                   name="pricingMethod" 
                   checked={isManualPricingInStep3} 
-                  onChange={() => setIsManualPricingInStep3(true)} 
-                  className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+                  onChange={() => {
+                    setIsManualPricingInStep3(true);
+                    if (!finalPriceVnd && typeof originalPriceVnd === 'number' && originalPriceVnd > 0) {
+                      const fastP = Math.round((originalPriceVnd * 0.5) / 10000) * 10000;
+                      setFinalPriceVnd(fastP);
+                    }
+                  }} 
+                  className="w-4 h-4 text-amber-600 focus:ring-amber-500"
                 />
-                <span className="text-sm font-bold text-slate-700">Tự Định Giá</span>
+                <span className="text-sm font-black text-amber-950">Tự Định Giá (Bỏ qua chờ AI, nhanh nhất ⚡)</span>
               </label>
             </div>
 
@@ -3094,6 +3191,53 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Hộp trạng thái AI đang phân tích kèm tùy chọn Dùng giá gợi ý nhanh hoặc bỏ qua chờ */}
+          {isEstimatingPrice && (
+            <div className="p-4 sm:p-5 rounded-2xl bg-amber-50 border border-amber-300 space-y-3 animate-fadeIn shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-amber-950 font-bold text-xs">
+                  <Loader2 className="w-4 h-4 animate-spin text-amber-600 shrink-0" />
+                  <span>AI đang phân tích dữ liệu thị trường và đối chiếu hao mòn...</span>
+                </div>
+                <span className="text-[10px] text-amber-800 bg-amber-100/90 border border-amber-300 px-2.5 py-0.5 rounded-full font-bold self-start sm:self-auto">
+                  Đang xử lý (~5-8s)
+                </span>
+              </div>
+
+              {typeof originalPriceVnd === 'number' && originalPriceVnd > 0 && (
+                <div className="pt-3 border-t border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div>
+                    <span className="text-slate-600 block text-[11px]">Không muốn chờ lâu? Giá gợi ý nhanh theo giá gốc ({formatVND(originalPriceVnd)}):</span>
+                    <strong className="text-base font-black text-[#c34c36]">
+                      ~{formatVND(Math.round((originalPriceVnd * (itemCondition === 'LIKE_NEW' ? 0.7 : itemCondition === 'USED_GOOD' ? 0.5 : 0.35)) / 10000) * 10000)}
+                    </strong>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const fastPrice = Math.round((originalPriceVnd * (itemCondition === 'LIKE_NEW' ? 0.7 : itemCondition === 'USED_GOOD' ? 0.5 : 0.35)) / 10000) * 10000;
+                        setFinalPriceVnd(fastPrice);
+                        setIsEstimatingPrice(false);
+                      }}
+                      className="px-3.5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl font-bold text-xs shadow-xs cursor-pointer transition active:scale-[0.98] flex items-center gap-1.5"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>⚡ Dùng giá này & Bỏ qua chờ</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEstimatingPrice(false)}
+                      className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl font-bold text-xs cursor-pointer"
+                    >
+                      Tự gõ giá
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* AI Valuation Result Card */}
           {valuationResult && (

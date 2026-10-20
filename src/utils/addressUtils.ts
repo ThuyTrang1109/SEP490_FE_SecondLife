@@ -15,7 +15,7 @@ export interface SavedSellerAddress {
 export function getSavedSellerAddress(): SavedSellerAddress {
   try {
     const rawSaved = localStorage.getItem('secondlife_seller_profile_address');
-    if (rawSaved) {
+    if (rawSaved && rawSaved !== 'undefined' && rawSaved !== 'null' && rawSaved.trim() !== '') {
       const parsed = JSON.parse(rawSaved);
       if (parsed && (parsed.address || parsed.wardName || parsed.provinceName)) {
         return {
@@ -29,7 +29,7 @@ export function getSavedSellerAddress(): SavedSellerAddress {
 
   try {
     const rawUser = localStorage.getItem('secondlife_user');
-    if (rawUser) {
+    if (rawUser && rawUser !== 'undefined' && rawUser !== 'null' && rawUser.trim() !== '') {
       const u = JSON.parse(rawUser);
       if (u) {
         return {
@@ -49,14 +49,16 @@ export function getSavedSellerAddress(): SavedSellerAddress {
  */
 export function saveSellerAddress(address: string, wardName?: string, provinceName?: string): void {
   try {
-    localStorage.setItem(
-      'secondlife_seller_profile_address',
-      JSON.stringify({
-        address: address || '',
-        wardName: wardName || '',
-        provinceName: provinceName || '',
-      })
-    );
+    if (address !== undefined && address !== null && address !== 'undefined') {
+      localStorage.setItem(
+        'secondlife_seller_profile_address',
+        JSON.stringify({
+          address: address || '',
+          wardName: wardName || '',
+          provinceName: provinceName || '',
+        })
+      );
+    }
   } catch (_) {}
 }
 

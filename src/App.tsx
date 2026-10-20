@@ -8,7 +8,7 @@ import { MarketplaceView } from './pages/MarketplaceView';
 import { ListingDetailModal } from './components/modals/ListingDetailModal';
 import { CreateListingView } from './pages/CreateListingView';
 import { SellerDashboardView } from './pages/SellerDashboardView';
-import { EscrowOrdersView } from './pages/EscrowOrdersView';
+import { EscrowOrdersView, getSortableOrderTimestamp } from './pages/EscrowOrdersView';
 import { InspectorPortalView } from './pages/InspectorPortalView';
 import { InspectionCenterDashboardView } from './pages/InspectionCenterDashboardView';
 import { StaffWorkspaceView } from './pages/StaffWorkspaceView';
@@ -32,7 +32,7 @@ import { RealtimeNotificationToast } from './components/common/RealtimeNotificat
 import { GlobalPopupModal } from './components/common/GlobalPopupModal';
 import './utils/dialogService';
 import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
-import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser, ChatRoomDto } from './services';
+import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, refreshAccessToken, ChatRoomDto } from './services';
 
 export default function App() {
   // Global State - Default to 'marketplace' so visitors enter directly into the marketplace
@@ -87,13 +87,18 @@ export default function App() {
           // Lấy thông tin địa chỉ kho bưu tá / onboarding từ BE
           let pickupAddr: any = null;
           try {
-            const [obRes, paRes] = await Promise.allSettled([
-              shippingService.getSellerOnboarding(),
-              shippingService.getPickupAddress(),
-            ]);
-            if (obRes.status === 'fulfilled' && obRes.value?.pickupAddress) {
+            const isSeller = profile.roles?.some((r: string) => r === 'SELLER' || r === 'ROLE_SELLER');
+            // Nếu là SELLER thì mới gọi getPickupAddress(), nếu là BUYER thì chỉ gọi getSellerOnboarding()
+            const tasks: Promise<any>[] = [shippingService.getSellerOnboarding()];
+            if (isSeller) {
+              tasks.push(shippingService.getPickupAddress());
+            }
+            const results = await Promise.allSettled(tasks);
+            const obRes = results[0];
+            const paRes = isSeller ? results[1] : null;
+            if (obRes && obRes.status === 'fulfilled' && obRes.value?.pickupAddress) {
               pickupAddr = obRes.value.pickupAddress;
-            } else if (paRes.status === 'fulfilled' && paRes.value) {
+            } else if (paRes && paRes.status === 'fulfilled' && paRes.value) {
               pickupAddr = paRes.value;
             }
           } catch (_) {}
@@ -362,6 +367,13 @@ export default function App() {
       }
     } catch {}
 
+    result.sort((a, b) => {
+      const timeA = getSortableOrderTimestamp(a);
+      const timeB = getSortableOrderTimestamp(b);
+      if (timeB !== timeA) return timeB - timeA;
+      return String(b.id || '').localeCompare(String(a.id || ''));
+    });
+
     return result;
   }, []);
 
@@ -414,24 +426,22 @@ export default function App() {
 
     const interval = setInterval(() => {
       if (currentUser) {
-        import('./services/apiClient').then(({ getAccessToken, isTokenExpired, refreshAccessToken }) => {
-          const token = getAccessToken();
-          if (token && isTokenExpired(token)) {
-            // Check if user is IDLE for 30 minutes (1800000 ms)
-            if (Date.now() - lastActivityTime >= 1800000) {
-              console.log('[App] User is idle and token expired. Dispatching unauthorized_session.');
-              window.dispatchEvent(new Event('unauthorized_session'));
-            } else {
-              // User is active, proactively refresh token
-              console.log('[App] Token expired but user active. Proactively refreshing.');
-              refreshAccessToken().then((newToken) => {
-                if (!newToken) {
-                  window.dispatchEvent(new Event('unauthorized_session'));
-                }
-              });
-            }
+        const token = getAccessToken();
+        if (token && isTokenExpired(token)) {
+          // Check if user is IDLE for 30 minutes (1800000 ms)
+          if (Date.now() - lastActivityTime >= 1800000) {
+            console.log('[App] User is idle and token expired. Dispatching unauthorized_session.');
+            window.dispatchEvent(new Event('unauthorized_session'));
+          } else {
+            // User is active, proactively refresh token
+            console.log('[App] Token expired but user active. Proactively refreshing.');
+            refreshAccessToken().then((newToken) => {
+              if (!newToken) {
+                window.dispatchEvent(new Event('unauthorized_session'));
+              }
+            });
           }
-        });
+        }
       }
     }, 5000);
     return () => {
@@ -907,6 +917,38 @@ export default function App() {
         confidence: 96,
         daysToSell: 3,
       } : undefined,
+      shippingWeight: post.shippingWeight ?? post.weight ?? (
+        detectedCategory === 'Tủ lạnh & Tủ đông' ? 55000 :
+        detectedCategory === 'Máy giặt & Máy sấy' ? 40000 :
+        detectedCategory === 'Điều hòa & Máy lọc' ? 15000 :
+        detectedCategory === 'Lò vi sóng & Lò nướng' ? 8000 :
+        detectedCategory === 'Robot & Máy hút bụi' ? 4500 :
+        detectedCategory === 'Nồi cơm & Bếp từ' ? 3500 : 2500
+      ),
+      shippingLength: post.shippingLength ?? post.length ?? (
+        detectedCategory === 'Tủ lạnh & Tủ đông' ? 65 :
+        detectedCategory === 'Máy giặt & Máy sấy' ? 60 :
+        detectedCategory === 'Điều hòa & Máy lọc' ? 80 :
+        detectedCategory === 'Lò vi sóng & Lò nướng' ? 45 :
+        detectedCategory === 'Robot & Máy hút bụi' ? 40 :
+        detectedCategory === 'Nồi cơm & Bếp từ' ? 30 : 25
+      ),
+      shippingWidth: post.shippingWidth ?? post.width ?? (
+        detectedCategory === 'Tủ lạnh & Tủ đông' ? 65 :
+        detectedCategory === 'Máy giặt & Máy sấy' ? 60 :
+        detectedCategory === 'Điều hòa & Máy lọc' ? 30 :
+        detectedCategory === 'Lò vi sóng & Lò nướng' ? 35 :
+        detectedCategory === 'Robot & Máy hút bụi' ? 40 :
+        detectedCategory === 'Nồi cơm & Bếp từ' ? 30 : 20
+      ),
+      shippingHeight: post.shippingHeight ?? post.height ?? (
+        detectedCategory === 'Tủ lạnh & Tủ đông' ? 165 :
+        detectedCategory === 'Máy giặt & Máy sấy' ? 85 :
+        detectedCategory === 'Điều hòa & Máy lọc' ? 30 :
+        detectedCategory === 'Lò vi sóng & Lò nướng' ? 30 :
+        detectedCategory === 'Robot & Máy hút bụi' ? 15 :
+        detectedCategory === 'Nồi cơm & Bếp từ' ? 25 : 20
+      ),
     };
   }, [
     currentUser?.id,
@@ -1321,7 +1363,7 @@ export default function App() {
                 ]
               }
             ],
-            createdAt: bOrd.createdAt,
+            createdAt: bOrd.createdAt || bOrd.createdDate || bOrd.created_at || bOrd.paidAt || bOrd.sellerConfirmedAt || bOrd.updatedAt || new Date().toISOString(),
             multiStagePhotos: {
               listingPhotos: [matchedListing.photos.front, matchedListing.photos.back]
             }
@@ -1337,16 +1379,12 @@ export default function App() {
           }
         });
 
-        // Sắp xếp đơn mới nhất trên cùng
+        // Sắp xếp đơn theo thứ tự thời gian: Mới nhất ở ĐẦU, cũ hơn ở SAU
         combined.sort((a, b) => {
-          const dateA = a.createdAt || (a as any).createdDate || (a as any).created_at || (a as any).timestamp;
-          const dateB = b.createdAt || (b as any).createdDate || (b as any).created_at || (b as any).timestamp;
-          const timeA = dateA ? new Date(dateA).getTime() : 0;
-          const timeB = dateB ? new Date(dateB).getTime() : 0;
-          const validTimeA = isNaN(timeA) ? 0 : timeA;
-          const validTimeB = isNaN(timeB) ? 0 : timeB;
-          if (validTimeB !== validTimeA) return validTimeB - validTimeA;
-          return (b.id || '').localeCompare(a.id || '');
+          const timeA = getSortableOrderTimestamp(a);
+          const timeB = getSortableOrderTimestamp(b);
+          if (timeB !== timeA) return timeB - timeA;
+          return String(b.id || '').localeCompare(String(a.id || ''));
         });
 
         setOrders(combined);
@@ -1354,9 +1392,10 @@ export default function App() {
         // Even if server returns 0, retain all local recent orders
         const localRecentOrders = getLocalStoredOrders();
         localRecentOrders.sort((a, b) => {
-          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+          const timeA = getSortableOrderTimestamp(a);
+          const timeB = getSortableOrderTimestamp(b);
+          if (timeB !== timeA) return timeB - timeA;
+          return String(b.id || '').localeCompare(String(a.id || ''));
         });
         setOrders(localRecentOrders);
       }
@@ -1410,7 +1449,17 @@ export default function App() {
       localStorage.setItem('recent_placed_orders', JSON.stringify(updatedRecent));
     } catch {}
 
-    setOrders((prev) => [newOrder, ...prev.filter((o) => o.id !== newOrder.id)]);
+    setOrders((prev) => {
+      const filtered = prev.filter((o) => o.id !== newOrder.id);
+      const nextList = [newOrder, ...filtered];
+      nextList.sort((a, b) => {
+        const timeA = getSortableOrderTimestamp(a);
+        const timeB = getSortableOrderTimestamp(b);
+        if (timeB !== timeA) return timeB - timeA;
+        return String(b.id || '').localeCompare(String(a.id || ''));
+      });
+      return nextList;
+    });
     setCheckoutListing(null);
     setCheckoutAgreedPrice(undefined);
     setCheckoutNegotiationId(undefined);

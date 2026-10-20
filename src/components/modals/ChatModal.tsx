@@ -5,6 +5,7 @@ import { dialogService } from '../../utils/dialogService';
 import {
   Sparkles,
   AlertTriangle,
+  AlertCircle,
   Check,
   X,
   Send,
@@ -453,6 +454,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       senderRole: chatRole,
       text,
       timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      isSending: true,
+      isFailed: false,
       safetyWarning: hasScam
         ? 'Cảnh báo an toàn: Tin nhắn có dấu hiệu giao dịch ngoài luồng. Tuyệt đối không chuyển tiền cọc trực tiếp ngoài SecondLife Escrow!'
         : undefined
@@ -472,20 +475,109 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
 
     try {
-      if (roomId) {
-        // Call Backend API: POST /api/v1/chats/{roomId}/messages
-        const res = await chatService.sendMessage(roomId, text);
-        if (res?.id) {
-          setMessages((prev) =>
-            prev.map((m) => (m.id === tempId ? { ...m, id: res.id } : m))
-          );
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        throw new Error('Mất kết nối Internet');
+      }
+
+      let targetRoomId = roomId;
+      if (!targetRoomId && listing?.id) {
+        const room = await chatService.getOrCreateRoom(listing.id);
+        if (room?.id) {
+          targetRoomId = room.id;
+          setRoomId(room.id);
+          setActiveRoom(room);
         }
       }
-    } catch (err) {
-      console.warn('Could not send message via backend API, kept in local state:', err);
+
+      if (!targetRoomId) {
+        throw new Error('Không thể kết nối phòng chat đến máy chủ Backend');
+      }
+
+      // Call Backend API: POST /api/v1/chats/{roomId}/messages
+      const res = await chatService.sendMessage(targetRoomId, text);
+      if (res?.id) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, id: res.id, isSending: false, isFailed: false } : m))
+        );
+      } else {
+        throw new Error('Máy chủ không phản hồi mã tin nhắn');
+      }
+    } catch (err: any) {
+      console.warn('Could not send message via backend API, marking as failed:', err);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId
+            ? {
+                ...m,
+                isSending: false,
+                isFailed: true,
+                errorReason: err?.message || 'Không thể gửi tin nhắn'
+              }
+            : m
+        )
+      );
     } finally {
       setIsSending(false);
     }
+  };
+
+  // Retry sending failed message
+  const handleRetrySendMessage = async (failedMsg: ChatMessage) => {
+    if (!failedMsg || isSending) return;
+
+    setMessages((prev) =>
+      prev.map((m) => (m.id === failedMsg.id ? { ...m, isSending: true, isFailed: false } : m))
+    );
+    setIsSending(true);
+
+    try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        throw new Error('Mất kết nối Internet');
+      }
+
+      let targetRoomId = roomId;
+      if (!targetRoomId && listing?.id) {
+        const room = await chatService.getOrCreateRoom(listing.id);
+        if (room?.id) {
+          targetRoomId = room.id;
+          setRoomId(room.id);
+          setActiveRoom(room);
+        }
+      }
+
+      if (!targetRoomId) {
+        throw new Error('Không thể kết nối phòng chat đến máy chủ Backend');
+      }
+
+      const res = await chatService.sendMessage(targetRoomId, failedMsg.text);
+      if (res?.id) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === failedMsg.id ? { ...m, id: res.id, isSending: false, isFailed: false } : m))
+        );
+      } else {
+        throw new Error('Máy chủ không phản hồi mã tin nhắn');
+      }
+    } catch (err: any) {
+      console.warn('Retry sending message failed:', err);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === failedMsg.id
+            ? {
+                ...m,
+                isSending: false,
+                isFailed: true,
+                errorReason: err?.message || 'Không thể gửi lại tin nhắn'
+              }
+            : m
+        )
+      );
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleRemoveFailedMessage = (msgId: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== msgId));
   };
 
   // Send official negotiation offer
@@ -1124,7 +1216,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                       {msg.senderName} • {msg.timestamp}
                     </span>
 
-                    {isMe && !msg.isUnsent && (
+                    {isMe && !msg.isUnsent && !msg.isFailed && (
                       <button
                         onClick={() => handleUnsendMessage(msg.id)}
                         className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-gray-400 hover:text-[#24263e] font-medium flex items-center gap-0.5 cursor-pointer ml-1"
@@ -1136,15 +1228,35 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     )}
                   </div>
 
-                  <div
-                    className={`max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed transition-all ${
-                      msg.isUnsent
-                        ? 'bg-[#FFFFFF] text-gray-400 italic border border-gray-200 shadow-none'
-                        : isMe
-                        ? 'bg-[#24263e] text-white rounded-br-xs font-medium shadow-2xs'
-                        : 'bg-[#FFFFFF] text-[#24263e] border border-gray-200 shadow-2xs rounded-bl-xs'
-                    }`}
-                  >
+                  {/* Message Bubble + Failed Icon / Sending Indicator */}
+                  <div className={`flex items-center gap-1.5 max-w-[85%] ${isMe ? 'flex-row' : 'flex-row-reverse'}`}>
+                    {/* Dấu chấm than đỏ thể hiện tin nhắn không gửi được khi mất kết nối hoặc lỗi */}
+                    {msg.isFailed && (
+                      <button
+                        type="button"
+                        onClick={() => handleRetrySendMessage(msg)}
+                        className="p-1 rounded-full text-rose-600 hover:text-rose-700 hover:bg-rose-50 transition cursor-pointer shrink-0 animate-bounce"
+                        title={lang === 'vi' ? 'Lỗi gửi tin nhắn (Mất kết nối máy chủ). Nhấn để gửi lại' : 'Message not sent. Click to retry'}
+                      >
+                        <AlertCircle className="w-5 h-5 text-rose-600 fill-rose-100" />
+                      </button>
+                    )}
+
+                    {msg.isSending && (
+                      <Loader2 className="w-3.5 h-3.5 text-gray-400 animate-spin shrink-0" />
+                    )}
+
+                    <div
+                      className={`rounded-2xl p-3 text-xs leading-relaxed transition-all ${
+                        msg.isUnsent
+                          ? 'bg-[#FFFFFF] text-gray-400 italic border border-gray-200 shadow-none'
+                          : msg.isFailed
+                          ? 'bg-[#24263e]/90 text-white rounded-br-xs font-medium border-2 border-rose-500 shadow-xs'
+                          : isMe
+                          ? 'bg-[#24263e] text-white rounded-br-xs font-medium shadow-2xs'
+                          : 'bg-[#FFFFFF] text-[#24263e] border border-gray-200 shadow-2xs rounded-bl-xs'
+                      }`}
+                    >
                     {msg.isUnsent ? (
                       <p className="flex items-center gap-1.5 text-gray-400 font-normal not-italic">
                         <RotateCcw className="w-3 h-3 text-gray-400 shrink-0" />
@@ -1268,6 +1380,31 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     )}
                   </div>
                 </div>
+
+                {/* Thông báo chi tiết ngay dưới tin nhắn không gửi được */}
+                {msg.isFailed && (
+                  <div className="flex items-center gap-1.5 mt-1 px-1 text-[11px] text-rose-600 font-medium animate-fadeIn">
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                    <span>{lang === 'vi' ? 'Tin nhắn chưa được gửi' : 'Not delivered'}</span>
+                    <span>•</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRetrySendMessage(msg)}
+                      className="underline hover:text-rose-700 font-bold cursor-pointer"
+                    >
+                      {lang === 'vi' ? 'Thử lại' : 'Retry'}
+                    </button>
+                    <span>•</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveFailedMessage(msg.id)}
+                      className="text-slate-400 hover:text-slate-600 cursor-pointer text-[10px]"
+                    >
+                      {lang === 'vi' ? 'Xóa' : 'Delete'}
+                    </button>
+                  </div>
+                )}
+              </div>
               );
             })
           )}

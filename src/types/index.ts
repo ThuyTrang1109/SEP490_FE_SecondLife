@@ -261,6 +261,9 @@ export interface ChatMessage {
   isUnsent?: boolean;
   isInspectionProposal?: boolean;
   inspectionProposal?: SystemInspectionProposalPayload;
+  isSending?: boolean;
+  isFailed?: boolean;
+  errorReason?: string;
 }
 
 export interface SystemInspectionProposalPayload {
@@ -394,6 +397,7 @@ export interface DepositResponseDTO {
   bankAccountNumber: string;
   bankName: string;
   createdAt: string;
+  expiresAt?: string;
 }
 
 export interface WalletTransaction {
@@ -511,6 +515,7 @@ export interface ShippingQuoteResponseDto {
   expiresAt: string;
   expectedDeliveryTime?: string;
   carrier?: string;
+  provider?: string;
   serviceType?: string;
   providerQuotationId?: string;
 }

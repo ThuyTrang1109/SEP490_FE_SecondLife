@@ -462,6 +462,21 @@ export const inspectorService = {
   },
 
   /**
+   * Xem danh sách tất cả các đơn kiểm định (hỗ trợ phân trang và lọc status)
+   * GET /api/v1/inspector/orders/all
+   */
+  async getAllInspectorOrders(status?: string, page = 0, size = 10): Promise<PageResponse<InspectionOrderDto>> {
+    const params = new URLSearchParams({ page: String(page), size: String(size) });
+    if (status) params.append('status', status);
+    const res = await request<PageResponse<InspectionOrderDto>>(`/inspector/orders/all?${params.toString()}`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data || res;
+    return data;
+  },
+
+  /**
    * KTV bắt đầu tiến hành kiểm định đơn hàng (chuyển trạng thái sang INSPECTING)
    */
   async startInspection(orderId: string): Promise<InspectionOrderDto> {

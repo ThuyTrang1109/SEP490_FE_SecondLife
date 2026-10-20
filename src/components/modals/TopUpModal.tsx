@@ -81,7 +81,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const [creatingDeposit, setCreatingDeposit] = useState(false);
   const [depositError, setDepositError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [timeLeft, setTimeLeft] = useState<number>(300); // 5 minutes in seconds
+  const [timeLeft, setTimeLeft] = useState<number>(900); // 15 minutes in seconds (matches BE config)
   const [isZoomQrOpen, setIsZoomQrOpen] = useState<boolean>(false);
 
   // Packages State
@@ -174,19 +174,37 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   useEffect(() => {
     let timerInterval: NodeJS.Timeout | null = null;
     if (depositRequest && depositRequest.status === 'PENDING') {
+      const getInitialSeconds = () => {
+        if (depositRequest.expiresAt) {
+          const diff = Math.floor((new Date(depositRequest.expiresAt).getTime() - Date.now()) / 1000);
+          return Math.max(0, diff);
+        }
+        if (depositRequest.createdAt) {
+          const diff = Math.floor((new Date(depositRequest.createdAt).getTime() + 15 * 60 * 1000 - Date.now()) / 1000);
+          return Math.max(0, diff);
+        }
+        return 900;
+      };
+
+      const initialSec = getInitialSeconds();
+      setTimeLeft(initialSec);
+
       timerInterval = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
             clearInterval(timerInterval!);
             setDepositRequest(null);
-            setDepositError('Hết thời gian giao dịch (5 phút). Vui lòng tạo yêu cầu nạp tiền mới nếu vẫn muốn giao dịch.');
+            const durationMin = depositRequest.expiresAt && depositRequest.createdAt
+              ? Math.max(1, Math.round((new Date(depositRequest.expiresAt).getTime() - new Date(depositRequest.createdAt).getTime()) / 60000))
+              : 15;
+            setDepositError(`Hết thời gian giao dịch (${durationMin} phút). Vui lòng tạo yêu cầu nạp tiền mới nếu vẫn muốn giao dịch.`);
             return 0;
           }
           return prev - 1;
         });
       }, 1000);
     } else {
-      setTimeLeft(300);
+      setTimeLeft(900);
     }
     return () => {
       if (timerInterval) clearInterval(timerInterval);

@@ -4,12 +4,13 @@ import { Listing, ItemCategory, ConditionGrade, Language } from '../types';
 import { translations } from '../utils/translations';
 import { ShowroomLobby3D } from '../components/3d/ShowroomLobby3D';
 import { ProductCard3D } from '../components/3d/ProductCard3D';
+import { getBoughtListingIds } from '../utils/orderUtils';
 
 interface MarketplaceViewProps {
   listings: Listing[];
   onSelectListing: (listing: Listing) => void;
   lang: Language;
-  onPostClick: () => void;
+  onPostClick?: () => void;
 }
 
 const CATEGORIES: { id: ItemCategory | 'ALL'; nameVi: string; nameEn: string; icon: string }[] = [
@@ -35,10 +36,21 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
   const [sortBy, setSortBy] = useState<'priceAsc' | 'priceDesc' | 'newest'>('newest');
 
   const filteredListings = useMemo(() => {
+    const boughtIds = getBoughtListingIds();
     return listings.filter(item => {
-      // Sàn mua bán (Marketplace) CHỈ hiển thị các bài đăng có trạng thái ACTIVE
-      const isActive = item.status === 'active' || item.backendStatus === 'ACTIVE';
-      if (!isActive) return false;
+      // Sàn mua bán (Marketplace) CHỈ hiển thị các bài đăng có trạng thái ACTIVE và CHƯA có người đặt mua
+      if (item.status === 'reserved' || item.status === 'sold' || item.status === 'draft' || item.status === 'rejected') {
+        return false;
+      }
+      if (item.backendStatus === 'RESERVED' || item.backendStatus === 'SOLD' || item.backendStatus === 'DRAFT') {
+        return false;
+      }
+      if (item.status !== 'active' && item.backendStatus !== 'ACTIVE') {
+        return false;
+      }
+      if (boughtIds.has(String(item.id))) {
+        return false;
+      }
 
       const matchesSearch =
         item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||

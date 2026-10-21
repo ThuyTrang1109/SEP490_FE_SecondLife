@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Listing, EscrowOrder, EscrowStatus, Language, UserWallet, ShippingQuoteResponseDto, ShippingLeg, InspectionCenter, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import { mockInspectionCenters } from '../../data/mockData';
+import { getBoughtListingIds, markListingAsBought } from '../../utils/orderUtils';
 import {
   ShieldCheck,
   Truck,
@@ -696,6 +697,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
     }
 
+    const alreadyBoughtIds = getBoughtListingIds();
+    if (alreadyBoughtIds.has(String(listing.id))) {
+      setOrderError(
+        lang === 'vi'
+          ? 'Sản phẩm này đã được người khác đặt mua rồi! Vui lòng không đặt mua trùng lặp.'
+          : 'This listing has already been purchased. Please choose another item.'
+      );
+      return;
+    }
+
     setOrderError(null);
     setSubmittingOrder(true);
 
@@ -820,7 +831,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       const isBankWaiting = !isInspected && paymentMethod === 'BANK_TRANSFER';
       const initialEscrowStatus: EscrowStatus = isInspected
-        ? 'INSPECTION_IN_PROGRESS'
+        ? 'AWAITING_INSPECTION'
         : isBankWaiting
         ? 'AWAITING_PAYMENT'
         : 'HELD_IN_ESCROW';
@@ -845,7 +856,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         totalPaidVnd: finalTotalPaid,
         escrowStatus: initialEscrowStatus,
         paymentMethod: paymentMethod,
-        backendStatus: isBankWaiting ? 'PENDING_PAYMENT' : 'PROCESSING',
+        backendStatus: isInspected ? 'WAITING_SELLER_APPROVAL' : (isBankWaiting ? 'PENDING_PAYMENT' : 'PROCESSING'),
         hasInspectionService: isInspected,
         inspectionCenterId: isInspected ? selectedCenter?.id : undefined,
         inspectionCenterName: isInspected ? selectedCenter?.name : undefined,
@@ -862,6 +873,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       };
 
       try {
+        markListingAsBought(String(listing.id));
         localStorage.setItem(`order_listing_${orderId}`, JSON.stringify(listing));
         if (listing?.id) {
           localStorage.setItem(`cached_post_${listing.id}`, JSON.stringify(listing));
@@ -908,6 +920,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             const existingNotifs = rawNotifs && rawNotifs !== 'undefined' && rawNotifs !== 'null' ? JSON.parse(rawNotifs) : [];
             localStorage.setItem('secondlife_local_notifications', JSON.stringify([sellerNotifItem, ...existingNotifs.filter((n: any) => n.id !== sellerNotifItem.id)].slice(0, 50)));
             window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: sellerNotifItem }));
+          } catch {}
+          try {
+            window.dispatchEvent(new CustomEvent('secondlife_order_placed_signal', { detail: newOrder }));
+            localStorage.setItem('secondlife_order_placed_signal', String(Date.now()));
           } catch {}
         }
       } catch {}
@@ -2344,14 +2360,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             <div>
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="font-extrabold text-xs text-slate-900">
-                                  Phương tiện chuẩn: {parcelVehicle.name}
-                                </span>
-                                <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
-                                  Phân loại theo kích thước & khối lượng
+                                  Phương tiện: {parcelVehicle.name}
                                 </span>
                                 {ghnQuote.serviceType && (
                                   <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-semibold border border-slate-200">
-                                    Provider: {ghnQuote.serviceType}
+                                    {ghnQuote.serviceType}
                                   </span>
                                 )}
                               </div>

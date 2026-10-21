@@ -61,7 +61,7 @@ import {
   UserReportResponseDto,
 } from '../../services';
 import { LiveFaceScannerModal, VnptEkycResultData } from './LiveFaceScannerModal';
-import { saveSellerAddress, extractWardAndCity, getSavedSellerAddress } from '../../utils/addressUtils';
+import { saveSellerAddress, extractWardAndCity, getSavedSellerAddress, cleanFullAddress, formatCombinedAddress } from '../../utils/addressUtils';
 import { LalamoveAddressPicker } from '../common/LalamoveAddressPicker';
 
 export type ProfileTab = 'info' | 'wallet' | 'kyc' | 'reports' | 'security' | 'settings';
@@ -406,13 +406,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [isLoadingUserWards, setIsLoadingUserWards] = useState(false);
 
   const computeFullAddress = () => {
-    const parts = [
-      userStreetAddress.trim(),
-      selectedWardName.trim(),
-      selectedDistrictName.trim(),
-      selectedProvinceName.trim(),
-    ].filter(Boolean);
-    return parts.join(', ');
+    return formatCombinedAddress(
+      userStreetAddress,
+      selectedWardName,
+      selectedDistrictName,
+      selectedProvinceName
+    );
   };
 
   // Tải danh sách Open API và khớp địa chỉ người dùng
@@ -852,13 +851,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const updateCombinedAddress = (pId: number | string | '', wId: number | string | '', street: string) => {
     const pObj = Array.isArray(provinces) ? provinces.find((p) => String(p._id) === String(pId)) : undefined;
     const wObj = Array.isArray(wards) ? wards.find((w) => String(w._id) === String(wId)) : undefined;
-    const parts = [
-      street.trim(),
-      wObj ? wObj.name : '',
-      pObj ? pObj.name : '',
-    ].filter(Boolean);
-    if (parts.length > 0) {
-      setPickupAddress(parts.join(', '));
+    const combined = formatCombinedAddress(street, wObj ? wObj.name : '', '', pObj ? pObj.name : '');
+    if (combined) {
+      setPickupAddress(combined);
     }
   };
 
@@ -1159,7 +1154,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
       const selProv = provinces.find((p) => String(p._id) === String(selectedProvinceId) || String((p as any).id) === String(selectedProvinceId));
       const selWard = wards.find((w) => String(w._id) === String(selectedWardId) || String((w as any).id) === String(selectedWardId));
-      saveSellerAddress(pickupAddress.trim() || streetAddress.trim(), selWard?.name, selProv?.name);
+      saveSellerAddress(cleanFullAddress(pickupAddress.trim() || streetAddress.trim()), selWard?.name, selProv?.name);
 
       await shippingService.sendSellerOnboardingEmailCode();
       setHasSentShopOtp(true);
@@ -1581,7 +1576,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     setSaveError(null);
     setIsSaving(true);
 
-    const fullAddr = address || userStreetAddress.trim() || computeFullAddress();
+    const rawFull = address || userStreetAddress.trim() || computeFullAddress();
+    const fullAddr = cleanFullAddress(rawFull);
+    const cleanedPickup = cleanFullAddress(pickupAddress || fullAddr);
+    const cleanedStreet = cleanFullAddress(userStreetAddress.trim() || fullAddr);
 
     // Tự động suy luận Ward & Province từ fullAddr nếu dropdown chưa chọn
     let effectiveWard = selectedWardName.trim() || currentUser?.wardName || currentUser?.ward || '';
@@ -1606,10 +1604,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       district: selectedDistrictName.trim() || undefined,
       ward: effectiveWard || undefined,
       wardName: effectiveWard || undefined,
-      streetAddress: userStreetAddress.trim() || fullAddr || undefined,
+      streetAddress: cleanedStreet || fullAddr || undefined,
       latitude: userLatitude ?? pickupLatitude ?? currentUser?.latitude,
       longitude: userLongitude ?? pickupLongitude ?? currentUser?.longitude,
-      pickupAddress: pickupAddress || fullAddr,
+      pickupAddress: cleanedPickup || fullAddr,
       avatar: avatarUrl || currentUser.avatar,
       gender: gender || undefined,
       birthday,
@@ -1621,7 +1619,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     };
 
     saveSellerAddress(
-      pickupAddress || fullAddr,
+      cleanedPickup || fullAddr,
       effectiveWard || undefined,
       effectiveProv || undefined
     );
@@ -1635,7 +1633,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         province: selectedProvinceName.trim() || undefined,
         district: selectedDistrictName.trim() || undefined,
         ward: selectedWardName.trim() || undefined,
-        streetAddress: userStreetAddress.trim() || fullAddr || undefined,
+        streetAddress: cleanedStreet || fullAddr || undefined,
         latitude: userLatitude ?? pickupLatitude ?? currentUser?.latitude ?? null,
         longitude: userLongitude ?? pickupLongitude ?? currentUser?.longitude ?? null,
       });

@@ -83,6 +83,7 @@ export interface InspectionSellerRespondRequest {
   counterFeePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
   sellerConsentZinLoss?: boolean;
   rejectionReason?: string;
+  rejectReason?: string;
 }
 
 export interface ChecklistResultItem {

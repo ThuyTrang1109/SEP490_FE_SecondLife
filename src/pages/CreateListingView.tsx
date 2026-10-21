@@ -59,7 +59,7 @@ import {
   shippingService
 } from '../services';
 import { parseQuestionItem, splitCompoundQuestion } from '../utils/questionParser';
-import { extractWardAndCity, getSavedSellerAddress } from '../utils/addressUtils';
+import { extractWardAndCity, getSavedSellerAddress, cleanFullAddress } from '../utils/addressUtils';
 
 
 
@@ -1792,7 +1792,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
     // Địa chỉ của sản phẩm được cập nhật theo địa chỉ người bán (chỉ lấy phường và thành phố)
     const finalLocation = effectiveDisplayLocation;
-    const finalSellerAddress = currentSellerFullAddress || finalLocation;
+    const finalSellerAddress = cleanFullAddress(currentSellerFullAddress) || finalLocation;
 
     const newListing: Listing = {
       id: postId,
@@ -2138,8 +2138,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             {/* Photos Preview Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
               {photoPreviews.map((previewUrl, idx) => (
-                <div key={idx} className="relative group rounded-2xl overflow-hidden border border-gray-200 aspect-square bg-slate-100 shadow-xs">
-                  <img src={previewUrl} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-cover" />
+                <div key={idx} className="relative group rounded-2xl overflow-hidden border border-gray-200 aspect-square bg-slate-50 flex items-center justify-center p-1 shadow-xs">
+                  <img src={previewUrl} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-contain" />
                   <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded-md bg-black/60 text-white text-[10px] font-bold">
                     #{idx + 1}
                   </div>

@@ -118,14 +118,49 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const [exteriorScore, setExteriorScore] = useState<number>(95);
   const [exteriorNotes, setExteriorNotes] = useState('');
 
+  // Helper to detect category from activeOrder
+  const detectCategoryFromOrder = (order: any): string => {
+    const text = `${order?.listing?.title || ''} ${order?.postTitle || ''} ${order?.listing?.category || ''}`.toLowerCase();
+    if (text.includes('giặt') || text.includes('sấy') || text.includes('washing')) {
+      return 'Máy giặt & Máy sấy';
+    }
+    if (text.includes('lạnh') || text.includes('đông') || text.includes('mát') || text.includes('refrigerator') || text.includes('fridge')) {
+      return 'Tủ lạnh & Tủ đông';
+    }
+    if (text.includes('điều hòa') || text.includes('máy lạnh') || text.includes('lọc không khí') || text.includes('air conditioner')) {
+      return 'Điều hòa & Máy lọc';
+    }
+    if (text.includes('robot') || text.includes('hút bụi') || text.includes('vacuum')) {
+      return 'Robot & Máy hút bụi';
+    }
+    if (text.includes('lò vi sóng') || text.includes('lò nướng') || text.includes('microwave') || text.includes('oven')) {
+      return 'Lò vi sóng & Lò nướng';
+    }
+    if (text.includes('nồi cơm') || text.includes('bếp từ') || text.includes('bếp hồng ngoại') || text.includes('bếp điện') || text.includes('nồi')) {
+      return 'Nồi cơm & Bếp từ';
+    }
+    return order?.listing?.category || 'Máy giặt & Máy sấy';
+  };
+
   // --- STEP 3: TECHNICAL CHECKLIST ---
-  const defaultCategory = 'Tủ lạnh & Tủ đông';
-  const [selectedCategory, setSelectedCategory] = useState<string>(defaultCategory);
+  const initialCat = activeOrder ? detectCategoryFromOrder(activeOrder) : 'Máy giặt & Máy sấy';
+  const [selectedCategory, setSelectedCategory] = useState<string>(initialCat);
   const [checklist, setChecklist] = useState<InspectionChecklistItem[]>(
-    mockStandardChecklist[defaultCategory] || []
+    mockStandardChecklist[initialCat] || []
   );
 
-  // Re-sync checklist when category changes
+  // Auto-detect & switch checklist when activeOrder changes
+  useEffect(() => {
+    if (activeOrder) {
+      const detected = detectCategoryFromOrder(activeOrder);
+      setSelectedCategory(detected);
+      if (mockStandardChecklist[detected]) {
+        setChecklist(mockStandardChecklist[detected]);
+      }
+    }
+  }, [activeOrder?.id, (activeOrder as any)?.postTitle, (activeOrder as any)?.listing?.title]);
+
+  // Re-sync checklist when technician manually changes category
   useEffect(() => {
     if (mockStandardChecklist[selectedCategory]) {
       setChecklist(mockStandardChecklist[selectedCategory]);
@@ -689,6 +724,18 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         {/* RIGHT COLUMN: ACTIVE INSPECTION WORKSTATION                          */}
         {/* ===================================================================== */}
         <div className="lg:col-span-8 bg-white rounded-3xl p-6 border border-gray-200 shadow-sm space-y-6">
+          {!activeOrder ? (
+            <div className="py-20 text-center flex flex-col items-center justify-center space-y-3">
+              <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                <Wrench className="w-8 h-8 stroke-[1.5]" />
+              </div>
+              <h3 className="text-base font-bold text-[#24263e]">Chưa có nhiệm vụ đo kiểm trực tiếp</h3>
+              <p className="text-xs text-slate-500 max-w-md">
+                Hiện tại bạn chưa được Trung tâm phân công đơn kiểm định nào. Khi Trung tâm điều phối giao task cho bạn, thiết bị sẽ xuất hiện ở danh sách bên trái để bắt đầu đo kiểm 5 bước.
+              </p>
+            </div>
+          ) : (
+            <>
           {/* Header of Active Order */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-gray-100 gap-3">
             <div>
@@ -975,9 +1022,11 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     onChange={(e) => setSelectedCategory(e.target.value)}
                     className="px-3 py-1.5 rounded-xl border border-gray-200 bg-[#faf8f5] text-xs font-bold text-gray-800 outline-none focus:border-[#c34c36]"
                   >
-                    <option value="Tủ lạnh & Tủ đông">Tủ lạnh & Tủ đông</option>
                     <option value="Máy giặt & Máy sấy">Máy giặt & Máy sấy</option>
+                    <option value="Tủ lạnh & Tủ đông">Tủ lạnh & Tủ đông</option>
+                    <option value="Điều hòa & Máy lọc">Điều hòa & Máy lọc</option>
                     <option value="Robot & Máy hút bụi">Robot & Máy hút bụi</option>
+                    <option value="Lò vi sóng & Lò nướng">Lò vi sóng & Lò nướng</option>
                     <option value="Nồi cơm & Bếp từ">Nồi cơm & Bếp từ</option>
                   </select>
                 </div>
@@ -1387,6 +1436,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 </button>
               </div>
             </div>
+          )}
+            </>
           )}
         </div>
       </div>

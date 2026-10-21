@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { Listing, Language, UserProfile } from '../types';
 import { formatVND } from '../utils/translations';
+import { getBoughtListingIds } from '../utils/orderUtils';
 import { sellerService, SellerVerificationResponseDto } from '../services/sellerService';
 import { sellerCreditService, CreditBalanceResponseDto, CreditLedgerResponseDto, CreditPurchaseResponseDto } from '../services/sellerCreditService';
 import { mediaService } from '../services/mediaService';
@@ -33,7 +34,7 @@ import { walletService } from '../services/walletService';
 import { reputationService, SellerReputationDto, ReputationHistoryDto } from '../services/reputationService';
 import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
 import { WithdrawalModal } from '../components/modals/WithdrawalModal';
-import { extractWardAndCity, getSavedSellerAddress } from '../utils/addressUtils';
+import { extractWardAndCity, getSavedSellerAddress, cleanFullAddress } from '../utils/addressUtils';
 import { dialogService } from '../utils/dialogService';
 
 interface SellerDashboardViewProps {
@@ -348,7 +349,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           const primaryImage = rawImages[0] || fallbackImage;
 
           // Xác định địa chỉ người bán: Ưu tiên địa chỉ người bán mới nhất từ profile của seller
-          const sellerAddr = currentSellerAddr || p.sellerAddress || p.pickupAddress || p.user?.address || '';
+          const sellerAddr = cleanFullAddress(currentSellerAddr || p.sellerAddress || p.pickupAddress || p.user?.address || '');
           const loc = (currentSellerAddr ? extractWardAndCity(currentSellerAddr, currentSellerWard, currentSellerProv) : '') ||
             extractWardAndCity(p.sellerAddress || p.pickupAddress || p.user?.address, currentSellerWard, currentSellerProv) ||
             'Hà Nội';
@@ -378,8 +379,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             sellerRating: 5.0,
             sellerCompletedOrders: 0,
             sellerVerified: true,
-            status: (p.status === 'ACTIVE' ? 'active' : p.status === 'DRAFT' ? 'draft' : 'reserved') as any,
-            backendStatus: p.status,
+            status: (getBoughtListingIds().has(String(p.postId || p.id)) ? 'reserved' : (p.status === 'ACTIVE' ? 'active' : p.status === 'DRAFT' ? 'draft' : 'reserved')) as any,
+            backendStatus: getBoughtListingIds().has(String(p.postId || p.id)) ? 'RESERVED' : p.status,
             rejectionReason: p.rejectionReason,
             createdAt: p.createdAt || new Date().toISOString(),
             isInspectionGuaranteed: true,
@@ -512,7 +513,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           return {
             ...item,
             location: latestLoc || item.location,
-            sellerAddress: currentSellerAddr || item.sellerAddress || latestLoc,
+            sellerAddress: cleanFullAddress(currentSellerAddr || item.sellerAddress || latestLoc),
           };
         }
         return item;
@@ -545,7 +546,13 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       return l.backendStatus === 'REJECTED';
     }
     if (filterStatus === 'active') {
+      if (getBoughtListingIds().has(String(l.id)) || l.backendStatus === 'RESERVED' || l.backendStatus === 'SOLD' || l.status === 'reserved' || l.status === 'sold') {
+        return false;
+      }
       return l.backendStatus === 'ACTIVE' || l.status === 'active';
+    }
+    if (filterStatus === 'reserved') {
+      return getBoughtListingIds().has(String(l.id)) || l.backendStatus === 'RESERVED' || l.status === 'reserved';
     }
     return l.status === filterStatus;
   });

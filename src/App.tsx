@@ -1,8 +1,8 @@
 import React, { useState, lazy, Suspense, useRef, useCallback, useEffect } from 'react';
 import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit, ItemCategory, ConditionGrade } from './types';
 import { formatVND } from './utils/translations';
-import { extractWardAndCity, getSavedSellerAddress, saveSellerAddress } from './utils/addressUtils';
-import { getSortableOrderTimestamp } from './utils/orderUtils';
+import { extractWardAndCity, getSavedSellerAddress, saveSellerAddress, cleanFullAddress, formatCombinedAddress } from './utils/addressUtils';
+import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable } from './utils/orderUtils';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 import { HomePageView } from './pages/HomePageView';
@@ -132,16 +132,16 @@ export default function App() {
           const stored = getStoredUser();
           const savedAddr = getSavedSellerAddress();
 
-          const profileFullAddress = [
+          const profileFullAddress = formatCombinedAddress(
             profile.streetAddress,
             profile.ward,
             profile.district,
-            profile.province,
-          ].filter(Boolean).join(', ');
+            profile.province
+          );
 
           // Ưu tiên địa chỉ người dùng đã cập nhật trong session/localStorage nếu có
-          const resolvedAddress = stored?.address || profileFullAddress || savedAddr?.address || '';
-          const resolvedPickup = stored?.pickupAddress || fullPickup || profileFullAddress || savedAddr?.address || '';
+          const resolvedAddress = cleanFullAddress(stored?.address || profileFullAddress || savedAddr?.address || '');
+          const resolvedPickup = cleanFullAddress(stored?.pickupAddress || fullPickup || profileFullAddress || savedAddr?.address || '');
           const resolvedWard = stored?.wardName || profile.ward || pickupAddr?.wardName || savedAddr?.wardName || '';
           const resolvedProv = stored?.provinceName || profile.province || pickupAddr?.provinceName || savedAddr?.provinceName || '';
 
@@ -299,12 +299,23 @@ export default function App() {
       setActiveTab('marketplace');
       setIsProfileDialogOpen(false);
       setEditingDraft(null);
+      setOrders([]);
 
-      // Xóa toàn bộ thông tin bài đăng nháp dở dang khi người bán thoát khỏi hệ thống
+      // Xóa toàn bộ thông tin bài đăng nháp và cache đơn hàng dở dang của tài khoản để tránh rò rỉ sang tài khoản khác
       try {
+        localStorage.removeItem('recent_placed_orders');
+        localStorage.removeItem('all_seller_posts_cache');
         for (let i = localStorage.length - 1; i >= 0; i--) {
           const key = localStorage.key(i);
-          if (key && (key.startsWith('create_listing_active_draft_') || key === 'create_listing_active_draft')) {
+          if (
+            key &&
+            (key.startsWith('create_listing_active_draft_') ||
+              key === 'create_listing_active_draft' ||
+              key.startsWith('order_listing_') ||
+              key.startsWith('order_buyer_info_') ||
+              key.startsWith('order_appointment_') ||
+              key.startsWith('buyer_info_'))
+          ) {
             localStorage.removeItem(key);
           }
         }
@@ -316,88 +327,54 @@ export default function App() {
     });
   };
 
-  // Helper to recover locally placed or cached orders from localStorage
-  const getLocalStoredOrders = React.useCallback((): EscrowOrder[] => {
+  // Helper to recover locally placed or cached orders from localStorage (strictly scoped to user)
+  const getLocalStoredOrders = React.useCallback((targetUser?: UserProfile | null): EscrowOrder[] => {
+    const activeUserId = targetUser?.id || currentUser?.id;
+    if (!activeUserId) return [];
+
     const result: EscrowOrder[] = [];
     const seenIds = new Set<string>();
 
-    // 1. Check recent_placed_orders
+    const activeRole = targetUser?.role || currentUser?.role || currentRole;
+    const isInspectionRole = Boolean(
+      activeRole === 'inspection_center' ||
+      activeRole === 'admin'
+    );
+
+    // 1. Check recent_placed_orders for the current user
     try {
+      const activeUserName = (targetUser?.name || currentUser?.name || '').trim().toLowerCase();
+      const activeUserEmail = (targetUser?.email || currentUser?.email || '').trim().toLowerCase();
       const raw = localStorage.getItem('recent_placed_orders');
       if (raw) {
         const list = JSON.parse(raw);
         if (Array.isArray(list)) {
           list.forEach((o) => {
             if (o?.id && !seenIds.has(o.id)) {
-              seenIds.add(o.id);
-              result.push(o);
+              const isBuyer = Boolean(o.buyerId && String(o.buyerId) === String(activeUserId));
+              const isSeller = Boolean(
+                (o.sellerId && String(o.sellerId) === String(activeUserId)) ||
+                (o.listing?.sellerId && String(o.listing.sellerId) === String(activeUserId)) ||
+                (activeUserName && o.sellerName && o.sellerName.trim().toLowerCase() === activeUserName) ||
+                (activeUserName && o.listing?.sellerName && o.listing.sellerName.trim().toLowerCase() === activeUserName) ||
+                (activeUserEmail && o.sellerEmail && o.sellerEmail.trim().toLowerCase() === activeUserEmail)
+              );
+              const isInspectionOrder = Boolean(
+                o.hasInspectionService ||
+                o.inspectionMethod ||
+                (o.inspectionFeeVnd && o.inspectionFeeVnd > 0) ||
+                o.escrowStatus === 'AWAITING_INSPECTION' ||
+                o.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
+                o.escrowStatus === 'INSPECTION_PASSED' ||
+                o.status === 'CONFIRMED_PENDING_DISPATCH' ||
+                o.status === 'WAITING_INSPECTION'
+              );
+              if (isBuyer || isSeller || (isInspectionRole && isInspectionOrder)) {
+                seenIds.add(o.id);
+                result.push(o);
+              }
             }
           });
-        }
-      }
-    } catch {}
-
-    // 2. Scan localStorage for any order_listing_* keys
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('order_listing_')) {
-          const orderId = key.replace('order_listing_', '');
-          if (orderId && !seenIds.has(orderId)) {
-            try {
-              const rawListing = localStorage.getItem(key);
-              const listing = rawListing ? JSON.parse(rawListing) : null;
-              let buyerInfo: any = {};
-              const rawBuyer = localStorage.getItem(`order_buyer_info_${orderId}`);
-              if (rawBuyer) buyerInfo = JSON.parse(rawBuyer);
-
-              if (listing) {
-                seenIds.add(orderId);
-                result.push({
-                  id: orderId,
-                  listingId: listing.id,
-                  listing,
-                  buyerId: 'buyer-current',
-                  buyerName: buyerInfo.buyerName || 'Khách Hàng',
-                  buyerPhone: buyerInfo.buyerPhone || '',
-                  buyerAddress: buyerInfo.buyerAddress || 'Địa chỉ nhận hàng',
-                  sellerId: listing.sellerId || '',
-                  sellerName: listing.sellerName || 'Người Bán SecondLife',
-                  itemPriceVnd: listing.priceVnd || 0,
-                  inspectionFeeVnd: 0,
-                  shippingFeeVnd: 0,
-                  platformFeeVnd: 0,
-                  totalPaidVnd: listing.priceVnd || 0,
-                  escrowStatus: 'AWAITING_PAYMENT',
-                  hasInspectionService: Boolean(listing.requiresInspection),
-                  shippingLegs: [
-                    {
-                      id: 'LEG-1',
-                      legType: 'SELLER_TO_BUYER',
-                      carrier: 'Lalamove',
-                      trackingNumber: `TRACK-${orderId.slice(0, 8).toUpperCase()}`,
-                      status: 'PICKED_UP',
-                      origin: listing.sellerAddress || listing.location || 'Địa chỉ người bán',
-                      destination: buyerInfo.buyerAddress || 'Địa chỉ nhận hàng',
-                      estimatedDelivery: 'Giao trong ngày',
-                      timeline: [
-                        {
-                          timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-                          description: 'Đã thanh toán Escrow thành công. Đang điều phối tài xế lấy hàng.',
-                          location: 'SecondLife Hub'
-                        }
-                      ]
-                    }
-                  ],
-                  createdAt: new Date().toISOString(),
-                  updatedAt: new Date().toISOString(),
-                  multiStagePhotos: {
-                    listingPhotos: [listing.photos?.front, listing.photos?.back].filter(Boolean)
-                  }
-                });
-              }
-            } catch {}
-          }
         }
       }
     } catch {}
@@ -409,12 +386,25 @@ export default function App() {
       return String(b.id || '').localeCompare(String(a.id || ''));
     });
 
-    return result;
-  }, []);
+    const seenActiveListingIds = new Set<string>();
+    const deduplicatedResult = result.filter((o) => {
+      const isEnded = o.escrowStatus === 'REFUNDED_TO_BUYER' || o.escrowStatus === 'COMPLETED_RELEASED' || o.backendStatus === 'CANCELLED';
+      const listingKey = String(o.listingId || o.listing?.id || '');
+      if (listingKey && !isEnded) {
+        if (seenActiveListingIds.has(listingKey)) {
+          return false;
+        }
+        seenActiveListingIds.add(listingKey);
+      }
+      return true;
+    });
+
+    return deduplicatedResult;
+  }, [currentUser?.id]);
 
   // Core Data State
   const [listings, setListings] = useState<Listing[]>([]);
-  const [orders, setOrders] = useState<EscrowOrder[]>(() => getLocalStoredOrders());
+  const [orders, setOrders] = useState<EscrowOrder[]>(() => getLocalStoredOrders(getStoredUser()));
   const [disputes, setDisputes] = useState<DisputeCase[]>([]);
 
   const listingsRef = useRef<Listing[]>(listings);
@@ -424,6 +414,19 @@ export default function App() {
   const isFetchingListingsRef = useRef<boolean>(false);
   const lastOrdersFetchRef = useRef<number>(0);
   const isFetchingOrdersRef = useRef<boolean>(false);
+
+  // Sync orders whenever logged-in user changes (prevents account order bleed)
+  const prevUserIdRef = useRef<string | null>(currentUser?.id || null);
+  React.useEffect(() => {
+    const currentId = currentUser?.id || null;
+    if (prevUserIdRef.current !== currentId) {
+      prevUserIdRef.current = currentId;
+      setOrders(getLocalStoredOrders(currentUser));
+      if (!currentId) {
+        setOrders([]);
+      }
+    }
+  }, [currentUser, getLocalStoredOrders]);
 
   // Modals
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
@@ -912,26 +915,29 @@ export default function App() {
     // 1. Nếu là bài đăng của chính seller hiện tại, ưu tiên lấy địa chỉ người bán mới nhất từ profile / onboarding
     if (isOwner && (currentSellerAddr || currentSellerWard || currentSellerProv)) {
       postLocation = extractWardAndCity(currentSellerAddr, currentSellerWard, currentSellerProv);
-      postSellerAddress = currentSellerAddr || (currentSellerWard && currentSellerProv ? `${currentSellerWard}, ${currentSellerProv}` : '');
+      postSellerAddress = cleanFullAddress(currentSellerAddr) || (currentSellerWard && currentSellerProv ? `${currentSellerWard}, ${currentSellerProv}` : '');
     } else {
       // 2. Bài đăng từ backend của seller khác
       const rawPostAddr = post.sellerAddress || post.pickupAddress || post.user?.address || (
-        post.user?.profile ? [post.user.profile.streetAddress, post.user.profile.ward, post.user.profile.district, post.user.profile.province].filter(Boolean).join(', ') : null
+        post.user?.profile ? formatCombinedAddress(post.user.profile.streetAddress, post.user.profile.ward, post.user.profile.district, post.user.profile.province) : null
       );
       if (rawPostAddr) {
-        postLocation = extractWardAndCity(rawPostAddr);
-        postSellerAddress = rawPostAddr;
+        postSellerAddress = cleanFullAddress(rawPostAddr);
+        postLocation = extractWardAndCity(postSellerAddress);
       } else if (post.location && post.location.toLowerCase() !== 'việt nam' && post.location.toLowerCase() !== 'toàn quốc') {
-        postLocation = extractWardAndCity(post.location);
-        postSellerAddress = post.location;
+        postSellerAddress = cleanFullAddress(post.location);
+        postLocation = extractWardAndCity(postSellerAddress);
       }
     }
 
     if ((!postLocation || !postSellerAddress) && isOwner && (currentSellerAddr || currentSellerWard || currentSellerProv)) {
       postLocation = postLocation || extractWardAndCity(currentSellerAddr, currentSellerWard, currentSellerProv);
-      postSellerAddress = postSellerAddress || currentSellerAddr;
+      postSellerAddress = postSellerAddress || cleanFullAddress(currentSellerAddr);
     }
 
+    if (postSellerAddress) {
+      postSellerAddress = cleanFullAddress(postSellerAddress);
+    }
     if (!postLocation) {
       postLocation = postSellerAddress ? extractWardAndCity(postSellerAddress) : 'Hà Nội';
     }
@@ -959,8 +965,8 @@ export default function App() {
       sellerRating: 5.0,
       sellerCompletedOrders: 3,
       sellerVerified: true,
-      status: (post.status === 'ACTIVE' ? 'active' : post.status === 'DRAFT' ? 'draft' : 'reserved') as any,
-      backendStatus: post.status || 'ACTIVE',
+      status: (getBoughtListingIds().has(String(post.postId || post.id)) ? 'reserved' : (post.status === 'ACTIVE' ? 'active' : post.status === 'DRAFT' ? 'draft' : 'reserved')) as any,
+      backendStatus: getBoughtListingIds().has(String(post.postId || post.id)) ? 'RESERVED' : (post.status || 'ACTIVE'),
       rejectionReason: post.rejectionReason,
       createdAt: post.publishedAt || post.createdAt || new Date().toISOString(),
       isInspectionGuaranteed: true,
@@ -1108,7 +1114,7 @@ export default function App() {
     (updated: UserProfile, successToast?: string) => {
       setCurrentUser(updated);
       setStoredUser(updated);
-      const effectiveAddr = updated.pickupAddress || updated.address || '';
+      const effectiveAddr = cleanFullAddress(updated.pickupAddress || updated.address || '');
       const effectiveWard = updated.wardName || updated.ward || '';
       const effectiveProv = updated.provinceName || updated.province || '';
       saveSellerAddress(effectiveAddr, effectiveWard, effectiveProv);
@@ -1164,17 +1170,20 @@ export default function App() {
     }
     const now = Date.now();
     if (!force && isFetchingOrdersRef.current) return;
-    if (!force && now - lastOrdersFetchRef.current < 15000) {
+    if (!force && now - lastOrdersFetchRef.current < 3000) {
       return;
     }
+    lastOrdersFetchRef.current = now;
     isFetchingOrdersRef.current = true;
     try {
-      const [buyerRes, sellerRes, inspBuyerRes, inspSellerRes, chatRooms] = await Promise.all([
+      const isCenter = currentUser?.role === 'inspection_center' || currentRole === 'inspection_center';
+      const [buyerRes, sellerRes, inspBuyerRes, inspSellerRes, chatRooms, inspCenterRes] = await Promise.all([
         orderService.getBuyerOrders(0, 50).catch(() => ({ content: [] })),
         orderService.getSellerOrders(0, 50).catch(() => ({ content: [] })),
         inspectorService.getMyBuyerOrders(0, 50).catch(() => ({ items: [] } as any)),
         inspectorService.getMySellerOrders(0, 50).catch(() => ({ items: [] } as any)),
-        chatService.getChatRooms().catch(() => [] as any[])
+        chatService.getChatRooms().catch(() => [] as any[]),
+        isCenter ? inspectorService.getAllOrders(undefined, 0, 100).catch(() => ({ items: [] } as any)) : Promise.resolve({ items: [] } as any)
       ]);
 
       const buyerNameMap = new Map<string, string>();
@@ -1212,6 +1221,7 @@ export default function App() {
       const rawSellerItems = (sellerRes as any)?.content || (sellerRes as any)?.items || (Array.isArray(sellerRes) ? sellerRes : []);
       const rawInspBuyerItems = (inspBuyerRes as any)?.data?.items || (inspBuyerRes as any)?.items || (inspBuyerRes as any)?.content || (Array.isArray(inspBuyerRes) ? inspBuyerRes : []);
       const rawInspSellerItems = (inspSellerRes as any)?.data?.items || (inspSellerRes as any)?.items || (inspSellerRes as any)?.content || (Array.isArray(inspSellerRes) ? inspSellerRes : []);
+      const rawInspCenterItems = (inspCenterRes as any)?.data?.items || (inspCenterRes as any)?.items || (inspCenterRes as any)?.content || (Array.isArray(inspCenterRes) ? inspCenterRes : []);
 
       // Deduplicate by order id
       const orderMap = new Map<string, any>();
@@ -1219,6 +1229,7 @@ export default function App() {
       rawSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: false }); });
       rawInspBuyerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
       rawInspSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
+      rawInspCenterItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
       const items = Array.from(orderMap.values());
       if (items && items.length > 0) {
         const currentListings = listingsRef.current;
@@ -1309,9 +1320,8 @@ export default function App() {
           let mappedEscrowStatus: EscrowOrder['escrowStatus'] = 'AWAITING_PAYMENT';
           if (isInspectionOrder) {
             const s = String(bOrd.status || '');
-            if (s === 'WAITING_SELLER_APPROVAL' || s === 'WAITING_BUYER_APPROVAL' || s === 'WAITING_FEE_PAYMENT' || s === 'PENDING_PAYMENT') {
-              mappedEscrowStatus = 'AWAITING_PAYMENT';
-            } else if (s === 'CONFIRMED_PENDING_DISPATCH' || s === 'DISPATCHED' || s === 'SCHEDULED' || s === 'SHIPPING_TO_CENTER' || s === 'INSPECTING') {
+            if (s === 'INSPECTING') {
+              // Chỉ sau khi gửi cho trung tâm hoặc KTV đến nhà quét mã kiểm định mới sang INSPECTION_IN_PROGRESS
               mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
             } else if (s === 'PASSED') {
               mappedEscrowStatus = 'INSPECTION_PASSED';
@@ -1324,7 +1334,9 @@ export default function App() {
             } else if (s === 'CANCELLED' || s === 'FAILED' || s === 'PAYMENT_EXPIRED') {
               mappedEscrowStatus = 'REFUNDED_TO_BUYER';
             } else {
-              mappedEscrowStatus = 'AWAITING_PAYMENT';
+              // WAITING_SELLER_APPROVAL, WAITING_BUYER_APPROVAL, CONFIRMED_PENDING_DISPATCH, DISPATCHED, SCHEDULED, SHIPPING_TO_CENTER
+              // Trạng thái ban đầu luôn là Chờ kiểm định
+              mappedEscrowStatus = 'AWAITING_INSPECTION';
             }
           } else {
             if (bOrd.escrowStatus === 'RELEASED') {
@@ -1476,10 +1488,29 @@ export default function App() {
         });
 
         // Merge with recent locally placed orders so newly placed orders are never lost
-        const localRecentOrders = getLocalStoredOrders();
+        const localRecentOrders = getLocalStoredOrders(currentUser);
         const combined = [...mappedOrders];
+        const currentUserName = currentUser?.name?.trim().toLowerCase();
         localRecentOrders.forEach((locOrd) => {
-          if (!combined.some((o) => o.id === locOrd.id)) {
+          const isBuyer = Boolean(currentUser?.id && String(locOrd.buyerId) === String(currentUser.id));
+          const isSeller = Boolean(
+            (currentUser?.id && String(locOrd.sellerId) === String(currentUser.id)) ||
+            (currentUser?.id && locOrd.listing?.sellerId && String(locOrd.listing.sellerId) === String(currentUser.id)) ||
+            (currentUserName && locOrd.sellerName && locOrd.sellerName.trim().toLowerCase() === currentUserName) ||
+            (currentUserName && locOrd.listing?.sellerName && locOrd.listing.sellerName.trim().toLowerCase() === currentUserName) ||
+            (currentUser?.email && (locOrd as any).sellerEmail && String((locOrd as any).sellerEmail).trim().toLowerCase() === currentUser.email.trim().toLowerCase())
+          );
+          const isInspectionRole = Boolean(
+            currentUser?.role === 'inspection_center' ||
+            currentRole === 'inspection_center' ||
+            currentUser?.role === 'admin'
+          );
+          const isInspectionOrder = Boolean(
+            locOrd.hasInspectionService ||
+            locOrd.inspectionMethod ||
+            (locOrd.inspectionFeeVnd && locOrd.inspectionFeeVnd > 0)
+          );
+          if ((isBuyer || isSeller || (isInspectionRole && isInspectionOrder)) && !combined.some((o) => o.id === locOrd.id)) {
             combined.unshift(locOrd);
           }
         });
@@ -1492,10 +1523,23 @@ export default function App() {
           return String(b.id || '').localeCompare(String(a.id || ''));
         });
 
-        setOrders(combined);
+        const seenActiveListingIds = new Set<string>();
+        const deduplicatedCombined = combined.filter((o) => {
+          const isEnded = o.escrowStatus === 'REFUNDED_TO_BUYER' || o.escrowStatus === 'COMPLETED_RELEASED' || o.backendStatus === 'CANCELLED';
+          const listingKey = String(o.listingId || o.listing?.id || '');
+          if (listingKey && !isEnded) {
+            if (seenActiveListingIds.has(listingKey)) {
+              return false;
+            }
+            seenActiveListingIds.add(listingKey);
+          }
+          return true;
+        });
+
+        setOrders(deduplicatedCombined);
       } else {
-        // Even if server returns 0, retain all local recent orders
-        const localRecentOrders = getLocalStoredOrders();
+        // Even if server returns 0, retain all local recent orders belonging to currentUser
+        const localRecentOrders = getLocalStoredOrders(currentUser);
         localRecentOrders.sort((a, b) => {
           const timeA = getSortableOrderTimestamp(a);
           const timeB = getSortableOrderTimestamp(b);
@@ -1507,7 +1551,7 @@ export default function App() {
       lastOrdersFetchRef.current = Date.now();
     } catch (err) {
       console.warn('Could not load orders from backend:', err);
-      const localRecentOrders = getLocalStoredOrders();
+      const localRecentOrders = getLocalStoredOrders(currentUser);
       setOrders(localRecentOrders);
     } finally {
       isFetchingOrdersRef.current = false;
@@ -1526,9 +1570,44 @@ export default function App() {
   React.useEffect(() => {
     const orderTabs = ['orders', 'seller-dashboard', 'disputes', 'buyer-inspection-decision', 'inspection-hub', 'inspection-center', 'admin-dashboard'];
     if (currentUser && orderTabs.includes(activeTab)) {
-      loadUserOrders();
+      loadUserOrders(true);
     }
   }, [loadUserOrders, activeTab, currentUser]);
+
+  // Realtime background polling for new orders when on orders or seller dashboard
+  React.useEffect(() => {
+    if (!currentUser || !['orders', 'seller-dashboard'].includes(activeTab)) return;
+    const interval = setInterval(() => {
+      loadUserOrders(true);
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [activeTab, currentUser, loadUserOrders]);
+
+  // Listen for instant order placement events across windows/tabs
+  React.useEffect(() => {
+    const handleSignal = () => {
+      loadUserOrders(true);
+    };
+    window.addEventListener('secondlife_order_placed_signal', handleSignal);
+    window.addEventListener('secondlife_inspection_task_created', handleSignal);
+    window.addEventListener('secondlife_order_assigned_signal', handleSignal);
+    const handleStorage = (e: StorageEvent) => {
+      if (
+        e.key === 'secondlife_order_placed_signal' ||
+        e.key === 'recent_placed_orders' ||
+        e.key?.startsWith('order_assigned_inspector_')
+      ) {
+        loadUserOrders(true);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('secondlife_order_placed_signal', handleSignal);
+      window.removeEventListener('secondlife_inspection_task_created', handleSignal);
+      window.removeEventListener('secondlife_order_assigned_signal', handleSignal);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [loadUserOrders]);
 
   const handleOrderPlaced = (newOrder: EscrowOrder) => {
     try {
@@ -1545,6 +1624,7 @@ export default function App() {
         buyerName: newOrder.buyerName,
         buyerPhone: newOrder.buyerPhone,
         buyerAddress: newOrder.buyerAddress,
+        buyerId: newOrder.buyerId,
       }));
       if (newOrder.buyerId) {
         localStorage.setItem(`buyer_info_${newOrder.buyerId}`, JSON.stringify({
@@ -1563,6 +1643,18 @@ export default function App() {
       localStorage.setItem('recent_placed_orders', JSON.stringify(updatedRecent));
     } catch {}
 
+    // Lập tức ẩn sản phẩm vừa mua khỏi sàn (status -> reserved)
+    const boughtListingId = newOrder.listingId || newOrder.listing?.id;
+    if (boughtListingId) {
+      markListingAsBought(String(boughtListingId));
+      setListings((prev) =>
+        prev.map((l) =>
+          String(l.id) === String(boughtListingId) ? { ...l, status: 'reserved', backendStatus: 'RESERVED' } : l
+        )
+      );
+    }
+    loadListingsFromBackend(true);
+
     setOrders((prev) => {
       const filtered = prev.filter((o) => o.id !== newOrder.id);
       const nextList = [newOrder, ...filtered];
@@ -1572,7 +1664,16 @@ export default function App() {
         if (timeB !== timeA) return timeB - timeA;
         return String(b.id || '').localeCompare(String(a.id || ''));
       });
-      return nextList;
+      const seenActiveListingIds = new Set<string>();
+      return nextList.filter((o) => {
+        const isEnded = o.escrowStatus === 'REFUNDED_TO_BUYER' || o.escrowStatus === 'COMPLETED_RELEASED' || o.backendStatus === 'CANCELLED';
+        const listingKey = String(o.listingId || o.listing?.id || '');
+        if (listingKey && !isEnded) {
+          if (seenActiveListingIds.has(listingKey)) return false;
+          seenActiveListingIds.add(listingKey);
+        }
+        return true;
+      });
     });
     setCheckoutListing(null);
     setCheckoutAgreedPrice(undefined);
@@ -1636,6 +1737,29 @@ export default function App() {
           ord.id === orderId ? { ...ord, escrowStatus: 'REFUNDED_TO_BUYER', backendStatus: 'CANCELLED' } : ord
         )
       );
+
+      // Cập nhật recent_placed_orders trong localStorage để giữ đúng trạng thái đã hủy
+      try {
+        const stored = localStorage.getItem('recent_placed_orders');
+        if (stored) {
+          const parsed: EscrowOrder[] = JSON.parse(stored);
+          const updated = parsed.map((o) => (o.id === orderId ? { ...o, escrowStatus: 'REFUNDED_TO_BUYER' as const, backendStatus: 'CANCELLED' as const } : o));
+          localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
+        }
+        localStorage.removeItem(`order_listing_${orderId}`);
+      } catch {}
+
+      // Lập tức khôi phục bài đăng thành ACTIVE trên sàn (vì BE đã revert sang ACTIVE khi hủy)
+      const cancelledListingId = targetOrder?.listingId || targetOrder?.listing?.id;
+      if (cancelledListingId) {
+        markListingAsAvailable(String(cancelledListingId));
+        setListings((prev) =>
+          prev.map((l) =>
+            String(l.id) === String(cancelledListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
+          )
+        );
+      }
+      loadListingsFromBackend(true);
       loadUserOrders(true);
       loadUserWallet();
       showToast(lang === 'vi' ? 'Đã hủy đơn hàng! Tiền ký quỹ Escrow đã được hoàn lại 100% vào ví người mua.' : 'Order cancelled and refunded to buyer.');
@@ -1653,7 +1777,20 @@ export default function App() {
           const updated = parsed.map((o) => (o.id === orderId ? { ...o, escrowStatus: 'REFUNDED_TO_BUYER' as const, backendStatus: 'CANCELLED' as const } : o));
           localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
         }
+        localStorage.removeItem(`order_listing_${orderId}`);
       } catch {}
+
+      const targetOrder = orders.find((o) => o.id === orderId);
+      const cancelledListingId = targetOrder?.listingId || targetOrder?.listing?.id;
+      if (cancelledListingId) {
+        markListingAsAvailable(String(cancelledListingId));
+        setListings((prev) =>
+          prev.map((l) =>
+            String(l.id) === String(cancelledListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
+          )
+        );
+      }
+      loadListingsFromBackend(true);
       showToast(lang === 'vi' ? 'Đã hủy đơn hàng thành công! Tiền ký quỹ Escrow được bảo vệ an toàn.' : 'Order cancelled successfully!');
     }
   };
@@ -1854,7 +1991,13 @@ export default function App() {
 
         {activeTab === 'marketplace' && (
           <MarketplaceView
-            listings={listings.filter((l) => l.status === 'active' || l.backendStatus === 'ACTIVE')}
+            listings={listings.filter((l) => {
+              const boughtIds = getBoughtListingIds();
+              if (boughtIds.has(String(l.id))) return false;
+              if (l.status === 'reserved' || l.status === 'sold') return false;
+              if (l.backendStatus === 'RESERVED' || l.backendStatus === 'SOLD') return false;
+              return l.status === 'active' || l.backendStatus === 'ACTIVE';
+            })}
             onSelectListing={(listing) => setSelectedListing(listing)}
             lang={lang}
             onPostClick={() => {

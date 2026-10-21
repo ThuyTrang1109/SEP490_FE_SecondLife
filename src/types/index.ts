@@ -98,6 +98,7 @@ export interface Listing {
 export type EscrowStatus =
   | 'AWAITING_PAYMENT'
   | 'HELD_IN_ESCROW'
+  | 'AWAITING_INSPECTION'
   | 'INSPECTION_IN_PROGRESS'
   | 'INSPECTION_PASSED'
   | 'INSPECTION_FAILED'
@@ -442,7 +443,7 @@ export interface Negotiation {
 // ==========================================
 // 3. Order & Escrow Types
 // ==========================================
-export type OrderStatusBackend = 'PENDING' | 'PENDING_PAYMENT' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED';
+export type OrderStatusBackend = 'PENDING' | 'PENDING_PAYMENT' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED' | 'WAITING_SELLER_APPROVAL';
 export type OrderBackendStatus = OrderStatusBackend;
 export type EscrowStatusBackend = 'HELD' | 'RELEASED' | 'REFUNDED' | 'FROZEN';
 

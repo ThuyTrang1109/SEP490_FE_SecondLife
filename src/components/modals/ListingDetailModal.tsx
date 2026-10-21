@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { Listing, Language, ProductReview, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
+import { cleanFullAddress } from '../../utils/addressUtils';
+import { getBoughtListingIds } from '../../utils/orderUtils';
 import { soundFx } from '../../utils/soundEffects';
 import { reviewService } from '../../data/mockReviews';
 import { reputationService, postService, SellerReputationDto, getStoredUser } from '../../services';
@@ -165,11 +167,11 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
               {/* Gallery Column (6 cols) */}
               <div className="md:col-span-6 space-y-2">
-                <div className="relative aspect-4/3 max-h-[220px] w-full bg-[#faf8f5] rounded-xl overflow-hidden border border-gray-200">
+                <div className="relative aspect-4/3 min-h-[240px] max-h-[340px] w-full bg-[#f8f9fa] rounded-xl overflow-hidden border border-gray-200 flex items-center justify-center p-1">
                   <img
                     src={listing.photos[activePhotoKey] || listing.photos.front}
                     alt={listing.title}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain"
                   />
                 </div>
 
@@ -195,7 +197,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                           <img
                             src={listing.photos[item.key] || listing.photos.front}
                             alt={item.labelVi}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-contain bg-slate-50"
                           />
                         </button>
                       );
@@ -285,7 +287,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                                 <span>•</span>
                                 <span className="flex items-center gap-0.5 text-slate-600 font-medium">
                                   <MapPin className="w-2.5 h-2.5 text-[#c34c36]" />
-                                  <span>{listing.sellerAddress || listing.location || (lang === 'vi' ? 'Chưa cập nhật địa chỉ' : 'Address not updated')}</span>
+                                  <span>{cleanFullAddress(listing.sellerAddress || listing.location) || (lang === 'vi' ? 'Chưa cập nhật địa chỉ' : 'Address not updated')}</span>
                                 </span>
                               </>
                             )}
@@ -343,10 +345,10 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                       {lang === 'vi' ? 'Quản trị viên không thể mua hàng hoặc chat' : 'Admin cannot purchase or chat'}
                     </div>
                   </div>
-                ) : listing.status === 'RESERVED' || listing.backendStatus === 'RESERVED' || listing.status === 'reserved' ? (
+                ) : listing.status === 'RESERVED' || listing.backendStatus === 'RESERVED' || listing.status === 'reserved' || listing.status === 'sold' || listing.backendStatus === 'SOLD' || getBoughtListingIds().has(String(listing.id)) ? (
                   <div className="space-y-1.5 pt-1">
                      <div className="w-full py-2.5 px-3 bg-amber-50 text-amber-800 rounded-xl font-bold text-xs text-center border border-amber-200">
-                        {lang === 'vi' ? 'Sản phẩm đang được người khác chốt' : 'Item is currently reserved'}
+                        {lang === 'vi' ? 'Sản phẩm đã có người đặt mua' : 'Item is currently reserved'}
                      </div>
                   </div>
                 ) : (

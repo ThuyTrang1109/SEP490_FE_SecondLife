@@ -10,6 +10,165 @@ export interface SavedSellerAddress {
 }
 
 /**
+ * Kiểm tra xem một chuỗi địa chỉ đã là địa chỉ đầy đủ (có phường/xã và tỉnh/thành phố) hay chưa.
+ */
+export function isFullAddress(address?: string | null): boolean {
+  if (!address || typeof address !== 'string') return false;
+  const lower = address.toLowerCase();
+
+  const hasWard =
+    lower.includes('phường') ||
+    lower.includes('phuong') ||
+    lower.includes('p.') ||
+    lower.includes('xã') ||
+    lower.includes('xa') ||
+    lower.includes('thị trấn') ||
+    lower.includes('thi tran');
+
+  const hasCityOrProv =
+    lower.includes('thành phố') ||
+    lower.includes('thanh pho') ||
+    lower.includes('tp.') ||
+    lower.includes('tp ') ||
+    lower.includes('tỉnh') ||
+    lower.includes('tinh') ||
+    lower.includes('hà nội') ||
+    lower.includes('hồ chí minh') ||
+    lower.includes('đà nẵng') ||
+    lower.includes('việt nam') ||
+    lower.includes('vietnam');
+
+  return hasWard && hasCityOrProv;
+}
+
+/**
+ * Làm sạch chuỗi địa chỉ đầy đủ:
+ * - Cắt bỏ phần đuôi bị lặp lại sau "Việt Nam" hoặc sau tên tỉnh/thành phố đã có
+ *   (ví dụ "...Việt Nam, Phường Long Bình, Thành phố Thủ Đức, TP. Hồ Chí Minh" -> "...Thành phố Hồ Chí Minh")
+ * - Loại bỏ từ "Việt Nam" thừa ở cuối nếu muốn hiển thị gọn gàng
+ * - Khử trùng lặp các phân đoạn lặp lại
+ */
+export function cleanFullAddress(rawAddress?: string | null): string {
+  if (!rawAddress || typeof rawAddress !== 'string' || !rawAddress.trim()) {
+    return '';
+  }
+
+  const trimmed = rawAddress.trim();
+  const parts = trimmed.split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean);
+
+  if (parts.length <= 1) {
+    return trimmed;
+  }
+
+  // 1. Kiểm tra nếu có phân đoạn "Việt Nam" / "Vietnam"
+  // Trong địa chỉ chuẩn, "Việt Nam" là cấp quốc gia. Mọi phân đoạn sau đó (như ", Phường Long Bình, Thành phố Thủ Đức...")
+  // chắc chắn là phần đuôi ghép nối thừa từ form/api.
+  const vnIndex = parts.findIndex((p) => {
+    const l = p.toLowerCase();
+    return l === 'việt nam' || l === 'viet nam' || l === 'vietnam';
+  });
+
+  let validParts = parts;
+  if (vnIndex !== -1 && vnIndex < parts.length - 1) {
+    // Cắt bỏ triệt để toàn bộ đuôi thừa sau "Việt Nam"
+    validParts = parts.slice(0, vnIndex);
+  } else if (vnIndex === parts.length - 1) {
+    // Bỏ chữ "Việt Nam" ở cuối để hiển thị tự nhiên đến cấp Tỉnh/Thành phố
+    validParts = parts.slice(0, vnIndex);
+  }
+
+  // 2. Kiểm tra nếu xuất hiện 2 lần Tỉnh/Thành phố (ví dụ có "Thành phố Hồ Chí Minh" rồi sau lại có "TP. Hồ Chí Minh")
+  const isCityPart = (p: string) => {
+    const l = p.toLowerCase();
+    return (
+      l.startsWith('thành phố') ||
+      l.startsWith('thanh pho') ||
+      l.startsWith('tp.') ||
+      l.startsWith('tp ') ||
+      l.startsWith('tỉnh') ||
+      l.startsWith('tinh') ||
+      l === 'hà nội' ||
+      l === 'hồ chí minh' ||
+      l === 'đà nẵng' ||
+      l === 'hải phòng' ||
+      l === 'cần thơ'
+    );
+  };
+
+  let firstCityIdx = -1;
+  for (let i = 0; i < validParts.length; i++) {
+    if (isCityPart(validParts[i])) {
+      if (firstCityIdx === -1) {
+        firstCityIdx = i;
+      } else {
+        // Đã có 1 thành phố trước đó kèm phường -> cắt bỏ phần lặp lại đằng sau
+        const hasWardBefore = validParts.slice(0, firstCityIdx).some((seg) => {
+          const l = seg.toLowerCase();
+          return l.includes('phường') || l.includes('xã') || l.includes('thị trấn') || l.includes('quận') || l.includes('huyện');
+        });
+        if (hasWardBefore) {
+          validParts = validParts.slice(0, firstCityIdx + 1);
+          break;
+        }
+      }
+    }
+  }
+
+  // 3. Khử trùng lặp phân đoạn liên tiếp
+  const deduped: string[] = [];
+  for (const part of validParts) {
+    const last = deduped[deduped.length - 1];
+    if (!last || last.toLowerCase() !== part.toLowerCase()) {
+      deduped.push(part);
+    }
+  }
+
+  return deduped.join(', ');
+}
+
+/**
+ * Ghép địa chỉ một cách thông minh:
+ * Nếu streetAddress đã là địa chỉ đầy đủ (từ GPS / Map Picker), dùng luôn streetAddress sau khi làm sạch.
+ * Chỉ nối thêm ward/district/province khi streetAddress chỉ là số nhà/tên đường ngắn.
+ */
+export function formatCombinedAddress(
+  street?: string | null,
+  ward?: string | null,
+  district?: string | null,
+  province?: string | null
+): string {
+  const cleanStreet = (street || '').trim();
+  const cleanWard = (ward || '').trim();
+  const cleanDist = (district || '').trim();
+  const cleanProv = (province || '').trim();
+
+  // Nếu street đã chứa cả phường và thành phố (đầy đủ từ map picker)
+  if (isFullAddress(cleanStreet)) {
+    return cleanFullAddress(cleanStreet);
+  }
+
+  const parts: string[] = [];
+  if (cleanStreet) parts.push(cleanStreet);
+
+  // Chỉ thêm ward nếu trong street chưa có ward này
+  if (cleanWard && (!cleanStreet || !cleanStreet.toLowerCase().includes(cleanWard.toLowerCase()))) {
+    parts.push(cleanWard);
+  }
+
+  // Chỉ thêm district nếu trong street chưa có district này
+  if (cleanDist && (!cleanStreet || !cleanStreet.toLowerCase().includes(cleanDist.toLowerCase()))) {
+    parts.push(cleanDist);
+  }
+
+  // Chỉ thêm province nếu trong street chưa có province này
+  if (cleanProv && (!cleanStreet || !cleanStreet.toLowerCase().includes(cleanProv.toLowerCase()))) {
+    parts.push(cleanProv);
+  }
+
+  return cleanFullAddress(parts.join(', '));
+}
+
+/**
  * Lấy địa chỉ người bán đã lưu từ localStorage / session
  */
 export function getSavedSellerAddress(): SavedSellerAddress {
@@ -19,7 +178,7 @@ export function getSavedSellerAddress(): SavedSellerAddress {
       const parsed = JSON.parse(rawSaved);
       if (parsed && (parsed.address || parsed.wardName || parsed.provinceName)) {
         return {
-          address: parsed.address || '',
+          address: cleanFullAddress(parsed.address) || parsed.address || '',
           wardName: parsed.wardName || '',
           provinceName: parsed.provinceName || '',
         };
@@ -33,7 +192,7 @@ export function getSavedSellerAddress(): SavedSellerAddress {
       const u = JSON.parse(rawUser);
       if (u) {
         return {
-          address: u.pickupAddress || u.address || '',
+          address: cleanFullAddress(u.pickupAddress || u.address) || u.pickupAddress || u.address || '',
           wardName: u.ward || u.wardName || '',
           provinceName: u.province || u.provinceName || '',
         };
@@ -50,10 +209,11 @@ export function getSavedSellerAddress(): SavedSellerAddress {
 export function saveSellerAddress(address: string, wardName?: string, provinceName?: string): void {
   try {
     if (address !== undefined && address !== null && address !== 'undefined') {
+      const cleaned = cleanFullAddress(address);
       localStorage.setItem(
         'secondlife_seller_profile_address',
         JSON.stringify({
-          address: address || '',
+          address: cleaned || address || '',
           wardName: wardName || '',
           provinceName: provinceName || '',
         })
@@ -70,6 +230,9 @@ export function extractWardAndCity(
   wardName?: string | null,
   provinceName?: string | null
 ): string {
+  // Làm sạch địa chỉ trước khi trích xuất
+  const cleanedAddress = cleanFullAddress(fullAddress);
+
   // 1. Nếu đã có sẵn wardName và provinceName
   const cleanWard = (wardName || '').trim();
   const cleanProv = (provinceName || '').trim();
@@ -79,14 +242,14 @@ export function extractWardAndCity(
   }
 
   // 2. Nếu không có địa chỉ truyền vào
-  if (!fullAddress || typeof fullAddress !== 'string' || !fullAddress.trim()) {
+  if (!cleanedAddress || typeof cleanedAddress !== 'string' || !cleanedAddress.trim()) {
     if (cleanProv || cleanWard) {
       return cleanProv || cleanWard;
     }
     return '';
   }
 
-  const raw = fullAddress.trim();
+  const raw = cleanedAddress.trim();
 
   // Bỏ qua giá trị chung chung 'Việt Nam' hoặc 'Toàn quốc'
   if (raw.toLowerCase() === 'việt nam' || raw.toLowerCase() === 'viet nam' || raw.toLowerCase() === 'toàn quốc') {

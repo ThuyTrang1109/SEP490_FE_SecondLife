@@ -74,3 +74,53 @@ export const getSortableOrderTimestamp = (ord: any): number => {
 
   return 0;
 };
+
+export const getBoughtListingIds = (): Set<string> => {
+  const set = new Set<string>();
+  try {
+    const raw = localStorage.getItem('bought_listing_ids');
+    if (raw) {
+      const ids = JSON.parse(raw);
+      if (Array.isArray(ids)) ids.forEach((id: string) => set.add(String(id)));
+    }
+  } catch {}
+  try {
+    const rawOrders = localStorage.getItem('recent_placed_orders');
+    if (rawOrders) {
+      const ords = JSON.parse(rawOrders);
+      if (Array.isArray(ords)) {
+        ords.forEach((o: any) => {
+          if (o.escrowStatus !== 'REFUNDED_TO_BUYER' && o.backendStatus !== 'CANCELLED') {
+            if (o.listingId) set.add(String(o.listingId));
+            if (o.listing?.id) set.add(String(o.listing.id));
+          }
+        });
+      }
+    }
+  } catch {}
+  return set;
+};
+
+export const markListingAsBought = (listingId: string): void => {
+  if (!listingId) return;
+  try {
+    const raw = localStorage.getItem('bought_listing_ids');
+    const list = raw ? JSON.parse(raw) : [];
+    if (!list.includes(String(listingId))) {
+      list.push(String(listingId));
+      localStorage.setItem('bought_listing_ids', JSON.stringify(list));
+    }
+  } catch {}
+};
+
+export const markListingAsAvailable = (listingId: string): void => {
+  if (!listingId) return;
+  try {
+    const raw = localStorage.getItem('bought_listing_ids');
+    if (raw) {
+      const list = JSON.parse(raw);
+      const nextList = list.filter((id: string) => id !== String(listingId));
+      localStorage.setItem('bought_listing_ids', JSON.stringify(nextList));
+    }
+  } catch {}
+};

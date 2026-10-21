@@ -48,6 +48,7 @@ import { ScheduleAppointmentModal } from '../components/modals/ScheduleAppointme
 import { ShipmentBackend, OrderSettlementDTO } from '../types';
 import { orderService } from '../services/orderService';
 import { inspectorService } from '../services/inspectorService';
+import { shippingService } from '../services/shippingService';
 import { UserReportModal } from '../components/modals/UserReportModal';
 import { InspectionProductQRModal } from '../components/modals/InspectionProductQRModal';
 import { VietQrEscrowModal } from '../components/modals/VietQrEscrowModal';
@@ -172,6 +173,28 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       setSettlementNotSettled(false);
     }
   }, [detailModalOrder]);
+
+  // Real Backend Shipments for Detail Modal
+  const [detailShipments, setDetailShipments] = useState<ShipmentBackend[]>([]);
+  const [isLoadingDetailShipments, setIsLoadingDetailShipments] = useState(false);
+
+  React.useEffect(() => {
+    if (detailModalOrder?.id) {
+      setIsLoadingDetailShipments(true);
+      shippingService.getOrderShipments(detailModalOrder.id)
+        .then((data) => {
+          setDetailShipments(Array.isArray(data) ? data : []);
+        })
+        .catch(() => {
+          setDetailShipments([]);
+        })
+        .finally(() => {
+          setIsLoadingDetailShipments(false);
+        });
+    } else {
+      setDetailShipments([]);
+    }
+  }, [detailModalOrder?.id]);
 
   // Lalamove Shipping Modals state
   const [trackingOrder, setTrackingOrder] = useState<EscrowOrder | null>(null);
@@ -468,6 +491,22 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             }
           }
 
+          // Tự động tạo vận đơn Lalamove ngay khi người bán xác nhận đơn hàng thông thường (chặng SELLER_TO_BUYER)
+          let createdShipment: ShipmentBackend | null = null;
+          let shipmentNotice: string | null = null;
+          if (!orderHasInspection) {
+            try {
+              createdShipment = await shippingService.createShipment(orderId, {
+                requestId: crypto.randomUUID(),
+                leg: 'SELLER_TO_BUYER',
+              });
+              console.log('Lalamove shipment created successfully on order confirm:', createdShipment);
+            } catch (shipErr: any) {
+              console.warn('Auto create Lalamove shipment notice:', shipErr);
+              shipmentNotice = shipErr?.response?.data?.message || shipErr?.message || '';
+            }
+          }
+
           const confirmedAt = new Date().toISOString();
           const updatedOrder: EscrowOrder | null = targetOrder ? {
             ...targetOrder,
@@ -527,6 +566,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           setInspectionActionNotice(
             orderHasInspection
               ? (lang === 'vi' ? 'Đã đồng ý kiểm định! Task đã chuyển sang Trung tâm điều phối.' : 'Inspection accepted! Task dispatched to Center.')
+              : createdShipment?.orderCode
+              ? (lang === 'vi'
+                  ? `Đã xác nhận đơn hàng & tạo vận đơn Lalamove thành công! Mã vận đơn: #${createdShipment.orderCode}`
+                  : `Order confirmed & Lalamove shipment created! #${createdShipment.orderCode}`)
+              : shipmentNotice
+              ? (lang === 'vi'
+                  ? `Đã xác nhận đơn hàng thành công. Lưu ý Lalamove: ${shipmentNotice}. Bạn có thể bấm "Tạo Vận Đơn Lalamove" để tạo lại.`
+                  : `Order confirmed! (Lalamove note: ${shipmentNotice})`)
               : (lang === 'vi' ? 'Đã xác nhận đơn hàng thành công! Vui lòng đóng gói và báo sẵn sàng giao.' : 'Order confirmed successfully!')
           );
           onRefreshOrders?.();
@@ -541,10 +588,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             setPrintInspectionQrOrder(updatedOrder);
           }
 
-          setTimeout(() => setInspectionActionNotice(null), 4000);
+          setTimeout(() => setInspectionActionNotice(null), 5000);
         } catch (err: any) {
           setInspectionActionNotice(err?.message || 'Không thể xác nhận đơn hàng');
-          setTimeout(() => setInspectionActionNotice(null), 4000);
+          setTimeout(() => setInspectionActionNotice(null), 5000);
         } finally {
           setOrderActionLoading(null);
           setConfirmDialog(null);
@@ -576,9 +623,37 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           if (detailModalOrder && detailModalOrder.id === orderId) {
             setDetailModalOrder((prev) => (prev ? { ...prev, sellerReadyAt: readyAt } : null));
           }
+
+          // Tự động đảm bảo vận đơn Lalamove đã được khởi tạo
+          const targetOrder = userOrders.find((o) => o.id === orderId) || (detailModalOrder?.id === orderId ? detailModalOrder : null);
+          const orderHasInspection = targetOrder ? Boolean(
+            targetOrder.hasInspectionService ||
+            (targetOrder.inspectionFeeVnd && targetOrder.inspectionFeeVnd > 0) ||
+            targetOrder.inspectionCenterId ||
+            targetOrder.inspectionMethod ||
+            (targetOrder as any).inspectionStatus
+          ) : false;
+
+          let readyShipment: ShipmentBackend | null = null;
+          if (!orderHasInspection) {
+            try {
+              const existing = await shippingService.getOrderShipments(orderId);
+              const active = existing.find((s) => s.status !== 'CANCELLED');
+              if (!active) {
+                readyShipment = await shippingService.createShipment(orderId, {
+                  requestId: crypto.randomUUID(),
+                  leg: 'SELLER_TO_BUYER',
+                });
+                console.log('Lalamove shipment created on ready-for-pickup:', readyShipment);
+              }
+            } catch (shipErr: any) {
+              console.warn('Lalamove shipment creation on mark ready notice:', shipErr);
+            }
+          }
+
           setInspectionActionNotice(
             lang === 'vi'
-              ? 'Đã ghi nhận kiện hàng sẵn sàng! Tài xế Lalamove đang được điều phối đến kho lấy hàng.'
+              ? `Đã ghi nhận kiện hàng sẵn sàng! ${readyShipment?.orderCode ? `Mã Lalamove: #${readyShipment.orderCode}. ` : ''}Tài xế Lalamove đang được điều phối đến kho lấy hàng.`
               : 'Package marked ready! Lalamove driver is being dispatched to your warehouse.'
           );
           onRefreshOrders?.();
@@ -1642,6 +1717,28 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                 </button>
                               )}
 
+                              {/* Nút Gọi Tài Xế Lalamove (Cách 1) */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (ord.escrowStatus === 'AWAITING_PAYMENT') {
+                                    setInspectionActionNotice(
+                                      lang === 'vi'
+                                        ? 'Đơn hàng đang chờ người mua nộp tiền ký quỹ Escrow. Chỉ có thể phát lệnh gọi bưu tá Lalamove sau khi tiền đã được giữ trong Escrow.'
+                                        : 'Order is awaiting buyer escrow deposit before driver dispatch.'
+                                    );
+                                    setTimeout(() => setInspectionActionNotice(null), 5000);
+                                    return;
+                                  }
+                                  setCreateShipmentOrder(ord);
+                                }}
+                                className="px-3.5 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm whitespace-nowrap shrink-0"
+                                title="Gọi tài xế Lalamove đến lấy hàng"
+                              >
+                                <Truck className="w-3.5 h-3.5 text-white" />
+                                <span>{lang === 'vi' ? 'Gọi Tài Xế Lalamove' : 'Call Lalamove'}</span>
+                              </button>
+
                               {/* Nút Theo Dõi Lalamove */}
                               <button
                                 onClick={(e) => {
@@ -1688,6 +1785,28 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                   <span>{lang === 'vi' ? 'Mã QR Kiểm Định' : 'Inspection QR'}</span>
                                 </button>
                               )}
+
+                              {/* Nút Gọi Tài Xế Lalamove (Cách 1) */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (ord.escrowStatus === 'AWAITING_PAYMENT') {
+                                    setInspectionActionNotice(
+                                      lang === 'vi'
+                                        ? 'Đơn hàng đang chờ người mua nộp tiền ký quỹ Escrow. Chỉ có thể phát lệnh gọi bưu tá Lalamove sau khi tiền đã được giữ trong Escrow.'
+                                        : 'Order is awaiting buyer escrow deposit before driver dispatch.'
+                                    );
+                                    setTimeout(() => setInspectionActionNotice(null), 5000);
+                                    return;
+                                  }
+                                  setCreateShipmentOrder(ord);
+                                }}
+                                className="px-3.5 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm whitespace-nowrap shrink-0"
+                                title="Gọi tài xế Lalamove đến lấy hàng"
+                              >
+                                <Truck className="w-3.5 h-3.5 text-white" />
+                                <span>{lang === 'vi' ? 'Gọi Tài Xế Lalamove' : 'Call Lalamove'}</span>
+                              </button>
 
                               {/* Nút Theo Dõi Lalamove */}
                               <button
@@ -2060,15 +2179,37 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                     Phí vận chuyển: <strong className="text-orange-700 font-bold">{formatVND(detailModalOrder.shippingFeeVnd)}</strong> • Địa chỉ giao: <span className="font-medium text-slate-700">{detailModalOrder.buyerAddress || 'Địa chỉ người mua'}</span>
                   </p>
                 </div>
-                <button
-                  onClick={() => {
-                    setTrackingOrder(detailModalOrder);
-                  }}
-                  className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer shrink-0"
-                >
-                  <Truck className="w-3.5 h-3.5" />
-                  <span>Tra cứu vận đơn Lalamove</span>
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  {isSeller && detailShipments.length === 0 && (
+                    <button
+                      onClick={() => {
+                        if (detailModalOrder.escrowStatus === 'AWAITING_PAYMENT') {
+                          setInspectionActionNotice(
+                            lang === 'vi'
+                              ? 'Đơn hàng đang chờ người mua nộp tiền ký quỹ Escrow. Chỉ có thể phát lệnh gọi bưu tá Lalamove sau khi tiền đã được giữ trong Escrow.'
+                              : 'Order is awaiting buyer escrow deposit before driver dispatch.'
+                          );
+                          setTimeout(() => setInspectionActionNotice(null), 5000);
+                          return;
+                        }
+                        setCreateShipmentOrder(detailModalOrder);
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    >
+                      <Truck className="w-3.5 h-3.5" />
+                      <span>{lang === 'vi' ? 'Tạo Vận Đơn Lalamove' : 'Create Shipment'}</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setTrackingOrder(detailModalOrder);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer shrink-0"
+                  >
+                    <Truck className="w-3.5 h-3.5" />
+                    <span>Tra cứu vận đơn Lalamove</span>
+                  </button>
+                </div>
               </div>
 
               {/* 2-Leg Shipping Visualizer */}
@@ -2087,7 +2228,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           {t.leg1}
                         </span>
                         <span className="text-xs font-mono font-bold text-[#24263e]">
-                          {detailModalOrder.shippingLegs[0].carrier} #{detailModalOrder.shippingLegs[0].trackingNumber}
+                          {detailShipments[0]?.orderCode ? (
+                            `Lalamove #${detailShipments[0].orderCode}`
+                          ) : detailModalOrder.shippingLegs[0].trackingNumber ? (
+                            `${detailModalOrder.shippingLegs[0].carrier} #${detailModalOrder.shippingLegs[0].trackingNumber}`
+                          ) : (
+                            <span className="text-[11px] font-sans font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                              Chưa tạo vận đơn Lalamove
+                            </span>
+                          )}
                         </span>
                       </div>
 
@@ -2097,7 +2246,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                       </div>
 
                       <div className="pt-2 border-t border-gray-200 text-[11px] text-[#24263e]/70">
-                        {detailModalOrder.shippingLegs[0].timeline[detailModalOrder.shippingLegs[0].timeline.length - 1]?.description || 'Đã bàn giao bưu tá'}
+                        {detailModalOrder.shippingLegs[0].timeline[detailModalOrder.shippingLegs[0].timeline.length - 1]?.description || 'Đang chờ điều phối'}
                       </div>
                     </div>
                   ) : (
@@ -2114,7 +2263,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           {t.leg2}
                         </span>
                         <span className="text-xs font-mono font-bold text-[#24263e]">
-                          {detailModalOrder.shippingLegs[1].carrier} #{detailModalOrder.shippingLegs[1].trackingNumber}
+                          {detailShipments[1]?.orderCode ? (
+                            `Lalamove #${detailShipments[1].orderCode}`
+                          ) : (
+                            <span className="text-[11px] font-sans font-medium text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
+                              Chờ hoàn tất chặng 1
+                            </span>
+                          )}
                         </span>
                       </div>
 
@@ -2482,6 +2637,26 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               )}
 
                               <button
+                                onClick={() => {
+                                  if (detailModalOrder.escrowStatus === 'AWAITING_PAYMENT') {
+                                    setInspectionActionNotice(
+                                      lang === 'vi'
+                                        ? 'Đơn hàng đang chờ người mua nộp tiền ký quỹ Escrow. Chỉ có thể phát lệnh gọi bưu tá Lalamove sau khi tiền đã được giữ trong Escrow.'
+                                        : 'Order is awaiting buyer escrow deposit before driver dispatch.'
+                                    );
+                                    setTimeout(() => setInspectionActionNotice(null), 5000);
+                                    return;
+                                  }
+                                  setCreateShipmentOrder(detailModalOrder);
+                                }}
+                                className="py-3 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                                title="Gọi tài xế Lalamove đến lấy hàng"
+                              >
+                                <Truck className="w-4 h-4 text-white" />
+                                <span>{lang === 'vi' ? 'Gọi Tài Xế Lalamove' : 'Call Lalamove Driver'}</span>
+                              </button>
+
+                              <button
                                 onClick={() => setTrackingOrder(detailModalOrder)}
                                 className="py-3 px-4 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-bold text-xs sm:text-sm shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
                               >
@@ -2528,6 +2703,26 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                   <span>{lang === 'vi' ? 'Mã QR Kiểm Định' : 'Inspection QR'}</span>
                                 </button>
                               )}
+
+                              <button
+                                onClick={() => {
+                                  if (detailModalOrder.escrowStatus === 'AWAITING_PAYMENT') {
+                                    setInspectionActionNotice(
+                                      lang === 'vi'
+                                        ? 'Đơn hàng đang chờ người mua nộp tiền ký quỹ Escrow. Chỉ có thể phát lệnh gọi bưu tá Lalamove sau khi tiền đã được giữ trong Escrow.'
+                                        : 'Order is awaiting buyer escrow deposit before driver dispatch.'
+                                    );
+                                    setTimeout(() => setInspectionActionNotice(null), 5000);
+                                    return;
+                                  }
+                                  setCreateShipmentOrder(detailModalOrder);
+                                }}
+                                className="py-3 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                                title="Gọi tài xế Lalamove đến lấy hàng"
+                              >
+                                <Truck className="w-4 h-4 text-white" />
+                                <span>{lang === 'vi' ? 'Gọi Tài Xế Lalamove' : 'Call Lalamove Driver'}</span>
+                              </button>
 
                               <button
                                 onClick={() => setTrackingOrder(detailModalOrder)}

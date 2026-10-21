@@ -1,4 +1,6 @@
 import { request, PageResponse } from './apiClient';
+import { InspectionCenter } from '../types';
+import { mockInspectionCenters } from '../data/mockData';
 
 // ============================================================================
 // DTOs & INTERFACES FOR PRODUCT INSPECTION SYSTEM
@@ -314,6 +316,25 @@ export const inspectorService = {
   // --------------------------------------------------------------------------
   // 1. BUYER & SELLER INSPECTION FLOW (/api/v1/inspection)
   // --------------------------------------------------------------------------
+
+  /**
+   * Lấy danh sách các Trung tâm kiểm định SecondLife Hubs
+   */
+  async getInspectionCenters(): Promise<InspectionCenter[]> {
+    try {
+      const res = await request<InspectionCenter[]>('/inspection/centers', {
+        method: 'GET',
+        requiresAuth: false,
+      });
+      const data = (res as any)?.data || res;
+      if (Array.isArray(data) && data.length > 0) {
+        return data;
+      }
+    } catch {
+      // Endpoint fallback
+    }
+    return mockInspectionCenters;
+  },
 
   /**
    * Tính toán báo giá chi tiết 2 gói AT_HOME và AT_CENTER

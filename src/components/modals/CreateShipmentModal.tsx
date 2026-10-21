@@ -60,7 +60,13 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
       const status = err?.response?.status || err?.status;
       const rawMsg = err?.response?.data?.message || err?.message || '';
       
-      if (status === 409 || rawMsg.toLowerCase().includes('fee') || rawMsg.toLowerCase().includes('phí') || rawMsg.toLowerCase().includes('tăng')) {
+      if (rawMsg.toLowerCase().includes('not eligible for outbound shipping') || (order.escrowStatus === 'AWAITING_PAYMENT')) {
+        setErrorMsg('Người mua chưa nộp tiền ký quỹ Escrow (trạng thái: Chờ Khách Ký Quỹ). Hệ thống chỉ cho phép gọi bưu tá Lalamove sau khi tiền đã được bảo chứng giữ trong Quỹ Escrow.');
+      } else if (rawMsg.toLowerCase().includes('must match the paid shipping quote')) {
+        setErrorMsg('Chặng vận chuyển không khớp với báo giá thanh toán của đơn hàng. Với đơn kiểm định Hub, chặng chuyển về Hub do Trung tâm kiểm định điều phối.');
+      } else if (rawMsg.toLowerCase().includes('seller must confirm')) {
+        setErrorMsg('Người bán cần bấm xác nhận đơn hàng trước khi tạo vận đơn giao hàng.');
+      } else if (status === 409 || rawMsg.toLowerCase().includes('fee') || rawMsg.toLowerCase().includes('phí') || rawMsg.toLowerCase().includes('tăng')) {
         setErrorMsg('Cước phí vận chuyển Lalamove hiện tại đã tăng so với số tiền phí người mua đã thanh toán lúc đặt hàng. Hệ thống không thể tự trừ thêm tiền của người mua. Vui lòng kiểm tra lại đơn hàng hoặc hỗ trợ hủy đơn theo quy định.');
       } else if (rawMsg.toLowerCase().includes('disabled') || rawMsg.includes('503')) {
         setErrorMsg('Lalamove chưa được kích hoạt trên máy chủ (LALAMOVE_ENABLED=false). Vui lòng cấu hình API Key đối tác trên Backend hoặc kiểm tra thông tin kho.');
@@ -103,6 +109,13 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-700 font-semibold flex items-center gap-2.5">
               <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {order.escrowStatus === 'AWAITING_PAYMENT' && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 font-semibold flex items-center gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>Đơn hàng đang chờ người mua nộp tiền ký quỹ Escrow. Theo quy định, chỉ có thể điều phối tài xế Lalamove sau khi tiền đã được giữ trong Quỹ Escrow (trạng thái Ký Quỹ Thành Công).</span>
             </div>
           )}
 
@@ -198,11 +211,14 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
 
               <button
                 type="button"
+                disabled={!order.hasInspectionService && !order.inspectionCenterId}
                 onClick={() => setLeg('SELLER_TO_CENTER')}
-                className={`p-3 rounded-2xl border text-left transition cursor-pointer ${
-                  leg === 'SELLER_TO_CENTER'
-                    ? 'border-[#c34c36] bg-[#c34c36]/5 text-slate-900 font-bold ring-2 ring-[#c34c36]/20'
-                    : 'border-gray-200 bg-white text-slate-600 hover:border-gray-300'
+                className={`p-3 rounded-2xl border text-left transition ${
+                  !order.hasInspectionService && !order.inspectionCenterId
+                    ? 'opacity-40 bg-gray-50 border-gray-200 cursor-not-allowed'
+                    : leg === 'SELLER_TO_CENTER'
+                    ? 'border-[#c34c36] bg-[#c34c36]/5 text-slate-900 font-bold ring-2 ring-[#c34c36]/20 cursor-pointer'
+                    : 'border-gray-200 bg-white text-slate-600 hover:border-gray-300 cursor-pointer'
                 }`}
               >
                 <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
@@ -210,7 +226,9 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                   <span>Qua Hub Kiểm Định (Seller → Hub)</span>
                 </div>
                 <p className="text-[10px] text-slate-500 mt-1 font-normal">
-                  Chuyển kiện hàng đến trung tâm kiểm định SecondLife.
+                  {!order.hasInspectionService && !order.inspectionCenterId
+                    ? 'Chỉ áp dụng cho đơn hàng có đăng ký dịch vụ kiểm định Hub.'
+                    : 'Chuyển kiện hàng đến trung tâm kiểm định SecondLife.'}
                 </p>
               </button>
             </div>
@@ -236,13 +254,22 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="px-6 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#dc4729] text-white font-black text-xs transition cursor-pointer shadow-md flex items-center gap-2 disabled:opacity-50"
+              disabled={isSubmitting || order.escrowStatus === 'AWAITING_PAYMENT'}
+              className={`px-6 py-2.5 rounded-xl font-black text-xs transition shadow-md flex items-center gap-2 ${
+                order.escrowStatus === 'AWAITING_PAYMENT'
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-[#c34c36] hover:bg-[#dc4729] text-white cursor-pointer disabled:opacity-50'
+              }`}
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-4 h-4 text-white animate-spin" />
                   <span>Đang kết nối Lalamove...</span>
+                </>
+              ) : order.escrowStatus === 'AWAITING_PAYMENT' ? (
+                <>
+                  <AlertTriangle className="w-4 h-4 text-gray-500" />
+                  <span>Chờ Khách Ký Quỹ Escrow</span>
                 </>
               ) : (
                 <>

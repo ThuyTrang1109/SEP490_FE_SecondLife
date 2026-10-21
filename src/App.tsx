@@ -1464,10 +1464,10 @@ export default function App() {
             shippingLegs: [
               {
                 id: 'LEG-1',
-                legType: 'SELLER_TO_CENTER',
+                legType: isInspectionOrder ? 'SELLER_TO_CENTER' : 'SELLER_TO_BUYER',
                 carrier: 'Lalamove',
-                trackingNumber: `LLM-${bOrd.id.slice(0, 8).toUpperCase()}`,
-                status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : 'IN_TRANSIT',
+                trackingNumber: (bOrd as any).shipmentOrderCode || (bOrd as any).trackingNumber || '',
+                status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : (bOrd.status === 'SHIPPED' ? 'IN_TRANSIT' : 'PENDING'),
                 origin: 'Địa chỉ kho người bán',
                 destination: buyerAddr,
                 estimatedDelivery: '1 - 2 ngày',

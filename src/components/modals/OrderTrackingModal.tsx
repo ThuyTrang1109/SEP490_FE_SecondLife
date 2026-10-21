@@ -79,9 +79,34 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   const [isReconciling, setIsReconciling] = useState(false);
   const [isRefunding, setIsRefunding] = useState(false);
   const [isConfirmingDelivered, setIsConfirmingDelivered] = useState(false);
+  const [isCreatingShipment, setIsCreatingShipment] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
+
+  const handleManualCreateShipment = async () => {
+    setIsCreatingShipment(true);
+    setErrorMsg(null);
+    try {
+      const shipment = await shippingService.createShipment(order.id, {
+        requestId: crypto.randomUUID(),
+        leg: 'SELLER_TO_BUYER',
+      });
+      showNotification(
+        shipment?.orderCode
+          ? `Đã khởi tạo vận đơn Lalamove thành công! Mã vận đơn: #${shipment.orderCode}`
+          : 'Đã khởi tạo vận đơn Lalamove thành công!'
+      );
+      await loadShipmentData();
+      onOrderUpdated?.();
+    } catch (err: any) {
+      console.error('Failed to create Lalamove shipment:', err);
+      const rawMsg = err?.response?.data?.message || err?.message || '';
+      showNotification(rawMsg || 'Không thể tạo vận đơn Lalamove. Vui lòng thử lại.', true);
+    } finally {
+      setIsCreatingShipment(false);
+    }
+  };
 
   // Polling state (10 - 15s interval as specified in Section 10.4 of guide)
   const [pollingActive] = useState(true);
@@ -928,12 +953,35 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
               <span className="font-bold text-sm">Đang tải dữ liệu tracking từ hệ thống Lalamove...</span>
             </div>
           ) : !activeShipment ? (
-            <div className="p-8 text-center bg-slate-50 border border-dashed border-gray-300 rounded-3xl space-y-3">
+            <div className="p-8 text-center bg-slate-50 border border-dashed border-gray-300 rounded-3xl space-y-4">
               <Package className="w-12 h-12 text-slate-400 mx-auto" />
               <h4 className="font-bold text-sm text-slate-800">Chưa có vận đơn nào được tạo</h4>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Người bán chưa khởi tạo mã vận đơn Lalamove cho đơn hàng này. Vui lòng chờ người bán đóng gói và tạo vận đơn bàn giao cho tài xế.
+                {isSeller
+                  ? 'Đơn hàng chưa có mã vận đơn Lalamove. Bạn có thể bấm nút bên dưới để tạo vận đơn và phát lệnh điều phối tài xế Lalamove ngay lập tức.'
+                  : 'Người bán chưa khởi tạo mã vận đơn Lalamove cho đơn hàng này. Vui lòng chờ người bán đóng gói và tạo vận đơn bàn giao cho tài xế.'}
               </p>
+              {isSeller && (
+                <div className="pt-2">
+                  <button
+                    onClick={handleManualCreateShipment}
+                    disabled={isCreatingShipment}
+                    className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-90 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2 mx-auto cursor-pointer disabled:opacity-50"
+                  >
+                    {isCreatingShipment ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        <span>Đang kết nối Lalamove...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Truck className="w-4 h-4 text-white" />
+                        <span>Tạo Vận Đơn Lalamove Ngay</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-6">

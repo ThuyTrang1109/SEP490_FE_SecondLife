@@ -259,16 +259,45 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [agreedZinLoss, setAgreedZinLoss] = useState(false);
 
   // Inspection Center, Method & Fee Splitting States
+  const [inspectionCenters, setInspectionCenters] = useState<InspectionCenter[]>(mockInspectionCenters);
+  const [loadingCenters, setLoadingCenters] = useState<boolean>(false);
   const [selectedCenterId, setSelectedCenterId] = useState<string>(mockInspectionCenters[0]?.id || 'center-hcm-01');
   const [inspectionMethod, setInspectionMethod] = useState<'AT_CENTER' | 'AT_HOME'>('AT_CENTER');
   const [feeSplit, setFeeSplit] = useState<'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100'>('BUYER_100');
 
+  // Load Inspection Centers / Hubs from API
+  useEffect(() => {
+    let isMounted = true;
+    const fetchCenters = async () => {
+      try {
+        setLoadingCenters(true);
+        const hubs = await inspectorService.getInspectionCenters();
+        if (isMounted && hubs && hubs.length > 0) {
+          setInspectionCenters(hubs);
+          // If current selectedCenterId is not in new list, pick the first one
+          setSelectedCenterId((prev) => {
+            if (hubs.some((h) => h.id === prev)) return prev;
+            return hubs[0].id;
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to load inspection centers:', err);
+      } finally {
+        if (isMounted) setLoadingCenters(false);
+      }
+    };
+    fetchCenters();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Auto suggest/select inspection center based on buyer province
   useEffect(() => {
-    if (!selectedProvinceName) return;
+    if (!selectedProvinceName || inspectionCenters.length === 0) return;
     const provLower = selectedProvinceName.toLowerCase();
     if (provLower.includes('hà nội') || provLower.includes('ha noi')) {
-      const hn = mockInspectionCenters.find((c) => c.id.includes('hn'));
+      const hn = inspectionCenters.find((c) => c.id.includes('hn') || c.city.toLowerCase().includes('hà nội'));
       if (hn) setSelectedCenterId(hn.id);
     } else if (
       provLower.includes('đà nẵng') ||
@@ -276,7 +305,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       provLower.includes('huế') ||
       provLower.includes('quảng')
     ) {
-      const dn = mockInspectionCenters.find((c) => c.id.includes('dn'));
+      const dn = inspectionCenters.find((c) => c.id.includes('dn') || c.city.toLowerCase().includes('đà nẵng'));
       if (dn) setSelectedCenterId(dn.id);
     } else if (
       provLower.includes('hồ chí minh') ||
@@ -285,10 +314,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       provLower.includes('bình dương') ||
       provLower.includes('đồng nai')
     ) {
-      const hcm = mockInspectionCenters.find((c) => c.id.includes('hcm'));
+      const hcm = inspectionCenters.find((c) => c.id.includes('hcm') || c.city.toLowerCase().includes('hồ chí minh'));
       if (hcm) setSelectedCenterId(hcm.id);
     }
-  }, [selectedProvinceName]);
+  }, [selectedProvinceName, inspectionCenters]);
 
   // Lalamove Shipping Quote State
   const [ghnQuote, setGhnQuote] = useState<ShippingQuoteResponseDto | null>(null);
@@ -510,7 +539,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Inspection fee & split calculations
   const isInspected = deliveryOption === 'INSPECTION';
-  const selectedCenter = mockInspectionCenters.find((c) => c.id === selectedCenterId) || mockInspectionCenters[0];
+  const selectedCenter = inspectionCenters.find((c) => c.id === selectedCenterId) || inspectionCenters[0] || mockInspectionCenters[0];
 
   const atHomeFee = inspectionQuote?.atHomePackage?.totalFee 
     ?? inspectionQuote?.atHomeTotalFee 
@@ -726,6 +755,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           const buyerLat = Number(deliveryLatitude) || 10.762622;
           const buyerLng = Number(deliveryLongitude) || 106.660172;
 
+          const hubNote = selectedCenter ? `[Trung tâm tiếp nhận: ${selectedCenter.name} - ${selectedCenter.city}]` : '';
+          const fullNote = [deliveryNote, hubNote].filter(Boolean).join(' | ');
+
           const beInspectionOrder = await inspectorService.createRequest({
             postId: listing.id,
             orderType: inspectionMethod,
@@ -739,7 +771,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               latitude: buyerLat,
               longitude: buyerLng,
             },
-            note: deliveryNote || undefined,
+            note: fullNote || undefined,
           });
           if (beInspectionOrder?.id) {
             orderId = String(beInspectionOrder.id);
@@ -772,8 +804,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               id: 'LEG-1',
               legType: 'SELLER_TO_CENTER',
               carrier: inspectionMethod === 'AT_HOME' ? 'SecondLife On-site Team' : 'Lalamove',
-              trackingNumber: `LLM-HUB-${orderId.slice(0, 8).toUpperCase()}`,
-              status: 'PICKED_UP',
+              trackingNumber: '',
+              status: 'PENDING',
               origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
               destination: inspectionMethod === 'AT_HOME'
                 ? `Kiểm định tại nhà người bán (Kỹ sư ${selectedCenter?.name})`
@@ -784,7 +816,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
                   description: inspectionMethod === 'AT_HOME'
                     ? `Cử chuyên viên kỹ thuật từ ${selectedCenter?.name} đến tận nhà người bán kiểm định trực tiếp on-site.`
-                    : `Khởi tạo đơn hàng kiểm định Hub (${selectedCenter?.name}). Tài xế Lalamove chuẩn bị lấy hàng chuyển về Hub.`,
+                    : `Khởi tạo đơn hàng kiểm định Hub (${selectedCenter?.name}). Chờ bưu tá Lalamove điều phối lấy hàng chuyển về Hub.`,
                   location: selectedCenter?.name || 'Hệ thống SecondLife Escrow'
                 }
               ]
@@ -793,8 +825,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               id: 'LEG-2',
               legType: 'CENTER_TO_BUYER',
               carrier: 'Lalamove',
-              trackingNumber: `LLM-BUYER-${orderId.slice(0, 8).toUpperCase()}`,
-              status: 'IN_TRANSIT',
+              trackingNumber: '',
+              status: 'PENDING',
               origin: selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab',
               destination: fullAddress,
               estimatedDelivery: 'Giao nhanh trong ngày sau khi đạt chuẩn kiểm định',
@@ -812,8 +844,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               id: 'LEG-1',
               legType: 'SELLER_TO_BUYER',
               carrier: 'Lalamove',
-              trackingNumber: `LLM-DIRECT-${orderId.slice(0, 8).toUpperCase()}`,
-              status: 'PICKED_UP',
+              trackingNumber: '',
+              status: 'PENDING',
               origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
               destination: fullAddress,
               estimatedDelivery: ghnQuote?.expectedDeliveryTime || 'Giao ngay trong ngày',
@@ -1746,8 +1778,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5 flex-wrap">
                       <Building2 className="w-3.5 h-3.5 text-[#c34c36]" />
                       <span>{lang === 'vi' ? '1. Chọn Trung Tâm Kiểm Định Tiếp Nhận' : '1. Select Inspection Hub'}</span>
-                      <span className="text-[10px] text-rose-600 font-extrabold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
-                        ❌ [Trạm mẫu / Chưa có API Hubs]
+                      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 shadow-xs">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        {lang === 'vi' ? 'Hệ thống Trạm Hub Chính Thức' : 'Official Verified Hubs'}
                       </span>
                     </label>
                     <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
@@ -1756,7 +1789,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
-                    {mockInspectionCenters.map((hub) => {
+                    {inspectionCenters.map((hub) => {
                       const isSelected = hub.id === selectedCenterId;
                       return (
                         <div

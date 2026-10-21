@@ -1,38 +1,60 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense, useRef, useCallback, useEffect } from 'react';
 import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit, ItemCategory, ConditionGrade } from './types';
 import { formatVND } from './utils/translations';
 import { extractWardAndCity, getSavedSellerAddress, saveSellerAddress } from './utils/addressUtils';
+import { getSortableOrderTimestamp } from './utils/orderUtils';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
-import { MarketplaceView } from './pages/MarketplaceView';
-import { ListingDetailModal } from './components/modals/ListingDetailModal';
-import { CreateListingView } from './pages/CreateListingView';
-import { SellerDashboardView } from './pages/SellerDashboardView';
-import { EscrowOrdersView, getSortableOrderTimestamp } from './pages/EscrowOrdersView';
-import { InspectorPortalView } from './pages/InspectorPortalView';
-import { InspectionCenterDashboardView } from './pages/InspectionCenterDashboardView';
-import { StaffWorkspaceView } from './pages/StaffWorkspaceView';
-import { AdminDashboardView } from './pages/AdminDashboardView';
-import { InboxView } from './pages/InboxView';
-import { ChatModal } from './components/modals/ChatModal';
-import { CheckoutModal } from './components/modals/CheckoutModal';
 import { HomePageView } from './pages/HomePageView';
+import { MarketplaceView } from './pages/MarketplaceView';
 import { AuthModal } from './components/modals/AuthModal';
-import { ProfileDialog } from './components/modals/ProfileDialog';
-import { SellerRegistrationModal } from './components/modals/SellerRegistrationModal';
 import { VerifyEmailModal } from './components/modals/VerifyEmailModal';
 import { LogoutConfirmModal } from './components/modals/LogoutConfirmModal';
 import { SessionExpiredModal } from './components/modals/SessionExpiredModal';
-import { TopUpModal } from './components/modals/TopUpModal';
-import { PolicyModal, PolicyTabKey } from './components/modals/PolicyModal';
-import { SellerReviewsModal } from './components/modals/SellerReviewsModal';
-import { NotificationCenterView } from './pages/NotificationCenterView';
-import { BuyerInspectionDecisionView } from './pages/BuyerInspectionDecisionView';
 import { RealtimeNotificationToast } from './components/common/RealtimeNotificationToast';
 import { GlobalPopupModal } from './components/common/GlobalPopupModal';
+import type { PolicyTabKey } from './components/modals/PolicyModal';
 import './utils/dialogService';
 import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
-import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, refreshAccessToken, ChatRoomDto } from './services';
+import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, getRefreshToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, isTokenExpiringSoon, recordUserActivity, isUserIdle, refreshAccessToken, ChatRoomDto } from './services';
+
+// Code-split heavy views via React.lazy
+const CreateListingView = lazy(() => import('./pages/CreateListingView').then(m => ({ default: m.CreateListingView })));
+const SellerDashboardView = lazy(() => import('./pages/SellerDashboardView').then(m => ({ default: m.SellerDashboardView })));
+const EscrowOrdersView = lazy(() => import('./pages/EscrowOrdersView').then(m => ({ default: m.EscrowOrdersView })));
+const InspectorPortalView = lazy(() => import('./pages/InspectorPortalView').then(m => ({ default: m.InspectorPortalView })));
+const InspectionCenterDashboardView = lazy(() => import('./pages/InspectionCenterDashboardView').then(m => ({ default: m.InspectionCenterDashboardView })));
+const StaffWorkspaceView = lazy(() => import('./pages/StaffWorkspaceView').then(m => ({ default: m.StaffWorkspaceView })));
+const AdminDashboardView = lazy(() => import('./pages/AdminDashboardView').then(m => ({ default: m.AdminDashboardView })));
+const InboxView = lazy(() => import('./pages/InboxView').then(m => ({ default: m.InboxView })));
+const NotificationCenterView = lazy(() => import('./pages/NotificationCenterView').then(m => ({ default: m.NotificationCenterView })));
+const BuyerInspectionDecisionView = lazy(() => import('./pages/BuyerInspectionDecisionView').then(m => ({ default: m.BuyerInspectionDecisionView })));
+const MyDisputesView = lazy(() => import('./pages/MyDisputesView').then(m => ({ default: m.MyDisputesView })));
+
+// Code-split heavy modals via React.lazy
+const ListingDetailModal = lazy(() => import('./components/modals/ListingDetailModal').then(m => ({ default: m.ListingDetailModal })));
+const CheckoutModal = lazy(() => import('./components/modals/CheckoutModal').then(m => ({ default: m.CheckoutModal })));
+const ChatModal = lazy(() => import('./components/modals/ChatModal').then(m => ({ default: m.ChatModal })));
+const ProfileDialog = lazy(() => import('./components/modals/ProfileDialog').then(m => ({ default: m.ProfileDialog })));
+const SellerRegistrationModal = lazy(() => import('./components/modals/SellerRegistrationModal').then(m => ({ default: m.SellerRegistrationModal })));
+const TopUpModal = lazy(() => import('./components/modals/TopUpModal').then(m => ({ default: m.TopUpModal })));
+const PolicyModal = lazy(() => import('./components/modals/PolicyModal').then(m => ({ default: m.PolicyModal })));
+const SellerReviewsModal = lazy(() => import('./components/modals/SellerReviewsModal').then(m => ({ default: m.SellerReviewsModal })));
+const UserReportModal = lazy(() => import('./components/modals/UserReportModal').then(m => ({ default: m.UserReportModal })));
+
+// In-memory quick lookup caches to avoid blocking synchronous localStorage disk I/O
+const postCacheMap = new Map<string, Listing>();
+const postTitleCacheMap = new Map<string, Listing>();
+
+// Sleek loading fallback for lazy-loaded tabs
+const ViewLoadingFallback = () => (
+  <div className="flex flex-col items-center justify-center min-h-[360px] py-16 px-4">
+    <div className="w-10 h-10 rounded-full border-4 border-amber-200 border-t-[#c34c36] animate-spin" />
+    <span className="mt-3 text-xs font-semibold text-slate-500 tracking-wider uppercase animate-pulse">
+      Đang tải dữ liệu...
+    </span>
+  </div>
+);
 
 export default function App() {
   // Global State - Default to 'marketplace' so visitors enter directly into the marketplace
@@ -117,10 +139,11 @@ export default function App() {
             profile.province,
           ].filter(Boolean).join(', ');
 
-          const resolvedAddress = profileFullAddress || stored?.address || savedAddr?.address || '';
-          const resolvedPickup = fullPickup || stored?.pickupAddress || profileFullAddress || savedAddr?.address || '';
-          const resolvedWard = profile.ward || pickupAddr?.wardName || stored?.wardName || savedAddr?.wardName || '';
-          const resolvedProv = profile.province || pickupAddr?.provinceName || stored?.provinceName || savedAddr?.provinceName || '';
+          // Ưu tiên địa chỉ người dùng đã cập nhật trong session/localStorage nếu có
+          const resolvedAddress = stored?.address || profileFullAddress || savedAddr?.address || '';
+          const resolvedPickup = stored?.pickupAddress || fullPickup || profileFullAddress || savedAddr?.address || '';
+          const resolvedWard = stored?.wardName || profile.ward || pickupAddr?.wardName || savedAddr?.wardName || '';
+          const resolvedProv = stored?.provinceName || profile.province || pickupAddr?.provinceName || savedAddr?.provinceName || '';
 
           if (resolvedPickup || resolvedAddress) {
             saveSellerAddress(resolvedPickup || resolvedAddress, resolvedWard, resolvedProv);
@@ -275,6 +298,18 @@ export default function App() {
       setCurrentRole('buyer');
       setActiveTab('marketplace');
       setIsProfileDialogOpen(false);
+      setEditingDraft(null);
+
+      // Xóa toàn bộ thông tin bài đăng nháp dở dang khi người bán thoát khỏi hệ thống
+      try {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('create_listing_active_draft_') || key === 'create_listing_active_draft')) {
+            localStorage.removeItem(key);
+          }
+        }
+        sessionStorage.removeItem('create_listing_active_draft');
+      } catch {}
 
       // Force a hard reload to ensure all memory states and third-party scripts are cleared
       window.location.reload();
@@ -333,13 +368,13 @@ export default function App() {
                   shippingFeeVnd: 0,
                   platformFeeVnd: 0,
                   totalPaidVnd: listing.priceVnd || 0,
-                  escrowStatus: 'HELD_IN_ESCROW',
+                  escrowStatus: 'AWAITING_PAYMENT',
                   hasInspectionService: Boolean(listing.requiresInspection),
                   shippingLegs: [
                     {
                       id: 'LEG-1',
                       legType: 'SELLER_TO_BUYER',
-                      carrier: 'Lalamove / GHN',
+                      carrier: 'Lalamove',
                       trackingNumber: `TRACK-${orderId.slice(0, 8).toUpperCase()}`,
                       status: 'PICKED_UP',
                       origin: listing.sellerAddress || listing.location || 'Địa chỉ người bán',
@@ -382,6 +417,14 @@ export default function App() {
   const [orders, setOrders] = useState<EscrowOrder[]>(() => getLocalStoredOrders());
   const [disputes, setDisputes] = useState<DisputeCase[]>([]);
 
+  const listingsRef = useRef<Listing[]>(listings);
+  listingsRef.current = listings;
+
+  const lastListingsFetchRef = useRef<number>(0);
+  const isFetchingListingsRef = useRef<boolean>(false);
+  const lastOrdersFetchRef = useRef<number>(0);
+  const isFetchingOrdersRef = useRef<boolean>(false);
+
   // Modals
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [checkoutListing, setCheckoutListing] = useState<Listing | null>(null);
@@ -392,6 +435,7 @@ export default function App() {
   const [chatPartnerAvatar, setChatPartnerAvatar] = useState<string | undefined>(undefined);
   const [chatRoom, setChatRoom] = useState<ChatRoomDto | undefined>(undefined);
   const [sellerReviewsModalData, setSellerReviewsModalData] = useState<{ sellerId: string; sellerName: string } | null>(null);
+  const [reportingOrderForDispute, setReportingOrderForDispute] = useState<EscrowOrder | null>(null);
 
   // Flash Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -415,46 +459,58 @@ export default function App() {
     return () => window.removeEventListener('unauthorized_session', handleUnauthorized);
   }, [lang]);
 
-  // Idle Time & Token Watchdog
+  // Idle Time & Token Watchdog (30-minute idle check + proactive JWT renewal for active users)
   React.useEffect(() => {
-    let lastActivityTime = Date.now();
-    const updateActivity = () => { lastActivityTime = Date.now(); };
-    window.addEventListener('mousemove', updateActivity);
-    window.addEventListener('keydown', updateActivity);
-    window.addEventListener('click', updateActivity);
-    window.addEventListener('scroll', updateActivity);
+    // Record activity on mount and register user interaction listeners
+    recordUserActivity();
+
+    const handleUserInteraction = () => {
+      recordUserActivity();
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'click', 'scroll', 'touchstart', 'wheel'];
+    events.forEach((evt) => {
+      window.addEventListener(evt, handleUserInteraction, { passive: true });
+    });
 
     const interval = setInterval(() => {
-      if (currentUser) {
-        const token = getAccessToken();
-        if (token && isTokenExpired(token)) {
-          // Check if user is IDLE for 30 minutes (1800000 ms)
-          if (Date.now() - lastActivityTime >= 1800000) {
-            console.log('[App] User is idle and token expired. Dispatching unauthorized_session.');
+      if (!currentUser) return;
+
+      const token = getAccessToken();
+      const rToken = getRefreshToken();
+
+      // If user has no tokens at all, nothing to watch
+      if (!token && !rToken) return;
+
+      // Check if user has been inactive/idle for >= 30 minutes (1,800,000 ms)
+      if (isUserIdle(30 * 60 * 1000)) {
+        console.log('[App] User inactive for 30 minutes. Session expired.');
+        window.dispatchEvent(new Event('unauthorized_session'));
+        return;
+      }
+
+      // User is still active: proactively refresh token if expiring within 3 minutes or expired
+      if (token && (isTokenExpiringSoon(token, 180) || isTokenExpired(token))) {
+        console.log('[App] User is actively using the system. Seamlessly renewing JWT token.');
+        refreshAccessToken().then((newToken) => {
+          if (!newToken && isTokenExpired(token)) {
+            console.log('[App] Refresh token rejected or expired on BE. Revoking session.');
             window.dispatchEvent(new Event('unauthorized_session'));
-          } else {
-            // User is active, proactively refresh token
-            console.log('[App] Token expired but user active. Proactively refreshing.');
-            refreshAccessToken().then((newToken) => {
-              if (!newToken) {
-                window.dispatchEvent(new Event('unauthorized_session'));
-              }
-            });
           }
-        }
+        });
       }
     }, 5000);
+
     return () => {
       clearInterval(interval);
-      window.removeEventListener('mousemove', updateActivity);
-      window.removeEventListener('keydown', updateActivity);
-      window.removeEventListener('click', updateActivity);
-      window.removeEventListener('scroll', updateActivity);
+      events.forEach((evt) => {
+        window.removeEventListener(evt, handleUserInteraction);
+      });
     };
   }, [currentUser]);
 
   // Auth Guard Helper
-  const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'inspection-center', 'admin-dashboard', 'staff-workspace', 'chat', 'notifications'];
+  const protectedTabs = ['create-listing', 'seller-dashboard', 'orders', 'inspection-hub', 'inspection-center', 'admin-dashboard', 'staff-workspace', 'chat', 'notifications', 'disputes'];
 
   const requireAuth = (onSuccessAction?: () => void, customMsg?: string): boolean => {
     if (!currentUser) {
@@ -617,6 +673,12 @@ export default function App() {
     // 7. Seller onboarding / eKYC
     if (url.includes('/seller')) {
       handleTabChange('seller-dashboard');
+      return;
+    }
+
+    // 8. Disputes & Claims
+    if (url.includes('/disputes') || url.includes('/reports')) {
+      handleTabChange('disputes');
       return;
     }
 
@@ -836,7 +898,9 @@ export default function App() {
         (post.userId && String(post.userId) === String(currentUser.id)) ||
         (post.sellerId && String(post.sellerId) === String(currentUser.id)) ||
         (post.user?.id && String(post.user.id) === String(currentUser.id)) ||
-        (post.user?.email && currentUser.email && post.user.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase())
+        (post.user?.email && currentUser.email && post.user.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase()) ||
+        (post.user?.fullName && currentUser.name && post.user.fullName.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
+        (post.user?.name && currentUser.name && post.user.name.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
       )
     );
 
@@ -963,7 +1027,13 @@ export default function App() {
   ]);
 
   // Synchronize listings directly with Backend
-  const loadListingsFromBackend = React.useCallback(async () => {
+  const loadListingsFromBackend = React.useCallback(async (force = false) => {
+    const now = Date.now();
+    if (!force && isFetchingListingsRef.current) return;
+    if (!force && now - lastListingsFetchRef.current < 20000 && listingsRef.current.length > 0) {
+      return;
+    }
+    isFetchingListingsRef.current = true;
     try {
       let postsData: any[] = [];
       try {
@@ -1014,21 +1084,22 @@ export default function App() {
         const mapped = postsData.map(mapBackendPostToListing);
         mapped.forEach((l) => {
           if (l?.id) {
-            try {
-              localStorage.setItem(`cached_post_${l.id}`, JSON.stringify(l));
-              if (l.title) {
-                localStorage.setItem(`cached_post_title_${l.title.toLowerCase().trim()}`, JSON.stringify(l));
-              }
-            } catch {}
+            postCacheMap.set(String(l.id), l);
+            if (l.title) {
+              postTitleCacheMap.set(l.title.toLowerCase().trim(), l);
+            }
           }
         });
         setListings(mapped);
       } else {
         setListings([]);
       }
+      lastListingsFetchRef.current = Date.now();
     } catch (err) {
       console.warn('Lỗi tải danh sách bài đăng từ Backend:', err);
       setListings([]);
+    } finally {
+      isFetchingListingsRef.current = false;
     }
   }, [mapBackendPostToListing, currentUser?.role, currentRole]);
 
@@ -1058,8 +1129,26 @@ export default function App() {
             return item;
           })
         );
+
+        // Đồng bộ tức thì địa chỉ mới vào tất cả đơn hàng liên quan
+        setOrders((prevOrders) =>
+          prevOrders.map((ord) => {
+            let updatedOrd = { ...ord };
+            if (ord.buyerId === updated.id) {
+              updatedOrd.buyerAddress = effectiveAddr || updatedOrd.buyerAddress;
+            }
+            if (ord.sellerId === updated.id && updatedOrd.listing) {
+              updatedOrd.listing = {
+                ...updatedOrd.listing,
+                location: newLoc || updatedOrd.listing.location,
+                sellerAddress: effectiveAddr || updatedOrd.listing.sellerAddress || newLoc,
+              };
+            }
+            return updatedOrd;
+          })
+        );
       }
-      loadListingsFromBackend();
+      loadListingsFromBackend(true);
       if (successToast) {
         showToast(successToast);
       }
@@ -1068,12 +1157,17 @@ export default function App() {
   );
 
   // Synchronize orders directly with Backend
-  // Synchronize orders directly with Backend
-  const loadUserOrders = React.useCallback(async () => {
+  const loadUserOrders = React.useCallback(async (force = false) => {
     if (!currentUser || !getAccessToken()) {
       setOrders([]);
       return;
     }
+    const now = Date.now();
+    if (!force && isFetchingOrdersRef.current) return;
+    if (!force && now - lastOrdersFetchRef.current < 15000) {
+      return;
+    }
+    isFetchingOrdersRef.current = true;
     try {
       const [buyerRes, sellerRes, inspBuyerRes, inspSellerRes, chatRooms] = await Promise.all([
         orderService.getBuyerOrders(0, 50).catch(() => ({ content: [] })),
@@ -1127,32 +1221,37 @@ export default function App() {
       rawInspSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
       const items = Array.from(orderMap.values());
       if (items && items.length > 0) {
+        const currentListings = listingsRef.current;
         const mappedOrders: EscrowOrder[] = items.map((bOrd: any) => {
-          let cachedListing: any = null;
-          try {
-            const rawOrderListing = localStorage.getItem(`order_listing_${bOrd.id}`);
-            if (rawOrderListing) cachedListing = JSON.parse(rawOrderListing);
-            if (!cachedListing && bOrd.postId) {
-              const rawPost = localStorage.getItem(`cached_post_${bOrd.postId}`);
-              if (rawPost) cachedListing = JSON.parse(rawPost);
-            }
-            if (!cachedListing && bOrd.postTitle) {
-              const rawPostByTitle = localStorage.getItem(`cached_post_title_${bOrd.postTitle.toLowerCase().trim()}`);
-              if (rawPostByTitle) cachedListing = JSON.parse(rawPostByTitle);
-            }
-            if (!cachedListing && allSellerPostsCached.length > 0) {
-              const matchedFromSellerCache = allSellerPostsCached.find((p: any) =>
-                (p.postId && p.postId === bOrd.postId) ||
-                (p.id && p.id === bOrd.postId) ||
-                (bOrd.postTitle && p.title && p.title.toLowerCase().trim() === bOrd.postTitle.toLowerCase().trim())
-              );
-              if (matchedFromSellerCache) {
-                cachedListing = mapBackendPostToListing(matchedFromSellerCache);
-              }
-            }
-          } catch {}
+          let cachedListing: any = (bOrd.postId ? postCacheMap.get(String(bOrd.postId)) : null)
+            || (bOrd.postTitle ? postTitleCacheMap.get(bOrd.postTitle.toLowerCase().trim()) : null);
 
-          const directMatched = listings.find(l => l.id === bOrd.postId || (bOrd.postTitle && l.title === bOrd.postTitle));
+          if (!cachedListing) {
+            try {
+              const rawOrderListing = localStorage.getItem(`order_listing_${bOrd.id}`);
+              if (rawOrderListing) cachedListing = JSON.parse(rawOrderListing);
+              if (!cachedListing && bOrd.postId) {
+                const rawPost = localStorage.getItem(`cached_post_${bOrd.postId}`);
+                if (rawPost) cachedListing = JSON.parse(rawPost);
+              }
+              if (!cachedListing && bOrd.postTitle) {
+                const rawPostByTitle = localStorage.getItem(`cached_post_title_${bOrd.postTitle.toLowerCase().trim()}`);
+                if (rawPostByTitle) cachedListing = JSON.parse(rawPostByTitle);
+              }
+              if (!cachedListing && allSellerPostsCached.length > 0) {
+                const matchedFromSellerCache = allSellerPostsCached.find((p: any) =>
+                  (p.postId && p.postId === bOrd.postId) ||
+                  (p.id && p.id === bOrd.postId) ||
+                  (bOrd.postTitle && p.title && p.title.toLowerCase().trim() === bOrd.postTitle.toLowerCase().trim())
+                );
+                if (matchedFromSellerCache) {
+                  cachedListing = mapBackendPostToListing(matchedFromSellerCache);
+                }
+              }
+            } catch {}
+          }
+
+          const directMatched = currentListings.find(l => l.id === bOrd.postId || (bOrd.postTitle && l.title === bOrd.postTitle));
           const baseListing = directMatched || cachedListing;
 
           const resolvedPostTitle = bOrd.postTitle || baseListing?.title || postTitleMap.get(bOrd.postId) || 'Thiết bị gia dụng SecondLife';
@@ -1207,10 +1306,10 @@ export default function App() {
           const inspFee = Number(bOrd.buyerFeeShare || bOrd.inspectionFee || 0);
           const isInspectionOrder = Boolean(bOrd.__isInspection || bOrd.hasInspectionService || inspFee > 0);
 
-          let mappedEscrowStatus: EscrowOrder['escrowStatus'] = 'HELD_IN_ESCROW';
+          let mappedEscrowStatus: EscrowOrder['escrowStatus'] = 'AWAITING_PAYMENT';
           if (isInspectionOrder) {
             const s = String(bOrd.status || '');
-            if (s === 'WAITING_SELLER_APPROVAL' || s === 'WAITING_BUYER_APPROVAL' || s === 'WAITING_FEE_PAYMENT') {
+            if (s === 'WAITING_SELLER_APPROVAL' || s === 'WAITING_BUYER_APPROVAL' || s === 'WAITING_FEE_PAYMENT' || s === 'PENDING_PAYMENT') {
               mappedEscrowStatus = 'AWAITING_PAYMENT';
             } else if (s === 'CONFIRMED_PENDING_DISPATCH' || s === 'DISPATCHED' || s === 'SCHEDULED' || s === 'SHIPPING_TO_CENTER' || s === 'INSPECTING') {
               mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
@@ -1225,7 +1324,7 @@ export default function App() {
             } else if (s === 'CANCELLED' || s === 'FAILED' || s === 'PAYMENT_EXPIRED') {
               mappedEscrowStatus = 'REFUNDED_TO_BUYER';
             } else {
-              mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
+              mappedEscrowStatus = 'AWAITING_PAYMENT';
             }
           } else {
             if (bOrd.escrowStatus === 'RELEASED') {
@@ -1236,8 +1335,12 @@ export default function App() {
               mappedEscrowStatus = 'DELIVERED_INSPECTION_WINDOW';
             } else if (bOrd.status === 'SHIPPED') {
               mappedEscrowStatus = 'SHIPPED_TO_BUYER';
-            } else if (bOrd.status === 'PROCESSING' || bOrd.status === 'PENDING') {
+            } else if (bOrd.status === 'PROCESSING') {
               mappedEscrowStatus = 'HELD_IN_ESCROW';
+            } else if (bOrd.status === 'PENDING_PAYMENT' || bOrd.status === 'PENDING' || bOrd.escrowStatus === 'PENDING_PAYMENT') {
+              mappedEscrowStatus = 'AWAITING_PAYMENT';
+            } else {
+              mappedEscrowStatus = 'AWAITING_PAYMENT';
             }
           }
 
@@ -1301,11 +1404,13 @@ export default function App() {
             (currentRole === 'seller' ? (currentUser?.name || 'Người Bán') : 'Người Bán')
           ).trim();
 
-          const buyerAddr = typeof bOrd.deliveryAddress === 'string'
-            ? (parsedAddressObj?.address || bOrd.deliveryAddress)
-            : bOrd.deliveryAddress?.detailAddress
-              ? `${bOrd.deliveryAddress.detailAddress}, ${bOrd.deliveryAddress.wardName || ''}, ${bOrd.deliveryAddress.provinceName || ''}`
-              : (cachedBuyer?.buyerAddress || 'SecondLife Hub Address');
+          const buyerAddr = (currentUser && currentUser.id === bOrd.buyerId && (currentUser.address || currentUser.pickupAddress))
+            ? (currentUser.address || currentUser.pickupAddress || '')
+            : typeof bOrd.deliveryAddress === 'string'
+              ? (parsedAddressObj?.address || bOrd.deliveryAddress)
+              : bOrd.deliveryAddress?.detailAddress
+                ? `${bOrd.deliveryAddress.detailAddress}, ${bOrd.deliveryAddress.wardName || ''}, ${bOrd.deliveryAddress.provinceName || ''}`
+                : (cachedBuyer?.buyerAddress || 'SecondLife Hub Address');
 
           const itemPrice = Number(bOrd.finalPrice || bOrd.finalItemPrice || bOrd.postPrice || 0);
           const shipFee = Number(bOrd.shippingFee || bOrd.finalShippingFee || 0);
@@ -1348,8 +1453,8 @@ export default function App() {
               {
                 id: 'LEG-1',
                 legType: 'SELLER_TO_CENTER',
-                carrier: 'GHN Express',
-                trackingNumber: `GHN-${bOrd.id.slice(0, 8).toUpperCase()}`,
+                carrier: 'Lalamove',
+                trackingNumber: `LLM-${bOrd.id.slice(0, 8).toUpperCase()}`,
                 status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : 'IN_TRANSIT',
                 origin: 'Địa chỉ kho người bán',
                 destination: buyerAddr,
@@ -1358,7 +1463,7 @@ export default function App() {
                   {
                     timestamp: bOrd.createdAt ? new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
                     description: `Khởi tạo đơn hàng qua Escrow. Trạng thái: ${bOrd.status || 'PROCESSING'}.`,
-                    location: 'Hệ thống SecondLife GHN'
+                    location: 'Hệ thống Vận chuyển Lalamove'
                   }
                 ]
               }
@@ -1399,22 +1504,31 @@ export default function App() {
         });
         setOrders(localRecentOrders);
       }
+      lastOrdersFetchRef.current = Date.now();
     } catch (err) {
       console.warn('Could not load orders from backend:', err);
       const localRecentOrders = getLocalStoredOrders();
       setOrders(localRecentOrders);
+    } finally {
+      isFetchingOrdersRef.current = false;
     }
-  }, [currentUser, currentRole, listings, getLocalStoredOrders]);
+  }, [currentUser, currentRole, getLocalStoredOrders, mapBackendPostToListing]);
 
-  // Refresh listings when their query inputs or the active tab change.
+  // Refresh listings on mount or when switching to listing-centric tabs
   React.useEffect(() => {
-    loadListingsFromBackend();
+    const listingTabs = ['home', 'marketplace', 'seller-dashboard', 'create-listing', 'admin-dashboard'];
+    if (listingTabs.includes(activeTab)) {
+      loadListingsFromBackend();
+    }
   }, [loadListingsFromBackend, activeTab]);
 
-  // Orders also use the latest listings to map each order.
+  // Orders are only refreshed when user accesses order-sensitive tabs or on auth change
   React.useEffect(() => {
-    loadUserOrders();
-  }, [loadUserOrders, activeTab]);
+    const orderTabs = ['orders', 'seller-dashboard', 'disputes', 'buyer-inspection-decision', 'inspection-hub', 'inspection-center', 'admin-dashboard'];
+    if (currentUser && orderTabs.includes(activeTab)) {
+      loadUserOrders();
+    }
+  }, [loadUserOrders, activeTab, currentUser]);
 
   const handleOrderPlaced = (newOrder: EscrowOrder) => {
     try {
@@ -1473,7 +1587,7 @@ export default function App() {
     try {
       await orderService.confirmDelivery(orderId);
       showToast(lang === 'vi' ? 'Đã xác nhận nhận hàng! Tiền trong Escrow đã được giải ngân thành công cho người bán.' : 'Delivery confirmed! Escrow funds released to seller.');
-      loadUserOrders();
+      loadUserOrders(true);
       loadUserWallet();
     } catch (err: any) {
       console.warn('Backend confirmDelivery fallback:', err);
@@ -1522,7 +1636,7 @@ export default function App() {
           ord.id === orderId ? { ...ord, escrowStatus: 'REFUNDED_TO_BUYER', backendStatus: 'CANCELLED' } : ord
         )
       );
-      loadUserOrders();
+      loadUserOrders(true);
       loadUserWallet();
       showToast(lang === 'vi' ? 'Đã hủy đơn hàng! Tiền ký quỹ Escrow đã được hoàn lại 100% vào ví người mua.' : 'Order cancelled and refunded to buyer.');
     } catch (err: any) {
@@ -1545,25 +1659,11 @@ export default function App() {
   };
 
   const handleOpenDispute = (order: EscrowOrder) => {
-    const newDispute: DisputeCase = {
-      id: `DISP-2026-${Math.floor(100 + Math.random() * 900)}`,
-      orderId: order.id,
-      buyerId: order.buyerId,
-      buyerName: order.buyerName,
-      sellerId: order.sellerId,
-      sellerName: order.sellerName,
-      reason: 'NOT_AS_DESCRIBED',
-      description: 'Sản phẩm nhận được có dấu hiệu trầy xước không giống như người bán khai báo trên tin đăng.',
-      buyerEvidencePhotos: [order.listing.photos.screenOrDetails],
-      openedAt: new Date().toISOString(),
-      status: 'PENDING_ARBITRATION'
-    };
-
-    setDisputes((prev) => [newDispute, ...prev]);
-    setOrders((prev) =>
-      prev.map((o) => (o.id === order.id ? { ...o, escrowStatus: 'DISPUTED' } : o))
-    );
-    showToast(`Đã mở khiếu nại đơn hàng #${order.id}! Tiền trong Escrow đã được đóng băng để Admin phân xử.`);
+    if (currentRole === 'seller' || currentUser?.role === 'seller' || (order.sellerId && String(order.sellerId) === String(currentUser?.id))) {
+      showToast(lang === 'vi' ? 'Tài khoản người bán không có quyền thực hiện tạo khiếu nại.' : 'Seller accounts cannot file disputes.');
+      return;
+    }
+    setReportingOrderForDispute(order);
   };
 
   const handleCompleteInspection = (
@@ -1723,6 +1823,7 @@ export default function App() {
             : 'flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6'
         }
       >
+        <Suspense fallback={<ViewLoadingFallback />}>
         {activeTab === 'home' && (
           <HomePageView
             lang={lang}
@@ -1825,6 +1926,15 @@ export default function App() {
               onCancel={() => {
                 const targetTab = createListingReturnTab || (editingDraft ? 'seller-dashboard' : 'marketplace');
                 setEditingDraft(null);
+                try {
+                  for (let i = localStorage.length - 1; i >= 0; i--) {
+                    const key = localStorage.key(i);
+                    if (key && (key.startsWith('create_listing_active_draft_') || key === 'create_listing_active_draft')) {
+                      localStorage.removeItem(key);
+                    }
+                  }
+                  sessionStorage.removeItem('create_listing_active_draft');
+                } catch {}
                 setActiveTab(targetTab as any);
               }}
               onDeleteDraft={(draftId) => {
@@ -1849,7 +1959,7 @@ export default function App() {
             onOpenDispute={handleOpenDispute}
             onMarkShipped={handleMarkShipped}
             onCancelOrder={handleCancelOrder}
-            onRefreshOrders={loadUserOrders}
+            onRefreshOrders={() => loadUserOrders(true)}
             lang={lang}
             userRole={currentRole}
             onOpenChat={(listing) => setChatListing(listing)}
@@ -1858,6 +1968,7 @@ export default function App() {
               setInspectionDecisionOrderId(ord.id);
               handleTabChange('buyer-inspection-decision');
             }}
+            onNavigateToDisputes={() => handleTabChange('disputes')}
           />
         )}
 
@@ -1869,7 +1980,7 @@ export default function App() {
             lang={lang}
             onBack={() => handleTabChange('orders')}
             onSuccess={() => {
-              loadUserOrders();
+              loadUserOrders(true);
               handleTabChange('orders');
             }}
             onOpenChat={(listing) => setChatListing(listing)}
@@ -1967,6 +2078,26 @@ export default function App() {
             onBackToHome={() => handleTabChange('home')}
           />
         )}
+
+        {/* My Disputes & Escrow Arbitration Page */}
+        {activeTab === 'disputes' && (
+          <MyDisputesView
+            currentUser={currentUser}
+            currentRole={currentRole}
+            lang={lang}
+            orders={orders}
+            onNavigateToOrder={() => {
+              handleTabChange('orders');
+            }}
+            onNavigateToPost={(postId) => {
+              const item = listings.find((l) => l.id === postId);
+              if (item) setSelectedListing(item);
+              else handleTabChange('marketplace');
+            }}
+            onBack={() => handleTabChange('orders')}
+          />
+        )}
+        </Suspense>
       </main>
 
       {/* Real-time WebSocket STOMP Push Notification Toast (Requirement 4 & Phase 4) */}
@@ -1975,292 +2106,333 @@ export default function App() {
         onNavigateToUrl={handleNotificationNavigate}
       />
 
-      {/* Listing Detail Modal */}
-      {selectedListing && (
-        <ListingDetailModal
-          listing={selectedListing}
-          currentUser={currentUser}
-          onClose={() => setSelectedListing(null)}
-          isAdmin={currentRole === 'admin'}
-          onBuyClick={(item) => {
-            if (!currentUser) {
-              setPendingCheckoutItem(item);
-              requireAuth(undefined, lang === 'vi'
-                ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
-                : 'Please log in to purchase with Escrow protection.');
-              return;
-            }
-            if (currentUser.id === item.sellerId) {
-              showToast(lang === 'vi' ? 'Bạn không thể tự mua sản phẩm của chính mình.' : 'You cannot buy your own product.');
-              return;
-            }
-            setSelectedListing(null);
-            setCheckoutAgreedPrice(undefined);
-            setCheckoutNegotiationId(undefined);
-            setCheckoutListing(item);
-          }}
-          onChatClick={(item) => {
-            if (!currentUser) {
-              requireAuth(undefined, lang === 'vi'
-                ? 'Vui lòng đăng nhập để chat và thương lượng giá với người bán.'
-                : 'Please log in to chat and negotiate with seller.');
-              return;
-            }
-            if (currentUser.id === item.sellerId) {
-              showToast(lang === 'vi' ? 'Bạn không thể tự chat hoặc thương lượng với chính mình.' : 'You cannot chat with yourself.');
-              return;
-            }
-            setChatListing(item);
-            setChatPredefinedRoomId(undefined);
-            setChatPartnerName(undefined);
-            setChatPartnerAvatar(undefined);
-            setChatRoom(undefined);
-          }}
-          onOpenSellerReviews={(sellerId, sellerName) => {
-            setSellerReviewsModalData({ sellerId, sellerName });
-          }}
-          lang={lang}
-        />
-      )}
+      {/* Modals & Popups */}
+      <Suspense fallback={null}>
+        {/* Listing Detail Modal */}
+        {selectedListing && (
+          <ListingDetailModal
+            listing={selectedListing}
+            currentUser={currentUser}
+            onClose={() => setSelectedListing(null)}
+            isAdmin={currentRole === 'admin'}
+            onBuyClick={(item) => {
+              if (!currentUser) {
+                setPendingCheckoutItem(item);
+                requireAuth(undefined, lang === 'vi'
+                  ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
+                  : 'Please log in to purchase with Escrow protection.');
+                return;
+              }
+              if (currentUser.id === item.sellerId) {
+                showToast(lang === 'vi' ? 'Bạn không thể tự mua sản phẩm của chính mình.' : 'You cannot buy your own product.');
+                return;
+              }
+              setSelectedListing(null);
+              setCheckoutAgreedPrice(undefined);
+              setCheckoutNegotiationId(undefined);
+              setCheckoutListing(item);
+            }}
+            onChatClick={(item) => {
+              if (!currentUser) {
+                requireAuth(undefined, lang === 'vi'
+                  ? 'Vui lòng đăng nhập để chat và thương lượng giá với người bán.'
+                  : 'Please log in to chat and negotiate with seller.');
+                return;
+              }
+              if (currentUser.id === item.sellerId) {
+                showToast(lang === 'vi' ? 'Bạn không thể tự chat hoặc thương lượng với chính mình.' : 'You cannot chat with yourself.');
+                return;
+              }
+              setChatListing(item);
+              setChatPredefinedRoomId(undefined);
+              setChatPartnerName(item.sellerName);
+              setChatPartnerAvatar(item.sellerAvatar);
+              setChatRoom(undefined);
+            }}
+            onOpenSellerReviews={(sellerId, sellerName) => {
+              setSellerReviewsModalData({ sellerId, sellerName });
+            }}
+            lang={lang}
+          />
+        )}
 
-      {/* Checkout Modal */}
-      {checkoutListing && (
-        <CheckoutModal
-          listing={checkoutListing}
-          currentUser={currentUser}
-          agreedPrice={checkoutAgreedPrice}
-          negotiationId={checkoutNegotiationId}
-          onOpenDeposit={() => setIsTopUpModalOpen(true)}
-          onClose={() => {
-            setCheckoutListing(null);
-            setCheckoutAgreedPrice(undefined);
-            setCheckoutNegotiationId(undefined);
-          }}
-          onOrderPlaced={handleOrderPlaced}
-          lang={lang}
-        />
-      )}
+        {/* Checkout Modal */}
+        {checkoutListing && (
+          <CheckoutModal
+            listing={checkoutListing}
+            currentUser={currentUser}
+            agreedPrice={checkoutAgreedPrice}
+            negotiationId={checkoutNegotiationId}
+            onOpenDeposit={() => setIsTopUpModalOpen(true)}
+            onClose={() => {
+              setCheckoutListing(null);
+              setCheckoutAgreedPrice(undefined);
+              setCheckoutNegotiationId(undefined);
+            }}
+            onCancelUnpaid={(msg) => {
+              setCheckoutListing(null);
+              setCheckoutAgreedPrice(undefined);
+              setCheckoutNegotiationId(undefined);
+              showToast(msg || (lang === 'vi' ? 'Đơn hàng chưa được thanh toán! Đã quay lại trang mua hàng.' : 'Order not paid. Returned to shopping page.'));
+            }}
+            showToast={showToast}
+            onOrderPlaced={handleOrderPlaced}
+            lang={lang}
+          />
+        )}
 
-      {/* Chat & Negotiation Modal */}
-      {chatListing && (
-        <ChatModal
-          listing={chatListing}
-          predefinedRoomId={chatPredefinedRoomId}
-          partnerName={chatPartnerName}
-          partnerAvatar={chatPartnerAvatar}
-          initialRoom={chatRoom}
-          currentUser={currentUser}
-          currentRole={currentRole}
-          onClose={() => {
-            setChatListing(null);
-            setChatPredefinedRoomId(undefined);
-            setChatPartnerName(undefined);
-            setChatPartnerAvatar(undefined);
-            setChatRoom(undefined);
-          }}
-          onBuyClick={(item, agreedPrice, negotiationId) => {
-            if (!currentUser) {
-              setPendingCheckoutItem(item);
-              requireAuth(undefined, lang === 'vi'
-                ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
-                : 'Please log in to purchase with Escrow protection.');
-              return;
-            }
-            setChatListing(null);
-            setChatPredefinedRoomId(undefined);
-            setChatPartnerName(undefined);
-            setChatPartnerAvatar(undefined);
-            setChatRoom(undefined);
-            setCheckoutAgreedPrice(agreedPrice);
-            setCheckoutNegotiationId(negotiationId);
-            setCheckoutListing(item);
-          }}
-          onOpenSellerReviews={(sellerId, sellerName) => {
-            setSellerReviewsModalData({ sellerId, sellerName });
-          }}
-          lang={lang}
-        />
-      )}
+        {/* Chat & Negotiation Modal */}
+        {chatListing && (
+          <ChatModal
+            listing={chatListing}
+            predefinedRoomId={chatPredefinedRoomId}
+            partnerName={chatPartnerName}
+            partnerAvatar={chatPartnerAvatar}
+            initialRoom={chatRoom}
+            currentUser={currentUser}
+            currentRole={currentRole}
+            onClose={() => {
+              setChatListing(null);
+              setChatPredefinedRoomId(undefined);
+              setChatPartnerName(undefined);
+              setChatPartnerAvatar(undefined);
+              setChatRoom(undefined);
+            }}
+            onBuyClick={(item, agreedPrice, negotiationId) => {
+              if (!currentUser) {
+                setPendingCheckoutItem(item);
+                requireAuth(undefined, lang === 'vi'
+                  ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
+                  : 'Please log in to purchase with Escrow protection.');
+                return;
+              }
+              setChatListing(null);
+              setChatPredefinedRoomId(undefined);
+              setChatPartnerName(undefined);
+              setChatPartnerAvatar(undefined);
+              setChatRoom(undefined);
+              setCheckoutAgreedPrice(agreedPrice);
+              setCheckoutNegotiationId(negotiationId);
+              setCheckoutListing(item);
+            }}
+            onOpenSellerReviews={(sellerId, sellerName) => {
+              setSellerReviewsModalData({ sellerId, sellerName });
+            }}
+            lang={lang}
+          />
+        )}
 
-      {/* Seller Reviews & Trust Modal Popup */}
-      {sellerReviewsModalData && (
-        <SellerReviewsModal
-          sellerId={sellerReviewsModalData.sellerId}
-          sellerName={sellerReviewsModalData.sellerName}
-          isOpen={!!sellerReviewsModalData}
-          onClose={() => setSellerReviewsModalData(null)}
-          lang={lang}
-        />
-      )}
+        {/* Seller Reviews & Trust Modal Popup */}
+        {sellerReviewsModalData && (
+          <SellerReviewsModal
+            sellerId={sellerReviewsModalData.sellerId}
+            sellerName={sellerReviewsModalData.sellerName}
+            isOpen={!!sellerReviewsModalData}
+            onClose={() => setSellerReviewsModalData(null)}
+            lang={lang}
+          />
+        )}
 
-      {/* Authentication Modal */}
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        initialMode={authModalMode}
-        onClose={() => setIsAuthModalOpen(false)}
-        onLoginSuccess={(user) => {
-          const profileUser: UserProfile = {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            phone: user.phone || '',
-            address: user.address || '',
-            role: user.role,
-            avatar: user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
-            kycStatus: 'verified',
-            emailVerified: true,
-            gender: user.gender || undefined,
-          };
-          setCurrentUser(profileUser);
-          setCurrentRole(user.role);
-          setStoredUser(profileUser);
-          saveSellerAddress(
-            profileUser.pickupAddress || profileUser.address || '',
-            profileUser.wardName || profileUser.ward || '',
-            profileUser.provinceName || profileUser.province || ''
-          );
-          showToast(
-            lang === 'vi'
-              ? `Chào mừng ${user.name}${['buyer', 'seller'].includes(user.role) ? '' : ` (${user.role === 'inspector' ? 'Kỹ Sư Hub' : user.role === 'staff' ? 'Nhân Viên Vận Hành' : 'Quản Trị'})`} đã đăng nhập!`
-              : `Welcome ${user.name}! Logged in successfully${['buyer', 'seller'].includes(user.role) ? '' : ` as ${user.role.toUpperCase()}`}.`
-          );
-          if (user.role === 'admin') {
-            setActiveTab('admin-dashboard');
-          } else if (user.role === 'inspector' || user.role === 'inspection_center') {
-            setActiveTab('inspection-hub');
-          } else if (user.role === 'staff') {
-            setActiveTab('home');
-          } else if (pendingCheckoutItem) {
-            setSelectedListing(null);
-            setCheckoutListing(pendingCheckoutItem);
-            setPendingCheckoutItem(null);
-          } else if (pendingTab) {
-            const targetTab = pendingTab;
-            setPendingTab(null);
-            handleTabChange(targetTab);
-          }
-        }}
-        lang={lang}
-      />
+        {/* Order Dispute / Claim Modal */}
+        {reportingOrderForDispute && (
+          <UserReportModal
+            isOpen={!!reportingOrderForDispute}
+            onClose={() => setReportingOrderForDispute(null)}
+            orderId={reportingOrderForDispute.id}
+            itemTitle={reportingOrderForDispute.listing?.title}
+            onNavigateToDisputes={() => handleTabChange('disputes')}
+            onSuccess={() => {
+              setOrders((prev) =>
+                prev.map((o) => (o.id === reportingOrderForDispute.id ? { ...o, escrowStatus: 'DISPUTED' } : o))
+              );
+              loadUserOrders(true);
+            }}
+          />
+        )}
 
-      {/* Session Expired Modal */}
-      <SessionExpiredModal
-        isOpen={isSessionExpiredOpen}
-        lang={lang}
-        onLoginAgain={() => {
-          setIsSessionExpiredOpen(false);
-          setAuthModalMode('login');
-          setIsAuthModalOpen(true);
-        }}
-      />
-
-      {/* User Profile Dialog */}
-      <ProfileDialog
-        isOpen={isProfileDialogOpen}
-        onClose={() => setIsProfileDialogOpen(false)}
-        currentUser={currentUser}
-        currentRole={currentRole}
-        lang={lang}
-        onUpdateProfile={(updated) => {
-          handleUserProfileUpdated(
-            updated,
-            lang === 'vi'
-              ? 'Đã lưu thông tin hồ sơ cá nhân thành công!'
-              : 'User profile updated successfully!'
-          );
-        }}
-        onRoleChange={handleRoleChange}
-        onChangePassword={() => {
-          setIsProfileDialogOpen(false);
-          setAuthModalMode('forgot');
-          setIsAuthModalOpen(true);
-        }}
-        onLogout={() => {
-          setIsLogoutModalOpen(true);
-        }}
-        onOpenVerifyEmail={(targetEmail) => {
-          setVerifyEmailTarget(targetEmail);
-          setIsVerifyEmailModalOpen(true);
-        }}
-        onOpenTopUp={() => setIsTopUpModalOpen(true)}
-      />
-
-      {/* 6-Digit OTP Email Verification Modal Popup */}
-      <VerifyEmailModal
-        isOpen={isVerifyEmailModalOpen}
-        email={verifyEmailTarget || currentUser?.email || 'user@secondlife.vn'}
-        onClose={() => setIsVerifyEmailModalOpen(false)}
-        onSuccess={() => {
-          if (currentUser) {
-            const updatedUser: UserProfile = {
-              ...currentUser,
+        {/* Authentication Modal */}
+        <AuthModal
+          isOpen={isAuthModalOpen}
+          initialMode={authModalMode}
+          onClose={() => setIsAuthModalOpen(false)}
+          onLoginSuccess={(user) => {
+            const profileUser: UserProfile = {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              phone: user.phone || '',
+              address: user.address || '',
+              role: user.role,
+              avatar: user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
+              kycStatus: 'verified',
               emailVerified: true,
+              gender: user.gender || undefined,
             };
-            setCurrentUser(updatedUser);
-            setStoredUser(updatedUser);
-          }
-          showToast(
-            lang === 'vi'
-              ? 'Xác thực địa chỉ email thành công! Tài khoản đã được bảo mật toàn diện.'
-              : 'Email address verified successfully! Your account is now fully secured.'
-          );
-        }}
-        lang={lang}
-      />
+            setCurrentUser(profileUser);
+            setCurrentRole(user.role);
+            setStoredUser(profileUser);
+            recordUserActivity();
+            saveSellerAddress(
+              profileUser.pickupAddress || profileUser.address || '',
+              profileUser.wardName || profileUser.ward || '',
+              profileUser.provinceName || profileUser.province || ''
+            );
+            showToast(
+              lang === 'vi'
+                ? `Chào mừng ${user.name}${['buyer', 'seller'].includes(user.role) ? '' : ` (${user.role === 'inspector' ? 'Kỹ Sư Hub' : user.role === 'staff' ? 'Nhân Viên Vận Hành' : 'Quản Trị'})`} đã đăng nhập!`
+                : `Welcome ${user.name}! Logged in successfully${['buyer', 'seller'].includes(user.role) ? '' : ` as ${user.role.toUpperCase()}`}.`
+            );
+            if (user.role === 'admin') {
+              setActiveTab('admin-dashboard');
+            } else if (user.role === 'inspector' || user.role === 'inspection_center') {
+              setActiveTab('inspection-hub');
+            } else if (user.role === 'staff') {
+              setActiveTab('home');
+            } else if (pendingCheckoutItem) {
+              setSelectedListing(null);
+              setCheckoutListing(pendingCheckoutItem);
+              setPendingCheckoutItem(null);
+            } else if (pendingTab) {
+              const targetTab = pendingTab;
+              setPendingTab(null);
+              handleTabChange(targetTab);
+            }
+          }}
+          lang={lang}
+        />
 
-      {/* Seller Registration Modal */}
-      <SellerRegistrationModal
-        isOpen={isSellerRegistrationModalOpen}
-        onClose={() => setIsSellerRegistrationModalOpen(false)}
-        currentUser={currentUser}
-        lang={lang}
-        onUpdateProfile={(updated) => {
-          handleUserProfileUpdated(
-            updated,
-            lang === 'vi'
-              ? 'Đã cập nhật hồ sơ người bán thành công!'
-              : 'Seller profile updated successfully!'
-          );
-        }}
-        onRoleChange={handleRoleChange}
-        onNavigateToCreateListing={() => {
-          setActiveTab('create-listing');
-        }}
-      />
+        {/* Session Expired Modal */}
+        <SessionExpiredModal
+          isOpen={isSessionExpiredOpen}
+          lang={lang}
+          onLoginAgain={() => {
+            setIsSessionExpiredOpen(false);
+            setAuthModalMode('login');
+            setIsAuthModalOpen(true);
+          }}
+        />
 
-      {/* TopUp Credits Modal Popup (Requirement 7) */}
-      <TopUpModal
-        isOpen={isTopUpModalOpen}
-        onClose={() => setIsTopUpModalOpen(false)}
-        currentUser={currentUser}
-        currentRole={currentRole}
-        lang={lang}
-        initialTab={topUpInitialTab}
-        currentCredit={userCreditBalance}
-        userCredit={userCredit}
-        walletBalance={walletBalance}
-        onCreditUpdated={(newBal) => setUserCreditBalance(newBal)}
-        onUserCreditUpdated={(newCredit) => {
-          setUserCredit(newCredit);
-          window.dispatchEvent(new CustomEvent('seller_credits_updated', { detail: newCredit }));
-        }}
-        onWalletUpdated={(newBal) => setWalletBalance(newBal)}
-      />
-      {/* Logout Confirmation Modal Popup */}
-      <LogoutConfirmModal
-        isOpen={isLogoutModalOpen}
-        onClose={() => setIsLogoutModalOpen(false)}
-        onConfirm={handleConfirmLogout}
-        lang={lang}
-      />
+        {/* User Profile Dialog */}
+        {isProfileDialogOpen && (
+          <ProfileDialog
+            isOpen={isProfileDialogOpen}
+            onClose={() => setIsProfileDialogOpen(false)}
+            currentUser={currentUser}
+            currentRole={currentRole}
+            lang={lang}
+            onUpdateProfile={(updated) => {
+              handleUserProfileUpdated(
+                updated,
+                lang === 'vi'
+                  ? 'Đã lưu thông tin hồ sơ cá nhân thành công!'
+                  : 'User profile updated successfully!'
+              );
+            }}
+            onRoleChange={handleRoleChange}
+            onChangePassword={() => {
+              setIsProfileDialogOpen(false);
+              setAuthModalMode('forgot');
+              setIsAuthModalOpen(true);
+            }}
+            onLogout={() => {
+              setIsLogoutModalOpen(true);
+            }}
+            onOpenVerifyEmail={(targetEmail) => {
+              setVerifyEmailTarget(targetEmail);
+              setIsVerifyEmailModalOpen(true);
+            }}
+            onOpenTopUp={() => setIsTopUpModalOpen(true)}
+            onOpenSellerRegister={() => {
+              setIsProfileDialogOpen(false);
+              setIsSellerRegistrationModalOpen(true);
+            }}
+          />
+        )}
 
-      {/* Policies & System Information Modal */}
-      <PolicyModal
-        isOpen={isPolicyModalOpen}
-        initialTab={policyInitialTab}
-        onClose={() => setIsPolicyModalOpen(false)}
-        lang={lang}
-      />
+        {/* 6-Digit OTP Email Verification Modal Popup */}
+        <VerifyEmailModal
+          isOpen={isVerifyEmailModalOpen}
+          email={verifyEmailTarget || currentUser?.email || 'user@secondlife.vn'}
+          onClose={() => setIsVerifyEmailModalOpen(false)}
+          onSuccess={() => {
+            if (currentUser) {
+              const updatedUser: UserProfile = {
+                ...currentUser,
+                emailVerified: true,
+              };
+              setCurrentUser(updatedUser);
+              setStoredUser(updatedUser);
+            }
+            showToast(
+              lang === 'vi'
+                ? 'Xác thực địa chỉ email thành công! Tài khoản đã được bảo mật toàn diện.'
+                : 'Email address verified successfully! Your account is now fully secured.'
+            );
+          }}
+          lang={lang}
+        />
+
+        {/* Seller Registration Modal */}
+        {isSellerRegistrationModalOpen && (
+          <SellerRegistrationModal
+            isOpen={isSellerRegistrationModalOpen}
+            onClose={() => setIsSellerRegistrationModalOpen(false)}
+            currentUser={currentUser}
+            lang={lang}
+            onUpdateProfile={(updated) => {
+              handleUserProfileUpdated(
+                updated,
+                lang === 'vi'
+                  ? 'Đã cập nhật hồ sơ người bán thành công!'
+                  : 'Seller profile updated successfully!'
+              );
+            }}
+            onRoleChange={handleRoleChange}
+            onNavigateToCreateListing={() => {
+              setActiveTab('create-listing');
+            }}
+          />
+        )}
+
+        {/* TopUp Credits Modal Popup (Requirement 7) */}
+        {isTopUpModalOpen && (
+          <TopUpModal
+            isOpen={isTopUpModalOpen}
+            onClose={() => setIsTopUpModalOpen(false)}
+            currentUser={currentUser}
+            currentRole={currentRole}
+            lang={lang}
+            initialTab={topUpInitialTab}
+            currentCredit={userCreditBalance}
+            userCredit={userCredit}
+            walletBalance={walletBalance}
+            onCreditUpdated={(newBal) => setUserCreditBalance(newBal)}
+            onUserCreditUpdated={(newCredit) => {
+              setUserCredit(newCredit);
+              window.dispatchEvent(new CustomEvent('seller_credits_updated', { detail: newCredit }));
+            }}
+            onWalletUpdated={(newBal) => setWalletBalance(newBal)}
+          />
+        )}
+
+        {/* Logout Confirmation Modal Popup */}
+        <LogoutConfirmModal
+          isOpen={isLogoutModalOpen}
+          onClose={() => setIsLogoutModalOpen(false)}
+          onConfirm={handleConfirmLogout}
+          lang={lang}
+        />
+
+        {/* Policies & System Information Modal */}
+        {isPolicyModalOpen && (
+          <PolicyModal
+            isOpen={isPolicyModalOpen}
+            initialTab={policyInitialTab}
+            onClose={() => setIsPolicyModalOpen(false)}
+            lang={lang}
+          />
+        )}
+      </Suspense>
 
       {/* Global In-App Popup Modal (Replaces all native browser localhost alerts & confirms) */}
       <GlobalPopupModal />

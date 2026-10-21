@@ -8,7 +8,8 @@ export type ReportReasonCode =
   | 'OTHER'
   | 'LATE_HANDOVER'
   | 'SELLER_CANCELLATION'
-  | 'RETURN_NOT_AS_DESCRIBED';
+  | 'RETURN_NOT_AS_DESCRIBED'
+  | 'DUPLICATE_LISTING';
 
 export type ReportStatus = 'OPEN' | 'IN_REVIEW' | 'CONFIRMED' | 'DISMISSED';
 export type ReportDecision = 'CONFIRMED' | 'DISMISSED';

@@ -37,6 +37,9 @@ import {
 } from '../../services';
 import { SystemInspectionProposalPayload } from '../../types';
 
+// In-memory cache to instantly retrieve known ChatRoom per PostId without duplicate API calls
+const postRoomCache = new Map<string, ChatRoomDto>();
+
 interface ChatModalProps {
   listing: Listing;
   currentRole: UserRole;
@@ -289,6 +292,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     [effectiveUserId, chatRole, activeRoom, isBuyer, lang, resolvedPartnerName]
   );
 
+  const mapDtoRef = useRef(mapDtoToChatMessage);
+  useEffect(() => {
+    mapDtoRef.current = mapDtoToChatMessage;
+  }, [mapDtoToChatMessage]);
+
   // Initialize or fetch Chat Room from Backend
   useEffect(() => {
     let isMounted = true;
@@ -297,42 +305,52 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       setLoadingRoom(true);
       try {
         let finalRoomId = predefinedRoomId;
-        console.log('[ChatModal] initRoom - predefinedRoomId:', predefinedRoomId, 'partnerName:', partnerName, 'chatRole:', chatRole);
+        let resolvedRoom = activeRoom;
+
+        // 1. Fast Path: Use in-memory cache for this post if room was already visited
+        if (!finalRoomId && postRoomCache.has(listing.id)) {
+          const cached = postRoomCache.get(listing.id)!;
+          finalRoomId = cached.id;
+          resolvedRoom = cached;
+          if (isMounted) setActiveRoom(cached);
+        }
+
+        console.log('[ChatModal] initRoom - predefinedRoomId:', predefinedRoomId, 'finalRoomId:', finalRoomId);
         
+        // 2. Network Path: Only call API if room is not yet resolved
         if (!finalRoomId) {
           // API: POST /api/v1/chats/rooms?postId={postId}
           // Only creates/fetches room for current user as buyer
           const room = await chatService.getOrCreateRoom(listing.id);
           if (room?.id) {
             finalRoomId = room.id;
+            resolvedRoom = room;
+            postRoomCache.set(listing.id, room);
             if (isMounted) setActiveRoom(room);
           }
-        } else if (!activeRoom || !activeRoom.sellerId || !activeRoom.buyerId) {
-          // Fetch room details if only predefinedRoomId was passed or room lacks party IDs
-          const room = await chatService.getRoom(listing.id).catch(() => null);
-          if (room && isMounted) {
-            setActiveRoom(room);
-          } else {
-            try {
-              const allRooms = await chatService.getChatRooms();
-              const matched = allRooms.find((r) => r.id === finalRoomId || r.postId === listing.id);
-              if (matched && isMounted) {
-                setActiveRoom(matched);
+        } else if (!resolvedRoom || !resolvedRoom.sellerId || !resolvedRoom.buyerId) {
+          // Non-blocking background sync if room is lacking party details
+          chatService.getRoom(listing.id)
+            .then((room) => {
+              if (room && isMounted) {
+                setActiveRoom(room);
+                postRoomCache.set(listing.id, room);
               }
-            } catch {}
-          }
+            })
+            .catch(() => {});
         }
 
-        console.log('[ChatModal] initRoom - finalRoomId:', finalRoomId);
+        console.log('[ChatModal] initRoom - resolved finalRoomId:', finalRoomId);
 
         if (!isMounted) return;
 
+        // 3. Load message history
         if (finalRoomId) {
           setRoomId(finalRoomId);
           // API: GET /api/v1/chats/{roomId}/messages
           const historyDtos = await chatService.getMessages(finalRoomId);
           if (isMounted && Array.isArray(historyDtos)) {
-            const uiMsgs = historyDtos.map(mapDtoToChatMessage);
+            const uiMsgs = historyDtos.map((dto) => mapDtoRef.current(dto));
             setMessages(uiMsgs);
           }
         }
@@ -356,7 +374,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [listing.id, mapDtoToChatMessage]);
+  }, [listing.id, predefinedRoomId]);
 
   // Subscribe to WebSocket for real-time messages (/user/queue/messages)
   useEffect(() => {
@@ -368,7 +386,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     const unsubscribe = chatService.subscribeToMessages((newDto: ChatMessageDto) => {
       // Check if message belongs to this room
       if (newDto.conversationId === roomId) {
-        const uiMsg = mapDtoToChatMessage(newDto);
+        const uiMsg = mapDtoRef.current(newDto);
         setMessages((prev) => {
           // Avoid duplicate by id
           if (prev.some((m) => m.id === uiMsg.id)) {
@@ -395,7 +413,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     return () => {
       unsubscribe();
     };
-  }, [roomId, mapDtoToChatMessage]);
+  }, [roomId]);
 
   // Track latest accepted offer price & negotiationId
   const acceptedOffers = messages.filter(
@@ -486,6 +504,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           targetRoomId = room.id;
           setRoomId(room.id);
           setActiveRoom(room);
+          postRoomCache.set(listing.id, room);
         }
       }
 
@@ -930,9 +949,27 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         {/* Chat Messages Log */}
         <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#faf8f5]">
           {loadingRoom ? (
-            <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2">
-              <Loader2 className="w-7 h-7 text-[#c34c36] animate-spin" />
-              <p className="text-xs font-medium">Đang tải phòng chat an toàn...</p>
+            <div className="space-y-3.5 p-2 animate-pulse">
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-slate-200 shrink-0" />
+                <div className="space-y-1.5 max-w-[70%]">
+                  <div className="w-24 h-3 bg-slate-200 rounded" />
+                  <div className="w-48 h-8 bg-slate-200 rounded-2xl rounded-tl-none" />
+                </div>
+              </div>
+              <div className="flex items-start justify-end gap-2.5">
+                <div className="space-y-1.5 max-w-[70%] flex flex-col items-end">
+                  <div className="w-20 h-3 bg-slate-200 rounded" />
+                  <div className="w-44 h-8 bg-[#c34c36]/20 rounded-2xl rounded-tr-none" />
+                </div>
+                <div className="w-8 h-8 rounded-full bg-[#c34c36]/20 shrink-0" />
+              </div>
+              <div className="flex items-center justify-center gap-2 pt-4 text-slate-400">
+                <Loader2 className="w-4 h-4 text-[#c34c36] animate-spin" />
+                <span className="text-xs font-medium text-slate-500">
+                  {lang === 'vi' ? 'Đang kết nối phòng chat bảo mật...' : 'Connecting to secure chat room...'}
+                </span>
+              </div>
             </div>
           ) : messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 p-6 space-y-2">

@@ -431,6 +431,32 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
   };
 
+  const handleCancelCreation = async () => {
+    // 1. Dọn dẹp sạch toàn bộ bản nháp cục bộ
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('create_listing_active_draft_') || key === 'create_listing_active_draft')) {
+          localStorage.removeItem(key);
+        }
+      }
+      sessionStorage.removeItem('create_listing_active_draft');
+    } catch {}
+
+    // 2. Nếu đang đăng bài dở dang (tạo mới từ đầu, không phải mở sửa bản nháp cũ ở dashboard) và đã có postId trên BE:
+    // Xóa bản nháp trên BE để không để lại bài rác
+    const draftIdToDelete = !initialDraft && postId ? postId : null;
+    if (draftIdToDelete) {
+      try {
+        await postService.deleteDraft(String(draftIdToDelete));
+      } catch (e) {
+        console.warn('Không thể xóa bản nháp dở dang trên BE:', e);
+      }
+    }
+
+    onCancel();
+  };
+
   // Load Draft from Backend (GET /api/v1/posts/{postId}/draft)
   const [isLoadDraftModalOpen, setIsLoadDraftModalOpen] = useState(false);
   const [draftIdInput, setDraftIdInput] = useState('');
@@ -577,99 +603,19 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
   }, [initialDraft]);
 
-  const LOCAL_FORM_DRAFT_KEY = `create_listing_active_draft_${currentUser?.id || 'guest'}`;
-
-  // Restore active form draft if user reloaded or navigated away while creating a new post
+  // Dọn dẹp sạch toàn bộ dữ liệu nháp tạm thời (khi thoát khỏi hệ thống hoặc vào trang mới thì không lưu giữ thông tin nháp)
   useEffect(() => {
-    if (initialDraft) return;
-    try {
-      const saved = localStorage.getItem(LOCAL_FORM_DRAFT_KEY);
-      if (saved) {
-        const d = JSON.parse(saved);
-        if (d.title) setTitle(d.title);
-        if (d.brand) setBrand(d.brand);
-        if (d.model) setModel(d.model);
-        if (d.purchaseYear) setPurchaseYear(d.purchaseYear);
-        if (d.selectedCategoryId) setSelectedCategoryId(d.selectedCategoryId);
-        if (d.selectedItemId) setSelectedItemId(d.selectedItemId);
-        if (d.originalPriceVnd) {
-          setOriginalPriceVnd(Number(d.originalPriceVnd));
-          setFinalPriceVnd(Number(d.originalPriceVnd));
+    if (!initialDraft) {
+      try {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('create_listing_active_draft_') || key === 'create_listing_active_draft')) {
+            localStorage.removeItem(key);
+          }
         }
-        if (d.shippingWeight) setShippingWeight(d.shippingWeight);
-        if (d.shippingLength) setShippingLength(d.shippingLength);
-        if (d.shippingWidth) setShippingWidth(d.shippingWidth);
-        if (d.shippingHeight) setShippingHeight(d.shippingHeight);
-        if (d.rawWeightInput) setRawWeightInput(d.rawWeightInput);
-        if (d.rawLengthInput) setRawLengthInput(d.rawLengthInput);
-        if (d.rawWidthInput) setRawWidthInput(d.rawWidthInput);
-        if (d.rawHeightInput) setRawHeightInput(d.rawHeightInput);
-        if (d.itemCondition) setItemCondition(d.itemCondition);
-        if (d.description) setDescription(d.description);
-        if (Array.isArray(d.photoPreviews) && d.photoPreviews.length > 0) {
-          setPhotoPreviews(d.photoPreviews);
-        }
-        if (d.currentStep && [1, 2, 3, 4, 5].includes(d.currentStep)) {
-          setCurrentStep(d.currentStep);
-        }
-      }
-    } catch (e) {
-      console.warn('Error restoring local active draft:', e);
+      } catch {}
     }
-  }, [initialDraft, LOCAL_FORM_DRAFT_KEY]);
-
-  // Auto-save form draft so user never loses inputs when running out of credits or switching tabs
-  useEffect(() => {
-    if (initialDraft) return;
-    try {
-      const draft = {
-        title,
-        brand,
-        model,
-        purchaseYear,
-        selectedCategoryId,
-        selectedItemId,
-        originalPriceVnd,
-        shippingWeight,
-        shippingLength,
-        shippingWidth,
-        shippingHeight,
-        rawWeightInput,
-        rawLengthInput,
-        rawWidthInput,
-        rawHeightInput,
-        itemCondition,
-        description,
-        photoPreviews: photoPreviews.filter((p) => typeof p === 'string' && (p.startsWith('http') || p.startsWith('data:') || p.startsWith('blob:'))),
-        currentStep,
-      };
-      if (title.trim() || description.trim() || photoPreviews.length > 0) {
-        localStorage.setItem(LOCAL_FORM_DRAFT_KEY, JSON.stringify(draft));
-      }
-    } catch {}
-  }, [
-    initialDraft,
-    title,
-    brand,
-    model,
-    purchaseYear,
-    selectedCategoryId,
-    selectedItemId,
-    originalPriceVnd,
-    shippingWeight,
-    shippingLength,
-    shippingWidth,
-    shippingHeight,
-    rawWeightInput,
-    rawLengthInput,
-    rawWidthInput,
-    rawHeightInput,
-    itemCondition,
-    description,
-    photoPreviews,
-    currentStep,
-    LOCAL_FORM_DRAFT_KEY
-  ]);
+  }, [initialDraft]);
 
   // Tự động loại bỏ các câu hỏi mẫu/gợi ý khảo sát nếu bị lọt vào ô mô tả sản phẩm ở bước 2
   useEffect(() => {
@@ -1888,7 +1834,12 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       photoGallery: photoPreviews
     };
     try {
-      localStorage.removeItem(LOCAL_FORM_DRAFT_KEY);
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('create_listing_active_draft_') || key === 'create_listing_active_draft')) {
+          localStorage.removeItem(key);
+        }
+      }
     } catch {}
     onListingCreated(newListing);
   };
@@ -1966,7 +1917,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </button>
           )}
           <button
-            onClick={onCancel}
+            onClick={handleCancelCreation}
             className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-300 hover:text-white border border-white/10 transition cursor-pointer"
           >
             {lang === 'vi' ? 'Hủy bỏ' : 'Cancel'}
@@ -3445,7 +3396,15 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <span className="text-xs font-bold text-slate-600 block mb-2">Bộ ảnh sản phẩm đã tải:</span>
               <div className="flex flex-wrap gap-2">
                 {photoPreviews.map((p, i) => (
-                  <img key={i} src={p} alt="" className="w-16 h-16 rounded-xl object-cover border border-gray-200 shadow-xs" />
+                  <img
+                    key={i}
+                    src={p}
+                    alt=""
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800';
+                    }}
+                    className="w-16 h-16 rounded-xl object-cover border border-gray-200 shadow-xs"
+                  />
                 ))}
               </div>
             </div>

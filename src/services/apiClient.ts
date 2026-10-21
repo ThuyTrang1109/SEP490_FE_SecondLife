@@ -79,18 +79,23 @@ export function resolveApiUrl(endpoint: string): string {
   return `${origin}/api/v1${path}`;
 }
 
-export function isTokenExpired(token: string | null): boolean {
+export function isTokenExpiringSoon(token: string | null, bufferSeconds = 120): boolean {
   if (!token) return true;
   try {
     const payloadBase64 = token.split('.')[1];
+    if (!payloadBase64) return true;
     const decodedJson = atob(payloadBase64);
     const decoded = JSON.parse(decodedJson);
     if (!decoded.exp) return false;
-    // Check if expired (with a 5 second buffer)
-    return Date.now() >= (decoded.exp * 1000) - 5000;
+    // Check if token expires within bufferSeconds
+    return Date.now() >= (decoded.exp * 1000) - (bufferSeconds * 1000);
   } catch {
     return true;
   }
+}
+
+export function isTokenExpired(token: string | null): boolean {
+  return isTokenExpiringSoon(token, 5);
 }
 
 export const BASE_URL = resolveApiUrl('/v1');
@@ -98,6 +103,40 @@ export const BASE_URL = resolveApiUrl('/v1');
 export const ACCESS_TOKEN_KEY = 'secondlife_access_token';
 export const REFRESH_TOKEN_KEY = 'secondlife_refresh_token';
 export const USER_INFO_KEY = 'secondlife_user_session';
+export const LAST_ACTIVITY_KEY = 'secondlife_last_activity_time';
+
+export const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes in milliseconds
+
+let memoryLastActivity = Date.now();
+
+export function recordUserActivity(): void {
+  const now = Date.now();
+  memoryLastActivity = now;
+  try {
+    const stored = localStorage.getItem(LAST_ACTIVITY_KEY);
+    const lastStored = stored ? Number(stored) : 0;
+    if (now - lastStored > 5000) {
+      localStorage.setItem(LAST_ACTIVITY_KEY, String(now));
+    }
+  } catch {}
+}
+
+export function getLastActivityTime(): number {
+  try {
+    const stored = localStorage.getItem(LAST_ACTIVITY_KEY);
+    if (stored) {
+      const parsed = Number(stored);
+      if (!isNaN(parsed) && parsed > memoryLastActivity) {
+        memoryLastActivity = parsed;
+      }
+    }
+  } catch {}
+  return memoryLastActivity;
+}
+
+export function isUserIdle(idleTimeoutMs = IDLE_TIMEOUT_MS): boolean {
+  return Date.now() - getLastActivityTime() >= idleTimeoutMs;
+}
 
 export const getAccessToken = (): string | null => {
   try {
@@ -127,6 +166,7 @@ export const setAuthTokens = (accessToken?: string | null, refreshToken?: string
   try {
     if (accessToken && accessToken !== 'undefined' && accessToken !== 'null' && accessToken.trim() !== '') {
       sessionStorage.setItem(ACCESS_TOKEN_KEY, accessToken.trim());
+      recordUserActivity();
     } else {
       sessionStorage.removeItem(ACCESS_TOKEN_KEY);
     }
@@ -171,6 +211,7 @@ export const clearAuthTokens = () => {
     localStorage.removeItem(ACCESS_TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_INFO_KEY);
+    localStorage.removeItem(LAST_ACTIVITY_KEY);
     
     // Clear legacy or additional user cached items
     localStorage.removeItem('secondlife_user');
@@ -218,7 +259,10 @@ export async function refreshAccessToken(): Promise<string | null> {
       });
 
       if (!response.ok) {
-        clearAuthTokens();
+        // If BE returns 400 or 401, refresh token is truly expired/invalid/revoked
+        if (response.status === 400 || response.status === 401) {
+          clearAuthTokens();
+        }
         return null;
       }
 
@@ -237,13 +281,14 @@ export async function refreshAccessToken(): Promise<string | null> {
 
       if (newAccessToken) {
         setAuthTokens(newAccessToken, newRefreshToken);
+        recordUserActivity();
         return newAccessToken;
       }
 
       clearAuthTokens();
       return null;
-    } catch {
-      clearAuthTokens();
+    } catch (err) {
+      console.warn('Network error during refreshAccessToken:', err);
       return null;
     } finally {
       refreshPromise = null;
@@ -253,11 +298,35 @@ export async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
+function translateApiError(msg: string): string {
+  if (!msg) return 'Đã xảy ra lỗi không xác định. Vui lòng thử lại sau.';
+  const s = String(msg).trim();
+  if (/bad credentials/i.test(s)) return 'Tên đăng nhập hoặc mật khẩu không chính xác.';
+  if (/user not found/i.test(s)) return 'Không tìm thấy tài khoản người dùng.';
+  if (/order not found/i.test(s)) return 'Không tìm thấy đơn hàng.';
+  if (/post not found|listing not found/i.test(s)) return 'Không tìm thấy thông tin sản phẩm.';
+  if (/unauthorized/i.test(s)) return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+  if (/access denied|forbidden/i.test(s)) return 'Bạn không có quyền thực hiện hành động này.';
+  if (/insufficient balance|insufficient fund/i.test(s)) return 'Số dư ví không đủ để thực hiện giao dịch.';
+  if (/email already exists|email.*already in use/i.test(s)) return 'Địa chỉ Email này đã được đăng ký trong hệ thống.';
+  if (/phone.*already exists/i.test(s)) return 'Số điện thoại này đã được sử dụng.';
+  if (/failed to fetch|network error/i.test(s)) return 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra đường truyền mạng.';
+  if (/internal server error/i.test(s)) return 'Máy chủ gặp sự cố xử lý. Vui lòng thử lại sau.';
+  if (/cannot read properties of/i.test(s)) return 'Dữ liệu chưa hoàn tất tải. Vui lòng làm mới trang.';
+  if (/jwt expired|token.*expired/i.test(s)) return 'Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.';
+  if (/invalid otp|otp expired/i.test(s)) return 'Mã xác thực OTP không chính xác hoặc đã hết hiệu lực.';
+  if (/invalid status/i.test(s)) return 'Trạng thái đơn hàng không hợp lệ cho thao tác này.';
+  return s;
+}
+
 export async function request<T>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<ApiResponse<T>> {
   const { requiresAuth = true, _retry = false, headers: customHeaders, ...restOptions } = options;
+
+  // Record user activity on any API interaction
+  recordUserActivity();
 
   const isFormData = typeof FormData !== 'undefined' && restOptions.body instanceof FormData;
   const headers: Record<string, string> = {
@@ -266,18 +335,28 @@ export async function request<T>(
   };
 
   let token = getAccessToken();
-  if (requiresAuth && !token) {
-    // If access token is missing, attempt to refresh if we have a refresh token
-    const rToken = getRefreshToken();
-    if (rToken && !_retry && !endpoint.includes('/auth/')) {
-      token = await refreshAccessToken();
+  const rToken = getRefreshToken();
+
+  // If endpoint requires auth and user is active, proactively renew token before calling BE
+  if (requiresAuth && rToken && !_retry && !endpoint.includes('/auth/')) {
+    const isExpiredOrSoon = !token || isTokenExpired(token) || isTokenExpiringSoon(token, 120);
+    if (isExpiredOrSoon && !isUserIdle()) {
+      const refreshedToken = await refreshAccessToken();
+      if (refreshedToken) {
+        token = refreshedToken;
+      }
     }
   }
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   } else if (requiresAuth) {
-    clearAuthTokens();
+    if (isUserIdle()) {
+      clearAuthTokens();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('unauthorized_session'));
+      }
+    }
     throw new Error('Chưa đăng nhập hoặc phiên làm việc đã kết thúc.');
   }
 
@@ -311,18 +390,21 @@ export async function request<T>(
     }
 
     if (!response.ok) {
-      // If 401 Unauthorized on an authenticated endpoint, try silent token refresh once
+      // If 401 Unauthorized on an authenticated endpoint, try silent token refresh once if user is active
       if (response.status === 401 && !_retry && requiresAuth && !endpoint.includes('/auth/')) {
-        const refreshedToken = await refreshAccessToken();
-        if (refreshedToken) {
-          return request<T>(endpoint, {
-            ...options,
-            _retry: true,
-          });
+        if (!isUserIdle()) {
+          const refreshedToken = await refreshAccessToken();
+          if (refreshedToken) {
+            return request<T>(endpoint, {
+              ...options,
+              _retry: true,
+            });
+          }
         }
       }
 
       // Only clear auth tokens and revoke session if 401 occurs on an authenticated route after retry
+      // or if the user has been idle for >= 30 minutes
       if (response.status === 401 && requiresAuth && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
         console.log('[apiClient] Dispatched unauthorized_session due to 401 on endpoint:', endpoint);
         clearAuthTokens();
@@ -330,27 +412,6 @@ export async function request<T>(
           window.dispatchEvent(new Event('unauthorized_session'));
         }
       }
-
-function translateApiError(msg: string): string {
-  if (!msg) return 'Đã xảy ra lỗi không xác định. Vui lòng thử lại sau.';
-  const s = String(msg).trim();
-  if (/bad credentials/i.test(s)) return 'Tên đăng nhập hoặc mật khẩu không chính xác.';
-  if (/user not found/i.test(s)) return 'Không tìm thấy tài khoản người dùng.';
-  if (/order not found/i.test(s)) return 'Không tìm thấy đơn hàng.';
-  if (/post not found|listing not found/i.test(s)) return 'Không tìm thấy thông tin sản phẩm.';
-  if (/unauthorized/i.test(s)) return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
-  if (/access denied|forbidden/i.test(s)) return 'Bạn không có quyền thực hiện hành động này.';
-  if (/insufficient balance|insufficient fund/i.test(s)) return 'Số dư ví không đủ để thực hiện giao dịch.';
-  if (/email already exists|email.*already in use/i.test(s)) return 'Địa chỉ Email này đã được đăng ký trong hệ thống.';
-  if (/phone.*already exists/i.test(s)) return 'Số điện thoại này đã được sử dụng.';
-  if (/failed to fetch|network error/i.test(s)) return 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra đường truyền mạng.';
-  if (/internal server error/i.test(s)) return 'Máy chủ gặp sự cố xử lý. Vui lòng thử lại sau.';
-  if (/cannot read properties of/i.test(s)) return 'Dữ liệu chưa hoàn tất tải. Vui lòng làm mới trang.';
-  if (/jwt expired|token.*expired/i.test(s)) return 'Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.';
-  if (/invalid otp|otp expired/i.test(s)) return 'Mã xác thực OTP không chính xác hoặc đã hết hiệu lực.';
-  if (/invalid status/i.test(s)) return 'Trạng thái đơn hàng không hợp lệ cho thao tác này.';
-  return s;
-}
 
       const rawError =
         resData?.message ||

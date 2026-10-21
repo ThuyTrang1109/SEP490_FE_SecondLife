@@ -347,10 +347,11 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           const fallbackImage = 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800';
           const primaryImage = rawImages[0] || fallbackImage;
 
-          // Xác định địa chỉ người bán
-          const rawPostAddr = p.sellerAddress || p.pickupAddress || p.user?.address || currentSellerAddr;
-          const loc = extractWardAndCity(rawPostAddr, currentSellerWard, currentSellerProv) || 'Hà Nội';
-          const sellerAddr = rawPostAddr || (currentSellerWard && currentSellerProv ? `${currentSellerWard}, ${currentSellerProv}` : loc);
+          // Xác định địa chỉ người bán: Ưu tiên địa chỉ người bán mới nhất từ profile của seller
+          const sellerAddr = currentSellerAddr || p.sellerAddress || p.pickupAddress || p.user?.address || '';
+          const loc = (currentSellerAddr ? extractWardAndCity(currentSellerAddr, currentSellerWard, currentSellerProv) : '') ||
+            extractWardAndCity(p.sellerAddress || p.pickupAddress || p.user?.address, currentSellerWard, currentSellerProv) ||
+            'Hà Nội';
 
           const isDraft = p.status === 'DRAFT';
           const draftTitle = p.title || (isDraft ? 'Bản nháp sản phẩm' : 'Thiết bị gia dụng SecondLife');
@@ -479,6 +480,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   // Chỉ lấy bài đăng thuộc về chính tài khoản người bán hiện tại (tuyệt đối không lấy bài/bản nháp của người bán khác)
   const combinedListings = React.useMemo(() => {
+    const savedAddr = getSavedSellerAddress();
+    const currentSellerAddr = currentUser?.pickupAddress || currentUser?.address || savedAddr.address;
+    const currentSellerWard = currentUser?.wardName || currentUser?.ward || savedAddr.wardName;
+    const currentSellerProv = currentUser?.provinceName || currentUser?.province || savedAddr.provinceName;
+    const latestLoc = currentSellerAddr ? extractWardAndCity(currentSellerAddr, currentSellerWard, currentSellerProv) : '';
+
     const list = [...myServerPosts];
     const existingIds = new Set(myServerPosts.map(p => p.id));
     for (const item of listings) {
@@ -491,15 +498,37 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         list.push(item);
       }
     }
-    // Lọc lại để đảm bảo 100% chỉ có bài đăng của chính tài khoản người bán này
-    return list.filter(item => {
-      const isMine =
-        Boolean(currentUser?.id && item.sellerId === currentUser.id) ||
-        Boolean(currentUser?.name && item.sellerName?.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
-        item.sellerId === 'me';
-      return isMine;
-    });
-  }, [myServerPosts, listings, currentUser?.id, currentUser?.name]);
+    // Lọc lại để đảm bảo 100% chỉ có bài đăng của chính tài khoản người bán này và luôn cập nhật địa chỉ theo profile mới nhất
+    return list
+      .filter(item => {
+        const isMine =
+          Boolean(currentUser?.id && item.sellerId === currentUser.id) ||
+          Boolean(currentUser?.name && item.sellerName?.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
+          item.sellerId === 'me';
+        return isMine;
+      })
+      .map(item => {
+        if (latestLoc || currentSellerAddr) {
+          return {
+            ...item,
+            location: latestLoc || item.location,
+            sellerAddress: currentSellerAddr || item.sellerAddress || latestLoc,
+          };
+        }
+        return item;
+      });
+  }, [
+    myServerPosts,
+    listings,
+    currentUser?.id,
+    currentUser?.name,
+    currentUser?.address,
+    currentUser?.pickupAddress,
+    currentUser?.wardName,
+    currentUser?.ward,
+    currentUser?.provinceName,
+    currentUser?.province,
+  ]);
 
   const filteredListings = combinedListings.filter((l) => {
     if (filterStatus === 'ALL') return true;

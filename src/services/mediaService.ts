@@ -1,4 +1,4 @@
-import { getAccessToken, getRefreshToken, setAuthTokens, clearAuthTokens, resolveApiUrl } from './apiClient';
+import { getAccessToken, clearAuthTokens, resolveApiUrl, refreshAccessToken, isUserIdle, isTokenExpired } from './apiClient';
 
 export interface CloudinaryUploadResponseDto {
   url: string;
@@ -8,45 +8,20 @@ export interface CloudinaryUploadResponseDto {
   originalFilename: string;
 }
 
-/** Attempt to refresh access token once, returns new token or null */
-async function tryRefreshToken(): Promise<string | null> {
-  const rToken = getRefreshToken();
-  if (!rToken) return null;
-  try {
-    const res = await fetch(resolveApiUrl('/auth/refresh'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: rToken }),
-    });
-    if (!res.ok) {
-      clearAuthTokens();
-      return null;
-    }
-    const json = await res.json();
-    const newAccess = json?.data?.accessToken || json?.accessToken;
-    const newRefresh = json?.data?.refreshToken || json?.refreshToken || rToken;
-    if (newAccess) {
-      setAuthTokens(newAccess, newRefresh);
-      return newAccess;
-    }
-    clearAuthTokens();
-    return null;
-  } catch {
-    clearAuthTokens();
-    return null;
-  }
-}
-
 /** Build Authorization header, refreshing token if needed */
 async function getAuthHeaders(): Promise<Record<string, string>> {
   let token = getAccessToken();
-  if (!token) {
-    token = await tryRefreshToken();
+  if (!token || isTokenExpired(token)) {
+    if (!isUserIdle()) {
+      token = await refreshAccessToken();
+    }
   }
   if (!token) {
-    clearAuthTokens();
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('unauthorized_session'));
+    if (isUserIdle()) {
+      clearAuthTokens();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('unauthorized_session'));
+      }
     }
     throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tải ảnh lên.');
   }
@@ -74,7 +49,10 @@ export const mediaService = {
 
       // Auto-retry once on 401 with refreshed token
       if (response.status === 401 || response.status === 403) {
-        const newToken = await tryRefreshToken();
+        let newToken: string | null = null;
+        if (!isUserIdle()) {
+          newToken = await refreshAccessToken();
+        }
         if (newToken) {
           headers = { Authorization: `Bearer ${newToken}` };
           response = await doUpload(headers);
@@ -126,7 +104,10 @@ export const mediaService = {
 
       // Auto-retry once on 401 with refreshed token
       if (response.status === 401 || response.status === 403) {
-        const newToken = await tryRefreshToken();
+        let newToken: string | null = null;
+        if (!isUserIdle()) {
+          newToken = await refreshAccessToken();
+        }
         if (newToken) {
           headers = { Authorization: `Bearer ${newToken}` };
           response = await doUpload(headers);
@@ -175,7 +156,10 @@ export const mediaService = {
       let response = await doUpload(headers);
 
       if (response.status === 401 || response.status === 403) {
-        const newToken = await tryRefreshToken();
+        let newToken: string | null = null;
+        if (!isUserIdle()) {
+          newToken = await refreshAccessToken();
+        }
         if (newToken) {
           headers = { Authorization: `Bearer ${newToken}` };
           response = await doUpload(headers);

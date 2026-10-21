@@ -149,7 +149,7 @@ export const ShippingLabelModal: React.FC<ShippingLabelModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
             {/* Sender / Pickup address */}
             <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-1">
-              <span className="text-[10px] text-slate-400 font-bold uppercase block">Người gửi (Kho bưu tá lấy hàng)</span>
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">Người gửi (Kho tài xế Lalamove lấy hàng)</span>
               <div className="font-bold text-slate-900 flex items-center gap-1">
                 <User className="w-3.5 h-3.5 text-slate-400" />
                 <span>{order.sellerName}</span>

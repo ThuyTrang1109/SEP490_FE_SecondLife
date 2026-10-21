@@ -36,6 +36,7 @@ import {
   Copy,
   PlusCircle,
   Eye,
+  ChevronDown,
 } from 'lucide-react';
 import { UserProfile, UserRole, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
@@ -60,7 +61,7 @@ import {
   UserReportResponseDto,
 } from '../../services';
 import { LiveFaceScannerModal, VnptEkycResultData } from './LiveFaceScannerModal';
-import { saveSellerAddress } from '../../utils/addressUtils';
+import { saveSellerAddress, extractWardAndCity, getSavedSellerAddress } from '../../utils/addressUtils';
 import { LalamoveAddressPicker } from '../common/LalamoveAddressPicker';
 
 export type ProfileTab = 'info' | 'wallet' | 'kyc' | 'reports' | 'security' | 'settings';
@@ -68,6 +69,55 @@ export type ProfileTab = 'info' | 'wallet' | 'kyc' | 'reports' | 'security' | 's
 const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 const isStrongPassword = (pass: string): boolean => {
   return STRONG_PASSWORD_REGEX.test(pass);
+};
+
+export const POPULAR_VIETNAM_BANKS = [
+  { code: 'VCB', name: 'Vietcombank', fullName: 'Ngoại Thương Việt Nam' },
+  { code: 'MB', name: 'MBBank', fullName: 'Quân Đội' },
+  { code: 'TCB', name: 'Techcombank', fullName: 'Kỹ Thương Việt Nam' },
+  { code: 'CTG', name: 'VietinBank', fullName: 'Công Thương Việt Nam' },
+  { code: 'BIDV', name: 'BIDV', fullName: 'Đầu Tư và Phát Triển Việt Nam' },
+  { code: 'ACB', name: 'ACB', fullName: 'Á Châu' },
+  { code: 'VPB', name: 'VPBank', fullName: 'Việt Nam Thịnh Vượng' },
+  { code: 'TPB', name: 'TPBank', fullName: 'Tiên Phong' },
+  { code: 'STB', name: 'Sacombank', fullName: 'Sài Gòn Thương Tín' },
+  { code: 'HDB', name: 'HDBank', fullName: 'Phát Triển TP.HCM' },
+  { code: 'VIB', name: 'VIB', fullName: 'Quốc Tế Việt Nam' },
+  { code: 'SHB', name: 'SHB', fullName: 'Sài Gòn - Hà Nội' },
+  { code: 'VBA', name: 'Agribank', fullName: 'Nông Nghiệp và PTNT' },
+  { code: 'MSB', name: 'MSB', fullName: 'Hàng Hải Việt Nam' },
+  { code: 'OCB', name: 'OCB', fullName: 'Phương Đông' },
+  { code: 'SSB', name: 'SeABank', fullName: 'Đông Nam Á' },
+  { code: 'LPB', name: 'LPBank', fullName: 'Lộc Phát Việt Nam' },
+  { code: 'EIB', name: 'Eximbank', fullName: 'Xuất Nhập Khẩu Việt Nam' },
+  { code: 'BAB', name: 'Bac A Bank', fullName: 'Bắc Á' },
+  { code: 'NAB', name: 'Nam A Bank', fullName: 'Nam Á' },
+  { code: 'PVC', name: 'PVcomBank', fullName: 'Đại Chúng Việt Nam' },
+  { code: 'KLB', name: 'KienlongBank', fullName: 'Kiên Long' },
+  { code: 'BVB', name: 'BaoViet Bank', fullName: 'Bảo Việt' },
+  { code: 'SGB', name: 'Saigonbank', fullName: 'Sài Gòn Công Thương' },
+  { code: 'SHINHAN', name: 'Shinhan Bank', fullName: 'Shinhan Bank Việt Nam' },
+  { code: 'WOORI', name: 'Woori Bank', fullName: 'Woori Bank Việt Nam' },
+];
+
+export const getMatchedBankName = (val: string): string => {
+  if (!val) return '';
+  const trimmed = val.trim();
+  // Exact match
+  const exact = POPULAR_VIETNAM_BANKS.find((b) => b.name.toLowerCase() === trimmed.toLowerCase());
+  if (exact) return exact.name;
+  // Code match
+  const byCode = POPULAR_VIETNAM_BANKS.find((b) => b.code.toLowerCase() === trimmed.toLowerCase());
+  if (byCode) return byCode.name;
+  // Partial match: e.g. "MB Bank" -> matches "MBBank" or "MB"
+  const cleanVal = trimmed.replace(/\s+/g, '').toLowerCase();
+  const partial = POPULAR_VIETNAM_BANKS.find((b) => {
+    const cleanName = b.name.replace(/\s+/g, '').toLowerCase();
+    const cleanCode = b.code.replace(/\s+/g, '').toLowerCase();
+    return cleanName === cleanVal || cleanName.includes(cleanVal) || cleanVal.includes(cleanName) || cleanVal.includes(cleanCode);
+  });
+  if (partial) return partial.name;
+  return trimmed;
 };
 
 interface ProfileDialogProps {
@@ -81,6 +131,7 @@ interface ProfileDialogProps {
   onChangePassword?: () => void;
   onOpenVerifyEmail?: (email: string) => void;
   onOpenTopUp?: () => void;
+  onOpenSellerRegister?: () => void;
   lang?: Language;
   initialTab?: ProfileTab;
 }
@@ -96,12 +147,17 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   onChangePassword,
   onOpenVerifyEmail,
   onOpenTopUp,
+  onOpenSellerRegister,
   lang = 'vi',
   initialTab = 'info',
 }) => {
   if (!isOpen || !currentUser) return null;
 
-  const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<ProfileTab>(
+    initialTab === 'settings' && !(currentUser.role === 'seller' || currentRole === 'seller')
+      ? 'info'
+      : initialTab
+  );
 
   // Form states
   const [name, setName] = useState(currentUser.name || '');
@@ -113,6 +169,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   );
   const [birthday, setBirthday] = useState(currentUser.birthday || '');
   const [bankName, setBankName] = useState(currentUser.bankAccount?.bankName || '');
+  const [isCustomBank, setIsCustomBank] = useState(false);
   const [accountNumber, setAccountNumber] = useState(
     currentUser.bankAccount?.accountNumber || ''
   );
@@ -240,7 +297,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
   // Seller verification & registration state
   const [existingVerification, setExistingVerification] = useState<any>(null);
-  const isApprovedSeller = currentUser.role === 'seller' || existingVerification?.status === 'APPROVED';
+  const isApprovedSeller = currentUser.role === 'seller' || currentRole === 'seller' || existingVerification?.status === 'APPROVED';
   const verStatus = existingVerification?.status || null;
   const isPendingReview = Boolean(
     existingVerification &&
@@ -269,6 +326,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [sellerBankName, setSellerBankName] = useState(
     currentUser.bankAccount?.bankName || ''
   );
+  const [isCustomSellerBank, setIsCustomSellerBank] = useState(false);
   const [sellerAccountNumber, setSellerAccountNumber] = useState(
     currentUser.bankAccount?.accountNumber || ''
   );
@@ -708,13 +766,27 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         if (ob.pickupAddress) {
           const pa = ob.pickupAddress;
           const fullAddr = [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
-          if (fullAddr) {
+          const saved = getSavedSellerAddress();
+          const userCurrentAddr = currentUser?.pickupAddress || currentUser?.address || saved?.address;
+          if (userCurrentAddr) {
+            setPickupAddress(userCurrentAddr);
+            setStreetAddress(userCurrentAddr);
+            addressFound = true;
+          } else if (fullAddr) {
             setPickupAddress(fullAddr);
             setStreetAddress(pa.address || '');
             addressFound = true;
           }
-          if (pa.latitude) setPickupLatitude(pa.latitude);
-          if (pa.longitude) setPickupLongitude(pa.longitude);
+          if (currentUser?.latitude) {
+            setPickupLatitude(currentUser.latitude);
+          } else if (pa.latitude) {
+            setPickupLatitude(pa.latitude);
+          }
+          if (currentUser?.longitude) {
+            setPickupLongitude(currentUser.longitude);
+          } else if (pa.longitude) {
+            setPickupLongitude(pa.longitude);
+          }
         }
         if (ob.provinceId) {
           setSelectedProvinceId(ob.provinceId);
@@ -730,18 +802,36 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       if (!addressFound && pickupData && pickupData.status === 'fulfilled' && pickupData.value) {
         const pa = pickupData.value;
         const fullAddr = [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
-        if (fullAddr) {
+        const saved = getSavedSellerAddress();
+        const userCurrentAddr = currentUser?.pickupAddress || currentUser?.address || saved?.address;
+        if (userCurrentAddr) {
+          setPickupAddress(userCurrentAddr);
+          setStreetAddress(userCurrentAddr);
+          addressFound = true;
+        } else if (fullAddr) {
           setPickupAddress(fullAddr);
           setStreetAddress(pa.address || '');
           addressFound = true;
         }
-        if (pa.latitude) setPickupLatitude(pa.latitude);
-        if (pa.longitude) setPickupLongitude(pa.longitude);
+        if (currentUser?.latitude) {
+          setPickupLatitude(currentUser.latitude);
+        } else if (pa.latitude) {
+          setPickupLatitude(pa.latitude);
+        }
+        if (currentUser?.longitude) {
+          setPickupLongitude(currentUser.longitude);
+        } else if (pa.longitude) {
+          setPickupLongitude(pa.longitude);
+        }
       }
 
-      if (!addressFound && currentUser?.address) {
-        setPickupAddress(currentUser.address);
-        setStreetAddress(currentUser.address);
+      if (!addressFound) {
+        const saved = getSavedSellerAddress();
+        const fallbackAddr = currentUser?.pickupAddress || currentUser?.address || saved?.address || '';
+        if (fallbackAddr) {
+          setPickupAddress(fallbackAddr);
+          setStreetAddress(fallbackAddr);
+        }
       }
 
       if (showNotification) {
@@ -1484,12 +1574,26 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSave = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
     setSaveError(null);
     setIsSaving(true);
 
     const fullAddr = address || userStreetAddress.trim() || computeFullAddress();
+
+    // Tự động suy luận Ward & Province từ fullAddr nếu dropdown chưa chọn
+    let effectiveWard = selectedWardName.trim() || currentUser?.wardName || currentUser?.ward || '';
+    let effectiveProv = selectedProvinceName.trim() || currentUser?.provinceName || currentUser?.province || '';
+    if ((!effectiveWard || !effectiveProv) && fullAddr) {
+      const extracted = extractWardAndCity(fullAddr);
+      if (extracted) {
+        const [w, c] = extracted.split(',').map((s) => s.trim());
+        if (!effectiveWard && w) effectiveWard = w;
+        if (!effectiveProv && c) effectiveProv = c;
+      }
+    }
 
     const updated: UserProfile = {
       ...currentUser,
@@ -1497,11 +1601,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       email,
       phone: phone.trim(),
       address: fullAddr,
-      province: selectedProvinceName.trim() || undefined,
-      provinceName: selectedProvinceName.trim() || undefined,
+      province: effectiveProv || undefined,
+      provinceName: effectiveProv || undefined,
       district: selectedDistrictName.trim() || undefined,
-      ward: selectedWardName.trim() || undefined,
-      wardName: selectedWardName.trim() || undefined,
+      ward: effectiveWard || undefined,
+      wardName: effectiveWard || undefined,
       streetAddress: userStreetAddress.trim() || fullAddr || undefined,
       latitude: userLatitude ?? pickupLatitude ?? currentUser?.latitude,
       longitude: userLongitude ?? pickupLongitude ?? currentUser?.longitude,
@@ -1518,8 +1622,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
     saveSellerAddress(
       pickupAddress || fullAddr,
-      selectedWardName.trim() || currentUser?.wardName,
-      selectedProvinceName.trim() || currentUser?.provinceName
+      effectiveWard || undefined,
+      effectiveProv || undefined
     );
 
     try {
@@ -1546,6 +1650,32 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           });
         } catch (_) {}
       }
+
+      // Luôn cập nhật thông tin địa chỉ kho bưu tá lấy hàng lên Backend Onboarding
+      try {
+        const cleanShop = (shopName || name.trim() || currentUser?.name || 'Gian Hàng').trim().slice(0, 30);
+        const cleanPhone = (sellerPhone || phone.trim() || currentUser?.phone || '0900000000').replace(/\s+/g, '').trim();
+        await shippingService.saveSellerOnboarding({
+          shopName: cleanShop,
+          email: (shopEmail || currentUser?.email || email || 'seller@secondlife.vn').trim(),
+          phone: cleanPhone,
+          pickupAddress: {
+            name: cleanShop,
+            phone: cleanPhone,
+            address: fullAddr,
+            latitude: userLatitude ?? pickupLatitude ?? 10.84362,
+            longitude: userLongitude ?? pickupLongitude ?? 106.76575,
+            provinceId: Number(selectedProvinceId) || 1000001,
+            wardId: Number(selectedWardId) || 1003646,
+          },
+        });
+      } catch (onboardingErr) {
+        console.warn('saveSellerOnboarding in handleSave warning:', onboardingErr);
+      }
+
+      setPickupAddress(fullAddr);
+      if (userLatitude) setPickupLatitude(userLatitude);
+      if (userLongitude) setPickupLongitude(userLongitude);
 
       onUpdateProfile(updated);
       setIsSaved(true);
@@ -1790,7 +1920,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <span>{lang === 'vi' ? 'Khiếu Nại' : 'Reports'}</span>
                 </button>
 
-                {!['admin', 'staff', 'inspector'].includes(currentUser.role) && (
+                {isApprovedSeller && !['admin', 'staff', 'inspector'].includes(currentUser.role) && (
                   <button
                     type="button"
                     onClick={() => setActiveTab('settings')}
@@ -2007,12 +2137,24 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           setPickupLatitude(data.latitude);
                           setPickupLongitude(data.longitude);
                           setPickupAddress(data.address);
-                          if (data.city) {
-                            setSelectedProvinceName(data.city);
+
+                          const extracted = extractWardAndCity(data.address);
+                          let extWard = '';
+                          let extProv = data.city || '';
+                          if (extracted) {
+                            const [w, c] = extracted.split(',').map((s) => s.trim());
+                            if (w && c) {
+                              extWard = w;
+                              extProv = c;
+                            } else if (w) {
+                              extWard = w;
+                            }
                           }
+                          if (extWard) setSelectedWardName(extWard);
+                          if (extProv) setSelectedProvinceName(extProv);
                           if (data.name && !name) setName(data.name);
                           if (data.phone && !phone) setPhone(data.phone);
-                          saveSellerAddress(data.address, undefined, data.city);
+                          saveSellerAddress(data.address, extWard || undefined, extProv || data.city);
                         }}
                         lang={lang}
                         title={lang === 'vi' ? 'Địa Chỉ Cư Trú / Nhận Hàng Của Bạn' : 'Your Residential / Delivery Address'}
@@ -2023,9 +2165,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 </div>
               </div>
 
-              {/* Action Buttons inside Tab 1 */}
-              <div className="pt-4 flex items-center justify-between border-t border-slate-100">
-                <div>
+              {/* Action Feedback inside Tab 1 */}
+              {(isSaved || saveError) && (
+                <div className="pt-4 flex items-center justify-start border-t border-slate-100">
                   {isSaved && (
                     <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 animate-in fade-in">
                       <CheckCircle2 className="w-4 h-4" />
@@ -2039,25 +2181,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     </span>
                   )}
                 </div>
-
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="px-6 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#b03e29] active:scale-95 text-white font-bold text-xs sm:text-sm shadow-md hover:shadow-lg disabled:opacity-50 transition flex items-center gap-2 cursor-pointer"
-                >
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>{lang === 'vi' ? 'Đang lưu...' : 'Saving...'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4" />
-                      <span>{lang === 'vi' ? 'Lưu Thay Đổi' : 'Save Changes'}</span>
-                    </>
-                  )}
-                </button>
-              </div>
+              )}
             </form>
           )}
 
@@ -2169,13 +2293,55 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1">
                   <div>
                     <label className="text-slate-500 text-[11px] block">{lang === 'vi' ? 'Ngân hàng' : 'Bank name'}</label>
-                    <input
-                      type="text"
-                      value={bankName}
-                      onChange={(e) => setBankName(e.target.value)}
-                      placeholder={lang === 'vi' ? 'VD: Vietcombank, MB Bank...' : 'e.g. Vietcombank'}
-                      className="mt-1 w-full p-2 bg-white rounded-lg border border-gray-200 font-semibold text-slate-900 placeholder:text-slate-400 placeholder:font-normal"
-                    />
+                    {isCustomBank ? (
+                      <div className="relative mt-1 flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={bankName}
+                          onChange={(e) => setBankName(e.target.value)}
+                          placeholder={lang === 'vi' ? 'Nhập tên ngân hàng...' : 'Enter bank name...'}
+                          autoFocus
+                          className="w-full p-2 bg-white rounded-lg border border-[#24263e] font-semibold text-slate-900 text-xs placeholder:text-slate-400 placeholder:font-normal focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCustomBank(false);
+                            setBankName(POPULAR_VIETNAM_BANKS[0].name);
+                          }}
+                          className="px-2.5 py-2 rounded-lg border border-gray-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-[11px] font-semibold whitespace-nowrap cursor-pointer transition shadow-sm"
+                        >
+                          {lang === 'vi' ? 'Chọn lại' : 'Select'}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative mt-1">
+                        <select
+                          value={getMatchedBankName(bankName)}
+                          onChange={(e) => {
+                            if (e.target.value === '__OTHER__') {
+                              setIsCustomBank(true);
+                              setBankName('');
+                            } else {
+                              setBankName(e.target.value);
+                            }
+                          }}
+                          className="w-full p-2 pr-9 bg-white rounded-lg border border-gray-200 font-semibold text-slate-900 text-xs appearance-none focus:outline-none focus:border-[#24263e] cursor-pointer"
+                        >
+                          <option value="">{lang === 'vi' ? '-- Chọn ngân hàng --' : '-- Select bank --'}</option>
+                          {POPULAR_VIETNAM_BANKS.map((b) => (
+                            <option key={b.code} value={b.name}>
+                              {b.name} - {b.fullName} ({b.code})
+                            </option>
+                          ))}
+                          {Boolean(bankName && !POPULAR_VIETNAM_BANKS.some((b) => b.name.toLowerCase() === bankName.trim().toLowerCase())) && (
+                            <option value={bankName}>{bankName}</option>
+                          )}
+                          <option value="__OTHER__">{lang === 'vi' ? '➕ Ngân hàng khác...' : '➕ Other bank...'}</option>
+                        </select>
+                        <ChevronDown className="w-4 h-4 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="text-slate-500 text-[11px] block">{lang === 'vi' ? 'Số tài khoản' : 'Account number'}</label>
@@ -2268,18 +2434,37 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         : 'Account not yet verified via eKYC'}
                     </h4>
                     <p className="text-xs text-slate-600 leading-relaxed">
-                      {lang === 'vi'
-                        ? 'Vui lòng hoàn tất xác thực thông tin tại mục "Gian Hàng" để bảo vệ tài khoản và mở khóa tính năng Người Bán.'
-                        : 'Please complete eKYC verification in the "Store" tab to unlock seller capabilities.'}
+                      {isApprovedSeller
+                        ? (lang === 'vi'
+                            ? 'Vui lòng hoàn tất xác thực thông tin tại mục "Gian Hàng" để bảo vệ tài khoản và mở khóa tính năng Người Bán.'
+                            : 'Please complete eKYC verification in the "Store" tab to unlock seller capabilities.')
+                        : (lang === 'vi'
+                            ? 'Đăng ký tài khoản Người Bán để kích hoạt tính năng định danh eKYC và mở khóa gian hàng đăng bán thiết bị.'
+                            : 'Register as a Seller to activate eKYC verification and unlock your store capabilities.')}
                     </p>
                     <div className="pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('settings')}
-                        className="text-xs font-bold text-[#c34c36] hover:underline cursor-pointer"
-                      >
-                        {lang === 'vi' ? 'Tiến hành định danh eKYC ngay →' : 'Complete eKYC now →'}
-                      </button>
+                      {isApprovedSeller ? (
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('settings')}
+                          className="text-xs font-bold text-[#c34c36] hover:underline cursor-pointer"
+                        >
+                          {lang === 'vi' ? 'Tiến hành định danh eKYC ngay →' : 'Complete eKYC now →'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onOpenSellerRegister) {
+                              onClose();
+                              onOpenSellerRegister();
+                            }
+                          }}
+                          className="text-xs font-bold text-[#c34c36] hover:underline cursor-pointer"
+                        >
+                          {lang === 'vi' ? 'Đăng ký Người Bán ngay →' : 'Register as Seller now →'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2394,7 +2579,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           )}
 
           {/* TAB 4: ĐỔI VAI TRÒ */}
-          {activeTab === 'settings' && (
+          {activeTab === 'settings' && isApprovedSeller && (
             ['admin', 'staff', 'inspector'].includes(currentUser.role) ? (
               <div className="py-12 px-4 text-center max-w-md mx-auto space-y-4 animate-in fade-in">
                 <div className="w-16 h-16 rounded-3xl bg-rose-50 text-[#c34c36] flex items-center justify-center mx-auto shadow-inner">
@@ -2632,13 +2817,13 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <div className="p-2.5 bg-white rounded-xl border border-gray-200/80 sm:col-span-2">
                       <span className="text-[10px] text-slate-400 block mb-0.5">{lang === 'vi' ? 'Địa chỉ kho bưu tá lấy hàng' : 'Courier pickup warehouse address'}</span>
                       <span className="font-medium text-slate-800">
-                        {pickupAddress || address || (
+                        {pickupAddress || address || currentUser.pickupAddress || currentUser.address || (
                           <span className="text-slate-400 italic">{lang === 'vi' ? 'Chưa cập nhật địa chỉ kho (Bấm Chỉnh sửa thông tin bên trên để thêm)' : 'Not updated'}</span>
                         )}
                       </span>
-                      {pickupLatitude && pickupLongitude && (
+                      {(pickupLatitude || currentUser.latitude || userLatitude) && (pickupLongitude || currentUser.longitude || userLongitude) && (
                         <span className="block text-[10px] text-orange-600 font-mono mt-0.5 font-semibold">
-                          📍 GPS: {pickupLatitude.toFixed(5)}, {pickupLongitude.toFixed(5)}
+                          📍 GPS: {(pickupLatitude ?? currentUser.latitude ?? userLatitude)?.toFixed(5)}, {(pickupLongitude ?? currentUser.longitude ?? userLongitude)?.toFixed(5)}
                         </span>
                       )}
                     </div>
@@ -2741,8 +2926,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         </h5>
                         <p className="text-[11px] text-slate-500">
                           {lang === 'vi'
-                            ? 'Điền thông tin để Kỹ sư Hub và đơn vị vận chuyển (GHTK/GHN) đến nhận thiết bị giám định'
-                            : 'Fill in details so Hub inspectors and couriers (GHTK/GHN) can collect devices for inspection'}
+                            ? 'Điền thông tin để Kỹ sư Hub và đơn vị vận chuyển (Lalamove) đến nhận thiết bị giám định'
+                            : 'Fill in details so Hub inspectors and couriers (Lalamove) can collect devices for inspection'}
                         </p>
                       </div>
                     </div>
@@ -3179,13 +3364,55 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                         <div>
                           <label className="text-[10px] font-bold text-slate-500 block mb-0.5">{lang === 'vi' ? 'Ngân hàng' : 'Bank name'}</label>
-                          <input
-                            type="text"
-                            value={sellerBankName}
-                            onChange={(e) => setSellerBankName(e.target.value)}
-                            placeholder={lang === 'vi' ? 'VD: Vietcombank, MB Bank...' : 'e.g. Vietcombank'}
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
-                          />
+                          {isCustomSellerBank ? (
+                            <div className="relative flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={sellerBankName}
+                                onChange={(e) => setSellerBankName(e.target.value)}
+                                placeholder={lang === 'vi' ? 'Nhập tên ngân hàng...' : 'Enter bank name...'}
+                                autoFocus
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-[#c34c36] text-xs outline-none font-semibold text-slate-900"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsCustomSellerBank(false);
+                                  setSellerBankName(POPULAR_VIETNAM_BANKS[0].name);
+                                }}
+                                className="px-2 py-1.5 rounded-lg border border-gray-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-[10px] font-semibold whitespace-nowrap cursor-pointer transition shadow-sm"
+                              >
+                                {lang === 'vi' ? 'Chọn lại' : 'Select'}
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="relative">
+                              <select
+                                value={getMatchedBankName(sellerBankName)}
+                                onChange={(e) => {
+                                  if (e.target.value === '__OTHER__') {
+                                    setIsCustomSellerBank(true);
+                                    setSellerBankName('');
+                                  } else {
+                                    setSellerBankName(e.target.value);
+                                  }
+                                }}
+                                className="w-full px-2.5 py-1.5 pr-8 rounded-lg border border-gray-200 text-xs font-semibold text-slate-900 outline-none focus:border-[#c34c36] appearance-none cursor-pointer bg-white"
+                              >
+                                <option value="">{lang === 'vi' ? '-- Chọn ngân hàng --' : '-- Select bank --'}</option>
+                                {POPULAR_VIETNAM_BANKS.map((b) => (
+                                  <option key={b.code} value={b.name}>
+                                    {b.name} - {b.fullName} ({b.code})
+                                  </option>
+                                ))}
+                                {Boolean(sellerBankName && !POPULAR_VIETNAM_BANKS.some((b) => b.name.toLowerCase() === sellerBankName.trim().toLowerCase())) && (
+                                  <option value={sellerBankName}>{sellerBankName}</option>
+                                )}
+                                <option value="__OTHER__">{lang === 'vi' ? '➕ Ngân hàng khác...' : '➕ Other bank...'}</option>
+                              </select>
+                              <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            </div>
+                          )}
                         </div>
                         <div>
                           <label className="text-[10px] font-bold text-slate-500 block mb-0.5">{lang === 'vi' ? 'Số tài khoản' : 'Account number'}</label>
@@ -3220,8 +3447,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       />
                       <span className="text-[11px] text-slate-600 leading-relaxed">
                         {lang === 'vi'
-                          ? 'Tôi cam kết mọi thiết bị đăng bán là chính hãng, đúng tình trạng; sẵn sàng giao hàng cho bưu tá để Kỹ sư Hub kiểm định dán tem NFC và tuân thủ quy chế giải ngân qua quỹ tín thác Escrow của SecondLife.'
-                          : 'I commit that all listed appliances are authentic and match their described condition; I agree to hand them over to couriers for Hub inspection and NFC sealing, and abide by the SecondLife Escrow payout terms.'}
+                          ? 'Tôi cam kết mọi thiết bị đăng bán là chính hãng, đúng tình trạng; sẵn sàng giao hàng cho tài xế Lalamove để Kỹ sư Hub kiểm định dán tem NFC và tuân thủ quy chế giải ngân qua quỹ tín thác Escrow của SecondLife.'
+                          : 'I commit that all listed appliances are authentic and match their described condition; I agree to hand them over to Lalamove couriers for Hub inspection and NFC sealing, and abide by the SecondLife Escrow payout terms.'}
                       </span>
                     </label>
                   </div>
@@ -3542,10 +3769,20 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             </button>
             <button
               onClick={handleSave}
-              className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+              disabled={isSaving}
+              className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
-              <Save className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? 'Lưu Hồ Sơ' : 'Save Profile'}</span>
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>{lang === 'vi' ? 'Đang lưu...' : 'Saving...'}</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? 'Lưu Hồ Sơ' : 'Save Profile'}</span>
+                </>
+              )}
             </button>
           </div>
         </div>

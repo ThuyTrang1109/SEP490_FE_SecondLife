@@ -1412,7 +1412,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
               <Truck className="w-4 h-4 text-amber-600 shrink-0" />
               <div>
                 <span className="font-bold block text-[11px] text-slate-900">{lang === 'vi' ? 'Lấy hàng tận kho' : 'Doorstep Pickup'}</span>
-                <span className="text-[10px] text-slate-500 hidden sm:block">{lang === 'vi' ? 'GHTK/GHN giao Hub' : 'Courier Pickup'}</span>
+                <span className="text-[10px] text-slate-500 hidden sm:block">{lang === 'vi' ? 'Lalamove giao Hub' : 'Lalamove Pickup'}</span>
               </div>
             </div>
             <div className="flex items-center gap-2 p-2.5 rounded-2xl bg-emerald-50/70 border border-emerald-100 text-slate-700">
@@ -1667,8 +1667,8 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                     </h5>
                     <p className="text-[11px] text-slate-500">
                       {lang === 'vi'
-                        ? 'Điền thông tin để Kỹ sư Hub và đơn vị vận chuyển (GHTK/GHN) đến nhận thiết bị giám định'
-                        : 'Fill in details so Hub inspectors and couriers can collect devices for inspection'}
+                        ? 'Điền thông tin để Kỹ sư Hub và đơn vị vận chuyển (Lalamove) đến nhận thiết bị giám định'
+                        : 'Fill in details so Hub inspectors and couriers (Lalamove) can collect devices for inspection'}
                     </p>
                   </div>
                 </div>
@@ -2172,8 +2172,8 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                   />
                   <span className="text-[11px] text-slate-600 leading-relaxed">
                     {lang === 'vi'
-                      ? 'Tôi cam kết mọi thiết bị đăng bán là chính hãng, đúng tình trạng; sẵn sàng giao hàng cho bưu tá để Kỹ sư Hub kiểm định dán tem NFC và tuân thủ quy chế giải ngân qua quỹ tín thác Escrow của SecondLife.'
-                      : 'I commit that all listed appliances are authentic and match condition; ready for courier pickup and Hub inspection.'}
+                      ? 'Tôi cam kết mọi thiết bị đăng bán là chính hãng, đúng tình trạng; sẵn sàng giao hàng cho tài xế Lalamove để Kỹ sư Hub kiểm định dán tem NFC và tuân thủ quy chế giải ngân qua quỹ tín thác Escrow của SecondLife.'
+                      : 'I commit that all listed appliances are authentic and match condition; ready for Lalamove pickup and Hub inspection.'}
                   </span>
                 </label>
               </div>

@@ -130,7 +130,7 @@ export interface InspectionReport {
 export interface ShippingLeg {
   id: string;
   legType: 'SELLER_TO_CENTER' | 'CENTER_TO_BUYER' | 'DIRECT' | string;
-  carrier: 'Lalamove' | 'GHTK' | 'GHN' | 'GHN Express' | string;
+  carrier: 'Lalamove' | 'GHN' | string;
   trackingNumber: string;
   status: 'PICKED_UP' | 'IN_TRANSIT' | 'DELIVERED' | string;
   origin: string;
@@ -188,6 +188,9 @@ export interface EscrowOrder {
   handoverDeadline?: string | null;
   appointmentScheduledAt?: string | null;
   appointmentNote?: string | null;
+  paymentMethod?: 'WALLET' | 'BANK_TRANSFER' | string;
+  paymentExpiresAt?: string | null;
+  bankPaymentDetails?: any;
 }
 
 export interface ProductReview {
@@ -439,7 +442,7 @@ export interface Negotiation {
 // ==========================================
 // 3. Order & Escrow Types
 // ==========================================
-export type OrderStatusBackend = 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED';
+export type OrderStatusBackend = 'PENDING' | 'PENDING_PAYMENT' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED';
 export type OrderBackendStatus = OrderStatusBackend;
 export type EscrowStatusBackend = 'HELD' | 'RELEASED' | 'REFUNDED' | 'FROZEN';
 

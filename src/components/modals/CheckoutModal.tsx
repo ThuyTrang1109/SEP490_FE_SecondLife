@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Listing, EscrowOrder, Language, UserWallet, ShippingQuoteResponseDto, ShippingLeg, InspectionCenter, UserProfile } from '../../types';
+import { Listing, EscrowOrder, EscrowStatus, Language, UserWallet, ShippingQuoteResponseDto, ShippingLeg, InspectionCenter, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import { mockInspectionCenters } from '../../data/mockData';
 import {
@@ -27,7 +27,8 @@ import {
   BadgeCheck,
   Check,
   Edit3,
-  ListFilter
+  ListFilter,
+  XCircle,
 } from 'lucide-react';
 import { orderService, walletService, shippingService, GhnLocation, inspectorService, InspectionQuoteResponse, InspectionTravelTierDto } from '../../services';
 import { LalamoveAddressPicker, getCityCoordinates } from '../common/LalamoveAddressPicker';
@@ -174,6 +175,8 @@ interface CheckoutModalProps {
   agreedPrice?: number;
   negotiationId?: string;
   onOpenDeposit?: () => void;
+  onCancelUnpaid?: (msg?: string) => void;
+  showToast?: (msg: string) => void;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
@@ -185,6 +188,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   agreedPrice,
   negotiationId,
   onOpenDeposit,
+  onCancelUnpaid,
+  showToast,
 }) => {
   const t = translations[lang];
 
@@ -206,8 +211,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [createdOrder, setCreatedOrder] = useState<EscrowOrder | null>(null);
   const [checkingBankPayment, setCheckingBankPayment] = useState<boolean>(false);
   const [copiedBankField, setCopiedBankField] = useState<string | null>(null);
+  const [paymentSecondsLeft, setPaymentSecondsLeft] = useState<number | null>(null);
+  const [isPaymentExpired, setIsPaymentExpired] = useState<boolean>(false);
+  const [isPaymentSuccess, setIsPaymentSuccess] = useState<boolean>(false);
+  const [bankCheckMessage, setBankCheckMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
-  // GHN Address & Catalogue States
+  // Shipping Address & Catalogue States
   const [provinces, setProvinces] = useState<GhnLocation[]>([]);
   const [loadingProvinces, setLoadingProvinces] = useState(false);
   const [selectedProvinceId, setSelectedProvinceId] = useState<number | ''>('');
@@ -280,7 +289,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   }, [selectedProvinceName]);
 
-  // GHN Quote State
+  // Lalamove Shipping Quote State
   const [ghnQuote, setGhnQuote] = useState<ShippingQuoteResponseDto | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
@@ -308,7 +317,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     return () => { isMounted = false; };
   }, []);
 
-  // Load GHN Provinces on mount
+  // Load Shipping Provinces on mount
   useEffect(() => {
     let isMounted = true;
     const loadProvinces = async () => {
@@ -319,7 +328,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           setProvinces(provs);
         }
       } catch (err) {
-        console.warn('Error loading GHN provinces:', err);
+        console.warn('Error loading shipping provinces:', err);
       } finally {
         if (isMounted) setLoadingProvinces(false);
       }
@@ -362,7 +371,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
-  // Load GHN Wards when selectedProvinceId changes
+  // Load Wards when selectedProvinceId changes
   useEffect(() => {
     if (!selectedProvinceId) {
       setWards([]);
@@ -380,7 +389,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           setWards(w);
         }
       } catch (err) {
-        console.warn('Error loading GHN wards:', err);
+        console.warn('Error loading shipping wards:', err);
       } finally {
         if (isMounted) setLoadingWards(false);
       }
@@ -800,12 +809,21 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               timeline: [
                 {
                   timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-                  description: 'Đã thanh toán ví thành công qua Escrow. Tài xế Lalamove lấy hàng và giao thẳng trực tiếp đến người mua.',
+                  description: !isInspected && paymentMethod === 'BANK_TRANSFER'
+                    ? 'Đơn hàng đã được khởi tạo. Đang chờ người mua quét mã VietQR để nạp tiền ký quỹ Escrow bảo vệ đơn hàng.'
+                    : 'Đã thanh toán ví thành công qua Escrow. Tiền đã được đóng băng an toàn tại Quỹ Escrow, sẵn sàng cho đơn vị vận chuyển lấy hàng.',
                   location: 'Hệ thống SecondLife Escrow'
                 }
               ]
             }
           ];
+
+      const isBankWaiting = !isInspected && paymentMethod === 'BANK_TRANSFER';
+      const initialEscrowStatus: EscrowStatus = isInspected
+        ? 'INSPECTION_IN_PROGRESS'
+        : isBankWaiting
+        ? 'AWAITING_PAYMENT'
+        : 'HELD_IN_ESCROW';
 
       const newOrder: EscrowOrder = {
         id: orderId,
@@ -825,7 +843,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         shippingFeeVnd: finalShippingFee,
         platformFeeVnd: 0,
         totalPaidVnd: finalTotalPaid,
-        escrowStatus: isInspected ? 'INSPECTION_IN_PROGRESS' : 'HELD_IN_ESCROW',
+        escrowStatus: initialEscrowStatus,
+        paymentMethod: paymentMethod,
+        backendStatus: isBankWaiting ? 'PENDING_PAYMENT' : 'PROCESSING',
         hasInspectionService: isInspected,
         inspectionCenterId: isInspected ? selectedCenter?.id : undefined,
         inspectionCenterName: isInspected ? selectedCenter?.name : undefined,
@@ -858,43 +878,54 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           }));
         }
 
-        // Always save order to recent_placed_orders
-        let existingRecent: EscrowOrder[] = [];
-        try {
-          const stored = localStorage.getItem('recent_placed_orders');
-          if (stored && stored !== 'undefined' && stored !== 'null') existingRecent = JSON.parse(stored);
-        } catch {}
-        const updatedRecent = [newOrder, ...existingRecent.filter((o) => o.id !== newOrder.id)].slice(0, 30);
-        localStorage.setItem('recent_placed_orders', JSON.stringify(updatedRecent));
+        // Only save to recent_placed_orders and dispatch seller notification for instant payment (wallet or inspection)
+        if (!isBankWaiting) {
+          let existingRecent: EscrowOrder[] = [];
+          try {
+            const stored = localStorage.getItem('recent_placed_orders');
+            if (stored && stored !== 'undefined' && stored !== 'null') existingRecent = JSON.parse(stored);
+          } catch {}
+          const updatedRecent = [newOrder, ...existingRecent.filter((o) => o.id !== newOrder.id)].slice(0, 30);
+          localStorage.setItem('recent_placed_orders', JSON.stringify(updatedRecent));
 
-        // Dispatch notification specifically for seller (and buyer)
-        const sellerNotifItem = {
-          id: `notif-seller-inspection-${orderId}`,
-          title: isInspected ? 'Yêu cầu kiểm định Hub mới' : 'Đơn đặt hàng mới',
-          message: isInspected
-            ? `Khách mua ${buyerName || 'Khách Hàng'} vừa gửi yêu cầu kiểm định cho sản phẩm "${listing.title}". Người bán vui lòng kiểm tra và hẹn lịch KTV!`
-            : `Khách mua ${buyerName || 'Khách Hàng'} vừa đặt mua sản phẩm "${listing.title}". Vui lòng xác nhận đơn hàng!`,
-          type: isInspected ? 'INSPECTION' : 'ORDER',
-          referenceId: orderId,
-          referenceType: isInspected ? 'INSPECTION_ORDER' : 'ORDER',
-          actionUrl: '/orders?tab=inspecting',
-          isRead: false,
-          readAt: null,
-          createdAt: new Date().toISOString(),
-        };
-        try {
-          const rawNotifs = localStorage.getItem('secondlife_local_notifications');
-          const existingNotifs = rawNotifs && rawNotifs !== 'undefined' && rawNotifs !== 'null' ? JSON.parse(rawNotifs) : [];
-          localStorage.setItem('secondlife_local_notifications', JSON.stringify([sellerNotifItem, ...existingNotifs.filter((n: any) => n.id !== sellerNotifItem.id)].slice(0, 50)));
-          window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: sellerNotifItem }));
-        } catch {}
+          // Dispatch notification specifically for seller (and buyer)
+          const sellerNotifItem = {
+            id: `notif-seller-inspection-${orderId}`,
+            title: isInspected ? 'Yêu cầu kiểm định Hub mới' : 'Đơn đặt hàng mới',
+            message: isInspected
+              ? `Khách mua ${buyerName || 'Khách Hàng'} vừa gửi yêu cầu kiểm định cho sản phẩm "${listing.title}". Người bán vui lòng kiểm tra và hẹn lịch KTV!`
+              : `Khách mua ${buyerName || 'Khách Hàng'} vừa đặt mua sản phẩm "${listing.title}". Vui lòng xác nhận đơn hàng!`,
+            type: isInspected ? 'INSPECTION' : 'ORDER',
+            referenceId: orderId,
+            referenceType: isInspected ? 'INSPECTION_ORDER' : 'ORDER',
+            actionUrl: '/orders?tab=inspecting',
+            isRead: false,
+            readAt: null,
+            createdAt: new Date().toISOString(),
+          };
+          try {
+            const rawNotifs = localStorage.getItem('secondlife_local_notifications');
+            const existingNotifs = rawNotifs && rawNotifs !== 'undefined' && rawNotifs !== 'null' ? JSON.parse(rawNotifs) : [];
+            localStorage.setItem('secondlife_local_notifications', JSON.stringify([sellerNotifItem, ...existingNotifs.filter((n: any) => n.id !== sellerNotifItem.id)].slice(0, 50)));
+            window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: sellerNotifItem }));
+          } catch {}
+        }
       } catch {}
 
       if (!isInspected && paymentMethod === 'BANK_TRANSFER') {
         try {
           const payRes = await orderService.getOrderPayment(orderId);
           setBankPaymentInfo(payRes);
-          setCreatedOrder(newOrder);
+          const bankWaitingOrder: EscrowOrder = {
+            ...newOrder,
+            escrowStatus: 'AWAITING_PAYMENT',
+            backendStatus: 'PENDING_PAYMENT',
+            paymentMethod: 'BANK_TRANSFER',
+            paymentExpiresAt: payRes?.expiresAt || null,
+            bankPaymentDetails: payRes,
+          };
+          setCreatedOrder(bankWaitingOrder);
+          // KHÔNG lưu bankWaitingOrder vào recent_placed_orders khi CHƯA thanh toán
           setSubmittingOrder(false);
           return;
         } catch (pErr) {
@@ -948,6 +979,173 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   };
 
 
+  // Đồng hồ đếm ngược thời hạn chuyển khoản ký quỹ theo dữ liệu expiresAt từ BE
+  useEffect(() => {
+    if (!bankPaymentInfo) {
+      setPaymentSecondsLeft(null);
+      setIsPaymentExpired(false);
+      return;
+    }
+
+    const calcSeconds = () => {
+      if (!bankPaymentInfo.expiresAt) {
+        return 15 * 60;
+      }
+      const expMs = new Date(bankPaymentInfo.expiresAt).getTime();
+      const nowMs = Date.now();
+      return Math.floor((expMs - nowMs) / 1000);
+    };
+
+    const initialDiff = calcSeconds();
+    if (initialDiff <= 0 || bankPaymentInfo.status === 'EXPIRED') {
+      setPaymentSecondsLeft(0);
+      setIsPaymentExpired(true);
+      return;
+    }
+
+    setPaymentSecondsLeft(initialDiff);
+    setIsPaymentExpired(false);
+
+    const timer = setInterval(() => {
+      const remaining = calcSeconds();
+      if (remaining <= 0) {
+        setPaymentSecondsLeft(0);
+        setIsPaymentExpired(true);
+        clearInterval(timer);
+      } else {
+        setPaymentSecondsLeft(remaining);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [bankPaymentInfo?.expiresAt, bankPaymentInfo?.status]);
+
+  const handlePaymentSuccess = useCallback((paidOrder: EscrowOrder) => {
+    setIsPaymentSuccess(true);
+    setCreatedOrder(paidOrder);
+    setBankCheckMessage({
+      type: 'success',
+      text: lang === 'vi' ? '🎉 Đã ký quỹ Escrow thành công! Đang chuyển hướng đến đơn hàng...' : '🎉 Escrow deposit verified! Redirecting...',
+    });
+
+    try {
+      const raw = localStorage.getItem('recent_placed_orders');
+      const list = raw ? JSON.parse(raw) : [];
+      const updated = [paidOrder, ...list.filter((o: any) => o.id !== paidOrder.id)].slice(0, 30);
+      localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
+    } catch {}
+
+    try {
+      const sellerNotifItem = {
+        id: `notif-seller-${paidOrder.id}`,
+        title: 'Đơn đặt hàng mới đã ký quỹ Escrow',
+        message: `Khách mua ${buyerName || 'Khách Hàng'} vừa ký quỹ thành công cho sản phẩm "${listing.title}". Vui lòng xác nhận đơn hàng!`,
+        type: 'ORDER',
+        referenceId: paidOrder.id,
+        referenceType: 'ORDER',
+        actionUrl: '/orders?tab=awaiting_pickup',
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+      };
+      const rawNotifs = localStorage.getItem('secondlife_local_notifications');
+      const existingNotifs = rawNotifs ? JSON.parse(rawNotifs) : [];
+      localStorage.setItem('secondlife_local_notifications', JSON.stringify([sellerNotifItem, ...existingNotifs.filter((n: any) => n.id !== sellerNotifItem.id)].slice(0, 50)));
+      window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: sellerNotifItem }));
+    } catch {}
+
+    setTimeout(() => {
+      onOrderPlaced(paidOrder);
+      onClose();
+    }, 1800);
+  }, [buyerName, listing.title, onOrderPlaced, onClose, lang]);
+
+  const handleCloseUnpaidModal = async () => {
+    if (isPaymentSuccess) {
+      if (createdOrder) {
+        onOrderPlaced(createdOrder);
+      }
+      onClose();
+      return;
+    }
+
+    // Nếu chưa thanh toán mà đã tắt mã:
+    if (createdOrder?.id) {
+      try {
+        await orderService.cancelOrder(createdOrder.id, {
+          reasonCode: 'BUYER_REQUESTED',
+          reason: 'Người mua tắt mã QR thanh toán, chưa hoàn tất chuyển khoản'
+        });
+      } catch (err) {
+        console.warn('Silent cancel unpaid order on backend:', err);
+      }
+
+      // Xóa mọi dữ liệu lưu tạm của đơn chưa thanh toán này
+      try {
+        localStorage.removeItem(`order_listing_${createdOrder.id}`);
+        localStorage.removeItem(`order_buyer_info_${createdOrder.id}`);
+        const raw = localStorage.getItem('recent_placed_orders');
+        if (raw) {
+          const list = JSON.parse(raw);
+          const filtered = list.filter((o: any) => o.id !== createdOrder.id);
+          localStorage.setItem('recent_placed_orders', JSON.stringify(filtered));
+        }
+        const rawNotifs = localStorage.getItem('secondlife_local_notifications');
+        if (rawNotifs) {
+          const list = JSON.parse(rawNotifs);
+          const filtered = list.filter((n: any) => n.referenceId !== createdOrder.id);
+          localStorage.setItem('secondlife_local_notifications', JSON.stringify(filtered));
+        }
+      } catch {}
+    }
+
+    const unpaidxMsg = lang === 'vi'
+      ? 'Đơn hàng chưa được thanh toán! Bạn đã đóng mã thanh toán VietQR nên giao dịch ký quỹ chưa hoàn tất.'
+      : 'Order not paid! VietQR code was closed without payment.';
+
+    if (showToast) {
+      showToast(unpaidxMsg);
+    } else {
+      window.dispatchEvent(new CustomEvent('secondlife_toast', { detail: unpaidxMsg }));
+    }
+
+    if (onCancelUnpaid) {
+      onCancelUnpaid(unpaidxMsg);
+    } else {
+      onClose();
+    }
+  };
+
+  // Polling tự động đối soát SePay thời gian thực mỗi 3 giây (Zero-Refresh)
+  useEffect(() => {
+    if (!bankPaymentInfo || !createdOrder || isPaymentExpired || isPaymentSuccess) return;
+
+    const orderId = createdOrder.id;
+    const interval = setInterval(async () => {
+      try {
+        const fresh = await orderService.getOrderPayment(orderId);
+        if (fresh) {
+          setBankPaymentInfo(fresh);
+          const isPaid = fresh.status === 'PAID' || fresh.remainingAmount === 0 || fresh.orderStatus === 'PROCESSING';
+          if (isPaid) {
+            const paidOrder: EscrowOrder = {
+              ...createdOrder,
+              escrowStatus: 'HELD_IN_ESCROW',
+              backendStatus: 'PROCESSING',
+            };
+            handlePaymentSuccess(paidOrder);
+          } else if (fresh.status === 'EXPIRED') {
+            setIsPaymentExpired(true);
+          }
+        }
+      } catch (err) {
+        // quiet polling catch
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [bankPaymentInfo, createdOrder, isPaymentExpired, isPaymentSuccess, handlePaymentSuccess]);
+
   if (bankPaymentInfo && createdOrder) {
     const remainingToPay = bankPaymentInfo.remainingAmount ?? bankPaymentInfo.totalAmount ?? totalAmount;
     const vietQrUrl = `https://img.vietqr.io/image/${bankPaymentInfo.bankName || 'MB'}-${bankPaymentInfo.bankAccountNumber || '0000000000'}-compact2.png?amount=${remainingToPay}&addInfo=${encodeURIComponent(bankPaymentInfo.transferContent || createdOrder.id)}&accountName=${encodeURIComponent(bankPaymentInfo.bankAccountName || 'SECONDLIFE ESCROW')}`;
@@ -958,25 +1156,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           {/* Header */}
           <div className="p-5 border-b border-[#24263e]/15 flex items-center justify-between bg-gradient-to-r from-blue-50 to-[#faf8f5] text-[#24263e] shrink-0 rounded-t-3xl">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md">
-                <QrCode className="w-5 h-5 text-white" />
+              <div className="w-10 h-10 rounded-2xl bg-[#24263e] text-white flex items-center justify-center shadow-md">
+                <ShieldCheck className="w-5 h-5 text-amber-400" />
               </div>
               <div>
                 <h3 className="font-extrabold text-base text-[#24263e]">
-                  {lang === 'vi' ? 'Chuyển Khoản Ngân Hàng VietQR (SePay)' : 'Bank Transfer Payment via VietQR'}
+                  {lang === 'vi' ? 'Ký Quỹ Escrow Qua Ngân Hàng VietQR (SePay)' : 'Escrow Deposit via VietQR'}
                 </h3>
                 <p className="text-[11px] text-slate-600 font-bold">
-                  Đơn hàng: #{createdOrder.id} • Ký quỹ Escrow bảo vệ người mua
+                  Đơn hàng: #{createdOrder.id} • Ký quỹ để đóng băng tiền bảo vệ giao dịch
                 </p>
               </div>
             </div>
 
             <button
-              onClick={() => {
-                onOrderPlaced(createdOrder);
-                onClose();
-              }}
+              onClick={handleCloseUnpaidModal}
               className="text-[#24263e] hover:bg-white/40 p-1.5 rounded-xl cursor-pointer transition font-bold"
+              title={lang === 'vi' ? 'Đóng và quay lại trang mua hàng' : 'Close and return to product'}
             >
               <X className="w-5 h-5" />
             </button>
@@ -984,39 +1180,102 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
           {/* Content */}
           <div className="p-5 sm:p-6 space-y-4 text-xs flex-1 overflow-y-auto subtle-scrollbar">
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-900 font-semibold flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Đơn hàng đã được tạo thành công! Vui lòng chuyển khoản theo thông tin dưới đây để kích hoạt đơn.</span>
-            </div>
+            {/* Status / Success / Expired Banner */}
+            {isPaymentSuccess ? (
+              <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-900 font-semibold flex items-center gap-3 animate-fadeIn">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <div>
+                  <h5 className="font-bold text-sm text-emerald-800">🎉 Đã Ký Quỹ Escrow Thành Công!</h5>
+                  <p className="text-[11px] text-emerald-700">
+                    Số tiền {formatVND(remainingToPay)} đã được hệ thống đóng băng an toàn tại Quỹ Escrow. Đang chuyển hướng...
+                  </p>
+                </div>
+              </div>
+            ) : isPaymentExpired ? (
+              <div className="p-3.5 bg-rose-50 border border-rose-300 rounded-2xl text-rose-900 font-semibold flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                <div>
+                  <h5 className="font-bold text-sm text-rose-800">⚠️ Mã Ký Quỹ Đã Quá Hạn (15 Phút Backend)</h5>
+                  <p className="text-[11px] text-rose-700">
+                    Thời hạn ký quỹ theo dữ liệu Backend đã kết thúc. Vui lòng không chuyển khoản vào mã này nữa để tránh đơn bị tự động hủy.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className={`p-3 rounded-2xl border flex items-center justify-between gap-3 ${
+                (paymentSecondsLeft ?? 900) < 180
+                  ? 'bg-amber-50 border-amber-300 text-amber-900 animate-pulse'
+                  : 'bg-blue-50 border-blue-200 text-blue-900'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <Clock className={`w-4 h-4 ${(paymentSecondsLeft ?? 900) < 180 ? 'text-amber-600 animate-spin' : 'text-blue-600'}`} />
+                  <div>
+                    <span className="font-bold text-xs">
+                      {lang === 'vi' ? 'Thời gian chuyển tiền ký quỹ còn lại:' : 'Remaining deposit window:'}
+                    </span>
+                    {bankPaymentInfo.expiresAt && (
+                      <span className="text-[10px] text-slate-500 block">
+                        Hạn chót BE: {new Date(bankPaymentInfo.expiresAt).toLocaleTimeString('vi-VN')} ({new Date(bankPaymentInfo.expiresAt).toLocaleDateString('vi-VN')})
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className={`text-base font-black font-mono px-2.5 py-1 rounded-xl border ${
+                    (paymentSecondsLeft ?? 900) < 180
+                      ? 'bg-rose-100 border-rose-300 text-rose-700 font-extrabold'
+                      : 'bg-white border-blue-200 text-blue-800'
+                  }`}>
+                    {paymentSecondsLeft !== null
+                      ? `${Math.floor(paymentSecondsLeft / 60).toString().padStart(2, '0')}:${(paymentSecondsLeft % 60).toString().padStart(2, '0')}`
+                      : '15:00'}
+                  </span>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center bg-[#faf8f5] p-4 rounded-2xl border border-slate-200">
-              {/* QR Image */}
-              <div className="flex flex-col items-center justify-center bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
+              {/* QR Image with Expired Blur Overlay */}
+              <div className="relative flex flex-col items-center justify-center bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
                 <img
                   src={vietQrUrl}
                   alt="VietQR Code"
-                  className="w-48 h-48 object-contain rounded-xl"
+                  className={`w-48 h-48 object-contain rounded-xl transition-all ${
+                    isPaymentExpired ? 'filter blur-sm opacity-40' : ''
+                  }`}
                 />
-                <span className="text-[10px] text-slate-500 font-bold mt-1.5 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-[#c34c36]" />
-                  <span>Quét bằng app ngân hàng bất kỳ</span>
-                </span>
+                {isPaymentExpired && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 rounded-2xl p-4 text-center">
+                    <XCircle className="w-8 h-8 text-rose-400 mb-1" />
+                    <span className="text-white font-extrabold text-xs uppercase bg-rose-600 px-2 py-0.5 rounded shadow">
+                      MÃ KÝ QUỸ ĐÃ HẾT HẠN
+                    </span>
+                    <span className="text-[10px] text-white/90 mt-1">Không chuyển tiền</span>
+                  </div>
+                )}
+                {!isPaymentExpired && (
+                  <span className="text-[10px] text-slate-500 font-bold mt-1.5 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-[#c34c36]" />
+                    <span>Quét bằng app ngân hàng bất kỳ</span>
+                  </span>
+                )}
               </div>
 
               {/* Bank Details */}
               <div className="space-y-2.5">
                 <div>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Số tiền thanh toán:</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Số tiền ký quỹ (Đóng băng Escrow):</span>
                   <div className="flex items-center justify-between mt-0.5">
                     <strong className="text-base font-black text-[#c34c36] font-mono">{formatVND(remainingToPay)}</strong>
                     <button
                       type="button"
+                      disabled={isPaymentExpired}
                       onClick={() => {
                         navigator.clipboard.writeText(String(remainingToPay));
                         setCopiedBankField('amount');
                         setTimeout(() => setCopiedBankField(null), 2000);
                       }}
-                      className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition cursor-pointer"
+                      className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition cursor-pointer disabled:opacity-40"
                     >
                       {copiedBankField === 'amount' ? '✓ Đã chép' : 'Sao chép'}
                     </button>
@@ -1029,12 +1288,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <strong className="text-xs font-black text-amber-950 font-mono">{bankPaymentInfo.transferContent || createdOrder.id}</strong>
                     <button
                       type="button"
+                      disabled={isPaymentExpired}
                       onClick={() => {
                         navigator.clipboard.writeText(bankPaymentInfo.transferContent || createdOrder.id);
                         setCopiedBankField('content');
                         setTimeout(() => setCopiedBankField(null), 2000);
                       }}
-                      className="px-2 py-0.5 rounded bg-amber-200 hover:bg-amber-300 text-amber-950 font-bold text-[10px] transition cursor-pointer"
+                      className="px-2 py-0.5 rounded bg-amber-200 hover:bg-amber-300 text-amber-950 font-bold text-[10px] transition cursor-pointer disabled:opacity-40"
                     >
                       {copiedBankField === 'content' ? '✓ Đã chép' : 'Sao chép'}
                     </button>
@@ -1052,12 +1312,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <strong className="text-xs font-mono text-slate-900">{bankPaymentInfo.bankAccountNumber || 'Chưa cấu hình'}</strong>
                     <button
                       type="button"
+                      disabled={isPaymentExpired}
                       onClick={() => {
                         navigator.clipboard.writeText(bankPaymentInfo.bankAccountNumber || '');
                         setCopiedBankField('account');
                         setTimeout(() => setCopiedBankField(null), 2000);
                       }}
-                      className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition cursor-pointer"
+                      className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition cursor-pointer disabled:opacity-40"
                     >
                       {copiedBankField === 'account' ? '✓ Đã chép' : 'Sao chép'}
                     </button>
@@ -1071,51 +1332,107 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             </div>
 
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl text-[11px] text-blue-900 space-y-1">
-              <div className="font-bold flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-blue-600" />
-                <span>Cơ chế bảo vệ Escrow:</span>
+            {/* Escrow Freeze Funds Messaging */}
+            <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-2xl text-[11px] text-blue-950 space-y-1.5">
+              <div className="font-extrabold flex items-center gap-1.5 text-blue-900">
+                <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>Cơ Chế Ký Quỹ Đóng Băng Tiền (Escrow Protection):</span>
               </div>
               <p className="text-slate-600 leading-snug">
-                Sau khi chuyển khoản, cổng SePay sẽ tự động đối soát trong vòng 5 - 30 giây. Tiền được phong tỏa an toàn tại quỹ Escrow và người bán sẽ tiến hành chuẩn bị hàng giao cho bạn.
+                Khoản tiền này sẽ được cổng SePay đối soát và <strong>đóng băng an toàn tại Quỹ Ký Quỹ Escrow</strong> của SecondLife. Người bán <strong>hoàn toàn CHƯA nhận được tiền</strong> cho đến khi bạn nhận được hàng, kiểm tra 48h và bấm xác nhận hài lòng.
               </p>
+              <div className="flex items-center gap-2 pt-1 text-[10px] font-bold text-emerald-700">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping shrink-0" />
+                <span>Hệ thống đang tự động đối soát theo thời gian thực (mỗi 3 giây)...</span>
+              </div>
             </div>
 
-            <div className="pt-2 flex items-center justify-between gap-3">
+            {/* Thông báo kết quả kiểm tra thanh toán nếu có */}
+            {bankCheckMessage && (
+              <div className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 ${
+                bankCheckMessage.type === 'error'
+                  ? 'bg-rose-50 border-rose-200 text-rose-800'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              }`}>
+                {bankCheckMessage.type === 'error' ? (
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                )}
+                <span>{bankCheckMessage.text}</span>
+              </div>
+            )}
+
+            {/* Buttons */}
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
               <button
                 type="button"
-                onClick={async () => {
-                  setCheckingBankPayment(true);
-                  try {
-                    const freshPayment = await orderService.getOrderPayment(createdOrder.id);
-                    setBankPaymentInfo(freshPayment);
-                    if (freshPayment.status === 'PAID' || freshPayment.remainingAmount === 0 || freshPayment.orderStatus === 'PROCESSING') {
-                      onOrderPlaced(createdOrder);
-                      onClose();
-                    }
-                  } catch (e) {
-                    console.warn('Check payment failed:', e);
-                  } finally {
-                    setCheckingBankPayment(false);
-                  }
-                }}
-                disabled={checkingBankPayment}
-                className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer flex items-center gap-1.5"
+                onClick={handleCloseUnpaidModal}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-rose-300 text-rose-700 hover:bg-rose-50 font-bold text-xs cursor-pointer flex items-center justify-center gap-1.5 transition"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${checkingBankPayment ? 'animate-spin' : ''}`} />
-                <span>{checkingBankPayment ? 'Đang kiểm tra...' : 'Kiểm tra trạng thái'}</span>
+                <X className="w-4 h-4" />
+                <span>{lang === 'vi' ? 'Hủy & Quay Lại Trang Mua Hàng' : 'Cancel & Return to Product'}</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  onOrderPlaced(createdOrder);
-                  onClose();
-                }}
-                className="px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#dc4729] text-white font-black text-xs cursor-pointer shadow-md transition"
-              >
-                Tôi Đã Chuyển Khoản • Xem Đơn Hàng
-              </button>
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                {isPaymentSuccess ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (createdOrder) onOrderPlaced(createdOrder);
+                      onClose();
+                    }}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs cursor-pointer shadow-md transition flex items-center justify-center gap-1.5"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{lang === 'vi' ? 'Xem Đơn Hàng Ngay' : 'View Order Now'}</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setCheckingBankPayment(true);
+                      setBankCheckMessage(null);
+                      try {
+                        const freshPayment = await orderService.getOrderPayment(createdOrder.id);
+                        setBankPaymentInfo(freshPayment);
+                        const isPaid = freshPayment.status === 'PAID' || freshPayment.remainingAmount === 0 || freshPayment.orderStatus === 'PROCESSING';
+                        if (isPaid) {
+                          const paidOrder: EscrowOrder = {
+                            ...createdOrder,
+                            escrowStatus: 'HELD_IN_ESCROW',
+                            backendStatus: 'PROCESSING',
+                          };
+                          handlePaymentSuccess(paidOrder);
+                        } else {
+                          setBankCheckMessage({
+                            type: 'error',
+                            text: lang === 'vi'
+                              ? 'Chưa nhận được thanh toán đối soát từ ngân hàng. Nếu bạn vừa chuyển khoản, vui lòng đợi 5-10 giây để hệ thống SePay tự động ghi nhận.'
+                              : 'Payment not detected yet. If you just transferred, please wait a few seconds.',
+                          });
+                        }
+                      } catch (e) {
+                        setBankCheckMessage({
+                          type: 'error',
+                          text: lang === 'vi' ? 'Không thể kết nối đến máy chủ đối soát. Vui lòng thử lại.' : 'Could not check payment status.',
+                        });
+                      } finally {
+                        setCheckingBankPayment(false);
+                      }
+                    }}
+                    disabled={checkingBankPayment || isPaymentExpired}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#dc4729] text-white font-black text-xs cursor-pointer shadow-md transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${checkingBankPayment ? 'animate-spin' : ''}`} />
+                    <span>
+                      {checkingBankPayment
+                        ? (lang === 'vi' ? 'Đang kiểm tra đối soát...' : 'Checking...')
+                        : (lang === 'vi' ? 'Tôi Đã Chuyển Khoản • Kiểm Tra Ngay' : 'I Have Transferred • Check Now')}
+                    </span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

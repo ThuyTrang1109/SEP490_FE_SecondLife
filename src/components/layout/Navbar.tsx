@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Phone, Coins, FileCheck, Wallet, Wrench, Bell, Store } from 'lucide-react';
+import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Phone, Coins, FileCheck, Wallet, Wrench, Bell, Store, Scale } from 'lucide-react';
 import { UserRole, Language, UserCredit } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import logoImg from '../../assets/logo.png';
@@ -224,6 +224,21 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
 
+              {currentUser && !['admin', 'inspector'].includes(currentRole) && (
+                <button
+                  onClick={() => onTabChange('disputes')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${
+                    activeTab === 'disputes'
+                      ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                  title={lang === 'vi' ? 'Khiếu nại & Trọng tài Escrow' : 'Disputes & Escrow Arbitration'}
+                >
+                  <Scale className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? 'Khiếu Nại' : 'Disputes'}</span>
+                </button>
+              )}
+
               {/* Staff Workspace - Placed at the end of navigation */}
               {currentUser && (currentRole === 'staff' || currentUser.role === 'staff') && (
                 <button
@@ -301,7 +316,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={() => {
                 if (!currentUser) {
                   onTabChange('create-listing');
-                } else if (currentRole !== 'seller' && currentRole !== 'staff') {
+                } else if (currentRole !== 'seller' && currentUser.role !== 'seller' && currentRole !== 'staff') {
                   if (onOpenSellerRegister) {
                     onOpenSellerRegister();
                   } else {
@@ -313,15 +328,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               }}
               className="hidden sm:inline-flex items-center gap-1.5 bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 text-white px-4 py-2 rounded-xl font-black text-xs shadow-md hover:shadow-lg transition cursor-pointer"
             >
-              {currentUser && currentRole !== 'seller' && currentRole !== 'staff' ? (
+              {currentUser && currentRole !== 'seller' && currentUser.role !== 'seller' && currentRole !== 'staff' ? (
                 <>
                   <Store className="w-3.5 h-3.5" />
-                  <span>{lang === 'vi' ? 'Đăng Ký Người Bán Để Đăng Bài' : 'Register Seller to Post'}</span>
+                  <span>{lang === 'vi' ? 'Đăng Ký Người Bán' : 'Register as Seller'}</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-3.5 h-3.5 fill-white" />
-                  <span>{lang === 'vi' ? 'Đăng Bán AI' : 'Post Listing'}</span>
+                  <span>{lang === 'vi' ? 'Đăng Bán' : 'Post Listing'}</span>
                 </>
               )}
             </button>
@@ -466,6 +481,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <Bell className="w-3.5 h-3.5" />
                 <span>{lang === 'vi' ? 'Thông báo' : 'Alerts'}</span>
+              </button>
+            )}
+            {currentUser && !['admin', 'inspector'].includes(currentRole) && (
+              <button
+                onClick={() => onTabChange('disputes')}
+                className={`flex items-center gap-1 py-1 px-2 rounded-md relative ${activeTab === 'disputes' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'}`}
+              >
+                <Scale className="w-3.5 h-3.5" />
+                <span>{lang === 'vi' ? 'Khiếu nại' : 'Disputes'}</span>
               </button>
             )}
             {currentUser && (currentRole === 'staff' || currentUser.role === 'staff') && (

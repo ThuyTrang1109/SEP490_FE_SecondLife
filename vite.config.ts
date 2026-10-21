@@ -35,6 +35,7 @@ export default defineConfig(() => {
             'vendor-react': ['react', 'react-dom'],
             'vendor-icons': ['lucide-react'],
             'vendor-ws': ['@stomp/stompjs', 'sockjs-client'],
+            'vendor-three': ['three'],
           },
         },
       },

@@ -54,20 +54,42 @@ export interface UserReportResponseDto {
   resolvedAt?: string | null;
 }
 
+function generateReportUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try {
+      return crypto.randomUUID();
+    } catch {}
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export const userReportService = {
   /**
    * Tạo khiếu nại đối với bài đăng hoặc đơn hàng
    * POST /api/v1/reports
    */
   async createReport(data: CreateReportRequestDto): Promise<UserReportResponseDto> {
-    const payload = {
-      requestId: data.requestId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `req-${Date.now()}`),
-      postId: data.postId || null,
-      orderId: data.orderId || null,
+    const payload: any = {
+      requestId: data.requestId || generateReportUuid(),
       reasonCode: data.reasonCode,
       description: data.description.trim(),
       evidenceUrls: Array.isArray(data.evidenceUrls) ? data.evidenceUrls : [],
     };
+
+    if (data.orderId) {
+      payload.orderId = data.orderId;
+      payload.postId = null;
+    } else if (data.postId) {
+      payload.postId = data.postId;
+      payload.orderId = null;
+    } else {
+      payload.orderId = null;
+      payload.postId = null;
+    }
 
     const res = await request<UserReportResponseDto>('/v1/reports', {
       method: 'POST',
@@ -151,7 +173,7 @@ export const userReportService = {
    */
   async reportListing(postId: string, data: CreateListingReportRequestDto): Promise<UserReportResponseDto> {
     const payload = {
-      requestId: data.requestId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `req-${Date.now()}`),
+      requestId: data.requestId || generateReportUuid(),
       reasonCode: data.reasonCode,
       description: data.description.trim(),
       evidenceUrls: Array.isArray(data.evidenceUrls) ? data.evidenceUrls : [],

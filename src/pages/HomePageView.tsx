@@ -155,12 +155,12 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
                 {currentUser && currentUser.role !== 'seller' && currentUser.role !== 'staff' ? (
                   <>
                     <Store className="w-4 h-4 text-[#c34c36]" />
-                    <span>{lang === 'vi' ? 'Đăng Ký Người Bán Để Đăng Bài' : 'Register Seller to Post'}</span>
+                    <span>{lang === 'vi' ? 'Đăng Ký Người Bán' : 'Register as Seller'}</span>
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4 text-[#c34c36]" />
-                    <span>{lang === 'vi' ? 'Thử Định Giá & Đăng Bán' : 'AI Valuation & Sell'}</span>
+                    <span>{lang === 'vi' ? 'Đăng Bán' : 'Post Listing'}</span>
                   </>
                 )}
               </button>

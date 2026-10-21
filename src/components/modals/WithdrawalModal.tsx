@@ -35,11 +35,29 @@ const SUPPORTED_BANKS = [
   { code: 'VCB', name: 'Vietcombank (Ngoại Thương Việt Nam)' },
   { code: 'MB', name: 'MBBank (Quân Đội)' },
   { code: 'TCB', name: 'Techcombank (Kỹ Thương)' },
-  { code: 'VPB', name: 'VPBank (Việt Nam Thịnh Vượng)' },
-  { code: 'ACB', name: 'ACB (Á Châu)' },
-  { code: 'BIDV', name: 'BIDV (Đầu Tư và Phát Triển)' },
   { code: 'CTG', name: 'VietinBank (Công Thương Việt Nam)' },
+  { code: 'BIDV', name: 'BIDV (Đầu Tư và Phát Triển)' },
+  { code: 'ACB', name: 'ACB (Á Châu)' },
+  { code: 'VPB', name: 'VPBank (Việt Nam Thịnh Vượng)' },
   { code: 'TPB', name: 'TPBank (Tiên Phong)' },
+  { code: 'STB', name: 'Sacombank (Sài Gòn Thương Tín)' },
+  { code: 'HDB', name: 'HDBank (Phát Triển TP.HCM)' },
+  { code: 'VIB', name: 'VIB (Quốc Tế Việt Nam)' },
+  { code: 'SHB', name: 'SHB (Sài Gòn - Hà Nội)' },
+  { code: 'VBA', name: 'Agribank (Nông Nghiệp & PTNT)' },
+  { code: 'MSB', name: 'MSB (Hàng Hải)' },
+  { code: 'OCB', name: 'OCB (Phương Đông)' },
+  { code: 'SSB', name: 'SeABank (Đông Nam Á)' },
+  { code: 'LPB', name: 'LPBank (Lộc Phát)' },
+  { code: 'EIB', name: 'Eximbank (Xuất Nhập Khẩu)' },
+  { code: 'BAB', name: 'Bac A Bank (Bắc Á)' },
+  { code: 'NAB', name: 'Nam A Bank (Nam Á)' },
+  { code: 'PVC', name: 'PVcomBank (Đại Chúng)' },
+  { code: 'KLB', name: 'KienlongBank (Kiên Long)' },
+  { code: 'BVB', name: 'BaoViet Bank (Bảo Việt)' },
+  { code: 'SGB', name: 'Saigonbank (Sài Gòn Công Thương)' },
+  { code: 'SHINHAN', name: 'Shinhan Bank Việt Nam' },
+  { code: 'WOORI', name: 'Woori Bank Việt Nam' },
 ];
 
 export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
@@ -71,9 +89,16 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
   // Match initial bank if possible
   useEffect(() => {
     if (initialBankName) {
+      const cleanInit = initialBankName.toLowerCase().replace(/\s+/g, '');
       const match = SUPPORTED_BANKS.find(
-        (b) => initialBankName.toLowerCase().includes(b.code.toLowerCase()) ||
-               initialBankName.toLowerCase().includes(b.name.toLowerCase())
+        (b) => {
+          const cleanCode = b.code.toLowerCase();
+          const cleanName = b.name.toLowerCase().replace(/\s+/g, '');
+          return cleanInit.includes(cleanCode) ||
+                 cleanInit.includes(cleanName) ||
+                 cleanName.includes(cleanInit) ||
+                 cleanInit === cleanCode;
+        }
       );
       if (match) setBankCode(match.code);
     }

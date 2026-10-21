@@ -374,43 +374,6 @@ export const InboxView: React.FC<InboxViewProps> = ({
                 : 'Track direct conversations and buyer price negotiations.'}
             </p>
           </div>
-
-          {/* Tab Switcher: Chats vs Negotiations */}
-          <div className="flex items-center bg-slate-200/70 p-1 rounded-2xl shrink-0 self-start sm:self-center">
-            <button
-              onClick={() => setActiveTab('chats')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
-                activeTab === 'chats'
-                  ? 'bg-white text-[#24263e] shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span>{lang === 'vi' ? 'Cuộc trò chuyện' : 'Conversations'}</span>
-              {rooms.length > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-slate-100 text-[10px] text-slate-700">
-                  {rooms.length}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('negotiations')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
-                activeTab === 'negotiations'
-                  ? 'bg-white text-[#c34c36] shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Tag className="w-4 h-4" />
-              <span>{lang === 'vi' ? 'Đàm phán giá' : 'Negotiations'}</span>
-              {pendingSellerCount + pendingBuyerCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-[#c34c36] text-white text-[10px] font-black">
-                  {pendingSellerCount + pendingBuyerCount}
-                </span>
-              )}
-            </button>
-          </div>
         </div>
 
         {/* TAB 1: CHATS LIST */}

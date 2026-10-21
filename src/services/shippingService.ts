@@ -381,7 +381,7 @@ export function resolveProvinceFromText(
 
 export const shippingService = {
   /**
-   * Lấy danh sách Tỉnh/Thành phố từ BE (GHN catalogue)
+   * Lấy danh sách Tỉnh/Thành phố từ BE (Lalamove catalogue)
    * GET /api/v1/shipping/provinces
    */
   async getProvinces(): Promise<GhnLocation[]> {
@@ -622,7 +622,7 @@ export const shippingService = {
   },
 
   /**
-   * Lấy dòng thời gian các sự kiện vận chuyển từ GHN
+   * Lấy dòng thời gian các sự kiện vận chuyển từ Lalamove
    * GET /api/v1/shipments/{shipmentId}/events
    */
   async getShipmentEvents(shipmentId: string): Promise<ShipmentEventBackend[]> {
@@ -660,7 +660,7 @@ export const shippingService = {
   },
 
   /**
-   * Hủy vận đơn GHN trước khi bưu tá lấy hàng
+   * Hủy vận đơn Lalamove trước khi tài xế lấy hàng
    * POST /api/v1/shipments/{shipmentId}/cancel
    */
   async cancelShipment(shipmentId: string): Promise<ShipmentBackend> {

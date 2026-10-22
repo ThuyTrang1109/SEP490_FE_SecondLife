@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { EscrowOrder, Language, ShipmentBackend, ShipmentEventBackend, LalamoveTrackingResponse } from '../../types';
 import { formatVND } from '../../utils/translations';
 import {
@@ -24,11 +24,77 @@ import {
   Sparkles,
   ShieldCheck,
   CreditCard,
-  Loader2
+  Loader2,
+  Info
 } from 'lucide-react';
 import { shippingService } from '../../services/shippingService';
 import { orderService } from '../../services/orderService';
 import { dialogService } from '../../utils/dialogService';
+
+interface GroupedShipmentEvent {
+  key: string;
+  status: string;
+  type: string;
+  title: string;
+  description: string;
+  badgeClass: string;
+  firstOccurredAt: string;
+  lastOccurredAt: string;
+  count: number;
+  reason?: string | null;
+  isLatest: boolean;
+}
+
+const getLalamoveStatusDetails = (status: string | null | undefined, type?: string) => {
+  const s = (status || type || '').toUpperCase();
+  if (s === 'ASSIGNING_DRIVER') {
+    return {
+      title: 'Đang tìm kiếm tài xế Lalamove',
+      description: 'Hệ thống đang phát chuyến và kết nối tài xế khu vực gần điểm lấy kiện hàng.',
+      badgeClass: 'bg-amber-100 text-amber-800 border-amber-300',
+    };
+  }
+  if (s === 'ON_GOING') {
+    return {
+      title: 'Tài xế đã nhận chuyến & đang di chuyển',
+      description: 'Tài xế đối tác Lalamove đã nhận đơn và đang trên đường đến điểm lấy kiện hàng từ người gửi.',
+      badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+    };
+  }
+  if (s === 'PICKED_UP' || s === 'PICKED' || s === 'SHIPPED') {
+    return {
+      title: 'Tài xế đã lấy kiện hàng',
+      description: 'Tài xế đã nhận kiện hàng từ người gửi và đang trên lộ trình di chuyển tới người nhận.',
+      badgeClass: 'bg-blue-100 text-blue-800 border-blue-300',
+    };
+  }
+  if (s === 'COMPLETED' || s === 'DELIVERED') {
+    return {
+      title: 'Đã giao hàng thành công',
+      description: 'Kiện hàng đã được bàn giao tận tay người nhận thành công.',
+      badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+    };
+  }
+  if (s.includes('CANCEL')) {
+    return {
+      title: 'Vận đơn đã bị hủy',
+      description: 'Vận đơn giao hàng qua đối tác Lalamove đã được hủy.',
+      badgeClass: 'bg-rose-100 text-rose-800 border-rose-300',
+    };
+  }
+  if (s.includes('REJECT') || s.includes('EXPIRE')) {
+    return {
+      title: 'Hết hạn tìm tài xế / Bị từ chối',
+      description: 'Không tìm thấy tài xế khả dụng nhận chuyến hoặc đơn đã hết thời gian chờ tiếp nhận.',
+      badgeClass: 'bg-rose-100 text-rose-800 border-rose-300',
+    };
+  }
+  return {
+    title: s ? `Trạng thái: ${s}` : 'Cập nhật hành trình',
+    description: 'Hệ thống ghi nhận sự kiện cập nhật từ đối tác vận chuyển Lalamove.',
+    badgeClass: 'bg-slate-100 text-slate-800 border-slate-300',
+  };
+};
 
 interface OrderTrackingModalProps {
   order: EscrowOrder;
@@ -215,8 +281,9 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
         const isTerminal = ['COMPLETED', 'DELIVERED', 'CANCELLED', 'FAILED'].includes(currentShipment.status) ||
           ['COMPLETED', 'CANCELED', 'EXPIRED', 'REJECTED'].includes(currentShipment.providerStatus || '');
 
-        // Tự động gọi sync để kéo trạng thái mới nhất từ Lalamove (đặc biệt cần thiết khi thử nghiệm trên Sandbox hoặc khi chưa nối webhook public)
-        if (!isTerminal && currentShipment.orderCode) {
+        // Chỉ đồng bộ tự động khi tải chủ động (mở modal lần đầu hoặc người dùng bấm làm mới)
+        // Tuyệt đối không gọi sync trong background polling để tránh Backend lưu sự kiện RECONCILIATION trùng lặp liên tục mỗi 12 giây
+        if (!isBackground && !isTerminal && currentShipment.orderCode) {
           try {
             const synced = await shippingService.syncShipment(targetId);
             if (synced) {
@@ -224,7 +291,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
               setShipments(shipList);
             }
           } catch (syncErr) {
-            console.debug('Background auto-sync shipment ignored:', syncErr);
+            console.debug('Initial sync shipment ignored:', syncErr);
           }
         }
 
@@ -714,6 +781,63 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   const lat = coordinates ? Number(coordinates.lat) : NaN;
   const lng = coordinates ? Number(coordinates.lng) : NaN;
   const hasValidCoords = isLocationAvailable && Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0);
+
+  // Gộp các sự kiện liên tiếp có cùng trạng thái (do hệ thống ghi nhận mỗi lần đồng bộ)
+  // và hiển thị sự kiện MỚI NHẤT ở trên cùng
+  const groupedEvents: GroupedShipmentEvent[] = useMemo(() => {
+    if (!events || events.length === 0) return [];
+
+    // Sắp xếp tăng dần theo thời gian xảy ra (Ascending) để phân tích chuỗi tiến trình
+    const sorted = [...events].sort(
+      (a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime()
+    );
+
+    const groups: {
+      key: string;
+      status: string;
+      type: string;
+      firstOccurredAt: string;
+      lastOccurredAt: string;
+      count: number;
+      reason?: string | null;
+    }[] = [];
+
+    for (const ev of sorted) {
+      const currentStatus = (ev.status || ev.type || 'UNKNOWN').toUpperCase();
+      const lastGroup = groups[groups.length - 1];
+
+      if (lastGroup && lastGroup.status === currentStatus) {
+        lastGroup.count += 1;
+        lastGroup.lastOccurredAt = ev.occurredAt;
+        if (ev.reason && !lastGroup.reason) {
+          lastGroup.reason = ev.reason;
+        }
+      } else {
+        groups.push({
+          key: ev.id || `${currentStatus}-${ev.occurredAt}`,
+          status: currentStatus,
+          type: ev.type,
+          firstOccurredAt: ev.occurredAt,
+          lastOccurredAt: ev.occurredAt,
+          count: 1,
+          reason: ev.reason,
+        });
+      }
+    }
+
+    // Đảo ngược thứ tự để mốc mới nhất (trạng thái hiện tại) nằm ở TRÊN CÙNG
+    const reversed = groups.reverse();
+    return reversed.map((grp, index) => {
+      const details = getLalamoveStatusDetails(grp.status, grp.type);
+      return {
+        ...grp,
+        title: details.title,
+        description: details.description,
+        badgeClass: details.badgeClass,
+        isLatest: index === 0,
+      };
+    });
+  }, [events]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto">
@@ -1342,31 +1466,86 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                 <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
                   <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                     <Clock className="w-4 h-4 text-orange-600" />
-                    <span>Lịch sử sự kiện Lalamove ({events.length})</span>
+                    <span>Lịch sử sự kiện Lalamove ({groupedEvents.length} mốc tiến trình{events.length > groupedEvents.length ? ` • ${events.length} lần cập nhật` : ''})</span>
                   </h4>
                   <span className="text-[11px] text-slate-400">Thời gian thực</span>
                 </div>
 
-                {events.length === 0 ? (
+                {/* Banner giải thích trực quan khi đơn đang ở trạng thái ON_GOING */}
+                {effectiveProviderStatus === 'ON_GOING' && (
+                  <div className="p-3.5 bg-indigo-50/90 border border-indigo-200 rounded-2xl flex items-start gap-2.5 text-xs text-indigo-900 animate-fadeIn">
+                    <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-bold">Tài xế đã nhận đơn & đang di chuyển tới lấy hàng (ON_GOING)</p>
+                      <p className="text-indigo-800 text-[11px] leading-relaxed">
+                        Tiến trình tiếp theo <strong>&quot;Đã lấy kiện&quot;</strong> sẽ tự động cập nhật khi tài xế đến lấy hàng và xác nhận trên ứng dụng. 
+                        Bạn có thể nhấn nút <strong>&quot;Đồng bộ từ Lalamove&quot;</strong> bên dưới để làm mới dữ liệu bất kỳ lúc nào.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {groupedEvents.length === 0 ? (
                   <div className="py-6 text-center text-slate-400 text-xs italic">
                     Chưa có nhật ký sự kiện ghi nhận từ Lalamove. Hệ thống sẽ cập nhật khi tài xế nhận đơn và bắt đầu giao.
                   </div>
                 ) : (
                   <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-                    {events.map((ev, index) => (
-                      <div key={ev.id || index} className="relative flex items-start gap-3 group">
-                        <div className="absolute -left-6 top-1 w-3.5 h-3.5 rounded-full bg-white border-2 border-orange-600 group-first:bg-orange-600" />
-                        <div className="flex-1 bg-[#faf8f5] p-3 rounded-2xl border border-gray-200 space-y-1">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-extrabold text-slate-900 uppercase">
-                              {ev.status || ev.type || 'CẬP NHẬT TRẠNG THÁI'}
-                            </span>
+                    {groupedEvents.map((ev) => (
+                      <div key={ev.key} className="relative flex items-start gap-3">
+                        {/* Dot indicator: Newest event is active pulsing */}
+                        {ev.isLatest ? (
+                          <div className="absolute -left-6 top-1.5 w-4 h-4 rounded-full bg-orange-600 ring-4 ring-orange-100 flex items-center justify-center animate-pulse">
+                            <div className="w-1.5 h-1.5 bg-white rounded-full" />
+                          </div>
+                        ) : (
+                          <div className="absolute -left-5.5 top-2 w-3 h-3 rounded-full bg-slate-300 border-2 border-white" />
+                        )}
+
+                        <div
+                          className={`flex-1 p-3.5 rounded-2xl border transition-all ${
+                            ev.isLatest
+                              ? 'bg-gradient-to-r from-orange-50/70 via-amber-50/40 to-white border-orange-200 shadow-2xs'
+                              : 'bg-[#faf8f5] border-gray-200'
+                          } space-y-1.5`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded-md text-[11px] font-extrabold border ${ev.badgeClass}`}>
+                                {ev.title}
+                              </span>
+                              {ev.isLatest && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-orange-600 text-white animate-pulse">
+                                  Hiện tại
+                                </span>
+                              )}
+                            </div>
+
                             <span className="text-slate-500 font-mono text-[10px]">
-                              {new Date(ev.occurredAt).toLocaleString('vi-VN')}
+                              {ev.count > 1 && ev.firstOccurredAt !== ev.lastOccurredAt ? (
+                                <span>
+                                  Bắt đầu: {new Date(ev.firstOccurredAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} • Lần cuối: {new Date(ev.lastOccurredAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </span>
+                              ) : (
+                                <span>{new Date(ev.firstOccurredAt).toLocaleString('vi-VN')}</span>
+                              )}
                             </span>
                           </div>
+
+                          <p className="text-slate-700 text-xs leading-relaxed">
+                            {ev.description}
+                          </p>
+
                           {ev.reason && (
-                            <p className="text-slate-600 text-xs">{ev.reason}</p>
+                            <p className="text-slate-500 text-[11px] italic bg-white/70 p-2 rounded-xl border border-slate-200/60 mt-1">
+                              {ev.reason}
+                            </p>
+                          )}
+
+                          {ev.count > 1 && (
+                            <div className="text-[10px] text-slate-400 font-medium pt-0.5 flex items-center gap-1">
+                              <span>ℹ️ Đã đồng bộ tín hiệu {ev.count} lần từ hệ thống đối tác Lalamove</span>
+                            </div>
                           )}
                         </div>
                       </div>

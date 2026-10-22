@@ -2,7 +2,7 @@ import React, { useState, lazy, Suspense, useRef, useCallback, useEffect } from 
 import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit, ItemCategory, ConditionGrade } from './types';
 import { formatVND } from './utils/translations';
 import { extractWardAndCity, getSavedSellerAddress, saveSellerAddress, cleanFullAddress, formatCombinedAddress } from './utils/addressUtils';
-import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable } from './utils/orderUtils';
+import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, isOrderCancelledOrRefunded } from './utils/orderUtils';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 import { HomePageView } from './pages/HomePageView';
@@ -303,7 +303,7 @@ export default function App() {
 
       // Xóa toàn bộ thông tin bài đăng nháp và cache đơn hàng dở dang của tài khoản để tránh rò rỉ sang tài khoản khác
       try {
-        localStorage.removeItem('recent_placed_orders');
+        // Giữ lại center_inspection_orders cho trung tâm kiểm định, chỉ dọn cache bài nháp
         localStorage.removeItem('all_seller_posts_cache');
         for (let i = localStorage.length - 1; i >= 0; i--) {
           const key = localStorage.key(i);
@@ -341,41 +341,47 @@ export default function App() {
       activeRole === 'admin'
     );
 
-    // 1. Check recent_placed_orders for the current user
+    // 1. Check recent_placed_orders and center_inspection_orders for the current user
     try {
       const activeUserName = (targetUser?.name || currentUser?.name || '').trim().toLowerCase();
       const activeUserEmail = (targetUser?.email || currentUser?.email || '').trim().toLowerCase();
       const raw = localStorage.getItem('recent_placed_orders');
-      if (raw) {
-        const list = JSON.parse(raw);
-        if (Array.isArray(list)) {
-          list.forEach((o) => {
-            if (o?.id && !seenIds.has(o.id)) {
-              const isBuyer = Boolean(o.buyerId && String(o.buyerId) === String(activeUserId));
-              const isSeller = Boolean(
-                (o.sellerId && String(o.sellerId) === String(activeUserId)) ||
-                (o.listing?.sellerId && String(o.listing.sellerId) === String(activeUserId)) ||
-                (activeUserName && o.sellerName && o.sellerName.trim().toLowerCase() === activeUserName) ||
-                (activeUserName && o.listing?.sellerName && o.listing.sellerName.trim().toLowerCase() === activeUserName) ||
-                (activeUserEmail && o.sellerEmail && o.sellerEmail.trim().toLowerCase() === activeUserEmail)
-              );
-              const isInspectionOrder = Boolean(
-                o.hasInspectionService ||
-                o.inspectionMethod ||
-                (o.inspectionFeeVnd && o.inspectionFeeVnd > 0) ||
-                o.escrowStatus === 'AWAITING_INSPECTION' ||
-                o.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
-                o.escrowStatus === 'INSPECTION_PASSED' ||
-                o.status === 'CONFIRMED_PENDING_DISPATCH' ||
-                o.status === 'WAITING_INSPECTION'
-              );
-              if (isBuyer || isSeller || (isInspectionRole && isInspectionOrder)) {
-                seenIds.add(o.id);
-                result.push(o);
-              }
+      const rawCenter = localStorage.getItem('center_inspection_orders');
+      const listRecent = raw ? JSON.parse(raw) : [];
+      const listCenter = rawCenter ? JSON.parse(rawCenter) : [];
+      const combined = [
+        ...(Array.isArray(listCenter) ? listCenter : []),
+        ...(Array.isArray(listRecent) ? listRecent : [])
+      ];
+
+      if (Array.isArray(combined)) {
+        combined.forEach((o) => {
+          if (o?.id && !seenIds.has(o.id)) {
+            const isBuyer = Boolean(o.buyerId && String(o.buyerId) === String(activeUserId));
+            const isSeller = Boolean(
+              (o.sellerId && String(o.sellerId) === String(activeUserId)) ||
+              (o.listing?.sellerId && String(o.listing.sellerId) === String(activeUserId)) ||
+              (activeUserName && o.sellerName && o.sellerName.trim().toLowerCase() === activeUserName) ||
+              (activeUserName && o.listing?.sellerName && o.listing.sellerName.trim().toLowerCase() === activeUserName) ||
+              (activeUserEmail && o.sellerEmail && o.sellerEmail.trim().toLowerCase() === activeUserEmail)
+            );
+            const isInspectionOrder = Boolean(
+              o.hasInspectionService ||
+              o.inspectionMethod ||
+              (o.inspectionFeeVnd && o.inspectionFeeVnd > 0) ||
+              o.escrowStatus === 'AWAITING_INSPECTION' ||
+              o.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
+              o.escrowStatus === 'INSPECTION_PASSED' ||
+              o.status === 'CONFIRMED_PENDING_DISPATCH' ||
+              o.status === 'WAITING_INSPECTION' ||
+              o.backendStatus === 'CONFIRMED_PENDING_DISPATCH'
+            );
+            if (isBuyer || isSeller || (isInspectionRole && isInspectionOrder)) {
+              seenIds.add(o.id);
+              result.push(o);
             }
-          });
-        }
+          }
+        });
       }
     } catch {}
 
@@ -973,10 +979,11 @@ export default function App() {
       requiresInspection: price > 5000000,
       photos: {
         front: photoList[0] || defaultImg,
-        back: photoList[1] || photoList[0] || defaultImg,
-        screenOrDetails: photoList[2] || photoList[0] || defaultImg,
-        accessoriesOrBox: photoList[3] || photoList[0] || defaultImg,
-        serialOrReceipt: photoList[4] || photoList[0] || defaultImg,
+        back: photoList[1] || '',
+        screenOrDetails: photoList[2] || '',
+        accessoriesOrBox: photoList[3] || '',
+        serialOrReceipt: photoList[4] || '',
+        extraDetail: photoList[5] || '',
       },
       photoGallery: photoList,
       aiPriceEstimation: post.aiSuggestedPrice && post.aiSuggestedPrice > 0 ? {
@@ -1223,6 +1230,23 @@ export default function App() {
       const rawInspSellerItems = (inspSellerRes as any)?.data?.items || (inspSellerRes as any)?.items || (inspSellerRes as any)?.content || (Array.isArray(inspSellerRes) ? inspSellerRes : []);
       const rawInspCenterItems = (inspCenterRes as any)?.data?.items || (inspCenterRes as any)?.items || (inspCenterRes as any)?.content || (Array.isArray(inspCenterRes) ? inspCenterRes : []);
 
+      // Collect cancelled post IDs from buyer and seller orders
+      const cancelledPostIds = new Set<string>();
+      rawBuyerItems.forEach((item: any) => {
+        const isCancelled = item?.status === 'CANCELLED' || item?.escrowStatus === 'REFUNDED' || item?.escrowStatus === 'REFUNDED_TO_BUYER';
+        if (isCancelled) {
+          const pid = String(item.postId || item.post?.id || item.post?.postId || '');
+          if (pid) cancelledPostIds.add(pid);
+        }
+      });
+      rawSellerItems.forEach((item: any) => {
+        const isCancelled = item?.status === 'CANCELLED' || item?.escrowStatus === 'REFUNDED' || item?.escrowStatus === 'REFUNDED_TO_BUYER';
+        if (isCancelled) {
+          const pid = String(item.postId || item.post?.id || item.post?.postId || '');
+          if (pid) cancelledPostIds.add(pid);
+        }
+      });
+
       // Deduplicate by order id
       const orderMap = new Map<string, any>();
       rawBuyerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: false }); });
@@ -1317,8 +1341,19 @@ export default function App() {
           const inspFee = Number(bOrd.buyerFeeShare || bOrd.inspectionFee || 0);
           const isInspectionOrder = Boolean(bOrd.__isInspection || bOrd.hasInspectionService || inspFee > 0);
 
+          const isCancelledOrRefund =
+            bOrd.escrowStatus === 'REFUNDED' ||
+            bOrd.escrowStatus === 'REFUNDED_TO_BUYER' ||
+            bOrd.status === 'CANCELLED' ||
+            bOrd.status === 'FAILED' ||
+            bOrd.status === 'PAYMENT_EXPIRED' ||
+            bOrd.status === 'REJECTED' ||
+            (bOrd.postId && cancelledPostIds.has(String(bOrd.postId)));
+
           let mappedEscrowStatus: EscrowOrder['escrowStatus'] = 'AWAITING_PAYMENT';
-          if (isInspectionOrder) {
+          if (isCancelledOrRefund) {
+            mappedEscrowStatus = 'REFUNDED_TO_BUYER';
+          } else if (isInspectionOrder) {
             const s = String(bOrd.status || '');
             if (s === 'INSPECTING') {
               // Chỉ sau khi gửi cho trung tâm hoặc KTV đến nhà quét mã kiểm định mới sang INSPECTION_IN_PROGRESS
@@ -1341,8 +1376,6 @@ export default function App() {
           } else {
             if (bOrd.escrowStatus === 'RELEASED') {
               mappedEscrowStatus = 'COMPLETED_RELEASED';
-            } else if (bOrd.escrowStatus === 'REFUNDED' || bOrd.status === 'CANCELLED') {
-              mappedEscrowStatus = 'REFUNDED_TO_BUYER';
             } else if (bOrd.status === 'DELIVERED') {
               mappedEscrowStatus = 'DELIVERED_INSPECTION_WINDOW';
             } else if (bOrd.status === 'SHIPPED') {
@@ -1422,11 +1455,22 @@ export default function App() {
               ? (parsedAddressObj?.address || bOrd.deliveryAddress)
               : bOrd.deliveryAddress?.detailAddress
                 ? `${bOrd.deliveryAddress.detailAddress}, ${bOrd.deliveryAddress.wardName || ''}, ${bOrd.deliveryAddress.provinceName || ''}`
-                : (cachedBuyer?.buyerAddress || 'SecondLife Hub Address');
+                : (cachedBuyer?.buyerAddress || currentUser?.address || (isInspectionOrder && bOrd.orderType !== 'AT_HOME' ? 'Trạm Kiểm Định SecondLife Hub' : 'Địa chỉ nhận hàng của người mua'));
 
           const itemPrice = Number(bOrd.finalPrice || bOrd.finalItemPrice || bOrd.postPrice || 0);
           const shipFee = Number(bOrd.shippingFee || bOrd.finalShippingFee || 0);
           const totalPaid = Number(bOrd.totalPaid || (itemPrice + inspFee + shipFee));
+
+          let resolvedInspectorId = bOrd.inspectorId;
+          let resolvedInspectorName = bOrd.inspectorName;
+          try {
+            const rawAssign = localStorage.getItem(`order_assigned_inspector_${bOrd.id}`);
+            if (rawAssign) {
+              const assignData = JSON.parse(rawAssign);
+              resolvedInspectorId = assignData.inspectorId || resolvedInspectorId;
+              resolvedInspectorName = assignData.inspectorName || resolvedInspectorName;
+            }
+          } catch {}
 
           return {
             id: bOrd.id,
@@ -1445,6 +1489,8 @@ export default function App() {
             totalPaidVnd: totalPaid,
             escrowStatus: mappedEscrowStatus,
             backendStatus: bOrd.status,
+            inspectorId: resolvedInspectorId || undefined,
+            inspectorName: resolvedInspectorName || undefined,
             shippingQuoteId: bOrd.shippingQuoteId,
             shippingDeliveredAt: bOrd.shippingDeliveredAt,
             deliveryAddress: bOrd.deliveryAddress,
@@ -1457,29 +1503,118 @@ export default function App() {
             handoverDeadline: (bOrd as any).handoverDeadline || null,
             appointmentScheduledAt: bOrd.appointmentScheduledAt || bOrd.scheduledAt || null,
             appointmentNote: bOrd.appointmentNote || bOrd.note || null,
+            cancellationReasonCode: bOrd.cancellationReasonCode || (bOrd as any).cancelReasonCode || (() => {
+              try {
+                const rawCancel = localStorage.getItem(`order_cancellation_info_${bOrd.id}`);
+                if (rawCancel) return JSON.parse(rawCancel).reasonCode;
+              } catch {}
+              return null;
+            })(),
+            cancellationReason: (bOrd as any).cancellationReason || (bOrd as any).cancelReason || (() => {
+              try {
+                const rawCancel = localStorage.getItem(`order_cancellation_info_${bOrd.id}`);
+                if (rawCancel) return JSON.parse(rawCancel).reason;
+              } catch {}
+              return null;
+            })(),
+            cancelledBy: bOrd.cancelledBy || null,
             hasInspectionService: isInspectionOrder,
             inspectionMethod: isInspectionOrder
               ? (bOrd.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER')
               : undefined,
-            shippingLegs: [
-              {
-                id: 'LEG-1',
-                legType: isInspectionOrder ? 'SELLER_TO_CENTER' : 'SELLER_TO_BUYER',
-                carrier: 'Lalamove',
-                trackingNumber: (bOrd as any).shipmentOrderCode || (bOrd as any).trackingNumber || '',
-                status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : (bOrd.status === 'SHIPPED' ? 'IN_TRANSIT' : 'PENDING'),
-                origin: 'Địa chỉ kho người bán',
-                destination: buyerAddr,
-                estimatedDelivery: '1 - 2 ngày',
-                timeline: [
+            shippingLegs: (isInspectionOrder && bOrd.orderType !== 'AT_HOME')
+              ? [
                   {
-                    timestamp: bOrd.createdAt ? new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
-                    description: `Khởi tạo đơn hàng qua Escrow. Trạng thái: ${bOrd.status || 'PROCESSING'}.`,
-                    location: 'Hệ thống Vận chuyển Lalamove'
+                    id: 'LEG-1',
+                    legType: 'SELLER_TO_CENTER',
+                    carrier: 'Lalamove',
+                    trackingNumber: (bOrd as any).shipmentOrderCode || (bOrd as any).trackingNumber || '',
+                    status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : (bOrd.status === 'SHIPPED' ? 'IN_TRANSIT' : 'PENDING'),
+                    origin: matchedListing.sellerAddress || matchedListing.location || 'Địa chỉ kho người bán',
+                    destination: 'Trạm Kiểm Định SecondLife Hub Lab',
+                    estimatedDelivery: 'Trong ngày',
+                    timeline: [
+                      {
+                        timestamp: bOrd.createdAt ? new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
+                        description: 'Khởi tạo đơn hàng kiểm định Hub. Chờ bưu tá Lalamove chuyển kiện hàng về Hub.',
+                        location: 'Hệ thống SecondLife Hub'
+                      }
+                    ]
+                  },
+                  {
+                    id: 'LEG-2',
+                    legType: 'CENTER_TO_BUYER',
+                    carrier: 'Lalamove',
+                    trackingNumber: '',
+                    status: 'PENDING',
+                    origin: 'Trạm Kiểm Định SecondLife Hub Lab',
+                    destination: buyerAddr,
+                    estimatedDelivery: 'Giao nhanh trong ngày sau kiểm định',
+                    timeline: [
+                      {
+                        timestamp: '--:--',
+                        description: 'Chờ hoàn tất kiểm định tại Hub và niêm phong giao đến người mua.',
+                        location: buyerAddr
+                      }
+                    ]
                   }
                 ]
-              }
-            ],
+              : (isInspectionOrder && bOrd.orderType === 'AT_HOME')
+              ? [
+                  {
+                    id: 'LEG-1',
+                    legType: 'SELLER_TO_BUYER',
+                    carrier: 'SecondLife On-site Team',
+                    trackingNumber: '',
+                    status: 'PENDING',
+                    origin: matchedListing.sellerAddress || matchedListing.location || 'Địa chỉ kho người bán',
+                    destination: 'Kiểm định tại nhà người bán',
+                    estimatedDelivery: 'Kỹ sư đến tận nơi theo lịch hẹn',
+                    timeline: [
+                      {
+                        timestamp: bOrd.createdAt ? new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
+                        description: 'Cử chuyên viên kỹ thuật đến kiểm định on-site tại nhà người bán.',
+                        location: 'Địa chỉ kho người bán'
+                      }
+                    ]
+                  },
+                  {
+                    id: 'LEG-2',
+                    legType: 'SELLER_TO_BUYER',
+                    carrier: 'Lalamove',
+                    trackingNumber: (bOrd as any).shipmentOrderCode || (bOrd as any).trackingNumber || '',
+                    status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : (bOrd.status === 'SHIPPED' ? 'IN_TRANSIT' : 'PENDING'),
+                    origin: matchedListing.sellerAddress || matchedListing.location || 'Địa chỉ kho người bán',
+                    destination: buyerAddr,
+                    estimatedDelivery: 'Giao ngay sau khi kiểm định đạt chuẩn',
+                    timeline: [
+                      {
+                        timestamp: '--:--',
+                        description: 'Tài xế Lalamove nhận hàng tại nhà người bán và phát thẳng đến người mua sau khi niêm phong.',
+                        location: buyerAddr
+                      }
+                    ]
+                  }
+                ]
+              : [
+                  {
+                    id: 'LEG-1',
+                    legType: 'SELLER_TO_BUYER',
+                    carrier: 'Lalamove',
+                    trackingNumber: (bOrd as any).shipmentOrderCode || (bOrd as any).trackingNumber || '',
+                    status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : (bOrd.status === 'SHIPPED' ? 'IN_TRANSIT' : 'PENDING'),
+                    origin: matchedListing.sellerAddress || matchedListing.location || 'Địa chỉ kho người bán',
+                    destination: buyerAddr,
+                    estimatedDelivery: '1 - 2 ngày',
+                    timeline: [
+                      {
+                        timestamp: bOrd.createdAt ? new Date(bOrd.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
+                        description: `Khởi tạo đơn hàng giao trực tiếp. Trạng thái: ${bOrd.status || 'PROCESSING'}.`,
+                        location: 'Hệ thống Vận chuyển Lalamove'
+                      }
+                    ]
+                  }
+                ],
             createdAt: bOrd.createdAt || bOrd.createdDate || bOrd.created_at || bOrd.paidAt || bOrd.sellerConfirmedAt || bOrd.updatedAt || new Date().toISOString(),
             multiStagePhotos: {
               listingPhotos: [matchedListing.photos.front, matchedListing.photos.back]
@@ -1490,7 +1625,24 @@ export default function App() {
         // Merge with recent locally placed orders so newly placed orders are never lost
         const localRecentOrders = getLocalStoredOrders(currentUser);
         const combined = [...mappedOrders];
+
+        const cancelledListingKeys = new Set<string>();
+        const activeBackendListingKeys = new Set<string>();
+        mappedOrders.forEach((m) => {
+          const lid = String(m.listingId || m.listing?.id || '');
+          const title = (m.listing?.title || '').trim().toLowerCase();
+          if (isOrderCancelledOrRefunded(m)) {
+            if (lid) cancelledListingKeys.add(lid);
+            if (title) cancelledListingKeys.add(title);
+          } else {
+            if (lid) activeBackendListingKeys.add(lid);
+            if (title) activeBackendListingKeys.add(title);
+          }
+        });
+
         const currentUserName = currentUser?.name?.trim().toLowerCase();
+        let localStorageNeedsUpdate = false;
+
         localRecentOrders.forEach((locOrd) => {
           const isBuyer = Boolean(currentUser?.id && String(locOrd.buyerId) === String(currentUser.id));
           const isSeller = Boolean(
@@ -1510,10 +1662,51 @@ export default function App() {
             locOrd.inspectionMethod ||
             (locOrd.inspectionFeeVnd && locOrd.inspectionFeeVnd > 0)
           );
-          if ((isBuyer || isSeller || (isInspectionRole && isInspectionOrder)) && !combined.some((o) => o.id === locOrd.id)) {
+
+          if (!isBuyer && !isSeller && !(isInspectionRole && isInspectionOrder)) return;
+
+          const locListingKey = String(locOrd.listingId || locOrd.listing?.id || '');
+          const locTitleKey = (locOrd.listing?.title || '').trim().toLowerCase();
+          const isLocalMockId = String(locOrd.id || '').startsWith('ORD-2026-');
+
+          // If backend already has the authoritative order for this listing, discard stale local mock order
+          if (isLocalMockId && (activeBackendListingKeys.has(locListingKey) || activeBackendListingKeys.has(locTitleKey) || cancelledListingKeys.has(locListingKey) || cancelledListingKeys.has(locTitleKey))) {
+            localStorageNeedsUpdate = true;
+            return;
+          }
+
+          // If the order on backend was cancelled/refunded, update local order
+          if (cancelledListingKeys.has(locListingKey) || cancelledListingKeys.has(locTitleKey)) {
+            locOrd.escrowStatus = 'REFUNDED_TO_BUYER';
+            locOrd.backendStatus = 'CANCELLED';
+            localStorageNeedsUpdate = true;
+          }
+
+          if (!combined.some((o) => o.id === locOrd.id)) {
             combined.unshift(locOrd);
           }
         });
+
+        if (localStorageNeedsUpdate) {
+          try {
+            const raw = localStorage.getItem('recent_placed_orders');
+            if (raw) {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                const filtered = list.filter((o: any) => {
+                  const oLid = String(o.listingId || o.listing?.id || '');
+                  const oTitle = (o.listing?.title || '').trim().toLowerCase();
+                  const isMock = String(o.id || '').startsWith('ORD-2026-');
+                  if (isMock && (activeBackendListingKeys.has(oLid) || activeBackendListingKeys.has(oTitle) || cancelledListingKeys.has(oLid) || cancelledListingKeys.has(oTitle))) {
+                    return false;
+                  }
+                  return true;
+                });
+                localStorage.setItem('recent_placed_orders', JSON.stringify(filtered));
+              }
+            }
+          } catch {}
+        }
 
         // Sắp xếp đơn theo thứ tự thời gian: Mới nhất ở ĐẦU, cũ hơn ở SAU
         combined.sort((a, b) => {
@@ -1525,7 +1718,7 @@ export default function App() {
 
         const seenActiveListingIds = new Set<string>();
         const deduplicatedCombined = combined.filter((o) => {
-          const isEnded = o.escrowStatus === 'REFUNDED_TO_BUYER' || o.escrowStatus === 'COMPLETED_RELEASED' || o.backendStatus === 'CANCELLED';
+          const isEnded = isOrderCancelledOrRefunded(o) || o.escrowStatus === 'COMPLETED_RELEASED';
           const listingKey = String(o.listingId || o.listing?.id || '');
           if (listingKey && !isEnded) {
             if (seenActiveListingIds.has(listingKey)) {
@@ -1535,6 +1728,44 @@ export default function App() {
           }
           return true;
         });
+
+        // Cache all orders for instant synchronous reference by getBoughtListingIds
+        try {
+          localStorage.setItem('all_orders_cache', JSON.stringify(deduplicatedCombined));
+        } catch {}
+
+        // Reconcile and free up any listings whose orders are refunded/cancelled
+        reconcileBoughtListingIds(deduplicatedCombined);
+
+        // Identify listings that should be restored to 'active' on the floor
+        const activeIds = new Set<string>();
+        const cancelledListingIds = new Set<string>();
+        deduplicatedCombined.forEach((o) => {
+          const lid = String(o.listingId || o.listing?.id || '');
+          if (!lid) return;
+          if (isOrderCancelledOrRefunded(o)) {
+            cancelledListingIds.add(lid);
+          } else {
+            activeIds.add(lid);
+          }
+        });
+
+        const freeListings = Array.from(cancelledListingIds).filter((id) => !activeIds.has(id));
+        if (freeListings.length > 0) {
+          freeListings.forEach((lid) => markListingAsAvailable(lid));
+          setListings((prev) =>
+            prev.map((item) => {
+              if (freeListings.includes(String(item.id))) {
+                return {
+                  ...item,
+                  status: 'active',
+                  backendStatus: 'ACTIVE',
+                };
+              }
+              return item;
+            })
+          );
+        }
 
         setOrders(deduplicatedCombined);
       } else {
@@ -1546,12 +1777,20 @@ export default function App() {
           if (timeB !== timeA) return timeB - timeA;
           return String(b.id || '').localeCompare(String(a.id || ''));
         });
+        try {
+          localStorage.setItem('all_orders_cache', JSON.stringify(localRecentOrders));
+        } catch {}
+        reconcileBoughtListingIds(localRecentOrders);
         setOrders(localRecentOrders);
       }
       lastOrdersFetchRef.current = Date.now();
     } catch (err) {
       console.warn('Could not load orders from backend:', err);
       const localRecentOrders = getLocalStoredOrders(currentUser);
+      try {
+        localStorage.setItem('all_orders_cache', JSON.stringify(localRecentOrders));
+      } catch {}
+      reconcileBoughtListingIds(localRecentOrders);
       setOrders(localRecentOrders);
     } finally {
       isFetchingOrdersRef.current = false;
@@ -1720,31 +1959,90 @@ export default function App() {
     orderId: string,
     cancelData?: { reasonCode: 'BUYER_REQUESTED' | 'SELLER_OUT_OF_STOCK' | 'SELLER_CANNOT_FULFILL'; reason: string }
   ) => {
+    let targetOrder = orders.find((o) => o.id === orderId);
+    if (!targetOrder) {
+      try {
+        const rawAll = localStorage.getItem('all_orders_cache');
+        if (rawAll) {
+          const parsed: EscrowOrder[] = JSON.parse(rawAll);
+          targetOrder = parsed.find((o) => o.id === orderId);
+        }
+      } catch {}
+    }
+    if (!targetOrder) {
+      try {
+        const rawRecent = localStorage.getItem('recent_placed_orders');
+        if (rawRecent) {
+          const parsed: EscrowOrder[] = JSON.parse(rawRecent);
+          targetOrder = parsed.find((o) => o.id === orderId);
+        }
+      } catch {}
+    }
+
+    const isSellerCancel = targetOrder?.sellerId === currentUser?.id || currentRole === 'seller';
+    const effectiveCancelData = cancelData || (isSellerCancel ? {
+      reasonCode: 'SELLER_OUT_OF_STOCK' as const,
+      reason: 'Người bán hết hàng hoặc không thể chuẩn bị đơn hàng này.',
+    } : {
+      reasonCode: 'BUYER_REQUESTED' as const,
+      reason: 'Người mua yêu cầu hủy đơn hàng.',
+    });
+
     try {
-      const targetOrder = orders.find((o) => o.id === orderId);
-      const isSellerCancel = targetOrder?.sellerId === currentUser?.id || currentRole === 'seller';
-      const effectiveCancelData = cancelData || (isSellerCancel ? {
-        reasonCode: 'SELLER_OUT_OF_STOCK' as const,
-        reason: 'Người bán hết hàng hoặc không thể chuẩn bị đơn hàng này.',
-      } : {
-        reasonCode: 'BUYER_REQUESTED' as const,
-        reason: 'Người mua yêu cầu hủy đơn hàng.',
-      });
+
+      // Lưu thông tin lý do hủy vào localStorage
+      try {
+        localStorage.setItem(`order_cancellation_info_${orderId}`, JSON.stringify(effectiveCancelData));
+      } catch {}
 
       await orderService.cancelOrder(orderId, effectiveCancelData);
       setOrders((prev) =>
         prev.map((ord) =>
-          ord.id === orderId ? { ...ord, escrowStatus: 'REFUNDED_TO_BUYER', backendStatus: 'CANCELLED' } : ord
+          ord.id === orderId
+            ? {
+                ...ord,
+                escrowStatus: 'REFUNDED_TO_BUYER',
+                backendStatus: 'CANCELLED',
+                cancellationReasonCode: effectiveCancelData.reasonCode,
+                cancellationReason: effectiveCancelData.reason,
+              }
+            : ord
         )
       );
 
-      // Cập nhật recent_placed_orders trong localStorage để giữ đúng trạng thái đã hủy
+      // Cập nhật recent_placed_orders và all_orders_cache trong localStorage để giữ đúng trạng thái đã hủy
       try {
         const stored = localStorage.getItem('recent_placed_orders');
         if (stored) {
           const parsed: EscrowOrder[] = JSON.parse(stored);
-          const updated = parsed.map((o) => (o.id === orderId ? { ...o, escrowStatus: 'REFUNDED_TO_BUYER' as const, backendStatus: 'CANCELLED' as const } : o));
+          const updated = parsed.map((o) =>
+            o.id === orderId
+              ? {
+                  ...o,
+                  escrowStatus: 'REFUNDED_TO_BUYER' as const,
+                  backendStatus: 'CANCELLED' as const,
+                  cancellationReasonCode: effectiveCancelData.reasonCode,
+                  cancellationReason: effectiveCancelData.reason,
+                }
+              : o
+          );
           localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
+        }
+        const storedAll = localStorage.getItem('all_orders_cache');
+        if (storedAll) {
+          const parsedAll: EscrowOrder[] = JSON.parse(storedAll);
+          const updatedAll = parsedAll.map((o) =>
+            o.id === orderId
+              ? {
+                  ...o,
+                  escrowStatus: 'REFUNDED_TO_BUYER' as const,
+                  backendStatus: 'CANCELLED' as const,
+                  cancellationReasonCode: effectiveCancelData.reasonCode,
+                  cancellationReason: effectiveCancelData.reason,
+                }
+              : o
+          );
+          localStorage.setItem('all_orders_cache', JSON.stringify(updatedAll));
         }
         localStorage.removeItem(`order_listing_${orderId}`);
       } catch {}
@@ -1753,6 +2051,7 @@ export default function App() {
       const cancelledListingId = targetOrder?.listingId || targetOrder?.listing?.id;
       if (cancelledListingId) {
         markListingAsAvailable(String(cancelledListingId));
+        reconcileBoughtListingIds();
         setListings((prev) =>
           prev.map((l) =>
             String(l.id) === String(cancelledListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
@@ -1765,25 +2064,62 @@ export default function App() {
       showToast(lang === 'vi' ? 'Đã hủy đơn hàng! Tiền ký quỹ Escrow đã được hoàn lại 100% vào ví người mua.' : 'Order cancelled and refunded to buyer.');
     } catch (err: any) {
       console.warn('Backend cancelOrder fallback (cancelling locally):', err);
+      try {
+        localStorage.setItem(`order_cancellation_info_${orderId}`, JSON.stringify(effectiveCancelData));
+      } catch {}
       setOrders((prev) =>
         prev.map((ord) =>
-          ord.id === orderId ? { ...ord, escrowStatus: 'REFUNDED_TO_BUYER', backendStatus: 'CANCELLED' } : ord
+          ord.id === orderId
+            ? {
+                ...ord,
+                escrowStatus: 'REFUNDED_TO_BUYER',
+                backendStatus: 'CANCELLED',
+                cancellationReasonCode: effectiveCancelData.reasonCode,
+                cancellationReason: effectiveCancelData.reason,
+              }
+            : ord
         )
       );
       try {
         const stored = localStorage.getItem('recent_placed_orders');
         if (stored) {
           const parsed: EscrowOrder[] = JSON.parse(stored);
-          const updated = parsed.map((o) => (o.id === orderId ? { ...o, escrowStatus: 'REFUNDED_TO_BUYER' as const, backendStatus: 'CANCELLED' as const } : o));
+          const updated = parsed.map((o) =>
+            o.id === orderId
+              ? {
+                  ...o,
+                  escrowStatus: 'REFUNDED_TO_BUYER' as const,
+                  backendStatus: 'CANCELLED' as const,
+                  cancellationReasonCode: effectiveCancelData.reasonCode,
+                  cancellationReason: effectiveCancelData.reason,
+                }
+              : o
+          );
           localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
+        }
+        const storedAll = localStorage.getItem('all_orders_cache');
+        if (storedAll) {
+          const parsedAll: EscrowOrder[] = JSON.parse(storedAll);
+          const updatedAll = parsedAll.map((o) =>
+            o.id === orderId
+              ? {
+                  ...o,
+                  escrowStatus: 'REFUNDED_TO_BUYER' as const,
+                  backendStatus: 'CANCELLED' as const,
+                  cancellationReasonCode: effectiveCancelData.reasonCode,
+                  cancellationReason: effectiveCancelData.reason,
+                }
+              : o
+          );
+          localStorage.setItem('all_orders_cache', JSON.stringify(updatedAll));
         }
         localStorage.removeItem(`order_listing_${orderId}`);
       } catch {}
 
-      const targetOrder = orders.find((o) => o.id === orderId);
       const cancelledListingId = targetOrder?.listingId || targetOrder?.listing?.id;
       if (cancelledListingId) {
         markListingAsAvailable(String(cancelledListingId));
+        reconcileBoughtListingIds();
         setListings((prev) =>
           prev.map((l) =>
             String(l.id) === String(cancelledListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
@@ -2308,14 +2644,36 @@ export default function App() {
             negotiationId={checkoutNegotiationId}
             onOpenDeposit={() => setIsTopUpModalOpen(true)}
             onClose={() => {
+              const closedListingId = checkoutListing?.id;
+              if (closedListingId) {
+                markListingAsAvailable(String(closedListingId));
+                reconcileBoughtListingIds();
+                setListings((prev) =>
+                  prev.map((l) =>
+                    String(l.id) === String(closedListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
+                  )
+                );
+              }
               setCheckoutListing(null);
               setCheckoutAgreedPrice(undefined);
               setCheckoutNegotiationId(undefined);
+              loadListingsFromBackend(true);
             }}
             onCancelUnpaid={(msg) => {
+              const cancelledListingId = checkoutListing?.id;
+              if (cancelledListingId) {
+                markListingAsAvailable(String(cancelledListingId));
+                reconcileBoughtListingIds();
+                setListings((prev) =>
+                  prev.map((l) =>
+                    String(l.id) === String(cancelledListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
+                  )
+                );
+              }
               setCheckoutListing(null);
               setCheckoutAgreedPrice(undefined);
               setCheckoutNegotiationId(undefined);
+              loadListingsFromBackend(true);
               showToast(msg || (lang === 'vi' ? 'Đơn hàng chưa được thanh toán! Đã quay lại trang mua hàng.' : 'Order not paid. Returned to shopping page.'));
             }}
             showToast={showToast}

@@ -89,6 +89,9 @@ export const VietQrEscrowModal: React.FC<VietQrEscrowModalProps> = ({
     if (!isOpen || !bankInfo || !order || isExpired || isSuccess) return;
 
     const orderId = order.id;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
+    if (!isUuid) return;
+
     const interval = setInterval(async () => {
       try {
         const fresh = await orderService.getOrderPayment(orderId);
@@ -129,13 +132,21 @@ export const VietQrEscrowModal: React.FC<VietQrEscrowModalProps> = ({
   const remainingToPay = bankInfo.remainingAmount ?? bankInfo.totalAmount ?? order.totalPaidVnd;
   const transferContent = bankInfo.transferContent || order.id;
   const bankAccountName = bankInfo.bankAccountName || 'SECONDLIFE ESCROW';
-  const bankAccountNumber = bankInfo.bankAccountNumber || '0963646027';
+  const bankAccountNumber = bankInfo.bankAccountNumber || '0388907604';
   const bankName = bankInfo.bankName || 'MB';
 
   const vietQrUrl = `https://img.vietqr.io/image/${bankName}-${bankAccountNumber}-compact2.png?amount=${remainingToPay}&addInfo=${encodeURIComponent(transferContent)}&accountName=${encodeURIComponent(bankAccountName)}`;
 
   const handleManualCheck = async () => {
     setIsChecking(true);
+    const orderId = order.id;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
+    if (!isUuid) {
+      setTimeout(() => {
+        setIsChecking(false);
+      }, 1000);
+      return;
+    }
     try {
       const fresh = await orderService.getOrderPayment(order.id);
       setBankInfo(fresh);

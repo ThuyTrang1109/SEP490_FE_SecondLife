@@ -97,6 +97,7 @@ export const translations = {
     
     // Multi-stage photo history
     multiStageTitle: 'Lịch sử ảnh 3 giai đoạn đối chiếu (Chống tráo hàng)',
+    multiStageTitle2Stage: 'Lịch sử ảnh 2 giai đoạn đối chiếu (Chống tráo hàng)',
     stageListing: '1. Ảnh người bán đăng',
     stageInspection: '2. Ảnh trung tâm kiểm định',
     stageHandover: '3. Ảnh lúc đóng gói & bàn giao',
@@ -216,6 +217,7 @@ export const translations = {
 
     // Multi-stage photo history
     multiStageTitle: '3-Stage Multi-Version Photo Audit (Anti-Swapping)',
+    multiStageTitle2Stage: '2-Stage Multi-Version Photo Audit (Anti-Swapping)',
     stageListing: '1. Seller Listing Photos',
     stageInspection: '2. Inspection Center Photos',
     stageHandover: '3. Packaging & Courier Handover',

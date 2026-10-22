@@ -77,11 +77,11 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
       className="group relative bg-white rounded-xl border border-slate-200 hover:border-[#c34c36] shadow-2xs hover:shadow-md flex flex-col overflow-hidden cursor-pointer select-none transition-all duration-300"
     >
       {/* Photo container */}
-      <div className="relative aspect-video w-full bg-[#faf8f5] overflow-hidden">
+      <div className="relative aspect-4/3 w-full bg-[#faf8f5] overflow-hidden flex items-center justify-center p-2">
         <img
-          src={item.photos.front}
+          src={item.photoGallery?.[0] || item.photos.front}
           alt={item.title}
-          className="w-full h-full object-cover group-hover:scale-104 transition-transform duration-500"
+          className="w-full h-full object-contain transition-transform duration-300"
           loading="lazy"
         />
 

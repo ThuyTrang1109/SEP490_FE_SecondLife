@@ -196,83 +196,120 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
   // Convert backendOrders into EscrowOrder format if available, otherwise filter prop orders strictly assigned to this technician
   const effectiveOrders: EscrowOrder[] = useMemo(() => {
-    if (backendOrders && backendOrders.length > 0) {
-      return backendOrders.map((bo) => {
-        const existing = orders.find((o) => o.id === bo.id);
-        if (existing) {
-          return {
-            ...existing,
-            escrowStatus: (bo.status as any) || existing.escrowStatus,
-            inspectionMethod: bo.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER',
-            buyerName: bo.buyerName || existing.buyerName,
-            sellerName: bo.sellerName || existing.sellerName,
-          };
-        }
-        return {
-          id: bo.id,
-          listing: {
-            id: bo.postId || bo.id,
-            title: bo.postTitle || 'Thiết bị đo kiểm',
-            category: 'KITCHEN_APPLIANCES' as any,
-            brand: 'Chính hãng',
-            model: 'Model tiêu chuẩn',
-            purchaseYear: 2023,
-            priceVnd: bo.postPrice || 1000000,
-            conditionGrade: 'Good' as any,
-            declaredConditionText: 'Máy hoạt động tốt',
-            description: bo.note || 'Thiết bị cần đo kiểm theo quy trình',
-            location: 'TP. Hồ Chí Minh',
-            sellerId: bo.sellerId || 'seller-1',
-            sellerName: bo.sellerName || 'Người bán',
-            sellerRating: 5.0,
-            sellerCompletedOrders: 10,
-            sellerVerified: true,
-            status: 'ACTIVE' as any,
-            createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
-            isInspectionGuaranteed: true,
-            requiresInspection: true,
-            photos: {
-              front: bo.postImageUrl || bo.postImageUrls?.[0] || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400',
-              back: bo.postImageUrls?.[1] || bo.postImageUrl || '',
-              screenOrDetails: bo.postImageUrls?.[2] || '',
-              accessoriesOrBox: '',
-              serialOrReceipt: '',
-            },
-            photoGallery: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : []),
-          },
-          listingId: bo.postId || bo.id,
-          buyerId: bo.buyerId || 'buyer-1',
-          buyerName: bo.buyerName || 'Khách hàng',
-          buyerPhone: '0912345678',
-          buyerAddress: 'TP. Hồ Chí Minh',
-          sellerId: bo.sellerId || 'seller-1',
-          sellerName: bo.sellerName || 'Người bán',
-          itemPriceVnd: bo.postPrice || 1000000,
-          inspectionFeeVnd: bo.inspectionFee || 150000,
-          shippingFeeVnd: bo.shippingFee || 30000,
-          platformFeeVnd: 0,
-          totalPaidVnd: (bo.postPrice || 1000000) + (bo.inspectionFee || 150000) + (bo.shippingFee || 30000),
-          totalAmountVnd: (bo.postPrice || 1000000) + (bo.inspectionFee || 150000) + (bo.shippingFee || 30000),
-          escrowStatus: (bo.status as any) || 'INSPECTING',
-          hasInspectionService: true,
-          requiresInspection: true,
-          inspectionMethod: bo.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER',
-          inspectionFeeSplit: bo.feePayer === 'SELLER_PAYS' ? 'SELLER_100' : bo.feePayer === 'BUYER_PAYS' ? 'BUYER_100' : 'SPLIT_50_50',
-          shippingLegs: [],
-          multiStagePhotos: {
-            listingPhotos: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : []),
-          },
-          createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
-          deliveryAddress: 'TP. Hồ Chí Minh',
-          deliveryOption: 'INSPECTION',
-        } as unknown as EscrowOrder;
-      });
-    }
-
-    // CHỈ hiển thị đơn hàng ĐÃ ĐƯỢC TRUNG TÂM PHÂN CÔNG cho KTV hiện tại
     const currentInspectorId = currentUser?.id;
     const currentInspectorName = (currentUser?.name || '').trim().toLowerCase();
 
+    // 1. Nếu có đơn từ backend: Lọc CHẶT CHẼ chỉ các đơn ĐÃ PHÂN CÔNG cho KTV hiện tại và ĐÃ ĐƯỢC TRUNG TÂM GIAO TASK
+    if (backendOrders && backendOrders.length > 0) {
+      const assignedBackendOrders = backendOrders.filter((bo) => {
+        let assignedId = bo.inspectorId;
+        let assignedName = bo.inspectorName;
+        try {
+          const assignedJson = localStorage.getItem(`order_assigned_inspector_${bo.id}`);
+          if (assignedJson) {
+            const parsed = JSON.parse(assignedJson);
+            assignedId = parsed.inspectorId || assignedId;
+            assignedName = parsed.inspectorName || assignedName;
+          }
+        } catch {}
+
+        // Bỏ qua nếu chưa phân công KTV hoặc chưa được Trung tâm điều phối
+        if (!assignedId || assignedName === 'Chưa phân công') return false;
+        if (
+          bo.status === 'CONFIRMED_PENDING_DISPATCH' ||
+          bo.status === 'WAITING_SELLER_APPROVAL' ||
+          bo.status === 'WAITING_BUYER_APPROVAL' ||
+          bo.status === 'WAITING_FEE_PAYMENT' ||
+          bo.status === 'PENDING'
+        ) {
+          return false;
+        }
+
+        // Kiểm tra khớp KTV
+        const matchId = currentInspectorId && assignedId && (
+          String(assignedId) === String(currentInspectorId) ||
+          String(assignedId).includes(String(currentInspectorId)) ||
+          String(currentInspectorId).includes(String(assignedId))
+        );
+        const matchName = currentInspectorName && assignedName && assignedName.toLowerCase().includes(currentInspectorName);
+        return Boolean(matchId || matchName);
+      });
+
+      if (assignedBackendOrders.length > 0) {
+        return assignedBackendOrders.map((bo) => {
+          const existing = orders.find((o) => o.id === bo.id);
+          if (existing) {
+            return {
+              ...existing,
+              escrowStatus: (bo.status as any) || existing.escrowStatus,
+              inspectionMethod: bo.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER',
+              buyerName: bo.buyerName || existing.buyerName,
+              sellerName: bo.sellerName || existing.sellerName,
+            };
+          }
+          return {
+            id: bo.id,
+            listing: {
+              id: bo.postId || bo.id,
+              title: bo.postTitle || 'Thiết bị đo kiểm',
+              category: 'KITCHEN_APPLIANCES' as any,
+              brand: 'Chính hãng',
+              model: 'Model tiêu chuẩn',
+              purchaseYear: 2023,
+              priceVnd: bo.postPrice || 1000000,
+              conditionGrade: 'Good' as any,
+              declaredConditionText: 'Máy hoạt động tốt',
+              description: bo.note || 'Thiết bị cần đo kiểm theo quy trình',
+              location: 'TP. Hồ Chí Minh',
+              sellerId: bo.sellerId || 'seller-1',
+              sellerName: bo.sellerName || 'Người bán',
+              sellerRating: 5.0,
+              sellerCompletedOrders: 10,
+              sellerVerified: true,
+              status: 'ACTIVE' as any,
+              createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
+              isInspectionGuaranteed: true,
+              requiresInspection: true,
+              photos: {
+                front: bo.postImageUrl || bo.postImageUrls?.[0] || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400',
+                back: bo.postImageUrls?.[1] || bo.postImageUrl || '',
+                screenOrDetails: bo.postImageUrls?.[2] || '',
+                accessoriesOrBox: '',
+                serialOrReceipt: '',
+              },
+              photoGallery: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : []),
+            },
+            listingId: bo.postId || bo.id,
+            buyerId: bo.buyerId || 'buyer-1',
+            buyerName: bo.buyerName || 'Khách hàng',
+            buyerPhone: '0912345678',
+            buyerAddress: 'TP. Hồ Chí Minh',
+            sellerId: bo.sellerId || 'seller-1',
+            sellerName: bo.sellerName || 'Người bán',
+            itemPriceVnd: bo.postPrice || 1000000,
+            inspectionFeeVnd: bo.inspectionFee || 150000,
+            shippingFeeVnd: bo.shippingFee || 30000,
+            platformFeeVnd: 0,
+            totalPaidVnd: (bo.postPrice || 1000000) + (bo.inspectionFee || 150000) + (bo.shippingFee || 30000),
+            totalAmountVnd: (bo.postPrice || 1000000) + (bo.inspectionFee || 150000) + (bo.shippingFee || 30000),
+            escrowStatus: (bo.status as any) || 'INSPECTING',
+            hasInspectionService: true,
+            requiresInspection: true,
+            inspectionMethod: bo.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER',
+            inspectionFeeSplit: bo.feePayer === 'SELLER_PAYS' ? 'SELLER_100' : bo.feePayer === 'BUYER_PAYS' ? 'BUYER_100' : 'SPLIT_50_50',
+            shippingLegs: [],
+            multiStagePhotos: {
+              listingPhotos: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : []),
+            },
+            createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
+            deliveryAddress: 'TP. Hồ Chí Minh',
+            deliveryOption: 'INSPECTION',
+          } as unknown as EscrowOrder;
+        });
+      }
+    }
+
+    // 2. CHỈ hiển thị đơn hàng ĐÃ ĐƯỢC TRUNG TÂM PHÂN CÔNG cho KTV hiện tại
     return orders.filter((o) => {
       if (!o.hasInspectionService && !o.inspectionMethod && (!o.inspectionFeeVnd || o.inspectionFeeVnd <= 0)) {
         return false;
@@ -289,9 +326,27 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         }
       } catch {}
 
-      // Nếu đơn chưa được Trung tâm phân công -> KHÔNG hiện ở bàn KTV
+      // Nếu đơn chưa được Trung tâm phân công -> TUYỆT ĐỐI KHÔNG hiện ở bàn KTV
       if (!assignedId || assignedName === 'Chưa phân công') {
         return false;
+      }
+
+      const rawAssign = localStorage.getItem(`order_assigned_inspector_${o.id}`);
+      const currentStatus = String((o as any).backendStatus || (o as any).status || o.escrowStatus || '').toUpperCase();
+      
+      // Bất kỳ đơn nào chưa được Trung tâm điều phối hoặc đang chờ duyệt/chờ cọc/chờ điều phối -> KHÔNG hiện ở bàn KTV
+      if (
+        currentStatus === 'CONFIRMED_PENDING_DISPATCH' ||
+        currentStatus === 'WAITING_SELLER_APPROVAL' ||
+        currentStatus === 'WAITING_BUYER_APPROVAL' ||
+        currentStatus === 'WAITING_FEE_PAYMENT' ||
+        currentStatus === 'AWAITING_PAYMENT' ||
+        currentStatus === 'PENDING' ||
+        (!rawAssign && currentStatus === 'AWAITING_INSPECTION')
+      ) {
+        if (!rawAssign) {
+          return false;
+        }
       }
 
       // Khớp theo ID hoặc tên KTV

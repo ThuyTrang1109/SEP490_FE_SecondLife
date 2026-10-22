@@ -83,19 +83,19 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   // Role detection scoped to this specific listing / chat room:
   // An account with system role 'seller' can still be the BUYER when inquiring/buying another seller's listing!
   const isExplicitBuyer = Boolean(
-    effectiveUserId && activeRoom?.buyerId && effectiveUserId === String(activeRoom.buyerId)
+    effectiveUserId && activeRoom?.buyerId && effectiveUserId.toLowerCase() === String(activeRoom.buyerId).toLowerCase()
   );
 
   const isExplicitSeller = Boolean(
-    effectiveUserId && activeRoom?.sellerId && effectiveUserId === String(activeRoom.sellerId)
+    effectiveUserId && activeRoom?.sellerId && effectiveUserId.toLowerCase() === String(activeRoom.sellerId).toLowerCase()
   );
 
   const isListingSeller = Boolean(
-    effectiveUserId && listing?.sellerId && effectiveUserId === String(listing.sellerId)
+    effectiveUserId && listing?.sellerId && effectiveUserId.toLowerCase() === String(listing.sellerId).toLowerCase()
   );
 
   const isListingBuyer = Boolean(
-    effectiveUserId && listing?.sellerId && effectiveUserId !== String(listing.sellerId)
+    effectiveUserId && listing?.sellerId && effectiveUserId.toLowerCase() !== String(listing.sellerId).toLowerCase()
   );
 
   // If user is explicitly the room's buyer, they CANNOT be seller!
@@ -104,7 +104,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     ? false
     : isExplicitSeller
     ? true
-    : isListingSeller && !isListingBuyer;
+    : isListingSeller
+    ? true
+    : isListingBuyer
+    ? false
+    : currentRole === 'seller';
 
   const isBuyer = !isSeller;
   const chatRole: 'seller' | 'buyer' = isSeller ? 'seller' : 'buyer';
@@ -181,6 +185,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const [offerError, setOfferError] = useState<string | null>(null);
   const [negotiationLoading, setNegotiationLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const isSendingOfferRef = useRef(false);
+  const isSendingInspectionRef = useRef(false);
+  const isSendingMessageRef = useRef(false);
+  const isRespondingOfferRef = useRef(false);
+  const isCancellingOfferRef = useRef(false);
   const [userCredit, setUserCredit] = useState<UserCredit | null>(null);
   const [loadingCredit, setLoadingCredit] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -376,6 +385,68 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     };
   }, [listing.id, predefinedRoomId]);
 
+  // Helper to deduplicate and cleanly synchronize incoming messages (WS or periodic fetch)
+  const syncIncomingMessage = useCallback((uiMsg: ChatMessage) => {
+    setMessages((prev) => {
+      // 1. If exact id already exists:
+      if (prev.some((m) => m.id === uiMsg.id)) {
+        return prev;
+      }
+
+      // 2. If it's an OFFER: match by negotiationId
+      if (uiMsg.negotiationId) {
+        const existingOfferIndex = prev.findIndex(
+          (m) =>
+            m.negotiationId === uiMsg.negotiationId ||
+            m.id === `nego-${uiMsg.negotiationId}` ||
+            (m.isOffer && m.offerAmountVnd === uiMsg.offerAmountVnd && m.offerStatus === uiMsg.offerStatus)
+        );
+        if (existingOfferIndex !== -1) {
+          const next = [...prev];
+          next[existingOfferIndex] = {
+            ...next[existingOfferIndex],
+            ...uiMsg,
+            id: uiMsg.id, // Upgrade temp id to real backend message id
+          };
+          return next;
+        }
+      }
+
+      // 3. If it's an INSPECTION PROPOSAL: match by proposalId
+      if (uiMsg.inspectionProposal?.proposalId) {
+        const existingPropIndex = prev.findIndex(
+          (m) =>
+            m.inspectionProposal?.proposalId === uiMsg.inspectionProposal?.proposalId ||
+            m.id === uiMsg.inspectionProposal?.proposalId
+        );
+        if (existingPropIndex !== -1) {
+          const next = [...prev];
+          next[existingPropIndex] = {
+            ...next[existingPropIndex],
+            ...uiMsg,
+            id: uiMsg.id,
+          };
+          return next;
+        }
+      }
+
+      // 4. If standard text message: replace matching optimistic message
+      const optIndex = prev.findIndex(
+        (m) =>
+          (m.id.startsWith('msg-') || m.id.startsWith('temp-')) &&
+          m.text.trim() === uiMsg.text.trim()
+      );
+      if (optIndex !== -1) {
+        const next = [...prev];
+        next[optIndex] = uiMsg;
+        return next;
+      }
+
+      // 5. Truly new message
+      return [...prev, uiMsg];
+    });
+  }, []);
+
   // Subscribe to WebSocket for real-time messages (/user/queue/messages)
   useEffect(() => {
     if (!roomId) return;
@@ -387,33 +458,40 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       // Check if message belongs to this room
       if (newDto.conversationId === roomId) {
         const uiMsg = mapDtoRef.current(newDto);
-        setMessages((prev) => {
-          // Avoid duplicate by id
-          if (prev.some((m) => m.id === uiMsg.id)) {
-            return prev;
-          }
-          
-          // Avoid duplicate by optimistic message (same text, starts with msg-)
-          const optimisticIndex = prev.findIndex(
-            (m) => m.id.startsWith('msg-') && m.text === uiMsg.text && m.senderRole === uiMsg.senderRole
-          );
-          
-          if (optimisticIndex !== -1) {
-            const next = [...prev];
-            next[optimisticIndex] = uiMsg;
-            return next;
-          }
-          
-          return [...prev, uiMsg];
-        });
-        setTimeout(scrollToBottom, 100);
+        syncIncomingMessage(uiMsg);
+        setTimeout(scrollToBottom, 60);
       }
     });
 
     return () => {
       unsubscribe();
     };
-  }, [roomId]);
+  }, [roomId, syncIncomingMessage]);
+
+  // Periodic background sync while ChatModal is open to guarantee real-time updates without page reset
+  useEffect(() => {
+    if (!roomId) return;
+
+    let isMounted = true;
+    const intervalId = setInterval(async () => {
+      try {
+        const historyDtos = await chatService.getMessages(roomId);
+        if (isMounted && Array.isArray(historyDtos)) {
+          historyDtos.forEach((dto) => {
+            const uiMsg = mapDtoRef.current(dto);
+            syncIncomingMessage(uiMsg);
+          });
+        }
+      } catch (err) {
+        // silent background sync
+      }
+    }, 2500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, [roomId, syncIncomingMessage]);
 
   // Track latest accepted offer price & negotiationId
   const acceptedOffers = messages.filter(
@@ -459,7 +537,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   // Send standard text message
   const handleSendMessage = async (textToSend?: string) => {
     const text = textToSend || inputMessage;
-    if (!text.trim() || isSending) return;
+    if (!text.trim() || isSendingMessageRef.current || isSending) return;
+    isSendingMessageRef.current = true;
 
     const scamTriggers = ['zalo', 'whatsapp', 'chuyển khoản trước', 'cọc ngoài', 'gửi link', 'ship ngoài'];
     const hasScam = scamTriggers.some((t) => text.toLowerCase().includes(t));
@@ -536,6 +615,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         )
       );
     } finally {
+      isSendingMessageRef.current = false;
       setIsSending(false);
     }
   };
@@ -601,7 +681,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
   // Send official negotiation offer
   const handleSendOffer = async () => {
-    if (!offerInput || offerInput <= 0) return;
+    if (!offerInput || offerInput <= 0 || isSendingOfferRef.current) return;
+    isSendingOfferRef.current = true;
     setNegotiationLoading(true);
     setOfferError(null);
 
@@ -627,7 +708,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           negotiationId: res.id,
         };
         setMessages((prev) => {
-          if (prev.some((m) => m.negotiationId === res.id)) return prev;
+          if (prev.some((m) => m.negotiationId === res.id || m.id === `nego-${res.id}`)) return prev;
           return [...prev, localOfferMsg];
         });
         setTimeout(scrollToBottom, 50);
@@ -641,12 +722,15 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         setOfferError(msg || 'Không thể tạo đề xuất thương lượng. Mức giá đề xuất phải thấp hơn giá gốc.');
       }
     } finally {
+      isSendingOfferRef.current = false;
       setNegotiationLoading(false);
     }
   };
 
   // Seller accepts or rejects offer
   const handleRespondOffer = async (negotiationId: string, action: 'accepted' | 'declined') => {
+    if (isRespondingOfferRef.current) return;
+    isRespondingOfferRef.current = true;
     try {
       if (action === 'accepted') {
         // PUT /api/v1/negotiations/{id}/accept
@@ -659,7 +743,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       // Update offer status in local state
       setMessages((prev) =>
         prev.map((m) => {
-          if (m.negotiationId === negotiationId) {
+          if (m.negotiationId === negotiationId || m.id === `nego-${negotiationId}`) {
             return {
               ...m,
               offerStatus: action,
@@ -672,17 +756,21 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     } catch (err: any) {
       console.warn('Backend respond negotiation error:', err);
       dialogService.error(err?.message || 'Thao tác không thành công. Vui lòng thử lại.', 'Lỗi Phản Hồi Trả Giá');
+    } finally {
+      isRespondingOfferRef.current = false;
     }
   };
 
   // Buyer cancels pending offer
   const handleCancelOffer = async (negotiationId: string) => {
+    if (isCancellingOfferRef.current) return;
+    isCancellingOfferRef.current = true;
     try {
       // PUT /api/v1/negotiations/{id}/cancel
       await negotiationService.cancelNegotiation(negotiationId);
       setMessages((prev) =>
         prev.map((m) =>
-          m.negotiationId === negotiationId
+          (m.negotiationId === negotiationId || m.id === `nego-${negotiationId}`)
             ? {
                 ...m,
                 offerStatus: 'declined',
@@ -693,86 +781,124 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       );
     } catch (err: any) {
       console.warn('Backend cancel negotiation error:', err);
+    } finally {
+      isCancellingOfferRef.current = false;
     }
   };
 
   // Buyer or Seller sends official inspection proposal
   const handleSendInspectionProposal = async () => {
+    if (isSendingInspectionRef.current) return;
+    isSendingInspectionRef.current = true;
     setInspectionLoading(true);
-    try {
-      const proposalPayload: SystemInspectionProposalPayload = {
-        type: 'INSPECTION_PROPOSAL',
-        status: 'PENDING',
-        method: inspectionMethod,
-        feeSplit: inspectionFeeSplit,
-        estimatedFeeVnd: inspectionFeeAmount,
-        proposedByRole: isSeller ? 'seller' : 'buyer',
-        proposalId: `insp-prop-${Date.now()}`,
-        note: inspectionNote.trim() || undefined,
-      };
-      const systemText = `SYSTEM: ${JSON.stringify(proposalPayload)}`;
 
-      if (roomId) {
-        await chatService.sendMessage(roomId, systemText).catch(() => {});
+    const proposalId = `insp-prop-${Date.now()}`;
+    const proposalPayload: SystemInspectionProposalPayload = {
+      type: 'INSPECTION_PROPOSAL',
+      status: 'PENDING',
+      method: inspectionMethod,
+      feeSplit: inspectionFeeSplit,
+      estimatedFeeVnd: inspectionFeeAmount,
+      proposedByRole: isSeller ? 'seller' : 'buyer',
+      proposalId,
+      note: inspectionNote.trim() || undefined,
+    };
+    const systemText = `SYSTEM: ${JSON.stringify(proposalPayload)}`;
+
+    const localMsg: ChatMessage = {
+      id: proposalId,
+      senderId: currentUser?.id || chatRole,
+      senderName: isBuyer ? 'Bạn' : listing.sellerName,
+      senderRole: 'system',
+      text: systemText,
+      timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      isInspectionProposal: true,
+      inspectionProposal: proposalPayload,
+    };
+
+    // Optimistically update UI immediately (0ms latency, eliminates perceived delay)
+    setMessages((prev) => {
+      if (prev.some((m) => m.inspectionProposal?.proposalId === proposalId || m.id === proposalId)) {
+        return prev;
+      }
+      return [...prev, localMsg];
+    });
+    setShowInspectionForm(false);
+    setTimeout(scrollToBottom, 50);
+
+    try {
+      let targetRoomId = roomId;
+      if (!targetRoomId && listing?.id) {
+        const room = await chatService.getOrCreateRoom(listing.id);
+        if (room?.id) {
+          targetRoomId = room.id;
+          setRoomId(room.id);
+          setActiveRoom(room);
+          postRoomCache.set(listing.id, room);
+        }
       }
 
-      const localMsg: ChatMessage = {
-        id: `msg-${Date.now()}`,
-        senderId: currentUser?.id || chatRole,
-        senderName: isBuyer ? 'Bạn' : listing.sellerName,
-        senderRole: 'system',
-        text: systemText,
-        timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-        isInspectionProposal: true,
-        inspectionProposal: proposalPayload,
-      };
-
-      setMessages((prev) => [...prev, localMsg]);
-      setShowInspectionForm(false);
-      setTimeout(scrollToBottom, 50);
+      if (targetRoomId) {
+        await chatService.sendMessage(targetRoomId, systemText);
+      }
+    } catch (err: any) {
+      console.warn('Could not send inspection proposal to backend:', err);
     } finally {
+      isSendingInspectionRef.current = false;
       setInspectionLoading(false);
     }
   };
 
   const handleRespondInspectionProposal = async (proposalId: string, action: 'ACCEPTED' | 'REJECTED') => {
+    let systemTextToSend = '';
     setMessages((prev) =>
       prev.map((m) => {
         if (m.inspectionProposal && (m.inspectionProposal.proposalId === proposalId || m.id === proposalId)) {
           const updated: SystemInspectionProposalPayload = { ...m.inspectionProposal, status: action };
-          const systemText = `SYSTEM: ${JSON.stringify(updated)}`;
-          if (roomId) {
-            chatService.sendMessage(roomId, systemText).catch(() => {});
-          }
+          systemTextToSend = `SYSTEM: ${JSON.stringify(updated)}`;
           return {
             ...m,
             inspectionProposal: updated,
-            text: systemText,
+            text: systemTextToSend,
           };
         }
         return m;
       })
     );
+
+    if (roomId && systemTextToSend) {
+      try {
+        await chatService.sendMessage(roomId, systemTextToSend);
+      } catch (err) {
+        console.warn('Could not broadcast inspection response:', err);
+      }
+    }
   };
 
   const handleCancelInspectionProposal = async (proposalId: string) => {
+    let systemTextToSend = '';
     setMessages((prev) =>
       prev.map((m) => {
         if (m.inspectionProposal && (m.inspectionProposal.proposalId === proposalId || m.id === proposalId)) {
           const updated: SystemInspectionProposalPayload = { ...m.inspectionProposal, status: 'CANCELLED' };
-          const systemText = `SYSTEM: ${JSON.stringify(updated)}`;
-          if (roomId) {
-            chatService.sendMessage(roomId, systemText).catch(() => {});
-          }
+          systemTextToSend = `SYSTEM: ${JSON.stringify(updated)}`;
           return {
             ...m,
             inspectionProposal: updated,
-            text: systemText,
+            text: systemTextToSend,
           };
         }
         return m;
       })
     );
+
+    if (roomId && systemTextToSend) {
+      try {
+        await chatService.sendMessage(roomId, systemTextToSend);
+      } catch (err) {
+        console.warn('Could not broadcast cancel inspection:', err);
+      }
+    }
   };
 
   const handleUnsendMessage = (msgId: string) => {
@@ -1000,11 +1126,10 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   const isExpired = false; // Note: EXPIRED is not in SystemOfferPayload
                   const isPending = offer.status === 'PENDING';
                   
-                  const isOfferSenderMe = Boolean(
-                    (effectiveUserId && msg.senderId && String(msg.senderId) === effectiveUserId) ||
-                    isBuyer
-                  );
-                  const showBuyerPerspective = isOfferSenderMe || isBuyer;
+                  // In SecondLife, negotiation offers are proposed by the buyer to the seller.
+                  // showBuyerPerspective is true ONLY when the current user is the buyer!
+                  // Sellers must see the seller's perspective (accept/reject buttons) without needing page reload.
+                  const showBuyerPerspective = isBuyer;
 
                   return (
                     <div key={msg.id} className="flex justify-center my-3 animate-fadeIn">

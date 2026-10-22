@@ -172,9 +172,13 @@ export const InboxView: React.FC<InboxViewProps> = ({
     chatService.connectWebSocket();
     const unsubscribe = chatService.subscribeToMessages(() => {
       loadChatRooms();
+      loadNegotiations();
     });
 
-    const intervalId = setInterval(loadChatRooms, 15000);
+    const intervalId = setInterval(() => {
+      loadChatRooms();
+      loadNegotiations();
+    }, 10000);
 
     return () => {
       unsubscribe();

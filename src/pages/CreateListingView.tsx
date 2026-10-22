@@ -1274,7 +1274,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
   // Convert URLs or files into Blob array for postService.initPost
   const prepareImageBlobs = async (): Promise<(File | Blob)[]> => {
-    if (photoFiles.length >= 3) {
+    if (photoFiles.length >= 1) {
       return photoFiles.slice(0, 6);
     }
     // If user kept preview URLs (e.g. demo placeholders), fetch them as Blobs
@@ -1306,8 +1306,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       showToast(lang === 'vi' ? 'Vui lòng chọn Danh mục sản phẩm trước khi quét AI' : 'Please select a Category');
       return;
     }
-    if (photoPreviews.length < 3 || photoPreviews.length > 6) {
-      showToast(lang === 'vi' ? 'Vui lòng tải lên từ 3 đến 6 ảnh sản phẩm hợp lệ' : 'Please upload 3 to 6 product images');
+    if (photoPreviews.length < 1) {
+      showToast(lang === 'vi' ? 'Vui lòng tải lên ít nhất 1 ảnh sản phẩm thực tế' : 'Please upload at least 1 product image');
       return;
     }
     if ((credits?.chatCredits ?? 0) < 1) {
@@ -1339,8 +1339,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       showToast(lang === 'vi' ? 'Vui lòng chọn Danh mục sản phẩm' : 'Please select a Category');
       return;
     }
-    if (photoPreviews.length < 3 || photoPreviews.length > 6) {
-      showToast(lang === 'vi' ? 'Vui lòng tải lên từ 3 đến 6 ảnh sản phẩm hợp lệ' : 'Please upload 3 to 6 product images');
+    if (photoPreviews.length < 1) {
+      showToast(lang === 'vi' ? 'Vui lòng tải lên ít nhất 1 ảnh sản phẩm thực tế' : 'Please upload at least 1 product image');
       return;
     }
 
@@ -2118,20 +2118,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           <div className="space-y-3 pt-2 border-t border-gray-100">
             <div>
               <label className="text-xs font-bold text-[#24263e] flex items-center gap-2">
-                <span>Ảnh chụp sản phẩm thực tế (Yêu cầu 3 - 6 ảnh) *</span>
+                <span>Ảnh chụp sản phẩm thực tế (Tối đa 6 ảnh) *</span>
                 <span
-                  className={`text-[10px] font-black px-2 py-0.5 rounded-full ${photoPreviews.length >= 3 && photoPreviews.length <= 6
+                  className={`text-[10px] font-black px-2 py-0.5 rounded-full ${photoPreviews.length >= 1 && photoPreviews.length <= 6
                     ? 'bg-emerald-100 text-emerald-800'
-                    : photoPreviews.length === 0
-                      ? 'bg-slate-100 text-slate-600'
-                      : 'bg-rose-100 text-rose-800'
+                    : 'bg-slate-100 text-slate-600'
                     }`}
                 >
                   Đã có: {photoPreviews.length}/6 ảnh
                 </span>
               </label>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Tải lên mặt trước, mặt sau, góc cạnh, tem nhãn/seri và phụ kiện để AI định giá tối ưu.
+                Đăng bao nhiêu ảnh hiển thị bấy nhiêu (tối đa 6 ảnh). Tải lên ảnh thực tế rõ nét để AI định giá tối ưu.
               </p>
             </div>
 
@@ -2233,7 +2231,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           {/* Action Buttons: Tự Đăng Bài & Chat Với AI */}
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pt-4 border-t border-gray-100">
             <div className="text-xs text-slate-500 font-medium">
-              <span>Đã chọn: <strong>{photoPreviews.length}/6 ảnh</strong>. Bạn có thể chọn tự điền thông tin hoặc để AI hỗ trợ.</span>
+              <span>Đã chọn: <strong>{photoPreviews.length} ảnh</strong>. Bạn có thể chọn tự điền thông tin hoặc để AI hỗ trợ.</span>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 justify-end">
@@ -2241,7 +2239,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <button
                 type="button"
                 onClick={() => handleInitPost('manual')}
-                disabled={isInitializingPost || (!postId && !initialDraft?.id && (photoPreviews.length < 3 || photoPreviews.length > 6))}
+                disabled={isInitializingPost || (!postId && !initialDraft?.id && photoPreviews.length < 1)}
                 className="px-6 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xs flex items-center justify-center gap-2 transition cursor-pointer border-2 border-[#24263e]/20 bg-white text-[#24263e] hover:bg-slate-50 hover:border-[#24263e] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
                 title={postId || initialDraft?.id ? 'Tiếp tục chỉnh sửa thông tin bản nháp' : 'Tự nhập tiêu đề, mô tả và đăng bài nhanh chóng'}
               >
@@ -2263,7 +2261,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <button
                 type="button"
                 onClick={handleTriggerAiChat}
-                disabled={isInitializingPost || (!postId && !initialDraft?.id && (photoPreviews.length < 3 || photoPreviews.length > 6))}
+                disabled={isInitializingPost || (!postId && !initialDraft?.id && photoPreviews.length < 1)}
                 className="px-7 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-md flex items-center justify-center gap-2.5 transition cursor-pointer bg-gradient-to-r from-[#c34c36] to-[#24263e] text-white hover:opacity-95 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
                 title={postId || initialDraft?.id ? 'Nhờ AI tối ưu mô tả cho bản nháp này' : 'Sử dụng trí tuệ nhân tạo để phân tích ảnh và hoàn thiện mô tả'}
               >

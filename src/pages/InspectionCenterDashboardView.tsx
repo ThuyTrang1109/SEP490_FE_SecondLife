@@ -425,30 +425,77 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
   // Convert initial escrow orders into InspectionOrderDto fallback
   const fallbackOrders: InspectionOrderDto[] = useMemo(() => {
-    return initialOrders.map((o: any) => ({
-      id: o.id,
-      postId: o.listing?.id || o.id,
-      postTitle: o.listing?.title || 'Thiết bị gia dụng kiểm định',
-      postPrice: o.listing?.priceVnd || o.totalAmountVnd || o.amountVnd || 0,
-      postImageUrls: o.listing?.photos
-        ? [
-            o.listing.photos.front,
-            o.listing.photos.back,
-            o.listing.photos.screenOrDetails,
-          ].filter(Boolean) as string[]
-        : ['https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400'],
-      buyerName: o.buyerName || 'Khách hàng',
-      buyerEmail: o.buyerId ? `buyer_${o.buyerId.slice(0, 6)}@gmail.com` : 'buyer@secondlife.vn',
-      sellerName: o.sellerName || 'Người bán',
-      sellerEmail: o.sellerId ? `seller_${o.sellerId.slice(0, 6)}@gmail.com` : 'seller@secondlife.vn',
-      inspectorId: o.inspectorId || undefined,
-      inspectorName: o.inspectorName || undefined,
-      orderType: o.inspectionMethod === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER',
-      feePayer: o.inspectionFeeSplit === 'SELLER_100' ? 'SELLER_PAYS' : o.inspectionFeeSplit === 'BUYER_100' ? 'BUYER_PAYS' : 'SPLIT_50_50',
-      status: o.status || o.escrowStatus || 'CONFIRMED_PENDING_DISPATCH',
-      inspectionFee: o.inspectionMethod === 'AT_HOME' ? 200000 : 120000,
-      createdAt: o.createdAt || new Date().toISOString(),
-    }));
+    return (initialOrders || [])
+      .filter((o: any) =>
+        o.hasInspectionService ||
+        o.inspectionMethod ||
+        (o.inspectionFeeVnd && o.inspectionFeeVnd > 0) ||
+        o.requiresInspection ||
+        o.deliveryOption === 'INSPECTION' ||
+        o.isInspectionGuaranteed ||
+        o.escrowStatus === 'AWAITING_INSPECTION' ||
+        o.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
+        o.escrowStatus === 'INSPECTION_PASSED' ||
+        o.escrowStatus === 'AWAITING_PAYMENT' ||
+        o.status === 'CONFIRMED_PENDING_DISPATCH' ||
+        o.status === 'WAITING_SELLER_APPROVAL' ||
+        o.status === 'WAITING_FEE_PAYMENT' ||
+        o.status === 'WAITING_BUYER_APPROVAL' ||
+        o.status === 'WAITING_INSPECTION' ||
+        o.status === 'DISPATCHED' ||
+        o.status === 'INSPECTING' ||
+        o.status === 'PASSED' ||
+        o.status === 'FAILED' ||
+        o.status === 'COMPLETED' ||
+        o.backendStatus === 'CONFIRMED_PENDING_DISPATCH' ||
+        (o.id && (String(o.id).startsWith('ORD-') || /^[0-9a-f]{8}-[0-9a-f]{4}/i.test(String(o.id))))
+      )
+      .map((o: any) => {
+        let assignedInspectorId = o.inspectorId;
+        let assignedInspectorName = o.inspectorName;
+        try {
+          const rawAssign = localStorage.getItem(`order_assigned_inspector_${o.id}`);
+          if (rawAssign) {
+            const assignData = JSON.parse(rawAssign);
+            assignedInspectorId = assignData.inspectorId || assignedInspectorId;
+            assignedInspectorName = assignData.inspectorName || assignedInspectorName;
+          }
+        } catch {}
+
+        const hasValidAssign = Boolean(assignedInspectorId && assignedInspectorName && assignedInspectorName !== 'Chưa phân công');
+
+        let resolvedStatus = o.status || o.escrowStatus || 'CONFIRMED_PENDING_DISPATCH';
+        if (!hasValidAssign && (resolvedStatus === 'AWAITING_INSPECTION' || o.backendStatus === 'CONFIRMED_PENDING_DISPATCH')) {
+          resolvedStatus = 'CONFIRMED_PENDING_DISPATCH';
+        } else if (hasValidAssign && (resolvedStatus === 'CONFIRMED_PENDING_DISPATCH' || resolvedStatus === 'WAITING_INSPECTION' || resolvedStatus === 'AWAITING_INSPECTION')) {
+          resolvedStatus = 'DISPATCHED';
+        }
+
+        return {
+          id: o.id,
+          postId: o.listing?.id || o.listingId || o.id,
+          postTitle: o.listing?.title || o.postTitle || 'Thiết bị gia dụng kiểm định',
+          postPrice: o.listing?.priceVnd || o.totalAmountVnd || o.amountVnd || 0,
+          postImageUrls: o.listing?.photos
+            ? [
+                o.listing.photos.front,
+                o.listing.photos.back,
+                o.listing.photos.screenOrDetails,
+              ].filter(Boolean) as string[]
+            : ['https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400'],
+          buyerName: o.buyerName || 'Khách hàng',
+          buyerEmail: o.buyerId ? `buyer_${String(o.buyerId).slice(0, 6)}@gmail.com` : 'buyer@secondlife.vn',
+          sellerName: o.sellerName || 'Người bán',
+          sellerEmail: o.sellerId ? `seller_${String(o.sellerId).slice(0, 6)}@gmail.com` : 'seller@secondlife.vn',
+          inspectorId: hasValidAssign ? assignedInspectorId : undefined,
+          inspectorName: hasValidAssign ? assignedInspectorName : undefined,
+          orderType: (o.inspectionMethod === 'AT_HOME' || o.orderType === 'AT_HOME') ? 'AT_HOME' : 'AT_CENTER',
+          feePayer: o.inspectionFeeSplit === 'SELLER_100' ? 'SELLER_PAYS' : o.inspectionFeeSplit === 'BUYER_100' ? 'BUYER_PAYS' : 'SPLIT_50_50',
+          status: resolvedStatus,
+          inspectionFee: o.inspectionFeeVnd || (o.inspectionMethod === 'AT_HOME' ? 200000 : 120000),
+          createdAt: o.createdAt || new Date().toISOString(),
+        };
+      });
   }, [initialOrders]);
 
   // --- Orders State ---
@@ -498,64 +545,136 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           0,
           100
         );
-        backendItems = res?.items || (res as any)?.content || (Array.isArray(res) ? res : []);
+        const extracted = res?.items || (res as any)?.content || (Array.isArray(res) ? res : []);
+        if (extracted && extracted.length > 0) {
+          backendItems = extracted;
+        }
       } catch (e) {
         console.warn('getAllOrders from backend error (falling back to storage/cache):', e);
       }
 
-      // Read orders from localStorage (recent_placed_orders)
+      // Nếu gọi backend không lọc status trả về rỗng, quét thêm các status trọng tâm của đơn kiểm định
+      if (backendItems.length === 0) {
+        const statusesToProbe = ['CONFIRMED_PENDING_DISPATCH', 'WAITING_FEE_PAYMENT', 'WAITING_SELLER_APPROVAL', 'DISPATCHED', 'INSPECTING'];
+        try {
+          const probeResults = await Promise.all(
+            statusesToProbe.map((st) => inspectorService.getAllOrders(st, 0, 100).catch(() => ({ items: [] } as any)))
+          );
+          const probedMap = new Map<string, InspectionOrderDto>();
+          probeResults.forEach((pr) => {
+            const list = pr?.items || (pr as any)?.content || (Array.isArray(pr) ? pr : []);
+            list.forEach((item: any) => {
+              if (item?.id) probedMap.set(item.id, item);
+            });
+          });
+          if (probedMap.size > 0) {
+            backendItems = Array.from(probedMap.values());
+          }
+        } catch {}
+      }
+
+      // Quét thêm từ my-seller-orders, my-buyer-orders và getMyOrders để không bỏ sót bất kỳ task nào
+      try {
+        const [sellerPage, buyerPage, myInspOrders] = await Promise.all([
+          inspectorService.getMySellerOrders(0, 100).catch(() => ({ items: [] } as any)),
+          inspectorService.getMyBuyerOrders(0, 100).catch(() => ({ items: [] } as any)),
+          inspectorService.getMyOrders().catch(() => [] as any[]),
+        ]);
+        const extraItems = [
+          ...(sellerPage?.items || (sellerPage as any)?.content || []),
+          ...(buyerPage?.items || (buyerPage as any)?.content || []),
+          ...(Array.isArray(myInspOrders) ? myInspOrders : []),
+        ];
+        extraItems.forEach((extra) => {
+          if (extra?.id && !backendItems.some((b) => b.id === extra.id)) {
+            backendItems.push(extra);
+          }
+        });
+      } catch {}
+
+      // Read orders from localStorage (center_inspection_orders + recent_placed_orders)
       let localOrders: InspectionOrderDto[] = [];
       try {
-        const raw = localStorage.getItem('recent_placed_orders');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            localOrders = parsed
-              .filter((o: any) =>
-                o.hasInspectionService ||
-                o.inspectionMethod ||
-                (o.inspectionFeeVnd && o.inspectionFeeVnd > 0) ||
-                o.escrowStatus === 'AWAITING_INSPECTION' ||
-                o.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
-                o.escrowStatus === 'INSPECTION_PASSED' ||
-                o.status === 'CONFIRMED_PENDING_DISPATCH' ||
-                o.status === 'WAITING_INSPECTION'
-              )
-              .map((o: any) => {
-                let assignedInspectorId = o.inspectorId;
-                let assignedInspectorName = o.inspectorName;
-                try {
-                  const rawAssign = localStorage.getItem(`order_assigned_inspector_${o.id}`);
-                  if (rawAssign) {
-                    const assignData = JSON.parse(rawAssign);
-                    assignedInspectorId = assignData.inspectorId || assignedInspectorId;
-                    assignedInspectorName = assignData.inspectorName || assignedInspectorName;
-                  }
-                } catch {}
+        const rawRecent = localStorage.getItem('recent_placed_orders');
+        const rawCenter = localStorage.getItem('center_inspection_orders');
+        const listRecent = rawRecent ? JSON.parse(rawRecent) : [];
+        const listCenter = rawCenter ? JSON.parse(rawCenter) : [];
+        const combinedRaw = [
+          ...(Array.isArray(listCenter) ? listCenter : []),
+          ...(Array.isArray(listRecent) ? listRecent : [])
+        ];
 
-                return {
-                  id: o.id,
-                  postId: o.listing?.id || o.listingId || o.id,
-                  postTitle: o.listing?.title || o.postTitle || 'Thiết bị gia dụng kiểm định',
-                  postPrice: o.listing?.priceVnd || o.totalPaidVnd || o.itemPriceVnd || o.amountVnd || 0,
-                  postImageUrls: o.listing?.photos
-                    ? [o.listing.photos.front, o.listing.photos.back, o.listing.photos.screenOrDetails].filter(Boolean) as string[]
-                    : (o.listing?.photoGallery || ['https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400']),
-                  buyerName: o.buyerName || 'Khách hàng',
-                  buyerEmail: o.buyerId ? `buyer_${String(o.buyerId).slice(0, 6)}@gmail.com` : 'buyer@secondlife.vn',
-                  sellerName: o.sellerName || 'Người bán',
-                  sellerEmail: o.sellerId ? `seller_${String(o.sellerId).slice(0, 6)}@gmail.com` : 'seller@secondlife.vn',
-                  inspectorId: assignedInspectorId || undefined,
-                  inspectorName: assignedInspectorName || undefined,
-                  orderType: (o.inspectionMethod === 'AT_HOME' || o.orderType === 'AT_HOME') ? 'AT_HOME' : 'AT_CENTER',
-                  feePayer: o.inspectionFeeSplit === 'SELLER_100' ? 'SELLER_PAYS' : o.inspectionFeeSplit === 'BUYER_100' ? 'BUYER_PAYS' : 'SPLIT_50_50',
-                  status: assignedInspectorId ? 'DISPATCHED' : (o.status || o.escrowStatus || 'CONFIRMED_PENDING_DISPATCH'),
-                  inspectionFee: o.inspectionFeeVnd || (o.inspectionMethod === 'AT_HOME' ? 200000 : 120000),
-                  createdAt: o.createdAt || new Date().toISOString(),
-                };
-              });
+        const seenOrderIds = new Set<string>();
+        const dedupedList: any[] = [];
+        combinedRaw.forEach((item: any) => {
+          if (item?.id && !seenOrderIds.has(item.id)) {
+            seenOrderIds.add(item.id);
+            dedupedList.push(item);
           }
-        }
+        });
+
+        localOrders = dedupedList
+          .filter((o: any) =>
+            o.hasInspectionService ||
+            o.inspectionMethod ||
+            (o.inspectionFeeVnd && o.inspectionFeeVnd > 0) ||
+            o.requiresInspection ||
+            o.deliveryOption === 'INSPECTION' ||
+            o.isInspectionGuaranteed ||
+            o.escrowStatus === 'AWAITING_INSPECTION' ||
+            o.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
+            o.escrowStatus === 'INSPECTION_PASSED' ||
+            o.status === 'CONFIRMED_PENDING_DISPATCH' ||
+            o.status === 'WAITING_SELLER_APPROVAL' ||
+            o.status === 'WAITING_FEE_PAYMENT' ||
+            o.status === 'WAITING_BUYER_APPROVAL' ||
+            o.status === 'WAITING_INSPECTION' ||
+            o.status === 'DISPATCHED' ||
+            o.status === 'INSPECTING' ||
+            o.backendStatus === 'CONFIRMED_PENDING_DISPATCH'
+          )
+          .map((o: any) => {
+            let assignedInspectorId = o.inspectorId;
+            let assignedInspectorName = o.inspectorName;
+            try {
+              const rawAssign = localStorage.getItem(`order_assigned_inspector_${o.id}`);
+              if (rawAssign) {
+                const assignData = JSON.parse(rawAssign);
+                assignedInspectorId = assignData.inspectorId || assignedInspectorId;
+                assignedInspectorName = assignData.inspectorName || assignedInspectorName;
+              }
+            } catch {}
+
+            const hasValidAssign = Boolean(assignedInspectorId && assignedInspectorName && assignedInspectorName !== 'Chưa phân công');
+
+            let resolvedStatus = o.status || o.escrowStatus || 'CONFIRMED_PENDING_DISPATCH';
+            if (!hasValidAssign && (resolvedStatus === 'AWAITING_INSPECTION' || o.backendStatus === 'CONFIRMED_PENDING_DISPATCH')) {
+              resolvedStatus = 'CONFIRMED_PENDING_DISPATCH';
+            } else if (hasValidAssign && (resolvedStatus === 'CONFIRMED_PENDING_DISPATCH' || resolvedStatus === 'WAITING_INSPECTION' || resolvedStatus === 'AWAITING_INSPECTION')) {
+              resolvedStatus = 'DISPATCHED';
+            }
+
+            return {
+              id: o.id,
+              postId: o.listing?.id || o.listingId || o.id,
+              postTitle: o.listing?.title || o.postTitle || 'Thiết bị gia dụng kiểm định',
+              postPrice: o.listing?.priceVnd || o.totalPaidVnd || o.itemPriceVnd || o.amountVnd || 0,
+              postImageUrls: o.listing?.photos
+                ? [o.listing.photos.front, o.listing.photos.back, o.listing.photos.screenOrDetails].filter(Boolean) as string[]
+                : (o.listing?.photoGallery || ['https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400']),
+              buyerName: o.buyerName || 'Khách hàng',
+              buyerEmail: o.buyerId ? `buyer_${String(o.buyerId).slice(0, 6)}@gmail.com` : 'buyer@secondlife.vn',
+              sellerName: o.sellerName || 'Người bán',
+              sellerEmail: o.sellerId ? `seller_${String(o.sellerId).slice(0, 6)}@gmail.com` : 'seller@secondlife.vn',
+              inspectorId: hasValidAssign ? assignedInspectorId : undefined,
+              inspectorName: hasValidAssign ? assignedInspectorName : undefined,
+              orderType: (o.inspectionMethod === 'AT_HOME' || o.orderType === 'AT_HOME') ? 'AT_HOME' : 'AT_CENTER',
+              feePayer: o.inspectionFeeSplit === 'SELLER_100' ? 'SELLER_PAYS' : o.inspectionFeeSplit === 'BUYER_100' ? 'BUYER_PAYS' : 'SPLIT_50_50',
+              status: resolvedStatus,
+              inspectionFee: o.inspectionFeeVnd || (o.inspectionMethod === 'AT_HOME' ? 200000 : 120000),
+              createdAt: o.createdAt || new Date().toISOString(),
+            };
+          });
       } catch {}
 
       // Combine backendItems + localOrders + fallbackOrders
@@ -573,11 +692,20 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             }
           } catch {}
 
+          const hasValidAssign = Boolean(assignedInspectorId && assignedInspectorName && assignedInspectorName !== 'Chưa phân công');
+
+          let resolvedStatus = ord.status;
+          if (!hasValidAssign && (resolvedStatus === 'AWAITING_INSPECTION' || (ord as any).backendStatus === 'CONFIRMED_PENDING_DISPATCH')) {
+            resolvedStatus = 'CONFIRMED_PENDING_DISPATCH';
+          } else if (hasValidAssign && (resolvedStatus === 'CONFIRMED_PENDING_DISPATCH' || resolvedStatus === 'WAITING_INSPECTION')) {
+            resolvedStatus = 'DISPATCHED';
+          }
+
           combinedMap.set(ord.id, {
             ...ord,
-            inspectorId: assignedInspectorId,
-            inspectorName: assignedInspectorName,
-            status: assignedInspectorId && ord.status === 'CONFIRMED_PENDING_DISPATCH' ? 'DISPATCHED' : ord.status
+            inspectorId: hasValidAssign ? assignedInspectorId : undefined,
+            inspectorName: hasValidAssign ? assignedInspectorName : undefined,
+            status: resolvedStatus
           });
         }
       });
@@ -623,24 +751,59 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         }
       } catch {}
 
-      // 2. Kỹ thuật viên số 1: Nguyên (INS-a50d1568) - Luôn hiện diện
-      const defaultKtv1: InspectionStaffDto = {
+      // 2. Kỹ thuật viên hạt giống BE (inspector@secondlife.com) & KTV số 1: Nguyên - Luôn hiện diện
+      const seededKtv1: InspectionStaffDto = {
+        id: 'a50d1568-1111-4222-9333-7272a95473db',
+        email: 'inspector@secondlife.com',
+        fullName: 'Kiểm Định Viên 1 (KTV Trưởng)',
+        phone: '0901234567',
+        accountStatus: 'ACTIVE',
+        assignedOrdersCount: 0,
+        role: 'INSPECTOR',
+      };
+      const defaultKtv2: InspectionStaffDto = {
         id: 'ins-a50d1568',
         email: 'nguyen.ktv@secondlife.vn',
-        fullName: 'Nguyên (KTV số 1)',
+        fullName: 'Nguyễn Văn Inspector (KTV số 1)',
         phone: '0908889999',
         accountStatus: 'ACTIVE',
         assignedOrdersCount: 0,
         role: 'INSPECTOR',
       };
-      if (!list.some((s) => s.id === defaultKtv1.id || s.email === defaultKtv1.email || s.fullName.toLowerCase().includes('nguyên'))) {
-        list.unshift(defaultKtv1);
+
+      if (!list.some((s) => s.email?.toLowerCase() === seededKtv1.email.toLowerCase())) {
+        list.unshift(seededKtv1);
       }
+      if (!list.some((s) => s.email?.toLowerCase() === defaultKtv2.email.toLowerCase() || s.id === defaultKtv2.id)) {
+        list.push(defaultKtv2);
+      }
+
+      // Trích xuất thêm KTV từ danh sách orders nếu có inspectorId/inspectorName
+      orders.forEach((ord) => {
+        if (ord.inspectorId && !list.some((s) => s.id === ord.inspectorId)) {
+          list.push({
+            id: ord.inspectorId,
+            email: ord.inspectorName ? `${ord.inspectorName.toLowerCase().replace(/\s+/g, '.')}@secondlife.vn` : 'ktv@secondlife.vn',
+            fullName: ord.inspectorName || 'Kỹ thuật viên',
+            phone: '0901234567',
+            accountStatus: 'ACTIVE',
+            assignedOrdersCount: 0,
+            role: 'INSPECTOR',
+          });
+        }
+      });
 
       // 3. Tính số task thực tế cho từng KTV
       list = list.map((st) => {
         let taskCount = 0;
         try {
+          // Đếm trực tiếp từ danh sách đơn hiện có
+          orders.forEach((o) => {
+            if (o.inspectorId === st.id || (st.email && o.inspectorId === st.email)) {
+              taskCount++;
+            }
+          });
+
           const raw = localStorage.getItem('recent_placed_orders');
           if (raw) {
             const allOrders = JSON.parse(raw);
@@ -670,16 +833,25 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       setStaffList(list);
     } catch (err: any) {
       console.warn('Lỗi tải danh sách nhân viên KTV:', err);
-      const defaultKtv1: InspectionStaffDto = {
+      const seededKtv1: InspectionStaffDto = {
+        id: 'a50d1568-1111-4222-9333-7272a95473db',
+        email: 'inspector@secondlife.com',
+        fullName: 'Kiểm Định Viên 1 (KTV Trưởng)',
+        phone: '0901234567',
+        accountStatus: 'ACTIVE',
+        assignedOrdersCount: 0,
+        role: 'INSPECTOR',
+      };
+      const defaultKtv2: InspectionStaffDto = {
         id: 'ins-a50d1568',
         email: 'nguyen.ktv@secondlife.vn',
-        fullName: 'Nguyên (KTV số 1)',
+        fullName: 'Nguyễn Văn Inspector (KTV số 1)',
         phone: '0908889999',
         accountStatus: 'ACTIVE',
         assignedOrdersCount: 0,
         role: 'INSPECTOR',
       };
-      setStaffList([defaultKtv1]);
+      setStaffList([seededKtv1, defaultKtv2]);
     } finally {
       setIsLoadingStaff(false);
     }
@@ -702,6 +874,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     const handleStorage = (e: StorageEvent) => {
       if (
         e.key === 'recent_placed_orders' ||
+        e.key === 'center_inspection_orders' ||
         e.key === 'center_registered_staff' ||
         e.key?.startsWith('order_assigned_inspector_')
       ) {
@@ -1197,6 +1370,28 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         return false;
       }
 
+      // Status filter
+      if (orderStatusFilter !== 'ALL') {
+        const ordStatus = (ord.status || '').toUpperCase();
+        const filterStatus = orderStatusFilter.toUpperCase();
+        if (filterStatus === 'CONFIRMED_PENDING_DISPATCH') {
+          if (
+            ordStatus !== 'CONFIRMED_PENDING_DISPATCH' &&
+            ordStatus !== 'PENDING' &&
+            ordStatus !== 'WAITING_INSPECTION' &&
+            ordStatus !== 'AWAITING_INSPECTION'
+          ) {
+            return false;
+          }
+        } else if (filterStatus === 'DISPATCHED') {
+          if (ordStatus !== 'DISPATCHED' && ordStatus !== 'ASSIGNED' && ordStatus !== 'SCHEDULED') {
+            return false;
+          }
+        } else if (ordStatus !== filterStatus) {
+          return false;
+        }
+      }
+
       // Search term filter
       if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase().trim();
@@ -1212,7 +1407,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
       return true;
     });
-  }, [orders, onlyUnassigned, orderMethodFilter, searchTerm]);
+  }, [orders, onlyUnassigned, orderMethodFilter, orderStatusFilter, searchTerm]);
 
   // Filtered Staff
   const filteredStaff = useMemo(() => {
@@ -1313,6 +1508,27 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             return o;
           });
           localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
+        }
+      } catch {}
+
+      // Update center_inspection_orders
+      try {
+        const rawCenter = localStorage.getItem('center_inspection_orders');
+        if (rawCenter) {
+          const list = JSON.parse(rawCenter);
+          const updated = list.map((o: any) => {
+            if (o.id === assignModalOrder.id) {
+              return {
+                ...o,
+                inspectorId: selectedInspectorId,
+                inspectorName: inspectorName,
+                status: 'DISPATCHED',
+                backendStatus: 'DISPATCHED',
+              };
+            }
+            return o;
+          });
+          localStorage.setItem('center_inspection_orders', JSON.stringify(updated));
         }
       } catch {}
 

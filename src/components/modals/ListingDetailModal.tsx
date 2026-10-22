@@ -53,15 +53,32 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
     user?.id && listing.sellerId && String(user.id) === String(listing.sellerId)
   );
 
-  const photoKeys: Array<{ key: keyof typeof listing.photos; labelVi: string; labelEn: string }> = [
-    { key: 'front', labelVi: '1. Mặt trước', labelEn: '1. Front' },
-    { key: 'back', labelVi: '2. Mặt sau & Viền', labelEn: '2. Back & Frame' },
-    { key: 'screenOrDetails', labelVi: '3. Soi vết xước', labelEn: '3. Scratches / Details' },
-    { key: 'accessoriesOrBox', labelVi: '4. Phụ kiện / Hộp', labelEn: '4. Accessories & Box' },
-    { key: 'serialOrReceipt', labelVi: '5. Serial / Hóa đơn', labelEn: '5. Serial / Proof' }
-  ];
+  // Lấy chính xác danh sách ảnh thực tế của bài đăng (không nhân bản / không lặp lại ảnh)
+  const galleryImages: string[] = React.useMemo(() => {
+    if (Array.isArray(listing.photoGallery) && listing.photoGallery.length > 0) {
+      const filtered = listing.photoGallery.filter(Boolean);
+      const unique = Array.from(new Set(filtered));
+      if (unique.length > 0) return unique;
+    }
+    const fromPhotos = [
+      listing.photos?.front,
+      listing.photos?.back,
+      listing.photos?.screenOrDetails,
+      listing.photos?.accessoriesOrBox,
+      listing.photos?.serialOrReceipt,
+      listing.photos?.extraDetail
+    ].filter(Boolean) as string[];
 
-  const [activePhotoKey, setActivePhotoKey] = useState<keyof typeof listing.photos>('front');
+    const deduped = Array.from(new Set(fromPhotos));
+    if (deduped.length > 0) return deduped;
+    return [(listing as any).imageUrl || listing.photos?.front || 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&q=80&w=800'];
+  }, [listing]);
+
+  const [activePhotoIndex, setActivePhotoIndex] = useState<number>(0);
+
+  useEffect(() => {
+    setActivePhotoIndex(0);
+  }, [listing.id]);
   const [reviewsTab, setReviewsTab] = useState<'product' | 'seller'>('product');
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
@@ -154,7 +171,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
             <div className="flex items-center gap-2 text-xs font-extrabold text-[#24263e]">
               <div className="flex items-center gap-1.5 bg-[#24263e] text-white px-2.5 py-1 rounded-lg shadow-xs text-[11px]">
                 <Camera className="w-3 h-3 text-white" />
-                <span>{lang === 'vi' ? 'Ảnh Thực Tế Sản Phẩm (5 Góc Chuẩn)' : 'Real Photos (5 Standard Angles)'}</span>
+                <span>{lang === 'vi' ? `Ảnh Thực Tế Sản Phẩm (${galleryImages.length} ảnh)` : `Real Photos (${galleryImages.length} photos)`}</span>
               </div>
             </div>
 
@@ -167,43 +184,48 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
               {/* Gallery Column (6 cols) */}
               <div className="md:col-span-6 space-y-2">
-                <div className="relative aspect-4/3 min-h-[240px] max-h-[340px] w-full bg-[#f8f9fa] rounded-xl overflow-hidden border border-gray-200 flex items-center justify-center p-1">
+                <div className="relative aspect-4/3 min-h-[240px] max-h-[340px] w-full bg-[#f8f9fa] rounded-xl overflow-hidden border border-gray-200 flex items-center justify-center p-2">
                   <img
-                    src={listing.photos[activePhotoKey] || listing.photos.front}
+                    src={galleryImages[activePhotoIndex] || galleryImages[0]}
                     alt={listing.title}
                     className="w-full h-full object-contain"
                   />
                 </div>
 
-                {/* Thumbnails */}
-                <div className="space-y-1">
-                  <div className="text-[10px] font-bold text-[#24263e]/70 flex items-center gap-1">
-                    <FileCheck2 className="w-3 h-3 text-[#24263e]" />
-                    <span>{t.photoChecklistTitle}</span>
+                {/* Thumbnails (Có bao nhiêu ảnh thì hiển thị bấy nhiêu) */}
+                {galleryImages.length > 1 && (
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-bold text-[#24263e]/70 flex items-center gap-1">
+                      <FileCheck2 className="w-3 h-3 text-[#24263e]" />
+                      <span>{lang === 'vi' ? `Danh sách ảnh thực tế (${galleryImages.length} ảnh)` : `Actual photos (${galleryImages.length})`}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {galleryImages.map((imgUrl, idx) => {
+                        const isSelected = activePhotoIndex === idx;
+                        return (
+                          <button
+                            key={idx}
+                            onClick={() => setActivePhotoIndex(idx)}
+                            className={`relative rounded-lg overflow-hidden w-14 h-14 sm:w-16 sm:h-16 border transition-all cursor-pointer p-0.5 bg-slate-50 shrink-0 ${
+                              isSelected
+                                ? 'border-[#24263e] ring-2 ring-[#24263e]/40 shadow-xs scale-105'
+                                : 'border-gray-200 opacity-75 hover:opacity-100 hover:border-gray-300'
+                            }`}
+                          >
+                            <img
+                              src={imgUrl}
+                              alt={`Ảnh ${idx + 1}`}
+                              className="w-full h-full object-contain"
+                            />
+                            <span className="absolute bottom-0.5 right-0.5 bg-black/60 text-white text-[9px] px-1 rounded font-bold">
+                              #{idx + 1}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="grid grid-cols-5 gap-1">
-                    {photoKeys.map((item) => {
-                      const isSelected = activePhotoKey === item.key;
-                      return (
-                        <button
-                          key={item.key}
-                          onClick={() => setActivePhotoKey(item.key)}
-                          className={`relative rounded-lg overflow-hidden aspect-square border transition-all cursor-pointer ${
-                            isSelected
-                              ? 'border-[#24263e] ring-2 ring-[#24263e]/30 scale-102'
-                              : 'border-gray-200 opacity-75 hover:opacity-100'
-                          }`}
-                        >
-                          <img
-                            src={listing.photos[item.key] || listing.photos.front}
-                            alt={item.labelVi}
-                            className="w-full h-full object-contain bg-slate-50"
-                          />
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Price & Seller Action Column (6 cols) */}

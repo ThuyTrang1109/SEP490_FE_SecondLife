@@ -165,6 +165,8 @@ export interface EscrowOrder {
   inspectionCenterId?: string;
   inspectionCenterName?: string;
   inspectionMethod?: 'AT_CENTER' | 'AT_HOME';
+  inspectorId?: string;
+  inspectorName?: string;
   inspectionFeeSplit?: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
   buyerInspectionFeeVnd?: number;
   sellerInspectionFeeVnd?: number;
@@ -192,6 +194,9 @@ export interface EscrowOrder {
   paymentMethod?: 'WALLET' | 'BANK_TRANSFER' | string;
   paymentExpiresAt?: string | null;
   bankPaymentDetails?: any;
+  cancellationReasonCode?: string | null;
+  cancellationReason?: string | null;
+  cancelledBy?: string | null;
 }
 
 export interface ProductReview {

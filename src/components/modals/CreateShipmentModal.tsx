@@ -31,7 +31,6 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [leg, setLeg] = useState<'SELLER_TO_BUYER' | 'SELLER_TO_CENTER'>('SELLER_TO_BUYER');
 
   const [requestId, setRequestId] = useState<string>(() => crypto.randomUUID());
 
@@ -41,9 +40,10 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
     setErrorMsg(null);
 
     try {
+      // Backend /api/v1/orders/{orderId}/shipments endpoint strictly requires leg: 'SELLER_TO_BUYER' matching paid quote
       const shipment = await shippingService.createShipment(order.id, {
         requestId,
-        leg,
+        leg: 'SELLER_TO_BUYER',
       });
 
       // Kiểm tra trạng thái vận đơn trả về theo mục 10
@@ -185,53 +185,24 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             </div>
           </div>
 
-          {/* Leg Selection */}
-          <div className="space-y-2">
-            <label className="font-extrabold text-[11px] uppercase tracking-wider text-slate-600">
-              Chặng giao hàng:
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                onClick={() => setLeg('SELLER_TO_BUYER')}
-                className={`p-3 rounded-2xl border text-left transition cursor-pointer ${
-                  leg === 'SELLER_TO_BUYER'
-                    ? 'border-[#c34c36] bg-[#c34c36]/5 text-slate-900 font-bold ring-2 ring-[#c34c36]/20'
-                    : 'border-gray-200 bg-white text-slate-600 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
-                  <Truck className="w-3.5 h-3.5 text-[#c34c36]" />
-                  <span>Giao thẳng (Seller → Buyer)</span>
-                </div>
-                <p className="text-[10px] text-slate-500 mt-1 font-normal">
-                  Áp dụng giao hàng trực tiếp bưu tá đến nhà người mua.
+          {/* Route Overview */}
+          <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Truck className="w-4 h-4 text-orange-600 shrink-0" />
+              <div>
+                <span className="font-bold text-xs text-slate-800">
+                  {order.hasInspectionService && order.inspectionMethod !== 'AT_HOME'
+                    ? 'Chặng vận chuyển bàn giao Trung tâm Hub'
+                    : 'Chặng vận chuyển trực tiếp (Người bán → Người mua)'}
+                </span>
+                <p className="text-[10px] text-slate-500">
+                  Tài xế Lalamove sẽ đến địa chỉ kho lấy hàng và phát thẳng theo điều phối hệ thống.
                 </p>
-              </button>
-
-              <button
-                type="button"
-                disabled={!order.hasInspectionService && !order.inspectionCenterId}
-                onClick={() => setLeg('SELLER_TO_CENTER')}
-                className={`p-3 rounded-2xl border text-left transition ${
-                  !order.hasInspectionService && !order.inspectionCenterId
-                    ? 'opacity-40 bg-gray-50 border-gray-200 cursor-not-allowed'
-                    : leg === 'SELLER_TO_CENTER'
-                    ? 'border-[#c34c36] bg-[#c34c36]/5 text-slate-900 font-bold ring-2 ring-[#c34c36]/20 cursor-pointer'
-                    : 'border-gray-200 bg-white text-slate-600 hover:border-gray-300 cursor-pointer'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Qua Hub Kiểm Định (Seller → Hub)</span>
-                </div>
-                <p className="text-[10px] text-slate-500 mt-1 font-normal">
-                  {!order.hasInspectionService && !order.inspectionCenterId
-                    ? 'Chỉ áp dụng cho đơn hàng có đăng ký dịch vụ kiểm định Hub.'
-                    : 'Chuyển kiện hàng đến trung tâm kiểm định SecondLife.'}
-                </p>
-              </button>
+              </div>
             </div>
+            <span className="text-[10px] font-extrabold text-orange-800 bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200 shrink-0">
+              Lalamove Sandbox
+            </span>
           </div>
 
           {/* Info notice */}

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Listing, EscrowOrder, EscrowStatus, Language, UserWallet, ShippingQuoteResponseDto, ShippingLeg, InspectionCenter, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import { mockInspectionCenters } from '../../data/mockData';
-import { getBoughtListingIds, markListingAsBought } from '../../utils/orderUtils';
+import { getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, safeJsonParse } from '../../utils/orderUtils';
 import {
   ShieldCheck,
   Truck,
@@ -799,46 +799,80 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
 
       const shippingLegsData: ShippingLeg[] = isInspected
-        ? [
-            {
-              id: 'LEG-1',
-              legType: 'SELLER_TO_CENTER',
-              carrier: inspectionMethod === 'AT_HOME' ? 'SecondLife On-site Team' : 'Lalamove',
-              trackingNumber: '',
-              status: 'PENDING',
-              origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
-              destination: inspectionMethod === 'AT_HOME'
-                ? `Kiểm định tại nhà người bán (Kỹ sư ${selectedCenter?.name})`
-                : (selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab'),
-              estimatedDelivery: 'Trong ngày',
-              timeline: [
+        ? (inspectionMethod === 'AT_HOME'
+            ? [
                 {
-                  timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-                  description: inspectionMethod === 'AT_HOME'
-                    ? `Cử chuyên viên kỹ thuật từ ${selectedCenter?.name} đến tận nhà người bán kiểm định trực tiếp on-site.`
-                    : `Khởi tạo đơn hàng kiểm định Hub (${selectedCenter?.name}). Chờ bưu tá Lalamove điều phối lấy hàng chuyển về Hub.`,
-                  location: selectedCenter?.name || 'Hệ thống SecondLife Escrow'
+                  id: 'LEG-1',
+                  legType: 'SELLER_TO_BUYER',
+                  carrier: 'SecondLife On-site Team',
+                  trackingNumber: '',
+                  status: 'PENDING',
+                  origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
+                  destination: `Kiểm định tại nhà người bán (Kỹ sư ${selectedCenter?.name || 'On-site'})`,
+                  estimatedDelivery: 'Kỹ sư đến kiểm định theo lịch hẹn',
+                  timeline: [
+                    {
+                      timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                      description: `Cử chuyên viên kỹ thuật từ ${selectedCenter?.name || 'Trung tâm'} đến tận nhà người bán kiểm định trực tiếp on-site.`,
+                      location: 'Địa chỉ kho người bán'
+                    }
+                  ]
+                },
+                {
+                  id: 'LEG-2',
+                  legType: 'SELLER_TO_BUYER',
+                  carrier: 'Lalamove',
+                  trackingNumber: '',
+                  status: 'PENDING',
+                  origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
+                  destination: fullAddress,
+                  estimatedDelivery: 'Giao nhanh đến người mua sau khi kiểm định đạt chuẩn',
+                  timeline: [
+                    {
+                      timestamp: '--:--',
+                      description: 'Tài xế Lalamove nhận hàng tại nhà người bán và phát thẳng đến người mua sau khi niêm phong tem kiểm định.',
+                      location: fullAddress
+                    }
+                  ]
                 }
               ]
-            },
-            {
-              id: 'LEG-2',
-              legType: 'CENTER_TO_BUYER',
-              carrier: 'Lalamove',
-              trackingNumber: '',
-              status: 'PENDING',
-              origin: selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab',
-              destination: fullAddress,
-              estimatedDelivery: 'Giao nhanh trong ngày sau khi đạt chuẩn kiểm định',
-              timeline: [
+            : [
                 {
-                  timestamp: '--:--',
-                  description: 'Chờ hoàn tất quy trình kiểm định và dán tem niêm phong NFC tại Hub Lab.',
-                  location: selectedCenter?.name || 'Trung tâm kiểm định SecondLife'
+                  id: 'LEG-1',
+                  legType: 'SELLER_TO_CENTER',
+                  carrier: 'Lalamove',
+                  trackingNumber: '',
+                  status: 'PENDING',
+                  origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
+                  destination: selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab',
+                  estimatedDelivery: 'Trong ngày',
+                  timeline: [
+                    {
+                      timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                      description: `Khởi tạo đơn hàng kiểm định Hub (${selectedCenter?.name || 'Hub'}). Chờ bưu tá Lalamove điều phối lấy hàng chuyển về Hub.`,
+                      location: selectedCenter?.name || 'Hệ thống SecondLife Escrow'
+                    }
+                  ]
+                },
+                {
+                  id: 'LEG-2',
+                  legType: 'CENTER_TO_BUYER',
+                  carrier: 'Lalamove',
+                  trackingNumber: '',
+                  status: 'PENDING',
+                  origin: selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab',
+                  destination: fullAddress,
+                  estimatedDelivery: 'Giao nhanh trong ngày sau khi đạt chuẩn kiểm định',
+                  timeline: [
+                    {
+                      timestamp: '--:--',
+                      description: 'Chờ hoàn tất quy trình kiểm định và dán tem niêm phong NFC tại Hub Lab.',
+                      location: selectedCenter?.name || 'Trung tâm kiểm định SecondLife'
+                    }
+                  ]
                 }
               ]
-            }
-          ]
+          )
         : [
             {
               id: 'LEG-1',
@@ -905,7 +939,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       };
 
       try {
-        markListingAsBought(String(listing.id));
+        if (!isBankWaiting) {
+          markListingAsBought(String(listing.id));
+        }
         localStorage.setItem(`order_listing_${orderId}`, JSON.stringify(listing));
         if (listing?.id) {
           localStorage.setItem(`cached_post_${listing.id}`, JSON.stringify(listing));
@@ -924,11 +960,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
         // Only save to recent_placed_orders and dispatch seller notification for instant payment (wallet or inspection)
         if (!isBankWaiting) {
-          let existingRecent: EscrowOrder[] = [];
-          try {
-            const stored = localStorage.getItem('recent_placed_orders');
-            if (stored && stored !== 'undefined' && stored !== 'null') existingRecent = JSON.parse(stored);
-          } catch {}
+          const stored = localStorage.getItem('recent_placed_orders');
+          const existingRecent = safeJsonParse<EscrowOrder[]>(stored, []);
           const updatedRecent = [newOrder, ...existingRecent.filter((o) => o.id !== newOrder.id)].slice(0, 30);
           localStorage.setItem('recent_placed_orders', JSON.stringify(updatedRecent));
 
@@ -949,7 +982,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           };
           try {
             const rawNotifs = localStorage.getItem('secondlife_local_notifications');
-            const existingNotifs = rawNotifs && rawNotifs !== 'undefined' && rawNotifs !== 'null' ? JSON.parse(rawNotifs) : [];
+            const existingNotifs = safeJsonParse<any[]>(rawNotifs, []);
             localStorage.setItem('secondlife_local_notifications', JSON.stringify([sellerNotifItem, ...existingNotifs.filter((n: any) => n.id !== sellerNotifItem.id)].slice(0, 50)));
             window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: sellerNotifItem }));
           } catch {}
@@ -1071,6 +1104,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const handlePaymentSuccess = useCallback((paidOrder: EscrowOrder) => {
     setIsPaymentSuccess(true);
     setCreatedOrder(paidOrder);
+    if (listing?.id) {
+      markListingAsBought(String(listing.id));
+    }
     setBankCheckMessage({
       type: 'success',
       text: lang === 'vi' ? '🎉 Đã ký quỹ Escrow thành công! Đang chuyển hướng đến đơn hàng...' : '🎉 Escrow deposit verified! Redirecting...',
@@ -1078,7 +1114,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     try {
       const raw = localStorage.getItem('recent_placed_orders');
-      const list = raw ? JSON.parse(raw) : [];
+      const list = safeJsonParse<any[]>(raw, []);
       const updated = [paidOrder, ...list.filter((o: any) => o.id !== paidOrder.id)].slice(0, 30);
       localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
     } catch {}
@@ -1097,7 +1133,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         createdAt: new Date().toISOString(),
       };
       const rawNotifs = localStorage.getItem('secondlife_local_notifications');
-      const existingNotifs = rawNotifs ? JSON.parse(rawNotifs) : [];
+      const existingNotifs = safeJsonParse<any[]>(rawNotifs, []);
       localStorage.setItem('secondlife_local_notifications', JSON.stringify([sellerNotifItem, ...existingNotifs.filter((n: any) => n.id !== sellerNotifItem.id)].slice(0, 50)));
       window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: sellerNotifItem }));
     } catch {}
@@ -1106,7 +1142,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       onOrderPlaced(paidOrder);
       onClose();
     }, 1800);
-  }, [buyerName, listing.title, onOrderPlaced, onClose, lang]);
+  }, [buyerName, listing.id, listing.title, onOrderPlaced, onClose, lang]);
 
   const handleCloseUnpaidModal = async () => {
     if (isPaymentSuccess) {
@@ -1133,18 +1169,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         localStorage.removeItem(`order_listing_${createdOrder.id}`);
         localStorage.removeItem(`order_buyer_info_${createdOrder.id}`);
         const raw = localStorage.getItem('recent_placed_orders');
-        if (raw) {
-          const list = JSON.parse(raw);
-          const filtered = list.filter((o: any) => o.id !== createdOrder.id);
-          localStorage.setItem('recent_placed_orders', JSON.stringify(filtered));
-        }
+        const list = safeJsonParse<any[]>(raw, []);
+        const filtered = list.filter((o: any) => o.id !== createdOrder.id);
+        localStorage.setItem('recent_placed_orders', JSON.stringify(filtered));
+
+        const rawAll = localStorage.getItem('all_orders_cache');
+        const listAll = safeJsonParse<any[]>(rawAll, []);
+        const filteredAll = listAll.filter((o: any) => o.id !== createdOrder.id);
+        localStorage.setItem('all_orders_cache', JSON.stringify(filteredAll));
+
         const rawNotifs = localStorage.getItem('secondlife_local_notifications');
-        if (rawNotifs) {
-          const list = JSON.parse(rawNotifs);
-          const filtered = list.filter((n: any) => n.referenceId !== createdOrder.id);
-          localStorage.setItem('secondlife_local_notifications', JSON.stringify(filtered));
-        }
+        const listNotifs = safeJsonParse<any[]>(rawNotifs, []);
+        const filteredNotifs = listNotifs.filter((n: any) => n.referenceId !== createdOrder.id);
+        localStorage.setItem('secondlife_local_notifications', JSON.stringify(filteredNotifs));
       } catch {}
+    }
+
+    // Giải phóng bài đăng để sản phẩm lập tức hiện lại trên sàn giao dịch
+    const cancelledListingId = String(listing?.id || createdOrder?.listingId || '');
+    if (cancelledListingId) {
+      markListingAsAvailable(cancelledListingId);
+      reconcileBoughtListingIds();
     }
 
     const unpaidxMsg = lang === 'vi'
@@ -1508,7 +1553,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={bankPaymentInfo || createdOrder ? handleCloseUnpaidModal : onClose}
             className="text-[#24263e] hover:bg-white/40 p-1.5 rounded-xl cursor-pointer transition font-bold"
           >
             <X className="w-5 h-5" />

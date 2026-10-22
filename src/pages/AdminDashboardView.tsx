@@ -125,6 +125,41 @@ type AdminTab =
   | 'inspection-governance';
 
 
+export const VALID_ADMIN_TABS: AdminTab[] = [
+  'overview',
+  'catalog-ai',
+  'orders',
+  'listings',
+  'withdrawals',
+  'hubs',
+  'customers',
+  'seller-kyc',
+  'permissions',
+  'credit-pricing',
+  'system-wallet',
+  'commission-rules',
+  'inspection-governance'
+];
+
+export const ADMIN_TAB_STORAGE_KEY = 'secondlife_admin_active_tab';
+
+export function getInitialAdminTab(): AdminTab {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const subtab = params.get('subtab') as AdminTab;
+    if (subtab && VALID_ADMIN_TABS.includes(subtab)) {
+      return subtab;
+    }
+    try {
+      const saved = sessionStorage.getItem(ADMIN_TAB_STORAGE_KEY) as AdminTab;
+      if (saved && VALID_ADMIN_TABS.includes(saved)) {
+        return saved;
+      }
+    } catch (e) {}
+  }
+  return 'overview';
+}
+
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   orders: initialOrders,
   listings: initialListings,
@@ -137,8 +172,33 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 }) => {
   const t = translations[lang];
 
-  // Active sub-tab in Admin Dashboard
-  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  // Active sub-tab in Admin Dashboard (khôi phục từ URL param ?subtab= hoặc sessionStorage khi F5)
+  const [activeTab, setActiveTab] = useState<AdminTab>(getInitialAdminTab);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      sessionStorage.setItem(ADMIN_TAB_STORAGE_KEY, activeTab);
+    } catch (e) {}
+    const currentUrl = new URL(window.location.href);
+    if (activeTab && activeTab !== 'overview') {
+      currentUrl.searchParams.set('subtab', activeTab);
+    } else {
+      currentUrl.searchParams.delete('subtab');
+    }
+    if (currentUrl.toString() !== window.location.href) {
+      window.history.replaceState(null, '', currentUrl.toString());
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const tab = getInitialAdminTab();
+      setActiveTab(tab);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Sidebar toggle state (expanded / collapsed)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);

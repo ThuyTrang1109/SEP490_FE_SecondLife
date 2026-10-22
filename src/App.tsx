@@ -15,8 +15,10 @@ import { RealtimeNotificationToast } from './components/common/RealtimeNotificat
 import { GlobalPopupModal } from './components/common/GlobalPopupModal';
 import type { PolicyTabKey } from './components/modals/PolicyModal';
 import './utils/dialogService';
+import { clearNotificationsOnLogout } from './utils/notificationStorage';
+import { notificationWsClient } from './services/notificationWsClient';
 import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
-import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, getRefreshToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, isTokenExpiringSoon, recordUserActivity, isUserIdle, refreshAccessToken, ChatRoomDto } from './services';
+import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, getRefreshToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, isTokenExpiringSoon, recordUserActivity, resetActivityTimer, isUserIdle, refreshAccessToken, ChatRoomDto } from './services';
 
 // Code-split heavy views via React.lazy
 const CreateListingView = lazy(() => import('./pages/CreateListingView').then(m => ({ default: m.CreateListingView })));
@@ -56,23 +58,140 @@ const ViewLoadingFallback = () => (
   </div>
 );
 
-export default function App() {
-  // Global State - Default to 'marketplace' so visitors enter directly into the marketplace
-  const [lang, setLang] = useState<Language>('vi');
-  const [activeTab, setActiveTab] = useState<string>(() => {
-    const token = getAccessToken();
-    const stored = getStoredUser();
-    if (token && stored && stored.role) {
-      const r = String(stored.role).toLowerCase();
-      if (r === 'admin') return 'admin-dashboard';
-      if (r === 'inspection_center') return 'inspection-center';
-      if (r === 'inspector') return 'inspection-hub';
+export const VALID_MAIN_TABS = [
+  'home',
+  'marketplace',
+  'seller-dashboard',
+  'create-listing',
+  'orders',
+  'buyer-inspection-decision',
+  'inspection-center',
+  'inspection-hub',
+  'staff-workspace',
+  'admin-dashboard',
+  'chat',
+  'notifications',
+  'disputes'
+] as const;
+
+export const TAB_STORAGE_KEY = 'secondlife_active_tab';
+
+export function getInitialActiveTab(): string {
+  const token = getAccessToken();
+  const stored = getStoredUser();
+  const userRole = (token && stored?.role) ? String(stored.role).toLowerCase() : null;
+
+  let candidateTab: string | null = null;
+  if (typeof window !== 'undefined') {
+    // 1. Kiểm tra URL query param ?tab=
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    if (tabParam && (VALID_MAIN_TABS as readonly string[]).includes(tabParam)) {
+      candidateTab = tabParam;
+    } else {
+      // Kiểm tra hash #tab nếu có
+      const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
+      if (hash && (VALID_MAIN_TABS as readonly string[]).includes(hash)) {
+        candidateTab = hash;
+      }
     }
-    return 'home';
-  });
+
+    // 2. Nếu URL chưa có thì lấy từ sessionStorage đã lưu trước khi F5
+    if (!candidateTab) {
+      try {
+        const savedTab = sessionStorage.getItem(TAB_STORAGE_KEY);
+        if (savedTab && (VALID_MAIN_TABS as readonly string[]).includes(savedTab)) {
+          candidateTab = savedTab;
+        }
+      } catch (e) {}
+    }
+  }
+
+  // 3. Phân quyền và bảo vệ route
+  if (candidateTab) {
+    if (userRole === 'admin') {
+      return candidateTab === 'admin-dashboard' ? candidateTab : 'admin-dashboard';
+    }
+    if (userRole === 'inspection_center') {
+      return ['inspection-center', 'inspection-hub', 'notifications'].includes(candidateTab)
+        ? candidateTab
+        : 'inspection-center';
+    }
+    if (userRole === 'inspector') {
+      return ['inspection-hub', 'notifications'].includes(candidateTab)
+        ? candidateTab
+        : 'inspection-hub';
+    }
+    const protectedTabs = [
+      'seller-dashboard',
+      'orders',
+      'buyer-inspection-decision',
+      'inspection-center',
+      'inspection-hub',
+      'staff-workspace',
+      'admin-dashboard',
+      'chat',
+      'notifications',
+      'disputes'
+    ];
+    if (!token && protectedTabs.includes(candidateTab)) {
+      return 'marketplace';
+    }
+    return candidateTab;
+  }
+
+  if (userRole === 'admin') return 'admin-dashboard';
+  if (userRole === 'inspection_center') return 'inspection-center';
+  if (userRole === 'inspector') return 'inspection-hub';
+  if (userRole === 'staff') return 'staff-workspace';
+
+  return 'home';
+}
+
+export default function App() {
+  // Global State - Khôi phục tab từ URL / sessionStorage khi F5 refresh
+  const [lang, setLang] = useState<Language>('vi');
+  const [activeTab, setActiveTab] = useState<string>(getInitialActiveTab);
 
   React.useEffect(() => {
     document.body.classList.remove('dark');
+  }, []);
+
+  // Tự động đồng bộ activeTab vào sessionStorage và URL query parameter ?tab=
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      sessionStorage.setItem(TAB_STORAGE_KEY, activeTab);
+    } catch (e) {}
+
+    const url = new URL(window.location.href);
+    if (activeTab && activeTab !== 'home') {
+      url.searchParams.set('tab', activeTab);
+    } else {
+      url.searchParams.delete('tab');
+    }
+    if (activeTab !== 'admin-dashboard' && activeTab !== 'staff-workspace' && activeTab !== 'inspection-center') {
+      url.searchParams.delete('subtab');
+    }
+    if (activeTab !== 'buyer-inspection-decision') {
+      url.searchParams.delete('orderId');
+    }
+    if (activeTab !== 'orders') {
+      url.searchParams.delete('order_tab');
+    }
+    if (url.toString() !== window.location.href) {
+      window.history.replaceState(null, '', url.toString());
+    }
+  }, [activeTab]);
+
+  // Hỗ trợ nút Back/Forward của trình duyệt
+  React.useEffect(() => {
+    const handlePopState = () => {
+      const tab = getInitialActiveTab();
+      setActiveTab(tab);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   // User Auth State - Isolated per browser/device via localStorage
@@ -189,11 +308,11 @@ export default function App() {
             syncedUser.provinceName || syncedUser.province || ''
           );
           if (syncedUser.role === 'admin') {
-            setActiveTab('admin-dashboard');
+            setActiveTab((prev) => (prev === 'admin-dashboard' ? prev : 'admin-dashboard'));
           } else if (syncedUser.role === 'inspection_center') {
-            setActiveTab('inspection-center');
+            setActiveTab((prev) => (['inspection-center', 'inspection-hub', 'notifications'].includes(prev) ? prev : 'inspection-center'));
           } else if (syncedUser.role === 'inspector') {
-            setActiveTab('inspection-hub');
+            setActiveTab((prev) => (['inspection-hub', 'notifications'].includes(prev) ? prev : 'inspection-hub'));
           }
         } else {
           clearAuthTokens();
@@ -260,14 +379,12 @@ export default function App() {
     if (currentUser && getAccessToken()) {
       loadUserWallet();
 
-      const isSellerOrAdmin =
+      // Chỉ tài khoản Người bán (Seller) mới có và sử dụng credit
+      const isSeller =
         currentRole === 'seller' ||
-        currentRole === 'admin' ||
-        currentUser.role === 'seller' ||
-        currentUser.role === 'admin';
+        currentUser.role === 'seller';
 
-      // Buyers only use wallet balance; credits are only for sellers/admins
-      if (isSellerOrAdmin) {
+      if (isSeller) {
         Promise.all([
           topupService.getMyCredit().catch(() => null),
           sellerCreditService.getCredits().catch(() => null)
@@ -292,8 +409,14 @@ export default function App() {
 
 
   const handleConfirmLogout = () => {
+    setIsSessionExpiredOpen(false);
     authService.logout().finally(() => {
+      try {
+        notificationWsClient.disconnect();
+      } catch {}
+      clearNotificationsOnLogout();
       clearAuthTokens();
+      resetActivityTimer();
       setCurrentUser(null);
       setCurrentRole('buyer');
       setActiveTab('marketplace');
@@ -320,9 +443,21 @@ export default function App() {
           }
         }
         sessionStorage.removeItem('create_listing_active_draft');
+        sessionStorage.removeItem(TAB_STORAGE_KEY);
+        sessionStorage.removeItem('secondlife_admin_active_tab');
+        sessionStorage.removeItem('secondlife_staff_active_tab');
+        sessionStorage.removeItem('secondlife_center_active_tab');
+        sessionStorage.removeItem('secondlife_orders_filter_tab');
+        sessionStorage.removeItem('secondlife_inspection_decision_order_id');
       } catch {}
 
       // Force a hard reload to ensure all memory states and third-party scripts are cleared
+      try {
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.search = '';
+        cleanUrl.hash = '';
+        window.history.replaceState(null, '', cleanUrl.toString());
+      } catch (e) {}
       window.location.reload();
     });
   };
@@ -456,22 +591,27 @@ export default function App() {
   // Listen for 401 Unauthorized session revocation events
   React.useEffect(() => {
     const handleUnauthorized = () => {
-      console.log('[App] Received unauthorized_session event! Setting isSessionExpiredOpen to true');
+      // Chỉ hiển thị modal hết hạn phiên nếu người dùng thực sự đang có phiên đăng nhập hoạt động
+      const hadUser = Boolean(currentUser || getAccessToken() || getRefreshToken());
+      console.log('[App] Received unauthorized_session event! hadUser:', hadUser);
       clearAuthTokens();
+      resetActivityTimer();
       setCurrentUser(null);
       setCurrentRole('buyer');
       
-      // Notify user that session expired without destroying their current UI state
-      setIsSessionExpiredOpen(true);
+      // Không làm phiền người dùng chưa đăng nhập hoặc vừa đăng xuất chủ động
+      if (hadUser) {
+        setIsSessionExpiredOpen(true);
+      }
     };
     window.addEventListener('unauthorized_session', handleUnauthorized);
     return () => window.removeEventListener('unauthorized_session', handleUnauthorized);
-  }, [lang]);
+  }, [lang, currentUser]);
 
   // Idle Time & Token Watchdog (30-minute idle check + proactive JWT renewal for active users)
   React.useEffect(() => {
     // Record activity on mount and register user interaction listeners
-    recordUserActivity();
+    recordUserActivity(true);
 
     const handleUserInteraction = () => {
       recordUserActivity();
@@ -498,8 +638,8 @@ export default function App() {
         return;
       }
 
-      // User is still active: proactively refresh token if expiring within 3 minutes or expired
-      if (token && (isTokenExpiringSoon(token, 180) || isTokenExpired(token))) {
+      // User is actively using the system: proactively refresh token if expiring within 60 seconds
+      if (token && isTokenExpiringSoon(token, 60)) {
         console.log('[App] User is actively using the system. Seamlessly renewing JWT token.');
         refreshAccessToken().then((newToken) => {
           if (!newToken && isTokenExpired(token)) {
@@ -508,7 +648,7 @@ export default function App() {
           }
         });
       }
-    }, 5000);
+    }, 10000);
 
     return () => {
       clearInterval(interval);
@@ -2281,6 +2421,8 @@ export default function App() {
       {/* Real-time Push Notification Floating Toast */}
       <RealtimeNotificationToast
         lang={lang}
+        currentUser={currentUser}
+        currentRole={currentRole}
         onNavigateToUrl={handleNotificationNavigate}
       />
 
@@ -2553,6 +2695,8 @@ export default function App() {
         {activeTab === 'notifications' && (
           <NotificationCenterView
             lang={lang}
+            currentUser={currentUser}
+            currentRole={currentRole}
             onNavigateToUrl={handleNotificationNavigate}
             onBackToHome={() => handleTabChange('home')}
           />
@@ -2578,12 +2722,6 @@ export default function App() {
         )}
         </Suspense>
       </main>
-
-      {/* Real-time WebSocket STOMP Push Notification Toast (Requirement 4 & Phase 4) */}
-      <RealtimeNotificationToast
-        lang={lang}
-        onNavigateToUrl={handleNotificationNavigate}
-      />
 
       {/* Modals & Popups */}
       <Suspense fallback={null}>
@@ -2757,6 +2895,9 @@ export default function App() {
           initialMode={authModalMode}
           onClose={() => setIsAuthModalOpen(false)}
           onLoginSuccess={(user) => {
+            setIsSessionExpiredOpen(false);
+            resetActivityTimer();
+            recordUserActivity(true);
             const profileUser: UserProfile = {
               id: user.id,
               name: user.name,
@@ -2772,7 +2913,6 @@ export default function App() {
             setCurrentUser(profileUser);
             setCurrentRole(user.role);
             setStoredUser(profileUser);
-            recordUserActivity();
             saveSellerAddress(
               profileUser.pickupAddress || profileUser.address || '',
               profileUser.wardName || profileUser.ward || '',

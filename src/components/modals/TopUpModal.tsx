@@ -53,6 +53,30 @@ const getPkgCredits = (pkg?: TopupPackage | null) => Number(pkg?.postCredits ?? 
 const getPkgBonus = (pkg?: TopupPackage | null) => Number(pkg?.chatCredits ?? pkg?.bonusPoints ?? 0);
 const getPkgTotalCredits = (pkg?: TopupPackage | null) => getPkgCredits(pkg) + getPkgBonus(pkg);
 
+export const getPackageType = (pkg: TopupPackage): 'combo' | 'listing' | 'valuation' | 'chat' => {
+  const posts = Number(pkg.postCredits || 0);
+  const chats = Number(pkg.chatCredits || 0);
+  const valuations = Number(pkg.valuationCredits || 0);
+  const name = (pkg.name || '').toLowerCase();
+
+  const typesCount = (posts > 0 ? 1 : 0) + (chats > 0 ? 1 : 0) + (valuations > 0 ? 1 : 0);
+  if (typesCount > 1 || name.includes('combo') || name.includes('trọn gói')) {
+    return 'combo';
+  }
+
+  if (valuations > 0 || name.includes('valuation') || name.includes('định giá')) {
+    return 'valuation';
+  }
+  if (chats > 0 || name.includes('chat')) {
+    return 'chat';
+  }
+  if (posts > 0 || name.includes('post') || name.includes('tin') || name.includes('bài')) {
+    return 'listing';
+  }
+
+  return 'valuation';
+};
+
 export const TopUpModal: React.FC<TopUpModalProps> = ({
   isOpen,
   onClose,
@@ -100,8 +124,8 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   // Sub-category inside packages: 'combo' (Gói Combo) vs 'single' (Gói Lẻ)
   const [packageCategory, setPackageCategory] = useState<'combo' | 'single'>('combo');
 
-  // Filter inside Gói Lẻ: 'all' | 'listing' | 'valuation'
-  const [singleFilter, setSingleFilter] = useState<'all' | 'listing' | 'valuation'>('all');
+  // Filter inside Gói Lẻ: 'all' | 'valuation' | 'chat' | 'listing'
+  const [singleFilter, setSingleFilter] = useState<'all' | 'valuation' | 'chat' | 'listing'>('all');
 
   const [userCredit, setUserCredit] = useState<UserCredit>(
     initialUserCredit || { postCredits: currentCredit || 10, valuationCredits: 0, chatCredits: 20 }
@@ -348,11 +372,19 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       ]);
 
       const pkgsList = Array.isArray(pkgsRes) ? pkgsRes : (pkgsRes as any)?.data || [];
-      const allPkgs: TopupPackage[] = [...pkgsList];
+      const seen = new Set<string>();
+      const uniquePkgs: TopupPackage[] = [];
+      for (const p of pkgsList) {
+        const key = p.id || `${p.name}_${p.postCredits}_${p.chatCredits}_${p.valuationCredits}_${p.price}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniquePkgs.push(p);
+        }
+      }
 
-      setPackages(allPkgs);
-      if (allPkgs.length > 0) {
-        setSelectedPkg(allPkgs[0]);
+      setPackages(uniquePkgs);
+      if (uniquePkgs.length > 0) {
+        setSelectedPkg(uniquePkgs[0]);
       }
 
       if (aiCreditObj || sellerCreditObj) {
@@ -372,31 +404,27 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   };
 
   const comboPackages = useMemo(() => {
-    return packages.filter((p) => {
-      const posts = Number(p.postCredits || 0);
-      const chats = Number(p.chatCredits || 0);
-      const name = (p.name || '').toLowerCase();
-      return (posts > 0 && chats > 0) || name.includes('combo') || name.includes('trọn gói');
-    });
+    return packages.filter((p) => getPackageType(p) === 'combo');
   }, [packages]);
 
   const singlePackages = useMemo(() => {
-    return packages.filter((p) => {
-      const posts = Number(p.postCredits || 0);
-      const chats = Number(p.chatCredits || 0);
-      const name = (p.name || '').toLowerCase();
-      const isCombo = (posts > 0 && chats > 0) || name.includes('combo') || name.includes('trọn gói');
-      if (isCombo) return false;
+    return packages
+      .filter((p) => {
+        const type = getPackageType(p);
+        if (type === 'combo') return false;
 
-      const singleType = (p as any).singleType || (posts > 0 ? 'listing' : 'valuation');
-      if (singleFilter === 'listing') {
-        return singleType === 'listing';
-      }
-      if (singleFilter === 'valuation') {
-        return singleType === 'valuation';
-      }
-      return true;
-    });
+        if (singleFilter === 'valuation') {
+          return type === 'valuation';
+        }
+        if (singleFilter === 'chat') {
+          return type === 'chat';
+        }
+        if (singleFilter === 'listing') {
+          return type === 'listing';
+        }
+        return true;
+      })
+      .sort((a, b) => getPkgPrice(a) - getPkgPrice(b));
   }, [packages, singleFilter]);
 
   // Handle Create Deposit Request
@@ -1237,43 +1265,58 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                       {packageCategory === 'single' && (
                         <div className="space-y-4 animate-fadeIn">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                            <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
                               <button
                                 type="button"
                                 onClick={() => setSingleFilter('all')}
-                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${singleFilter === 'all'
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                  singleFilter === 'all'
                                     ? 'bg-white text-[#24263e] shadow-xs'
                                     : 'text-slate-600 hover:text-slate-900'
-                                  }`}
+                                }`}
                               >
-                                Tất Cả Gói Lẻ ({packages.filter(p => !((Number(p.postCredits || 0) > 0 && Number(p.chatCredits || 0) > 0) || (p.name || '').toLowerCase().includes('combo'))).length})
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setSingleFilter('listing')}
-                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${singleFilter === 'listing'
-                                    ? 'bg-white text-[#c34c36] shadow-xs'
-                                    : 'text-slate-600 hover:text-slate-900'
-                                  }`}
-                              >
-                                <Tag className="w-3 h-3" />
-                                <span>Chỉ Lượt Đăng Bài</span>
+                                Tất Cả Gói Lẻ ({packages.filter((p) => getPackageType(p) !== 'combo').length})
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setSingleFilter('valuation')}
-                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${singleFilter === 'valuation'
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                                  singleFilter === 'valuation'
+                                    ? 'bg-white text-blue-600 shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                <Search className="w-3 h-3 text-blue-600" />
+                                <span>Chỉ Định Giá AI ({packages.filter((p) => getPackageType(p) === 'valuation').length})</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSingleFilter('chat')}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                                  singleFilter === 'chat'
                                     ? 'bg-white text-indigo-600 shadow-xs'
                                     : 'text-slate-600 hover:text-slate-900'
-                                  }`}
+                                }`}
                               >
-                                <Sparkles className="w-3 h-3" />
-                                <span>Chỉ Lượt Chat AI</span>
+                                <Sparkles className="w-3 h-3 text-indigo-500" />
+                                <span>Chỉ Chat AI ({packages.filter((p) => getPackageType(p) === 'chat').length})</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSingleFilter('listing')}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                                  singleFilter === 'listing'
+                                    ? 'bg-white text-[#c34c36] shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                <Tag className="w-3 h-3 text-[#c34c36]" />
+                                <span>Chỉ Đăng Bài ({packages.filter((p) => getPackageType(p) === 'listing').length})</span>
                               </button>
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                             {singlePackages.map((pkg) => {
                               const isSelected = selectedPkg?.id === pkg.id;
                               const pkgName = getPkgName(pkg);
@@ -1281,8 +1324,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                               const postCredits = Number(pkg.postCredits || 0);
                               const chatCredits = Number(pkg.chatCredits || 0);
                               const valuationCredits = Number(pkg.valuationCredits || 0);
-                              const isListingType = postCredits > 0;
-                              const isValuationType = valuationCredits > 0;
+                              const pkgType = getPackageType(pkg);
+                              const isListingType = pkgType === 'listing';
+                              const isValuationType = pkgType === 'valuation';
                               const isAffordable = currentWalletBalance >= pkgPrice;
 
                               return (
@@ -1292,10 +1336,11 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                                     setSelectedPkg(pkg);
                                     setPurchaseError(null);
                                   }}
-                                  className={`relative p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${isSelected
+                                  className={`relative p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+                                    isSelected
                                       ? 'bg-white border-2 border-[#24263e] shadow-md ring-2 ring-[#24263e]/20 transform -translate-y-0.5'
                                       : 'bg-white border-slate-200 hover:border-[#24263e]/60 hover:shadow-xs'
-                                    }`}
+                                  }`}
                                 >
                                   {(pkg.discountPercentage ?? 0) > 0 && (
                                     <span className="absolute -top-2 right-2 px-1.5 py-0.2 text-[9px] font-black rounded-md bg-emerald-600 text-white">
@@ -1305,12 +1350,21 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
                                   <div>
                                     <span
-                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black ${isListingType
-                                          ? 'bg-orange-100 text-orange-900'
-                                          : isValuationType ? 'bg-blue-100 text-blue-900' : 'bg-indigo-100 text-indigo-900'
-                                        }`}
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black ${
+                                        isListingType
+                                          ? 'bg-orange-100 text-orange-900 border border-orange-200'
+                                          : isValuationType
+                                          ? 'bg-blue-100 text-blue-900 border border-blue-200'
+                                          : 'bg-indigo-100 text-indigo-900 border border-indigo-200'
+                                      }`}
                                     >
-                                      {isListingType ? <Tag className="w-3 h-3" /> : isValuationType ? <Search className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
+                                      {isListingType ? (
+                                        <Tag className="w-3 h-3" />
+                                      ) : isValuationType ? (
+                                        <Search className="w-3 h-3" />
+                                      ) : (
+                                        <Sparkles className="w-3 h-3" />
+                                      )}
                                       <span>{isListingType ? 'Đăng Bài' : isValuationType ? 'Định Giá AI' : 'Chat AI'}</span>
                                     </span>
 

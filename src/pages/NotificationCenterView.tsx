@@ -22,19 +22,29 @@ import {
 } from 'lucide-react';
 import { NotificationItem, NotificationType } from '../types/notification';
 import { notificationService } from '../services/notificationService';
-import { Language } from '../types';
+import { Language, UserProfile, UserRole } from '../types';
 import { dialogService } from '../utils/dialogService';
+import {
+  getScopedLocalNotifications,
+  isNotificationForUser,
+  markScopedLocalNotificationRead,
+  deleteScopedLocalNotification,
+} from '../utils/notificationStorage';
 
 interface NotificationCenterViewProps {
   lang: Language;
   onNavigateToUrl?: (actionUrl: string | null, notification: NotificationItem) => void;
   onBackToHome?: () => void;
+  currentUser?: UserProfile | null;
+  currentRole?: UserRole | string;
 }
 
 export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
   lang,
   onNavigateToUrl,
   onBackToHome,
+  currentUser,
+  currentRole,
 }) => {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -85,28 +95,23 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
         console.warn('Backend notification fetch fallback:', beErr);
       }
 
-      // Merge local notifications (e.g. from checkout / inspection)
-      let localNotifs: NotificationItem[] = [];
-      try {
-        const raw = localStorage.getItem('secondlife_local_notifications');
-        if (raw) localNotifs = JSON.parse(raw);
-      } catch {}
-
-      if (selectedType && selectedType !== 'ALL') {
-        localNotifs = localNotifs.filter(
-          (n) => (n.type || '').toUpperCase() === selectedType.toUpperCase()
-        );
-      }
-      if (unreadOnly) {
-        localNotifs = localNotifs.filter((n) => !n.isRead);
-      }
+      // Merge local notifications (scoped strictly to current user)
+      const localNotifs = getScopedLocalNotifications(currentUser, currentRole).filter((n) => {
+        if (selectedType && selectedType !== 'ALL') {
+          if ((n.type || '').toUpperCase() !== selectedType.toUpperCase()) return false;
+        }
+        if (unreadOnly) {
+          if (n.isRead) return false;
+        }
+        return true;
+      });
 
       const combined = [...localNotifs, ...listContent];
       const seen = new Set<string>();
       const unique = combined.filter((n) => {
         if (!n?.id || seen.has(n.id)) return false;
         seen.add(n.id);
-        return true;
+        return isNotificationForUser(n, currentUser, currentRole);
       });
 
       const localUnread = localNotifs.filter((n) => !n.isRead).length;
@@ -122,7 +127,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [unreadOnly, selectedType]);
+  }, [unreadOnly, selectedType, currentUser, currentRole]);
 
   useEffect(() => {
     loadData(0);
@@ -147,16 +152,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
       await notificationService.markAsRead(item.id).catch(() => {});
     } catch {}
 
-    try {
-      const raw = localStorage.getItem('secondlife_local_notifications');
-      if (raw) {
-        const list: NotificationItem[] = JSON.parse(raw);
-        localStorage.setItem(
-          'secondlife_local_notifications',
-          JSON.stringify(list.map((n) => (n.id === item.id ? { ...n, isRead: true, readAt: new Date().toISOString() } : n)))
-        );
-      }
-    } catch {}
+    markScopedLocalNotificationRead(currentUser, item.id);
 
     setNotifications((prev) =>
       prev.map((n) => (n.id === item.id ? { ...n, isRead: true, readAt: new Date().toISOString() } : n))
@@ -170,16 +166,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
     setIsProcessing(true);
     try {
       await notificationService.markAllAsRead().catch(() => {});
-      try {
-        const raw = localStorage.getItem('secondlife_local_notifications');
-        if (raw) {
-          const list: NotificationItem[] = JSON.parse(raw);
-          localStorage.setItem(
-            'secondlife_local_notifications',
-            JSON.stringify(list.map((n) => ({ ...n, isRead: true, readAt: new Date().toISOString() })))
-          );
-        }
-      } catch {}
+      markScopedLocalNotificationRead(currentUser);
 
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true, readAt: new Date().toISOString() })));
       setUnreadCount(0);
@@ -203,16 +190,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
       await notificationService.deleteNotification(id).catch(() => {});
     } catch {}
 
-    try {
-      const raw = localStorage.getItem('secondlife_local_notifications');
-      if (raw) {
-        const list: NotificationItem[] = JSON.parse(raw);
-        localStorage.setItem(
-          'secondlife_local_notifications',
-          JSON.stringify(list.filter((n) => n.id !== id))
-        );
-      }
-    } catch {}
+    deleteScopedLocalNotification(currentUser, id);
 
     setNotifications((prev) => prev.filter((n) => n.id !== id));
     setTotalElements((prev) => Math.max(0, prev - 1));
@@ -229,16 +207,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
     setIsProcessing(true);
     try {
       await notificationService.clearReadNotifications().catch(() => {});
-      try {
-        const raw = localStorage.getItem('secondlife_local_notifications');
-        if (raw) {
-          const list: NotificationItem[] = JSON.parse(raw);
-          localStorage.setItem(
-            'secondlife_local_notifications',
-            JSON.stringify(list.filter((n) => !n.isRead))
-          );
-        }
-      } catch {}
+      deleteScopedLocalNotification(currentUser, undefined, false);
 
       showNotice(lang === 'vi' ? 'Đã dọn dẹp các thông báo đã đọc!' : 'Cleared read notifications!');
       await loadData(0);
@@ -259,9 +228,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
     setIsProcessing(true);
     try {
       await notificationService.clearAllNotifications().catch(() => {});
-      try {
-        localStorage.removeItem('secondlife_local_notifications');
-      } catch {}
+      deleteScopedLocalNotification(currentUser, undefined, true);
 
       showNotice(lang === 'vi' ? 'Đã dọn sạch toàn bộ hộp thư thông báo!' : 'Cleared all notifications!');
       setNotifications([]);

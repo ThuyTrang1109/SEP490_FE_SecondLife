@@ -69,6 +69,37 @@ type StaffTab =
   | 'monitor-transactions'
   | 'restrict-users';
 
+export const VALID_STAFF_TABS: StaffTab[] = [
+  'overview',
+  'review-listings',
+  'proof-possession',
+  'reports-support',
+  'disputes',
+  'refund-requests',
+  'payouts',
+  'monitor-transactions',
+  'restrict-users'
+];
+
+export const STAFF_TAB_STORAGE_KEY = 'secondlife_staff_active_tab';
+
+export function getInitialStaffTab(): StaffTab {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const subtab = params.get('subtab') as StaffTab;
+    if (subtab && VALID_STAFF_TABS.includes(subtab)) {
+      return subtab;
+    }
+    try {
+      const saved = sessionStorage.getItem(STAFF_TAB_STORAGE_KEY) as StaffTab;
+      if (saved && VALID_STAFF_TABS.includes(saved)) {
+        return saved;
+      }
+    } catch (e) {}
+  }
+  return 'overview';
+}
+
 export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   listings = [],
   orders = [],
@@ -78,7 +109,32 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   onOpenProfile,
   onLogout,
 }) => {
-  const [activeTab, setActiveTab] = useState<StaffTab>('overview');
+  const [activeTab, setActiveTab] = useState<StaffTab>(getInitialStaffTab);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      sessionStorage.setItem(STAFF_TAB_STORAGE_KEY, activeTab);
+    } catch (e) {}
+    const currentUrl = new URL(window.location.href);
+    if (activeTab && activeTab !== 'overview') {
+      currentUrl.searchParams.set('subtab', activeTab);
+    } else {
+      currentUrl.searchParams.delete('subtab');
+    }
+    if (currentUrl.toString() !== window.location.href) {
+      window.history.replaceState(null, '', currentUrl.toString());
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const tab = getInitialStaffTab();
+      setActiveTab(tab);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);

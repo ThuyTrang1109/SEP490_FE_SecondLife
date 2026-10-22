@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { inspectorService, InspectionOrderDto } from '../services/inspectorService';
 import { walletService, WalletBackend } from '../services/walletService';
+import { saveScopedLocalNotification } from '../utils/notificationStorage';
 
 interface BuyerInspectionDecisionViewProps {
   orderId?: string;
@@ -166,12 +167,14 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         }
       } catch {}
 
-      // Dispatch local notification
+      // Dispatch local notification for Buyer
       const successNotif = {
         id: `notif-confirm-purchase-${effectiveOrderId}`,
+        recipientId: currentUser?.id || order?.buyerId,
+        recipientRole: 'buyer',
         title: 'Thanh toán mua hàng thành công',
         message: `Bạn đã xác nhận mua tiếp và thanh toán tiền hàng cho sản phẩm "${postTitle}". Đơn hàng đang được đóng gói gửi đến bạn!`,
-        type: 'ORDER',
+        type: 'ORDER' as const,
         referenceId: effectiveOrderId,
         referenceType: 'INSPECTION_ORDER',
         actionUrl: '/orders',
@@ -179,12 +182,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         readAt: null,
         createdAt: new Date().toISOString(),
       };
-      try {
-        const raw = localStorage.getItem('secondlife_local_notifications');
-        const existing = raw ? JSON.parse(raw) : [];
-        localStorage.setItem('secondlife_local_notifications', JSON.stringify([successNotif, ...existing]));
-        window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: successNotif }));
-      } catch {}
+      saveScopedLocalNotification(successNotif, currentUser?.id || order?.buyerId, 'buyer');
 
       setAlertNotice({
         type: 'success',
@@ -229,11 +227,14 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
       } catch {}
 
       // Dispatch notification specifically for Seller
+      const targetSellerId = inspectionDto?.sellerId || order?.sellerId;
       const sellerNotice = {
         id: `notif-seller-buyer-rejected-${effectiveOrderId}`,
+        recipientId: targetSellerId,
+        recipientRole: 'seller',
         title: 'Người mua từ chối mua tiếp sau kiểm định',
         message: `Khách hàng đã quyết định từ chối mua tiếp sản phẩm "${postTitle}" sau khi xem kết quả kiểm định. Lý do: ${fullReason}. Trung tâm sẽ đóng gói hoàn trả sản phẩm về cho bạn.`,
-        type: 'INSPECTION',
+        type: 'INSPECTION' as const,
         referenceId: effectiveOrderId,
         referenceType: 'INSPECTION_ORDER',
         actionUrl: '/orders',
@@ -241,12 +242,24 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         readAt: null,
         createdAt: new Date().toISOString(),
       };
-      try {
-        const raw = localStorage.getItem('secondlife_local_notifications');
-        const existing = raw ? JSON.parse(raw) : [];
-        localStorage.setItem('secondlife_local_notifications', JSON.stringify([sellerNotice, ...existing]));
-        window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: sellerNotice }));
-      } catch {}
+      saveScopedLocalNotification(sellerNotice, targetSellerId, 'seller');
+
+      // Dispatch notification for Buyer confirmation
+      const buyerNotice = {
+        id: `notif-buyer-rejected-confirm-${effectiveOrderId}`,
+        recipientId: currentUser?.id || order?.buyerId,
+        recipientRole: 'buyer',
+        title: 'Đã từ chối mua sản phẩm sau kiểm định',
+        message: `Bạn đã từ chối nhận mua sản phẩm "${postTitle}". Khoản tạm giữ tiền hàng sẽ được giải phóng hoàn lại ví cho bạn.`,
+        type: 'INSPECTION' as const,
+        referenceId: effectiveOrderId,
+        referenceType: 'INSPECTION_ORDER',
+        actionUrl: '/orders',
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+      };
+      saveScopedLocalNotification(buyerNotice, currentUser?.id || order?.buyerId, 'buyer');
 
       setAlertNotice({
         type: 'success',

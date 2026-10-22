@@ -32,7 +32,9 @@ import {
   XCircle,
 } from 'lucide-react';
 import { orderService, walletService, shippingService, GhnLocation, inspectorService, InspectionQuoteResponse, InspectionTravelTierDto } from '../../services';
+import { translateApiError } from '../../services/apiClient';
 import { LalamoveAddressPicker, getCityCoordinates } from '../common/LalamoveAddressPicker';
+import { saveScopedLocalNotification } from '../../utils/notificationStorage';
 
 export const formatLalamoveVehicle = (serviceType?: string): { name: string; icon: string; desc: string } => {
   if (!serviceType) {
@@ -691,7 +693,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           });
           setGhnQuote(activeQuote);
         } catch (err: any) {
-          setOrderError(err?.message || 'Không thể lấy báo giá Lalamove. Vui lòng kiểm tra lại địa chỉ hoặc thử lại.');
+          setOrderError(translateApiError(err?.message) || 'Không thể lấy báo giá Lalamove. Vui lòng kiểm tra lại địa chỉ hoặc thử lại.');
           setSubmittingOrder(false);
           return;
         }
@@ -966,8 +968,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           localStorage.setItem('recent_placed_orders', JSON.stringify(updatedRecent));
 
           // Dispatch notification specifically for seller (and buyer)
+          const targetSellerId = listing.sellerId || (listing as any).seller?.id;
           const sellerNotifItem = {
             id: `notif-seller-inspection-${orderId}`,
+            recipientId: targetSellerId,
+            recipientRole: 'seller',
             title: isInspected ? 'Yêu cầu kiểm định Hub mới' : 'Đơn đặt hàng mới',
             message: isInspected
               ? `Khách mua ${buyerName || 'Khách Hàng'} vừa gửi yêu cầu kiểm định cho sản phẩm "${listing.title}". Người bán vui lòng kiểm tra và hẹn lịch KTV!`
@@ -980,12 +985,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             readAt: null,
             createdAt: new Date().toISOString(),
           };
-          try {
-            const rawNotifs = localStorage.getItem('secondlife_local_notifications');
-            const existingNotifs = safeJsonParse<any[]>(rawNotifs, []);
-            localStorage.setItem('secondlife_local_notifications', JSON.stringify([sellerNotifItem, ...existingNotifs.filter((n: any) => n.id !== sellerNotifItem.id)].slice(0, 50)));
-            window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: sellerNotifItem }));
-          } catch {}
+          saveScopedLocalNotification(sellerNotifItem as any, targetSellerId, 'seller');
+
+          // Buyer local notification
+          const buyerNotifItem = {
+            id: `notif-buyer-${orderId}`,
+            recipientId: currentUser?.id,
+            recipientRole: 'buyer',
+            title: isInspected ? 'Đặt đơn kiểm định thành công' : 'Đặt đơn hàng thành công',
+            message: `Bạn đã đặt mua sản phẩm "${listing.title}". Đang chờ Người bán xác nhận!`,
+            type: isInspected ? 'INSPECTION' : 'ORDER',
+            referenceId: orderId,
+            referenceType: isInspected ? 'INSPECTION_ORDER' : 'ORDER',
+            actionUrl: '/orders',
+            isRead: false,
+            readAt: null,
+            createdAt: new Date().toISOString(),
+          };
+          saveScopedLocalNotification(buyerNotifItem as any, currentUser?.id, 'buyer');
           try {
             window.dispatchEvent(new CustomEvent('secondlife_order_placed_signal', { detail: newOrder }));
             localStorage.setItem('secondlife_order_placed_signal', String(Date.now()));
@@ -1052,7 +1069,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             : 'Invalid or expired negotiation deal price. Please review in chat before placing order.'
         );
       } else {
-        setOrderError(beMsg || (lang === 'vi' ? 'Không thể tạo đơn hàng trên hệ thống. Vui lòng kiểm tra lại kết nối backend hoặc số dư ví.' : 'Failed to create order on backend.'));
+        setOrderError(translateApiError(beMsg) || (lang === 'vi' ? 'Không thể tạo đơn hàng trên hệ thống. Vui lòng kiểm tra lại kết nối backend hoặc số dư ví.' : 'Failed to create order on backend.'));
       }
     } finally {
       setSubmittingOrder(false);
@@ -1120,11 +1137,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     } catch {}
 
     try {
+      const targetSellerId = listing.sellerId || (listing as any).seller?.id;
       const sellerNotifItem = {
         id: `notif-seller-${paidOrder.id}`,
+        recipientId: targetSellerId,
+        recipientRole: 'seller',
         title: 'Đơn đặt hàng mới đã ký quỹ Escrow',
         message: `Khách mua ${buyerName || 'Khách Hàng'} vừa ký quỹ thành công cho sản phẩm "${listing.title}". Vui lòng xác nhận đơn hàng!`,
-        type: 'ORDER',
+        type: 'ORDER' as const,
         referenceId: paidOrder.id,
         referenceType: 'ORDER',
         actionUrl: '/orders?tab=awaiting_pickup',
@@ -1132,10 +1152,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         readAt: null,
         createdAt: new Date().toISOString(),
       };
-      const rawNotifs = localStorage.getItem('secondlife_local_notifications');
-      const existingNotifs = safeJsonParse<any[]>(rawNotifs, []);
-      localStorage.setItem('secondlife_local_notifications', JSON.stringify([sellerNotifItem, ...existingNotifs.filter((n: any) => n.id !== sellerNotifItem.id)].slice(0, 50)));
-      window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: sellerNotifItem }));
+      saveScopedLocalNotification(sellerNotifItem, targetSellerId, 'seller');
+
+      const buyerNotifItem = {
+        id: `notif-buyer-${paidOrder.id}`,
+        recipientId: currentUser?.id,
+        recipientRole: 'buyer',
+        title: 'Ký quỹ đơn hàng thành công',
+        message: `Bạn đã ký quỹ Escrow thành công cho đơn #${paidOrder.id.slice(0, 8)}. Người bán sẽ sớm chuẩn bị hàng!`,
+        type: 'ORDER' as const,
+        referenceId: paidOrder.id,
+        referenceType: 'ORDER',
+        actionUrl: '/orders',
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+      };
+      saveScopedLocalNotification(buyerNotifItem, currentUser?.id, 'buyer');
     } catch {}
 
     setTimeout(() => {
@@ -1182,6 +1215,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         const listNotifs = safeJsonParse<any[]>(rawNotifs, []);
         const filteredNotifs = listNotifs.filter((n: any) => n.referenceId !== createdOrder.id);
         localStorage.setItem('secondlife_local_notifications', JSON.stringify(filteredNotifs));
+
+        if (currentUser?.id) {
+          const userKey = `secondlife_local_notifications_${currentUser.id}`;
+          const rawUserNotifs = localStorage.getItem(userKey);
+          const listUserNotifs = safeJsonParse<any[]>(rawUserNotifs, []);
+          const filteredUserNotifs = listUserNotifs.filter((n: any) => n.referenceId !== createdOrder.id);
+          localStorage.setItem(userKey, JSON.stringify(filteredUserNotifs));
+        }
       } catch {}
     }
 

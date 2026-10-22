@@ -1,8 +1,31 @@
 export function numberToVietnameseWords(num: number): string {
+    if (num === null || num === undefined || isNaN(num) || num < 0) return '';
     if (num === 0) return 'Không đồng';
+    if (!isFinite(num) || num > 999_999_999_999_999_999) return 'Số tiền vượt quá giới hạn hiển thị';
     
-    const units = ['', 'nghìn', 'triệu', 'tỷ', 'nghìn tỷ', 'triệu tỷ'];
+    const units = [
+        '',
+        'nghìn',
+        'triệu',
+        'tỷ',
+        'nghìn tỷ',
+        'triệu tỷ',
+        'tỷ tỷ',
+        'nghìn tỷ tỷ',
+        'triệu tỷ tỷ',
+        'tỷ tỷ tỷ'
+    ];
     const digits = ['không', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu', 'bảy', 'tám', 'chín'];
+
+    function getUnit(index: number): string {
+        if (index < units.length && units[index] !== undefined) return units[index];
+        const tyCount = Math.floor(index / 3);
+        const remainder = index % 3;
+        const tyStr = Array(tyCount).fill('tỷ').join(' ');
+        if (remainder === 0) return tyStr;
+        if (remainder === 1) return `nghìn ${tyStr}`;
+        return `triệu ${tyStr}`;
+    }
     
     function readGroup(group: number, isLast: boolean): string {
         const h = Math.floor(group / 100);
@@ -36,7 +59,7 @@ export function numberToVietnameseWords(num: number): string {
     }
     
     let words = '';
-    let currentNum = num;
+    let currentNum = Math.floor(num);
     let unitIndex = 0;
     let firstGroup = true;
     
@@ -44,10 +67,11 @@ export function numberToVietnameseWords(num: number): string {
         const group = currentNum % 1000;
         currentNum = Math.floor(currentNum / 1000);
         
-        if (group > 0 || unitIndex === 0 && num === 0) {
+        if (group > 0 || (unitIndex === 0 && num === 0)) {
             const groupText = readGroup(group, firstGroup && currentNum === 0);
             if (groupText !== '') {
-                words = groupText + ' ' + units[unitIndex] + ' ' + words;
+                const u = getUnit(unitIndex);
+                words = groupText + (u ? ' ' + u : '') + ' ' + words;
             }
         }
         firstGroup = false;
@@ -55,6 +79,7 @@ export function numberToVietnameseWords(num: number): string {
     }
     
     words = words.trim().replace(/\s+/g, ' ');
+    if (!words) return '';
     words = words.charAt(0).toUpperCase() + words.slice(1);
     
     // Replace awkward phrases
@@ -71,8 +96,9 @@ export function numberToVietnameseWords(num: number): string {
  *   khiến hàng phím số 1-0 bị gõ ra ký tự ă, â, ê, ô, đ hoặc dấu thanh
  * - Tự động ánh xạ về các chữ số tương ứng 0-9
  * - Loại bỏ toàn bộ ký tự không phải chữ số
+ * - Giới hạn số lượng chữ số tối đa (mặc định 12 chữ số tương đương gần 1.000 tỷ VNĐ) để tránh tràn số
  */
-export function cleanVndInput(value: string | number | null | undefined): string {
+export function cleanVndInput(value: string | number | null | undefined, maxDigits = 12): string {
     if (value === null || value === undefined) return '';
     let str = value.toString();
 
@@ -93,7 +119,8 @@ export function cleanVndInput(value: string | number | null | undefined): string
         .replace(/[\u0323]/g, '9');
 
     // Chỉ giữ lại chữ số
-    return str.replace(/\D/g, '');
+    const digits = str.replace(/\D/g, '');
+    return maxDigits > 0 ? digits.slice(0, maxDigits) : digits;
 }
 
 export function formatVndInput(value: string | number | null | undefined): string {

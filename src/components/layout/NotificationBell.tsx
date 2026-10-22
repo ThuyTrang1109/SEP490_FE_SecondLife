@@ -19,13 +19,20 @@ import {
 import { NotificationItem, NotificationType } from '../../types/notification';
 import { notificationService } from '../../services/notificationService';
 import { notificationWsClient } from '../../services/notificationWsClient';
-import { Language } from '../../types';
+import { Language, UserProfile, UserRole } from '../../types';
+import {
+  getScopedLocalNotifications,
+  isNotificationForUser,
+  markScopedLocalNotificationRead,
+} from '../../utils/notificationStorage';
 
 interface NotificationBellProps {
   lang: Language;
   onNavigateToUrl?: (actionUrl: string | null, notification: NotificationItem) => void;
   onViewAllNotifications?: () => void;
   token?: string | null;
+  currentUser?: UserProfile | null;
+  currentRole?: UserRole | string;
 }
 
 export const NotificationBell: React.FC<NotificationBellProps> = ({
@@ -33,6 +40,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
   onNavigateToUrl,
   onViewAllNotifications,
   token,
+  currentUser,
+  currentRole,
 }) => {
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [isOpen, setIsOpen] = useState<boolean>(false);
@@ -43,40 +52,38 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Load unread count
+  // Load unread count scoped strictly to current user
   const loadUnreadCount = useCallback(async () => {
+    if (!currentUser) {
+      setUnreadCount(0);
+      return;
+    }
     try {
       const count = await notificationService.getUnreadCount();
-      let localUnread = 0;
-      try {
-        const raw = localStorage.getItem('secondlife_local_notifications');
-        if (raw) {
-          const list: NotificationItem[] = JSON.parse(raw);
-          localUnread = list.filter((n) => !n.isRead).length;
-        }
-      } catch {}
+      const localNotifs = getScopedLocalNotifications(currentUser, currentRole);
+      const localUnread = localNotifs.filter((n) => !n.isRead).length;
       setUnreadCount(count + localUnread);
     } catch {
       // Ignored
     }
-  }, []);
+  }, [currentUser, currentRole]);
 
-  // Load quick view items (top 6 notifications)
+  // Load quick view items (top 6 notifications) scoped strictly to current user
   const loadQuickNotifications = useCallback(async () => {
+    if (!currentUser) {
+      setNotifications([]);
+      return;
+    }
     setIsLoading(true);
     try {
       const res = await notificationService.getNotifications({ page: 0, size: 6 });
-      let localNotifs: NotificationItem[] = [];
-      try {
-        const raw = localStorage.getItem('secondlife_local_notifications');
-        if (raw) localNotifs = JSON.parse(raw);
-      } catch {}
+      const localNotifs = getScopedLocalNotifications(currentUser, currentRole);
       const combined = [...localNotifs, ...(res.content || [])];
       const seen = new Set<string>();
       const unique = combined.filter((n) => {
         if (!n?.id || seen.has(n.id)) return false;
         seen.add(n.id);
-        return true;
+        return isNotificationForUser(n, currentUser, currentRole);
       });
       setNotifications(unique.slice(0, 6));
     } catch (err) {
@@ -84,18 +91,23 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [currentUser, currentRole]);
 
-  // Initial load
+  // Initial load & account change reset
   useEffect(() => {
     loadUnreadCount();
   }, [loadUnreadCount]);
+
+  useEffect(() => {
+    setNotifications([]);
+    loadUnreadCount();
+  }, [currentUser?.id, currentRole, loadUnreadCount]);
 
   // Listen for local custom notifications (e.g. from checkout or inspection)
   useEffect(() => {
     const handleLocalNotif = (e: any) => {
       const item: NotificationItem = e.detail;
-      if (item) {
+      if (item && isNotificationForUser(item, currentUser, currentRole)) {
         setUnreadCount((prev) => prev + 1);
         setHasNewAnim(true);
         setTimeout(() => setHasNewAnim(false), 2000);
@@ -103,7 +115,10 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       }
     };
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === 'secondlife_local_notifications') {
+      if (
+        e.key === 'secondlife_local_notifications' ||
+        (currentUser && e.key === `secondlife_local_notifications_${currentUser.id}`)
+      ) {
         loadUnreadCount();
         loadQuickNotifications();
       }
@@ -114,7 +129,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       window.removeEventListener('secondlife_notification', handleLocalNotif);
       window.removeEventListener('storage', handleStorage);
     };
-  }, [loadUnreadCount, loadQuickNotifications]);
+  }, [currentUser, currentRole, loadUnreadCount, loadQuickNotifications]);
 
   // Connect WebSocket STOMP
   useEffect(() => {
@@ -124,6 +139,11 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
     // Subscribe to incoming real-time notifications
     const unsubscribe = notificationWsClient.subscribeListener((item: NotificationItem) => {
+      // Chỉ nhận thông báo nếu thuộc về chính tài khoản này
+      if (!isNotificationForUser(item, currentUser, currentRole)) {
+        return;
+      }
+
       // Increment unread count
       setUnreadCount((prev) => prev + 1);
 
@@ -132,13 +152,13 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       setTimeout(() => setHasNewAnim(false), 2000);
 
       // Prepend to current list if list is loaded
-      setNotifications((prev) => [item, ...prev.slice(0, 5)]);
+      setNotifications((prev) => [item, ...prev.filter((n) => n.id !== item.id)].slice(0, 6));
     });
 
     return () => {
       unsubscribe();
     };
-  }, [token]);
+  }, [token, currentUser, currentRole]);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -169,15 +189,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     if (!item.isRead) {
       try {
         await notificationService.markAsRead(item.id).catch(() => {});
-        // Also update local storage
-        try {
-          const raw = localStorage.getItem('secondlife_local_notifications');
-          if (raw) {
-            const list: NotificationItem[] = JSON.parse(raw);
-            const updated = list.map((n) => (n.id === item.id ? { ...n, isRead: true, readAt: new Date().toISOString() } : n));
-            localStorage.setItem('secondlife_local_notifications', JSON.stringify(updated));
-          }
-        } catch {}
+        markScopedLocalNotificationRead(currentUser, item.id);
         setNotifications((prev) =>
           prev.map((n) => (n.id === item.id ? { ...n, isRead: true, readAt: new Date().toISOString() } : n))
         );
@@ -198,15 +210,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     setIsMarkingAll(true);
     try {
       await notificationService.markAllAsRead().catch(() => {});
-      // Also update local storage
-      try {
-        const raw = localStorage.getItem('secondlife_local_notifications');
-        if (raw) {
-          const list: NotificationItem[] = JSON.parse(raw);
-          const updated = list.map((n) => ({ ...n, isRead: true, readAt: new Date().toISOString() }));
-          localStorage.setItem('secondlife_local_notifications', JSON.stringify(updated));
-        }
-      } catch {}
+      markScopedLocalNotificationRead(currentUser);
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true, readAt: new Date().toISOString() })));
       setUnreadCount(0);
     } catch (err) {

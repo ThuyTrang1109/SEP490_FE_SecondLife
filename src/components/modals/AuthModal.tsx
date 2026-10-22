@@ -988,48 +988,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     </div>
                   )}
                 </div>
-
-                {/* Demo Accounts Quick-Fill */}
-                <div className="pt-2 border-t border-gray-100 space-y-1.5">
-                  <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider text-center">
-                    {lang === 'vi' ? 'Tài khoản thử nghiệm' : 'Demo Test Accounts'}
-                  </div>
-                  <div className="flex flex-wrap items-center justify-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEmailOrPhone('center@secondlife.com');
-                        setPassword('123456');
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-[#c34c36] text-[11px] font-bold border border-rose-200 transition cursor-pointer"
-                      title="center@secondlife.com / 123456"
-                    >
-                      🏢 Trưởng TT Kiểm Định
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEmailOrPhone('inspector@secondlife.com');
-                        setPassword('123456');
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold border border-blue-200 transition cursor-pointer"
-                      title="inspector@secondlife.com / 123456"
-                    >
-                      🔧 Kỹ Thuật Viên
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEmailOrPhone('staff@secondlife.com');
-                        setPassword('staff@123456');
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-700 text-[11px] font-semibold border border-gray-200 transition cursor-pointer"
-                      title="staff@secondlife.com / staff@123456"
-                    >
-                      Staff
-                    </button>
-                  </div>
-                </div>
               </form>
             )}
 

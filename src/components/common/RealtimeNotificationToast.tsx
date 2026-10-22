@@ -14,10 +14,13 @@ import {
 } from 'lucide-react';
 import { NotificationItem, NotificationType } from '../../types/notification';
 import { notificationWsClient } from '../../services/notificationWsClient';
-import { Language } from '../../types';
+import { Language, UserProfile, UserRole } from '../../types';
+import { isNotificationForUser } from '../../utils/notificationStorage';
 
 interface RealtimeNotificationToastProps {
   lang: Language;
+  currentUser?: UserProfile | null;
+  currentRole?: UserRole | string;
   onNavigateToUrl?: (actionUrl: string | null, notification: NotificationItem) => void;
 }
 
@@ -53,13 +56,21 @@ function playNotificationChime() {
 
 export const RealtimeNotificationToast: React.FC<RealtimeNotificationToastProps> = ({
   lang,
+  currentUser,
+  currentRole,
   onNavigateToUrl,
 }) => {
   const [currentToast, setCurrentToast] = useState<NotificationItem | null>(null);
 
   useEffect(() => {
+    // If not logged in, do not listen or show notifications
+    if (!currentUser) return;
+
     const handleItem = (item: NotificationItem) => {
       if (!item) return;
+      if (!isNotificationForUser(item, currentUser, currentRole)) {
+        return;
+      }
       playNotificationChime();
       setCurrentToast(item);
       const timer = setTimeout(() => {
@@ -80,7 +91,8 @@ export const RealtimeNotificationToast: React.FC<RealtimeNotificationToastProps>
     window.addEventListener('secondlife_notification', handleCustom);
 
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === 'secondlife_local_notifications' && e.newValue) {
+      const scopedKey = `secondlife_local_notifications_${currentUser.id}`;
+      if ((e.key === scopedKey || e.key === 'secondlife_local_notifications') && e.newValue) {
         try {
           const list: NotificationItem[] = JSON.parse(e.newValue);
           if (Array.isArray(list) && list.length > 0) {
@@ -96,7 +108,7 @@ export const RealtimeNotificationToast: React.FC<RealtimeNotificationToastProps>
       window.removeEventListener('secondlife_notification', handleCustom);
       window.removeEventListener('storage', handleStorage);
     };
-  }, []);
+  }, [currentUser, currentRole]);
 
   if (!currentToast) return null;
 

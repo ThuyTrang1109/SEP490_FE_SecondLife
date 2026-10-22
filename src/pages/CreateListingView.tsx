@@ -1298,6 +1298,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // STEP 1: Init Post (POST /api/v1/posts/init with multipart/form-data)
   // =========================================================================
   const handleTriggerAiChat = () => {
+    if (typeof originalPriceVnd === 'number' && originalPriceVnd > 1000000000) {
+      showToast(lang === 'vi' ? 'Giá sản phẩm không được vượt quá 1.000.000.000đ (1 tỷ VNĐ)' : 'Price cannot exceed 1 billion VND');
+      return;
+    }
     if (postId || initialDraft?.id) {
       handleInitPost('ai');
       return;
@@ -1321,6 +1325,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   };
 
   const handleInitPost = async (mode: 'ai' | 'manual' = 'ai') => {
+    if (typeof originalPriceVnd === 'number' && originalPriceVnd > 1000000000) {
+      showToast(lang === 'vi' ? 'Giá sản phẩm không được vượt quá 1.000.000.000đ (1 tỷ VNĐ)' : 'Price cannot exceed 1 billion VND');
+      return;
+    }
     // Nếu bản nháp đã tồn tại (đã có postId hoặc initialDraft.id):
     // KHÔNG gọi postService.initPost nữa để tránh tạo bản nháp trùng lặp trong DB và xóa trắng mô tả của người dùng!
     if (postId || initialDraft?.id) {
@@ -2077,9 +2085,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <input
                 type="text"
                 inputMode="numeric"
+                maxLength={15}
                 value={originalPriceVnd ? formatVndInput(originalPriceVnd.toString()) : ''}
                 onChange={(e) => {
-                  const raw = cleanVndInput(e.target.value);
+                  const raw = cleanVndInput(e.target.value, 11);
                   const numVal = raw ? Number(raw) : '';
                   setOriginalPriceVnd(numVal);
                   if (initialDraft && typeof numVal === 'number') {
@@ -2100,10 +2109,16 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <span>{lang === 'vi' ? 'Giá bạn nhập có vẻ quá thấp (< 10.000đ). Vui lòng kiểm tra lại.' : 'Price seems too low (< 10,000 VND). Please verify.'}</span>
                 </p>
               )}
-              {typeof originalPriceVnd === 'number' && originalPriceVnd > 100000000 && (
-                <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+              {typeof originalPriceVnd === 'number' && originalPriceVnd > 100000000 && originalPriceVnd <= 1000000000 && (
+                <p className="text-[11px] text-amber-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                   <span>{lang === 'vi' ? 'Giá bạn nhập có vẻ bất hợp lý (> 100 triệu). Hãy kiểm tra lại số lượng số 0.' : 'Price seems unusually high (> 100M VND). Please check zeros.'}</span>
+                </p>
+              )}
+              {typeof originalPriceVnd === 'number' && originalPriceVnd > 1000000000 && (
+                <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{lang === 'vi' ? 'Giá sản phẩm không được vượt quá 1.000.000.000đ (1 tỷ VNĐ).' : 'Price cannot exceed 1,000,000,000 VND.'}</span>
                 </p>
               )}
               <p className="text-[10.5px] text-slate-400 italic mt-1 leading-tight">
@@ -3023,9 +3038,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <input
                     type="text"
                     inputMode="numeric"
+                    maxLength={15}
                     value={finalPriceVnd > 0 ? formatVndInput(finalPriceVnd.toString()) : ''}
                     onChange={(e) => {
-                      const numericValue = cleanVndInput(e.target.value);
+                      const numericValue = cleanVndInput(e.target.value, 11);
                       setFinalPriceVnd(numericValue ? Number(numericValue) : 0);
                     }}
                     placeholder="VD: 500.000"
@@ -3033,6 +3049,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">đ</span>
                 </div>
+                {finalPriceVnd > 0 && (
+                  <p className="text-[11px] text-emerald-600 font-medium italic mt-1.5">
+                    {numberToVietnameseWords(finalPriceVnd)}
+                  </p>
+                )}
+                {finalPriceVnd > 1000000000 && (
+                  <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{lang === 'vi' ? 'Giá bán không được vượt quá 1.000.000.000đ (1 tỷ VNĐ).' : 'Price cannot exceed 1,000,000,000 VND.'}</span>
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -3308,14 +3335,26 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <input
                 type="text"
                 inputMode="numeric"
+                maxLength={15}
                 value={finalPriceVnd > 0 ? formatVndInput(finalPriceVnd.toString()) : ''}
                 onChange={(e) => {
-                  const numericValue = cleanVndInput(e.target.value);
+                  const numericValue = cleanVndInput(e.target.value, 11);
                   setFinalPriceVnd(numericValue ? Number(numericValue) : 0);
                 }}
                 className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:border-[#c34c36] tabular-nums"
               />
             </div>
+            {finalPriceVnd > 0 && (
+              <p className="text-[11px] text-emerald-600 font-medium italic mt-1">
+                {numberToVietnameseWords(finalPriceVnd)}
+              </p>
+            )}
+            {finalPriceVnd > 1000000000 && (
+              <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                <span>{lang === 'vi' ? 'Giá bán không được vượt quá 1.000.000.000đ (1 tỷ VNĐ).' : 'Price cannot exceed 1,000,000,000 VND.'}</span>
+              </p>
+            )}
             {valuationResult && finalPriceVnd > valuationResult.fairPriceMax * 1.3 && (
               <p className="text-[11px] text-amber-700 font-semibold flex items-center gap-1.5 mt-1.5 animate-fadeIn">
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
@@ -3351,7 +3390,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
             <button
               onClick={() => setCurrentStep(5)}
-              disabled={!finalPriceVnd || finalPriceVnd < 1000}
+              disabled={!finalPriceVnd || finalPriceVnd < 1000 || finalPriceVnd > 1000000000}
               className="px-6 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-black shadow-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50 w-full sm:w-auto"
             >
               <span>Tiếp tục: Xem lại & Gửi đăng</span>

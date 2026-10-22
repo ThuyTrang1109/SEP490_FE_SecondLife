@@ -30,6 +30,7 @@ import {
 import { shippingService } from '../../services/shippingService';
 import { orderService } from '../../services/orderService';
 import { dialogService } from '../../utils/dialogService';
+import { translateApiError } from '../../services/apiClient';
 
 interface GroupedShipmentEvent {
   key: string;
@@ -253,7 +254,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
   const showNotification = (msg: string, isError = false) => {
     if (isError) {
-      setErrorMsg(msg);
+      setErrorMsg(translateApiError(msg));
       setTimeout(() => setErrorMsg(null), 6000);
     } else {
       setSuccessMsg(msg);
@@ -1405,7 +1406,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                     <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                     <div>
                       <span className="font-bold block">Ghi chú tài xế / cảnh báo Lalamove:</span>
-                      <span>{activeShipment.lastError}</span>
+                      <span>{translateApiError(activeShipment.lastError)}</span>
                     </div>
                   </div>
                 )}

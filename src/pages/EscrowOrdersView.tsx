@@ -43,6 +43,7 @@ import { CreateShipmentModal } from '../components/modals/CreateShipmentModal';
 import { ShippingLabelModal } from '../components/modals/ShippingLabelModal';
 import { DigitalInspectionCertificateModal } from '../components/modals/DigitalInspectionCertificateModal';
 import { InspectionSealVerificationModal } from '../components/modals/InspectionSealVerificationModal';
+import { saveScopedLocalNotification } from '../utils/notificationStorage';
 import { PrintTamperSealModal } from '../components/modals/PrintTamperSealModal';
 import { ScheduleAppointmentModal } from '../components/modals/ScheduleAppointmentModal';
 import { ShipmentBackend, OrderSettlementDTO } from '../types';
@@ -82,6 +83,36 @@ type OrderFilterTab =
   | 'completed'
   | 'disputed'
   | 'with_inspection';
+
+export const VALID_ORDER_FILTER_TABS: OrderFilterTab[] = [
+  'all',
+  'awaiting_pickup',
+  'inspecting',
+  'shipping',
+  'delivered',
+  'completed',
+  'disputed',
+  'with_inspection'
+];
+
+export const ORDER_TAB_STORAGE_KEY = 'secondlife_orders_filter_tab';
+
+export function getInitialOrderFilterTab(): OrderFilterTab {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('order_tab') as OrderFilterTab;
+    if (tab && VALID_ORDER_FILTER_TABS.includes(tab)) {
+      return tab;
+    }
+    try {
+      const saved = sessionStorage.getItem(ORDER_TAB_STORAGE_KEY) as OrderFilterTab;
+      if (saved && VALID_ORDER_FILTER_TABS.includes(saved)) {
+        return saved;
+      }
+    } catch (e) {}
+  }
+  return 'all';
+}
 
 export { getSortableOrderTimestamp };
 
@@ -144,7 +175,33 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
   const isSeller = userRole === 'seller' || userOrders.some((o) => isOrderSeller(o));
 
-  const [activeTab, setActiveTab] = useState<OrderFilterTab>('all');
+  const [activeTab, setActiveTab] = useState<OrderFilterTab>(getInitialOrderFilterTab);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      sessionStorage.setItem(ORDER_TAB_STORAGE_KEY, activeTab);
+    } catch (e) {}
+    const currentUrl = new URL(window.location.href);
+    if (activeTab && activeTab !== 'all') {
+      currentUrl.searchParams.set('order_tab', activeTab);
+    } else {
+      currentUrl.searchParams.delete('order_tab');
+    }
+    if (currentUrl.toString() !== window.location.href) {
+      window.history.replaceState(null, '', currentUrl.toString());
+    }
+  }, [activeTab]);
+
+  React.useEffect(() => {
+    const handlePopState = () => {
+      const tab = getInitialOrderFilterTab();
+      setActiveTab(tab);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [detailModalOrder, setDetailModalOrder] = useState<EscrowOrder | null>(null);
   const [activePhotoStage, setActivePhotoStage] = useState<'listing' | 'inspector' | 'handover'>('listing');
@@ -733,9 +790,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           if (orderHasInspection) {
             const centerNotif = {
               id: `notif-center-task-${orderId}`,
+              recipientRole: 'inspection_center',
               title: 'Nhiệm vụ kiểm định mới cần điều phối',
               message: `Người bán đã đồng ý kiểm định cho đơn #${orderId.slice(0, 8)}. Trung tâm vui lòng điều phối và phân công KTV!`,
-              type: 'INSPECTION_TASK',
+              type: 'INSPECTION_TASK' as const,
               referenceId: orderId,
               referenceType: 'INSPECTION_ORDER',
               actionUrl: '/inspection-center',
@@ -743,12 +801,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               readAt: null,
               createdAt: new Date().toISOString(),
             };
-            try {
-              const rawNotifs = localStorage.getItem('secondlife_local_notifications');
-              const existingNotifs = rawNotifs && rawNotifs !== 'undefined' && rawNotifs !== 'null' ? JSON.parse(rawNotifs) : [];
-              localStorage.setItem('secondlife_local_notifications', JSON.stringify([centerNotif, ...existingNotifs.filter((n: any) => n.id !== centerNotif.id)].slice(0, 50)));
-              window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: centerNotif }));
-            } catch {}
+            saveScopedLocalNotification(centerNotif, undefined, 'inspection_center');
             try {
               window.dispatchEvent(new CustomEvent('secondlife_inspection_task_created', { detail: { orderId, order: updatedOrder } }));
               window.dispatchEvent(new CustomEvent('secondlife_order_placed_signal', { detail: { orderId } }));

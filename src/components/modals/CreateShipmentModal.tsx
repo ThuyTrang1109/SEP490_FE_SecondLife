@@ -15,6 +15,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { shippingService } from '../../services/shippingService';
+import { translateApiError } from '../../services/apiClient';
 
 interface CreateShipmentModalProps {
   order: EscrowOrder;
@@ -48,7 +49,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
 
       // Kiểm tra trạng thái vận đơn trả về theo mục 10
       if (shipment.lastError && !shipment.orderCode) {
-        setErrorMsg(`Lalamove từ chối tạo chuyến: ${shipment.lastError}`);
+        setErrorMsg(`Lalamove từ chối tạo chuyến: ${translateApiError(shipment.lastError)}`);
         // Tạo requestId mới cho lần tạo lại sau khi đã sửa lỗi
         setRequestId(crypto.randomUUID());
         return;
@@ -71,7 +72,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
       } else if (rawMsg.toLowerCase().includes('disabled') || rawMsg.includes('503')) {
         setErrorMsg('Lalamove chưa được kích hoạt trên máy chủ (LALAMOVE_ENABLED=false). Vui lòng cấu hình API Key đối tác trên Backend hoặc kiểm tra thông tin kho.');
       } else {
-        setErrorMsg(rawMsg || 'Không thể tạo vận đơn Lalamove. Vui lòng kiểm tra lại cấu hình kho lấy hàng hoặc thử lại.');
+        setErrorMsg(translateApiError(rawMsg) || 'Không thể tạo vận đơn Lalamove. Vui lòng kiểm tra lại cấu hình kho lấy hàng hoặc thử lại.');
       }
     } finally {
       setIsSubmitting(false);

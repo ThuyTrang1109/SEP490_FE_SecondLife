@@ -299,6 +299,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             <NotificationBell
               lang={lang}
               token={token}
+              currentUser={currentUser}
+              currentRole={currentRole}
               onNavigateToUrl={onNavigateNotification}
               onViewAllNotifications={() => {
                 if (onOpenNotifications) {

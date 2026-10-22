@@ -383,6 +383,34 @@ export const APPLIANCE_PRESETS: AppliancePreset[] = [
   },
 ];
 
+export const VALID_CENTER_TABS: CenterTab[] = [
+  'overview',
+  'dispatch',
+  'staff',
+  'orders',
+  'checklists',
+  'pricing'
+];
+
+export const CENTER_TAB_STORAGE_KEY = 'secondlife_center_active_tab';
+
+export function getInitialCenterTab(): CenterTab {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const subtab = params.get('subtab') as CenterTab;
+    if (subtab && VALID_CENTER_TABS.includes(subtab)) {
+      return subtab;
+    }
+    try {
+      const saved = sessionStorage.getItem(CENTER_TAB_STORAGE_KEY) as CenterTab;
+      if (saved && VALID_CENTER_TABS.includes(saved)) {
+        return saved;
+      }
+    } catch (e) {}
+  }
+  return 'overview';
+}
+
 export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardViewProps> = ({
   initialOrders = [],
   currentUser,
@@ -392,8 +420,33 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   onLogout,
   onViewWebsite,
 }) => {
-  // --- Active Sub-Tab (Default to overview like Admin Dashboard) ---
-  const [activeTab, setActiveTab] = useState<CenterTab>('overview');
+  // --- Active Sub-Tab (Khôi phục từ URL param ?subtab= hoặc sessionStorage khi F5) ---
+  const [activeTab, setActiveTab] = useState<CenterTab>(getInitialCenterTab);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      sessionStorage.setItem(CENTER_TAB_STORAGE_KEY, activeTab);
+    } catch (e) {}
+    const currentUrl = new URL(window.location.href);
+    if (activeTab && activeTab !== 'overview') {
+      currentUrl.searchParams.set('subtab', activeTab);
+    } else {
+      currentUrl.searchParams.delete('subtab');
+    }
+    if (currentUrl.toString() !== window.location.href) {
+      window.history.replaceState(null, '', currentUrl.toString());
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const tab = getInitialCenterTab();
+      setActiveTab(tab);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // --- Sidebar Collapse & Mobile Sidebar State ---
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);

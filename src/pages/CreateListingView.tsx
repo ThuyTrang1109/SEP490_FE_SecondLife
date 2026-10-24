@@ -1777,6 +1777,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       });
 
       setSubmitResult(submitRes);
+      try {
+        localStorage.setItem(`post_parcel_${postId}`, JSON.stringify(parcel));
+      } catch {}
       // Reload credits (if ACTIVE, minus 1 LISTING)
       await loadCredits();
     } catch (err: any) {
@@ -1839,9 +1842,25 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         serialOrReceipt: photoPreviews[4] || '',
         extraDetail: photoPreviews[5] || ''
       },
-      photoGallery: photoPreviews
+      photoGallery: photoPreviews,
+      shippingWeight: Number(shippingWeight) || undefined,
+      shippingLength: Number(shippingLength) || undefined,
+      shippingWidth: Number(shippingWidth) || undefined,
+      shippingHeight: Number(shippingHeight) || undefined,
     };
     try {
+      const parsedWeight = Math.round(Number(shippingWeight) || 0);
+      const parsedLength = Math.round(Number(shippingLength) || 0);
+      const parsedWidth = Math.round(Number(shippingWidth) || 0);
+      const parsedHeight = Math.round(Number(shippingHeight) || 0);
+      if (parsedWeight > 0) {
+        localStorage.setItem(`post_parcel_${postId}`, JSON.stringify({
+          weight: parsedWeight,
+          length: parsedLength,
+          width: parsedWidth,
+          height: parsedHeight
+        }));
+      }
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (key && (key.startsWith('create_listing_active_draft_') || key === 'create_listing_active_draft')) {

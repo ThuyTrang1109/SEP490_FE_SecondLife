@@ -79,6 +79,82 @@ interface InspectorPortalViewProps {
 export type InspectorDashboardTab = 'workbench' | 'tasks' | 'certificates' | 'standards';
 export type ManagerPortalTab = 'center_dispatch' | 'center_staff' | 'center_checklists_tiers' | 'center_finance';
 
+/**
+ * Helper to match if an inspection assignment belongs to the current technician.
+ * Supports matching by ID, Email, Full Name, registered staff aliases, or role-based technician seed.
+ */
+export const isAssignedToInspector = (
+  assignedId?: string | null,
+  assignedName?: string | null,
+  assignedEmail?: string | null,
+  inspectorUser?: UserProfile | null
+): boolean => {
+  if (!assignedId && !assignedName && !assignedEmail) return false;
+  if (assignedName === 'Chưa phân công' || assignedId === 'unassigned') return false;
+
+  const currentId = String(inspectorUser?.id || '').trim().toLowerCase();
+  const currentName = String(inspectorUser?.name || '').trim().toLowerCase();
+  const currentEmail = String(inspectorUser?.email || '').trim().toLowerCase();
+
+  const aId = String(assignedId || '').trim().toLowerCase();
+  const aName = String(assignedName || '').trim().toLowerCase();
+  const aEmail = String(assignedEmail || '').trim().toLowerCase();
+
+  // 1. Direct ID match
+  if (currentId && aId && (currentId === aId || currentId.includes(aId) || aId.includes(currentId))) {
+    return true;
+  }
+
+  // 2. Direct Email match
+  if (currentEmail && (currentEmail === aEmail || currentEmail === aId || aEmail.includes(currentEmail))) {
+    return true;
+  }
+
+  // 3. Direct Name match
+  if (currentName && aName && (currentName.includes(aName) || aName.includes(currentName))) {
+    return true;
+  }
+
+  // 4. Check aliases in registered staff list ('center_registered_staff')
+  try {
+    const rawStaff = localStorage.getItem('center_registered_staff');
+    if (rawStaff) {
+      const staffList: any[] = JSON.parse(rawStaff);
+      const matchingStaff = staffList.find((s) =>
+        (aId && (String(s.id).toLowerCase() === aId || aId.includes(String(s.id).toLowerCase()))) ||
+        (aEmail && s.email && String(s.email).toLowerCase() === aEmail) ||
+        (aName && s.fullName && (String(s.fullName).toLowerCase() === aName || aName.includes(String(s.fullName).toLowerCase())))
+      );
+      if (matchingStaff) {
+        if (
+          (currentEmail && matchingStaff.email && String(matchingStaff.email).toLowerCase() === currentEmail) ||
+          (currentId && matchingStaff.id && String(matchingStaff.id).toLowerCase() === currentId) ||
+          (currentName && matchingStaff.fullName && (currentName.includes(String(matchingStaff.fullName).toLowerCase()) || String(matchingStaff.fullName).toLowerCase().includes(currentName)))
+        ) {
+          return true;
+        }
+      }
+    }
+  } catch {}
+
+  // 5. Fallback for demo / standard seed inspector (inspector@secondlife.com or 'Kiểm Định Viên 1' or id: a50d1568-...)
+  if (
+    inspectorUser?.role === 'inspector' &&
+    (
+      aId.includes('a50d1568') ||
+      aEmail.includes('inspector') ||
+      aName.includes('kiểm định') ||
+      aName.includes('ktv') ||
+      aName.includes('inspector') ||
+      !currentId
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
 export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   orders,
   currentUser,
@@ -138,20 +214,79 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     setTimeout(() => setNoticeMessage(null), 4500);
   };
 
-  // --- LOAD INSPECTOR'S ASSIGNED ORDERS FROM BACKEND ---
+  // --- LOAD INSPECTOR'S ASSIGNED ORDERS FROM BACKEND & STORAGE ---
   const loadInspectorOrders = async () => {
     setIsLoadingBackendOrders(true);
     try {
-      const data = await inspectorService.getMyOrders();
-      if (Array.isArray(data)) {
-        setBackendOrders(data);
-      }
+      const [myOrdersRes, allOrdersRes] = await Promise.all([
+        inspectorService.getMyOrders().catch(() => []),
+        inspectorService.getAllOrders(undefined, 0, 100).catch(() => ({ items: [] } as any)),
+      ]);
+      const myItems = Array.isArray(myOrdersRes) ? myOrdersRes : ((myOrdersRes as any)?.items || []);
+      const allItems = (allOrdersRes as any)?.items || (allOrdersRes as any)?.content || (Array.isArray(allOrdersRes) ? allOrdersRes : []);
+
+      const orderMap = new Map<string, InspectionOrderDto>();
+      allItems.forEach((o: any) => { if (o?.id) orderMap.set(o.id, o); });
+      myItems.forEach((o: any) => { if (o?.id) orderMap.set(o.id, o); });
+
+      try {
+        const rawCenter = localStorage.getItem('center_inspection_orders');
+        if (rawCenter) {
+          const list = JSON.parse(rawCenter);
+          if (Array.isArray(list)) {
+            list.forEach((o: any) => {
+              if (o?.id && !orderMap.has(o.id)) orderMap.set(o.id, o);
+            });
+          }
+        }
+      } catch {}
+
+      try {
+        const rawRecent = localStorage.getItem('recent_placed_orders');
+        if (rawRecent) {
+          const list = JSON.parse(rawRecent);
+          if (Array.isArray(list)) {
+            list.forEach((o: any) => {
+              if (o?.id && !orderMap.has(o.id)) orderMap.set(o.id, o);
+            });
+          }
+        }
+      } catch {}
+
+      setBackendOrders(Array.from(orderMap.values()));
     } catch (err) {
       console.warn('Lỗi tải danh sách đơn từ backend:', err);
     } finally {
       setIsLoadingBackendOrders(false);
     }
   };
+
+  // Realtime listeners for order assignment signals & storage sync
+  useEffect(() => {
+    const handleSignal = () => {
+      loadInspectorOrders();
+    };
+    const handleStorage = (e: StorageEvent) => {
+      if (
+        e.key?.startsWith('order_assigned_inspector_') ||
+        e.key === 'recent_placed_orders' ||
+        e.key === 'center_inspection_orders' ||
+        e.key === 'secondlife_order_placed_signal'
+      ) {
+        loadInspectorOrders();
+      }
+    };
+    window.addEventListener('secondlife_order_assigned_signal', handleSignal);
+    window.addEventListener('secondlife_order_placed_signal', handleSignal);
+    window.addEventListener('secondlife_inspection_task_created', handleSignal);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('secondlife_order_assigned_signal', handleSignal);
+      window.removeEventListener('secondlife_order_placed_signal', handleSignal);
+      window.removeEventListener('secondlife_inspection_task_created', handleSignal);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
 
   useEffect(() => {
     loadInspectorOrders();
@@ -194,172 +329,150 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     }
   }, [isCenterManager]);
 
-  // Convert backendOrders into EscrowOrder format if available, otherwise filter prop orders strictly assigned to this technician
+  // Convert backendOrders into EscrowOrder format if available, and unify with prop orders strictly assigned to this technician
   const effectiveOrders: EscrowOrder[] = useMemo(() => {
-    const currentInspectorId = currentUser?.id;
-    const currentInspectorName = (currentUser?.name || '').trim().toLowerCase();
+    const candidateMap = new Map<string, EscrowOrder>();
 
-    // 1. Nếu có đơn từ backend: Lọc CHẶT CHẼ chỉ các đơn ĐÃ PHÂN CÔNG cho KTV hiện tại và ĐÃ ĐƯỢC TRUNG TÂM GIAO TASK
-    if (backendOrders && backendOrders.length > 0) {
-      const assignedBackendOrders = backendOrders.filter((bo) => {
-        let assignedId = bo.inspectorId;
-        let assignedName = bo.inspectorName;
-        try {
-          const assignedJson = localStorage.getItem(`order_assigned_inspector_${bo.id}`);
-          if (assignedJson) {
-            const parsed = JSON.parse(assignedJson);
-            assignedId = parsed.inspectorId || assignedId;
-            assignedName = parsed.inspectorName || assignedName;
-          }
-        } catch {}
-
-        // Bỏ qua nếu chưa phân công KTV hoặc chưa được Trung tâm điều phối
-        if (!assignedId || assignedName === 'Chưa phân công') return false;
-        if (
-          bo.status === 'CONFIRMED_PENDING_DISPATCH' ||
-          bo.status === 'WAITING_SELLER_APPROVAL' ||
-          bo.status === 'WAITING_BUYER_APPROVAL' ||
-          bo.status === 'WAITING_FEE_PAYMENT' ||
-          bo.status === 'PENDING'
-        ) {
-          return false;
-        }
-
-        // Kiểm tra khớp KTV
-        const matchId = currentInspectorId && assignedId && (
-          String(assignedId) === String(currentInspectorId) ||
-          String(assignedId).includes(String(currentInspectorId)) ||
-          String(currentInspectorId).includes(String(assignedId))
-        );
-        const matchName = currentInspectorName && assignedName && assignedName.toLowerCase().includes(currentInspectorName);
-        return Boolean(matchId || matchName);
-      });
-
-      if (assignedBackendOrders.length > 0) {
-        return assignedBackendOrders.map((bo) => {
-          const existing = orders.find((o) => o.id === bo.id);
-          if (existing) {
-            return {
-              ...existing,
-              escrowStatus: (bo.status as any) || existing.escrowStatus,
-              inspectionMethod: bo.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER',
-              buyerName: bo.buyerName || existing.buyerName,
-              sellerName: bo.sellerName || existing.sellerName,
-            };
-          }
-          return {
-            id: bo.id,
-            listing: {
-              id: bo.postId || bo.id,
-              title: bo.postTitle || 'Thiết bị đo kiểm',
-              category: 'KITCHEN_APPLIANCES' as any,
-              brand: 'Chính hãng',
-              model: 'Model tiêu chuẩn',
-              purchaseYear: 2023,
-              priceVnd: bo.postPrice || 1000000,
-              conditionGrade: 'Good' as any,
-              declaredConditionText: 'Máy hoạt động tốt',
-              description: bo.note || 'Thiết bị cần đo kiểm theo quy trình',
-              location: 'TP. Hồ Chí Minh',
-              sellerId: bo.sellerId || 'seller-1',
-              sellerName: bo.sellerName || 'Người bán',
-              sellerRating: 5.0,
-              sellerCompletedOrders: 10,
-              sellerVerified: true,
-              status: 'ACTIVE' as any,
-              createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
-              isInspectionGuaranteed: true,
-              requiresInspection: true,
-              photos: {
-                front: bo.postImageUrl || bo.postImageUrls?.[0] || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400',
-                back: bo.postImageUrls?.[1] || bo.postImageUrl || '',
-                screenOrDetails: bo.postImageUrls?.[2] || '',
-                accessoriesOrBox: '',
-                serialOrReceipt: '',
-              },
-              photoGallery: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : []),
-            },
-            listingId: bo.postId || bo.id,
-            buyerId: bo.buyerId || 'buyer-1',
-            buyerName: bo.buyerName || 'Khách hàng',
-            buyerPhone: '0912345678',
-            buyerAddress: 'TP. Hồ Chí Minh',
-            sellerId: bo.sellerId || 'seller-1',
-            sellerName: bo.sellerName || 'Người bán',
-            itemPriceVnd: bo.postPrice || 1000000,
-            inspectionFeeVnd: bo.inspectionFee || 150000,
-            shippingFeeVnd: bo.shippingFee || 30000,
-            platformFeeVnd: 0,
-            totalPaidVnd: (bo.postPrice || 1000000) + (bo.inspectionFee || 150000) + (bo.shippingFee || 30000),
-            totalAmountVnd: (bo.postPrice || 1000000) + (bo.inspectionFee || 150000) + (bo.shippingFee || 30000),
-            escrowStatus: (bo.status as any) || 'INSPECTING',
-            hasInspectionService: true,
-            requiresInspection: true,
-            inspectionMethod: bo.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER',
-            inspectionFeeSplit: bo.feePayer === 'SELLER_PAYS' ? 'SELLER_100' : bo.feePayer === 'BUYER_PAYS' ? 'BUYER_100' : 'SPLIT_50_50',
-            shippingLegs: [],
-            multiStagePhotos: {
-              listingPhotos: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : []),
-            },
-            createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
-            deliveryAddress: 'TP. Hồ Chí Minh',
-            deliveryOption: 'INSPECTION',
-          } as unknown as EscrowOrder;
-        });
-      }
-    }
-
-    // 2. CHỈ hiển thị đơn hàng ĐÃ ĐƯỢC TRUNG TÂM PHÂN CÔNG cho KTV hiện tại
-    return orders.filter((o) => {
-      if (!o.hasInspectionService && !o.inspectionMethod && (!o.inspectionFeeVnd || o.inspectionFeeVnd <= 0)) {
-        return false;
+    // 1. Process orders passed via props (from App.tsx)
+    orders.forEach((o) => {
+      if (
+        !o.hasInspectionService &&
+        !o.inspectionMethod &&
+        (!o.inspectionFeeVnd || o.inspectionFeeVnd <= 0)
+      ) {
+        return;
       }
 
       let assignedId = (o as any).inspectorId;
       let assignedName = (o as any).inspectorName;
+      let assignedEmail = (o as any).inspectorEmail;
       try {
         const assignedJson = localStorage.getItem(`order_assigned_inspector_${o.id}`);
         if (assignedJson) {
           const parsed = JSON.parse(assignedJson);
           assignedId = parsed.inspectorId || assignedId;
           assignedName = parsed.inspectorName || assignedName;
+          assignedEmail = parsed.inspectorEmail || assignedEmail;
         }
       } catch {}
 
-      // Nếu đơn chưa được Trung tâm phân công -> TUYỆT ĐỐI KHÔNG hiện ở bàn KTV
-      if (!assignedId || assignedName === 'Chưa phân công') {
-        return false;
+      if (isAssignedToInspector(assignedId, assignedName, assignedEmail, currentUser)) {
+        candidateMap.set(o.id, {
+          ...o,
+          inspectorId: assignedId,
+          inspectorName: assignedName,
+        });
       }
-
-      const rawAssign = localStorage.getItem(`order_assigned_inspector_${o.id}`);
-      const currentStatus = String((o as any).backendStatus || (o as any).status || o.escrowStatus || '').toUpperCase();
-      
-      // Bất kỳ đơn nào chưa được Trung tâm điều phối hoặc đang chờ duyệt/chờ cọc/chờ điều phối -> KHÔNG hiện ở bàn KTV
-      if (
-        currentStatus === 'CONFIRMED_PENDING_DISPATCH' ||
-        currentStatus === 'WAITING_SELLER_APPROVAL' ||
-        currentStatus === 'WAITING_BUYER_APPROVAL' ||
-        currentStatus === 'WAITING_FEE_PAYMENT' ||
-        currentStatus === 'AWAITING_PAYMENT' ||
-        currentStatus === 'PENDING' ||
-        (!rawAssign && currentStatus === 'AWAITING_INSPECTION')
-      ) {
-        if (!rawAssign) {
-          return false;
-        }
-      }
-
-      // Khớp theo ID hoặc tên KTV
-      if (currentInspectorId && assignedId && (String(assignedId) === String(currentInspectorId) || String(assignedId).includes(String(currentInspectorId)) || String(currentInspectorId).includes(String(assignedId)))) {
-        return true;
-      }
-      if (currentInspectorName && assignedName && assignedName.toLowerCase().includes(currentInspectorName)) {
-        return true;
-      }
-
-      return false;
     });
-  }, [backendOrders, orders, currentUser?.id, currentUser?.name]);
+
+    // 2. Process backendOrders (which includes /inspector/orders, /inspector-center/orders, and localStorage inspection orders)
+    (backendOrders || []).forEach((bo) => {
+      let assignedId = bo.inspectorId;
+      let assignedName = bo.inspectorName;
+      let assignedEmail = (bo as any).inspectorEmail;
+      try {
+        const assignedJson = localStorage.getItem(`order_assigned_inspector_${bo.id}`);
+        if (assignedJson) {
+          const parsed = JSON.parse(assignedJson);
+          assignedId = parsed.inspectorId || assignedId;
+          assignedName = parsed.inspectorName || assignedName;
+          assignedEmail = parsed.inspectorEmail || assignedEmail;
+        }
+      } catch {}
+
+      if (!isAssignedToInspector(assignedId, assignedName, assignedEmail, currentUser)) {
+        return;
+      }
+
+      // If already in candidateMap, enrich it
+      const existing = candidateMap.get(bo.id);
+      if (existing) {
+        candidateMap.set(bo.id, {
+          ...existing,
+          inspectorId: assignedId,
+          inspectorName: assignedName,
+          inspectionMethod: bo.orderType === 'AT_HOME' ? 'AT_HOME' : (existing.inspectionMethod || 'AT_CENTER'),
+          buyerName: bo.buyerName || existing.buyerName,
+          sellerName: bo.sellerName || existing.sellerName,
+        });
+      } else {
+        // Build new EscrowOrder from bo
+        const mappedEscrow: EscrowOrder = {
+          id: bo.id,
+          listing: {
+            id: bo.postId || bo.id,
+            title: bo.postTitle || 'Thiết bị đo kiểm',
+            category: 'KITCHEN_APPLIANCES' as any,
+            brand: 'Chính hãng',
+            model: 'Model tiêu chuẩn',
+            purchaseYear: 2023,
+            priceVnd: bo.postPrice || 1000000,
+            conditionGrade: 'Good' as any,
+            declaredConditionText: 'Máy hoạt động tốt',
+            description: bo.note || 'Thiết bị cần đo kiểm theo quy trình',
+            location: 'TP. Hồ Chí Minh',
+            sellerId: bo.sellerId || 'seller-1',
+            sellerName: bo.sellerName || 'Người bán',
+            sellerRating: 5.0,
+            sellerCompletedOrders: 10,
+            sellerVerified: true,
+            status: 'ACTIVE' as any,
+            createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
+            isInspectionGuaranteed: true,
+            requiresInspection: true,
+            photos: {
+              front: bo.postImageUrl || bo.postImageUrls?.[0] || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400',
+              back: bo.postImageUrls?.[1] || bo.postImageUrl || '',
+              screenOrDetails: bo.postImageUrls?.[2] || '',
+              accessoriesOrBox: '',
+              serialOrReceipt: '',
+            },
+            photoGallery: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : []),
+          },
+          listingId: bo.postId || bo.id,
+          buyerId: bo.buyerId || 'buyer-1',
+          buyerName: bo.buyerName || 'Khách hàng',
+          buyerPhone: '0912345678',
+          buyerAddress: 'TP. Hồ Chí Minh',
+          sellerId: bo.sellerId || 'seller-1',
+          sellerName: bo.sellerName || 'Người bán',
+          inspectorId: assignedId,
+          inspectorName: assignedName,
+          itemPriceVnd: bo.postPrice || 1000000,
+          inspectionFeeVnd: bo.inspectionFee || 150000,
+          shippingFeeVnd: bo.shippingFee || 30000,
+          platformFeeVnd: 0,
+          totalPaidVnd: (bo.postPrice || 1000000) + (bo.inspectionFee || 150000) + (bo.shippingFee || 30000),
+          totalAmountVnd: (bo.postPrice || 1000000) + (bo.inspectionFee || 150000) + (bo.shippingFee || 30000),
+          escrowStatus: (bo.status as any) || 'INSPECTING',
+          hasInspectionService: true,
+          requiresInspection: true,
+          inspectionMethod: bo.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER',
+          inspectionFeeSplit: bo.feePayer === 'SELLER_PAYS' ? 'SELLER_100' : bo.feePayer === 'BUYER_PAYS' ? 'BUYER_100' : 'SPLIT_50_50',
+          shippingLegs: [],
+          multiStagePhotos: {
+            listingPhotos: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : []),
+          },
+          createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
+          deliveryAddress: 'TP. Hồ Chí Minh',
+          deliveryOption: 'INSPECTION',
+        } as unknown as EscrowOrder;
+
+        candidateMap.set(bo.id, mappedEscrow);
+      }
+    });
+
+    const result = Array.from(candidateMap.values());
+    result.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    return result;
+  }, [backendOrders, orders, currentUser]);
+
+  // Auto-select first order when effectiveOrders loads and nothing is selected
+  useEffect(() => {
+    if ((!selectedOrderId || !effectiveOrders.some((o) => o.id === selectedOrderId)) && effectiveOrders.length > 0) {
+      setSelectedOrderId(effectiveOrders[0].id);
+    }
+  }, [effectiveOrders, selectedOrderId]);
 
   // --- KPI COMPUTATIONS FOR INSPECTOR ---
   const activeOrder = useMemo(() => {
@@ -655,20 +768,6 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                   >
                     <User className="w-3.5 h-3.5 text-[#c34c36]" />
                     <span>Hồ Sơ Cá Nhân</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowUserDropdown(false);
-                      if (onViewWebsite) {
-                        onViewWebsite();
-                      } else if (onNavigate) {
-                        onNavigate('home');
-                      }
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-100 rounded-xl flex items-center gap-2 text-[#24263e] font-bold cursor-pointer transition"
-                  >
-                    <Home className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Quay lại Trang Mua Sắm</span>
                   </button>
                   <button
                     onClick={() => {
@@ -1119,8 +1218,8 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                 <p className="text-sm font-semibold">Không tìm thấy nhiệm vụ kiểm định nào phù hợp bộ lọc.</p>
               </div>
             ) : (
-              filteredTasks.map((ord, idx) => {
-                const isAtHome = ord.inspectionMethod === 'AT_HOME' || idx % 2 === 1;
+              filteredTasks.map((ord) => {
+                const isAtHome = ord.inspectionMethod === 'AT_HOME';
                 const isCompleted =
                   Boolean(ord.inspectionReport) ||
                   (ord.escrowStatus as string) === 'COMPLETED' ||

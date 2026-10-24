@@ -560,6 +560,9 @@ export const shippingService = {
    * PUT /api/v1/posts/{postId}/shipping-package
    */
   async updateShippingPackage(postId: string, body: ShippingParcel): Promise<ShippingParcel> {
+    try {
+      localStorage.setItem(`post_parcel_${postId}`, JSON.stringify(body));
+    } catch {}
     const res = await request<ShippingParcel>(`/posts/${postId}/shipping-package`, {
       method: 'PUT',
       body: JSON.stringify(body),

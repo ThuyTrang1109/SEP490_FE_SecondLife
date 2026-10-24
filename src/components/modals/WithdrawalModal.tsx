@@ -20,6 +20,7 @@ import {
   CreateWithdrawalRequestDto
 } from '../../services/walletService';
 import { formatVND } from '../../utils/translations';
+import { formatVndInput, cleanVndInput } from '../../utils/numberToWords';
 
 interface WithdrawalModalProps {
   isOpen: boolean;
@@ -142,7 +143,7 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    const amount = Number(amountStr);
+    const amount = Number(cleanVndInput(amountStr));
     if (isNaN(amount) || amount < 50000) {
       setErrorMessage('Số tiền rút tối thiểu là 50.000 VND.');
       return;
@@ -325,17 +326,20 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
                 <span>Số tiền cần rút (VND) <span className="text-rose-500">*</span></span>
                 <span className="text-[10px] text-slate-400">Tối thiểu: 50.000₫</span>
               </label>
-              <input
-                type="number"
-                required
-                min={50000}
-                max={availableBalance}
-                step={1000}
-                value={amountStr}
-                onChange={(e) => setAmountStr(e.target.value)}
-                placeholder="Nhập số tiền (VND)..."
-                className="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#24263e] font-black text-base text-[#c34c36]"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  required
+                  value={amountStr ? formatVndInput(amountStr) : ''}
+                  onChange={(e) => setAmountStr(cleanVndInput(e.target.value))}
+                  placeholder="Nhập số tiền (VND)..."
+                  className="w-full text-xs px-3 py-2.5 pr-8 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#24263e] font-black text-base text-[#c34c36]"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">
+                  đ
+                </span>
+              </div>
 
               {/* Quick Percentage Chips */}
               <div className="flex items-center gap-2 mt-2">

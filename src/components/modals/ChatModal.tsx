@@ -36,6 +36,7 @@ import {
   SellerReputationDto,
 } from '../../services';
 import { SystemInspectionProposalPayload } from '../../types';
+import { formatVndInput, cleanVndInput } from '../../utils/numberToWords';
 
 // In-memory cache to instantly retrieve known ChatRoom per PostId without duplicate API calls
 const postRoomCache = new Map<string, ChatRoomDto>();
@@ -229,6 +230,29 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  const notifyChatInteraction = useCallback((targetRoomId?: string, text?: string) => {
+    const rid = targetRoomId || roomId || activeRoom?.id;
+    if (!rid && !listing?.id) return;
+    try {
+      if (rid) {
+        localStorage.setItem(`chat_room_latest_touch_${rid}`, Date.now().toString());
+        if (text) {
+          localStorage.setItem(`chat_room_latest_msg_${rid}`, text);
+        }
+      }
+      window.dispatchEvent(
+        new CustomEvent('chat_message_sent', {
+          detail: {
+            roomId: rid,
+            postId: listing?.id,
+            message: text,
+            timestamp: Date.now(),
+          },
+        })
+      );
+    } catch {}
+  }, [roomId, activeRoom?.id, listing?.id]);
 
   // Convert ChatMessageDto from backend to ChatMessage for UI
   const mapDtoToChatMessage = useCallback(
@@ -459,6 +483,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       if (newDto.conversationId === roomId) {
         const uiMsg = mapDtoRef.current(newDto);
         syncIncomingMessage(uiMsg);
+        notifyChatInteraction(roomId, newDto.messageContent);
         setTimeout(scrollToBottom, 60);
       }
     });
@@ -466,7 +491,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     return () => {
       unsubscribe();
     };
-  }, [roomId, syncIncomingMessage]);
+  }, [roomId, syncIncomingMessage, notifyChatInteraction]);
 
   // Periodic background sync while ChatModal is open to guarantee real-time updates without page reset
   useEffect(() => {
@@ -597,6 +622,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         setMessages((prev) =>
           prev.map((m) => (m.id === tempId ? { ...m, id: res.id, isSending: false, isFailed: false } : m))
         );
+        notifyChatInteraction(targetRoomId, text);
       } else {
         throw new Error('Máy chủ không phản hồi mã tin nhắn');
       }
@@ -681,7 +707,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
   // Send official negotiation offer
   const handleSendOffer = async () => {
-    if (!offerInput || offerInput <= 0 || isSendingOfferRef.current) return;
+    if (!offerInput || offerInput <= 0 || isSendingOfferRef.current) {
+      if (!offerInput || offerInput <= 0) {
+        setOfferError(lang === 'vi' ? 'Vui lòng nhập mức giá bạn muốn đề xuất mua (VNĐ).' : 'Please enter an offer price (VND).');
+      }
+      return;
+    }
     isSendingOfferRef.current = true;
     setNegotiationLoading(true);
     setOfferError(null);
@@ -711,13 +742,24 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           if (prev.some((m) => m.negotiationId === res.id || m.id === `nego-${res.id}`)) return prev;
           return [...prev, localOfferMsg];
         });
+        notifyChatInteraction(roomId || activeRoom?.id, `Đề xuất giá: ${formatVND(offerInput)}`);
         setTimeout(scrollToBottom, 50);
       }
     } catch (err: any) {
       console.warn('Backend negotiation creation error:', err);
-      const msg = err?.message || '';
+      const msg = err?.response?.data?.message || err?.message || '';
       if (msg.includes('internal error') || msg.includes('500')) {
         setOfferError('Máy chủ Backend gặp lỗi nội bộ (500) khi lưu đàm phán hoặc gửi tin nhắn hệ thống. Vui lòng kiểm tra lại server.');
+      } else if (msg.includes('strictly greater than your highest rejected price') || msg.includes('highest rejected price')) {
+        const rejectedNum = msg.match(/(\d+(?:\.\d+)?)/)?.[0];
+        const formattedNum = rejectedNum ? Number(rejectedNum).toLocaleString('vi-VN') + ' đ' : '';
+        setOfferError(lang === 'vi'
+          ? `Mức giá đề xuất mới phải lớn hơn mức giá cao nhất từng bị từ chối (${formattedNum}).`
+          : `Offered price must be strictly greater than your highest rejected price: ${formattedNum}`);
+      } else if (msg.includes('lower than') || msg.includes('must be lower')) {
+        setOfferError(lang === 'vi'
+          ? 'Mức giá đề xuất phải thấp hơn giá gốc của bài đăng.'
+          : 'Offered price must be lower than original post price.');
       } else {
         setOfferError(msg || 'Không thể tạo đề xuất thương lượng. Mức giá đề xuất phải thấp hơn giá gốc.');
       }
@@ -753,6 +795,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           return m;
         })
       );
+      notifyChatInteraction(roomId || activeRoom?.id, action === 'accepted' ? 'Đã chấp nhận đề xuất giá' : 'Đã từ chối đề xuất giá');
     } catch (err: any) {
       console.warn('Backend respond negotiation error:', err);
       dialogService.error(err?.message || 'Thao tác không thành công. Vui lòng thử lại.', 'Lỗi Phản Hồi Trả Giá');
@@ -1585,16 +1628,29 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   {lang === 'vi' ? 'Giá gốc:' : 'Original:'} {formatVND(listing.priceVnd)}
                 </span>
               </div>
-              <input
-                type="number"
-                step={50000}
-                value={offerInput}
-                onChange={(e) => {
-                  setOfferInput(Number(e.target.value));
-                  if (offerError) setOfferError(null);
-                }}
-                className={`w-full px-3 py-1.5 border rounded-xl text-xs font-black text-[#24263e] focus:outline-none mt-1 bg-[#faf8f5] border-gray-200 focus:border-[#c34c36]`}
-              />
+              <div className="relative mt-1">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Ví dụ: 1.200.000"
+                  value={offerInput > 0 ? formatVndInput(offerInput) : ''}
+                  onChange={(e) => {
+                    const cleaned = cleanVndInput(e.target.value);
+                    setOfferInput(cleaned ? Number(cleaned) : 0);
+                    if (offerError) setOfferError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSendOffer();
+                    }
+                  }}
+                  className={`w-full px-3 py-1.5 pr-8 border rounded-xl text-xs font-black text-[#24263e] focus:outline-none bg-[#faf8f5] border-gray-200 focus:border-[#c34c36]`}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">
+                  đ
+                </span>
+              </div>
               {offerError && (
                 <p className="text-[11px] text-rose-600 font-bold mt-1.5 flex items-center gap-1 bg-rose-50 p-2 rounded-lg border border-rose-200 animate-fadeIn">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-600" />

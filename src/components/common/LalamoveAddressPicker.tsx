@@ -22,6 +22,7 @@ interface LalamoveAddressPickerProps {
   sellerCity?: string;
   sellerLocation?: string;
   onAddressConfirmed: (data: SelectedLocationData) => void;
+  onAddressUnconfirmed?: () => void;
   onNameChange?: (name: string) => void;
   onPhoneChange?: (phone: string) => void;
   lang?: 'vi' | 'en';
@@ -82,6 +83,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
   sellerCity,
   sellerLocation,
   onAddressConfirmed,
+  onAddressUnconfirmed,
   onNameChange,
   onPhoneChange,
   lang = 'vi',
@@ -104,8 +106,13 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
 
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
-  const [isConfirmed, setIsConfirmed] = useState(Boolean(initialAddress && initialLatitude && initialLongitude));
+  const [isConfirmed, setIsConfirmed] = useState(false);
   const [isLocatingDevice, setIsLocatingDevice] = useState(false);
+
+  const markUnconfirmed = useCallback(() => {
+    setIsConfirmed(false);
+    onAddressUnconfirmed?.();
+  }, [onAddressUnconfirmed]);
 
   // Dynamic Cities from Backend (GET /api/v1/shipping/cities)
   const [supportedCities, setSupportedCities] = useState(ALLOWED_CITIES);
@@ -231,7 +238,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
       setResolvedAddress(item.display_name || query);
       const detectedCity = detectCityFromCoords(parsedLat, parsedLng);
       setResolvedCity(detectedCity);
-      setIsConfirmed(false);
+      markUnconfirmed();
       setLookupError(null);
 
       // Move Leaflet map & marker
@@ -288,7 +295,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
     const currentSeq = ++lookupSeqRef.current;
     setIsLookingUp(true);
     setLookupError(null);
-    setIsConfirmed(false);
+    markUnconfirmed();
 
     try {
       const res: GeocodedAddressDto = await shippingService.reverseGeocode(lat, lng);
@@ -567,7 +574,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
               const val = e.target.value;
               setContactName(val);
               onNameChange?.(val);
-              setIsConfirmed(false);
+              markUnconfirmed();
             }}
             placeholder={lang === 'vi' ? 'VD: Nguyễn Văn A' : 'Full name'}
             className="w-full h-9 px-3 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none focus:border-orange-500 shadow-2xs"
@@ -586,7 +593,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
               const val = e.target.value;
               setContactPhone(val);
               onPhoneChange?.(val);
-              setIsConfirmed(false);
+              markUnconfirmed();
             }}
             placeholder={lang === 'vi' ? 'VD: 0912345678' : '0912345678'}
             className="w-full h-9 px-3 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none focus:border-orange-500 shadow-2xs"
@@ -743,7 +750,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
             value={resolvedAddress}
             onChange={(e) => {
               setResolvedAddress(e.target.value);
-              setIsConfirmed(false);
+              markUnconfirmed();
             }}
             placeholder={isLookingUp ? 'Đang tra cứu địa chỉ...' : 'Nhập hoặc bổ sung số nhà, tên đường, tòa nhà...'}
             className="w-full px-3 py-2 bg-slate-50/80 border border-gray-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-orange-500 transition"

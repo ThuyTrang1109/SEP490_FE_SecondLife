@@ -96,8 +96,11 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   useEffect(() => {
     if (externalSelectedOrderId) {
       setSelectedOrderId(externalSelectedOrderId);
+    } else if ((!selectedOrderId || !orders.some((o) => o.id === selectedOrderId)) && orders.length > 0) {
+      setSelectedOrderId(orders[0].id);
+      onSelectOrder?.(orders[0].id);
     }
-  }, [externalSelectedOrderId]);
+  }, [externalSelectedOrderId, orders, selectedOrderId, onSelectOrder]);
 
   // Active Order
   const activeOrder = useMemo(() => {
@@ -402,8 +405,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   // Filter tasks
   const filteredOrders = useMemo(() => {
-    return orders.filter((o, idx) => {
-      const isAtHome = o.inspectionMethod === 'AT_HOME' || idx % 2 === 1;
+    return orders.filter((o) => {
+      const isAtHome = o.inspectionMethod === 'AT_HOME';
       const isCompleted = (o.escrowStatus as string) === 'COMPLETED' || o.escrowStatus === 'COMPLETED_RELEASED' || o.escrowStatus === 'DELIVERED_INSPECTION_WINDOW';
 
       if (taskFilter === 'AT_CENTER' && isAtHome) return false;
@@ -658,15 +661,16 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   Không có đơn kiểm định phù hợp trong bộ lọc này
                 </div>
               ) : (
-                filteredOrders.map((ord, idx) => {
+                filteredOrders.map((ord) => {
                   const isSelected = ord.id === activeOrder?.id;
-                  const isAtHome = ord.inspectionMethod === 'AT_HOME' || idx % 2 === 1;
+                  const isAtHome = ord.inspectionMethod === 'AT_HOME';
 
                   return (
                     <div
                       key={ord.id}
                       onClick={() => {
                         setSelectedOrderId(ord.id);
+                        onSelectOrder?.(ord.id);
                         notify(`Đã chuyển sang đơn #${ord.id}`);
                       }}
                       className={`p-3.5 rounded-2xl border transition cursor-pointer space-y-2 ${

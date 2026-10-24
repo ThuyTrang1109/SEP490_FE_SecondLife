@@ -119,12 +119,32 @@ export const InboxView: React.FC<InboxViewProps> = ({
     [currentUser, listings, lang]
   );
 
+  // Helper to calculate effective timestamp for room sorting
+  const getRoomEffectiveTimestamp = (room: ChatRoomDto): number => {
+    const now = Date.now();
+    // 1. Highest priority: local touch timestamp (when user just chatted in this room or received a message)
+    const localTouch = localStorage.getItem(`chat_room_latest_touch_${room.id}`);
+    const localTouchTime = localTouch ? Number(localTouch) : 0;
+
+    // 2. Room updatedAt from backend
+    let serverTime = 0;
+    if (room.updatedAt) {
+      const parsed = new Date(room.updatedAt).getTime();
+      if (!isNaN(parsed)) {
+        // If server time is in the future (> now + 30s), clamp it so it doesn't artificially pin over live activity
+        serverTime = parsed > (now + 30000) ? (now - 60000) : parsed;
+      }
+    }
+
+    return Math.max(localTouchTime, serverTime);
+  };
+
   // Fetch rooms from Backend API: GET /api/v1/chats
   const loadChatRooms = useCallback(async () => {
     try {
       const data = await chatService.getChatRooms();
       const rawRooms = Array.isArray(data) ? data : [];
-      const uniqueRooms = [];
+      const uniqueRooms: ChatRoomDto[] = [];
       const seen = new Set();
       for (const r of rawRooms) {
         if (!r.lastMessage || r.lastMessage.trim() === '') {
@@ -133,9 +153,28 @@ export const InboxView: React.FC<InboxViewProps> = ({
         const key = r.postId && r.buyerId && r.sellerId ? `${r.postId}_${r.buyerId}_${r.sellerId}` : r.id;
         if (!seen.has(key)) {
           seen.add(key);
-          uniqueRooms.push(r);
+          const localMsg = localStorage.getItem(`chat_room_latest_msg_${r.id}`);
+          const localTouch = localStorage.getItem(`chat_room_latest_touch_${r.id}`);
+          const mergedRoom = { ...r };
+          if (localMsg && localTouch) {
+            const touchTime = Number(localTouch);
+            const serverTime = r.updatedAt ? new Date(r.updatedAt).getTime() : 0;
+            if (touchTime > serverTime) {
+              mergedRoom.lastMessage = localMsg;
+              mergedRoom.updatedAt = new Date(touchTime).toISOString();
+            }
+          }
+          uniqueRooms.push(mergedRoom);
         }
       }
+
+      // Sort rooms by latest message timestamp DESCENDING
+      uniqueRooms.sort((a, b) => {
+        const timeA = getRoomEffectiveTimestamp(a);
+        const timeB = getRoomEffectiveTimestamp(b);
+        return timeB - timeA;
+      });
+
       setRooms(uniqueRooms);
     } catch (err) {
       console.warn('Failed to load chat rooms from backend:', err);
@@ -143,6 +182,24 @@ export const InboxView: React.FC<InboxViewProps> = ({
       setLoading(false);
     }
   }, []);
+
+  const bumpRoomToTop = useCallback((roomId?: string, postId?: string, lastMessage?: string) => {
+    if (!roomId && !postId) return;
+    setRooms((prevRooms) => {
+      const index = prevRooms.findIndex((r) => (roomId && r.id === roomId) || (postId && r.postId === postId));
+      if (index === -1) {
+        loadChatRooms();
+        return prevRooms;
+      }
+      const targetRoom = {
+        ...prevRooms[index],
+        lastMessage: lastMessage || prevRooms[index].lastMessage,
+        updatedAt: new Date().toISOString()
+      };
+      const rest = prevRooms.filter((_, i) => i !== index);
+      return [targetRoom, ...rest];
+    });
+  }, [loadChatRooms]);
 
   // Fetch negotiations from Backend API: GET /api/v1/negotiations/seller & buyer
   const loadNegotiations = useCallback(async () => {
@@ -170,10 +227,21 @@ export const InboxView: React.FC<InboxViewProps> = ({
     loadNegotiations();
 
     chatService.connectWebSocket();
-    const unsubscribe = chatService.subscribeToMessages(() => {
+    const unsubscribe = chatService.subscribeToMessages((msg) => {
+      if (msg?.conversationId) {
+        bumpRoomToTop(msg.conversationId, undefined, msg.messageContent);
+      }
       loadChatRooms();
       loadNegotiations();
     });
+
+    const handleMessageSent = (e: any) => {
+      const { roomId, postId, message } = e.detail || {};
+      if (roomId || postId) {
+        bumpRoomToTop(roomId, postId, message);
+      }
+    };
+    window.addEventListener('chat_message_sent', handleMessageSent);
 
     const intervalId = setInterval(() => {
       loadChatRooms();
@@ -182,9 +250,10 @@ export const InboxView: React.FC<InboxViewProps> = ({
 
     return () => {
       unsubscribe();
+      window.removeEventListener('chat_message_sent', handleMessageSent);
       clearInterval(intervalId);
     };
-  }, [loadChatRooms, loadNegotiations]);
+  }, [loadChatRooms, loadNegotiations, bumpRoomToTop]);
 
   const handleSelectRoom = (room: ChatRoomDto) => {
     const { partnerName, partnerAvatar } = getRoomPartnerInfo(room);

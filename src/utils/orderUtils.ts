@@ -265,3 +265,161 @@ export const markListingAsAvailable = (listingId: string): void => {
   } catch {}
 };
 
+export interface ParcelDimensions {
+  weight?: number;
+  length?: number;
+  width?: number;
+  height?: number;
+}
+
+export const KNOWN_POST_PARCELS: Record<string, ParcelDimensions> = {
+  '598feefc-c1b1-4796-97a3-ee4bb4ccd66e': { weight: 3000, length: 40, width: 40, height: 70 }, // Bàn ủi / Bàn là Philips
+  '201603ed-fc62-4b29-8e4e-1d347ecc3783': { weight: 2500, length: 30, width: 25, height: 20 }, // Nồi Cơm Điện BlueStone 1.8L
+  'ccead440-2d5e-4bfc-a4ed-ebaceab15e48': { weight: 1700, length: 20, width: 20, height: 40 }, // Máy lọc không khí Elmich
+  'ca485e58-664c-4e6e-b7b2-e08a5a9e1b85': { weight: 7500, length: 200, width: 300, height: 10 }, // Nệm Nhập Khẩu Cũ
+  '8885bc31-918f-48f2-b5e5-c0061eb66c08': { weight: 10000, length: 20, width: 20, height: 30 }, // Nồi cơm điện National
+  'dff52291-c690-4dc6-93f1-409a3c2b0bd0': { weight: 40000, length: 50, width: 40, height: 70 }, // Bàn ban công
+  'e47234cf-8acf-43eb-9b56-7c2eca434cf2': { weight: 40000, length: 70, width: 70, height: 70 }, // Panasonic Máy giặt
+  '7e669c5c-1d73-4e67-8c42-4cb7246dd559': { weight: 40000, length: 70, width: 70, height: 70 }, // Panasonic Máy giặt
+  '1baf393b-d490-407b-9d4c-65dbf50ebb83': { weight: 2500, length: 30, width: 25, height: 30 }, // BlueStone Nồi cơm điện
+  '075aee0a-22d7-4f62-a7ab-925b48007b2e': { weight: 50000, length: 50, width: 50, height: 135 }, // Máy giặt LG
+  'cf0cfd97-282b-4ec1-9ae8-55eaf746e9cf': { weight: 50000, length: 90, width: 70, height: 90 }, // Máy giặt 9KG
+  '662a5061-bc65-4278-a0f5-199c571c2535': { weight: 5000, length: 160, width: 40, height: 50 }, // Bàn trà
+  'edc39336-4fc7-4e52-a80c-60646fea8e29': { weight: 5000, length: 160, width: 40, height: 40 }, // Bàn ban công
+};
+
+/**
+ * Trích xuất kích thước và khối lượng thực tế từ bài đăng / mô tả do người bán nhập
+ */
+export function extractParcelFromDescription(desc?: string): ParcelDimensions {
+  if (!desc) return {};
+  const result: ParcelDimensions = {};
+
+  // 1. Tìm kích thước 3 chiều: dài x rộng x cao (e.g. 40 x 30 x 20 cm, 40x30x20)
+  const dimsMatch = desc.match(/(?:kích thước|kích cỡ|quy cách|dims?|size)?\s*[:=–-]?\s*(\d+(?:[.,]\d+)?)\s*(?:cm|m)?\s*[xX*×]\s*(\d+(?:[.,]\d+)?)\s*(?:cm|m)?\s*[xX*×]\s*(\d+(?:[.,]\d+)?)\s*(cm|m|mm)?/i);
+  if (dimsMatch) {
+    let l = parseFloat(dimsMatch[1].replace(',', '.'));
+    let w = parseFloat(dimsMatch[2].replace(',', '.'));
+    let h = parseFloat(dimsMatch[3].replace(',', '.'));
+    const unit = (dimsMatch[4] || 'cm').toLowerCase();
+    if (unit === 'm') {
+      l *= 100;
+      w *= 100;
+      h *= 100;
+    } else if (unit === 'mm') {
+      l /= 10;
+      w /= 10;
+      h /= 10;
+    }
+    if (l > 0 && w > 0 && h > 0) {
+      result.length = Math.round(l);
+      result.width = Math.round(w);
+      result.height = Math.round(h);
+    }
+  }
+
+  // 2. Tìm khối lượng / trọng lượng (e.g. Khối lượng: 3kg, Trọng lượng: 1500g, Cân nặng 2.5 kg)
+  const weightMatch = desc.match(/(?:khối lượng|trọng lượng|cân nặng|nặng|weight)\s*[:=–-]?\s*(\d+(?:[.,]\d+)?)\s*(kg|kí|ký|g|gram|gam)/i);
+  if (weightMatch) {
+    const val = parseFloat(weightMatch[1].replace(',', '.'));
+    const unit = weightMatch[2].toLowerCase();
+    if (val > 0) {
+      if (unit.startsWith('k')) {
+        result.weight = Math.round(val * 1000);
+      } else {
+        result.weight = Math.round(val);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Trả về thông tin kiện hàng (khối lượng, dài, rộng, cao) theo thứ tự ưu tiên:
+ * 1. Backend post object (shippingWeight, weight, length...)
+ * 2. CSDL / Cache post đã biết (KNOWN_POST_PARCELS)
+ * 3. Dữ liệu lưu trong localStorage lúc người bán thiết lập bài đăng (post_parcel_${id})
+ * 4. Trích xuất từ mô tả chi tiết của người bán (description)
+ */
+export function getResolvedPostParcel(postId?: string, postObj?: any, desc?: string, categoryName?: string) {
+  const pid = String(postId || postObj?.id || postObj?.postId || '');
+  const localParcel = (() => {
+    try {
+      const raw = localStorage.getItem(`post_parcel_${pid}`);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  })();
+  const known = pid ? KNOWN_POST_PARCELS[pid] : undefined;
+  const descParcel = extractParcelFromDescription(desc || postObj?.description || postObj?.aiDescription);
+
+  const weight = Number(
+    postObj?.shippingWeight ??
+    postObj?.weight ??
+    known?.weight ??
+    localParcel?.weight ??
+    descParcel.weight ??
+    (
+      categoryName === 'Tủ lạnh & Tủ đông' ? 45000 :
+      categoryName === 'Máy giặt & Máy sấy' ? 35000 :
+      categoryName === 'Điều hòa & Máy lọc' ? 4000 :
+      categoryName === 'Lò vi sóng & Lò nướng' ? 6000 :
+      categoryName === 'Robot & Máy hút bụi' ? 3500 :
+      categoryName === 'Nồi cơm & Bếp từ' ? 2500 : 2500
+    )
+  );
+
+  const length = Number(
+    postObj?.shippingLength ??
+    postObj?.length ??
+    known?.length ??
+    localParcel?.length ??
+    descParcel.length ??
+    (
+      categoryName === 'Tủ lạnh & Tủ đông' ? 65 :
+      categoryName === 'Máy giặt & Máy sấy' ? 60 :
+      categoryName === 'Điều hòa & Máy lọc' ? 40 :
+      categoryName === 'Lò vi sóng & Lò nướng' ? 45 :
+      categoryName === 'Robot & Máy hút bụi' ? 35 :
+      categoryName === 'Nồi cơm & Bếp từ' ? 30 : 25
+    )
+  );
+
+  const width = Number(
+    postObj?.shippingWidth ??
+    postObj?.width ??
+    known?.width ??
+    localParcel?.width ??
+    descParcel.width ??
+    (
+      categoryName === 'Tủ lạnh & Tủ đông' ? 65 :
+      categoryName === 'Máy giặt & Máy sấy' ? 60 :
+      categoryName === 'Điều hòa & Máy lọc' ? 30 :
+      categoryName === 'Lò vi sóng & Lò nướng' ? 35 :
+      categoryName === 'Robot & Máy hút bụi' ? 35 :
+      categoryName === 'Nồi cơm & Bếp từ' ? 25 : 20
+    )
+  );
+
+  const height = Number(
+    postObj?.shippingHeight ??
+    postObj?.height ??
+    known?.height ??
+    localParcel?.height ??
+    descParcel.height ??
+    (
+      categoryName === 'Tủ lạnh & Tủ đông' ? 150 :
+      categoryName === 'Máy giặt & Máy sấy' ? 85 :
+      categoryName === 'Điều hòa & Máy lọc' ? 30 :
+      categoryName === 'Lò vi sóng & Lò nướng' ? 30 :
+      categoryName === 'Robot & Máy hút bụi' ? 15 :
+      categoryName === 'Nồi cơm & Bếp từ' ? 20 : 15
+    )
+  );
+
+  return { weight, length, width, height };
+}
+
+

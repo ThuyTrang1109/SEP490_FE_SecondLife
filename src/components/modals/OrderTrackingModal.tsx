@@ -148,6 +148,19 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   const [isConfirmingDelivered, setIsConfirmingDelivered] = useState(false);
   const [isCreatingShipment, setIsCreatingShipment] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const isReceiptConfirmed = Boolean(
+    String(order.escrowStatus) === 'COMPLETED_RELEASED' ||
+    String(order.escrowStatus) === 'RELEASED' ||
+    String(order.escrowStatus) === 'COMPLETED' ||
+    String((order as any).status).toUpperCase() === 'COMPLETED' ||
+    String((order as any).backendStatus).toUpperCase() === 'COMPLETED' ||
+    (order as any).buyerConfirmedAt ||
+    (order as any).buyer_confirmed_at ||
+    (order as any).releasedAt ||
+    (order as any).released_at ||
+    (typeof window !== 'undefined' && localStorage.getItem(`order_receipt_confirmed_${order.id}`) === 'true')
+  );
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
 
@@ -535,6 +548,9 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     if (!confirmed) return;
     setIsConfirmingDelivered(true);
     try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`order_receipt_confirmed_${order.id}`, 'true');
+      }
       await orderService.confirmDelivery(order.id);
       showNotification('Đã xác nhận nhận hàng thành công! Đơn hàng hoàn tất và quỹ Escrow đã được giải ngân.');
       onConfirmReceipt?.(order.id);
@@ -1584,7 +1600,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                 {/* Confirm Receipt for Buyer when Delivered (Section 12) */}
                 {!isSeller && (
                   <div>
-                    {String(order.escrowStatus) === 'COMPLETED_RELEASED' || String(order.escrowStatus) === 'RELEASED' || (order as any).status === 'COMPLETED' ? (
+                    {isReceiptConfirmed ? (
                       <span className="px-3.5 py-2 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 flex items-center gap-1.5">
                         <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                         <span>Đơn hàng đã hoàn tất & giải ngân thành công</span>

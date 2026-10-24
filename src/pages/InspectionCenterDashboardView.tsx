@@ -1532,6 +1532,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
       const inspectorObj = staffList.find((s) => s.id === selectedInspectorId);
       const inspectorName = inspectorObj?.fullName || 'Kỹ thuật viên';
+      const inspectorEmail = inspectorObj?.email;
+      const inspectorPhone = inspectorObj?.phone;
 
       // Persist assignment mapping
       localStorage.setItem(
@@ -1539,6 +1541,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         JSON.stringify({
           inspectorId: selectedInspectorId,
           inspectorName: inspectorName,
+          inspectorEmail: inspectorEmail,
+          inspectorPhone: inspectorPhone,
           assignedAt: new Date().toISOString(),
         })
       );
@@ -1554,6 +1558,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 ...o,
                 inspectorId: selectedInspectorId,
                 inspectorName: inspectorName,
+                inspectorEmail: inspectorEmail,
                 status: 'DISPATCHED',
                 backendStatus: 'DISPATCHED',
               };
@@ -1564,25 +1569,32 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         }
       } catch {}
 
-      // Update center_inspection_orders
+      // Update center_inspection_orders (ensure the order is persisted and marked DISPATCHED)
       try {
         const rawCenter = localStorage.getItem('center_inspection_orders');
-        if (rawCenter) {
-          const list = JSON.parse(rawCenter);
-          const updated = list.map((o: any) => {
-            if (o.id === assignModalOrder.id) {
-              return {
-                ...o,
-                inspectorId: selectedInspectorId,
-                inspectorName: inspectorName,
-                status: 'DISPATCHED',
-                backendStatus: 'DISPATCHED',
-              };
-            }
-            return o;
+        let listCenter = rawCenter ? JSON.parse(rawCenter) : [];
+        if (!Array.isArray(listCenter)) listCenter = [];
+        const existingIdx = listCenter.findIndex((o: any) => o.id === assignModalOrder.id);
+        if (existingIdx >= 0) {
+          listCenter[existingIdx] = {
+            ...listCenter[existingIdx],
+            inspectorId: selectedInspectorId,
+            inspectorName: inspectorName,
+            inspectorEmail: inspectorEmail,
+            status: 'DISPATCHED',
+            backendStatus: 'DISPATCHED',
+          };
+        } else {
+          listCenter.unshift({
+            ...assignModalOrder,
+            inspectorId: selectedInspectorId,
+            inspectorName: inspectorName,
+            inspectorEmail: inspectorEmail,
+            status: 'DISPATCHED',
+            backendStatus: 'DISPATCHED',
           });
-          localStorage.setItem('center_inspection_orders', JSON.stringify(updated));
         }
+        localStorage.setItem('center_inspection_orders', JSON.stringify(listCenter));
       } catch {}
 
       // Notify other tabs and inspector workstation
@@ -1592,6 +1604,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             orderId: assignModalOrder.id,
             inspectorId: selectedInspectorId,
             inspectorName: inspectorName,
+            inspectorEmail: inspectorEmail,
           },
         })
       );

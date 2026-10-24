@@ -214,7 +214,7 @@ class ChatWebSocketManager {
     };
   }
 
-  private notifyMessage(msg: ChatMessageDto): void {
+  public notifyMessage(msg: ChatMessageDto): void {
     this.messageListeners.forEach((fn) => {
       try {
         fn(msg);
@@ -308,9 +308,28 @@ export const chatService = {
       body: JSON.stringify({ messageContent }),
       requiresAuth: true,
     });
-    return ((response as any)?.data !== undefined && (response as any)?.data !== null
+    const dto = (((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
-      : response) as ChatMessageDto;
+      : response) as ChatMessageDto) || {
+        id: `msg-${Date.now()}`,
+        conversationId: roomId,
+        senderId: '',
+        messageContent,
+        sentAt: new Date().toISOString()
+      };
+
+    try {
+      chatWsManager.notifyMessage(dto);
+      localStorage.setItem(`chat_room_latest_touch_${roomId}`, Date.now().toString());
+      localStorage.setItem(`chat_room_latest_msg_${roomId}`, messageContent);
+      window.dispatchEvent(
+        new CustomEvent('chat_message_sent', {
+          detail: { roomId, message: messageContent, timestamp: Date.now() }
+        })
+      );
+    } catch {}
+
+    return dto;
   },
 
   /**

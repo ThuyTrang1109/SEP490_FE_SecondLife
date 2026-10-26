@@ -37,6 +37,7 @@ export interface SystemOfferPayload {
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
   price: number;
   negotiationId: string;
+  senderRole?: 'buyer' | 'seller';
 }
 
 export function parseSystemMessage(content: string): {

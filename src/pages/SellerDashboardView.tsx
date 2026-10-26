@@ -31,11 +31,13 @@ import { sellerCreditService, CreditBalanceResponseDto, CreditLedgerResponseDto,
 import { mediaService } from '../services/mediaService';
 import { postService } from '../services/postService';
 import { walletService } from '../services/walletService';
-import { reputationService, SellerReputationDto, ReputationHistoryDto } from '../services/reputationService';
+import { reputationService, SellerReputationDto, ReputationHistoryDto, getAssessmentStatusMeta, getReputationWarningMeta, getReputationEventMeta } from '../services/reputationService';
 import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
+import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { WithdrawalModal } from '../components/modals/WithdrawalModal';
 import { extractWardAndCity, getSavedSellerAddress, cleanFullAddress } from '../utils/addressUtils';
 import { dialogService } from '../utils/dialogService';
+import { resolveCategoryAndItem } from '../utils/catalogCache';
 
 interface SellerDashboardViewProps {
   listings: Listing[];
@@ -62,7 +64,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [toastNotice, setToastNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const showToastNotice = (type: 'success' | 'error', message: string) => {
-    setToastNotice({ type, message });
+    setToastNotice({ type, message: translateSystemNotification(message) });
     setTimeout(() => setToastNotice(null), 4000);
   };
 
@@ -177,12 +179,33 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [isReputationHistoryOpen, setIsReputationHistoryOpen] = useState(false);
   const [reputationHistoryItems, setReputationHistoryItems] = useState<ReputationHistoryDto[]>([]);
   const [isLoadingReputationHistory, setIsLoadingReputationHistory] = useState(false);
+  const [isReloadingReputation, setIsReloadingReputation] = useState(false);
+
+  const handleRefreshReputation = async () => {
+    setIsReloadingReputation(true);
+    try {
+      const [rep, historyRes] = await Promise.all([
+        reputationService.getMyReputation(),
+        reputationService.getMyReputationHistory(0, 30),
+      ]);
+      if (rep) setMyReputation(rep);
+      setReputationHistoryItems(historyRes.items || []);
+    } catch (err) {
+      console.warn('Lỗi làm mới dữ liệu uy tín:', err);
+    } finally {
+      setIsReloadingReputation(false);
+    }
+  };
 
   const handleOpenReputationHistory = async () => {
     setIsReputationHistoryOpen(true);
     setIsLoadingReputationHistory(true);
     try {
-      const res = await reputationService.getMyReputationHistory(0, 30);
+      const [rep, res] = await Promise.all([
+        reputationService.getMyReputation(),
+        reputationService.getMyReputationHistory(0, 30),
+      ]);
+      if (rep) setMyReputation(rep);
       setReputationHistoryItems(res.items || []);
     } catch (err) {
       console.warn('Lỗi tải lịch sử uy tín:', err);
@@ -358,14 +381,27 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           const draftTitle = p.title || (isDraft ? 'Bản nháp sản phẩm' : 'Thiết bị gia dụng SecondLife');
           const draftDesc = p.description || p.aiDescription || '';
 
-          return {
-            id: p.id || `post-${Date.now()}`,
+          const resolved = resolveCategoryAndItem({
+            postId: p.id || p.postId,
             categoryId: p.categoryId,
             itemId: p.itemId,
             title: draftTitle,
-            category: (p.category || 'Tủ lạnh & Tủ đông') as any,
-            brand: p.brand || '',
-            model: p.model || '',
+            description: draftDesc,
+            category: p.category,
+            brand: p.brand,
+            model: p.model,
+          });
+
+          return {
+            id: p.id || `post-${Date.now()}`,
+            categoryId: p.categoryId || resolved.categoryId,
+            itemId: p.itemId || resolved.itemId,
+            categoryName: resolved.categoryName,
+            itemName: resolved.itemName,
+            title: draftTitle,
+            category: (resolved.displayCategory || 'Đồ gia dụng') as any,
+            brand: resolved.brand,
+            model: p.model || resolved.model || '',
             purchaseYear: 2024,
             priceVnd: Number(p.price || p.aiSuggestedPrice || 0),
             originalPriceVnd: Number(p.aiSuggestedPrice || p.price || 0),
@@ -696,16 +732,23 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   type="button"
                   onClick={handleOpenReputationHistory}
                   className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-black shadow-xs transition cursor-pointer"
-                  title="Bấm để xem lịch sử biến động điểm uy tín"
+                  title="Bấm để xem chi tiết chỉ số và lịch sử uy tín"
                 >
                   <Award className="w-3.5 h-3.5 text-amber-300" />
                   <span>
-                    {myReputation?.score !== undefined && myReputation?.score !== null
-                      ? `${myReputation.score} Điểm Uy Tín`
+                    {myReputation?.assessmentStatus === 'NO_TRANSACTIONS'
+                      ? 'Chưa có đơn (Mới)'
+                      : myReputation?.score !== undefined && myReputation?.score !== null
+                      ? `${myReputation.score}/100 Điểm Uy Tín`
                       : currentUser?.trustScore
-                      ? `${currentUser.trustScore} Điểm Uy Tín`
-                      : '100 Điểm Uy Tín'}
+                      ? `${currentUser.trustScore}/100 Điểm Uy Tín`
+                      : 'Chưa có điểm'}
                   </span>
+                  {myReputation?.sellingRestricted && (
+                    <span className="px-1.5 py-0.2 rounded text-[9px] bg-rose-500 text-white font-bold animate-pulse">
+                      Hạn chế
+                    </span>
+                  )}
                   <History className="w-3 h-3 text-slate-300 ml-0.5" />
                 </button>
                 <button
@@ -764,6 +807,53 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Cảnh báo hạn chế bán hàng hoặc cảnh báo vi phạm uy tín theo tài liệu BE */}
+        {myReputation?.sellingRestricted ? (
+          <div className="bg-rose-50 border border-rose-300 text-rose-900 p-4 rounded-2xl flex items-start gap-3 shadow-xs animate-fadeIn mt-4">
+            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            <div className="flex-1 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm text-rose-900">
+                  Tài khoản đang bị hạn chế bán hàng (Selling Restricted)
+                </span>
+                <button
+                  type="button"
+                  onClick={handleOpenReputationHistory}
+                  className="text-xs font-bold text-rose-700 underline hover:text-rose-900 cursor-pointer"
+                >
+                  Xem lý do & lịch sử
+                </button>
+              </div>
+              <p className="mt-1 text-rose-700 leading-relaxed">
+                Quyền đăng bán sản phẩm mới đang tạm thời bị khóa do điểm phạt hoặc vi phạm quy chế sàn. Bạn vẫn có thể tiếp tục thực hiện và hoàn tất các đơn hàng đang xử lý. Vui lòng liên hệ Quản trị viên để được hỗ trợ gỡ hạn chế.
+              </p>
+            </div>
+          </div>
+        ) : myReputation?.warningCode ? (
+          (() => {
+            const warnMeta = getReputationWarningMeta(myReputation.warningCode);
+            if (!warnMeta) return null;
+            return (
+              <div className={`p-3.5 rounded-2xl border flex items-start gap-3 shadow-xs animate-fadeIn mt-4 ${warnMeta.badgeClass}`}>
+                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                <div className="flex-1 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-sm">{warnMeta.title}</span>
+                    <button
+                      type="button"
+                      onClick={handleOpenReputationHistory}
+                      className="text-[11px] font-bold underline hover:opacity-80 cursor-pointer"
+                    >
+                      Chi tiết uy tín
+                    </button>
+                  </div>
+                  <p className="mt-0.5 opacity-90">{warnMeta.desc}</p>
+                </div>
+              </div>
+            );
+          })()
+        ) : null}
 
         {/* Financial Metrics Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-[#24263e]/15">
@@ -826,16 +916,46 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             </div>
           </div>
 
-          <div className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1">
+          <div
+            onClick={handleOpenReputationHistory}
+            className="bg-[#FFFFFF] text-[#24263e] rounded-2xl p-4 border border-gray-200 shadow-sm space-y-1 hover:border-[#c34c36]/40 transition cursor-pointer group"
+            title="Bấm để xem bảng chỉ số uy tín và lịch sử"
+          >
             <div className="text-xs text-[#24263e]/70 flex items-center justify-between">
-              <span>{lang === 'vi' ? 'Tỷ lệ Pass Kiểm Định Hub' : 'Hub Inspection Pass Rate'}</span>
-              <TrendingUp className="w-4 h-4 text-[#c34c36]" />
+              <span className="font-bold flex items-center gap-1.5">
+                <Award className="w-4 h-4 text-amber-500" />
+                <span>{lang === 'vi' ? 'Uy Tín Giao Dịch' : 'Seller Reputation'}</span>
+              </span>
+              {(() => {
+                const statusMeta = getAssessmentStatusMeta(myReputation?.assessmentStatus);
+                return (
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${statusMeta.badgeClass}`}>
+                    {statusMeta.shortLabel}
+                  </span>
+                );
+              })()}
             </div>
-            <div className="text-2xl font-black text-[#24263e]">
-              96.8%
+            <div className="text-2xl font-black text-[#24263e] flex items-baseline gap-1">
+              <span>
+                {myReputation?.score !== null && myReputation?.score !== undefined
+                  ? myReputation.score
+                  : myReputation?.assessmentStatus === 'NO_TRANSACTIONS'
+                  ? 'Chưa có đơn'
+                  : '—'}
+              </span>
+              {myReputation?.score !== null && myReputation?.score !== undefined && (
+                <span className="text-xs font-bold text-slate-400">/ 100</span>
+              )}
             </div>
-            <div className="text-[11px] text-[#24263e]/60">
-              {lang === 'vi' ? 'Chỉ số uy tín tin đăng cao' : 'High listing trust score'}
+            <div className="text-[11px] text-[#24263e]/60 flex items-center justify-between pt-0.5">
+              <span>
+                {myReputation?.evaluatedOrders
+                  ? `${myReputation.goodTransactions} thành công • ${myReputation.badTransactions} lỗi SELLER`
+                  : lang === 'vi'
+                  ? 'Bấm xem chi tiết & lịch sử'
+                  : 'Click to view audit trail'}
+              </span>
+              <span className="text-xs font-bold text-[#c34c36] group-hover:translate-x-0.5 transition-transform">→</span>
             </div>
           </div>
         </div>
@@ -1564,120 +1684,279 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         </div>
       )}
 
-      {/* Modal: Lịch Sử Điểm Uy Tín Người Bán (GET /api/v1/seller/reputation/me/history) */}
+      {/* Modal: Uy Tín Của Tôi & Lịch Sử Biến Động (GET /api/v1/seller/reputation/me & /history) */}
       {isReputationHistoryOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-5 border border-slate-200 shadow-2xl text-[#24263e]">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 border border-slate-200 shadow-2xl text-[#24263e] max-h-[90vh] flex flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-black">
-                  <Award className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-black">
+                  <Award className="w-5 h-5 text-amber-600" />
                 </div>
                 <div>
-                  <h4 className="font-extrabold text-sm text-slate-900">
-                    {lang === 'vi' ? 'Hồ Sơ & Lịch Sử Điểm Uy Tín' : 'Seller Reputation & Trust Score History'}
-                  </h4>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-extrabold text-base text-slate-900">
+                      {lang === 'vi' ? 'UY TÍN CỦA TÔI' : 'MY REPUTATION'}
+                    </h4>
+                    {(() => {
+                      const statusMeta = getAssessmentStatusMeta(myReputation?.assessmentStatus);
+                      return (
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${statusMeta.badgeClass}`}>
+                          {statusMeta.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
                   <p className="text-[11px] text-slate-500">
-                    {lang === 'vi' ? 'Đánh giá độ tin cậy dựa trên chất lượng đóng gói và thời gian giao hàng' : 'Trust metrics based on fulfillment quality and promptness'}
+                    {lang === 'vi'
+                      ? 'Đánh giá dựa trên tỷ lệ giao dịch thành công (GOOD/evaluatedOrders) và trừ điểm vi phạm/trễ hạn'
+                      : 'Evaluated on completed transaction success rate and penalty deductions'}
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsReputationHistoryOpen(false)}
-                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Reputation Overview Metrics */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-center">
-                <span className="text-[10px] text-slate-500 font-bold block uppercase tracking-wider">Điểm Hiện Tại</span>
-                <span className="text-xl font-black text-[#c34c36] font-mono">
-                  {myReputation?.score ?? 100}/100
-                </span>
-              </div>
-              <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-center">
-                <span className="text-[10px] text-emerald-800 font-bold block uppercase tracking-wider">Đơn Hàng Tốt</span>
-                <span className="text-xl font-black text-emerald-700 font-mono">
-                  {myReputation?.goodTransactions ?? 0}
-                </span>
-              </div>
-              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-center">
-                <span className="text-[10px] text-amber-800 font-bold block uppercase tracking-wider">Trễ Hạn Bàn Giao</span>
-                <span className="text-xl font-black text-amber-700 font-mono">
-                  {myReputation?.lateHandoverOrders ?? 0}
-                </span>
-              </div>
-              <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-center">
-                <span className="text-[10px] text-rose-800 font-bold block uppercase tracking-wider">Sự Cố Vi Phạm</span>
-                <span className="text-xl font-black text-rose-700 font-mono">
-                  {myReputation?.confirmedIncidents ?? 0}
-                </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleRefreshReputation}
+                  disabled={isReloadingReputation}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer disabled:opacity-50"
+                  title="Tải lại số liệu mới nhất từ server"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isReloadingReputation ? 'animate-spin text-[#c34c36]' : ''}`} />
+                  <span>{isReloadingReputation ? 'Đang tải...' : 'Tải lại'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsReputationHistoryOpen(false)}
+                  className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
             </div>
 
-            {/* History Table */}
-            <div className="space-y-2">
-              <span className="text-xs font-bold text-slate-800 block">
-                {lang === 'vi' ? 'Nhật Ký Biến Động Điểm (Mới nhất)' : 'Score Audit Trail'}
-              </span>
-
-              {isLoadingReputationHistory ? (
-                <div className="py-8 text-center text-slate-400">
-                  <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-[#c34c36]" />
-                  <span className="text-xs">{lang === 'vi' ? 'Đang tải lịch sử...' : 'Loading history...'}</span>
+            {/* Modal Body: Scrollable */}
+            <div className="space-y-4 overflow-y-auto pr-1">
+              {/* Cảnh báo ưu tiên nếu có */}
+              {myReputation?.sellingRestricted ? (
+                <div className="p-3 rounded-2xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block">Tài khoản đang bị hạn chế bán hàng</span>
+                    <span className="text-[11px] text-rose-700">Quyền đăng tin đang tạm khóa. Vui lòng hoàn tất xử lý đơn và liên hệ Quản trị viên.</span>
+                  </div>
                 </div>
-              ) : reputationHistoryItems.length === 0 ? (
-                <div className="py-8 text-center border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
-                  <Award className="w-8 h-8 text-slate-300 mx-auto mb-1.5" />
-                  <span className="text-xs font-bold text-slate-600 block">
-                    {lang === 'vi' ? 'Chưa có biến động điểm nào' : 'No reputation score changes yet'}
-                  </span>
-                  <span className="text-[11px] text-slate-400">
-                    {lang === 'vi' ? 'Tài khoản của bạn giữ trọn vẹn 100 điểm uy tín khởi tạo.' : 'Your account maintains full 100 starting trust score.'}
-                  </span>
-                </div>
-              ) : (
-                <div className="max-h-60 overflow-y-auto space-y-2 pr-1 text-xs">
-                  {reputationHistoryItems.map((item) => (
-                    <div
-                      key={item.id}
-                      className="p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-between gap-3"
-                    >
+              ) : myReputation?.warningCode ? (
+                (() => {
+                  const warnMeta = getReputationWarningMeta(myReputation.warningCode);
+                  if (!warnMeta) return null;
+                  return (
+                    <div className={`p-3 rounded-2xl border text-xs flex items-start gap-2.5 ${warnMeta.badgeClass}`}>
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                       <div>
-                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-700">
-                            {item.eventType}
-                          </span>
-                          <span className="text-slate-600">{item.reason || 'Biến động theo đơn hàng'}</span>
-                        </div>
-                        <span className="text-[10px] text-slate-400 mt-0.5 block">
-                          {new Date(item.createdAt).toLocaleString('vi-VN')}
-                        </span>
-                      </div>
-
-                      <div className="text-right shrink-0 font-mono font-bold">
-                        {item.scoreBefore !== undefined && item.scoreAfter !== undefined && (
-                          <div className="flex items-center gap-1 text-xs">
-                            <span className="text-slate-400">{item.scoreBefore}</span>
-                            <span className="text-slate-400">→</span>
-                            <span className={item.scoreAfter >= (item.scoreBefore || 0) ? 'text-emerald-600' : 'text-rose-600'}>
-                              {item.scoreAfter}
-                            </span>
-                          </div>
-                        )}
+                        <span className="font-bold block">{warnMeta.title}</span>
+                        <span className="text-[11px] opacity-90">{warnMeta.desc}</span>
                       </div>
                     </div>
-                  ))}
+                  );
+                })()
+              ) : null}
+
+              {/* Main Score Hero Card */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-[#24263e] text-white shadow-md">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <span className="text-[11px] uppercase tracking-wider text-slate-300 font-bold block">
+                      Điểm Uy Tín Tổng Kết
+                    </span>
+                    <div className="flex items-baseline gap-2 mt-0.5">
+                      <span className="text-3xl sm:text-4xl font-black text-amber-300 font-mono">
+                        {myReputation?.score !== null && myReputation?.score !== undefined
+                          ? myReputation.score
+                          : '—'}
+                      </span>
+                      <span className="text-sm font-bold text-slate-300">/ 100</span>
+                      {myReputation?.score === null && (
+                        <span className="text-xs font-medium text-slate-300 ml-2">
+                          (Chưa có đơn hàng kết thúc)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-right">
+                    <div className="bg-white/10 px-3 py-2 rounded-xl backdrop-blur-xs">
+                      <span className="text-[10px] text-slate-300 block font-semibold">Điểm giao dịch</span>
+                      <span className="text-base font-black text-emerald-400 font-mono">
+                        {myReputation?.transactionScore !== null && myReputation?.transactionScore !== undefined
+                          ? `${myReputation.transactionScore}`
+                          : '—'}
+                      </span>
+                    </div>
+                    <div className="bg-white/10 px-3 py-2 rounded-xl backdrop-blur-xs">
+                      <span className="text-[10px] text-slate-300 block font-semibold">Điểm phạt tích lũy</span>
+                      <span className={`text-base font-black font-mono ${(myReputation?.confirmationPenaltyPoints || 0) > 0 ? 'text-rose-400' : 'text-slate-200'}`}>
+                        {myReputation?.confirmationPenaltyPoints ?? 0}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              )}
+
+                {/* 3 Pills: good / bad / evaluated */}
+                <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-white/15 text-xs">
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-400/30">
+                    {myReputation?.goodTransactions ?? 0} đơn thành công (GOOD)
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-300 font-bold border border-rose-400/30">
+                    {myReputation?.badTransactions ?? 0} đơn lỗi SELLER (BAD)
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-white/10 text-white font-bold border border-white/20">
+                    {myReputation?.evaluatedOrders ?? 0} đơn được đánh giá
+                  </span>
+                </div>
+              </div>
+
+              {/* Operational Metrics Breakdown */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                {/* Non-fulfillment breakdown */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-700">Tỷ lệ không hoàn thành:</span>
+                    <span className="font-black font-mono text-rose-600">
+                      {myReputation?.nonFulfillmentRate !== null && myReputation?.nonFulfillmentRate !== undefined
+                        ? `${myReputation.nonFulfillmentRate}%`
+                        : '0%'}
+                      <span className="text-slate-400 text-[11px] font-normal ml-1">
+                        ({myReputation?.nonFulfillmentOrders ?? 0}/{myReputation?.evaluatedOrders ?? 0})
+                      </span>
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-200/60">
+                    <span>Hủy do SELLER: <strong className="text-slate-700">{myReputation?.sellerCancellationOrders ?? 0}</strong></span>
+                    <span>Trả hàng lỗi SELLER: <strong className="text-slate-700">{myReputation?.sellerReturnFaultOrders ?? 0}</strong></span>
+                  </div>
+                </div>
+
+                {/* Handover breakdown */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-700">Bàn giao trễ bưu tá:</span>
+                    <span className="font-black font-mono text-amber-600">
+                      {myReputation?.lateHandoverRate !== null && myReputation?.lateHandoverRate !== undefined
+                        ? `${myReputation.lateHandoverRate}%`
+                        : '0%'}
+                      <span className="text-slate-400 text-[11px] font-normal ml-1">
+                        ({myReputation?.lateHandoverOrders ?? 0}/{myReputation?.handoverEvaluatedOrders ?? 0})
+                      </span>
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-200/60">
+                    <span>Đơn bàn giao trễ: <strong className="text-slate-700">{myReputation?.lateHandoverOrders ?? 0}</strong></span>
+                    <span>Vi phạm xác nhận: <strong className="text-slate-700">{myReputation?.confirmedIncidents ?? 0}</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* History Table */}
+              <div className="space-y-2 pt-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-800 block uppercase tracking-wider">
+                    {lang === 'vi' ? 'LỊCH SỬ BIẾN ĐỘNG ĐIỂM UY TÍN' : 'REPUTATION AUDIT TRAIL'}
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    {reputationHistoryItems.length} sự kiện gần nhất
+                  </span>
+                </div>
+
+                {isLoadingReputationHistory ? (
+                  <div className="py-8 text-center text-slate-400">
+                    <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-[#c34c36]" />
+                    <span className="text-xs">{lang === 'vi' ? 'Đang tải lịch sử...' : 'Loading history...'}</span>
+                  </div>
+                ) : reputationHistoryItems.length === 0 ? (
+                  <div className="py-8 text-center border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                    <Award className="w-8 h-8 text-slate-300 mx-auto mb-1.5" />
+                    <span className="text-xs font-bold text-slate-600 block">
+                      {lang === 'vi' ? 'Chưa có biến động điểm nào' : 'No reputation score changes yet'}
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      {lang === 'vi'
+                        ? 'Tài khoản chưa có sự kiện phạt hoặc đánh giá giao dịch kết thúc.'
+                        : 'No penalty or completed order evaluation events recorded yet.'}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1 text-xs">
+                    {reputationHistoryItems.map((item) => {
+                      const eventMeta = getReputationEventMeta(item.eventType);
+                      const penaltyIncrease = (item.penaltyAfter || 0) - (item.penaltyBefore || 0);
+
+                      return (
+                        <div
+                          key={item.id}
+                          className="p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 flex items-start justify-between gap-3 transition"
+                        >
+                          <div className="space-y-1">
+                            <div className="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                eventMeta.type === 'positive'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : eventMeta.type === 'negative'
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : 'bg-slate-100 text-slate-700 border border-slate-200'
+                              }`}>
+                                {eventMeta.label}
+                              </span>
+                              {item.orderId && (
+                                <span className="font-mono text-[10px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
+                                  Đơn #{item.orderId.substring(0, 8)}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-600">
+                              {item.reason || eventMeta.desc}
+                            </p>
+                            <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium">
+                              <span>{new Date(item.createdAt).toLocaleString('vi-VN')}</span>
+                              {(item.goodAfter !== undefined || item.badAfter !== undefined) && (
+                                <span>Mẫu: G:{item.goodAfter ?? 0} | B:{item.badAfter ?? 0}</span>
+                              )}
+                              {item.formulaVersion && (
+                                <span className="text-[9px] font-mono text-slate-400">v:{item.formulaVersion}</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="text-right shrink-0 font-mono space-y-1">
+                            {item.scoreBefore !== undefined && item.scoreAfter !== undefined && (
+                              <div className="flex items-center gap-1 text-xs justify-end font-bold">
+                                <span className="text-slate-400">{item.scoreBefore ?? '—'}</span>
+                                <span className="text-slate-400">→</span>
+                                <span className={(item.scoreAfter || 0) >= (item.scoreBefore || 0) ? 'text-emerald-600' : 'text-rose-600'}>
+                                  {item.scoreAfter ?? '—'}
+                                </span>
+                              </div>
+                            )}
+                            {penaltyIncrease > 0 && (
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                +{penaltyIncrease} phạt
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="pt-2 border-t border-slate-100 flex justify-end">
+            {/* Footer */}
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between shrink-0">
+              <span className="text-[11px] text-slate-400">
+                {myReputation?.updatedAt ? `Cập nhật: ${new Date(myReputation.updatedAt).toLocaleTimeString('vi-VN')}` : ''}
+              </span>
               <button
                 type="button"
                 onClick={() => setIsReputationHistoryOpen(false)}
@@ -1949,7 +2228,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             ) : (
               <AlertTriangle className="w-4 h-4 text-white shrink-0" />
             )}
-            <span>{toastNotice.message}</span>
+            <span>{translateSystemNotification(toastNotice.message)}</span>
           </div>
         </div>
       )}

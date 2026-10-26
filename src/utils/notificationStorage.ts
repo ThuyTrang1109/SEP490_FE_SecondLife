@@ -1,5 +1,6 @@
 import { NotificationItem } from '../types/notification';
 import { UserProfile, UserRole } from '../types';
+import { translateSystemNotification } from './systemNotificationTranslator';
 
 /**
  * Kiểm tra xem một thông báo có thuộc về người dùng và vai trò hiện tại hay không.
@@ -16,26 +17,41 @@ export function isNotificationForUser(
   const currentUserId = String(currentUser.id || '');
   const role = String(currentRole || currentUser.role || '').toUpperCase();
 
-  // 1. Kiểm tra chính xác theo recipientId hoặc userId đích
-  const targetId = item.recipientId || item.userId;
-  if (targetId) {
-    return String(targetId) === currentUserId;
-  }
-
-  // 2. Kiểm tra theo vai trò người nhận (recipientRole)
+  // 1. Kiểm tra nghiêm ngặt theo vai trò người nhận (recipientRole):
+  // Nếu thông báo dành riêng cho vai trò khác vai trò hiện tại thì tuyệt đối không hiển thị
   if (item.recipientRole) {
     const targetRole = String(item.recipientRole).toUpperCase();
-    if (['ALL', 'SYSTEM'].includes(targetRole)) return true;
-    return targetRole === role;
+    if (!['ALL', 'SYSTEM'].includes(targetRole) && targetRole !== role) {
+      return false;
+    }
   }
 
-  // 3. Phân loại theo ngữ cảnh nội dung nếu thông báo chưa gắn metadata:
+  // 2. Kiểm tra theo recipientId hoặc userId nếu trùng khớp
+  const targetId = item.recipientId || item.userId;
+  if (targetId && String(targetId) === currentUserId) {
+    return true;
+  }
+
+  // 3. Nếu cùng vai trò người nhận (BUYER, SELLER, INSPECTOR, INSPECTION_CENTER...)
+  if (item.recipientRole) {
+    const targetRole = String(item.recipientRole).toUpperCase();
+    if (['ALL', 'SYSTEM'].includes(targetRole) || targetRole === role) {
+      return true;
+    }
+  }
+
+  // 4. Phân loại theo ngữ cảnh nội dung nếu thông báo chưa gắn metadata:
   // Ngăn chặn thông báo của Người bán bị hiển thị trên chuông Người mua và ngược lại
   const title = (item.title || '').toLowerCase();
   const msg = (item.message || '').toLowerCase();
 
-  // Thông báo dành riêng cho Trung tâm kiểm định
-  if (title.includes('nhiệm vụ kiểm định') || msg.includes('trung tâm vui lòng điều phối') || msg.includes('phân công ktv')) {
+  // Thông báo dành riêng cho Trung tâm kiểm định / KTV
+  if (
+    title.includes('nhiệm vụ kiểm định') ||
+    title.includes('phân công ktv') ||
+    msg.includes('trung tâm vui lòng điều phối') ||
+    msg.includes('phân công ktv')
+  ) {
     return role === 'INSPECTOR' || role === 'INSPECTION_CENTER';
   }
 
@@ -43,11 +59,26 @@ export function isNotificationForUser(
   if (
     title.includes('có đơn hàng mới cần xác nhận') ||
     title.includes('người mua từ chối mua tiếp') ||
+    title.includes('sản phẩm của bạn đã') ||
+    title.includes('sản phẩm của bạn') ||
     msg.includes('vừa đặt mua sản phẩm') ||
     msg.includes('vừa đặt cọc kiểm định') ||
-    msg.includes('khách hàng đã quyết định từ chối mua tiếp')
+    msg.includes('khách hàng đã quyết định từ chối mua tiếp') ||
+    msg.includes('thiết bị của bạn')
   ) {
     return role === 'SELLER';
+  }
+
+  // Thông báo dành cho Người mua
+  if (
+    title.includes('kết quả kiểm định') ||
+    title.includes('đặt đơn kiểm định') ||
+    title.includes('đặt đơn hàng') ||
+    msg.includes('hoàn tất thẩm định') ||
+    msg.includes('xác nhận quyết định nhận hàng') ||
+    msg.includes('hoàn trả 100%')
+  ) {
+    return role === 'BUYER';
   }
 
   // Mặc định an toàn: nếu không xác định được người nhận cụ thể thì chỉ cho phép nếu là thông báo hệ thống
@@ -93,7 +124,13 @@ export function getScopedLocalNotifications(
     }
   } catch {}
 
-  return list.filter((n) => isNotificationForUser(n, currentUser, currentRole));
+  return list
+    .filter((n) => isNotificationForUser(n, currentUser, currentRole))
+    .map((n) => ({
+      ...n,
+      title: translateSystemNotification(n.title),
+      message: translateSystemNotification(n.message),
+    }));
 }
 
 /**
@@ -106,31 +143,35 @@ export function saveScopedLocalNotification(
 ): void {
   const enhancedItem: NotificationItem = {
     ...item,
+    title: translateSystemNotification(item.title),
+    message: translateSystemNotification(item.message),
     recipientId: targetUserId || item.recipientId || null,
     recipientRole: targetRole || item.recipientRole || null,
   };
 
   try {
-    // Lưu vào kho riêng của người nhận nếu có ID
+    // 1. Lưu vào kho riêng của người nhận nếu có ID
     if (targetUserId) {
       const userKey = `secondlife_local_notifications_${targetUserId}`;
       const existingRaw = localStorage.getItem(userKey);
       const existing: NotificationItem[] = existingRaw ? JSON.parse(existingRaw) : [];
       const updated = [enhancedItem, ...existing.filter((n) => n.id !== enhancedItem.id)].slice(0, 50);
       localStorage.setItem(userKey, JSON.stringify(updated));
-    } else {
-      const raw = localStorage.getItem('secondlife_local_notifications');
-      const existing: NotificationItem[] = raw ? JSON.parse(raw) : [];
-      const updated = [enhancedItem, ...existing.filter((n) => n.id !== enhancedItem.id)].slice(0, 50);
-      localStorage.setItem('secondlife_local_notifications', JSON.stringify(updated));
     }
 
-    // Phát sự kiện trong window kèm metadata người nhận
+    // 2. Luôn lưu vào kho thông báo chung để truy xuất dự phòng
+    const raw = localStorage.getItem('secondlife_local_notifications');
+    const existing: NotificationItem[] = raw ? JSON.parse(raw) : [];
+    const updated = [enhancedItem, ...existing.filter((n) => n.id !== enhancedItem.id)].slice(0, 50);
+    localStorage.setItem('secondlife_local_notifications', JSON.stringify(updated));
+
+    // 3. Phát sự kiện trong window kèm metadata người nhận
     window.dispatchEvent(
       new CustomEvent('secondlife_notification', {
         detail: enhancedItem,
       })
     );
+    window.dispatchEvent(new Event('storage'));
   } catch (e) {
     console.warn('Failed to save scoped local notification:', e);
   }

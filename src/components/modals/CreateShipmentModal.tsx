@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { shippingService } from '../../services/shippingService';
 import { translateApiError } from '../../services/apiClient';
+import { translateSystemNotification } from '../../utils/systemNotificationTranslator';
+import { resolveOrderListing } from '../../utils/catalogCache';
 
 interface CreateShipmentModalProps {
   order: EscrowOrder;
@@ -109,7 +111,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
           {errorMsg && (
             <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-700 font-semibold flex items-center gap-2.5">
               <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-              <span>{errorMsg}</span>
+              <span>{translateSystemNotification(errorMsg)}</span>
             </div>
           )}
 
@@ -128,7 +130,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               className="w-14 h-14 rounded-xl object-cover border border-gray-200 shrink-0 bg-white"
             />
             <div className="flex-1 min-w-0">
-              <span className="text-[10px] text-[#c34c36] uppercase font-black">{order.listing.brand}</span>
+              <span className="text-[10px] text-[#c34c36] uppercase font-black">{resolveOrderListing(order.listing).brand}</span>
               <h4 className="font-bold text-slate-900 truncate text-xs sm:text-sm">{order.listing.title}</h4>
               <div className="text-[11px] text-slate-500 mt-0.5">
                 Giá trị hàng: <strong className="text-slate-900">{formatVND(order.itemPriceVnd)}</strong>

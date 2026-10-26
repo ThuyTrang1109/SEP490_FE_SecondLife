@@ -22,8 +22,9 @@ import { cleanFullAddress } from '../../utils/addressUtils';
 import { getBoughtListingIds } from '../../utils/orderUtils';
 import { soundFx } from '../../utils/soundEffects';
 import { reviewService } from '../../data/mockReviews';
-import { reputationService, postService, SellerReputationDto, getStoredUser } from '../../services';
+import { reputationService, postService, SellerReputationDto, getStoredUser, getAssessmentStatusMeta } from '../../services';
 import { UserReportModal } from './UserReportModal';
+import { resolveCategoryAndItem, extractSellerOriginalPrice } from '../../utils/catalogCache';
 
 interface ListingDetailModalProps {
   listing: Listing | null;
@@ -35,6 +36,15 @@ interface ListingDetailModalProps {
   isAdmin?: boolean;
   lang: Language;
 }
+
+const cleanDisplayDescription = (desc?: string): string => {
+  if (!desc) return '';
+  return desc
+    .replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '')
+    .replace(/^[-*•\s]*giá\s*(?:sản\s*phẩm\s*)?lúc\s*mua\s*(?:mới)?\s*[:=–-].*$/gmi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
 
 export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   listing,
@@ -52,6 +62,32 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const isOwnListing = Boolean(
     user?.id && listing.sellerId && String(user.id) === String(listing.sellerId)
   );
+
+  const resolved = React.useMemo(() => {
+    return resolveCategoryAndItem({
+      postId: listing.id,
+      categoryId: listing.categoryId,
+      itemId: listing.itemId,
+      title: listing.title,
+      description: listing.description,
+      category: listing.category,
+      brand: listing.brand,
+      model: listing.model,
+    });
+  }, [listing]);
+
+  const displayBrand = (listing.brand && listing.brand !== 'SecondLife' && listing.brand !== 'Hãng' ? listing.brand : resolved.brand) || 'Chính hãng';
+  const displayCategory = listing.itemName || resolved.itemName || listing.category || resolved.displayCategory || 'Đồ gia dụng';
+
+  // Giá tiền lúc người bán mua (Original purchase price) từ thông tin người bán khai báo khi tạo bài đăng
+  const effectiveOriginalPrice = React.useMemo(() => {
+    return extractSellerOriginalPrice(listing) || 0;
+  }, [listing]);
+
+  const discountPercent = React.useMemo(() => {
+    if (!effectiveOriginalPrice || !listing.priceVnd || effectiveOriginalPrice <= listing.priceVnd) return 0;
+    return Math.round(((effectiveOriginalPrice - listing.priceVnd) / effectiveOriginalPrice) * 100);
+  }, [effectiveOriginalPrice, listing.priceVnd]);
 
   // Lấy chính xác danh sách ảnh thực tế của bài đăng (không nhân bản / không lặp lại ảnh)
   const galleryImages: string[] = React.useMemo(() => {
@@ -232,9 +268,9 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
               <div className="md:col-span-6 flex flex-col justify-between space-y-2.5">
                 <div className="space-y-2">
                   <div className="flex items-center gap-1.5 text-[10px] text-[#24263e]/70 font-medium">
-                    <span className="font-black text-[#24263e] uppercase tracking-wider">{listing.brand}</span>
+                    <span className="font-black text-[#24263e] uppercase tracking-wider">{displayBrand}</span>
                     <span>•</span>
-                    <span className="truncate max-w-[130px]">{listing.category}</span>
+                    <span className="truncate max-w-[150px]" title={resolved.categoryName ? `${resolved.categoryName} > ${displayCategory}` : displayCategory}>{displayCategory}</span>
                     <span>•</span>
                     <span>{listing.purchaseYear}</span>
                   </div>
@@ -244,13 +280,40 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   </h1>
 
                   {/* Price block */}
-                  <div className="bg-[#faf8f5] rounded-xl p-2.5 border border-gray-200 space-y-0.5">
-                    <div className="text-[10px] text-[#24263e]/70 font-medium leading-none">
-                      {lang === 'vi' ? 'Giá người bán niêm yết' : 'Listing Price'}
+                  <div className="bg-[#faf8f5] rounded-xl p-3 border border-gray-200 space-y-1.5">
+                    {/* Dòng giá tiền lúc người bán mua và gạch ngang */}
+                    {effectiveOriginalPrice > 0 && (
+                      <div className="flex items-center justify-between text-[11px] text-[#24263e]/75 font-medium">
+                        <span>{lang === 'vi' ? 'Giá tiền lúc người bán mua:' : 'Original purchase price:'}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="line-through font-bold text-slate-400 text-xs decoration-slate-400 decoration-1.5">
+                            {formatVND(effectiveOriginalPrice)}
+                          </span>
+                          {discountPercent > 0 && (
+                            <span className="text-[9.5px] font-black text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded-md font-mono">
+                              -{discountPercent}%
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className={effectiveOriginalPrice > 0 ? 'border-t border-dashed border-gray-200 pt-1.5' : ''}>
+                      <div className="text-[10px] text-[#24263e]/70 font-medium leading-none mb-1">
+                        {lang === 'vi' ? 'Giá người bán niêm yết' : 'Listing Price'}
+                      </div>
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="text-xl sm:text-2xl font-black text-[#c34c36] leading-tight">
+                          {formatVND(listing.priceVnd)}
+                        </span>
+                        {effectiveOriginalPrice > 0 && (
+                          <span className="text-xs text-slate-400 line-through font-semibold">
+                            {formatVND(effectiveOriginalPrice)}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-lg sm:text-xl font-black text-[#c34c36] leading-tight">
-                      {formatVND(listing.priceVnd)}
-                    </div>
+
                     <div className="text-[10px] text-emerald-800 font-bold flex items-center gap-1 pt-0.5">
                       <ShieldCheck className="w-3 h-3 text-emerald-600 shrink-0" />
                       <span>{lang === 'vi' ? 'Bảo lãnh Escrow 100%: Kiểm tra 48h mới giải ngân' : '100% Escrow Protection'}</span>
@@ -319,13 +382,24 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
 
                       {/* Trust Score Badge */}
                       <div className="text-right shrink-0">
-                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#24263e] text-white shadow-xs">
-                          <Award className="w-3 h-3 text-amber-300" />
-                          <span className="text-[11px] font-black">{realReputation?.score ?? sellerTrust.trustScore}</span>
-                          <span className="text-[9px] text-white/70">/100</span>
-                        </div>
-                        <div className="text-[9px] font-bold text-amber-700 mt-0.2">
-                          {realReputation?.assessmentStatus || sellerTrust.tier}
+                        {realReputation?.assessmentStatus === 'NO_TRANSACTIONS' ? (
+                          <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold shadow-2xs">
+                            <Award className="w-3 h-3 text-slate-500" />
+                            <span>{lang === 'vi' ? 'Người bán mới' : 'New Seller'}</span>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#24263e] text-white shadow-xs">
+                            <Award className="w-3 h-3 text-amber-300" />
+                            <span className="text-[11px] font-black">
+                              {realReputation?.score !== undefined && realReputation?.score !== null
+                                ? realReputation.score
+                                : sellerTrust.trustScore}
+                            </span>
+                            <span className="text-[9px] text-white/70">/100</span>
+                          </div>
+                        )}
+                        <div className="text-[9px] font-bold text-amber-700 mt-0.5">
+                          {realReputation ? getAssessmentStatusMeta(realReputation.assessmentStatus).shortLabel : sellerTrust.tier}
                         </div>
                       </div>
                     </div>
@@ -454,7 +528,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                 <span>{listing.declaredConditionText}</span>
               </div>
               <p className="whitespace-pre-line text-xs text-[#24263e]">
-                {listing.description}
+                {cleanDisplayDescription(listing.description)}
               </p>
             </div>
           </div>

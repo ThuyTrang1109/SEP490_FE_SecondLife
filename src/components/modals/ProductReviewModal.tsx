@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Star, X, CheckCircle2, ShieldCheck, Sparkles, Upload, ThumbsUp } from 'lucide-react';
 import { EscrowOrder, Language, ProductReview } from '../../types';
 import { formatVND } from '../../utils/translations';
+import { resolveListingCategory, resolveOrderListing } from '../../utils/catalogCache';
 
 interface ProductReviewModalProps {
   order: EscrowOrder;
@@ -146,7 +147,7 @@ export const ProductReviewModal: React.FC<ProductReviewModalProps> = ({
             />
             <div className="overflow-hidden">
               <span className="text-[10px] font-bold text-[#c34c36] uppercase tracking-wider">
-                {order.listing.brand} • {order.listing.category}
+                {resolveOrderListing(order.listing).brand} • {resolveListingCategory(order.listing)}
               </span>
               <h4 className="font-bold text-slate-900 truncate">{order.listing.title}</h4>
               <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">

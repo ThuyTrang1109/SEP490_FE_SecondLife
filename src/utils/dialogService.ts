@@ -1,4 +1,4 @@
-import { translateApiError } from '../services/apiClient';
+import { translateSystemNotification } from './systemNotificationTranslator';
 
 export type DialogType = 'info' | 'success' | 'warning' | 'error' | 'confirm';
 
@@ -23,7 +23,7 @@ type DialogListener = (state: DialogState | null) => void;
 
 export function translateToVietnamese(msg: string): string {
   if (!msg) return 'Đã xảy ra lỗi không xác định. Vui lòng thử lại sau.';
-  return translateApiError(msg);
+  return translateSystemNotification(msg);
 }
 
 class DialogService {

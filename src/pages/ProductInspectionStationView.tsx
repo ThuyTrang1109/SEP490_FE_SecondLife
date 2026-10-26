@@ -51,6 +51,8 @@ import { BarcodeScannerModal, playScanBeep } from '../components/modals/BarcodeS
 import { PrintTamperSealModal } from '../components/modals/PrintTamperSealModal';
 import { InspectionSealVerificationModal } from '../components/modals/InspectionSealVerificationModal';
 import { ScannableQRCode } from '../components/common/ScannableQRCode';
+import { resolveListingCategory, resolveOrderListing } from '../utils/catalogCache';
+import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 
 interface ProductInspectionStationViewProps {
   orders: EscrowOrder[];
@@ -59,7 +61,17 @@ interface ProductInspectionStationViewProps {
     orderId: string,
     verdict: 'PASS' | 'FAIL',
     tamperSeal: string,
-    summary: string
+    summary: string,
+    meta?: {
+      conditionScore?: number;
+      conditionGrade?: ConditionGrade;
+      checklistResults?: any[];
+      inspectorPhotos?: string[];
+      inspectorNotes?: string;
+      videoProofUrl?: string;
+      unboxingVideoUrl?: string;
+      order?: EscrowOrder;
+    }
   ) => void;
   lang: Language;
   onNavigateToHub?: () => void;
@@ -123,7 +135,20 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   // Helper to detect category from activeOrder
   const detectCategoryFromOrder = (order: any): string => {
-    const text = `${order?.listing?.title || ''} ${order?.postTitle || ''} ${order?.listing?.category || ''}`.toLowerCase();
+    if (order?.listing) {
+      const cat = resolveListingCategory(order.listing);
+      if (cat && cat !== 'Đồ gia dụng') return cat;
+    }
+    const text = `${order?.listing?.title || ''} ${order?.postTitle || ''}`.toLowerCase();
+    if (text.includes('bàn trà') || text.includes('bàn sofa') || text.includes('bàn cafe') || text.includes('bàn tròn')) {
+      return 'Bàn trà / Bàn sofa';
+    }
+    if (text.includes('sofa') || text.includes('ghế dài')) {
+      return 'Sofa / Ghế dài';
+    }
+    if (text.includes('quần áo') || text.includes('giường') || text.includes('nệm')) {
+      return 'Phòng ngủ';
+    }
     if (text.includes('giặt') || text.includes('sấy') || text.includes('washing')) {
       return 'Máy giặt & Máy sấy';
     }
@@ -142,7 +167,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     if (text.includes('nồi cơm') || text.includes('bếp từ') || text.includes('bếp hồng ngoại') || text.includes('bếp điện') || text.includes('nồi')) {
       return 'Nồi cơm & Bếp từ';
     }
-    return order?.listing?.category || 'Máy giặt & Máy sấy';
+    return resolveListingCategory(order?.listing) || order?.listing?.itemName || order?.listing?.category || 'Đồ gia dụng';
   };
 
   // --- STEP 3: TECHNICAL CHECKLIST ---
@@ -271,7 +296,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   };
 
   const notify = (text: string, isError = false) => {
-    setNoticeMessage({ text, isError });
+    setNoticeMessage({ text: translateSystemNotification(text), isError });
     setTimeout(() => setNoticeMessage(null), 4500);
   };
 
@@ -393,7 +418,25 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       activeOrder.id,
       overallVerdict,
       tamperSealInput,
-      `[Grade: ${selectedGrade}][Điểm: ${conditionScore}/100] ${inspectorNotes}`
+      `[Grade: ${selectedGrade}][Điểm: ${conditionScore}/100] ${inspectorNotes}`,
+      {
+        conditionScore,
+        conditionGrade: selectedGrade,
+        checklistResults: checklist.map((item) => ({
+          id: item.id,
+          category: item.category,
+          title: item.title,
+          description: item.description || '',
+          status: item.status === 'pass' ? 'pass' : 'fail',
+          notes: item.notes,
+          testedValue: item.testedValue,
+        })),
+        inspectorPhotos: proofPhotos,
+        inspectorNotes,
+        videoProofUrl,
+        unboxingVideoUrl,
+        order: activeOrder,
+      }
     );
 
     setIsSubmitting(false);
@@ -407,7 +450,16 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
       const isAtHome = o.inspectionMethod === 'AT_HOME';
-      const isCompleted = (o.escrowStatus as string) === 'COMPLETED' || o.escrowStatus === 'COMPLETED_RELEASED' || o.escrowStatus === 'DELIVERED_INSPECTION_WINDOW';
+      const isCompleted =
+        (o.escrowStatus as string) === 'COMPLETED' ||
+        o.escrowStatus === 'COMPLETED_RELEASED' ||
+        o.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
+        o.escrowStatus === 'INSPECTION_PASSED' ||
+        o.escrowStatus === 'INSPECTION_FAILED' ||
+        (o as any).backendStatus === 'PASSED' ||
+        (o as any).backendStatus === 'FAILED' ||
+        (o as any).status === 'PASSED' ||
+        (o as any).status === 'FAILED';
 
       if (taskFilter === 'AT_CENTER' && isAtHome) return false;
       if (taskFilter === 'AT_HOME' && !isAtHome) return false;
@@ -507,7 +559,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
           ) : (
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
           )}
-          <span>{noticeMessage.text}</span>
+          <span>{translateSystemNotification(noticeMessage.text)}</span>
         </div>
       )}
 

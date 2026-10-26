@@ -16,6 +16,116 @@ export interface ShippingParcel {
   height: number;
 }
 
+export interface VehicleLimit {
+  serviceType: string;
+  description: string;
+  minWeightGram: number;
+  maxWeightGram: number;
+  maxLengthCm: number;
+  maxWidthCm: number;
+  maxHeightCm: number;
+}
+
+export interface VehicleCity {
+  locode: string;
+  name: string;
+  vehicles: VehicleLimit[];
+}
+
+export interface VehicleCatalog {
+  provider: 'LALAMOVE';
+  minWeightSource: 'APPLICATION';
+  minDimensionCm: number;
+  allowLengthWidthSwap: boolean;
+  keepUpright: boolean;
+  cities: VehicleCity[];
+}
+
+export interface PickupCoordinates {
+  latitude: number;
+  longitude: number;
+}
+
+export interface Parcel {
+  weight: number; // g
+  length: number; // cm
+  width: number;  // cm
+  height: number; // cm
+}
+
+export function toBaseInteger(raw: string, decimalPlaces: number): number | null {
+  const normalized = raw.trim().replace(',', '.');
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) return null;
+  const [whole, fraction = ''] = normalized.split('.');
+  if (/[1-9]/.test(fraction.slice(decimalPlaces))) return null;
+  const digits = fraction.slice(0, decimalPlaces).padEnd(decimalPlaces, '0');
+  const value = Number(whole + digits);
+  return Number.isSafeInteger(value) && value >= 1 && value <= 2147483647
+    ? value : null;
+}
+
+export function fromBaseInteger(value: number, decimalPlaces: number): string {
+  const factor = 10 ** decimalPlaces;
+  const whole = Math.floor(value / factor);
+  const fraction = String(value % factor)
+    .padStart(decimalPlaces, '0').replace(/0+$/, '');
+  return fraction ? String(whole) + '.' + fraction : String(whole);
+}
+
+export function validParcel(parcel: Parcel, catalog: VehicleCatalog): boolean {
+  return [parcel.weight, parcel.length, parcel.width, parcel.height]
+    .every(value => Number.isSafeInteger(value) && value <= 2147483647)
+    && parcel.weight >= 1
+    && [parcel.length, parcel.width, parcel.height]
+      .every(value => value >= catalog.minDimensionCm);
+}
+
+export function fitsVehicle(
+  parcel: Parcel,
+  vehicle: VehicleLimit,
+  catalog: VehicleCatalog,
+): boolean {
+  if (!validParcel(parcel, catalog)) return false;
+  if (parcel.weight < vehicle.minWeightGram
+      || parcel.weight > vehicle.maxWeightGram
+      || parcel.height > vehicle.maxHeightCm) return false;
+  const normal = parcel.length <= vehicle.maxLengthCm
+    && parcel.width <= vehicle.maxWidthCm;
+  const swapped = catalog.allowLengthWidthSwap
+    && parcel.length <= vehicle.maxWidthCm
+    && parcel.width <= vehicle.maxLengthCm;
+  return normal || swapped;
+}
+
+export function suggestVehicle(fitting: VehicleLimit[]): VehicleLimit | undefined {
+  return fitting.reduce<VehicleLimit | undefined>(
+    (best, vehicle) => !best || vehicle.maxWeightGram < best.maxWeightGram
+      ? vehicle : best,
+    undefined,
+  );
+}
+
+export async function getVehicleCatalog(
+  pickup?: PickupCoordinates,
+  signal?: AbortSignal,
+): Promise<VehicleCatalog> {
+  const query = pickup
+    ? '?' + new URLSearchParams({
+        latitude: String(pickup.latitude),
+        longitude: String(pickup.longitude),
+      }).toString()
+    : '';
+  const response = await request<VehicleCatalog>('/shipping/vehicles' + query, {
+    method: 'GET',
+    requiresAuth: true,
+    signal,
+  });
+  if (!response.success || !response.data) {
+    throw new Error(response.message || 'Chưa tải được danh mục xe');
+  }
+  return response.data;
+}
+
 export interface GhnLocation {
   _id: number;
   name: string;
@@ -468,6 +578,14 @@ export const shippingService = {
       console.warn('Backend /shipping/cities failed:', err);
       return null;
     }
+  },
+
+  /**
+   * Lấy danh mục xe chuẩn hóa và giới hạn kích thước theo điểm lấy hàng
+   * GET /api/v1/shipping/vehicles
+   */
+  async getVehicleCatalog(pickup?: PickupCoordinates, signal?: AbortSignal): Promise<VehicleCatalog> {
+    return getVehicleCatalog(pickup, signal);
   },
 
   /**

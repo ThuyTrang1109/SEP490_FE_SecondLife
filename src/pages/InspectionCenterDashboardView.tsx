@@ -63,6 +63,7 @@ import logoImg from '../assets/logo.png';
 import { Language, UserProfile, EscrowOrder, CategoryBackend, ItemBackend, ShipmentBackend } from '../types';
 import { formatVND } from '../utils/translations';
 import { dialogService } from '../utils/dialogService';
+import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import {
   inspectorService,
   categoryService,
@@ -470,7 +471,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   const showNotice = (msg: string) => {
-    setActionNotice(msg);
+    setActionNotice(translateSystemNotification(msg));
     setTimeout(() => {
       setActionNotice(null);
     }, 4500);
@@ -2141,7 +2142,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           {actionNotice && (
             <div className="p-3.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-xs flex items-center gap-3 animate-in fade-in font-bold text-xs">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>{actionNotice}</span>
+              <span>{translateSystemNotification(actionNotice)}</span>
               <button
                 onClick={() => setActionNotice(null)}
                 className="ml-auto text-emerald-600 hover:text-emerald-800 cursor-pointer p-1"

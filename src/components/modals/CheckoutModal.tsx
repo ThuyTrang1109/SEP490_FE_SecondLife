@@ -36,6 +36,8 @@ import { orderService, walletService, shippingService, GhnLocation, inspectorSer
 import { translateApiError } from '../../services/apiClient';
 import { LalamoveAddressPicker, getCityCoordinates } from '../common/LalamoveAddressPicker';
 import { saveScopedLocalNotification } from '../../utils/notificationStorage';
+import { resolveListingCategory, resolveOrderListing } from '../../utils/catalogCache';
+import { translateSystemNotification } from '../../utils/systemNotificationTranslator';
 
 export const formatLalamoveVehicle = (serviceType?: string): { name: string; icon: string; desc: string; standard?: string } => {
   if (!serviceType) {
@@ -485,6 +487,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           errMsg = 'Người bán chưa cấu hình địa chỉ kho lấy hàng Lalamove. Không thể tạo đơn hàng.';
         } else if (errMsg.includes('Seller must save the packed weight and dimensions') || errMsg.includes('Shipping weight is required')) {
           errMsg = 'Người bán chưa cấu hình kích thước và trọng lượng kiện hàng. Không thể tính phí vận chuyển Lalamove. Vui lòng liên hệ người bán cập nhật bài đăng.';
+        } else if (
+          errMsg.includes('Shipping supports packages up to 50 kg and 200 cm') ||
+          errMsg.toLowerCase().includes('up to 50 kg and 200 cm')
+        ) {
+          errMsg = 'Dịch vụ vận chuyển chỉ hỗ trợ kiện hàng tối đa 50 kg và kích thước mỗi chiều không quá 200 cm (2 mét).';
         } else if (errMsg.includes('You cannot buy your own post')) {
           errMsg = 'Bạn đang đăng nhập bằng tài khoản người bán. Không thể tạo báo giá mua bài đăng của chính mình.';
         } else if (errMsg.includes('Post is not available')) {
@@ -497,6 +504,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           errMsg = `Vị trí giao hàng nằm ngoài phạm vi phục vụ Lalamove so với kho người bán (${sellerCityInfo.name}). Do Lalamove là dịch vụ giao hàng nhanh nội thành, vui lòng chọn địa chỉ nhận hàng tại cùng khu vực ${sellerCityInfo.name}.`;
         } else if (errMsg.includes('Chưa cấu hình Geoapify') || errMsg.includes('Geoapify')) {
           errMsg = 'Dịch vụ bản đồ Backend chưa bật Geoapify key. Đã chuyển sang chế độ định vị dự phòng OpenStreetMap.';
+        } else {
+          errMsg = translateApiError(errMsg);
         }
       }
       setQuoteError(errMsg);
@@ -915,14 +924,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       const newOrder: EscrowOrder = {
         id: orderId,
         listingId: String(listing.id),
-        listing: {
+        listing: resolveOrderListing({
           ...listing,
           priceVnd: finalChargedPrice,
           sellerId: targetSellerId,
           sellerName: targetSellerName,
           sellerAddress: targetSellerAddress,
           sellerAvatarUrl: targetSellerAvatar,
-        },
+        }),
         buyerId: currentUser?.id || 'buyer-current',
         buyerName: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
         buyerPhone: buyerPhone.trim(),
@@ -1638,7 +1647,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-[#c34c36] uppercase font-black">{listing.brand}</span>
                 <span className="text-gray-300">•</span>
-                <span className="text-[10px] text-slate-500 font-semibold">{listing.category}</span>
+                <span className="text-[10px] text-slate-500 font-semibold">{resolveListingCategory(listing)}</span>
                 {hasAgreedDiscount && (
                   <span className="px-2 py-0.2 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
                     {lang === 'vi' ? '⚡ Giá Thỏa Thuận Chat' : '⚡ Chat Deal Price'}
@@ -2947,7 +2956,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 font-semibold flex items-center justify-between gap-2.5 animate-fadeIn">
               <div className="flex items-center gap-2.5 min-w-0">
                 <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-                <span className="break-words">{orderError}</span>
+                <span className="break-words">{translateSystemNotification(orderError)}</span>
               </div>
               <button
                 type="button"

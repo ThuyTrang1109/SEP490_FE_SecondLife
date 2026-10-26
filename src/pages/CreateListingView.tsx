@@ -56,10 +56,21 @@ import {
   ListingDraftResponse,
   AiPriceEstimationResponse,
   PostSubmitResponse,
-  shippingService
+  shippingService,
+  VehicleCatalog,
+  VehicleLimit,
+  Parcel,
+  getVehicleCatalog,
+  toBaseInteger,
+  fromBaseInteger,
+  validParcel,
+  fitsVehicle,
+  suggestVehicle
 } from '../services';
 import { parseQuestionItem, splitCompoundQuestion } from '../utils/questionParser';
 import { extractWardAndCity, getSavedSellerAddress, cleanFullAddress } from '../utils/addressUtils';
+import { savePostMetadata } from '../utils/catalogCache';
+import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 
 
 
@@ -76,6 +87,13 @@ export const cleanDescriptionFromQuestionTemplate = (desc: string): string => {
   const filtered = lines.filter((line) => {
     const trimmed = line.trim();
     if (!trimmed) return true;
+    // 0. Lọc bỏ thông tin giá sản phẩm lúc mua/giá mua mới/giá gốc và tag ẩn không hiển thị vào mô tả bài viết
+    if (/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/i.test(trimmed)) {
+      return false;
+    }
+    if (/^[-*•\d\.\)]*\s*(Giá\s*lúc\s*mua\s*mới|Giá\s*lúc\s*mua|Giá\s*mua\s*mới|Giá\s*mua\s*gốc|Giá\s*gốc|Giá\s*mua)\s*:/i.test(trimmed)) {
+      return false;
+    }
     // 1. Dạng chuẩn của template câu hỏi BE: **Tiêu đề** (Ví dụ: ...)
     if (/^[-*•\d\.\)]*\s*\*\*.*?\*\*\s*\([Vv]í\s*dụ\s*:?.*?\)/i.test(trimmed)) {
       return false;
@@ -130,7 +148,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // Toast State
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const showToast = (msg: string) => {
-    setToastMsg(msg);
+    const translated = translateSystemNotification(msg);
+    setToastMsg(translated);
     setTimeout(() => setToastMsg(null), 4000);
   };
 
@@ -188,8 +207,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     return sellerLocation || 'Hà Nội';
   }, [currentSellerFullAddress, currentSellerWard, currentSellerProv, sellerLocation]);
 
-  // Lấy địa chỉ của người bán (chỉ lấy phường và thành phố) từ hồ sơ hoặc địa chỉ kho đã lưu
+  const [pickupCoords, setPickupCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [pickupAddressDisplay, setPickupAddressDisplay] = useState<string>('');
+  const [isLoadingPickup, setIsLoadingPickup] = useState<boolean>(false);
+
+  // Lấy địa chỉ của người bán từ hồ sơ hoặc địa chỉ kho đã lưu
   useEffect(() => {
+    let isMounted = true;
     const resolveSellerLocation = async () => {
       // 1. ƯU TIÊN HÀNG ĐẦU: Lấy từ currentUser profile hiện tại hoặc localStorage đã cập nhật của người bán
       if (currentSellerFullAddress || currentSellerWard || currentSellerProv) {
@@ -200,36 +224,113 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         );
         if (userLoc) {
           setSellerLocation(userLoc);
-          return;
         }
       }
 
-      // 2. Dự phòng: Thử lấy địa chỉ kho bưu tá từ BE shippingService nếu chưa có profile
+      // 2. Lấy thông tin kho bưu tá và tọa độ GPS từ BE qua GET /api/v1/shipping/pickup-address
       try {
-        const [obRes, pickupRes] = await Promise.allSettled([
-          shippingService.getSellerOnboarding(),
+        setIsLoadingPickup(true);
+        const [pickupRes, obRes] = await Promise.allSettled([
           shippingService.getPickupAddress(),
+          shippingService.getSellerOnboarding(),
         ]);
+        if (!isMounted) return;
+
         let pa: any = null;
-        if (obRes.status === 'fulfilled' && obRes.value?.pickupAddress) {
-          pa = obRes.value.pickupAddress;
-        } else if (pickupRes.status === 'fulfilled' && pickupRes.value) {
+        if (pickupRes.status === 'fulfilled' && pickupRes.value) {
           pa = pickupRes.value;
+        } else if (obRes.status === 'fulfilled' && obRes.value?.pickupAddress) {
+          pa = obRes.value.pickupAddress;
         }
+
         if (pa) {
           const loc = extractWardAndCity(pa.address, pa.wardName, pa.provinceName);
-          if (loc) {
+          if (loc && !sellerLocation) {
             setSellerLocation(loc);
-            return;
           }
+          if (pa.address) {
+            setPickupAddressDisplay(pa.address);
+          }
+          const lat = typeof pa.latitude === 'number' ? pa.latitude : Number(pa.latitude);
+          const lng = typeof pa.longitude === 'number' ? pa.longitude : Number(pa.longitude);
+          if (
+            Number.isFinite(lat) &&
+            Number.isFinite(lng) &&
+            lat >= -90 &&
+            lat <= 90 &&
+            lng >= -180 &&
+            lng <= 180
+          ) {
+            setPickupCoords({ latitude: lat, longitude: lng });
+          } else {
+            setPickupCoords(null);
+          }
+        } else {
+          setPickupCoords(null);
         }
       } catch (e) {
-        // Fallback sang thông tin profile
+        if (isMounted) setPickupCoords(null);
+      } finally {
+        if (isMounted) setIsLoadingPickup(false);
       }
     };
 
     resolveSellerLocation();
+    return () => {
+      isMounted = false;
+    };
   }, [currentUser, currentSellerFullAddress, currentSellerWard, currentSellerProv]);
+
+  type CatalogState =
+    | { status: 'idle' }
+    | { status: 'loading'; key: string }
+    | { status: 'ready'; key: string; data: VehicleCatalog }
+    | { status: 'error'; key: string; message: string; httpStatus?: number };
+
+  const [catalogState, setCatalogState] = useState<CatalogState>({ status: 'idle' });
+  const [refreshVersion, setRefreshVersion] = useState<number>(0);
+  const [isVehicleInfoOpen, setIsVehicleInfoOpen] = useState<boolean>(false);
+
+  const pickupKey = pickupCoords != null
+    ? `${pickupCoords.latitude}/${pickupCoords.longitude}`
+    : null;
+
+  useEffect(() => {
+    if (!pickupCoords || !pickupKey) {
+      setCatalogState({ status: 'idle' });
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    setCatalogState({ status: 'loading', key: pickupKey });
+
+    getVehicleCatalog(
+      { latitude: pickupCoords.latitude, longitude: pickupCoords.longitude },
+      controller.signal
+    )
+      .then((data) => {
+        if (active) {
+          setCatalogState({ status: 'ready', key: pickupKey, data });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!active || controller.signal.aborted) return;
+        const msg = error instanceof Error ? error.message : 'Chưa tải được danh mục xe';
+        const httpStatus = (error as any)?.status;
+        setCatalogState({
+          status: 'error',
+          key: pickupKey,
+          message: msg,
+          httpStatus,
+        });
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [pickupKey, refreshVersion]);
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
   const [purchaseYear, setPurchaseYear] = useState<number>(new Date().getFullYear());
@@ -334,22 +435,24 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
   const handleWeightChange = (valStr: string) => {
     setRawWeightInput(valStr);
-    const num = parseFloat(valStr);
-    if (!isNaN(num) && num > 0) {
-      setShippingWeight(weightUnit === 'kg' ? Math.round(num * 1000) : Math.round(num));
-    } else {
-      setShippingWeight('');
-    }
+    const base = toBaseInteger(valStr, weightUnit === 'kg' ? 3 : 0);
+    setShippingWeight(base !== null ? base : '');
   };
 
   const handleWeightUnitSwitch = (newUnit: 'kg' | 'g') => {
     if (newUnit === weightUnit) return;
     setWeightUnit(newUnit);
-    if (rawWeightInput && !isNaN(Number(rawWeightInput))) {
-      const currentVal = Number(rawWeightInput);
-      const converted = newUnit === 'g' ? Math.round(currentVal * 1000) : Number((currentVal / 1000).toFixed(2));
-      setRawWeightInput(converted.toString());
-      setShippingWeight(newUnit === 'g' ? converted : Math.round(converted * 1000));
+    if (postId) {
+      try {
+        localStorage.setItem(`post_weight_unit_${postId}`, newUnit);
+      } catch {}
+    }
+    const targetDec = newUnit === 'kg' ? 3 : 0;
+    if (typeof shippingWeight === 'number' && shippingWeight >= 1) {
+      setRawWeightInput(fromBaseInteger(shippingWeight, targetDec));
+    } else {
+      setRawWeightInput('');
+      setShippingWeight('');
     }
   };
 
@@ -358,31 +461,90 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     if (field === 'width') setRawWidthInput(valStr);
     if (field === 'height') setRawHeightInput(valStr);
 
-    const num = parseFloat(valStr);
-    if (!isNaN(num) && num > 0) {
-      const inCm = dimensionUnit === 'm' ? Math.round(num * 100) : Math.round(num);
-      if (field === 'length') setShippingLength(inCm);
-      if (field === 'width') setShippingWidth(inCm);
-      if (field === 'height') setShippingHeight(inCm);
-    } else {
-      if (field === 'length') setShippingLength('');
-      if (field === 'width') setShippingWidth('');
-      if (field === 'height') setShippingHeight('');
-    }
+    const base = toBaseInteger(valStr, dimensionUnit === 'm' ? 2 : 0);
+    if (field === 'length') setShippingLength(base !== null ? base : '');
+    if (field === 'width') setShippingWidth(base !== null ? base : '');
+    if (field === 'height') setShippingHeight(base !== null ? base : '');
   };
 
   const handleDimensionUnitSwitch = (newUnit: 'cm' | 'm') => {
     if (newUnit === dimensionUnit) return;
     setDimensionUnit(newUnit);
-    const convert = (valStr: string) => {
-      if (!valStr || isNaN(Number(valStr))) return valStr;
-      const num = Number(valStr);
-      return newUnit === 'm' ? Number((num / 100).toFixed(2)).toString() : Math.round(num * 100).toString();
-    };
-    if (rawLengthInput) setRawLengthInput(convert(rawLengthInput));
-    if (rawWidthInput) setRawWidthInput(convert(rawWidthInput));
-    if (rawHeightInput) setRawHeightInput(convert(rawHeightInput));
+    if (postId) {
+      try {
+        localStorage.setItem(`post_dimension_unit_${postId}`, newUnit);
+      } catch {}
+    }
+    const targetDec = newUnit === 'm' ? 2 : 0;
+    setRawLengthInput(typeof shippingLength === 'number' && shippingLength >= 1 ? fromBaseInteger(shippingLength, targetDec) : '');
+    setRawWidthInput(typeof shippingWidth === 'number' && shippingWidth >= 1 ? fromBaseInteger(shippingWidth, targetDec) : '');
+    setRawHeightInput(typeof shippingHeight === 'number' && shippingHeight >= 1 ? fromBaseInteger(shippingHeight, targetDec) : '');
+    if (typeof shippingLength !== 'number' || shippingLength < 1) setShippingLength('');
+    if (typeof shippingWidth !== 'number' || shippingWidth < 1) setShippingWidth('');
+    if (typeof shippingHeight !== 'number' || shippingHeight < 1) setShippingHeight('');
   };
+
+  const catalog = catalogState.status === 'ready' && catalogState.key === pickupKey
+    ? catalogState.data
+    : null;
+  const city = catalog?.cities?.[0]; // Dữ liệu scoped theo tọa độ điểm lấy hàng
+
+  const parcel: Parcel = useMemo(() => ({
+    weight: typeof shippingWeight === 'number' ? shippingWeight : 0,
+    length: typeof shippingLength === 'number' ? shippingLength : 0,
+    width: typeof shippingWidth === 'number' ? shippingWidth : 0,
+    height: typeof shippingHeight === 'number' ? shippingHeight : 0,
+  }), [shippingWeight, shippingLength, shippingWidth, shippingHeight]);
+
+  const parcelIsValid = useMemo(() => {
+    if (!catalog) return false;
+    return validParcel(parcel, catalog);
+  }, [parcel, catalog]);
+
+  const fitting = useMemo(() => {
+    if (!catalog || !city || !parcelIsValid) return [];
+    return city.vehicles.filter((v) => fitsVehicle(parcel, v, catalog));
+  }, [catalog, city, parcelIsValid, parcel]);
+
+  const suggested = useMemo(() => {
+    return suggestVehicle(fitting);
+  }, [fitting]);
+
+  const canConfirmShipping = Boolean(pickupKey && parcelIsValid && fitting.length > 0);
+
+  // Chuỗi hiển thị kích thước và trọng lượng theo đúng đơn vị người dùng đã chọn (kg/g, m/cm)
+  const displayWeight = useMemo(() => {
+    if (typeof shippingWeight !== 'number' || shippingWeight < 1) return '---';
+    if (weightUnit === 'kg') {
+      return `${fromBaseInteger(shippingWeight, 3)} kg`;
+    }
+    return `${shippingWeight.toLocaleString('vi-VN')} g`;
+  }, [shippingWeight, weightUnit]);
+
+  const displayLength = useMemo(() => {
+    if (typeof shippingLength !== 'number' || shippingLength < 1) return '---';
+    if (dimensionUnit === 'm') {
+      return `${fromBaseInteger(shippingLength, 2)} m`;
+    }
+    return `${shippingLength} cm`;
+  }, [shippingLength, dimensionUnit]);
+
+  const displayWidth = useMemo(() => {
+    if (typeof shippingWidth !== 'number' || shippingWidth < 1) return '---';
+    if (dimensionUnit === 'm') {
+      return `${fromBaseInteger(shippingWidth, 2)} m`;
+    }
+    return `${shippingWidth} cm`;
+  }, [shippingWidth, dimensionUnit]);
+
+  const displayHeight = useMemo(() => {
+    if (typeof shippingHeight !== 'number' || shippingHeight < 1) return '---';
+    if (dimensionUnit === 'm') {
+      return `${fromBaseInteger(shippingHeight, 2)} m`;
+    }
+    return `${shippingHeight} cm`;
+  }, [shippingHeight, dimensionUnit]);
+
 
 
   // Images state: Raw files for FormData & previews
@@ -477,7 +639,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         if (draft.title) setTitle(draft.title);
         if (draft.description) setDescription(draft.description);
         if (draft.price) {
-          setOriginalPriceVnd(draft.price);
+          const savedOrig = extractSellerOriginalPrice(draft) || Number(localStorage.getItem(`post_original_price_${cleanId}`));
+          setOriginalPriceVnd(savedOrig > 0 ? savedOrig : draft.price);
           setFinalPriceVnd(draft.price);
           setIsManualPricingInStep3(true);
         }
@@ -506,21 +669,81 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       setBrand(initialDraft.brand || '');
       setModel(initialDraft.model || '');
       if (initialDraft.purchaseYear) setPurchaseYear(initialDraft.purchaseYear);
-      // Khi chỉnh sửa bài đăng đã có: lấy giá bán thực tế của sản phẩm (priceVnd) thay vì giá mua gốc
-      const existingSellingPrice = initialDraft.priceVnd || (initialDraft as any).price || initialDraft.originalPriceVnd || '';
-      if (existingSellingPrice) {
+      const existingSellingPrice = initialDraft.priceVnd || (initialDraft as any).price || '';
+      const existingOrigPrice = extractSellerOriginalPrice(initialDraft) || initialDraft.originalPriceVnd || Number(localStorage.getItem(`post_original_price_${initialDraft.id}`));
+      if (existingOrigPrice) {
+        setOriginalPriceVnd(Number(existingOrigPrice));
+      } else if (existingSellingPrice) {
         setOriginalPriceVnd(Number(existingSellingPrice));
+      }
+      if (existingSellingPrice) {
         setFinalPriceVnd(Number(existingSellingPrice));
         setIsManualPricingInStep3(true);
       }
-      if (initialDraft.shippingWeight) setShippingWeight(initialDraft.shippingWeight);
-      if (initialDraft.shippingLength) setShippingLength(initialDraft.shippingLength);
-      if (initialDraft.shippingWidth) setShippingWidth(initialDraft.shippingWidth);
-      if (initialDraft.shippingHeight) setShippingHeight(initialDraft.shippingHeight);
-      if (initialDraft.shippingWeight) setRawWeightInput((Number(initialDraft.shippingWeight) / 1000).toString());
-      if (initialDraft.shippingLength) setRawLengthInput(initialDraft.shippingLength.toString());
-      if (initialDraft.shippingWidth) setRawWidthInput(initialDraft.shippingWidth.toString());
-      if (initialDraft.shippingHeight) setRawHeightInput(initialDraft.shippingHeight.toString());
+      try {
+        const savedWu = localStorage.getItem(`post_weight_unit_${initialDraft.id}`) as 'kg' | 'g' | null;
+        const savedDu = localStorage.getItem(`post_dimension_unit_${initialDraft.id}`) as 'cm' | 'm' | null;
+        if (savedWu) setWeightUnit(savedWu);
+        if (savedDu) setDimensionUnit(savedDu);
+
+        if (initialDraft.shippingWeight) {
+          const w = Number(initialDraft.shippingWeight);
+          if (Number.isSafeInteger(w) && w >= 1) {
+            setShippingWeight(w);
+            setRawWeightInput(fromBaseInteger(w, savedWu === 'g' ? 0 : 3));
+          }
+        }
+        if (initialDraft.shippingLength) {
+          const l = Number(initialDraft.shippingLength);
+          if (Number.isSafeInteger(l) && l >= 1) {
+            setShippingLength(l);
+            setRawLengthInput(fromBaseInteger(l, savedDu === 'm' ? 2 : 0));
+          }
+        }
+        if (initialDraft.shippingWidth) {
+          const wi = Number(initialDraft.shippingWidth);
+          if (Number.isSafeInteger(wi) && wi >= 1) {
+            setShippingWidth(wi);
+            setRawWidthInput(fromBaseInteger(wi, savedDu === 'm' ? 2 : 0));
+          }
+        }
+        if (initialDraft.shippingHeight) {
+          const h = Number(initialDraft.shippingHeight);
+          if (Number.isSafeInteger(h) && h >= 1) {
+            setShippingHeight(h);
+            setRawHeightInput(fromBaseInteger(h, savedDu === 'm' ? 2 : 0));
+          }
+        }
+      } catch {
+        if (initialDraft.shippingWeight) {
+          const w = Number(initialDraft.shippingWeight);
+          if (Number.isSafeInteger(w) && w >= 1) {
+            setShippingWeight(w);
+            setRawWeightInput(fromBaseInteger(w, 3));
+          }
+        }
+        if (initialDraft.shippingLength) {
+          const l = Number(initialDraft.shippingLength);
+          if (Number.isSafeInteger(l) && l >= 1) {
+            setShippingLength(l);
+            setRawLengthInput(fromBaseInteger(l, 0));
+          }
+        }
+        if (initialDraft.shippingWidth) {
+          const wi = Number(initialDraft.shippingWidth);
+          if (Number.isSafeInteger(wi) && wi >= 1) {
+            setShippingWidth(wi);
+            setRawWidthInput(fromBaseInteger(wi, 0));
+          }
+        }
+        if (initialDraft.shippingHeight) {
+          const h = Number(initialDraft.shippingHeight);
+          if (Number.isSafeInteger(h) && h >= 1) {
+            setShippingHeight(h);
+            setRawHeightInput(fromBaseInteger(h, 0));
+          }
+        }
+      }
       if (initialDraft.conditionGrade) {
         // Map condition grade string back to enum value if needed
         const gradeMap: any = {
@@ -579,21 +802,69 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             if (freshDraft.itemCondition) setItemCondition(freshDraft.itemCondition);
             if (freshDraft.categoryId) setSelectedCategoryId(freshDraft.categoryId);
             if (freshDraft.itemId) setSelectedItemId(freshDraft.itemId);
-            if (freshDraft.shippingWeight) {
-              setShippingWeight(freshDraft.shippingWeight);
-              setRawWeightInput((Number(freshDraft.shippingWeight) / 1000).toString());
-            }
-            if (freshDraft.shippingLength) {
-              setShippingLength(freshDraft.shippingLength);
-              setRawLengthInput(freshDraft.shippingLength.toString());
-            }
-            if (freshDraft.shippingWidth) {
-              setShippingWidth(freshDraft.shippingWidth);
-              setRawWidthInput(freshDraft.shippingWidth.toString());
-            }
-            if (freshDraft.shippingHeight) {
-              setShippingHeight(freshDraft.shippingHeight);
-              setRawHeightInput(freshDraft.shippingHeight.toString());
+            try {
+              const savedWu = localStorage.getItem(`post_weight_unit_${freshDraft.id || initialDraft.id}`) as 'kg' | 'g' | null;
+              const savedDu = localStorage.getItem(`post_dimension_unit_${freshDraft.id || initialDraft.id}`) as 'cm' | 'm' | null;
+              if (savedWu) setWeightUnit(savedWu);
+              if (savedDu) setDimensionUnit(savedDu);
+
+              if (freshDraft.shippingWeight) {
+                const w = Number(freshDraft.shippingWeight);
+                if (Number.isSafeInteger(w) && w >= 1) {
+                  setShippingWeight(w);
+                  setRawWeightInput(fromBaseInteger(w, savedWu === 'g' ? 0 : 3));
+                }
+              }
+              if (freshDraft.shippingLength) {
+                const l = Number(freshDraft.shippingLength);
+                if (Number.isSafeInteger(l) && l >= 1) {
+                  setShippingLength(l);
+                  setRawLengthInput(fromBaseInteger(l, savedDu === 'm' ? 2 : 0));
+                }
+              }
+              if (freshDraft.shippingWidth) {
+                const wi = Number(freshDraft.shippingWidth);
+                if (Number.isSafeInteger(wi) && wi >= 1) {
+                  setShippingWidth(wi);
+                  setRawWidthInput(fromBaseInteger(wi, savedDu === 'm' ? 2 : 0));
+                }
+              }
+              if (freshDraft.shippingHeight) {
+                const h = Number(freshDraft.shippingHeight);
+                if (Number.isSafeInteger(h) && h >= 1) {
+                  setShippingHeight(h);
+                  setRawHeightInput(fromBaseInteger(h, savedDu === 'm' ? 2 : 0));
+                }
+              }
+            } catch {
+              if (freshDraft.shippingWeight) {
+                const w = Number(freshDraft.shippingWeight);
+                if (Number.isSafeInteger(w) && w >= 1) {
+                  setShippingWeight(w);
+                  setRawWeightInput(fromBaseInteger(w, 3));
+                }
+              }
+              if (freshDraft.shippingLength) {
+                const l = Number(freshDraft.shippingLength);
+                if (Number.isSafeInteger(l) && l >= 1) {
+                  setShippingLength(l);
+                  setRawLengthInput(fromBaseInteger(l, 0));
+                }
+              }
+              if (freshDraft.shippingWidth) {
+                const wi = Number(freshDraft.shippingWidth);
+                if (Number.isSafeInteger(wi) && wi >= 1) {
+                  setShippingWidth(wi);
+                  setRawWidthInput(fromBaseInteger(wi, 0));
+                }
+              }
+              if (freshDraft.shippingHeight) {
+                const h = Number(freshDraft.shippingHeight);
+                if (Number.isSafeInteger(h) && h >= 1) {
+                  setShippingHeight(h);
+                  setRawHeightInput(fromBaseInteger(h, 0));
+                }
+              }
             }
           }
         }).catch((err) => {
@@ -835,16 +1106,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     // Trích xuất điểm nổi bật về tình trạng (Like New 99%, Hàng Lướt, Mới 99%...)
     let conditionHighlight = '';
     const allAnswers = Object.values(questionAnswers).join(' ').toLowerCase();
+    const isFurnitureOrWood = /phòng ngủ|phòng khách|tủ|giường|nệm|đệm|sofa|ghế|bàn|kệ|gỗ/i.test(`${itmName} ${selectedCat?.name || ''}`);
+
     if (allAnswers.includes('mới 100%') || allAnswers.includes('nguyên hộp') || allAnswers.includes('chưa bóc')) {
-      conditionHighlight = 'Mới 100% Nguyên Hộp';
+      conditionHighlight = isFurnitureOrWood ? 'Mới 100% Nguyên Kiện' : 'Mới 100% Nguyên Hộp';
     } else if (allAnswers.includes('like-new') || allAnswers.includes('like new') || allAnswers.includes('hàng lướt') || allAnswers.includes('99%') || allAnswers.includes('vài lần')) {
       conditionHighlight = 'Hàng Lướt Like New 99%';
-    } else if (allAnswers.includes('hoạt động tốt') || allAnswers.includes('nguyên bản') || allAnswers.includes('chưa từng sửa')) {
-      conditionHighlight = 'Nguyên Bản Chạy Tốt';
+    } else if (allAnswers.includes('hoạt động tốt') || allAnswers.includes('nguyên bản') || allAnswers.includes('chưa từng sửa') || allAnswers.includes('chắc chắn')) {
+      conditionHighlight = isFurnitureOrWood ? 'Nguyên Bản Chắc Chắn' : 'Nguyên Bản Chạy Tốt';
     } else if (allAnswers.includes('xước nhẹ') || allAnswers.includes('cấn móp nhẹ')) {
-      conditionHighlight = 'Hoạt Động Tốt Giá Tốt';
+      conditionHighlight = isFurnitureOrWood ? 'Bền Đẹp Giá Tốt' : 'Hoạt Động Tốt Giá Tốt';
     } else {
-      conditionHighlight = 'Chính Hãng Đẹp Bền';
+      conditionHighlight = isFurnitureOrWood ? 'Bền Đẹp Chắc Chắn' : 'Chính Hãng Đẹp Bền';
     }
 
     const mainParts = [itmName, brandName, modelName, keySpec].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
@@ -910,12 +1183,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       sections.push('✨ Ngoại hình & Thiết kế thực tế:\n' + aiVisualReport.trim());
     }
 
-    // 2. Thông số cơ bản
+    // 2. Thông số cơ bản (không đưa giá lúc mua vào mô tả bài đăng)
     const basicSpecs: string[] = [];
     if (brand && brand.trim()) basicSpecs.push(`• Thương hiệu: ${brand.trim()}`);
     if (model && model.trim()) basicSpecs.push(`• Model: ${model.trim()}`);
     if (purchaseYear) basicSpecs.push(`• Năm mua: ${purchaseYear}`);
-    if (originalPriceVnd) basicSpecs.push(`• Giá lúc mua mới: ${Number(originalPriceVnd).toLocaleString('vi-VN')} VNĐ`);
 
     if (basicSpecs.length > 0) {
       sections.push('📌 Thông số cơ bản:\n' + basicSpecs.join('\n'));
@@ -1001,7 +1273,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     if (brand && brand.trim()) basicInfoParts.push(`Thương hiệu: ${brand.trim()}`);
     if (model && model.trim()) basicInfoParts.push(`Model: ${model.trim()}`);
     if (purchaseYear) basicInfoParts.push(`Năm mua: ${purchaseYear}`);
-    if (originalPriceVnd) basicInfoParts.push(`Giá lúc mua: ${Number(originalPriceVnd).toLocaleString('vi-VN')} VNĐ`);
 
     const basicStr = basicInfoParts.length > 0 ? `Thông tin sản phẩm: ${basicInfoParts.join(', ')}.\n` : '';
     const visualStr = aiVisualReport ? `Ghi nhận ngoại quan từ ảnh chụp: ${aiVisualReport}.\n` : '';
@@ -1410,6 +1681,28 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           status: 'DRAFT',
         });
 
+        // Lưu metadata bài đăng vào cache để đảm bảo nhận diện đúng danh mục & thương hiệu
+        const currentCatName = selectedCat?.name || '';
+        const currentItmName = selectedItm?.name || '';
+        const numOrig = typeof originalPriceVnd === 'number' && originalPriceVnd > 0 ? originalPriceVnd : Number(localStorage.getItem('temp_creating_original_price') || 0);
+        if (numOrig > 0) {
+          try {
+            localStorage.setItem(`post_original_price_${initRes.postId}`, String(numOrig));
+          } catch {}
+        }
+        savePostMetadata({
+          postId: initRes.postId,
+          categoryId: selectedCategoryId,
+          itemId: selectedItemId,
+          categoryName: currentCatName,
+          itemName: currentItmName,
+          category: currentItmName || currentCatName,
+          brand: brand?.trim() || '',
+          model: model?.trim() || '',
+          purchaseYear,
+          originalPriceVnd: numOrig > 0 ? numOrig : undefined
+        });
+
         // Reset chat tracking
         setUserChatCount(0);
         setIsSessionCompleted(false);
@@ -1618,6 +1911,62 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       showToast(lang === 'vi' ? 'Vui lòng nhập Mô tả sản phẩm hoặc trò chuyện với AI để tạo mô tả.' : 'Please provide a Description or chat with AI.');
       return;
     }
+    if (!pickupCoords) {
+      showToast(
+        lang === 'vi'
+          ? 'Chưa có địa chỉ lấy hàng có tọa độ GPS. Vui lòng bổ sung địa chỉ kho lấy hàng trong hồ sơ để đối chiếu xe Lalamove.'
+          : 'Missing seller pickup address with GPS coordinates.'
+      );
+      return;
+    }
+    if (catalogState.status === 'loading') {
+      showToast(
+        lang === 'vi'
+          ? 'Đang tải danh mục xe Lalamove cho điểm lấy hàng, vui lòng chờ trong giây lát...'
+          : 'Loading Lalamove vehicle catalogue...'
+      );
+      return;
+    }
+    if (catalogState.status === 'error') {
+      showToast(
+        lang === 'vi'
+          ? `Chưa thể xác nhận thông số: ${catalogState.message}`
+          : `Vehicle catalogue error: ${catalogState.message}`
+      );
+      return;
+    }
+    if (!catalog || !catalog.cities || catalog.cities.length === 0) {
+      showToast(
+        lang === 'vi'
+          ? 'Chưa có danh mục xe cho điểm lấy hàng này.'
+          : 'No vehicle catalogue available for this pickup location.'
+      );
+      return;
+    }
+    if (!city || !city.vehicles || city.vehicles.length === 0) {
+      showToast(
+        lang === 'vi'
+          ? 'Chưa có thông số xe được xác minh cho khu vực này.'
+          : 'No verified vehicle specifications for this area.'
+      );
+      return;
+    }
+    if (!parcelIsValid) {
+      showToast(
+        lang === 'vi'
+          ? `Vui lòng nhập đầy đủ và hợp lệ trọng lượng kiện hàng (≥ 1 g) và kích thước (≥ ${catalog?.minDimensionCm || 1} cm).`
+          : `Please enter valid package weight (>= 1g) and dimensions (>= ${catalog?.minDimensionCm || 1} cm).`
+      );
+      return;
+    }
+    if (fitting.length === 0) {
+      showToast(
+        lang === 'vi'
+          ? 'Không có loại xe Lalamove đủ tải trọng và kích thước cho kiện hàng tại điểm lấy hàng.'
+          : 'No Lalamove vehicle fits this package at pickup location.'
+      );
+      return;
+    }
 
     setCurrentStep(3);
   };
@@ -1645,11 +1994,20 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
     setIsAcceptingDescription(true);
     try {
+      const numOrig = typeof originalPriceVnd === 'number' && originalPriceVnd > 0 ? originalPriceVnd : Number(localStorage.getItem(`post_original_price_${postId}`) || 0);
+      if (numOrig > 0 && postId) {
+        try {
+          localStorage.setItem(`post_original_price_${postId}`, String(numOrig));
+        } catch {}
+      }
+      const cleanDesc = description.trim().replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '').trim();
+      const descToSend = numOrig > 0 ? `${cleanDesc}\n\n<!--sl_orig_price:${numOrig}-->` : cleanDesc;
+
       // 1 & 2. Chạy song song updateDraft và acceptDescription bằng Promise.all để giảm 50% thời gian chờ ở Bước 3
       const [, acceptRes] = await Promise.all([
         postService.updateDraft(postId, {
           title: title.trim(),
-          description: description.trim(),
+          description: descToSend,
           itemCondition: itemCondition || 'USED',
           price: isManualPricingInStep3 ? finalPriceVnd : null,
           shippingWeight: shippingWeight ? Number(shippingWeight) : undefined,
@@ -1657,7 +2015,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           shippingWidth: shippingWidth ? Number(shippingWidth) : undefined,
           shippingHeight: shippingHeight ? Number(shippingHeight) : undefined,
         }),
-        postService.acceptDescription(postId, description.trim()),
+        postService.acceptDescription(postId, descToSend),
       ]);
 
       setDescriptionAccepted(true);
@@ -1734,41 +2092,59 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       return;
     }
 
-    // BE ShippingParcel: int, weight 1..50000 (gram), length/width/height 1..200 (cm)
-    const parcel = {
-      weight: Math.round(Number(shippingWeight)),
-      length: Math.round(Number(shippingLength)),
-      width: Math.round(Number(shippingWidth)),
-      height: Math.round(Number(shippingHeight)),
+    if (!pickupCoords) {
+      showToast(lang === 'vi' ? 'Chưa có địa chỉ lấy hàng có tọa độ. Vui lòng bổ sung để xác nhận vận chuyển.' : 'Please provide pickup location with coordinates');
+      return;
+    }
+
+    if (!parcelIsValid) {
+      showToast(
+        lang === 'vi'
+          ? `Thông số kiện hàng không hợp lệ (cân nặng từ 1 g, kích thước mỗi chiều từ ${catalog?.minDimensionCm || 1} cm).`
+          : 'Package weight or dimensions are invalid.'
+      );
+      return;
+    }
+
+    if (fitting.length === 0) {
+      showToast(
+        lang === 'vi'
+          ? 'Không có loại xe Lalamove đủ tải trọng và kích thước cho kiện hàng tại điểm lấy hàng.'
+          : 'No Lalamove vehicle fits this package at pickup location.'
+      );
+      return;
+    }
+
+    const parcelPayload = {
+      weight: parcel.weight,
+      length: parcel.length,
+      width: parcel.width,
+      height: parcel.height,
     };
-    if (parcel.weight < 1 || parcel.weight > 50000) {
-      showToast(lang === 'vi' ? 'Trọng lượng kiện hàng phải từ 1 đến 50.000 gram (tối đa 50kg)' : 'Package weight must be 1–50000 grams (max 50kg)');
-      return;
-    }
-    if ([parcel.length, parcel.width, parcel.height].some((v) => v < 1 || v > 200)) {
-      showToast(lang === 'vi' ? 'Dài/Rộng/Cao phải từ 1 đến 200 cm' : 'Length/Width/Height must be 1–200 cm');
-      return;
-    }
 
     setIsSubmittingPost(true);
     setSubmitError(null);
 
     // Lưu thông tin kiện hàng (Shipping Package) trước khi Submit Post
     try {
-      await shippingService.updateShippingPackage(postId, parcel);
+      await shippingService.updateShippingPackage(postId, parcelPayload);
     } catch (err: any) {
       setSubmitError(
         (lang === 'vi' ? 'Không lưu được thông tin kiện hàng: ' : 'Failed to save shipping package: ') +
-          (err?.message || '')
+          (translateSystemNotification(err?.message || '') || '')
       );
       setIsSubmittingPost(false);
       return;
     }
 
     try {
+      const numericOrigPrice = typeof originalPriceVnd === 'number' && originalPriceVnd > 0 ? originalPriceVnd : Number(localStorage.getItem(`post_original_price_${postId}`) || 0);
+      const cleanDesc = description.trim().replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '').trim();
+      const descToSend = numericOrigPrice > 0 ? `${cleanDesc}\n\n<!--sl_orig_price:${numericOrigPrice}-->` : cleanDesc;
+
       const submitRes = await postService.submitPost(postId, {
         title: title.trim(),
-        description: description.trim(),
+        description: descToSend,
         price: finalPriceVnd,
         shippingWeight: parcel.weight,
         shippingLength: parcel.length,
@@ -1780,6 +2156,48 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       try {
         localStorage.setItem(`post_parcel_${postId}`, JSON.stringify(parcel));
       } catch {}
+
+      // Đồng bộ metadata bài đăng
+      const submitCat = backendCategories.find((c) => c.id === selectedCategoryId);
+      const submitItm = backendItems.find((i) => i.id === selectedItemId);
+      const submitCatName = submitCat?.name || '';
+      const finalOrigPrice = numericOrigPrice > 0 ? numericOrigPrice : undefined;
+
+      savePostMetadata({
+        postId,
+        categoryId: selectedCategoryId,
+        itemId: selectedItemId,
+        categoryName: submitCatName,
+        itemName: submitItmName,
+        category: submitItmName || submitCatName,
+        brand: brand?.trim() || '',
+        model: model?.trim() || '',
+        purchaseYear,
+        originalPriceVnd: finalOrigPrice
+      });
+
+      if (finalOrigPrice) {
+        localStorage.setItem(`post_original_price_${postId}`, String(finalOrigPrice));
+        if (submitRes?.id) {
+          localStorage.setItem(`post_original_price_${submitRes.id}`, String(finalOrigPrice));
+          savePostMetadata({
+            postId: submitRes.id,
+            categoryId: selectedCategoryId,
+            itemId: selectedItemId,
+            categoryName: submitCatName,
+            itemName: submitItmName,
+            category: submitItmName || submitCatName,
+            brand: brand?.trim() || '',
+            model: model?.trim() || '',
+            purchaseYear,
+            originalPriceVnd: finalOrigPrice
+          });
+        }
+        if (submitRes?.postId) {
+          localStorage.setItem(`post_original_price_${submitRes.postId}`, String(finalOrigPrice));
+        }
+      }
+
       // Reload credits (if ACTIVE, minus 1 LISTING)
       await loadCredits();
     } catch (err: any) {
@@ -1790,7 +2208,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           ? 'Tài khoản chưa hoàn tất hồ sơ xác thực người bán (eKYC). Vui lòng xác thực trước khi gửi đăng bài.'
           : 'An approved seller verification is required before publish');
       } else {
-        setSubmitError(err?.message || 'Gửi bài đăng thất bại');
+        setSubmitError(translateSystemNotification(err?.message) || 'Gửi bài đăng thất bại');
       }
     } finally {
       setIsSubmittingPost(false);
@@ -1799,7 +2217,27 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
   const handleFinishAndExit = () => {
     if (!postId) return;
-    const catName = backendCategories.find((c) => c.id === selectedCategoryId)?.name || 'Thiết bị điện tử';
+    const catObj = backendCategories.find((c) => c.id === selectedCategoryId);
+    const itmObj = backendItems.find((i) => i.id === selectedItemId);
+    const catName = catObj?.name || 'Đồ gia dụng';
+    const itmName = itmObj?.name || '';
+    const finalDisplayCategory = itmName || catName;
+    const finalBrand = brand?.trim() || 'Hàng nhập khẩu';
+
+    const numericOrigPrice = typeof originalPriceVnd === 'number' && originalPriceVnd > 0 ? originalPriceVnd : undefined;
+
+    savePostMetadata({
+      postId,
+      categoryId: selectedCategoryId,
+      itemId: selectedItemId,
+      categoryName: catName,
+      itemName: itmName,
+      category: finalDisplayCategory,
+      brand: finalBrand,
+      model: model?.trim() || '',
+      purchaseYear,
+      originalPriceVnd: numericOrigPrice
+    });
 
     // Địa chỉ của sản phẩm được cập nhật theo địa chỉ người bán (chỉ lấy phường và thành phố)
     const finalLocation = effectiveDisplayLocation;
@@ -1807,13 +2245,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
     const newListing: Listing = {
       id: postId,
+      categoryId: selectedCategoryId,
+      itemId: selectedItemId,
+      categoryName: catName,
+      itemName: itmName,
       title: title || 'Sản phẩm SecondLife',
-      category: catName as ItemCategory,
-      brand: brand || 'Hãng',
+      category: finalDisplayCategory as ItemCategory,
+      brand: finalBrand,
       model: model || 'Model',
       purchaseYear,
       priceVnd: finalPriceVnd,
-      originalPriceVnd: finalPriceVnd,
+      originalPriceVnd: numericOrigPrice,
       conditionGrade: 'Like New',
       declaredConditionText: itemCondition,
       description: description || 'Mô tả bài đăng đã qua kiểm duyệt AI',
@@ -1860,6 +2302,15 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           width: parsedWidth,
           height: parsedHeight
         }));
+      }
+      if (numericOrigPrice) {
+        localStorage.setItem(`post_original_price_${postId}`, String(numericOrigPrice));
+        if (submitResult?.id) {
+          localStorage.setItem(`post_original_price_${submitResult.id}`, String(numericOrigPrice));
+        }
+        if (submitResult?.postId) {
+          localStorage.setItem(`post_original_price_${submitResult.postId}`, String(numericOrigPrice));
+        }
       }
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
@@ -2110,6 +2561,14 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   const raw = cleanVndInput(e.target.value, 11);
                   const numVal = raw ? Number(raw) : '';
                   setOriginalPriceVnd(numVal);
+                  if (typeof numVal === 'number' && numVal > 0) {
+                    try {
+                      localStorage.setItem('temp_creating_original_price', String(numVal));
+                      if (postId) {
+                        localStorage.setItem(`post_original_price_${postId}`, String(numVal));
+                      }
+                    } catch {}
+                  }
                   if (initialDraft && typeof numVal === 'number') {
                     setFinalPriceVnd(numVal);
                   }
@@ -2797,143 +3256,452 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
                 {/* Trọng lượng */}
-                <div className="space-y-1.5 flex flex-col justify-between">
-                  <div className="h-7 flex items-center justify-between">
-                    <label className="text-[10px] font-bold text-slate-600 uppercase">Trọng lượng *</label>
-                    <div className="flex items-center bg-gray-200/80 rounded-lg p-0.5 text-[10px] font-bold">
-                      <button
-                        type="button"
-                        onClick={() => handleWeightUnitSwitch('kg')}
-                        className={`px-2 py-0.5 rounded-md transition cursor-pointer ${weightUnit === 'kg' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
-                      >
-                        kg
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleWeightUnitSwitch('g')}
-                        className={`px-2 py-0.5 rounded-md transition cursor-pointer ${weightUnit === 'g' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
-                      >
-                        g
-                      </button>
+                {(() => {
+                  const isInvalid = Boolean(rawWeightInput.trim() && toBaseInteger(rawWeightInput, weightUnit === 'kg' ? 3 : 0) === null);
+                  return (
+                    <div className="space-y-1.5 flex flex-col justify-between">
+                      <div className="h-7 flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase">Trọng lượng *</label>
+                        <div className="flex items-center bg-gray-200/80 rounded-lg p-0.5 text-[10px] font-bold">
+                          <button
+                            type="button"
+                            onClick={() => handleWeightUnitSwitch('kg')}
+                            className={`px-2 py-0.5 rounded-md transition cursor-pointer ${weightUnit === 'kg' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
+                          >
+                            kg
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleWeightUnitSwitch('g')}
+                            className={`px-2 py-0.5 rounded-md transition cursor-pointer ${weightUnit === 'g' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
+                          >
+                            g
+                          </button>
+                        </div>
+                      </div>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder={weightUnit === 'kg' ? 'VD: 3.5' : 'VD: 3500'}
+                        value={rawWeightInput}
+                        onChange={(e) => handleWeightChange(e.target.value)}
+                        className={`w-full h-10 px-3.5 py-2 bg-white border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none shadow-2xs transition ${
+                          isInvalid
+                            ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                            : 'border-gray-200 focus:border-[#c34c36]'
+                        }`}
+                      />
+                      <div className="h-5 flex items-center pl-1 text-[10px]">
+                        {isInvalid ? (
+                          <span className="font-bold text-rose-600 truncate">
+                            ⚠️ Cần nhập số hợp lệ (≥ 1 {weightUnit === 'kg' ? 'g: 0.001 kg' : 'g'})
+                          </span>
+                        ) : typeof shippingWeight === 'number' && shippingWeight >= 1 ? (
+                          <span className="font-bold text-emerald-600 truncate">
+                            = {shippingWeight.toLocaleString('vi-VN')} gram
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 truncate">Nhập cân nặng ({weightUnit})</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <input
-                    type="number"
-                    step={weightUnit === 'kg' ? '0.1' : '1'}
-                    min="0.1"
-                    placeholder={weightUnit === 'kg' ? 'VD: 3.5' : 'VD: 3500'}
-                    value={rawWeightInput}
-                    onChange={(e) => handleWeightChange(e.target.value)}
-                    className="w-full h-10 px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36] shadow-2xs transition"
-                  />
-                  <div className="h-5 flex items-center pl-1 text-[10px]">
-                    {shippingWeight ? (
-                      <span className="font-bold text-emerald-600 truncate">
-                        = {Number(shippingWeight).toLocaleString('vi-VN')} gram
-                      </span>
-                    ) : (
-                      <span className="text-slate-400 truncate">Nhập cân nặng ({weightUnit})</span>
-                    )}
-                  </div>
-                </div>
+                  );
+                })()}
 
                 {/* Chiều dài */}
-                <div className="space-y-1.5 flex flex-col justify-between">
-                  <div className="h-7 flex items-center justify-between">
-                    <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều Dài *</label>
-                    <div className="flex items-center bg-gray-200/80 rounded-lg p-0.5 text-[10px] font-bold">
-                      <button
-                        type="button"
-                        onClick={() => handleDimensionUnitSwitch('cm')}
-                        className={`px-2 py-0.5 rounded-md transition cursor-pointer ${dimensionUnit === 'cm' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
-                      >
-                        cm
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDimensionUnitSwitch('m')}
-                        className={`px-2 py-0.5 rounded-md transition cursor-pointer ${dimensionUnit === 'm' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
-                      >
-                        m
-                      </button>
+                {(() => {
+                  const isInvalid = Boolean(rawLengthInput.trim() && toBaseInteger(rawLengthInput, dimensionUnit === 'm' ? 2 : 0) === null);
+                  return (
+                    <div className="space-y-1.5 flex flex-col justify-between">
+                      <div className="h-7 flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều Dài *</label>
+                        <div className="flex items-center bg-gray-200/80 rounded-lg p-0.5 text-[10px] font-bold">
+                          <button
+                            type="button"
+                            onClick={() => handleDimensionUnitSwitch('cm')}
+                            className={`px-2 py-0.5 rounded-md transition cursor-pointer ${dimensionUnit === 'cm' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
+                          >
+                            cm
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDimensionUnitSwitch('m')}
+                            className={`px-2 py-0.5 rounded-md transition cursor-pointer ${dimensionUnit === 'm' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
+                          >
+                            m
+                          </button>
+                        </div>
+                      </div>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder={dimensionUnit === 'm' ? 'VD: 0.3' : 'VD: 30'}
+                        value={rawLengthInput}
+                        onChange={(e) => handleDimensionChange('length', e.target.value)}
+                        className={`w-full h-10 px-3.5 py-2 bg-white border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none shadow-2xs transition ${
+                          isInvalid
+                            ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                            : 'border-gray-200 focus:border-[#c34c36]'
+                        }`}
+                      />
+                      <div className="h-5 flex items-center pl-1 text-[10px]">
+                        {isInvalid ? (
+                          <span className="font-bold text-rose-600 truncate">
+                            ⚠️ Cần nhập số hợp lệ (≥ 1 {dimensionUnit === 'm' ? 'cm: 0.01 m' : 'cm'})
+                          </span>
+                        ) : typeof shippingLength === 'number' && shippingLength >= 1 ? (
+                          <span className="font-bold text-emerald-600 truncate">
+                            = {shippingLength} cm
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 truncate">Dài ({dimensionUnit})</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <input
-                    type="number"
-                    step={dimensionUnit === 'm' ? '0.05' : '1'}
-                    min="1"
-                    placeholder={dimensionUnit === 'm' ? 'VD: 0.3' : 'VD: 30'}
-                    value={rawLengthInput}
-                    onChange={(e) => handleDimensionChange('length', e.target.value)}
-                    className="w-full h-10 px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36] shadow-2xs transition"
-                  />
-                  <div className="h-5 flex items-center pl-1 text-[10px]">
-                    {shippingLength ? (
-                      <span className="font-bold text-emerald-600 truncate">
-                        = {shippingLength} cm
-                      </span>
-                    ) : (
-                      <span className="text-slate-400 truncate">Dài ({dimensionUnit})</span>
-                    )}
-                  </div>
-                </div>
+                  );
+                })()}
 
                 {/* Chiều rộng */}
-                <div className="space-y-1.5 flex flex-col justify-between">
-                  <div className="h-7 flex items-center justify-between">
-                    <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều Rộng *</label>
-                    <span className="px-2 py-0.5 rounded-md bg-gray-200/80 text-slate-600 text-[10px] font-bold">
-                      {dimensionUnit}
-                    </span>
-                  </div>
-                  <input
-                    type="number"
-                    step={dimensionUnit === 'm' ? '0.05' : '1'}
-                    min="1"
-                    placeholder={dimensionUnit === 'm' ? 'VD: 0.25' : 'VD: 25'}
-                    value={rawWidthInput}
-                    onChange={(e) => handleDimensionChange('width', e.target.value)}
-                    className="w-full h-10 px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36] shadow-2xs transition"
-                  />
-                  <div className="h-5 flex items-center pl-1 text-[10px]">
-                    {shippingWidth ? (
-                      <span className="font-bold text-emerald-600 truncate">
-                        = {shippingWidth} cm
-                      </span>
-                    ) : (
-                      <span className="text-slate-400 truncate">Rộng ({dimensionUnit})</span>
-                    )}
-                  </div>
-                </div>
+                {(() => {
+                  const isInvalid = Boolean(rawWidthInput.trim() && toBaseInteger(rawWidthInput, dimensionUnit === 'm' ? 2 : 0) === null);
+                  return (
+                    <div className="space-y-1.5 flex flex-col justify-between">
+                      <div className="h-7 flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều Rộng *</label>
+                        <div className="flex items-center bg-gray-200/80 rounded-lg p-0.5 text-[10px] font-bold">
+                          <button
+                            type="button"
+                            onClick={() => handleDimensionUnitSwitch('cm')}
+                            className={`px-2 py-0.5 rounded-md transition cursor-pointer ${dimensionUnit === 'cm' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
+                          >
+                            cm
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDimensionUnitSwitch('m')}
+                            className={`px-2 py-0.5 rounded-md transition cursor-pointer ${dimensionUnit === 'm' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
+                          >
+                            m
+                          </button>
+                        </div>
+                      </div>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder={dimensionUnit === 'm' ? 'VD: 0.25' : 'VD: 25'}
+                        value={rawWidthInput}
+                        onChange={(e) => handleDimensionChange('width', e.target.value)}
+                        className={`w-full h-10 px-3.5 py-2 bg-white border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none shadow-2xs transition ${
+                          isInvalid
+                            ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                            : 'border-gray-200 focus:border-[#c34c36]'
+                        }`}
+                      />
+                      <div className="h-5 flex items-center pl-1 text-[10px]">
+                        {isInvalid ? (
+                          <span className="font-bold text-rose-600 truncate">
+                            ⚠️ Cần nhập số hợp lệ (≥ 1 {dimensionUnit === 'm' ? 'cm: 0.01 m' : 'cm'})
+                          </span>
+                        ) : typeof shippingWidth === 'number' && shippingWidth >= 1 ? (
+                          <span className="font-bold text-emerald-600 truncate">
+                            = {shippingWidth} cm
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 truncate">Rộng ({dimensionUnit})</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Chiều cao */}
-                <div className="space-y-1.5 flex flex-col justify-between">
-                  <div className="h-7 flex items-center justify-between">
-                    <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều Cao *</label>
-                    <span className="px-2 py-0.5 rounded-md bg-gray-200/80 text-slate-600 text-[10px] font-bold">
-                      {dimensionUnit}
+                {(() => {
+                  const isInvalid = Boolean(rawHeightInput.trim() && toBaseInteger(rawHeightInput, dimensionUnit === 'm' ? 2 : 0) === null);
+                  return (
+                    <div className="space-y-1.5 flex flex-col justify-between">
+                      <div className="h-7 flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase">Chiều Cao *</label>
+                        <div className="flex items-center bg-gray-200/80 rounded-lg p-0.5 text-[10px] font-bold">
+                          <button
+                            type="button"
+                            onClick={() => handleDimensionUnitSwitch('cm')}
+                            className={`px-2 py-0.5 rounded-md transition cursor-pointer ${dimensionUnit === 'cm' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
+                          >
+                            cm
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDimensionUnitSwitch('m')}
+                            className={`px-2 py-0.5 rounded-md transition cursor-pointer ${dimensionUnit === 'm' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
+                          >
+                            m
+                          </button>
+                        </div>
+                      </div>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder={dimensionUnit === 'm' ? 'VD: 0.2' : 'VD: 20'}
+                        value={rawHeightInput}
+                        onChange={(e) => handleDimensionChange('height', e.target.value)}
+                        className={`w-full h-10 px-3.5 py-2 bg-white border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none shadow-2xs transition ${
+                          isInvalid
+                            ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                            : 'border-gray-200 focus:border-[#c34c36]'
+                        }`}
+                      />
+                      <div className="h-5 flex items-center pl-1 text-[10px]">
+                        {isInvalid ? (
+                          <span className="font-bold text-rose-600 truncate">
+                            ⚠️ Cần nhập số hợp lệ (≥ 1 {dimensionUnit === 'm' ? 'cm: 0.01 m' : 'cm'})
+                          </span>
+                        ) : typeof shippingHeight === 'number' && shippingHeight >= 1 ? (
+                          <span className="font-bold text-emerald-600 truncate">
+                            = {shippingHeight} cm
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 truncate">Cao ({dimensionUnit})</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Trạng thái đối chiếu xe Lalamove (Luôn hiển thị kể cả khi bảng thu gọn) */}
+              <div className="pt-1">
+                {isLoadingPickup ? (
+                  <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-600 shrink-0" />
+                    <span>Đang kiểm tra tọa độ kho lấy hàng của người bán...</span>
+                  </div>
+                ) : !pickupCoords ? (
+                  <div className="p-3 bg-amber-50/90 border border-amber-300 rounded-xl text-xs text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>
+                        Chưa có tọa độ điểm lấy hàng: Vui lòng bổ sung địa chỉ kho lấy hàng trong hồ sơ để đối chiếu xe Lalamove.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setRefreshVersion((v) => v + 1)}
+                      className="text-xs font-bold text-blue-700 hover:text-blue-900 underline shrink-0 cursor-pointer self-end sm:self-auto"
+                    >
+                      Kiểm tra lại
+                    </button>
+                  </div>
+                ) : catalogState.status === 'loading' ? (
+                  <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-600 shrink-0" />
+                    <span>Đang tải danh mục xe Lalamove theo điểm lấy hàng...</span>
+                  </div>
+                ) : catalogState.status === 'error' ? (
+                  <div className="p-3 bg-rose-50/90 border border-rose-300 rounded-xl text-xs text-rose-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>{catalogState.message || 'Lỗi kết nối danh mục xe Lalamove'}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setRefreshVersion((v) => v + 1)}
+                      className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shrink-0 cursor-pointer transition self-end sm:self-auto"
+                    >
+                      Thử lại
+                    </button>
+                  </div>
+                ) : catalog && (!catalog.cities || catalog.cities.length === 0) ? (
+                  <div className="p-3 bg-amber-50/90 border border-amber-300 rounded-xl text-xs text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>Chưa có danh mục xe cho điểm lấy hàng này.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setRefreshVersion((v) => v + 1)}
+                      className="text-xs font-bold text-blue-700 hover:text-blue-900 underline shrink-0 cursor-pointer self-end sm:self-auto"
+                    >
+                      Tải lại
+                    </button>
+                  </div>
+                ) : catalog && city && (!city.vehicles || city.vehicles.length === 0) ? (
+                  <div className="p-3 bg-amber-50/90 border border-amber-300 rounded-xl text-xs text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>Chưa có thông số xe được xác minh cho khu vực này.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setRefreshVersion((v) => v + 1)}
+                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shrink-0 cursor-pointer transition self-end sm:self-auto"
+                    >
+                      Thử lại
+                    </button>
+                  </div>
+                ) : !parcelIsValid ? (
+                  <div className="p-3 bg-slate-100/90 border border-slate-200 rounded-xl text-xs text-slate-700 flex items-center gap-2">
+                    <Info className="w-4 h-4 text-slate-500 shrink-0" />
+                    <span>Vui lòng nhập đầy đủ cân nặng và kích thước để kiểm tra xe Lalamove phù hợp.</span>
+                  </div>
+                ) : fitting.length > 0 ? (
+                  <div className="p-3 bg-emerald-50/90 border border-emerald-300 rounded-xl text-xs text-emerald-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>
+                        Có <strong className="font-extrabold text-emerald-800">{fitting.length}</strong> loại xe phù hợp về tải trọng và kích thước.
+                        {suggested ? ` (Gợi ý: ${suggested.description || suggested.serviceType})` : ''}
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300 self-start sm:self-auto">
+                      Đạt thông số
                     </span>
                   </div>
-                  <input
-                    type="number"
-                    step={dimensionUnit === 'm' ? '0.05' : '1'}
-                    min="1"
-                    placeholder={dimensionUnit === 'm' ? 'VD: 0.2' : 'VD: 20'}
-                    value={rawHeightInput}
-                    onChange={(e) => handleDimensionChange('height', e.target.value)}
-                    className="w-full h-10 px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36] shadow-2xs transition"
-                  />
-                  <div className="h-5 flex items-center pl-1 text-[10px]">
-                    {shippingHeight ? (
-                      <span className="font-bold text-emerald-600 truncate">
-                        = {shippingHeight} cm
-                      </span>
-                    ) : (
-                      <span className="text-slate-400 truncate">Cao ({dimensionUnit})</span>
-                    )}
+                ) : (
+                  <div className="p-3 bg-rose-50/90 border border-rose-300 rounded-xl text-xs text-rose-950 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span className="font-bold text-rose-700">
+                      Không có loại xe Lalamove đủ tải trọng và kích thước cho kiện hàng tại điểm lấy hàng.
+                    </span>
                   </div>
-                </div>
+                )}
               </div>
+
+              {/* Nút Xem / Thu gọn thông tin vận chuyển */}
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  type="button"
+                  aria-expanded={isVehicleInfoOpen}
+                  aria-controls="shipping-vehicle-catalogue"
+                  onClick={() => setIsVehicleInfoOpen((prev) => !prev)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 transition py-1 px-1 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400 rounded-lg"
+                >
+                  <span>{isVehicleInfoOpen ? 'Thu gọn thông tin vận chuyển ▲' : 'Xem thông tin vận chuyển ▼'}</span>
+                  {isVehicleInfoOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+
+                {city && (
+                  <span className="text-[11px] text-slate-500">
+                    Khu vực: <span className="font-bold text-slate-700">{city.name || city.locode}</span> ({city.vehicles.length} phương tiện)
+                  </span>
+                )}
+              </div>
+
+              {/* Bảng danh mục phương tiện Lalamove */}
+              {isVehicleInfoOpen && (
+                <div
+                  id="shipping-vehicle-catalogue"
+                  className="mt-2 p-3.5 bg-white border border-gray-200 rounded-xl space-y-3 shadow-xs animate-fadeIn"
+                >
+                  <div className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-200/70">
+                    <p className="font-medium">
+                      * Giữ kiện đứng (chiều cao luôn kiểm tra theo phương thẳng đứng); cho phép đổi chỗ chiều dài và rộng. Cân nặng nhập từ 1 g; tải xe tối đa theo thông số Lalamove.
+                    </p>
+                    <p className="mt-0.5 text-slate-400 italic">
+                      * Tuyến đường, cước phí và loại xe phục vụ thực tế sẽ được xác định ở bước báo giá khi đặt hàng.
+                    </p>
+                  </div>
+
+                  {!city || city.vehicles.length === 0 ? (
+                    <div className="text-center py-4 text-xs text-slate-500">
+                      Chưa có thông số phương tiện cho khu vực này.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {city.vehicles.map((v) => {
+                        const isFit = catalog ? fitsVehicle(parcel, v, catalog) : false;
+                        const isSuggested = suggested?.serviceType === v.serviceType;
+
+                        // Lý do không vừa nếu parcel hợp lệ
+                        const reasons: string[] = [];
+                        if (parcelIsValid && catalog) {
+                          if (parcel.weight < v.minWeightGram || parcel.weight > v.maxWeightGram) {
+                            reasons.push(
+                              `Vượt tải trọng (Kiện ${(parcel.weight / 1000).toLocaleString('vi-VN')} kg > ${(v.maxWeightGram / 1000).toLocaleString('vi-VN')} kg)`
+                            );
+                          }
+                          if (parcel.height > v.maxHeightCm) {
+                            reasons.push(`Vượt chiều cao (Kiện ${parcel.height} cm > ${v.maxHeightCm} cm)`);
+                          }
+                          const normalFits = parcel.length <= v.maxLengthCm && parcel.width <= v.maxWidthCm;
+                          const swappedFits = catalog.allowLengthWidthSwap && parcel.length <= v.maxWidthCm && parcel.width <= v.maxLengthCm;
+                          if (!normalFits && !swappedFits) {
+                            reasons.push(
+                              `Vượt kích thước Dài x Rộng (${parcel.length}×${parcel.width} cm > ${v.maxLengthCm}×${v.maxWidthCm} cm)`
+                            );
+                          }
+                        }
+
+                        return (
+                          <div
+                            key={`${city.locode}_${v.serviceType}`}
+                            className={`p-3 rounded-xl border transition ${
+                              isFit
+                                ? 'bg-emerald-50/70 border-emerald-300'
+                                : parcelIsValid
+                                  ? 'bg-rose-50/30 border-rose-200'
+                                  : 'bg-slate-50/50 border-gray-200'
+                            }`}
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {isFit ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-600 text-white shadow-2xs">
+                                    <Check className="w-3.5 h-3.5" /> Phù hợp
+                                  </span>
+                                ) : parcelIsValid ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-300">
+                                    <X className="w-3.5 h-3.5" /> Không vừa
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-500">
+                                    Chờ thông số kiện
+                                  </span>
+                                )}
+
+                                <span className="font-bold text-xs text-[#24263e]">
+                                  {v.description || v.serviceType}
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                                  {v.serviceType}
+                                </span>
+
+                                {isSuggested && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300">
+                                    ★ Gợi ý xe nhỏ nhất đủ tải
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-3 text-xs text-slate-700 flex-wrap">
+                                <div>
+                                  <span className="text-slate-400 text-[10px] font-semibold uppercase mr-1">Tải trọng:</span>
+                                  <span className="font-bold">
+                                    1 g – {v.maxWeightGram >= 1000 ? `${(v.maxWeightGram / 1000).toLocaleString('vi-VN')} kg` : `${v.maxWeightGram} g`}
+                                  </span>
+                                </div>
+                                <div className="hidden sm:inline text-slate-300">•</div>
+                                <div>
+                                  <span className="text-slate-400 text-[10px] font-semibold uppercase mr-1">Kích thước tối đa:</span>
+                                  <span className="font-bold">
+                                    {v.maxLengthCm} × {v.maxWidthCm} × {v.maxHeightCm} cm
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {!isFit && reasons.length > 0 && (
+                              <div className="mt-1.5 pt-1.5 border-t border-rose-200/60 text-[11px] text-rose-600 font-medium flex items-center gap-1">
+                                <span>Lý do:</span>
+                                <span>{reasons.join(' • ')}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -3475,28 +4243,92 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
             {/* Thông tin đóng gói Lalamove */}
             <div className="pt-2 border-t border-slate-200">
-              <span className="text-xs font-bold text-slate-600 block mb-3">
-                <Truck className="w-4 h-4 inline mr-1 text-blue-600" />
-                Thông tin kiện hàng (Sử dụng để tính phí vận chuyển):
-              </span>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white p-3 rounded-xl border border-gray-200">
-                <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-bold text-slate-600 flex items-center gap-1">
+                  <Truck className="w-4 h-4 text-blue-600" />
+                  Thông tin kiện hàng (Sử dụng để tính phí vận chuyển):
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(2)}
+                  className="text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer flex items-center gap-1"
+                >
+                  <FileEdit className="w-3.5 h-3.5" />
+                  Sửa kích thước
+                </button>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white p-3.5 rounded-xl border border-gray-200">
+                <div className="p-2 rounded-lg bg-slate-50/50">
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Trọng lượng</label>
-                  <div className="mt-1 text-xs font-bold text-[#24263e]">{shippingWeight ? `${shippingWeight} gram` : '---'}</div>
+                  <div className="mt-1 text-xs font-bold text-[#24263e]">
+                    {displayWeight}
+                  </div>
+                  {weightUnit === 'kg' && typeof shippingWeight === 'number' && shippingWeight >= 1 && (
+                    <div className="text-[10px] font-semibold text-emerald-600 mt-0.5">
+                      = {shippingWeight.toLocaleString('vi-VN')} gram
+                    </div>
+                  )}
                 </div>
-                <div>
+
+                <div className="p-2 rounded-lg bg-slate-50/50">
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Dài</label>
-                  <div className="mt-1 text-xs font-bold text-[#24263e]">{shippingLength ? `${shippingLength} cm` : '---'}</div>
+                  <div className="mt-1 text-xs font-bold text-[#24263e]">
+                    {displayLength}
+                  </div>
+                  {dimensionUnit === 'm' && typeof shippingLength === 'number' && shippingLength >= 1 && (
+                    <div className="text-[10px] font-semibold text-emerald-600 mt-0.5">
+                      = {shippingLength} cm
+                    </div>
+                  )}
                 </div>
-                <div>
+
+                <div className="p-2 rounded-lg bg-slate-50/50">
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Rộng</label>
-                  <div className="mt-1 text-xs font-bold text-[#24263e]">{shippingWidth ? `${shippingWidth} cm` : '---'}</div>
+                  <div className="mt-1 text-xs font-bold text-[#24263e]">
+                    {displayWidth}
+                  </div>
+                  {dimensionUnit === 'm' && typeof shippingWidth === 'number' && shippingWidth >= 1 && (
+                    <div className="text-[10px] font-semibold text-emerald-600 mt-0.5">
+                      = {shippingWidth} cm
+                    </div>
+                  )}
                 </div>
-                <div>
+
+                <div className="p-2 rounded-lg bg-slate-50/50">
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Cao</label>
-                  <div className="mt-1 text-xs font-bold text-[#24263e]">{shippingHeight ? `${shippingHeight} cm` : '---'}</div>
+                  <div className="mt-1 text-xs font-bold text-[#24263e]">
+                    {displayHeight}
+                  </div>
+                  {dimensionUnit === 'm' && typeof shippingHeight === 'number' && shippingHeight >= 1 && (
+                    <div className="text-[10px] font-semibold text-emerald-600 mt-0.5">
+                      = {shippingHeight} cm
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* Tóm tắt phương tiện phù hợp theo catalog */}
+              {fitting.length > 0 ? (
+                <div className="mt-2.5 p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-950 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>
+                      Phù hợp với <strong>{fitting.length}</strong> loại xe Lalamove
+                      {suggested ? ` (Gợi ý: ${suggested.description || suggested.serviceType})` : ''}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold bg-emerald-200/80 text-emerald-900 px-2.5 py-0.5 rounded-full">
+                    Đủ điều kiện
+                  </span>
+                </div>
+              ) : (
+                <div className="mt-2.5 p-2.5 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-950 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span className="font-bold">
+                    Chưa có phương tiện Lalamove nào phù hợp với kiện hàng tại điểm lấy hàng này.
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Địa chỉ kho lấy hàng của người bán */}

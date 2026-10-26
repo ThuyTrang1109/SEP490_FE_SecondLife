@@ -16,6 +16,7 @@ import { NotificationItem, NotificationType } from '../../types/notification';
 import { notificationWsClient } from '../../services/notificationWsClient';
 import { Language, UserProfile, UserRole } from '../../types';
 import { isNotificationForUser } from '../../utils/notificationStorage';
+import { translateSystemNotification } from '../../utils/systemNotificationTranslator';
 
 interface RealtimeNotificationToastProps {
   lang: Language;
@@ -145,10 +146,10 @@ export const RealtimeNotificationToast: React.FC<RealtimeNotificationToastProps>
             </div>
             <div>
               <span className="text-[10px] font-black uppercase text-[#c34c36] tracking-wider block">
-                {lang === 'vi' ? 'Thông báo mới' : 'New Notification'}
+                Thông báo mới
               </span>
               <h4 className="font-bold text-xs text-white leading-tight">
-                {currentToast.title}
+                {translateSystemNotification(currentToast.title)}
               </h4>
             </div>
           </div>
@@ -162,7 +163,7 @@ export const RealtimeNotificationToast: React.FC<RealtimeNotificationToastProps>
         </div>
 
         <p className="text-[11px] text-white/70 line-clamp-2 leading-relaxed">
-          {currentToast.message}
+          {translateSystemNotification(currentToast.message)}
         </p>
 
         <div className="pt-1 flex items-center justify-end gap-2">
@@ -177,7 +178,7 @@ export const RealtimeNotificationToast: React.FC<RealtimeNotificationToastProps>
               }}
               className="px-3 py-1.5 rounded-xl bg-[#c34c36] hover:bg-[#dc4729] text-white font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-md"
             >
-              <span>{lang === 'vi' ? 'Xem chi tiết' : 'View details'}</span>
+              <span>Xem chi tiết</span>
               <ExternalLink className="w-3 h-3" />
             </button>
           )}

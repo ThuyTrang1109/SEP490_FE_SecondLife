@@ -30,6 +30,7 @@ import {
   markScopedLocalNotificationRead,
   deleteScopedLocalNotification,
 } from '../utils/notificationStorage';
+import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 
 interface NotificationCenterViewProps {
   lang: Language;
@@ -62,7 +63,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
   const [noticeMsg, setNoticeMsg] = useState<{ text: string; isError?: boolean } | null>(null);
 
   const showNotice = (text: string, isError = false) => {
-    setNoticeMsg({ text, isError });
+    setNoticeMsg({ text: translateSystemNotification(text), isError });
     setTimeout(() => setNoticeMsg(null), 4000);
   };
 
@@ -522,12 +523,12 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
                           !item.isRead ? 'font-black text-slate-900' : 'font-bold text-slate-700'
                         }`}
                       >
-                        {item.title}
+                        {translateSystemNotification(item.title)}
                       </h3>
                     </div>
 
                     <p className="text-xs text-slate-600 leading-relaxed">
-                      {item.message}
+                      {translateSystemNotification(item.message)}
                     </p>
 
                     <div className="flex items-center gap-3 text-[11px] text-slate-400 font-medium pt-0.5">

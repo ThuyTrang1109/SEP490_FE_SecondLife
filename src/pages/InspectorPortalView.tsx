@@ -5,6 +5,7 @@ import { mockInspectionCenters, mockStandardChecklist } from '../data/mockData';
 import { ProductInspectionStationView } from './ProductInspectionStationView';
 import { DigitalInspectionCertificateModal } from '../components/modals/DigitalInspectionCertificateModal';
 import { BarcodeScannerModal, playScanBeep } from '../components/modals/BarcodeScannerModal';
+import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import logoImg from '../assets/logo.png';
 import {
   Building2,
@@ -68,7 +69,7 @@ import {
 interface InspectorPortalViewProps {
   orders: EscrowOrder[];
   currentUser?: UserProfile | null;
-  onCompleteInspection: (orderId: string, verdict: 'PASS' | 'FAIL', tamperSeal: string, summary: string) => void;
+  onCompleteInspection: (orderId: string, verdict: 'PASS' | 'FAIL', tamperSeal: string, summary: string, meta?: any) => void;
   lang: Language;
   onNavigate?: (tab: string) => void;
   onOpenProfile?: () => void;
@@ -210,7 +211,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   const [noticeMessage, setNoticeMessage] = useState<{ text: string; isError?: boolean } | null>(null);
 
   const showNotice = (text: string, isError = false) => {
-    setNoticeMessage({ text, isError });
+    setNoticeMessage({ text: translateSystemNotification(text), isError });
     setTimeout(() => setNoticeMessage(null), 4500);
   };
 
@@ -1078,7 +1079,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
             ) : (
               <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
             )}
-            <span>{noticeMessage.text}</span>
+            <span>{translateSystemNotification(noticeMessage.text)}</span>
           </div>
           <button
             type="button"

@@ -3,6 +3,8 @@ import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, Use
 import { formatVND } from './utils/translations';
 import { extractWardAndCity, getSavedSellerAddress, saveSellerAddress, cleanFullAddress, formatCombinedAddress } from './utils/addressUtils';
 import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, isOrderCancelledOrRefunded, getResolvedPostParcel } from './utils/orderUtils';
+import { resolveCategoryAndItem, initCatalogCache, resolveOrderListing, resolveListingCategory, extractSellerOriginalPrice } from './utils/catalogCache';
+import { translateSystemNotification } from './utils/systemNotificationTranslator';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 import { HomePageView } from './pages/HomePageView';
@@ -15,7 +17,8 @@ import { RealtimeNotificationToast } from './components/common/RealtimeNotificat
 import { GlobalPopupModal } from './components/common/GlobalPopupModal';
 import type { PolicyTabKey } from './components/modals/PolicyModal';
 import './utils/dialogService';
-import { clearNotificationsOnLogout } from './utils/notificationStorage';
+import { clearNotificationsOnLogout, saveScopedLocalNotification } from './utils/notificationStorage';
+import { NotificationItem } from './types/notification';
 import { notificationWsClient } from './services/notificationWsClient';
 import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
 import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, getRefreshToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, isTokenExpiringSoon, recordUserActivity, resetActivityTimer, isUserIdle, refreshAccessToken, ChatRoomDto } from './services';
@@ -534,6 +537,9 @@ export default function App() {
               o.backendStatus === 'CONFIRMED_PENDING_DISPATCH'
             );
             if (isBuyer || isSeller || (isInspectionRole && isInspectionOrder)) {
+              if (o.listing) {
+                o.listing = resolveOrderListing(o.listing);
+              }
               seenIds.add(o.id);
               result.push(o);
             }
@@ -604,7 +610,8 @@ export default function App() {
   // Flash Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const showToast = (msg: string) => {
-    setToastMessage(msg);
+    const translated = translateSystemNotification(msg);
+    setToastMessage(translated);
     setTimeout(() => setToastMessage(null), 5000);
   };
 
@@ -805,18 +812,33 @@ export default function App() {
       return;
     }
 
-    // 2. Inspection routing: /inspections, /inspector, /buyer/inspections
-    if (url.includes('/inspections') || url.includes('/inspection')) {
+    // 2. Inspection routing: /buyer-inspection-decision, /inspections, /inspector, /buyer/inspections
+    if (url.includes('buyer-inspection-decision') || url.includes('/inspections') || url.includes('/inspection')) {
       if (currentRole === 'inspection_center') {
         handleTabChange('inspection-center');
       } else if (currentRole === 'inspector' || currentUser?.role === 'inspector') {
         handleTabChange('inspection-hub');
       } else {
-        const parts = url.split('/');
-        const id = parts[parts.length - 1]?.split('?')[0];
-        if (id && id !== 'inspections' && id !== 'inspection') {
-          setInspectionDecisionOrderId(id);
-          const found = orders.find((o) => o.id === id);
+        let extractedOrderId: string | null = null;
+        try {
+          const queryIdx = actionUrl.indexOf('?');
+          if (queryIdx !== -1) {
+            const params = new URLSearchParams(actionUrl.substring(queryIdx));
+            extractedOrderId = params.get('orderId') || params.get('id');
+          }
+        } catch {}
+
+        if (!extractedOrderId) {
+          const parts = url.split('/');
+          const id = parts[parts.length - 1]?.split('?')[0];
+          if (id && !['inspections', 'inspection', 'buyer-inspection-decision'].includes(id)) {
+            extractedOrderId = id;
+          }
+        }
+
+        if (extractedOrderId) {
+          setInspectionDecisionOrderId(extractedOrderId);
+          const found = orders.find((o) => o.id === extractedOrderId);
           setInspectionDecisionOrder(found || null);
           handleTabChange('buyer-inspection-decision');
         } else {
@@ -994,50 +1016,34 @@ export default function App() {
     const titleLower = cleanTitle.toLowerCase();
     const descLower = (post.description || '').toLowerCase();
 
-    // 1. Nhận diện danh mục sản phẩm thông minh
-    let detectedCategory: ItemCategory = 'Tủ lạnh & Tủ đông';
-    if (titleLower.includes('tủ lạnh') || titleLower.includes('tủ đông') || titleLower.includes('refrigerator') || titleLower.includes('fridge')) {
-      detectedCategory = 'Tủ lạnh & Tủ đông';
-    } else if (titleLower.includes('máy giặt') || titleLower.includes('máy sấy') || titleLower.includes('giặt sấy') || titleLower.includes('washing') || titleLower.includes('dryer')) {
-      detectedCategory = 'Máy giặt & Máy sấy';
-    } else if (titleLower.includes('lò vi sóng') || titleLower.includes('microwave') || titleLower.includes('lò nướng') || titleLower.includes('oven')) {
-      detectedCategory = 'Lò vi sóng & Lò nướng';
-    } else if (titleLower.includes('điều hòa') || titleLower.includes('máy lạnh') || titleLower.includes('máy lọc') || titleLower.includes('air conditioner')) {
-      detectedCategory = 'Điều hòa & Máy lọc';
-    } else if (titleLower.includes('robot') || titleLower.includes('hút bụi') || titleLower.includes('vacuum')) {
-      detectedCategory = 'Robot & Máy hút bụi';
-    } else if (titleLower.includes('nồi cơm') || titleLower.includes('bếp từ') || titleLower.includes('bếp hồng ngoại') || titleLower.includes('cooker') || titleLower.includes('stove')) {
-      detectedCategory = 'Nồi cơm & Bếp từ';
-    } else if (post.category && typeof post.category === 'string' && !post.category.includes('-')) {
-      detectedCategory = post.category as ItemCategory;
-    }
+    // 1. Nhận diện danh mục, loại sản phẩm và thương hiệu thông minh từ catalog & metadata
+    const resolvedProduct = resolveCategoryAndItem({
+      postId: post.postId || post.id,
+      categoryId: post.categoryId,
+      itemId: post.itemId,
+      title: cleanTitle,
+      description: post.description || post.aiDescription,
+      category: post.category,
+      brand: post.brand,
+      model: post.model,
+    });
 
-    // 2. Nhận diện thương hiệu
-    let detectedBrand = post.brand || '';
-    if (!detectedBrand) {
-      const knownBrands = ['Panasonic', 'Kaff', 'LG', 'Samsung', 'Hitachi', 'Daikin', 'Electrolux', 'Toshiba', 'Sharp', 'Casper', 'Ecovacs', 'Cuckoo', 'Philips', 'Bosch', 'Xiaomi'];
-      for (const b of knownBrands) {
-        if (titleLower.includes(b.toLowerCase())) {
-          detectedBrand = b;
-          break;
-        }
-      }
-      if (!detectedBrand) detectedBrand = 'SecondLife';
-    }
+    let detectedCategory: ItemCategory = (resolvedProduct.displayCategory || 'Đồ gia dụng') as ItemCategory;
+    let detectedBrand = resolvedProduct.brand || 'Chính hãng';
 
-    // 3. Nhận diện tình trạng máy (Condition Grade)
+    // 2. Nhận diện tình trạng máy (Condition Grade)
     let detectedGrade: ConditionGrade = 'Like New';
     const conditionStr = (post.itemCondition || descLower).toLowerCase();
     if (conditionStr.includes('99%') || conditionStr.includes('như mới') || conditionStr.includes('like new') || conditionStr.includes('brand new')) {
       detectedGrade = 'Like New';
-    } else if (conditionStr.includes('95%') || conditionStr.includes('tốt') || conditionStr.includes('good')) {
+    } else if (conditionStr.includes('95%') || conditionStr.includes('tốt') || conditionStr.includes('good') || conditionStr.includes('chắc chắn')) {
       detectedGrade = 'Good';
     } else if (conditionStr.includes('90%') || conditionStr.includes('khá') || conditionStr.includes('fair')) {
       detectedGrade = 'Fair';
     }
 
-    // 4. Ảnh gia dụng chất lượng cao thay vì ảnh cơm/đồ ăn
-    const categoryFallbacks: Record<ItemCategory, string[]> = {
+    // 3. Ảnh gia dụng chất lượng cao theo đúng phân loại
+    const categoryFallbacks: Record<string, string[]> = {
       'Tủ lạnh & Tủ đông': [
         'https://images.unsplash.com/photo-1584568694244-14fbdf83bd30?auto=format&fit=crop&q=80&w=800',
         'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&q=80&w=800',
@@ -1059,10 +1065,38 @@ export default function App() {
       'Nồi cơm & Bếp từ': [
         'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&q=80&w=800',
       ],
+      'Phòng ngủ': [
+        'https://images.unsplash.com/photo-1558997519-83ea9252def8?auto=format&fit=crop&q=80&w=800',
+        'https://images.unsplash.com/photo-1540518614846-7ede433c4ef7?auto=format&fit=crop&q=80&w=800'
+      ],
+      'Tủ quần áo': [
+        'https://images.unsplash.com/photo-1558997519-83ea9252def8?auto=format&fit=crop&q=80&w=800'
+      ],
+      'Khung giường': [
+        'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&q=80&w=800'
+      ],
+      'Phòng khách': [
+        'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=800'
+      ],
+      'Sofa / Ghế dài': [
+        'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=800'
+      ],
+      'Bếp & Phòng ăn': [
+        'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&q=80&w=800'
+      ],
+      'Ban công & Giặt giũ': [
+        'https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?auto=format&fit=crop&q=80&w=800'
+      ],
+      'Phòng tắm & Vệ sinh': [
+        'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&q=80&w=800'
+      ],
+      'Khác': [
+        'https://images.unsplash.com/photo-1581291518857-4e27b48ff24e?auto=format&fit=crop&q=80&w=800'
+      ]
     };
 
-    const fallbackList = categoryFallbacks[detectedCategory] || [
-      'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&q=80&w=800'
+    const fallbackList = categoryFallbacks[detectedCategory] || categoryFallbacks[resolvedProduct.categoryName] || [
+      'https://images.unsplash.com/photo-1558997519-83ea9252def8?auto=format&fit=crop&q=80&w=800'
     ];
     const defaultImg = fallbackList[0];
 
@@ -1135,13 +1169,17 @@ export default function App() {
 
     return {
       id: post.postId || post.id || `post-${Date.now()}`,
+      categoryId: post.categoryId || resolvedProduct.categoryId,
+      itemId: post.itemId || resolvedProduct.itemId,
+      categoryName: resolvedProduct.categoryName,
+      itemName: resolvedProduct.itemName,
       title: cleanTitle,
-      category: detectedCategory,
+      category: (resolvedProduct.displayCategory || detectedCategory) as ItemCategory,
       brand: detectedBrand,
-      model: post.model || 'Standard',
+      model: post.model || resolvedProduct.model || 'Standard',
       purchaseYear: 2024,
       priceVnd: price,
-      originalPriceVnd: Number(post.originalPriceVnd || post.aiSuggestedPrice || price || 0),
+      originalPriceVnd: extractSellerOriginalPrice(post) || undefined,
       conditionGrade: detectedGrade,
       declaredConditionText: post.itemCondition || (detectedGrade === 'Like New' ? 'Độ mới 99%, nguyên zin chưa sửa chữa' : 'Tình trạng tốt, hoạt động ổn định'),
       description: post.description || post.aiDescription || 'Đã qua thẩm định và xác thực trên hệ thống SecondLife.',
@@ -1453,7 +1491,7 @@ export default function App() {
             || baseListing?.photoGallery?.[0]
             || 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=800';
 
-          const matchedListing = baseListing ? {
+          const rawMatchedListing = baseListing ? {
             ...baseListing,
             title: resolvedPostTitle,
             photos: {
@@ -1495,6 +1533,8 @@ export default function App() {
             },
             photoGallery: [resolvedImage],
           };
+
+          const matchedListing = resolveOrderListing(rawMatchedListing);
 
           const inspFee = Number(bOrd.buyerFeeShare || bOrd.inspectionFee || 0);
           const isInspectionOrder = Boolean(bOrd.__isInspection || bOrd.hasInspectionService || inspFee > 0);
@@ -1993,6 +2033,7 @@ export default function App() {
 
   // Refresh listings on mount or when switching to listing-centric tabs
   React.useEffect(() => {
+    initCatalogCache();
     const listingTabs = ['home', 'marketplace', 'seller-dashboard', 'create-listing', 'admin-dashboard'];
     if (listingTabs.includes(activeTab)) {
       loadListingsFromBackend();
@@ -2367,35 +2408,212 @@ export default function App() {
     orderId: string,
     verdict: 'PASS' | 'FAIL',
     tamperSeal: string,
-    summary: string
+    summary: string,
+    meta?: any
   ) => {
+    const isPass = verdict === 'PASS';
+    const nextEscrowStatus: EscrowStatus = isPass ? 'INSPECTION_PASSED' : 'INSPECTION_FAILED';
+    const nextBackendStatus = isPass ? 'PASSED' : 'FAILED';
+    const targetOrder = orders.find((o) => o.id === orderId) || meta?.order;
+
+    const conditionScore =
+      typeof meta?.conditionScore === 'number'
+        ? meta.conditionScore
+        : isPass
+        ? 96
+        : 40;
+    const conditionGrade = meta?.conditionGrade || targetOrder?.listing?.conditionGrade || 'Like New';
+    const inspectorPhotos =
+      meta?.inspectorPhotos && meta.inspectorPhotos.length > 0
+        ? meta.inspectorPhotos
+        : ([targetOrder?.listing?.photos?.front, targetOrder?.listing?.photos?.back].filter(Boolean) as string[]);
+
+    const inspectionReport: InspectionReport = {
+      id: `REP-${Math.floor(1000 + Math.random() * 9000)}`,
+      orderId: orderId,
+      centerId: targetOrder?.inspectionCenterId || 'center-hcm-01',
+      centerName: targetOrder?.inspectionCenterName || 'SecondLife Hub Flagship Lab',
+      inspectorName: currentUser?.name || 'KTV Trưởng Hải Đăng (Level 4)',
+      inspectedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      verdict,
+      detectedGrade: conditionGrade,
+      conditionScore,
+      tamperSealId: tamperSeal,
+      checklistResults: meta?.checklistResults || [],
+      inspectorPhotos,
+      summaryNotes: summary || (isPass ? 'Đạt tiêu chuẩn thẩm định kỹ thuật 100%' : 'Không đạt yêu cầu kỹ thuật'),
+    };
+
+    // 1. Cập nhật in-memory state orders
     setOrders((prev) =>
       prev.map((ord) => {
         if (ord.id === orderId) {
           return {
             ...ord,
-            escrowStatus: verdict === 'PASS' ? 'SHIPPED_TO_BUYER' : 'REFUNDED_TO_BUYER',
-            inspectionReport: {
-              id: `REP-${Math.floor(1000 + Math.random() * 9000)}`,
-              orderId: ord.id,
-              centerId: 'center-hcm-01',
-              centerName: 'SecondLife Hub Flagship',
-              inspectorName: 'KTV Trưởng Hải Đăng',
-              inspectedAt: new Date().toISOString(),
-              verdict,
-              detectedGrade: ord.listing.conditionGrade,
-              conditionScore: verdict === 'PASS' ? 96 : 40,
-              tamperSealId: tamperSeal,
-              checklistResults: [],
-              inspectorPhotos: [ord.listing.photos.front, ord.listing.photos.back],
-              summaryNotes: summary
-            }
+            escrowStatus: nextEscrowStatus,
+            backendStatus: nextBackendStatus as any,
+            status: nextBackendStatus,
+            inspectionReport,
+            updatedAt: new Date().toISOString(),
+            ...(isPass
+              ? {}
+              : {
+                  cancellationReasonCode: 'INSPECTION_FAILED',
+                  cancellationReason: `Sản phẩm không đạt kiểm định Hub: ${meta?.inspectorNotes || summary || 'Không đạt quy chuẩn kỹ thuật'}`,
+                }),
           };
         }
         return ord;
       })
     );
-    showToast(`Đã nghiệm thu đơn hàng #${orderId} kết quả: ${verdict}! Tem NFC: ${tamperSeal}.`);
+
+    // 2. Cập nhật và lưu vào recent_placed_orders trong localStorage
+    try {
+      const rawRecent = localStorage.getItem('recent_placed_orders');
+      if (rawRecent) {
+        const list: EscrowOrder[] = JSON.parse(rawRecent);
+        const updatedList = list.map((ord) => {
+          if (ord.id === orderId) {
+            return {
+              ...ord,
+              escrowStatus: nextEscrowStatus,
+              backendStatus: nextBackendStatus as any,
+              status: nextBackendStatus,
+              inspectionReport,
+              updatedAt: new Date().toISOString(),
+              ...(isPass
+                ? {}
+                : {
+                    cancellationReasonCode: 'INSPECTION_FAILED',
+                    cancellationReason: `Sản phẩm không đạt kiểm định Hub: ${meta?.inspectorNotes || summary || 'Không đạt quy chuẩn kỹ thuật'}`,
+                  }),
+            };
+          }
+          return ord;
+        });
+        localStorage.setItem('recent_placed_orders', JSON.stringify(updatedList));
+      }
+    } catch (e) {
+      console.warn('Failed to persist inspection result to recent_placed_orders:', e);
+    }
+
+    // 3. Cập nhật và lưu vào center_inspection_orders trong localStorage
+    try {
+      const rawCenter = localStorage.getItem('center_inspection_orders');
+      if (rawCenter) {
+        const listCenter = JSON.parse(rawCenter);
+        const updatedCenter = listCenter.map((ord: any) => {
+          if (ord.id === orderId) {
+            return {
+              ...ord,
+              escrowStatus: nextEscrowStatus,
+              status: nextBackendStatus,
+              backendStatus: nextBackendStatus,
+              inspectionReport,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return ord;
+        });
+        localStorage.setItem('center_inspection_orders', JSON.stringify(updatedCenter));
+      }
+    } catch (e) {
+      console.warn('Failed to persist inspection result to center_inspection_orders:', e);
+    }
+
+    // 4. Phát thông báo tình trạng đến Người mua (Buyer) và Người bán (Seller)
+    const productTitle = targetOrder?.listing?.title || 'Sản phẩm kiểm định';
+    const shortOrderId = orderId.length > 8 ? orderId.slice(0, 8).toUpperCase() : orderId;
+    const targetBuyerId = targetOrder?.buyerId || 'buyer-current';
+    const targetSellerId = targetOrder?.sellerId || targetOrder?.listing?.sellerId || 'seller-01';
+
+    // A. Thông báo cho Người mua (Buyer)
+    if (isPass) {
+      const buyerNotif: NotificationItem = {
+        id: `notif-insp-buyer-pass-${orderId}-${Date.now()}`,
+        title: `Kết quả kiểm định: ĐẠT TIÊU CHUẨN (${conditionGrade} • ${conditionScore}/100)`,
+        message: `Sản phẩm "${productTitle}" (Đơn #${shortOrderId}) đã được kiểm định ĐẠT TIÊU CHUẨN tại Hub SecondLife và dán tem niêm phong #${tamperSeal}. Vui lòng xem biên bản kiểm định chi tiết và xác nhận quyết định nhận hàng!`,
+        type: 'INSPECTION',
+        referenceId: orderId,
+        referenceType: 'INSPECTION_ORDER',
+        actionUrl: `/buyer-inspection-decision?orderId=${orderId}`,
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+        recipientId: targetBuyerId,
+        recipientRole: 'buyer',
+      };
+      saveScopedLocalNotification(buyerNotif, targetBuyerId, 'buyer');
+    } else {
+      const buyerNotif: NotificationItem = {
+        id: `notif-insp-buyer-fail-${orderId}-${Date.now()}`,
+        title: `Kết quả kiểm định: KHÔNG ĐẠT TIÊU CHUẨN`,
+        message: `Sản phẩm "${productTitle}" (Đơn #${shortOrderId}) KHÔNG ĐẠT tiêu chuẩn chất lượng tại Hub. Lý do: ${meta?.inspectorNotes || summary || 'Không đúng mô tả kỹ thuật'}. Tiền ký quỹ 100% đang được tự động hoàn trả vào ví của bạn.`,
+        type: 'INSPECTION',
+        referenceId: orderId,
+        referenceType: 'INSPECTION_ORDER',
+        actionUrl: `/orders?order_tab=disputed&orderId=${orderId}`,
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+        recipientId: targetBuyerId,
+        recipientRole: 'buyer',
+      };
+      saveScopedLocalNotification(buyerNotif, targetBuyerId, 'buyer');
+    }
+
+    // B. Thông báo cho Người bán (Seller)
+    if (isPass) {
+      const sellerNotif: NotificationItem = {
+        id: `notif-insp-seller-pass-${orderId}-${Date.now()}`,
+        title: `Sản phẩm của bạn đã ĐẠT CHUẨN kiểm định Hub`,
+        message: `Thiết bị "${productTitle}" (Đơn #${shortOrderId}) của bạn đã được Hub kiểm định ĐẠT CHUẨN (${conditionGrade} • ${conditionScore}/100) và niêm phong bằng mã tem #${tamperSeal}. Đơn hàng đang được gửi thông báo đến Người mua để xác nhận giao hàng.`,
+        type: 'INSPECTION',
+        referenceId: orderId,
+        referenceType: 'INSPECTION_ORDER',
+        actionUrl: `/orders?order_tab=inspecting&orderId=${orderId}`,
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+        recipientId: targetSellerId,
+        recipientRole: 'seller',
+      };
+      saveScopedLocalNotification(sellerNotif, targetSellerId, 'seller');
+    } else {
+      const sellerNotif: NotificationItem = {
+        id: `notif-insp-seller-fail-${orderId}-${Date.now()}`,
+        title: `Sản phẩm KHÔNG ĐẠT tiêu chuẩn kiểm định Hub`,
+        message: `Thiết bị "${productTitle}" (Đơn #${shortOrderId}) không vượt qua thẩm định tại Hub. Lý do: ${meta?.inspectorNotes || summary || 'Không đúng mô tả kỹ thuật'}. Trung tâm sẽ liên hệ để làm thủ tục hoàn trả thiết bị về địa chỉ kho của bạn.`,
+        type: 'INSPECTION',
+        referenceId: orderId,
+        referenceType: 'INSPECTION_ORDER',
+        actionUrl: `/orders?order_tab=disputed&orderId=${orderId}`,
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+        recipientId: targetSellerId,
+        recipientRole: 'seller',
+      };
+      saveScopedLocalNotification(sellerNotif, targetSellerId, 'seller');
+    }
+
+    // 5. Phát tín hiệu toàn cục để cập nhật chuông và danh sách đơn hàng
+    try {
+      window.dispatchEvent(
+        new CustomEvent('secondlife_inspection_completed', {
+          detail: { orderId, verdict, tamperSeal, inspectionReport },
+        })
+      );
+      window.dispatchEvent(new CustomEvent('orders_updated'));
+      window.dispatchEvent(new Event('storage'));
+    } catch {}
+
+    showToast(
+      isPass
+        ? `Đã thẩm định ĐẠT CHUẨN đơn hàng #${shortOrderId}! Tem NFC: #${tamperSeal}. Đã gửi thông báo kết quả đến Người mua và Người bán.`
+        : `Đã thẩm định KHÔNG ĐẠT đơn hàng #${shortOrderId}. Đã gửi thông báo kết quả đến Người mua và Người bán.`
+    );
   };
 
   const handleResolveDispute = (disputeId: string, decision: 'REFUND_BUYER' | 'RELEASE_SELLER') => {

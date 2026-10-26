@@ -55,6 +55,8 @@ import { InspectionProductQRModal } from '../components/modals/InspectionProduct
 import { VietQrEscrowModal } from '../components/modals/VietQrEscrowModal';
 import { dialogService } from '../utils/dialogService';
 import { getSortableOrderTimestamp, markListingAsAvailable } from '../utils/orderUtils';
+import { resolveListingCategory, resolveOrderListing } from '../utils/catalogCache';
+import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 
 interface EscrowOrdersViewProps {
   orders: EscrowOrder[];
@@ -159,9 +161,19 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     return false;
   };
 
+  const resolvedOrders = useMemo(() => {
+    return (orders || []).map((ord) => {
+      if (!ord || !ord.listing) return ord;
+      return {
+        ...ord,
+        listing: resolveOrderListing(ord.listing),
+      };
+    });
+  }, [orders]);
+
   const userOrders = useMemo(() => {
-    if (!currentUser?.id) return orders;
-    return orders.filter((ord) => {
+    if (!currentUser?.id) return resolvedOrders;
+    return resolvedOrders.filter((ord) => {
       if (userRole === 'admin' || currentUser.role === 'admin' || currentUser.role === 'inspector' || currentUser.role === 'inspection_center') {
         return true;
       }
@@ -185,7 +197,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         (userRole === 'seller' && !isBuyer);
       return isBuyer || isSeller;
     });
-  }, [orders, currentUser, userRole]);
+  }, [resolvedOrders, currentUser, userRole]);
 
   const isSeller = userRole === 'seller' || userOrders.some((o) => isOrderSeller(o));
 
@@ -291,7 +303,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   const [isVerifySealModalOpen, setIsVerifySealModalOpen] = useState(false);
   const [printSealOrder, setPrintSealOrder] = useState<EscrowOrder | null>(null);
   const [printInspectionQrOrder, setPrintInspectionQrOrder] = useState<EscrowOrder | null>(null);
-  const [inspectionActionNotice, setInspectionActionNotice] = useState<string | null>(null);
+  const [inspectionActionNotice, _setInspectionActionNotice] = useState<string | null>(null);
+  const setInspectionActionNotice = (msg: string | null) => {
+    _setInspectionActionNotice(msg ? translateSystemNotification(msg) : null);
+  };
   const [reportingOrder, setReportingOrder] = useState<EscrowOrder | null>(null);
   const [localReadyOrderIds, setLocalReadyOrderIds] = useState<Set<string>>(new Set());
   const [confirmingReceiptIds, setConfirmingReceiptIds] = useState<Set<string>>(new Set());
@@ -921,7 +936,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   : `Order confirmed & Lalamove shipment created! #${createdShipment.orderCode}`)
               : shipmentNotice
               ? (lang === 'vi'
-                  ? `Đã xác nhận đơn hàng thành công. Lưu ý Lalamove: ${shipmentNotice}. Bạn có thể bấm "Tạo Vận Đơn Lalamove" để tạo lại.`
+                  ? `Đã xác nhận đơn hàng thành công. Lưu ý Lalamove: ${translateSystemNotification(shipmentNotice)}. Bạn có thể bấm "Tạo Vận Đơn Lalamove" để tạo lại.`
                   : `Order confirmed! (Lalamove note: ${shipmentNotice})`)
               : (lang === 'vi' ? 'Đã xác nhận đơn hàng thành công! Vui lòng đóng gói và báo sẵn sàng giao.' : 'Order confirmed successfully!')
           );
@@ -939,7 +954,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
           setTimeout(() => setInspectionActionNotice(null), 5000);
         } catch (err: any) {
-          setInspectionActionNotice(err?.message || 'Không thể xác nhận đơn hàng');
+          setInspectionActionNotice(translateSystemNotification(err?.message) || 'Không thể xác nhận đơn hàng');
           setTimeout(() => setInspectionActionNotice(null), 5000);
         } finally {
           setOrderActionLoading(null);
@@ -1024,7 +1039,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           onRefreshOrders?.();
           setTimeout(() => setInspectionActionNotice(null), 5000);
         } catch (err: any) {
-          setInspectionActionNotice(err?.message || 'Không thể cập nhật trạng thái sẵn sàng giao hàng');
+          setInspectionActionNotice(translateSystemNotification(err?.message) || 'Không thể cập nhật trạng thái sẵn sàng giao hàng');
           setTimeout(() => setInspectionActionNotice(null), 5000);
         } finally {
           setOrderActionLoading(null);
@@ -1130,7 +1145,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   };
 
   // Seller specific state
-  const [pickupConfirmedNotice, setPickupConfirmedNotice] = useState<string | null>(null);
+  const [pickupConfirmedNotice, _setPickupConfirmedNotice] = useState<string | null>(null);
+  const setPickupConfirmedNotice = (msg: string | null) => {
+    _setPickupConfirmedNotice(msg ? translateSystemNotification(msg) : null);
+  };
   const [shippingLabelOrder, setShippingLabelOrder] = useState<EscrowOrder | null>(null);
 
   const handleConfirmCourierPickup = (orderId: string) => {
@@ -1484,7 +1502,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           {pickupConfirmedNotice && (
             <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-2.5 animate-in fade-in">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>{pickupConfirmedNotice}</span>
+              <span>{translateSystemNotification(pickupConfirmedNotice)}</span>
             </div>
           )}
         </div>
@@ -1509,7 +1527,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       {inspectionActionNotice && (
         <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-2.5 animate-in fade-in shadow-xs">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{inspectionActionNotice}</span>
+          <span>{translateSystemNotification(inspectionActionNotice)}</span>
         </div>
       )}
 
@@ -1800,7 +1818,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                       </h3>
                       <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                         <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-medium">
-                          {ord.listing.category}
+                          {resolveListingCategory(ord.listing)}
                         </span>
                         <span>•</span>
                         <span>
@@ -2641,7 +2659,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                     {detailModalOrder.listing.title}
                   </h4>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {detailModalOrder.listing.category} • {lang === 'vi' ? 'Tình trạng:' : 'Condition:'} {detailModalOrder.listing.conditionGrade}
+                    {resolveListingCategory(detailModalOrder.listing)} • {lang === 'vi' ? 'Tình trạng:' : 'Condition:'} {detailModalOrder.listing.conditionGrade}
                   </p>
                   <div className="text-sm font-extrabold text-[#24263e] mt-1">
                     {formatVND(detailModalOrder.itemPriceVnd)}

@@ -24,6 +24,7 @@ import { UserRole, Language } from '../../types';
 import { soundFx } from '../../utils/soundEffects';
 import { authService } from '../../services/authService';
 import { setAuthTokens } from '../../services/apiClient';
+import { translateSystemNotification } from '../../utils/systemNotificationTranslator';
 import logoImg from '../../assets/logo.png';
 
 interface AuthModalProps {
@@ -840,7 +841,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {errorMsg && (
               <div className="p-3 rounded-2xl bg-rose-50 border border-rose-300 text-rose-800 text-xs flex items-start gap-2.5 animate-fadeIn">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                <span className="font-semibold leading-relaxed">{errorMsg}</span>
+                <span className="font-semibold leading-relaxed">{translateSystemNotification(errorMsg)}</span>
               </div>
             )}
 
@@ -848,7 +849,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {successMsg && (
               <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs flex items-start gap-2.5 animate-fadeIn">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span className="font-semibold leading-relaxed">{successMsg}</span>
+                <span className="font-semibold leading-relaxed">{translateSystemNotification(successMsg)}</span>
               </div>
             )}
 

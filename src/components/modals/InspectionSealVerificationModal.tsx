@@ -21,6 +21,7 @@ import {
   InspectionSealLogDto
 } from '../../services/inspectorService';
 import { ScannableQRCode } from '../common/ScannableQRCode';
+import { translateSystemNotification } from '../../utils/systemNotificationTranslator';
 
 interface InspectionSealVerificationModalProps {
   isOpen: boolean;
@@ -183,7 +184,7 @@ export const InspectionSealVerificationModal: React.FC<InspectionSealVerificatio
         {error && (
           <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{error}</span>
+            <span>{translateSystemNotification(error)}</span>
           </div>
         )}
 
@@ -191,7 +192,7 @@ export const InspectionSealVerificationModal: React.FC<InspectionSealVerificatio
         {scanSuccessMessage && (
           <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{scanSuccessMessage}</span>
+            <span>{translateSystemNotification(scanSuccessMessage)}</span>
           </div>
         )}
 

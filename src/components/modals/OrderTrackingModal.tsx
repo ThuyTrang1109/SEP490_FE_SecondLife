@@ -31,6 +31,7 @@ import { shippingService } from '../../services/shippingService';
 import { orderService } from '../../services/orderService';
 import { dialogService } from '../../utils/dialogService';
 import { translateApiError } from '../../services/apiClient';
+import { resolveListingCategory, resolveOrderListing } from '../../utils/catalogCache';
 
 interface GroupedShipmentEvent {
   key: string;
@@ -182,7 +183,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     } catch (err: any) {
       console.error('Failed to create Lalamove shipment:', err);
       const rawMsg = err?.response?.data?.message || err?.message || '';
-      showNotification(rawMsg || 'Không thể tạo vận đơn Lalamove. Vui lòng thử lại.', true);
+      showNotification(translateApiError(rawMsg) || 'Không thể tạo vận đơn Lalamove. Vui lòng thử lại.', true);
     } finally {
       setIsCreatingShipment(false);
     }
@@ -935,9 +936,9 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
             />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-orange-600 uppercase font-black">{order.listing.brand}</span>
+                <span className="text-[10px] text-orange-600 uppercase font-black">{resolveOrderListing(order.listing).brand}</span>
                 <span className="text-gray-300">•</span>
-                <span className="text-[10px] text-slate-500 font-semibold">{order.listing.category}</span>
+                <span className="text-[10px] text-slate-500 font-semibold">{resolveListingCategory(order.listing)}</span>
               </div>
               <h4 className="font-bold text-slate-900 truncate text-xs sm:text-sm">{order.listing.title}</h4>
               <div className="flex items-center justify-between mt-1 text-slate-600 text-[11px]">

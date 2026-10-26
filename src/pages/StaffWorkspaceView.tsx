@@ -44,6 +44,7 @@ import { Listing, EscrowOrder, Language, UserProfile } from '../types';
 import { formatVND } from '../utils/translations';
 import { staffService, staffListingService, adminPostService, SellerVerificationResponseDto, staffReportService, ReportItemDto, StaffOrderConfirmationResponse } from '../services';
 import { dialogService } from '../utils/dialogService';
+import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { ListingComparisonModal } from '../components/staff/ListingComparisonModal';
 import logoImg from '../assets/logo.png';
 import { User, LogOut } from 'lucide-react';
@@ -143,7 +144,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
 
   // Trigger notice helper
   const triggerNotice = (msg: string) => {
-    setActionNotice(msg);
+    setActionNotice(translateSystemNotification(msg));
     setTimeout(() => setActionNotice(null), 4000);
   };
 
@@ -786,7 +787,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
           {actionNotice && (
             <div className="p-3.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-md flex items-center gap-3 animate-in fade-in font-bold">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="text-xs">{actionNotice}</span>
+              <span className="text-xs">{translateSystemNotification(actionNotice)}</span>
               <button
                 onClick={() => setActionNotice(null)}
                 className="ml-auto text-emerald-600 hover:text-emerald-800 text-xs cursor-pointer p-1"

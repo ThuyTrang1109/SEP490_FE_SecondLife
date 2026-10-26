@@ -277,6 +277,21 @@ export interface RequestOptions extends RequestInit {
   _retry?: boolean;
 }
 
+export class ApiError extends Error {
+  status: number;
+  errors?: any[];
+  path?: string;
+
+  constructor(message: string, status: number, errors?: any[], path?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.errors = errors;
+    this.path = path;
+    Object.setPrototypeOf(this, ApiError.prototype);
+  }
+}
+
 // Shared promise for refreshing token to prevent concurrent duplicate calls
 let refreshPromise: Promise<string | null> | null = null;
 
@@ -372,6 +387,15 @@ export function translateApiError(msg: string | null | undefined): string {
   if (/identity.*restricted/i.test(s)) return 'Danh tính người dùng đang bị hạn chế; không thể duyệt hồ sơ.';
 
   // 3. Đơn hàng, Vận chuyển, Ký quỹ Escrow & Lalamove
+  if (/shipping supports packages up to 50\s*kg and 200\s*cm/i.test(s) || /up to 50\s*kg and 200\s*cm/i.test(s)) {
+    return 'Dịch vụ vận chuyển chỉ hỗ trợ kiện hàng tối đa 50 kg và kích thước mỗi chiều không quá 200 cm (2 mét).';
+  }
+  if (/package weight must be/i.test(s)) {
+    return 'Trọng lượng kiện hàng phải từ 1 đến 50.000 gram (tối đa 50kg).';
+  }
+  if (/length\/width\/height must be|dimensions must be 1–200/i.test(s)) {
+    return 'Kích thước mỗi chiều (Dài/Rộng/Cao) phải từ 1 đến 200 cm (tối đa 2 mét).';
+  }
   if (/order not found/i.test(s)) return 'Không tìm thấy đơn hàng.';
   if (/order is already closed|order already closed/i.test(s)) return 'Đơn hàng này đã hoàn tất hoặc đã bị hủy trước đó.';
   if (/order already cancelled|order is already cancelled/i.test(s)) return 'Đơn hàng này đã bị hủy.';
@@ -445,6 +469,13 @@ export function translateApiError(msg: string | null | undefined): string {
     if (code === '502' || code === '503' || code === '504') return 'Máy chủ phản hồi chậm hoặc đang bảo trì. Vui lòng thử lại.';
     return `Yêu cầu không thành công (Mã lỗi ${code}). Vui lòng thử lại sau.`;
   }
+
+  const lower = s.toLowerCase();
+  if (lower.includes('not found')) return 'Không tìm thấy dữ liệu yêu cầu trên máy chủ.';
+  if (lower.includes('forbidden') || lower.includes('access denied')) return 'Bạn không có quyền thực hiện thao tác này.';
+  if (lower.includes('unauthorized') || lower.includes('session expired')) return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+  if (lower.includes('bad request')) return 'Yêu cầu không hợp lệ. Vui lòng kiểm tra lại.';
+  if (lower.includes('internal server error')) return 'Máy chủ gặp sự cố xử lý nội bộ. Vui lòng thử lại sau.';
 
   return s;
 }
@@ -554,7 +585,12 @@ export async function request<T>(
         resData?.error ||
         (response.status === 403 ? 'Bạn không có quyền thực hiện hành động này.' : `Lỗi máy chủ (${response.status}): ${response.statusText || 'Yêu cầu không thành công'}`);
 
-      throw new Error(translateApiError(rawError));
+      throw new ApiError(
+        translateApiError(rawError),
+        response.status,
+        Array.isArray(resData?.errors) ? resData.errors : undefined,
+        resData?.path
+      );
     }
 
     return resData as ApiResponse<T>;

@@ -12,7 +12,14 @@ export type ItemCategory =
   | 'Điều hòa & Máy lọc'
   | 'Robot & Máy hút bụi'
   | 'Lò vi sóng & Lò nướng'
-  | 'Nồi cơm & Bếp từ';
+  | 'Nồi cơm & Bếp từ'
+  | 'Phòng ngủ'
+  | 'Bếp & Phòng ăn'
+  | 'Ban công & Giặt giũ'
+  | 'Phòng tắm & Vệ sinh'
+  | 'Phòng khách'
+  | 'Khác'
+  | string;
 
 export type ListingStatus = 'active' | 'pending' | 'reserved' | 'sold' | 'draft' | 'RESERVED' | 'rejected' | 'pending_inspection';
 
@@ -46,6 +53,8 @@ export interface Listing {
   id: string;
   categoryId?: string;
   itemId?: string;
+  categoryName?: string;
+  itemName?: string;
   title: string;
   category: ItemCategory;
   brand: string;
@@ -268,6 +277,7 @@ export interface ChatMessage {
   isOffer?: boolean;
   offerAmountVnd?: number;
   offerStatus?: 'pending' | 'accepted' | 'declined' | 'countered';
+  offerSenderRole?: 'buyer' | 'seller';
   negotiationId?: string;
   safetyWarning?: string;
   isUnsent?: boolean;

@@ -18,6 +18,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { ScannableQRCode } from '../common/ScannableQRCode';
+import { resolveListingCategory, resolveOrderListing } from '../../utils/catalogCache';
 
 interface DigitalInspectionCertificateModalProps {
   order: EscrowOrder;
@@ -177,11 +178,11 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
               <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
                 <div>
                   <span className="text-slate-400">Danh mục:</span>{' '}
-                  <strong className="text-slate-800">{order.listing.category}</strong>
+                  <strong className="text-slate-800">{resolveListingCategory(order.listing)}</strong>
                 </div>
                 <div>
                   <span className="text-slate-400">Thương hiệu:</span>{' '}
-                  <strong className="text-slate-800">{order.listing.brand || 'Chính hãng'}</strong>
+                  <strong className="text-slate-800">{resolveOrderListing(order.listing).brand || 'Chính hãng'}</strong>
                 </div>
                 <div>
                   <span className="text-slate-400">Model / Dòng máy:</span>{' '}

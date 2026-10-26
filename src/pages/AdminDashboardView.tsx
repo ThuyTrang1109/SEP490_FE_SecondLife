@@ -10,6 +10,8 @@ import {
 } from '../types';
 import { translations, formatVND } from '../utils/translations';
 import { dialogService } from '../utils/dialogService';
+import { resolveCategoryAndItem } from '../utils/catalogCache';
+import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import {
   adminService,
   adminPostService,
@@ -277,12 +279,27 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             const fallbackImage = 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800';
             const primaryImage = rawImages[0] || fallbackImage;
 
+            const resolved = resolveCategoryAndItem({
+              postId: post.id || post.postId,
+              categoryId: post.categoryId,
+              itemId: post.itemId,
+              title: post.title,
+              description: post.description || post.aiDescription,
+              category: post.category,
+              brand: post.brand,
+              model: post.model,
+            });
+
             return {
               id: post.id || `post-${Date.now()}`,
-              title: post.title || 'Thiết bị gia dụng SecondLife',
-              category: (post.category || 'Tủ lạnh & Tủ đông') as any,
-              brand: post.brand || 'SecondLife',
-              model: post.model || 'Model',
+              categoryId: post.categoryId || resolved.categoryId,
+              itemId: post.itemId || resolved.itemId,
+              categoryName: resolved.categoryName,
+              itemName: resolved.itemName,
+              title: post.title || 'Sản phẩm SecondLife',
+              category: (resolved.displayCategory || 'Đồ gia dụng') as any,
+              brand: resolved.brand,
+              model: post.model || resolved.model || 'Model',
               purchaseYear: 2024,
               priceVnd: Number(post.price || post.priceVnd || 0),
               originalPriceVnd: Number(post.originalPriceVnd || post.aiSuggestedPrice || post.price || 0),
@@ -692,7 +709,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   const triggerNotice = (msg: string) => {
-    setActionNotice(msg);
+    setActionNotice(translateSystemNotification(msg));
     setTimeout(() => setActionNotice(null), 4000);
   };
 
@@ -1474,7 +1491,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {actionNotice && (
             <div className="p-3.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-md flex items-center gap-3 animate-in fade-in font-bold">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="text-xs">{actionNotice}</span>
+              <span className="text-xs">{translateSystemNotification(actionNotice)}</span>
               <button
                 onClick={() => setActionNotice(null)}
                 className="ml-auto text-emerald-600 hover:text-emerald-800 text-xs cursor-pointer p-1"

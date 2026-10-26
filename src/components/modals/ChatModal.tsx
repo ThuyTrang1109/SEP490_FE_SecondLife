@@ -34,6 +34,7 @@ import {
   topupService,
   reputationService,
   SellerReputationDto,
+  getAssessmentStatusMeta,
 } from '../../services';
 import { SystemInspectionProposalPayload } from '../../types';
 import { formatVndInput, cleanVndInput } from '../../utils/numberToWords';
@@ -287,11 +288,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       let offerAmountVnd: number | undefined;
       let offerStatus: 'pending' | 'accepted' | 'declined' | undefined;
       let negotiationId: string | undefined;
+      let offerSenderRole: 'buyer' | 'seller' | undefined;
 
       if (parsedSys.offer) {
         isOffer = true;
         offerAmountVnd = parsedSys.offer.price;
         negotiationId = parsedSys.offer.negotiationId;
+        offerSenderRole = parsedSys.offer.senderRole || (parsedSys.offer.negotiationId?.startsWith('seller-offer-') ? 'seller' : 'buyer');
         offerStatus =
           parsedSys.offer.status === 'ACCEPTED'
             ? 'accepted'
@@ -317,6 +320,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         isOffer,
         offerAmountVnd,
         offerStatus,
+        offerSenderRole,
         negotiationId,
         isInspectionProposal,
         inspectionProposal,
@@ -544,7 +548,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const hasPendingOffer = messages.some(
     (m) =>
       (m.isOffer && m.offerStatus === 'pending') ||
-      (m.text && m.text.includes('"status":"PENDING"'))
+      (m.text && m.text.includes('"type":"OFFER"') && m.text.includes('"status":"PENDING"'))
   );
 
   const [aiAdvice, setAiAdvice] = useState<{
@@ -705,48 +709,117 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
   };
 
-  // Send official negotiation offer
+  // Send official negotiation offer (Buyer or Seller)
   const handleSendOffer = async () => {
     if (!offerInput || offerInput <= 0 || isSendingOfferRef.current) {
       if (!offerInput || offerInput <= 0) {
-        setOfferError(lang === 'vi' ? 'Vui lòng nhập mức giá bạn muốn đề xuất mua (VNĐ).' : 'Please enter an offer price (VND).');
+        setOfferError(
+          lang === 'vi'
+            ? (isSeller ? 'Vui lòng nhập mức giá bạn muốn đề xuất bán (VNĐ).' : 'Vui lòng nhập mức giá bạn muốn đề xuất mua (VNĐ).')
+            : 'Please enter an offer price (VND).'
+        );
       }
       return;
     }
+    if (offerInput >= listing.priceVnd) {
+      setOfferError(
+        lang === 'vi'
+          ? (isSeller
+              ? 'Mức giá đề xuất bán ưu đãi phải thấp hơn giá niêm yết ban đầu.'
+              : 'Mức giá đề xuất mua phải thấp hơn giá gốc bài đăng.')
+          : 'Offered price must be lower than original post price.'
+      );
+      return;
+    }
+    if (offerInput < 1000) {
+      setOfferError(lang === 'vi' ? 'Mức giá đề xuất tối thiểu là 1.000 đ' : 'Minimum offer is 1,000 VND');
+      return;
+    }
+
     isSendingOfferRef.current = true;
     setNegotiationLoading(true);
     setOfferError(null);
 
     try {
-      // POST /api/v1/negotiations
-      const res = await negotiationService.createNegotiation(listing.id, offerInput);
-      setShowOfferForm(false);
-      setOfferError(null);
+      if (isSeller) {
+        // Seller proposal flow
+        const offerId = `seller-offer-${Date.now()}`;
+        const offerPayload: SystemOfferPayload = {
+          type: 'OFFER',
+          status: 'PENDING',
+          price: offerInput,
+          negotiationId: offerId,
+          senderRole: 'seller',
+        };
+        const systemText = `SYSTEM: ${JSON.stringify(offerPayload)}`;
 
-      // Backend will automatically generate a SYSTEM message and broadcast via WebSocket.
-      // We also add an optimistic offer card to UI immediately in case WS has network latency
-      if (res?.id) {
         const localOfferMsg: ChatMessage = {
-          id: `nego-${res.id}`,
+          id: offerId,
           senderId: currentUser?.id || chatRole,
-          senderName: isBuyer ? 'Bạn' : listing.sellerName,
+          senderName: listing.sellerName || 'Người bán',
           senderRole: 'system',
-          text: `SYSTEM: {"type":"OFFER","status":"PENDING","price":${offerInput},"negotiationId":"${res.id}"}`,
+          text: systemText,
           timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
           isOffer: true,
           offerAmountVnd: offerInput,
           offerStatus: 'pending',
-          negotiationId: res.id,
+          offerSenderRole: 'seller',
+          negotiationId: offerId,
         };
+
         setMessages((prev) => {
-          if (prev.some((m) => m.negotiationId === res.id || m.id === `nego-${res.id}`)) return prev;
+          if (prev.some((m) => m.negotiationId === offerId || m.id === offerId)) return prev;
           return [...prev, localOfferMsg];
         });
-        notifyChatInteraction(roomId || activeRoom?.id, `Đề xuất giá: ${formatVND(offerInput)}`);
+        setShowOfferForm(false);
+        setOfferError(null);
         setTimeout(scrollToBottom, 50);
+
+        let targetRoomId = roomId;
+        if (!targetRoomId && listing?.id) {
+          const room = await chatService.getOrCreateRoom(listing.id);
+          if (room?.id) {
+            targetRoomId = room.id;
+            setRoomId(room.id);
+            setActiveRoom(room);
+            postRoomCache.set(listing.id, room);
+          }
+        }
+
+        if (targetRoomId) {
+          await chatService.sendMessage(targetRoomId, systemText);
+        }
+        notifyChatInteraction(targetRoomId, `Người bán đề xuất giá: ${formatVND(offerInput)}`);
+      } else {
+        // Buyer offer flow (via Backend API)
+        const res = await negotiationService.createNegotiation(listing.id, offerInput);
+        setShowOfferForm(false);
+        setOfferError(null);
+
+        if (res?.id) {
+          const localOfferMsg: ChatMessage = {
+            id: `nego-${res.id}`,
+            senderId: currentUser?.id || chatRole,
+            senderName: isBuyer ? 'Bạn' : listing.sellerName,
+            senderRole: 'system',
+            text: `SYSTEM: {"type":"OFFER","status":"PENDING","price":${offerInput},"negotiationId":"${res.id}","senderRole":"buyer"}`,
+            timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+            isOffer: true,
+            offerAmountVnd: offerInput,
+            offerStatus: 'pending',
+            offerSenderRole: 'buyer',
+            negotiationId: res.id,
+          };
+          setMessages((prev) => {
+            if (prev.some((m) => m.negotiationId === res.id || m.id === `nego-${res.id}`)) return prev;
+            return [...prev, localOfferMsg];
+          });
+          notifyChatInteraction(roomId || activeRoom?.id, `Đề xuất giá: ${formatVND(offerInput)}`);
+          setTimeout(scrollToBottom, 50);
+        }
       }
     } catch (err: any) {
-      console.warn('Backend negotiation creation error:', err);
+      console.warn('Negotiation creation error:', err);
       const msg = err?.response?.data?.message || err?.message || '';
       if (msg.includes('internal error') || msg.includes('500')) {
         setOfferError('Máy chủ Backend gặp lỗi nội bộ (500) khi lưu đàm phán hoặc gửi tin nhắn hệ thống. Vui lòng kiểm tra lại server.');
@@ -769,32 +842,62 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
   };
 
-  // Seller accepts or rejects offer
-  const handleRespondOffer = async (negotiationId: string, action: 'accepted' | 'declined') => {
+  // Seller accepts/rejects buyer offer OR Buyer accepts/rejects seller offer
+  const handleRespondOffer = async (
+    negotiationId: string,
+    action: 'accepted' | 'declined',
+    senderRole?: 'buyer' | 'seller',
+    price?: number
+  ) => {
     if (isRespondingOfferRef.current) return;
     isRespondingOfferRef.current = true;
     try {
-      if (action === 'accepted') {
-        // PUT /api/v1/negotiations/{id}/accept
-        await negotiationService.acceptNegotiation(negotiationId);
-      } else {
-        // PUT /api/v1/negotiations/{id}/reject
-        await negotiationService.rejectNegotiation(negotiationId);
+      const isSellerOffer = senderRole === 'seller' || negotiationId.startsWith('seller-offer-');
+      const actionUpper = action === 'accepted' ? 'ACCEPTED' : 'REJECTED';
+      let systemTextToSend = '';
+
+      if (!isSellerOffer) {
+        if (action === 'accepted') {
+          // PUT /api/v1/negotiations/{id}/accept
+          await negotiationService.acceptNegotiation(negotiationId);
+        } else {
+          // PUT /api/v1/negotiations/{id}/reject
+          await negotiationService.rejectNegotiation(negotiationId);
+        }
       }
 
       // Update offer status in local state
       setMessages((prev) =>
         prev.map((m) => {
-          if (m.negotiationId === negotiationId || m.id === `nego-${negotiationId}`) {
+          if (m.negotiationId === negotiationId || m.id === `nego-${negotiationId}` || m.id === negotiationId) {
+            const finalPrice = price || m.offerAmountVnd || listing.priceVnd;
+            const updatedPayload: SystemOfferPayload = {
+              type: 'OFFER',
+              status: actionUpper,
+              price: finalPrice,
+              negotiationId,
+              senderRole: isSellerOffer ? 'seller' : 'buyer',
+            };
+            systemTextToSend = `SYSTEM: ${JSON.stringify(updatedPayload)}`;
             return {
               ...m,
               offerStatus: action,
-              text: `SYSTEM: {"type":"OFFER","status":"${action === 'accepted' ? 'ACCEPTED' : 'REJECTED'}","price":${m.offerAmountVnd || listing.priceVnd},"negotiationId":"${negotiationId}"}`
+              text: systemTextToSend,
             };
           }
           return m;
         })
       );
+
+      // Broadcast update over chat if seller offer
+      if (isSellerOffer && (roomId || activeRoom?.id) && systemTextToSend) {
+        try {
+          await chatService.sendMessage(roomId || activeRoom!.id, systemTextToSend);
+        } catch (e) {
+          console.warn('Could not broadcast seller offer response:', e);
+        }
+      }
+
       notifyChatInteraction(roomId || activeRoom?.id, action === 'accepted' ? 'Đã chấp nhận đề xuất giá' : 'Đã từ chối đề xuất giá');
     } catch (err: any) {
       console.warn('Backend respond negotiation error:', err);
@@ -804,24 +907,52 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
   };
 
-  // Buyer cancels pending offer
-  const handleCancelOffer = async (negotiationId: string) => {
+  // Buyer or Seller cancels their own pending offer
+  const handleCancelOffer = async (
+    negotiationId: string,
+    senderRole?: 'buyer' | 'seller',
+    price?: number
+  ) => {
     if (isCancellingOfferRef.current) return;
     isCancellingOfferRef.current = true;
     try {
-      // PUT /api/v1/negotiations/{id}/cancel
-      await negotiationService.cancelNegotiation(negotiationId);
+      const isSellerOffer = senderRole === 'seller' || negotiationId.startsWith('seller-offer-');
+      let systemTextToSend = '';
+
+      if (!isSellerOffer) {
+        // PUT /api/v1/negotiations/{id}/cancel
+        await negotiationService.cancelNegotiation(negotiationId);
+      }
+
       setMessages((prev) =>
-        prev.map((m) =>
-          (m.negotiationId === negotiationId || m.id === `nego-${negotiationId}`)
-            ? {
-                ...m,
-                offerStatus: 'declined',
-                text: `SYSTEM: {"type":"OFFER","status":"CANCELLED","price":${m.offerAmountVnd || listing.priceVnd},"negotiationId":"${negotiationId}"}`
-              }
-            : m
-        )
+        prev.map((m) => {
+          if (m.negotiationId === negotiationId || m.id === `nego-${negotiationId}` || m.id === negotiationId) {
+            const finalPrice = price || m.offerAmountVnd || listing.priceVnd;
+            const updatedPayload: SystemOfferPayload = {
+              type: 'OFFER',
+              status: 'CANCELLED',
+              price: finalPrice,
+              negotiationId,
+              senderRole: isSellerOffer ? 'seller' : 'buyer',
+            };
+            systemTextToSend = `SYSTEM: ${JSON.stringify(updatedPayload)}`;
+            return {
+              ...m,
+              offerStatus: 'declined',
+              text: systemTextToSend,
+            };
+          }
+          return m;
+        })
       );
+
+      if (isSellerOffer && (roomId || activeRoom?.id) && systemTextToSend) {
+        try {
+          await chatService.sendMessage(roomId || activeRoom!.id, systemTextToSend);
+        } catch (e) {
+          console.warn('Could not broadcast offer cancellation:', e);
+        }
+      }
     } catch (err: any) {
       console.warn('Backend cancel negotiation error:', err);
     } finally {
@@ -1002,13 +1133,19 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     title="Bấm để xem chi tiết uy tín và đánh giá từ người mua khác"
                   >
                     <Award className="w-3 h-3 text-amber-600" />
-                    <span>{sellerReputation?.score ?? sellerTrust.trustScore} điểm uy tín</span>
+                    <span>
+                      {sellerReputation?.assessmentStatus === 'NO_TRANSACTIONS'
+                        ? 'Người bán mới'
+                        : sellerReputation?.score !== undefined && sellerReputation?.score !== null
+                        ? `${sellerReputation.score}/100 uy tín`
+                        : `${sellerTrust.trustScore} điểm uy tín`}
+                    </span>
                     <span className="text-slate-400">|</span>
                     <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
                     <span>{sellerTrust.rating}</span>
                     {sellerReputation?.assessmentStatus && (
                       <span className="ml-1 text-[9px] text-emerald-700 font-bold bg-emerald-50 px-1 rounded border border-emerald-200">
-                        {sellerReputation.assessmentStatus}
+                        {getAssessmentStatusMeta(sellerReputation.assessmentStatus).shortLabel}
                       </span>
                     )}
                   </button>
@@ -1073,39 +1210,6 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           </div>
         )}
 
-        {/* AI Smart Negotiation Advisor Pill */}
-        <div className={`border-b px-4 py-2.5 flex items-center justify-between text-xs shrink-0 ${
-          isSeller ? 'bg-blue-50/60 border-blue-100' : 'bg-[#faf8f5] border-gray-200'
-        }`}>
-          <div className="flex items-center gap-2 text-[#24263e]">
-            <Sparkles className={`w-4 h-4 shrink-0 ${isSeller ? 'text-blue-600' : 'text-[#c34c36]'}`} />
-            <span className="text-[11px] font-medium leading-snug">
-              <span className={`font-bold ${isSeller ? 'text-blue-900' : 'text-[#24263e]'}`}>
-                {lang === 'vi' 
-                  ? (isSeller ? 'Insight bán hàng: ' : 'AI Gợi ý thương lượng: ') 
-                  : 'AI Advisor: '}
-              </span>
-              <span className={isSeller ? 'text-blue-800' : ''}>
-                {aiAdvice.adviceText}
-              </span>
-            </span>
-          </div>
-
-          <button
-            onClick={() =>
-              handleSendMessage(
-                lang === 'vi'
-                  ? (isSeller ? `Mình có thể giảm một chút, chốt giá ${formatVND(aiAdvice.counterOfferVnd)} qua kiểm định Hub nhé!` : `Mình đề xuất chốt mức ${formatVND(aiAdvice.counterOfferVnd)} qua kiểm định Hub nhé!`)
-                  : `I propose a deal at ${formatVND(aiAdvice.counterOfferVnd)} through Hub inspection!`
-              )
-            }
-            className={`shrink-0 ml-2 px-2.5 py-1 text-white rounded-lg text-[10px] font-bold cursor-pointer transition shadow-2xs ${
-              isSeller ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#24263e] hover:bg-black'
-            }`}
-          >
-            {lang === 'vi' ? (isSeller ? 'Gửi đề xuất:' : 'Dùng giá gợi ý:') : 'Use suggestion:'} {formatVND(aiAdvice.counterOfferVnd)}
-          </button>
-        </div>
 
         {/* Anti-Scam Banner */}
         {aiAdvice.warningMessage && (
@@ -1160,19 +1264,23 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               // Render bong bóng / thông báo ở CHÍNH GIỮA MÀN HÌNH thay vì lệch trái/phải
               // -------------------------------------------------------------
               if (parsedSys.isSystem) {
-                // If it's a structured OFFER from backend
-                if (parsedSys.offer) {
-                  const offer = parsedSys.offer;
+                // If it's a structured OFFER from backend or seller proposal
+                if (parsedSys.offer || msg.isOffer) {
+                  const offer = parsedSys.offer || {
+                    price: msg.offerAmountVnd || 0,
+                    status: (msg.offerStatus?.toUpperCase() as any) || 'PENDING',
+                    negotiationId: msg.negotiationId || msg.id,
+                    senderRole: msg.offerSenderRole,
+                  };
                   const isAccepted = offer.status === 'ACCEPTED';
                   const isRejected = offer.status === 'REJECTED';
                   const isCancelled = offer.status === 'CANCELLED';
                   const isExpired = false; // Note: EXPIRED is not in SystemOfferPayload
                   const isPending = offer.status === 'PENDING';
                   
-                  // In SecondLife, negotiation offers are proposed by the buyer to the seller.
-                  // showBuyerPerspective is true ONLY when the current user is the buyer!
-                  // Sellers must see the seller's perspective (accept/reject buttons) without needing page reload.
-                  const showBuyerPerspective = isBuyer;
+                  const isSellerOffer = offer.senderRole === 'seller' || (Boolean(offer.negotiationId) && offer.negotiationId.startsWith('seller-offer-'));
+                  const isProposerMe = isSellerOffer ? isSeller : isBuyer;
+                  const isRecipientMe = isSellerOffer ? isBuyer : isSeller;
 
                   return (
                     <div key={msg.id} className="flex justify-center my-3 animate-fadeIn">
@@ -1206,6 +1314,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                               ? 'Đề Xuất Giá Đã Được Hủy'
                               : isExpired
                               ? '⏳ Phiên Thương Lượng Đã Hết Hạn'
+                              : isSellerOffer
+                              ? '🏷️ Người Bán Đề Xuất Giá Mới'
                               : '🤝 Đề Xuất Thương Lượng Giá Mới'}
                           </span>
                         </div>
@@ -1218,40 +1328,46 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                             {formatVND(listing.priceVnd)}
                           </span>
                           <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
-                            Tiết kiệm {formatVND(listing.priceVnd - offer.price)}
+                            {isSellerOffer ? 'Giảm' : 'Tiết kiệm'} {formatVND(listing.priceVnd - offer.price)}
                           </span>
                         </div>
 
                         <p className="text-[11px] text-slate-600 mb-2">
                           {isAccepted
-                            ? (showBuyerPerspective
+                            ? (isBuyer
                                 ? (lang === 'vi' ? 'Người bán đã chấp nhận mức giá này. Bạn có thể tiến hành đặt cọc qua Escrow ngay bây giờ!' : 'Seller accepted this offer. You can checkout now!')
-                                : (lang === 'vi' ? 'Bạn đã chấp nhận mức giá này. Đang chờ người mua tiến hành thanh toán qua Escrow.' : 'You accepted this offer. Waiting for buyer to checkout.'))
+                                : (lang === 'vi' ? 'Mức giá đã được chốt thành công. Đang chờ người mua tiến hành thanh toán qua Escrow.' : 'You accepted this offer. Waiting for buyer to checkout.'))
                             : isRejected
-                            ? (showBuyerPerspective
-                                ? (lang === 'vi' ? 'Mức giá đề xuất chưa phù hợp với người bán. Bạn có thể gửi lại mức giá khác hợp lý hơn.' : 'Offer was declined by seller. You can send another offer.')
+                            ? (isProposerMe
+                                ? (lang === 'vi' ? 'Mức giá đề xuất chưa phù hợp với đối phương. Bạn có thể gửi lại mức giá khác hợp lý hơn.' : 'Offer was declined.')
                                 : (lang === 'vi' ? 'Bạn đã từ chối mức giá đề xuất này.' : 'You declined this offer.'))
                             : isCancelled
-                            ? (showBuyerPerspective
+                            ? (isProposerMe
                                 ? (lang === 'vi' ? 'Bạn đã hủy yêu cầu thương lượng giá này.' : 'You cancelled this offer.')
-                                : (lang === 'vi' ? 'Người mua đã hủy yêu cầu thương lượng giá này.' : 'Buyer cancelled this offer.'))
-                            : (!showBuyerPerspective && isSeller)
-                            ? (lang === 'vi' ? 'Người mua gửi đề xuất giá cho sản phẩm của bạn. Vui lòng phản hồi:' : 'Buyer made an offer. Please respond:')
-                            : (lang === 'vi' ? 'Đề xuất đã được gửi tới người bán, đang chờ phản hồi...' : 'Offer sent to seller, waiting for response...')}
+                                : (lang === 'vi' ? 'Đối phương đã hủy yêu cầu thương lượng giá này.' : 'Buyer cancelled this offer.'))
+                            : isPending
+                            ? (isRecipientMe
+                                ? (lang === 'vi'
+                                    ? (isSellerOffer
+                                        ? 'Người bán chủ động đề xuất mức giá bán ưu đãi cho bạn. Bạn có muốn đồng ý mua với giá này không?'
+                                        : 'Người mua gửi đề xuất giá cho sản phẩm của bạn. Vui lòng phản hồi:')
+                                    : 'You received a price offer. Please respond:')
+                                : (lang === 'vi' ? 'Đề xuất giá đã được gửi tới đối phương, đang chờ phản hồi...' : 'Offer sent, waiting for response...'))
+                            : ''}
                         </p>
 
-                        {/* Action buttons inside System Offer Banner */}
-                        {isPending && isSeller && !showBuyerPerspective && (
+                        {/* Action buttons inside System Offer Banner for recipient */}
+                        {isPending && isRecipientMe && (
                           <div className="flex items-center justify-center gap-2 mt-2 pt-2 border-t border-amber-200/60">
                             <button
-                              onClick={() => handleRespondOffer(offer.negotiationId, 'accepted')}
+                              onClick={() => handleRespondOffer(offer.negotiationId, 'accepted', offer.senderRole, offer.price)}
                               className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1 cursor-pointer shadow-xs transition"
                             >
                               <Check className="w-3.5 h-3.5" />
                               <span>{lang === 'vi' ? 'Chấp nhận giá này' : 'Accept Offer'}</span>
                             </button>
                             <button
-                              onClick={() => handleRespondOffer(offer.negotiationId, 'declined')}
+                              onClick={() => handleRespondOffer(offer.negotiationId, 'declined', offer.senderRole, offer.price)}
                               className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1 cursor-pointer shadow-xs transition"
                             >
                               <X className="w-3.5 h-3.5" />
@@ -1260,10 +1376,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                           </div>
                         )}
 
-                        {isPending && showBuyerPerspective && (
+                        {/* Proposer cancel button */}
+                        {isPending && isProposerMe && (
                           <div className="mt-2 pt-2 border-t border-amber-200/60 flex justify-center">
                             <button
-                              onClick={() => handleCancelOffer(offer.negotiationId)}
+                              onClick={() => handleCancelOffer(offer.negotiationId, offer.senderRole, offer.price)}
                               className="px-3 py-1 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 rounded-lg text-[10px] font-bold cursor-pointer transition flex items-center gap-1"
                             >
                               <X className="w-3 h-3" />
@@ -1272,10 +1389,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                           </div>
                         )}
 
-                        {isAccepted && showBuyerPerspective && (
+                        {/* Checkout button for buyer once offer is accepted */}
+                        {isAccepted && isBuyer && (
                           <div className="mt-2 pt-2 border-t border-emerald-200 flex justify-center">
                             <button
-                              onClick={() => handleBuyNow(offer.price, offer.negotiationId)}
+                              onClick={() => handleBuyNow(offer.price, isSellerOffer ? undefined : offer.negotiationId)}
                               className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:opacity-95 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md cursor-pointer transition transform hover:scale-102"
                             >
                               <ShoppingBag className="w-4 h-4" />
@@ -1617,15 +1735,19 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         </div>
 
         {/* Quick Offer Popup */}
-        {showOfferForm && isBuyer && !hasPendingOffer && (
-          <div className={`p-3.5 border-t flex items-center gap-3 animate-fadeIn shrink-0 bg-[#FFFFFF] border-gray-200`}>
+        {showOfferForm && !hasPendingOffer && (
+          <div className={`p-3.5 border-t flex items-center gap-3 animate-fadeIn shrink-0 ${
+            isSeller ? 'bg-blue-50/30 border-blue-100' : 'bg-[#FFFFFF] border-gray-200'
+          }`}>
             <div className="flex-1">
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-bold text-slate-700">
-                  {lang === 'vi' ? 'Nhập mức giá bạn muốn đề xuất mua (VNĐ):' : 'Enter offer price (VND):'}
+                  {lang === 'vi'
+                    ? (isSeller ? 'Nhập mức giá bạn muốn đề xuất bán (VNĐ):' : 'Nhập mức giá bạn muốn đề xuất mua (VNĐ):')
+                    : (isSeller ? 'Enter proposed selling price (VND):' : 'Enter offer price (VND):')}
                 </label>
-                <span className={`text-[10px] font-bold text-[#c34c36]`}>
-                  {lang === 'vi' ? 'Giá gốc:' : 'Original:'} {formatVND(listing.priceVnd)}
+                <span className={`text-[10px] font-bold ${isSeller ? 'text-blue-600' : 'text-[#c34c36]'}`}>
+                  {lang === 'vi' ? (isSeller ? 'Giá niêm yết:' : 'Giá gốc:') : 'Original:'} {formatVND(listing.priceVnd)}
                 </span>
               </div>
               <div className="relative mt-1">
@@ -1645,7 +1767,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                       handleSendOffer();
                     }
                   }}
-                  className={`w-full px-3 py-1.5 pr-8 border rounded-xl text-xs font-black text-[#24263e] focus:outline-none bg-[#faf8f5] border-gray-200 focus:border-[#c34c36]`}
+                  className={`w-full px-3 py-1.5 pr-8 border rounded-xl text-xs font-black text-[#24263e] focus:outline-none ${
+                    isSeller
+                      ? 'bg-white border-blue-200 focus:border-blue-500'
+                      : 'bg-[#faf8f5] border-gray-200 focus:border-[#c34c36]'
+                  }`}
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">
                   đ
@@ -1661,12 +1787,16 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             <button
               onClick={handleSendOffer}
               disabled={negotiationLoading}
-              className={`px-4 py-2 text-white rounded-xl text-xs font-bold mt-4 cursor-pointer transition shadow-xs flex items-center gap-1 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95`}
+              className={`px-4 py-2 text-white rounded-xl text-xs font-bold mt-4 cursor-pointer transition shadow-xs flex items-center gap-1 ${
+                isSeller
+                  ? 'bg-gradient-to-r from-blue-600 to-indigo-700 hover:opacity-95'
+                  : 'bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95'
+              }`}
             >
               {negotiationLoading ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <span>{lang === 'vi' ? 'Gửi Offer' : 'Send Offer'}</span>
+                <span>{lang === 'vi' ? (isSeller ? 'Gửi Đề Xuất Giá' : 'Gửi Offer') : (isSeller ? 'Send Proposal' : 'Send Offer')}</span>
               )}
             </button>
             <button
@@ -1830,16 +1960,20 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         <div className={`p-3 border-t flex items-center gap-2 shrink-0 ${
           isSeller ? 'bg-slate-50 border-slate-200' : 'bg-[#FFFFFF] border-gray-200'
         }`}>
-          {isBuyer && !hasPendingOffer && (
+          {!hasPendingOffer && (
             <button
               onClick={() => {
                 setShowOfferForm(!showOfferForm);
                 setShowInspectionForm(false);
               }}
-              className="px-3 py-2 text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1 bg-gradient-to-r from-[#c34c36] to-[#e36a54] hover:opacity-95"
+              className={`px-3 py-2 text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1 ${
+                isSeller
+                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95'
+                  : 'bg-gradient-to-r from-[#c34c36] to-[#e36a54] hover:opacity-95'
+              }`}
             >
               <span>💰</span>
-              <span>{lang === 'vi' ? 'Trả giá' : 'Offer'}</span>
+              <span>{lang === 'vi' ? (isSeller ? 'Đề xuất giá' : 'Trả giá') : (isSeller ? 'Propose Price' : 'Offer')}</span>
             </button>
           )}
 

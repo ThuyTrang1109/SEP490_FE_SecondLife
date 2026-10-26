@@ -14,13 +14,17 @@ interface MarketplaceViewProps {
 }
 
 const CATEGORIES: { id: ItemCategory | 'ALL'; nameVi: string; nameEn: string; icon: string }[] = [
-  { id: 'ALL', nameVi: 'Tất cả đồ gia dụng', nameEn: 'All Home Goods', icon: '🏠' },
+  { id: 'ALL', nameVi: 'Tất cả sản phẩm', nameEn: 'All Products', icon: '🏠' },
+  { id: 'Phòng ngủ', nameVi: 'Phòng ngủ & Tủ giường', nameEn: 'Bedroom', icon: '🛏️' },
+  { id: 'Bếp & Phòng ăn', nameVi: 'Bếp & Phòng ăn', nameEn: 'Kitchen & Dining', icon: '🍳' },
+  { id: 'Phòng khách', nameVi: 'Phòng khách & Sofa', nameEn: 'Living Room & Sofa', icon: '🛋️' },
+  { id: 'Ban công & Giặt giũ', nameVi: 'Máy giặt & Giặt giũ', nameEn: 'Laundry & Balcony', icon: '🧺' },
   { id: 'Tủ lạnh & Tủ đông', nameVi: 'Tủ lạnh & Tủ đông', nameEn: 'Refrigerators', icon: '🧊' },
-  { id: 'Máy giặt & Máy sấy', nameVi: 'Máy giặt & Máy sấy', nameEn: 'Washing Machines', icon: '🧺' },
   { id: 'Điều hòa & Máy lọc', nameVi: 'Điều hòa & Máy lọc', nameEn: 'Air Conditioners', icon: '❄️' },
   { id: 'Robot & Máy hút bụi', nameVi: 'Robot & Hút bụi', nameEn: 'Robot Vacuums', icon: '🧹' },
   { id: 'Lò vi sóng & Lò nướng', nameVi: 'Lò vi sóng & Lò nướng', nameEn: 'Microwaves & Ovens', icon: '🍲' },
-  { id: 'Nồi cơm & Bếp từ', nameVi: 'Nồi cơm & Bếp từ', nameEn: 'Rice Cookers & Stoves', icon: '🍳' },
+  { id: 'Phòng tắm & Vệ sinh', nameVi: 'Phòng tắm & Vệ sinh', nameEn: 'Bathroom', icon: '🚿' },
+  { id: 'Khác', nameVi: 'Khác', nameEn: 'Others', icon: '📦' },
 ];
 
 export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
@@ -58,7 +62,16 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
         item.model.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.location.toLowerCase().includes(searchQuery.toLowerCase());
 
-      const matchesCat = selectedCategory === 'ALL' || item.category === selectedCategory;
+      const matchesCat =
+        selectedCategory === 'ALL' ||
+        item.category === selectedCategory ||
+        item.categoryName === selectedCategory ||
+        item.itemName === selectedCategory ||
+        (selectedCategory === 'Phòng ngủ' && (item.categoryName === 'Phòng ngủ' || ['Tủ quần áo', 'Khung giường', 'Nệm / Đệm', 'Tủ đầu giường', 'Bàn làm việc', 'Bàn trang điểm', 'Ghế công thái học / Ghế xoay'].includes(String(item.itemName || item.category)))) ||
+        (selectedCategory === 'Bếp & Phòng ăn' && (item.categoryName === 'Bếp & Phòng ăn' || ['Tủ lạnh', 'Lò vi sóng / Lò nướng', 'Bếp từ / Bếp hồng ngoại', 'Nồi cơm điện', 'Nồi chiên không dầu', 'Bàn ăn', 'Tủ lạnh & Tủ đông', 'Lò vi sóng & Lò nướng', 'Nồi cơm & Bếp từ'].includes(String(item.itemName || item.category)))) ||
+        (selectedCategory === 'Ban công & Giặt giũ' && (item.categoryName === 'Ban công & Giặt giũ' || ['Máy sấy', 'Máy giặt', 'Bàn ủi / Bàn là', 'Giá phơi đồ', 'Máy giặt & Máy sấy'].includes(String(item.itemName || item.category)))) ||
+        (selectedCategory === 'Phòng khách' && (item.categoryName === 'Phòng khách' || ['Sofa / Ghế dài', 'Kệ Tivi', 'Bàn trà / Bàn sofa', 'Giá sách / Kệ sách', 'Ghế bành'].includes(String(item.itemName || item.category)))) ||
+        (selectedCategory === 'Phòng tắm & Vệ sinh' && (item.categoryName === 'Phòng tắm & Vệ sinh' || ['Máy nước nóng', 'Tủ / Kệ phòng tắm', 'Bồn rửa mặt', 'Bồn cầu', 'Vòi hoa sen', 'Gương'].includes(String(item.itemName || item.category))));
       const matchesGrade = selectedGrade === 'ALL' || item.conditionGrade === selectedGrade;
       const matchesVerified = !verifiedOnly || item.isInspectionGuaranteed;
 

@@ -25,6 +25,7 @@ import { reviewService } from '../../data/mockReviews';
 import { reputationService, postService, SellerReputationDto, getStoredUser, getAssessmentStatusMeta } from '../../services';
 import { UserReportModal } from './UserReportModal';
 import { resolveCategoryAndItem, extractSellerOriginalPrice } from '../../utils/catalogCache';
+import { MarkdownContent } from '../common/MarkdownDescription';
 
 interface ListingDetailModalProps {
   listing: Listing | null;
@@ -527,9 +528,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                 <CheckCircle2 className="w-3 h-3 text-[#24263e]" />
                 <span>{listing.declaredConditionText}</span>
               </div>
-              <p className="whitespace-pre-line text-xs text-[#24263e]">
-                {cleanDisplayDescription(listing.description)}
-              </p>
+              <MarkdownContent content={cleanDisplayDescription(listing.description)} />
             </div>
           </div>
 

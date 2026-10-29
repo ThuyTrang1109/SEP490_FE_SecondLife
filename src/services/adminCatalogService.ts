@@ -51,10 +51,39 @@ export interface UpdateTemplateRequest {
   templateText: string;
 }
 
-// Removed mock fallback block
+export type TemplateProposalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface AdminTemplateProposal {
+  id: string;
+  categoryId: string;
+  categoryName: string;
+  itemId?: string | null;
+  itemName?: string | null;
+  templateText: string;
+  status: TemplateProposalStatus;
+  triggeredBy?: string | null;
+  requestCount: number;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  rejectionReason?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpdateTemplateProposalRequest {
+  templateText: string;
+}
+
+export interface ApproveTemplateProposalRequest {
+  templateText: string;
+}
+
+export interface RejectTemplateProposalRequest {
+  reason?: string | null;
+}
 
 // ============================================================================
-// ADMIN CATALOG SERVICE (Gọi API Backend kèm Mock Fallback chuẩn tài liệu)
+// ADMIN CATALOG SERVICE
 // ============================================================================
 
 export const adminCatalogService = {
@@ -143,7 +172,7 @@ export const adminCatalogService = {
   },
 
   // --------------------------------------------------------------------------
-  // 3. CATEGORY QUESTION TEMPLATE (Kịch bản AI)
+  // 3. CATEGORY QUESTION TEMPLATE (Kịch bản AI chính thức trong DB)
   // --------------------------------------------------------------------------
   async getAllTemplates(): Promise<AdminCategoryQuestionTemplate[]> {
     const response = await request<AdminCategoryQuestionTemplate[]>('/v1/admin/catalog/templates', {
@@ -178,5 +207,65 @@ export const adminCatalogService = {
     });
     const resMsg = (response as any)?.message || response;
     return typeof resMsg === 'string' ? resMsg : 'Template deleted successfully';
+  },
+
+  // --------------------------------------------------------------------------
+  // 4. AI QUESTION TEMPLATE PROPOSALS (Đề xuất AI tạm chờ Admin duyệt)
+  // --------------------------------------------------------------------------
+  async getTemplateProposals(status?: TemplateProposalStatus): Promise<AdminTemplateProposal[]> {
+    const query = status ? `?status=${encodeURIComponent(status)}` : '';
+    const response = await request<AdminTemplateProposal[]>(
+      `/v1/admin/catalog/template-proposals${query}`,
+      {
+        method: 'GET',
+        requiresAuth: true
+      }
+    );
+    return (response as any)?.data || response || [];
+  },
+
+  async updateTemplateProposal(
+    id: string,
+    payload: UpdateTemplateProposalRequest
+  ): Promise<AdminTemplateProposal> {
+    const response = await request<AdminTemplateProposal>(
+      `/v1/admin/catalog/template-proposals/${id}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+        requiresAuth: true
+      }
+    );
+    return (response as any)?.data || response;
+  },
+
+  async approveTemplateProposal(
+    id: string,
+    payload: ApproveTemplateProposalRequest
+  ): Promise<AdminCategoryQuestionTemplate> {
+    const response = await request<AdminCategoryQuestionTemplate>(
+      `/v1/admin/catalog/template-proposals/${id}/approve`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        requiresAuth: true
+      }
+    );
+    return (response as any)?.data || response;
+  },
+
+  async rejectTemplateProposal(
+    id: string,
+    payload?: RejectTemplateProposalRequest
+  ): Promise<AdminTemplateProposal> {
+    const response = await request<AdminTemplateProposal>(
+      `/v1/admin/catalog/template-proposals/${id}/reject`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload || {}),
+        requiresAuth: true
+      }
+    );
+    return (response as any)?.data || response;
   }
 };

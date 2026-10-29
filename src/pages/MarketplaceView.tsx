@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Search, ShieldCheck, Sparkles, ArrowUpDown } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Search, ShieldCheck, Sparkles, ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Listing, ItemCategory, ConditionGrade, Language } from '../types';
 import { translations } from '../utils/translations';
 import { ShowroomLobby3D } from '../components/3d/ShowroomLobby3D';
@@ -39,20 +39,78 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'priceAsc' | 'priceDesc' | 'newest'>('newest');
 
+  const categoryRefs = useRef<{ [key: string]: HTMLButtonElement | null }>({});
+
+  const handleNavigateCategory = (direction: 'prev' | 'next') => {
+    const currentIndex = CATEGORIES.findIndex((c) => c.id === selectedCategory);
+    let nextIndex: number;
+    if (direction === 'next') {
+      nextIndex = currentIndex < CATEGORIES.length - 1 ? currentIndex + 1 : 0;
+    } else {
+      nextIndex = currentIndex > 0 ? currentIndex - 1 : CATEGORIES.length - 1;
+    }
+    const nextCat = CATEGORIES[nextIndex];
+    setSelectedCategory(nextCat.id);
+  };
+
+  const handleCategoryKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      handleNavigateCategory('next');
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      handleNavigateCategory('prev');
+    }
+  };
+
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const handleRefresh = () => {
+      setRefreshKey((prev) => prev + 1);
+    };
+    window.addEventListener('storage', handleRefresh);
+    window.addEventListener('secondlife_order_placed_signal', handleRefresh);
+    window.addEventListener('secondlife_listing_status_changed', handleRefresh);
+    return () => {
+      window.removeEventListener('storage', handleRefresh);
+      window.removeEventListener('secondlife_order_placed_signal', handleRefresh);
+      window.removeEventListener('secondlife_listing_status_changed', handleRefresh);
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = categoryRefs.current[selectedCategory];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  }, [selectedCategory]);
+
   const filteredListings = useMemo(() => {
     const boughtIds = getBoughtListingIds();
     return listings.filter(item => {
       // Sàn mua bán (Marketplace) CHỈ hiển thị các bài đăng có trạng thái ACTIVE và CHƯA có người đặt mua
-      if (item.status === 'reserved' || item.status === 'sold' || item.status === 'draft' || item.status === 'rejected') {
+      if (item.status === 'sold' || item.status === 'draft' || item.status === 'rejected') {
         return false;
       }
-      if (item.backendStatus === 'RESERVED' || item.backendStatus === 'SOLD' || item.backendStatus === 'DRAFT') {
+      if (item.backendStatus === 'SOLD' || item.backendStatus === 'DRAFT') {
         return false;
       }
-      if (item.status !== 'active' && item.backendStatus !== 'ACTIVE') {
-        return false;
+      const itemIdStr = String(item.id || '');
+      const itemPostIdStr = String((item as any).postId || '');
+      const isExplicitlyAvailable =
+        (Boolean(itemIdStr) && localStorage.getItem(`listing_available_${itemIdStr}`) === 'true') ||
+        (Boolean(itemPostIdStr) && localStorage.getItem(`listing_available_${itemPostIdStr}`) === 'true');
+
+      if (!isExplicitlyAvailable) {
+        if (boughtIds.has(itemIdStr) || (itemPostIdStr && boughtIds.has(itemPostIdStr))) {
+          return false;
+        }
+        if (item.status === 'reserved' || item.backendStatus === 'RESERVED') {
+          return false;
+        }
       }
-      if (boughtIds.has(String(item.id))) {
+      if (item.status !== 'active' && item.backendStatus !== 'ACTIVE' && !isExplicitlyAvailable) {
         return false;
       }
 
@@ -81,7 +139,7 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
       if (sortBy === 'priceDesc') return b.priceVnd - a.priceVnd;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [listings, searchQuery, selectedCategory, selectedGrade, verifiedOnly, sortBy]);
+  }, [listings, searchQuery, selectedCategory, selectedGrade, verifiedOnly, sortBy, refreshKey]);
 
   return (
     <div className="space-y-6 pb-16 text-[#24263e]">
@@ -110,24 +168,57 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 no-scrollbar text-xs">
-          {CATEGORIES.map((cat) => {
-            const isSelected = selectedCategory === cat.id;
-            return (
-              <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(cat.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap transition text-xs font-bold cursor-pointer border ${
-                  isSelected
-                    ? 'bg-[#24263e] text-white border-[#24263e] shadow-xs'
-                    : 'bg-[#faf8f5] text-[#24263e]/75 border-slate-200 hover:bg-[#FFFFFF] hover:text-[#24263e]'
-                }`}
-              >
-                <span>{cat.icon}</span>
-                <span>{lang === 'vi' ? cat.nameVi : cat.nameEn}</span>
-              </button>
-            );
-          })}
+        <div className="relative flex items-center gap-1.5">
+          {/* Nút điều hướng danh mục trước */}
+          <button
+            type="button"
+            onClick={() => handleNavigateCategory('prev')}
+            title={lang === 'vi' ? 'Danh mục trước (hoặc phím mũi tên Trái)' : 'Previous category (Left arrow)'}
+            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg bg-[#faf8f5] hover:bg-[#FFFFFF] hover:border-[#c34c36]/40 border border-slate-200 text-[#24263e] shadow-2xs cursor-pointer transition active:scale-95"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          {/* Dải danh mục có thanh scroll rõ nét & nhận phím mũi tên chuyển ô */}
+          <div
+            tabIndex={0}
+            role="tablist"
+            aria-label="Category tabs"
+            onKeyDown={handleCategoryKeyDown}
+            className="flex-1 flex items-center gap-2 overflow-x-auto pb-2 pt-0.5 category-scrollbar text-xs focus:outline-none focus:ring-1 focus:ring-[#c34c36]/30 rounded-xl"
+          >
+            {CATEGORIES.map((cat) => {
+              const isSelected = selectedCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  ref={(el) => { categoryRefs.current[cat.id] = el; }}
+                  role="tab"
+                  aria-selected={isSelected}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  onKeyDown={handleCategoryKeyDown}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap transition text-xs font-bold cursor-pointer border shrink-0 ${
+                    isSelected
+                      ? 'bg-[#24263e] text-white border-[#24263e] shadow-xs ring-2 ring-[#24263e]/20'
+                      : 'bg-[#faf8f5] text-[#24263e]/75 border-slate-200 hover:bg-[#FFFFFF] hover:text-[#24263e]'
+                  }`}
+                >
+                  <span>{cat.icon}</span>
+                  <span>{lang === 'vi' ? cat.nameVi : cat.nameEn}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Nút điều hướng danh mục kế tiếp */}
+          <button
+            type="button"
+            onClick={() => handleNavigateCategory('next')}
+            title={lang === 'vi' ? 'Danh mục kế tiếp (hoặc phím mũi tên Phải)' : 'Next category (Right arrow)'}
+            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg bg-[#faf8f5] hover:bg-[#FFFFFF] hover:border-[#c34c36]/40 border border-slate-200 text-[#24263e] shadow-2xs cursor-pointer transition active:scale-95"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
       </section>
 

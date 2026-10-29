@@ -176,6 +176,8 @@ export interface EscrowOrder {
   inspectionMethod?: 'AT_CENTER' | 'AT_HOME';
   inspectorId?: string;
   inspectorName?: string;
+  inspectorEmail?: string;
+  inspectorPhone?: string;
   inspectionFeeSplit?: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
   buyerInspectionFeeVnd?: number;
   sellerInspectionFeeVnd?: number;
@@ -188,6 +190,7 @@ export interface EscrowOrder {
   isReviewed?: boolean;
   userReview?: ProductReview;
   backendStatus?: OrderBackendStatus;
+  status?: OrderBackendStatus | string | null;
   shippingQuoteId?: string;
   shippingDeliveredAt?: string;
   deliveryAddress?: any;
@@ -548,6 +551,7 @@ export interface CreateShipmentRequestDto {
   fromAddress?: any;
   toAddress?: any;
   reason?: string;
+  reportId?: string;
 }
 
 export interface ShipmentBackend {

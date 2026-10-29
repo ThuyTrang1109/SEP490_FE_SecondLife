@@ -72,11 +72,15 @@ export const RealtimeNotificationToast: React.FC<RealtimeNotificationToastProps>
       if (!isNotificationForUser(item, currentUser, currentRole)) {
         return;
       }
+      const notifItem: NotificationItem = {
+        ...item,
+        id: item.id || `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      };
       playNotificationChime();
-      setCurrentToast(item);
+      setCurrentToast(notifItem);
       const timer = setTimeout(() => {
-        setCurrentToast((prev) => (prev?.id === item.id ? null : prev));
-      }, 7000);
+        setCurrentToast((prev) => (prev?.id === notifItem.id ? null : prev));
+      }, 8000);
       return timer;
     };
 
@@ -137,8 +141,8 @@ export const RealtimeNotificationToast: React.FC<RealtimeNotificationToastProps>
   };
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 max-w-sm w-full animate-slideUp">
-      <div className="p-4 rounded-3xl bg-[#24263e]/95 backdrop-blur-2xl border border-white/20 shadow-2xl text-white space-y-2.5">
+    <div className="fixed bottom-5 right-5 z-[999999] max-w-sm w-full pointer-events-none p-3 sm:p-0">
+      <div className="p-4 rounded-3xl bg-[#24263e] border border-white/25 shadow-2xl text-white space-y-2.5 pointer-events-auto animate-slideUp ring-2 ring-white/10">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-2xl bg-white/10 border border-white/15 shrink-0">

@@ -17,7 +17,7 @@ export const SessionExpiredModal: React.FC<SessionExpiredModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/65 backdrop-blur-md animate-fadeIn select-none font-sans"
+      className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/65 backdrop-blur-md animate-fadeIn select-none font-sans"
     >
       <div
         className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden transform transition-all text-[#24263e]"

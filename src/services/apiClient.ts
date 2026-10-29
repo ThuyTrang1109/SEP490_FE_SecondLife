@@ -15,7 +15,7 @@ export interface PageResponse<T> {
 }
 
 function isNoV1Path(path: string): boolean {
-  return path.startsWith('/auth');
+  return path.startsWith('/auth') || path.startsWith('/video');
 }
 
 export function resolveApiUrl(endpoint: string): string {
@@ -272,9 +272,36 @@ export const clearAuthTokens = () => {
   }
 };
 
+let isNotifyingSessionExpired = false;
+export const notifySessionExpired = (reason = 'SESSION_EXPIRED') => {
+  if (isNotifyingSessionExpired) return;
+  isNotifyingSessionExpired = true;
+  setTimeout(() => {
+    isNotifyingSessionExpired = false;
+  }, 4000);
+
+  const hadSession = Boolean(
+    getAccessToken() ||
+    getRefreshToken() ||
+    getStoredUser() ||
+    sessionStorage.getItem(USER_INFO_KEY) ||
+    localStorage.getItem(USER_INFO_KEY) ||
+    localStorage.getItem('secondlife_user')
+  );
+  clearAuthTokens();
+  if (hadSession && typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('unauthorized_session', {
+        detail: { hadSession, reason },
+      })
+    );
+  }
+};
+
 export interface RequestOptions extends RequestInit {
   requiresAuth?: boolean;
   _retry?: boolean;
+  isBackground?: boolean;
 }
 
 export class ApiError extends Error {
@@ -316,7 +343,7 @@ export async function refreshAccessToken(): Promise<string | null> {
       if (!response.ok) {
         // If BE returns 400 or 401, refresh token is truly expired/invalid/revoked
         if (response.status === 400 || response.status === 401) {
-          clearAuthTokens();
+          notifySessionExpired('REFRESH_TOKEN_EXPIRED');
         }
         return null;
       }
@@ -353,6 +380,36 @@ export async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
+/**
+ * Tự động kiểm tra và làm mới token khi người dùng quay lại tab (focus / visibilitychange).
+ * Giúp đồng bộ phiên đăng nhập mượt mà cho cả Người mua và Người bán mà không bị văng session vô lý.
+ */
+export async function checkAndRenewSessionOnReturn(): Promise<boolean> {
+  const rToken = getRefreshToken();
+  if (!rToken) return false;
+
+  const token = getAccessToken();
+  const isExpiredOrSoon = !token || isTokenExpired(token) || isTokenExpiringSoon(token, 180);
+
+  if (isExpiredOrSoon) {
+    try {
+      console.log('[apiClient] User returned to tab. Proactively renewing JWT token...');
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        recordUserActivity(true);
+        return true;
+      }
+    } catch (err) {
+      console.warn('[apiClient] Session renewal on tab return failed:', err);
+    }
+  } else {
+    // Token vẫn còn hạn, ghi nhận người dùng đã quay lại tương tác
+    recordUserActivity(true);
+    return true;
+  }
+  return false;
+}
+
 export function translateApiError(msg: string | null | undefined): string {
   if (!msg) return 'Đã xảy ra lỗi không xác định. Vui lòng thử lại sau.';
   const s = String(msg).trim();
@@ -387,6 +444,9 @@ export function translateApiError(msg: string | null | undefined): string {
   if (/identity.*restricted/i.test(s)) return 'Danh tính người dùng đang bị hạn chế; không thể duyệt hồ sơ.';
 
   // 3. Đơn hàng, Vận chuyển, Ký quỹ Escrow & Lalamove
+  if (/không có loại xe lalamove đủ tải trọng/i.test(s)) {
+    return 'Kiện hàng vượt quá tải trọng hoặc kích thước của các loại xe Lalamove tại điểm lấy hàng. Vui lòng liên hệ người bán để thỏa thuận phương thức vận chuyển khác.';
+  }
   if (/shipping supports packages up to 50\s*kg and 200\s*cm/i.test(s) || /up to 50\s*kg and 200\s*cm/i.test(s)) {
     return 'Dịch vụ vận chuyển chỉ hỗ trợ kiện hàng tối đa 50 kg và kích thước mỗi chiều không quá 200 cm (2 mét).';
   }
@@ -448,7 +508,7 @@ export function translateApiError(msg: string | null | undefined): string {
 
   // 6. Hệ thống & Mạng (Network & Server)
   if (/failed to fetch|network error|networkerror|network request failed/i.test(s)) return 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra đường truyền mạng.';
-  if (/internal server error|500 internal server error/i.test(s)) return 'Máy chủ gặp sự cố xử lý. Vui lòng thử lại sau.';
+  if (/internal server error|500 internal server error|unexpected internal error|an unexpected internal/i.test(s)) return 'Máy chủ gặp sự cố xử lý. Vui lòng thử lại sau.';
   if (/request timeout|gateway timeout|504/i.test(s)) return 'Yêu cầu quá thời gian phản hồi (Timeout). Vui lòng thử lại.';
   if (/bad request|400 bad request/i.test(s)) return 'Yêu cầu không hợp lệ. Vui lòng kiểm tra lại thông tin.';
   if (/cannot read properties of/i.test(s)) return 'Dữ liệu chưa hoàn tất tải. Vui lòng làm mới trang.';
@@ -484,10 +544,13 @@ export async function request<T>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<ApiResponse<T>> {
-  const { requiresAuth = true, _retry = false, headers: customHeaders, ...restOptions } = options;
+  const { requiresAuth = true, _retry = false, isBackground = false, headers: customHeaders, ...restOptions } = options;
 
-  // Record user activity on any API interaction
-  recordUserActivity();
+  // Chỉ ghi nhận hoạt động người dùng khi request KHÔNG PHẢI là background polling ngầm
+  // và chỉ khi người dùng chưa bị nhàn rỗi quá hạn (tránh background polling tự gia hạn activity giả tạo)
+  if (!isBackground && !isUserIdle(30 * 60 * 1000)) {
+    recordUserActivity();
+  }
 
   const isFormData = typeof FormData !== 'undefined' && restOptions.body instanceof FormData;
   const headers: Record<string, string> = {
@@ -510,15 +573,22 @@ export async function request<T>(
   }
 
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    if (!requiresAuth && isTokenExpired(token)) {
+      // Không gửi access token đã hết hạn lên public endpoint để tránh backend trả về 401
+    } else {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
   } else if (requiresAuth) {
-    // Chỉ kích hoạt unauthorized_session nếu trước đó người dùng có phiên hoạt động và bị nhàn rỗi quá hạn
-    // Tuyệt đối không dispatch khi người dùng chưa đăng nhập hoặc vừa đăng xuất thủ công
-    if (rToken && isUserIdle()) {
-      clearAuthTokens();
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new Event('unauthorized_session'));
-      }
+    const hadSession = Boolean(
+      getAccessToken() ||
+      getRefreshToken() ||
+      getStoredUser() ||
+      sessionStorage.getItem(USER_INFO_KEY) ||
+      localStorage.getItem(USER_INFO_KEY) ||
+      localStorage.getItem('secondlife_user')
+    );
+    if (hadSession) {
+      notifySessionExpired('TOKEN_REQUIRED_BUT_MISSING_OR_EXPIRED');
     }
     throw new Error('Chưa đăng nhập hoặc phiên làm việc đã kết thúc.');
   }
@@ -553,8 +623,8 @@ export async function request<T>(
     }
 
     if (!response.ok) {
-      // If 401 Unauthorized on an authenticated endpoint, try silent token refresh once if user is active
-      if (response.status === 401 && !_retry && requiresAuth && !endpoint.includes('/auth/')) {
+      // If 401 Unauthorized, try silent token refresh once if user is active
+      if (response.status === 401 && !_retry && !endpoint.includes('/auth/')) {
         if (!isUserIdle()) {
           const refreshedToken = await refreshAccessToken();
           if (refreshedToken) {
@@ -566,15 +636,10 @@ export async function request<T>(
         }
       }
 
-      // Only clear auth tokens and revoke session if 401 occurs on an authenticated route after retry
-      // and user previously possessed active tokens
-      if (response.status === 401 && requiresAuth && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
+      // Xử lý khi thực sự 401 và không thể làm mới token (hết hạn session)
+      if (response.status === 401 && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
         console.log('[apiClient] Dispatched unauthorized_session due to 401 on endpoint:', endpoint);
-        const hadTokens = Boolean(token || rToken);
-        clearAuthTokens();
-        if (hadTokens && typeof window !== 'undefined') {
-          window.dispatchEvent(new Event('unauthorized_session'));
-        }
+        notifySessionExpired('API_401_UNAUTHORIZED');
       }
 
       const rawError =

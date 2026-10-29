@@ -798,9 +798,10 @@ export const shippingService = {
    * Đối soát / Kích hoạt lại tạo vận đơn khi API đối tác bị timeout hoặc thất bại
    * POST /api/v1/shipments/{shipmentId}/reconcile-creation
    */
-  async reconcileCreation(shipmentId: string): Promise<ShipmentBackend> {
+  async reconcileCreation(shipmentId: string, orderCode?: string): Promise<ShipmentBackend> {
     const res = await request<ShipmentBackend>(`/shipments/${shipmentId}/reconcile-creation`, {
       method: 'POST',
+      body: JSON.stringify({ orderCode: orderCode || '' }),
       requiresAuth: true,
     });
     const shipment = (res as any)?.data ?? res;
@@ -808,15 +809,19 @@ export const shippingService = {
   },
 
   /**
-   * Hoàn tiền phí vận chuyển khi hủy chuyến hoặc hủy đơn trước khi bưu tá lấy hàng
+   * Hoàn tiền phí vận chuyển hoặc tiền hàng hoàn khi bưu tá giao hàng hoàn thành công
    * POST /api/v1/shipments/{shipmentId}/refund
    */
-  async refundShipment(shipmentId: string): Promise<any> {
-    const res = await request<any>(`/shipments/${shipmentId}/refund`, {
+  async refundShipment(shipmentId: string, payload?: { reason: string; responsibleParty?: string }): Promise<ShipmentBackend> {
+    const body = payload || {
+      reason: 'Carrier đã xác nhận giao hàng hoàn về seller. Hoàn toàn bộ tiền hàng vào ví buyer theo quyết định đã duyệt.',
+    };
+    const res = await request<ShipmentBackend>(`/shipments/${shipmentId}/refund`, {
       method: 'POST',
+      body: JSON.stringify(body),
       requiresAuth: true,
     });
-    return (res as any)?.data ?? res;
+    return ((res as any)?.data ?? res) as ShipmentBackend;
   },
 };
 

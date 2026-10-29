@@ -15,58 +15,108 @@ export function isNotificationForUser(
   if (!currentUser) return false;
 
   const currentUserId = String(currentUser.id || '');
+  const currentUserName = ((currentUser as any)?.fullName || currentUser?.name || '').trim().toLowerCase();
+  const currentUserEmail = (currentUser?.email || '').trim().toLowerCase();
   const role = String(currentRole || currentUser.role || '').toUpperCase();
+  const userRoles = Array.isArray((currentUser as any)?.roles)
+    ? (currentUser as any).roles.map((r: any) => String(r).toUpperCase())
+    : [];
 
-  // 1. Kiểm tra nghiêm ngặt theo vai trò người nhận (recipientRole):
-  // Nếu thông báo dành riêng cho vai trò khác vai trò hiện tại thì tuyệt đối không hiển thị
-  if (item.recipientRole) {
-    const targetRole = String(item.recipientRole).toUpperCase();
-    if (!['ALL', 'SYSTEM'].includes(targetRole) && targetRole !== role) {
-      return false;
-    }
-  }
-
-  // 2. Kiểm tra theo recipientId hoặc userId nếu trùng khớp
   const targetId = item.recipientId || item.userId;
+  const itemRecipientName = String((item as any)?.recipientName || (item as any)?.sellerName || '').trim().toLowerCase();
+  const itemRecipientEmail = String((item as any)?.recipientEmail || (item as any)?.sellerEmail || '').trim().toLowerCase();
+
+  // 1. Kiểm tra đích danh người dùng trước tiên:
+  // Nếu thông báo gửi đích danh cho currentUserId thì hiển thị ngay lập tức
   if (targetId && String(targetId) === currentUserId) {
     return true;
   }
 
-  // 3. Nếu cùng vai trò người nhận (BUYER, SELLER, INSPECTOR, INSPECTION_CENTER...)
-  if (item.recipientRole) {
-    const targetRole = String(item.recipientRole).toUpperCase();
-    if (['ALL', 'SYSTEM'].includes(targetRole) || targetRole === role) {
-      return true;
+  // 1.1 Khớp theo tên hiển thị hoặc email của người nhận/người bán
+  if (currentUserName && itemRecipientName && currentUserName === itemRecipientName) {
+    return true;
+  }
+  if (currentUserEmail && itemRecipientEmail && currentUserEmail === itemRecipientEmail) {
+    return true;
+  }
+
+  // 1.2 Nếu thông báo đã chỉ định đích danh người khác (khác currentUserId và khác tên/email)
+  // Lưu ý: Nếu thông báo gửi cho vai trò SELLER hoặc BUYER và người dùng đang ở vai trò đó, vẫn cho phép hiển thị
+  const targetRole = String(item.recipientRole || '').toUpperCase();
+  if (targetId && String(targetId) !== currentUserId && itemRecipientName && itemRecipientName !== currentUserName) {
+    if (targetRole !== 'SELLER' && targetRole !== 'BUYER') {
+      return false;
+    }
+    // Nếu là SELLER nhưng người dùng hiện tại lại là ADMIN/INSPECTOR/CENTER thì không hiển thị
+    if (targetRole === 'SELLER' && (role === 'INSPECTOR' || role === 'INSPECTION_CENTER' || role === 'ADMIN')) {
+      return false;
     }
   }
 
+  // 2. Kiểm tra vai trò chuyên biệt (Inspector, Inspection Center, Admin)
+  if (['INSPECTOR', 'INSPECTION_CENTER'].includes(targetRole)) {
+    return role === 'INSPECTOR' || role === 'INSPECTION_CENTER' || userRoles.includes('INSPECTOR') || userRoles.includes('INSPECTION_CENTER');
+  }
+  if (targetRole === 'ADMIN') {
+    return role === 'ADMIN' || userRoles.includes('ADMIN');
+  }
+
+  // 3. Đối với người dùng cá nhân C2C (vừa là Người mua vừa là Người bán):
+  // Thông báo của Người bán (SELLER) sẽ hiển thị cho tài khoản nếu họ là người bán hoặc có bài đăng/đơn bán
+  if (targetRole === 'SELLER') {
+    if (role === 'INSPECTOR' || role === 'INSPECTION_CENTER' || role === 'ADMIN') {
+      return false; // Portal chuyên biệt không hiển thị thông báo seller thông thường
+    }
+    // Nếu thông báo gửi cho người bán và người dùng này là user/seller/buyer cá nhân
+    return true;
+  }
+
+  if (targetRole === 'BUYER') {
+    if (role === 'INSPECTOR' || role === 'INSPECTION_CENTER' || role === 'ADMIN') {
+      return false;
+    }
+    return true;
+  }
+
+  if (['ALL', 'SYSTEM'].includes(targetRole)) {
+    return true;
+  }
+
   // 4. Phân loại theo ngữ cảnh nội dung nếu thông báo chưa gắn metadata:
-  // Ngăn chặn thông báo của Người bán bị hiển thị trên chuông Người mua và ngược lại
   const title = (item.title || '').toLowerCase();
   const msg = (item.message || '').toLowerCase();
+  const itemType = String(item.type || '').toUpperCase();
 
   // Thông báo dành riêng cho Trung tâm kiểm định / KTV
   if (
     title.includes('nhiệm vụ kiểm định') ||
     title.includes('phân công ktv') ||
     msg.includes('trung tâm vui lòng điều phối') ||
-    msg.includes('phân công ktv')
+    msg.includes('phân công ktv') ||
+    itemType === 'INSPECTION_TASK'
   ) {
     return role === 'INSPECTOR' || role === 'INSPECTION_CENTER';
   }
 
-  // Thông báo dành riêng cho Người bán
+  // Thông báo dành cho Người bán
   if (
-    title.includes('có đơn hàng mới cần xác nhận') ||
+    title.includes('yêu cầu kiểm định') ||
+    title.includes('đơn kiểm định mới') ||
+    title.includes('kiểm định tại nhà') ||
+    title.includes('kiểm định qua hub') ||
+    title.includes('hẹn lịch ktv') ||
+    title.includes('có đơn hàng mới') ||
     title.includes('người mua từ chối mua tiếp') ||
-    title.includes('sản phẩm của bạn đã') ||
     title.includes('sản phẩm của bạn') ||
+    itemType === 'INSPECTION_SELLER_REQUEST' ||
     msg.includes('vừa đặt mua sản phẩm') ||
     msg.includes('vừa đặt cọc kiểm định') ||
-    msg.includes('khách hàng đã quyết định từ chối mua tiếp') ||
+    msg.includes('vừa gửi yêu cầu kiểm định') ||
+    msg.includes('hẹn lịch ktv') ||
+    msg.includes('chuẩn bị gửi hàng') ||
     msg.includes('thiết bị của bạn')
   ) {
-    return role === 'SELLER';
+    return role !== 'INSPECTOR' && role !== 'INSPECTION_CENTER' && role !== 'ADMIN';
   }
 
   // Thông báo dành cho Người mua
@@ -78,10 +128,9 @@ export function isNotificationForUser(
     msg.includes('xác nhận quyết định nhận hàng') ||
     msg.includes('hoàn trả 100%')
   ) {
-    return role === 'BUYER';
+    return role !== 'INSPECTOR' && role !== 'INSPECTION_CENTER' && role !== 'ADMIN';
   }
 
-  // Mặc định an toàn: nếu không xác định được người nhận cụ thể thì chỉ cho phép nếu là thông báo hệ thống
   return true;
 }
 

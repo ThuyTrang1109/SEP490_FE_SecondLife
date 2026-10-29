@@ -162,6 +162,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   // Form states
   const [name, setName] = useState(currentUser.name || '');
   const [email, setEmail] = useState(currentUser.email || '');
+  const [isEmailVerified, setIsEmailVerified] = useState<boolean>(() => Boolean(currentUser.emailVerified));
+
+  useEffect(() => {
+    setIsEmailVerified(Boolean(currentUser.emailVerified));
+  }, [currentUser.emailVerified]);
   const [phone, setPhone] = useState(currentUser.phone || '');
   const [address, setAddress] = useState(currentUser.address || '');
   const [gender, setGender] = useState<'male' | 'female' | 'other' | ''>(
@@ -656,6 +661,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       userService.getMyProfile()
         .then((fresh) => {
           if (fresh) {
+            if (typeof fresh.emailVerified === 'boolean') {
+              setIsEmailVerified(fresh.emailVerified);
+              if (fresh.emailVerified !== currentUser.emailVerified) {
+                onUpdateProfile({
+                  ...currentUser,
+                  emailVerified: fresh.emailVerified,
+                });
+              }
+            }
             if (fresh.fullName) setName(fresh.fullName);
             if (fresh.email) setEmail(fresh.email);
             if (fresh.phone) setPhone(fresh.phone);
@@ -1694,9 +1708,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const getRoleBadge = (role: UserRole) => {
     switch (role) {
       case 'buyer':
+        if (isEmailVerified) {
+          return {
+            label: lang === 'vi' ? 'Người Mua Xác Thực (Verified Buyer)' : 'Verified Buyer',
+            className: 'bg-blue-500/15 text-blue-600 border-blue-500/30',
+          };
+        }
         return {
-          label: lang === 'vi' ? 'Người Mua Xác Thực (Verified Buyer)' : 'Verified Buyer',
-          className: 'bg-blue-500/15 text-blue-600 border-blue-500/30',
+          label: lang === 'vi' ? 'Người Mua (Chờ Xác Thực OTP)' : 'Buyer (Pending OTP)',
+          className: 'bg-amber-500/15 text-amber-700 border-amber-500/30',
         };
       case 'seller':
         return {
@@ -1827,7 +1847,16 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
                       {name || currentUser.name}
                     </h2>
-                    <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                    {isEmailVerified ? (
+                      <span title={lang === 'vi' ? 'Tài khoản đã xác thực' : 'Verified account'}>
+                        <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300 shadow-2xs">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        {lang === 'vi' ? 'Chưa xác thực OTP' : 'Unverified OTP'}
+                      </span>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span
@@ -1838,6 +1867,16 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
                       SecondLife Member
                     </span>
+                    {!isEmailVerified && onOpenVerifyEmail && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenVerifyEmail(email || currentUser.email)}
+                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#c34c36] hover:bg-[#a83b27] text-white shadow-xs cursor-pointer transition active:scale-95"
+                      >
+                        <Mail className="w-3 h-3" />
+                        <span>{lang === 'vi' ? 'Xác thực ngay' : 'Verify now'}</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1956,6 +1995,34 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       </p>
                     </div>
 
+                    {!isEmailVerified && (
+                      <div className="p-3 sm:p-3.5 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                        <div className="flex items-start gap-2.5">
+                          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-xs font-black text-amber-950">
+                              {lang === 'vi' ? 'Tài khoản chưa xác thực Email OTP' : 'Email OTP Not Verified'}
+                            </p>
+                            <p className="text-[11px] text-amber-800 leading-snug mt-0.5">
+                              {lang === 'vi'
+                                ? 'Hòm thư của bạn chưa được kích hoạt mã OTP. Vui lòng xác thực bổ sung để bảo vệ tài khoản và mở khóa đầy đủ quyền giao dịch.'
+                                : 'Your email has not been verified. Please complete OTP verification to secure your account.'}
+                            </p>
+                          </div>
+                        </div>
+                        {onOpenVerifyEmail && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenVerifyEmail(email || currentUser.email)}
+                            className="shrink-0 px-3.5 py-1.5 rounded-lg bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition cursor-pointer active:scale-95 whitespace-nowrap"
+                          >
+                            <Mail className="w-3.5 h-3.5" />
+                            <span>{lang === 'vi' ? 'Xác thực OTP ngay' : 'Verify OTP Now'}</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
                     <div className="space-y-3.5">
                       {/* Name */}
                       <div>
@@ -1981,18 +2048,26 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           <label className="text-xs font-bold text-slate-700 block">
                             {lang === 'vi' ? 'Địa Chỉ Email' : 'Email Address'}
                           </label>
-                          {currentUser.emailVerified ? (
+                          {isEmailVerified ? (
                             <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 inline-flex items-center gap-1">
                               <CheckCircle2 className="w-3 h-3 text-emerald-600" /> {lang === 'vi' ? 'Đã xác thực' : 'Verified'}
                             </span>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => onOpenVerifyEmail?.(email || currentUser.email)}
-                              className="text-[10px] font-bold text-[#c34c36] bg-[#fce5da]/50 hover:bg-[#fce5da] px-2 py-0.5 rounded-md border border-[#c34c36]/20 inline-flex items-center gap-1 cursor-pointer transition shadow-2xs"
-                            >
-                              <Mail className="w-3 h-3" /> {lang === 'vi' ? 'Xác thực OTP ngay' : 'Verify OTP now'}
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-300 inline-flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3 text-amber-600" /> {lang === 'vi' ? 'Chưa xác thực' : 'Unverified'}
+                              </span>
+                              {onOpenVerifyEmail && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenVerifyEmail(email || currentUser.email)}
+                                  className="text-[11px] font-bold text-white bg-[#c34c36] hover:bg-[#a83b27] px-2.5 py-0.5 rounded-md border border-[#c34c36] inline-flex items-center gap-1 cursor-pointer transition shadow-2xs hover:shadow-xs active:scale-95"
+                                  title={lang === 'vi' ? 'Bấm để nhận mã OTP và xác thực email' : 'Click to verify email OTP'}
+                                >
+                                  <Mail className="w-3 h-3 text-white" /> {lang === 'vi' ? 'Xác thực OTP ngay' : 'Verify OTP now'}
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                         <div className="relative">
@@ -2006,6 +2081,23 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
                           />
                         </div>
+                        {!isEmailVerified && (
+                          <div className="mt-1.5 flex items-center justify-between text-[11px] text-amber-700 px-0.5">
+                            <span className="flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
+                              {lang === 'vi' ? 'Hộp thư chưa được xác thực mã OTP' : 'Email OTP not confirmed'}
+                            </span>
+                            {onOpenVerifyEmail && (
+                              <button
+                                type="button"
+                                onClick={() => onOpenVerifyEmail(email || currentUser.email)}
+                                className="font-bold text-[#c34c36] hover:underline cursor-pointer"
+                              >
+                                {lang === 'vi' ? 'Xác thực bổ sung ngay →' : 'Verify now →'}
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {/* Phone & Birthday */}
@@ -2508,6 +2600,44 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                   {lang === 'vi' ? 'Cài Đặt An Toàn & Bảo Vệ Tài Khoản' : 'Security & Account Protection Settings'}
                 </h4>
+
+                {/* Email Verification Checklist Card */}
+                <div className="p-3.5 rounded-xl border border-gray-200 bg-white flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Mail className="w-4 h-4 text-slate-500" />
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 block">
+                        {lang === 'vi' ? 'Xác thực hòm thư Email (OTP)' : 'Email Verification (OTP)'}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        Email: {email || currentUser.email}
+                      </span>
+                    </div>
+                  </div>
+                  {isEmailVerified ? (
+                    <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 inline-flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      {lang === 'vi' ? 'Đã Xác Thực' : 'Verified'}
+                    </span>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-300 inline-flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 text-amber-600" />
+                        {lang === 'vi' ? 'Chưa Xác Thực' : 'Unverified'}
+                      </span>
+                      {onOpenVerifyEmail && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenVerifyEmail(email || currentUser.email)}
+                          className="px-2.5 py-1 rounded-lg bg-[#c34c36] hover:bg-[#a83b27] text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition cursor-pointer active:scale-95"
+                        >
+                          <Mail className="w-3 h-3" />
+                          <span>{lang === 'vi' ? 'Xác thực ngay' : 'Verify now'}</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 <div className="p-3.5 rounded-xl border border-gray-200 bg-white flex items-center justify-between">
                   <div className="flex items-center gap-3">

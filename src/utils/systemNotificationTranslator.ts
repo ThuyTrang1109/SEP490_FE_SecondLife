@@ -146,7 +146,7 @@ export function translateSystemNotification(rawMsg: string | null | undefined): 
   if (lower.includes('network error') || lower.includes('failed to fetch')) {
     return 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại đường truyền mạng.';
   }
-  if (lower.includes('internal server error')) {
+  if (lower.includes('internal server error') || lower.includes('unexpected internal error') || lower.includes('unexpected internal')) {
     return 'Máy chủ gặp sự cố xử lý nội bộ. Vui lòng thử lại sau.';
   }
   if (lower.includes('unauthorized') || lower.includes('session expired')) {

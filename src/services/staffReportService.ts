@@ -22,13 +22,20 @@ export interface ReportItemDto {
   sellerId?: string | null;
   postId?: string | null;
   orderId?: string | null;
+  targetType?: 'ORDER' | 'LISTING' | string;
   reasonCode: ReportReasonCode;
   description: string;
   evidenceUrls: string[];
   status: ReportStatus;
   reviewerId?: string | null;
+  resolutionAction?: 'NONE' | 'RETURN_AND_REFUND' | null;
   responsibleParty?: ResponsibleParty | null;
   decisionReason?: string | null;
+  returnShipmentId?: string | null;
+  returnApprovedAt?: string | null;
+  refundedAt?: string | null;
+  refundedBy?: string | null;
+  refundAmount?: number | null;
   createdAt: string;
   updatedAt?: string | null;
   resolvedAt?: string | null;
@@ -38,6 +45,7 @@ export interface ResolveReportRequestDto {
   decision: ReportDecision;
   responsibleParty?: ResponsibleParty;
   reason: string;
+  resolutionAction?: 'NONE' | 'RETURN_AND_REFUND';
 }
 
 export const staffReportService = {
@@ -45,7 +53,7 @@ export const staffReportService = {
    * Lấy danh sách hàng đợi các báo cáo vi phạm cần duyệt
    * GET /api/v1/staff/reports
    */
-  async getReportQueue(status?: ReportStatus, page = 0, size = 20): Promise<{
+  async getReportQueue(status?: ReportStatus, targetType?: string, page = 0, size = 20): Promise<{
     items: ReportItemDto[];
     page: number;
     size: number;
@@ -54,6 +62,7 @@ export const staffReportService = {
   }> {
     const params = new URLSearchParams();
     if (status) params.append('status', status);
+    if (targetType) params.append('targetType', targetType);
     params.append('page', String(page));
     params.append('size', String(size));
 
@@ -69,6 +78,18 @@ export const staffReportService = {
       totalElements: data?.totalElements ?? 0,
       totalPages: data?.totalPages ?? 1,
     };
+  },
+
+  /**
+   * Xem chi tiết report dành cho staff / reviewer
+   * GET /api/v1/reports/{id}
+   */
+  async getReportById(id: string): Promise<ReportItemDto> {
+    const res = await request<ReportItemDto>(`/reports/${id}`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return ((res as any)?.data ?? res) as ReportItemDto;
   },
 
   /**

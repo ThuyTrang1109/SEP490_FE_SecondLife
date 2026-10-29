@@ -441,7 +441,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                       {lang === 'vi' ? 'Quản trị viên không thể mua hàng hoặc chat' : 'Admin cannot purchase or chat'}
                     </div>
                   </div>
-                ) : listing.status === 'RESERVED' || listing.backendStatus === 'RESERVED' || listing.status === 'reserved' || listing.status === 'sold' || listing.backendStatus === 'SOLD' || getBoughtListingIds().has(String(listing.id)) ? (
+                ) : (localStorage.getItem(`listing_available_${listing.id}`) !== 'true' && (listing.status === 'RESERVED' || listing.backendStatus === 'RESERVED' || listing.status === 'reserved' || listing.status === 'sold' || listing.backendStatus === 'SOLD' || getBoughtListingIds().has(String(listing.id)))) ? (
                   <div className="space-y-1.5 pt-1">
                      <div className="w-full py-2.5 px-3 bg-amber-50 text-amber-800 rounded-xl font-bold text-xs text-center border border-amber-200">
                         {lang === 'vi' ? 'Sản phẩm đã có người đặt mua' : 'Item is currently reserved'}

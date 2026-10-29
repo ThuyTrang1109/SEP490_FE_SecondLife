@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { Listing, Language, UserProfile } from '../types';
 import { formatVND } from '../utils/translations';
-import { getBoughtListingIds } from '../utils/orderUtils';
+import { getBoughtListingIds, getSortablePostTimestamp } from '../utils/orderUtils';
 import { sellerService, SellerVerificationResponseDto } from '../services/sellerService';
 import { sellerCreditService, CreditBalanceResponseDto, CreditLedgerResponseDto, CreditPurchaseResponseDto } from '../services/sellerCreditService';
 import { mediaService } from '../services/mediaService';
@@ -38,6 +38,10 @@ import { WithdrawalModal } from '../components/modals/WithdrawalModal';
 import { extractWardAndCity, getSavedSellerAddress, cleanFullAddress } from '../utils/addressUtils';
 import { dialogService } from '../utils/dialogService';
 import { resolveCategoryAndItem } from '../utils/catalogCache';
+import { returnShippingFeeService, SellerReturnShippingDebtResponse } from '../services';
+import { SellerReturnShippingFeesSection } from '../components/seller/SellerReturnShippingFeesSection';
+import { SellerDisputeResponseModal } from '../components/seller/SellerDisputeResponseModal';
+import { RotateCcw } from 'lucide-react';
 
 interface SellerDashboardViewProps {
   listings: Listing[];
@@ -59,6 +63,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   onDeleteListing,
 }) => {
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'active' | 'draft' | 'pending' | 'rejected' | 'reserved' | 'sold'>('ALL');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [draftToDelete, setDraftToDelete] = useState<{ id: string; title: string } | null>(null);
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const [toastNotice, setToastNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -173,6 +178,29 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   // Real Backend Posts State
   const [myServerPosts, setMyServerPosts] = useState<Listing[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
+
+  // Return Shipping Fees & Dispute Modal State
+  const [sellerActiveTab, setSellerActiveTab] = useState<'listings' | 'return_fees'>('listings');
+  const [sellerDebt, setSellerDebt] = useState<SellerReturnShippingDebtResponse | null>(null);
+  const [disputeModalReportId, setDisputeModalReportId] = useState<string | null>(null);
+  const [disputeModalOrderId, setDisputeModalOrderId] = useState<string | null>(null);
+  const [isDisputeModalOpen, setIsDisputeModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('seller_tab');
+      if (tab === 'return_fees') setSellerActiveTab('return_fees');
+
+      const rId = params.get('reportId') || params.get('report_id');
+      const oId = params.get('orderId') || params.get('order_id');
+      if (rId) {
+        setDisputeModalReportId(rId);
+        if (oId) setDisputeModalOrderId(oId);
+        setIsDisputeModalOpen(true);
+      }
+    }
+  }, []);
 
   // Seller Reputation State (GET /api/v1/seller/reputation/me & /history)
   const [myReputation, setMyReputation] = useState<SellerReputationDto | null>(null);
@@ -356,6 +384,10 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         })
         .catch(() => {});
 
+      returnShippingFeeService.getMyReturnShippingDebt()
+        .then((d) => setSellerDebt(d))
+        .catch(() => {});
+
       const res = await postService.getMyPosts(0, 50);
       const posts = (res as any)?.content || (res as any)?.data || (Array.isArray(res) ? res : []);
       if (posts && posts.length > 0) {
@@ -415,10 +447,18 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             sellerRating: 5.0,
             sellerCompletedOrders: 0,
             sellerVerified: true,
-            status: (getBoughtListingIds().has(String(p.postId || p.id)) ? 'reserved' : (p.status === 'ACTIVE' ? 'active' : p.status === 'DRAFT' ? 'draft' : 'reserved')) as any,
-            backendStatus: getBoughtListingIds().has(String(p.postId || p.id)) ? 'RESERVED' : p.status,
+            status: (
+              localStorage.getItem(`listing_available_${p.postId || p.id}`) === 'true'
+                ? 'active'
+                : (getBoughtListingIds().has(String(p.postId || p.id)) ? 'reserved' : (p.status === 'ACTIVE' ? 'active' : p.status === 'DRAFT' ? 'draft' : 'reserved'))
+            ) as any,
+            backendStatus: (
+              localStorage.getItem(`listing_available_${p.postId || p.id}`) === 'true'
+                ? 'ACTIVE'
+                : (getBoughtListingIds().has(String(p.postId || p.id)) ? 'RESERVED' : p.status)
+            ),
             rejectionReason: p.rejectionReason,
-            createdAt: p.createdAt || new Date().toISOString(),
+            createdAt: p.createdAt || p.createdDate || p.created_at || p.publishedAt || p.updatedAt || new Date().toISOString(),
             isInspectionGuaranteed: true,
             requiresInspection: Number(p.price || 0) > 5000000,
             photos: {
@@ -437,8 +477,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           };
         });
         mapped.sort((a, b) => {
-          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          const timeA = getSortablePostTimestamp(a);
+          const timeB = getSortablePostTimestamp(b);
           return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
         });
         setMyServerPosts(mapped);
@@ -554,6 +594,11 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           };
         }
         return item;
+      })
+      .sort((a, b) => {
+        const timeA = getSortablePostTimestamp(a);
+        const timeB = getSortablePostTimestamp(b);
+        return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
       });
   }, [
     myServerPosts,
@@ -568,31 +613,49 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     currentUser?.province,
   ]);
 
-  const filteredListings = combinedListings.filter((l) => {
-    if (filterStatus === 'ALL') return true;
-    if (filterStatus === 'draft') {
-      return l.backendStatus === 'DRAFT' || l.status === 'draft';
-    }
-    if (filterStatus === 'pending') {
-      return (
-        (l.backendStatus === 'PENDING' || l.backendStatus === 'PENDING_INSPECTION' || l.backendStatus === 'PENDING_REVIEW') &&
-        l.status !== 'draft'
-      );
-    }
-    if (filterStatus === 'rejected') {
-      return l.backendStatus === 'REJECTED';
-    }
-    if (filterStatus === 'active') {
-      if (getBoughtListingIds().has(String(l.id)) || l.backendStatus === 'RESERVED' || l.backendStatus === 'SOLD' || l.status === 'reserved' || l.status === 'sold') {
-        return false;
+  const filteredListings = React.useMemo(() => {
+    const list = combinedListings.filter((l) => {
+      if (filterStatus === 'ALL') return true;
+      if (filterStatus === 'draft') {
+        return l.backendStatus === 'DRAFT' || l.status === 'draft';
       }
-      return l.backendStatus === 'ACTIVE' || l.status === 'active';
-    }
-    if (filterStatus === 'reserved') {
-      return getBoughtListingIds().has(String(l.id)) || l.backendStatus === 'RESERVED' || l.status === 'reserved';
-    }
-    return l.status === filterStatus;
-  });
+      if (filterStatus === 'pending') {
+        return (
+          (l.backendStatus === 'PENDING' || l.backendStatus === 'PENDING_INSPECTION' || l.backendStatus === 'PENDING_REVIEW') &&
+          l.status !== 'draft'
+        );
+      }
+      if (filterStatus === 'rejected') {
+        return l.backendStatus === 'REJECTED';
+      }
+      if (filterStatus === 'active') {
+        const isExplicitlyAvail = localStorage.getItem(`listing_available_${l.id}`) === 'true';
+        if (!isExplicitlyAvail && (getBoughtListingIds().has(String(l.id)) || l.backendStatus === 'RESERVED' || l.backendStatus === 'SOLD' || l.status === 'reserved' || l.status === 'sold')) {
+          return false;
+        }
+        return l.backendStatus === 'ACTIVE' || l.status === 'active' || isExplicitlyAvail;
+      }
+      if (filterStatus === 'reserved') {
+        const isExplicitlyAvail = localStorage.getItem(`listing_available_${l.id}`) === 'true';
+        if (isExplicitlyAvail) return false;
+        return getBoughtListingIds().has(String(l.id)) || l.backendStatus === 'RESERVED' || l.status === 'reserved';
+      }
+      return l.status === filterStatus;
+    });
+
+    return [...list].sort((a, b) => {
+      const timeA = getSortablePostTimestamp(a);
+      const timeB = getSortablePostTimestamp(b);
+      return sortOrder === 'oldest' ? timeA - timeB : timeB - timeA;
+    });
+  }, [combinedListings, filterStatus, sortOrder]);
+
+  const formatPostDateTime = (item: any) => {
+    const ts = getSortablePostTimestamp(item);
+    if (!ts || isNaN(ts)) return '--';
+    const d = new Date(ts);
+    return `${d.toLocaleDateString('vi-VN')} lúc ${d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
+  };
 
   const totalEarnings = currentUser?.walletBalanceVnd ?? currentUser?.walletBalance ?? 0;
   const pendingEscrow = currentUser?.escrowLockedVnd ?? 0;
@@ -968,8 +1031,43 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         </div>
       )}
 
-      {/* Seller Listings Management */}
-      <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-xs space-y-6">
+      {/* Seller Dashboard Sub-Navigation Tabs */}
+      <div className="flex items-center gap-3 border-b border-gray-200 pb-2">
+        <button
+          onClick={() => setSellerActiveTab('listings')}
+          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+            sellerActiveTab === 'listings'
+              ? 'bg-[#24263e] text-white shadow-md'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Tag className="w-4 h-4" />
+          <span>{lang === 'vi' ? 'Quản Lý Tin Đăng' : 'Listings'} ({filteredListings.length})</span>
+        </button>
+
+        <button
+          onClick={() => setSellerActiveTab('return_fees')}
+          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+            sellerActiveTab === 'return_fees'
+              ? 'bg-[#24263e] text-white shadow-md'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <RotateCcw className="w-4 h-4 text-[#c34c36]" />
+          <span>{lang === 'vi' ? 'Phí Hoàn Hàng & Công Nợ' : 'Return Fees & Debt'}</span>
+          {sellerDebt?.outstandingDebt && sellerDebt.outstandingDebt > 0 ? (
+            <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black">
+              Nợ: {formatVND(sellerDebt.outstandingDebt)}
+            </span>
+          ) : null}
+        </button>
+      </div>
+
+      {sellerActiveTab === 'return_fees' ? (
+        <SellerReturnShippingFeesSection />
+      ) : (
+        /* Seller Listings Management */
+        <div className="bg-[#FFFFFF] rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-xs space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
           <div>
             <h2 className="text-lg font-bold text-[#24263e] flex items-center gap-2">
@@ -996,6 +1094,19 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPosts ? 'animate-spin text-indigo-600' : ''}`} />
               <span>{lang === 'vi' ? 'Làm mới' : 'Refresh'}</span>
+            </button>
+
+            <button
+              onClick={() => setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest')}
+              className="p-1.5 px-2.5 rounded-xl border border-gray-200 bg-[#faf8f5] hover:bg-gray-100 text-[#24263e] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+              title={lang === 'vi' ? 'Sắp xếp theo thời gian đăng bài' : 'Sort by posting time'}
+            >
+              <Clock className="w-3.5 h-3.5 text-[#c34c36]" />
+              <span>
+                {sortOrder === 'newest'
+                  ? (lang === 'vi' ? 'Mới đăng nhất' : 'Newest first')
+                  : (lang === 'vi' ? 'Cũ nhất trước' : 'Oldest first')}
+              </span>
             </button>
 
             <div className="flex items-center gap-1.5 bg-[#faf8f5] p-1 rounded-xl border border-gray-200">
@@ -1081,6 +1192,13 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                       📍 {item.location || item.sellerAddress || 'Chưa cập nhật'}
                     </span>
                   </div>
+                  <div className="text-[10.5px] text-slate-500 flex items-center gap-1.5 pt-1 border-t border-gray-100">
+                    <Clock className="w-3 h-3 text-[#c34c36] shrink-0" />
+                    <span>
+                      {lang === 'vi' ? 'Đăng lúc: ' : 'Posted: '}
+                      <span className="font-semibold text-slate-700">{formatPostDateTime(item)}</span>
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -1121,6 +1239,24 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           ))}
         </div>
       </div>
+      )}
+
+      {/* Seller Dispute Response Modal */}
+      {isDisputeModalOpen && disputeModalReportId && (
+        <SellerDisputeResponseModal
+          isOpen={isDisputeModalOpen}
+          onClose={() => {
+            setIsDisputeModalOpen(false);
+            setDisputeModalReportId(null);
+            setDisputeModalOrderId(null);
+          }}
+          reportId={disputeModalReportId}
+          orderId={disputeModalOrderId || undefined}
+          onSuccess={() => {
+            fetchSellerData();
+          }}
+        />
+      )}
 
       {/* Payout / Withdrawal Modal */}
       <WithdrawalModal

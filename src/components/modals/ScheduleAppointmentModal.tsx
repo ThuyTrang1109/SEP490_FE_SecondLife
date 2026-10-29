@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Calendar, Clock, MapPin, X, Check, RefreshCw, AlertCircle, ShieldCheck } from 'lucide-react';
 import { Language } from '../../types';
 import { inspectorService } from '../../services/inspectorService';
+import { saveScopedLocalNotification } from '../../utils/notificationStorage';
 
 interface ScheduleAppointmentModalProps {
   orderId: string;
@@ -70,6 +71,76 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
   // Set min datetime to now + 2 hours
   const minDate = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16);
 
+  const syncAppointmentToOrdersAndNotify = (scheduledDate: Date, noteText: string) => {
+    const formattedDate = scheduledDate.toLocaleString('vi-VN');
+    let buyerId: string | undefined;
+
+    // 1. Cập nhật recent_placed_orders
+    try {
+      const raw = localStorage.getItem('recent_placed_orders');
+      if (raw) {
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          const updated = list.map((o: any) => {
+            if (o.id === orderId) {
+              buyerId = o.buyerId;
+              return {
+                ...o,
+                appointmentScheduledAt: scheduledDate.toISOString(),
+                appointmentNote: noteText,
+                sellerConfirmedAt: o.sellerConfirmedAt || new Date().toISOString(),
+                confirmationStatus: 'CONFIRMED',
+                escrowStatus: 'AWAITING_INSPECTION',
+                backendStatus: 'CONFIRMED_PENDING_DISPATCH',
+              };
+            }
+            return o;
+          });
+          localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
+        }
+      }
+    } catch {}
+
+    // 2. Gửi thông báo cho Người mua
+    const buyerNotif = {
+      id: `notif-buyer-appt-${orderId}-${Date.now()}`,
+      recipientId: buyerId,
+      recipientRole: 'buyer',
+      title: 'Người bán đã hẹn lịch đón KTV kiểm định tại nhà',
+      message: `Người bán đã lên lịch hẹn đón KTV SecondLife đến thẩm định máy vào ${formattedDate}. Đơn hàng #${orderCode || orderId.slice(0, 8)} đang được tiến hành kiểm tra!`,
+      type: 'INSPECTION' as const,
+      referenceId: orderId,
+      referenceType: 'INSPECTION_ORDER',
+      actionUrl: '/orders?order_tab=inspecting',
+      isRead: false,
+      readAt: null,
+      createdAt: new Date().toISOString(),
+    };
+    saveScopedLocalNotification(buyerNotif, buyerId, 'buyer');
+
+    // 3. Gửi thông báo cho Trung tâm kiểm định / KTV
+    const centerNotif = {
+      id: `notif-center-appt-${orderId}-${Date.now()}`,
+      recipientRole: 'inspection_center',
+      title: `Đã có lịch hẹn kiểm định tại nhà (#${orderCode || orderId.slice(0, 8)})`,
+      message: `Người bán đã hẹn đón KTV vào ${formattedDate}. Trung tâm vui lòng phân công KTV đến đúng giờ! Ghi chú: ${noteText || 'Không có'}`,
+      type: 'INSPECTION_TASK' as const,
+      referenceId: orderId,
+      referenceType: 'INSPECTION_ORDER',
+      actionUrl: '/inspection-center',
+      isRead: false,
+      readAt: null,
+      createdAt: new Date().toISOString(),
+    };
+    saveScopedLocalNotification(centerNotif, undefined, 'inspection_center');
+
+    try {
+      window.dispatchEvent(new CustomEvent('secondlife_appointment_scheduled', {
+        detail: { orderId, scheduledAt: scheduledDate.toISOString(), note: noteText }
+      }));
+    } catch {}
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!scheduledAt) {
@@ -96,6 +167,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
         scheduledAt: scheduledDate.toISOString(),
         note: note.trim() || ''
       }));
+      syncAppointmentToOrdersAndNotify(scheduledDate, note.trim());
       if (onSuccess) onSuccess();
       onClose();
     } catch (err: any) {
@@ -104,6 +176,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
         scheduledAt: scheduledDate.toISOString(),
         note: note.trim() || ''
       }));
+      syncAppointmentToOrdersAndNotify(scheduledDate, note.trim());
       if (onSuccess) onSuccess();
       onClose();
     } finally {

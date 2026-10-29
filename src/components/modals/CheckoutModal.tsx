@@ -31,6 +31,9 @@ import {
   ListFilter,
   XCircle,
   AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  Package,
 } from 'lucide-react';
 import { orderService, walletService, shippingService, GhnLocation, inspectorService, InspectionQuoteResponse, InspectionTravelTierDto } from '../../services';
 import { translateApiError } from '../../services/apiClient';
@@ -48,7 +51,9 @@ export const formatLalamoveVehicle = (serviceType?: string): { name: string; ico
       standard: 'Phương tiện do Lalamove chỉ định',
     };
   }
-  const code = serviceType.toUpperCase();
+  const rawCode = serviceType.toUpperCase();
+  const code = rawCode.replace(/^LD_/, '');
+
   if (code === 'MOTORCYCLE' || code === 'BIKE') {
     return {
       name: 'Xe máy',
@@ -57,52 +62,92 @@ export const formatLalamoveVehicle = (serviceType?: string): { name: string; ico
       standard: 'Cân nặng ≤ 30kg • Kích thước ≤ 50x40x50cm',
     };
   }
-  if (code === 'VAN' || code === 'VAN500' || code.includes('VAN')) {
+  if (code === 'VAN_1000' || code === 'VAN1000') {
+    return {
+      name: 'Xe Van 1 tấn',
+      icon: '🚐',
+      desc: 'Chở hàng cồng kềnh, tải trọng lớn che chắn mưa nắng',
+      standard: 'Cân nặng ≤ 1.000kg • Thùng xe Van 1 tấn',
+    };
+  }
+  if (code === 'VAN' || code === 'VAN500' || code === 'VAN_500' || code.includes('VAN')) {
     return {
       name: 'Xe bán tải / Van',
       icon: '🚐',
       desc: 'Chở hàng cồng kềnh, tải trọng lớn che chắn mưa nắng',
-      standard: 'Cân nặng ≤ 500kg • Kích thước ≤ 160x110x110cm',
+      standard: 'Cân nặng ≤ 500kg • Kích thước ≤ 170x120x120cm',
     };
   }
-  if (code === 'PICK_UP_TRUCK' || code.includes('PICK_UP') || code.includes('PICKUP')) {
+  if (code === 'PICK_UP_TRUCK' || code === 'PICKUP_TRUCK' || code.includes('PICK_UP') || code.includes('PICKUP')) {
     return {
       name: 'Xe bán tải (Pick-up)',
       icon: '🛻',
       desc: 'Chở hàng cồng kềnh, kiện hàng lớn hoặc vận chuyển đường dài',
-      standard: 'Cân nặng ≤ 500kg • Kích thước ≤ 160x110x110cm',
+      standard: 'Cân nặng ≤ 500kg • Thùng 140x150x50cm',
     };
   }
-  if (code === 'TRUCK500' || code === 'TRUCK_500KG') {
+  if (code === 'TRUCK500' || code === 'TRUCK_500' || code === 'TRUCK_500KG') {
     return {
       name: 'Xe tải 500kg',
       icon: '🚚',
       desc: 'Chở hàng nặng, kích thước lớn an toàn',
-      standard: 'Cân nặng ≤ 500kg • Thùng xe tải 500kg',
+      standard: 'Cân nặng ≤ 500kg • Thùng 190x140x140cm',
     };
   }
-  if (code === 'TRUCK1000' || code === 'TRUCK_1000KG' || code === 'TRUCK_1T') {
+  if (code === 'TRUCK1000' || code === 'TRUCK_1000' || code === 'TRUCK_1000KG' || code === 'TRUCK_1T') {
     return {
       name: 'Xe tải 1 tấn',
       icon: '🚛',
       desc: 'Xe tải trọng tải lớn',
-      standard: 'Cân nặng ≤ 1.000kg • Thùng xe tải 1 tấn',
+      standard: 'Cân nặng ≤ 1.000kg • Thùng 300x160x160cm',
     };
   }
-  if (code === 'TRUCK1500' || code === 'TRUCK_1500KG') {
+  if (code === 'TRUCK1500' || code === 'TRUCK_1500' || code === 'TRUCK_1500KG') {
     return {
       name: 'Xe tải 1.5 tấn',
       icon: '🚛',
       desc: 'Xe tải trọng tải lớn',
-      standard: 'Cân nặng ≤ 1.500kg • Thùng xe tải 1.5 tấn',
+      standard: 'Cân nặng ≤ 1.500kg • Thùng 320x160x170cm',
     };
   }
-  if (code === 'TRUCK2000' || code === 'TRUCK_2000KG' || code === 'TRUCK_2T') {
+  if (code === 'TRUCK175' || code === 'TRUCK_175') {
+    return {
+      name: 'Xe tải 1.75 tấn',
+      icon: '🚛',
+      desc: 'Xe tải thùng rộng đường dài',
+      standard: 'Cân nặng ≤ 1.750kg • Thùng 190x140x140cm',
+    };
+  }
+  if (code === 'TRUCK2000' || code === 'TRUCK_2000' || code === 'TRUCK_2000KG' || code === 'TRUCK_2T') {
     return {
       name: 'Xe tải 2 tấn',
       icon: '🚛',
       desc: 'Xe tải hạng nặng',
-      standard: 'Cân nặng ≤ 2.000kg • Thùng xe tải 2 tấn',
+      standard: 'Cân nặng ≤ 2.000kg • Thùng 400x170x170cm',
+    };
+  }
+  if (code === 'TRUCK2500' || code === 'TRUCK_2500' || code === 'TRUCK_2500KG') {
+    return {
+      name: 'Xe tải 2.5 tấn',
+      icon: '🚛',
+      desc: 'Xe tải hạng nặng',
+      standard: 'Cân nặng ≤ 2.500kg • Thùng 420x170x180cm',
+    };
+  }
+  if (code === 'TRUCK330' || code === 'TRUCK_330') {
+    return {
+      name: 'Xe tải 3.3 tấn',
+      icon: '🚛',
+      desc: 'Xe tải siêu trường siêu trọng',
+      standard: 'Cân nặng ≤ 3.300kg • Thùng 300x160x160cm',
+    };
+  }
+  if (code === 'TRUCK550' || code === 'TRUCK_550') {
+    return {
+      name: 'Xe tải 5.5 tấn',
+      icon: '🚛',
+      desc: 'Xe tải siêu trường siêu trọng',
+      standard: 'Cân nặng ≤ 5.500kg • Thùng 400x170x170cm',
     };
   }
   return {
@@ -111,6 +156,27 @@ export const formatLalamoveVehicle = (serviceType?: string): { name: string; ico
     desc: 'Phương tiện Lalamove do hệ thống tự động báo giá',
     standard: 'Tiêu chuẩn phương tiện Lalamove',
   };
+};
+
+export const parseLalamoveVehicleLimits = (text: string) => {
+  if (!text) return [];
+  const marker = 'Giới hạn từng loại xe tại điểm lấy hàng (dài x rộng x cao):';
+  const idx = text.indexOf(marker);
+  const rawLimits = idx !== -1 ? text.slice(idx + marker.length).trim() : text;
+  const items = rawLimits.split(';').map(s => s.trim()).filter(Boolean);
+
+  return items.map(item => {
+    const colonIdx = item.indexOf(':');
+    const rawCode = colonIdx !== -1 ? item.slice(0, colonIdx).trim() : item;
+    const limitText = colonIdx !== -1 ? item.slice(colonIdx + 1).trim() : '';
+    const formatted = formatLalamoveVehicle(rawCode);
+    return {
+      rawCode,
+      name: formatted.name && formatted.name !== rawCode ? formatted.name : rawCode,
+      icon: formatted.icon || '🚚',
+      limitText: limitText || formatted.standard || '',
+    };
+  });
 };
 
 export interface VehicleClassification {
@@ -338,6 +404,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [ghnQuote, setGhnQuote] = useState<ShippingQuoteResponseDto | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [showVehicleLimits, setShowVehicleLimits] = useState(false);
 
   // Live Inspection Quote State (POST /api/v1/inspection/quote)
   const [inspectionQuote, setInspectionQuote] = useState<InspectionQuoteResponse | null>(null);
@@ -504,6 +571,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           errMsg = `Vị trí giao hàng nằm ngoài phạm vi phục vụ Lalamove so với kho người bán (${sellerCityInfo.name}). Do Lalamove là dịch vụ giao hàng nhanh nội thành, vui lòng chọn địa chỉ nhận hàng tại cùng khu vực ${sellerCityInfo.name}.`;
         } else if (errMsg.includes('Chưa cấu hình Geoapify') || errMsg.includes('Geoapify')) {
           errMsg = 'Dịch vụ bản đồ Backend chưa bật Geoapify key. Đã chuyển sang chế độ định vị dự phòng OpenStreetMap.';
+        } else if (errMsg.includes('Không có loại xe Lalamove đủ tải trọng') || errMsg.includes('Giới hạn từng loại xe')) {
+          // Giữ nguyên raw string để parse danh sách chi tiết các loại xe cho giao diện accordion
         } else {
           errMsg = translateApiError(errMsg);
         }
@@ -760,23 +829,38 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         const hubNote = selectedCenter ? `[Trung tâm tiếp nhận: ${selectedCenter.name} - ${selectedCenter.city}]` : '';
         const fullNote = [deliveryNote, hubNote].filter(Boolean).join(' | ');
 
-        const beInspectionOrder = await inspectorService.createRequest({
-          postId: listing.id,
-          orderType: inspectionMethod,
-          feePayer: feePayerCode,
-          buyerConsentZinLoss: true,
-          buyerLatitude: buyerLat,
-          buyerLongitude: buyerLng,
-          buyerDeliveryAddress: {
-            name: (buyerName || currentUser?.name || 'Khách Hàng').trim().slice(0, 100),
-            phone: validPhone,
-            latitude: buyerLat,
-            longitude: buyerLng,
-          },
-          note: fullNote || undefined,
-        });
-        if (beInspectionOrder?.id) {
-          orderId = String(beInspectionOrder.id);
+        try {
+          const beInspectionOrder = await inspectorService.createRequest({
+            postId: listing.id,
+            orderType: inspectionMethod,
+            feePayer: feePayerCode,
+            buyerConsentZinLoss: true,
+            buyerLatitude: buyerLat,
+            buyerLongitude: buyerLng,
+            buyerDeliveryAddress: {
+              name: (buyerName || currentUser?.name || 'Khách Hàng').trim().slice(0, 100),
+              phone: validPhone,
+              latitude: buyerLat,
+              longitude: buyerLng,
+            },
+            note: fullNote || undefined,
+          });
+          if (beInspectionOrder?.id) {
+            orderId = String(beInspectionOrder.id);
+          }
+        } catch (inspErr: any) {
+          console.warn('Backend inspection request issue, using client order id:', inspErr);
+          const errMsg = (inspErr?.message || '').toLowerCase();
+          if (errMsg.includes('chính mình') || errMsg.includes('own post')) {
+            setOrderError(lang === 'vi' ? 'Bạn đang đăng nhập bằng tài khoản người bán của bài đăng này. Không thể tự mua hàng của chính mình.' : 'You cannot buy your own post.');
+            setSubmittingOrder(false);
+            return;
+          }
+          if (errMsg.includes('đang diễn ra') || errMsg.includes('active inspection')) {
+            setOrderError(lang === 'vi' ? 'Bài đăng đã có đơn kiểm định khác đang diễn ra. Vui lòng chờ kết quả kiểm định.' : 'Another inspection order is already in progress.');
+            setSubmittingOrder(false);
+            return;
+          }
         }
       } else {
         // Gọi Backend Order trực tiếp qua POST /api/v1/orders
@@ -944,6 +1028,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         shippingFeeVnd: finalShippingFee,
         platformFeeVnd: 0,
         totalPaidVnd: finalTotalPaid,
+        finalPrice: finalChargedPrice,
+        finalItemPrice: finalChargedPrice,
+        postPrice: finalChargedPrice,
+        totalPaid: finalTotalPaid,
         escrowStatus: initialEscrowStatus,
         paymentMethod: paymentMethod,
         backendStatus: isInspected ? 'WAITING_SELLER_APPROVAL' : (isBankWaiting ? 'PENDING_PAYMENT' : 'PROCESSING'),
@@ -968,6 +1056,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         if (!isBankWaiting) {
           markListingAsBought(String(listing.id));
         }
+        localStorage.removeItem(`order_cancellation_info_${orderId}`);
+        localStorage.removeItem(`order_cancelled_${orderId}`);
+        if (listing?.id) {
+          localStorage.removeItem(`listing_available_${listing.id}`);
+          localStorage.removeItem(`listing_cancelled_at_${listing.id}`);
+        }
         localStorage.setItem(`order_listing_${orderId}`, JSON.stringify(newOrder.listing));
         if (listing?.id) {
           localStorage.setItem(`cached_post_${listing.id}`, JSON.stringify(newOrder.listing));
@@ -986,6 +1080,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
         // Only save to recent_placed_orders and dispatch seller notification for instant payment (wallet or inspection)
         if (!isBankWaiting) {
+          if (paymentMethod === 'WALLET') {
+            try {
+              const currentBal = wallet?.balance ?? 0;
+              const newBal = Math.max(0, currentBal - upfrontAmount);
+              setWallet((prev) => (prev ? { ...prev, balance: newBal } : null));
+              if (currentUser?.id) {
+                localStorage.setItem(`user_wallet_balance_${currentUser.id}`, String(newBal));
+              }
+            } catch {}
+          }
           const stored = localStorage.getItem('recent_placed_orders');
           const existingRecent = safeJsonParse<EscrowOrder[]>(stored, []);
           const updatedRecent = [newOrder, ...existingRecent.filter((o) => o.id !== newOrder.id)].slice(0, 50);
@@ -993,6 +1097,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
           if (isInspected) {
             try {
+              // Lưu vào bộ nhớ đơn bán của Người bán để Seller Dashboard và EscrowOrdersView hiển thị ngay tức thì
+              const rawSellerInsp = localStorage.getItem('my_seller_inspection_orders');
+              const existingSellerInsp = safeJsonParse<EscrowOrder[]>(rawSellerInsp, []);
+              const updatedSellerInsp = [newOrder, ...existingSellerInsp.filter((o) => o.id !== newOrder.id)].slice(0, 50);
+              localStorage.setItem('my_seller_inspection_orders', JSON.stringify(updatedSellerInsp));
+
+              // Lưu vào center_inspection_orders để Trung tâm kiểm định đồng bộ
               const rawCenter = localStorage.getItem('center_inspection_orders');
               const existingCenter = safeJsonParse<EscrowOrder[]>(rawCenter, []);
               const updatedCenter = [newOrder, ...existingCenter.filter((o) => o.id !== newOrder.id)].slice(0, 50);
@@ -1001,21 +1112,36 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           }
 
           // Dispatch notification specifically for seller (and buyer)
+          const sellerNotifTitle = isInspected
+            ? (inspectionMethod === 'AT_HOME'
+                ? 'Yêu cầu kiểm định tại nhà mới (Hẹn lịch KTV)'
+                : 'Yêu cầu kiểm định mới (Chờ bạn xác nhận)')
+            : 'Đơn đặt hàng mới cần xác nhận';
+
+          const sellerNotifMsg = isInspected
+            ? (inspectionMethod === 'AT_HOME'
+                ? `Khách mua ${buyerName || 'Khách Hàng'} vừa đặt đơn kiểm định tại nhà cho "${listing.title}". Người bán vui lòng vào đơn hàng để xác nhận và hẹn lịch KTV đến tận nơi thẩm định!`
+                : `Khách mua ${buyerName || 'Khách Hàng'} vừa gửi yêu cầu kiểm định cho sản phẩm "${listing.title}". Người bán vui lòng vào đơn hàng để xác nhận đồng ý kiểm định!`)
+            : `Khách mua ${buyerName || 'Khách Hàng'} vừa đặt mua sản phẩm "${listing.title}". Vui lòng xác nhận đơn hàng!`;
+
           const sellerNotifItem = {
             id: `notif-seller-inspection-${orderId}`,
             recipientId: targetSellerId,
             recipientRole: 'seller',
-            title: isInspected ? 'Yêu cầu kiểm định Hub mới' : 'Đơn đặt hàng mới',
-            message: isInspected
-              ? `Khách mua ${buyerName || 'Khách Hàng'} vừa gửi yêu cầu kiểm định cho sản phẩm "${listing.title}". Người bán vui lòng kiểm tra và hẹn lịch KTV!`
-              : `Khách mua ${buyerName || 'Khách Hàng'} vừa đặt mua sản phẩm "${listing.title}". Vui lòng xác nhận đơn hàng!`,
-            type: isInspected ? 'INSPECTION' : 'ORDER',
+            sellerName: targetSellerName,
+            sellerEmail: targetSellerEmail,
+            recipientName: targetSellerName,
+            recipientEmail: targetSellerEmail,
+            title: sellerNotifTitle,
+            message: sellerNotifMsg,
+            type: 'INSPECTION_SELLER_REQUEST' as const,
             referenceId: orderId,
-            referenceType: isInspected ? 'INSPECTION_ORDER' : 'ORDER',
-            actionUrl: '/orders?order_tab=inspecting',
+            referenceType: 'INSPECTION_ORDER' as const,
+            actionUrl: '/orders?order_tab=awaiting_pickup',
             isRead: false,
             readAt: null,
             createdAt: new Date().toISOString(),
+            inspectionMethod: isInspected ? inspectionMethod : undefined,
           };
           saveScopedLocalNotification(sellerNotifItem as any, targetSellerId, 'seller');
 
@@ -1037,7 +1163,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           saveScopedLocalNotification(buyerNotifItem as any, currentUser?.id, 'buyer');
           try {
             window.dispatchEvent(new CustomEvent('secondlife_order_placed_signal', { detail: newOrder }));
+            window.dispatchEvent(new CustomEvent('secondlife_listing_status_changed', { detail: { id: listing.id, status: 'reserved' } }));
             window.dispatchEvent(new CustomEvent('secondlife_inspection_task_created', { detail: newOrder }));
+            window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: sellerNotifItem }));
             localStorage.setItem('secondlife_order_placed_signal', String(Date.now()));
           } catch {}
         }
@@ -2446,49 +2574,150 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             )}
 
-            {quoteError && (
-              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 animate-fadeIn">
-                <div className="flex items-start gap-2.5">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <p className="font-semibold leading-relaxed">{quoteError}</p>
-                    {(quoteError.includes('phạm vi phục vụ') || quoteError.includes('ERR_OUT_OF_SERVICE_AREA')) && (
-                      <p className="text-[11px] text-amber-700">
-                        👉 Bấm nút bên cạnh để chuyển vị trí giao hàng sang khu vực <strong>{sellerCityInfo.name}</strong>.
-                      </p>
+            {quoteError && (() => {
+              const isVehicleLimit = quoteError.includes('Không có loại xe Lalamove đủ tải trọng') || quoteError.includes('Giới hạn từng loại xe');
+              const isOutOfArea = quoteError.includes('phạm vi phục vụ') || quoteError.includes('ERR_OUT_OF_SERVICE_AREA');
+
+              if (isVehicleLimit) {
+                const parcel = getResolvedPostParcel(
+                  listing.id,
+                  listing,
+                  listing.description,
+                  listing.category
+                );
+                const hasParcel = parcel && (parcel.weight > 0 || parcel.length > 0 || parcel.width > 0 || parcel.height > 0);
+                const vehicleLimits = parseLalamoveVehicleLimits(quoteError);
+
+                return (
+                  <div className="p-4 bg-gradient-to-br from-amber-50 to-orange-50/70 dark:from-amber-950/40 dark:to-orange-950/30 border border-amber-300 dark:border-amber-700/60 rounded-2xl shadow-xs text-amber-950 dark:text-amber-100 space-y-3 animate-fadeIn">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <div className="p-2 bg-amber-100 dark:bg-amber-900/60 rounded-xl text-amber-700 dark:text-amber-300 shrink-0 mt-0.5">
+                          <Package className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm text-amber-900 dark:text-amber-200">
+                            Kiện hàng vượt quá tải trọng / kích thước xe Lalamove
+                          </h4>
+                          <p className="text-xs text-amber-800/90 dark:text-amber-300/90 mt-1 leading-relaxed">
+                            Kích thước hoặc cân nặng của sản phẩm này lớn hơn giới hạn chuyên chở của các loại xe Lalamove tại điểm lấy hàng của người bán.
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          calculateLalamoveQuote(deliveryLatitude, deliveryLongitude, streetAddress, buyerName, buyerPhone);
+                        }}
+                        disabled={quoteLoading}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs transition flex items-center gap-1.5 shrink-0"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${quoteLoading ? 'animate-spin' : ''}`} />
+                        <span>{quoteLoading ? 'Đang tính...' : 'Thử lại'}</span>
+                      </button>
+                    </div>
+
+                    {/* Hiển thị thông số kiện hàng hiện tại nếu có */}
+                    {hasParcel && (
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-amber-900 dark:text-amber-200 bg-amber-100/70 dark:bg-amber-900/40 px-3 py-1.5 rounded-xl border border-amber-200/80 dark:border-amber-800/50">
+                        <span className="font-semibold text-amber-950 dark:text-amber-100">Thông số kiện hàng:</span>
+                        <span>Trọng lượng: <strong>{(parcel.weight / 1000).toLocaleString('vi-VN')} kg</strong></span>
+                        <span>•</span>
+                        <span>Kích thước: <strong>{parcel.length} x {parcel.width} x {parcel.height} cm</strong></span>
+                      </div>
+                    )}
+
+                    {/* Hướng dẫn giải pháp ngắn gọn, thân thiện */}
+                    <div className="text-xs text-amber-800 dark:text-amber-300 bg-white/80 dark:bg-slate-900/60 p-2.5 rounded-xl border border-amber-200/70 dark:border-amber-800/40 flex items-start gap-2">
+                      <span className="text-sm shrink-0">💡</span>
+                      <span className="leading-relaxed text-[11px]">
+                        <strong>Gợi ý:</strong> Bạn có thể nhắn tin trao đổi với người bán để kiểm tra lại thông số đóng gói bài đăng hoặc thỏa thuận phương án vận chuyển riêng.
+                      </span>
+                    </div>
+
+                    {/* Accordion xem chi tiết giới hạn phương tiện (thu gọn mặc định) */}
+                    {vehicleLimits.length > 0 && (
+                      <div className="pt-1 border-t border-amber-200/60 dark:border-amber-800/40">
+                        <button
+                          type="button"
+                          onClick={() => setShowVehicleLimits(!showVehicleLimits)}
+                          className="text-[11px] font-semibold text-amber-800 hover:text-amber-950 dark:text-amber-300 dark:hover:text-amber-100 flex items-center gap-1.5 cursor-pointer transition py-1"
+                        >
+                          <span>{showVehicleLimits ? 'Thu gọn chi tiết các loại xe' : `Xem chi tiết giới hạn ${vehicleLimits.length} loại xe tại điểm lấy hàng`}</span>
+                          {showVehicleLimits ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        </button>
+
+                        {showVehicleLimits && (
+                          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                            {vehicleLimits.map((v, idx) => (
+                              <div key={idx} className="bg-white/80 dark:bg-amber-950/50 p-2 rounded-xl border border-amber-200/70 dark:border-amber-800/40 text-[11px] leading-tight">
+                                <div className="font-bold text-amber-950 dark:text-amber-100 flex items-center gap-1.5">
+                                  <span>{v.icon}</span>
+                                  <span>{v.name}</span>
+                                </div>
+                                {v.limitText && (
+                                  <div className="text-amber-800 dark:text-amber-300 text-[10px] mt-0.5 pl-5">
+                                    {v.limitText}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                  {(quoteError.includes('phạm vi phục vụ') || quoteError.includes('ERR_OUT_OF_SERVICE_AREA')) && (
+                );
+              }
+
+              // Các trường hợp lỗi quote khác
+              return (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 animate-fadeIn">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-semibold leading-relaxed">{quoteError}</p>
+                      {isOutOfArea && (
+                        <p className="text-[11px] text-amber-700">
+                          👉 Bấm nút bên cạnh để chuyển vị trí giao hàng sang khu vực <strong>{sellerCityInfo.name}</strong>.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                    {isOutOfArea && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeliveryLatitude(sellerCityInfo.lat);
+                          setDeliveryLongitude(sellerCityInfo.lng);
+                          setStreetAddress(`Khu vực trung tâm ${sellerCityInfo.name}`);
+                          setSelectedProvinceName(sellerCityInfo.name);
+                          setIsLocationConfirmed(false);
+                          setGhnQuote(null);
+                          setQuoteError(null);
+                        }}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs transition"
+                      >
+                        Đổi sang {sellerCityInfo.name}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
-                        setDeliveryLatitude(sellerCityInfo.lat);
-                        setDeliveryLongitude(sellerCityInfo.lng);
-                        setStreetAddress(`Khu vực trung tâm ${sellerCityInfo.name}`);
-                        setSelectedProvinceName(sellerCityInfo.name);
-                        setIsLocationConfirmed(false);
-                        setGhnQuote(null);
-                        setQuoteError(null);
+                        calculateLalamoveQuote(deliveryLatitude, deliveryLongitude, streetAddress, buyerName, buyerPhone);
                       }}
-                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs transition"
+                      disabled={quoteLoading}
+                      className="px-3 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded-xl font-bold text-xs cursor-pointer transition flex items-center gap-1"
                     >
-                      Đổi sang {sellerCityInfo.name}
+                      <RefreshCw className={`w-3.5 h-3.5 ${quoteLoading ? 'animate-spin' : ''}`} />
+                      <span>{quoteLoading ? 'Đang tính...' : 'Thử lại'}</span>
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      calculateLalamoveQuote(deliveryLatitude, deliveryLongitude, streetAddress, buyerName, buyerPhone);
-                    }}
-                    className="px-3 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded-xl font-bold text-xs cursor-pointer transition"
-                  >
-                    Thử lại
-                  </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {isLocationConfirmed && ghnQuote && !quoteError && (
               <div className="p-4 bg-emerald-50/90 border border-emerald-300 rounded-2xl space-y-3 text-xs text-emerald-950 animate-fadeIn">

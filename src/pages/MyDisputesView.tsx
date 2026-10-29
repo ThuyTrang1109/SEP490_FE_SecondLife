@@ -20,7 +20,8 @@ import {
   ArrowLeft,
   X,
   User,
-  ShieldAlert
+  ShieldAlert,
+  Loader2
 } from 'lucide-react';
 import { Language, UserProfile, EscrowOrder, UserRole } from '../types';
 import {
@@ -41,6 +42,66 @@ interface MyDisputesViewProps {
   onBack?: () => void;
   currentRole?: UserRole;
 }
+
+const PrivateEvidenceThumb: React.FC<{
+  url: string;
+  idx: number;
+  onPreview: (src: string) => void;
+}> = ({ url, idx, onPreview }) => {
+  const [blobSrc, setBlobSrc] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      setBlobSrc(url);
+      return;
+    }
+    setLoading(true);
+    userReportService
+      .getEvidenceBlobUrl(url)
+      .then((bUrl) => {
+        if (active) setBlobSrc(bUrl);
+      })
+      .catch(() => {
+        if (active) setBlobSrc(null);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [url]);
+
+  return (
+    <button
+      type="button"
+      onClick={() => onPreview(blobSrc || url)}
+      className="w-14 h-14 rounded-xl overflow-hidden border border-gray-200 hover:ring-2 hover:ring-[#c34c36] transition cursor-pointer relative group bg-slate-50 flex items-center justify-center"
+      title={`Bằng chứng ${idx + 1}`}
+    >
+      {loading ? (
+        <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+      ) : blobSrc ? (
+        <img
+          src={blobSrc}
+          alt={`Evidence ${idx + 1}`}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+          onError={(e) => {
+            (e.target as any).src =
+              'https://images.unsplash.com/photo-1584438784894-089d6a62b8fa?auto=format&fit=crop&q=80&w=200';
+          }}
+        />
+      ) : (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 text-slate-400 text-[10px]">
+          <ImageIcon className="w-4 h-4 mb-0.5" />
+          <span>Tệp #{idx + 1}</span>
+        </div>
+      )}
+    </button>
+  );
+};
 
 export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
   currentUser,
@@ -512,20 +573,12 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
                           </div>
                           <div className="flex items-center gap-2 flex-wrap">
                             {report.evidenceUrls.map((url, idx) => (
-                              <button
+                              <PrivateEvidenceThumb
                                 key={idx}
-                                onClick={() => setPreviewImage(url)}
-                                className="w-14 h-14 rounded-xl overflow-hidden border border-gray-200 hover:ring-2 hover:ring-[#c34c36] transition cursor-pointer relative group bg-slate-50"
-                              >
-                                <img
-                                  src={url}
-                                  alt={`Evidence ${idx + 1}`}
-                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                                  onError={(e) => {
-                                    (e.target as any).src = 'https://images.unsplash.com/photo-1584438784894-089d6a62b8fa?auto=format&fit=crop&q=80&w=200';
-                                  }}
-                                />
-                              </button>
+                                url={url}
+                                idx={idx}
+                                onPreview={(src) => setPreviewImage(src)}
+                              />
                             ))}
                           </div>
                         </div>

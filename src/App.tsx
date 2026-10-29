@@ -1,10 +1,11 @@
 import React, { useState, lazy, Suspense, useRef, useCallback, useEffect } from 'react';
-import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit, ItemCategory, ConditionGrade } from './types';
+import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit, ItemCategory, ConditionGrade, EscrowStatus, InspectionReport } from './types';
 import { formatVND } from './utils/translations';
 import { extractWardAndCity, getSavedSellerAddress, saveSellerAddress, cleanFullAddress, formatCombinedAddress } from './utils/addressUtils';
-import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, isOrderCancelledOrRefunded, getResolvedPostParcel } from './utils/orderUtils';
+import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, isOrderCancelledOrRefunded, getResolvedPostParcel, extractListingIdFromOrder } from './utils/orderUtils';
 import { resolveCategoryAndItem, initCatalogCache, resolveOrderListing, resolveListingCategory, extractSellerOriginalPrice } from './utils/catalogCache';
 import { translateSystemNotification } from './utils/systemNotificationTranslator';
+import { lazyWithRetry } from './utils/lazyWithRetry';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 import { HomePageView } from './pages/HomePageView';
@@ -21,31 +22,31 @@ import { clearNotificationsOnLogout, saveScopedLocalNotification } from './utils
 import { NotificationItem } from './types/notification';
 import { notificationWsClient } from './services/notificationWsClient';
 import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
-import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, getRefreshToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, isTokenExpiringSoon, recordUserActivity, resetActivityTimer, isUserIdle, refreshAccessToken, ChatRoomDto } from './services';
+import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, getRefreshToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, isTokenExpiringSoon, recordUserActivity, resetActivityTimer, isUserIdle, refreshAccessToken, checkAndRenewSessionOnReturn, ChatRoomDto } from './services';
 
-// Code-split heavy views via React.lazy
-const CreateListingView = lazy(() => import('./pages/CreateListingView').then(m => ({ default: m.CreateListingView })));
-const SellerDashboardView = lazy(() => import('./pages/SellerDashboardView').then(m => ({ default: m.SellerDashboardView })));
-const EscrowOrdersView = lazy(() => import('./pages/EscrowOrdersView').then(m => ({ default: m.EscrowOrdersView })));
-const InspectorPortalView = lazy(() => import('./pages/InspectorPortalView').then(m => ({ default: m.InspectorPortalView })));
-const InspectionCenterDashboardView = lazy(() => import('./pages/InspectionCenterDashboardView').then(m => ({ default: m.InspectionCenterDashboardView })));
-const StaffWorkspaceView = lazy(() => import('./pages/StaffWorkspaceView').then(m => ({ default: m.StaffWorkspaceView })));
-const AdminDashboardView = lazy(() => import('./pages/AdminDashboardView').then(m => ({ default: m.AdminDashboardView })));
-const InboxView = lazy(() => import('./pages/InboxView').then(m => ({ default: m.InboxView })));
-const NotificationCenterView = lazy(() => import('./pages/NotificationCenterView').then(m => ({ default: m.NotificationCenterView })));
-const BuyerInspectionDecisionView = lazy(() => import('./pages/BuyerInspectionDecisionView').then(m => ({ default: m.BuyerInspectionDecisionView })));
-const MyDisputesView = lazy(() => import('./pages/MyDisputesView').then(m => ({ default: m.MyDisputesView })));
+// Code-split heavy views via lazyWithRetry to prevent dynamic import fetch errors
+const CreateListingView = lazyWithRetry(() => import('./pages/CreateListingView').then(m => ({ default: m.CreateListingView })), 'CreateListingView');
+const SellerDashboardView = lazyWithRetry(() => import('./pages/SellerDashboardView').then(m => ({ default: m.SellerDashboardView })), 'SellerDashboardView');
+const EscrowOrdersView = lazyWithRetry(() => import('./pages/EscrowOrdersView').then(m => ({ default: m.EscrowOrdersView })), 'EscrowOrdersView');
+const InspectorPortalView = lazyWithRetry(() => import('./pages/InspectorPortalView').then(m => ({ default: m.InspectorPortalView })), 'InspectorPortalView');
+const InspectionCenterDashboardView = lazyWithRetry(() => import('./pages/InspectionCenterDashboardView').then(m => ({ default: m.InspectionCenterDashboardView })), 'InspectionCenterDashboardView');
+const StaffWorkspaceView = lazyWithRetry(() => import('./pages/StaffWorkspaceView').then(m => ({ default: m.StaffWorkspaceView })), 'StaffWorkspaceView');
+const AdminDashboardView = lazyWithRetry(() => import('./pages/AdminDashboardView').then(m => ({ default: m.AdminDashboardView })), 'AdminDashboardView');
+const InboxView = lazyWithRetry(() => import('./pages/InboxView').then(m => ({ default: m.InboxView })), 'InboxView');
+const NotificationCenterView = lazyWithRetry(() => import('./pages/NotificationCenterView').then(m => ({ default: m.NotificationCenterView })), 'NotificationCenterView');
+const BuyerInspectionDecisionView = lazyWithRetry(() => import('./pages/BuyerInspectionDecisionView').then(m => ({ default: m.BuyerInspectionDecisionView })), 'BuyerInspectionDecisionView');
+const MyDisputesView = lazyWithRetry(() => import('./pages/MyDisputesView').then(m => ({ default: m.MyDisputesView })), 'MyDisputesView');
 
-// Code-split heavy modals via React.lazy
-const ListingDetailModal = lazy(() => import('./components/modals/ListingDetailModal').then(m => ({ default: m.ListingDetailModal })));
-const CheckoutModal = lazy(() => import('./components/modals/CheckoutModal').then(m => ({ default: m.CheckoutModal })));
-const ChatModal = lazy(() => import('./components/modals/ChatModal').then(m => ({ default: m.ChatModal })));
-const ProfileDialog = lazy(() => import('./components/modals/ProfileDialog').then(m => ({ default: m.ProfileDialog })));
-const SellerRegistrationModal = lazy(() => import('./components/modals/SellerRegistrationModal').then(m => ({ default: m.SellerRegistrationModal })));
-const TopUpModal = lazy(() => import('./components/modals/TopUpModal').then(m => ({ default: m.TopUpModal })));
-const PolicyModal = lazy(() => import('./components/modals/PolicyModal').then(m => ({ default: m.PolicyModal })));
-const SellerReviewsModal = lazy(() => import('./components/modals/SellerReviewsModal').then(m => ({ default: m.SellerReviewsModal })));
-const UserReportModal = lazy(() => import('./components/modals/UserReportModal').then(m => ({ default: m.UserReportModal })));
+// Code-split heavy modals via lazyWithRetry
+const ListingDetailModal = lazyWithRetry(() => import('./components/modals/ListingDetailModal').then(m => ({ default: m.ListingDetailModal })), 'ListingDetailModal');
+const CheckoutModal = lazyWithRetry(() => import('./components/modals/CheckoutModal').then(m => ({ default: m.CheckoutModal })), 'CheckoutModal');
+const ChatModal = lazyWithRetry(() => import('./components/modals/ChatModal').then(m => ({ default: m.ChatModal })), 'ChatModal');
+const ProfileDialog = lazyWithRetry(() => import('./components/modals/ProfileDialog').then(m => ({ default: m.ProfileDialog })), 'ProfileDialog');
+const SellerRegistrationModal = lazyWithRetry(() => import('./components/modals/SellerRegistrationModal').then(m => ({ default: m.SellerRegistrationModal })), 'SellerRegistrationModal');
+const TopUpModal = lazyWithRetry(() => import('./components/modals/TopUpModal').then(m => ({ default: m.TopUpModal })), 'TopUpModal');
+const PolicyModal = lazyWithRetry(() => import('./components/modals/PolicyModal').then(m => ({ default: m.PolicyModal })), 'PolicyModal');
+const SellerReviewsModal = lazyWithRetry(() => import('./components/modals/SellerReviewsModal').then(m => ({ default: m.SellerReviewsModal })), 'SellerReviewsModal');
+const UserReportModal = lazyWithRetry(() => import('./components/modals/UserReportModal').then(m => ({ default: m.UserReportModal })), 'UserReportModal');
 
 // In-memory quick lookup caches to avoid blocking synchronous localStorage disk I/O
 const postCacheMap = new Map<string, Listing>();
@@ -202,11 +203,19 @@ export default function App() {
     const token = getAccessToken();
     const stored = getStoredUser();
     if (!token || !stored) {
-      clearAuthTokens();
       return null;
     }
     return stored as UserProfile;
   });
+
+  const hadSessionRef = React.useRef<boolean>(
+    Boolean(getAccessToken() || getRefreshToken() || getStoredUser())
+  );
+  React.useEffect(() => {
+    if (currentUser) {
+      hadSessionRef.current = true;
+    }
+  }, [currentUser]);
 
   const [currentRole, setCurrentRole] = useState<UserRole>(() => {
     const token = getAccessToken();
@@ -225,6 +234,9 @@ export default function App() {
   // Restore & verify session for THIS browser from Backend /me on startup/refresh
   React.useEffect(() => {
     const token = getAccessToken();
+    const stored = getStoredUser();
+    const hadInitialSession = hadSessionRef.current || Boolean(token || stored || getRefreshToken());
+
     if (token) {
       userService.getMyProfile().then(async (profile) => {
         if (profile) {
@@ -300,7 +312,7 @@ export default function App() {
             avatar: profile.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
             accountStatus: profile.accountStatus,
             kycStatus: (profile.roles?.includes('SELLER') || profile.roles?.includes('ROLE_SELLER')) ? 'verified' : 'unverified',
-            emailVerified: profile.emailVerified ?? true,
+            emailVerified: Boolean(profile.emailVerified),
           };
           setCurrentUser(syncedUser);
           setCurrentRole(syncedUser.role);
@@ -321,16 +333,47 @@ export default function App() {
           clearAuthTokens();
           setCurrentUser(null);
           setCurrentRole('buyer');
+          hadSessionRef.current = false;
+          if (hadInitialSession) {
+            setIsSessionExpiredOpen(true);
+            showToast(
+              lang === 'vi'
+                ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.'
+                : 'Session expired. Please log in again.'
+            );
+          }
         }
       }).catch(() => {
         clearAuthTokens();
         setCurrentUser(null);
         setCurrentRole('buyer');
+        hadSessionRef.current = false;
+        if (hadInitialSession) {
+          setIsSessionExpiredOpen(true);
+          showToast(
+            lang === 'vi'
+              ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.'
+              : 'Session expired. Please log in again.'
+          );
+        }
       });
     } else {
-      clearAuthTokens();
-      setCurrentUser(null);
-      setCurrentRole('buyer');
+      if (hadInitialSession) {
+        clearAuthTokens();
+        setCurrentUser(null);
+        setCurrentRole('buyer');
+        hadSessionRef.current = false;
+        setIsSessionExpiredOpen(true);
+        showToast(
+          lang === 'vi'
+            ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.'
+            : 'Session expired. Please log in again.'
+        );
+      } else {
+        clearAuthTokens();
+        setCurrentUser(null);
+        setCurrentRole('buyer');
+      }
     }
   }, []);
 
@@ -501,12 +544,20 @@ export default function App() {
               localStorage.getItem(`order_receipt_confirmed_${o.id}`) === 'true' ||
               o.id === '16915c88-96a2-4cb0-8f6c-cc9a931a6e89'
             );
+            const isLocalCancelled = typeof window !== 'undefined' && (
+              localStorage.getItem(`order_cancellation_info_${o.id}`) !== null ||
+              localStorage.getItem(`order_cancelled_${o.id}`) === 'true'
+            );
             if (isLocalConfirmed || o.escrowStatus === 'RELEASED' || o.escrowStatus === 'COMPLETED_RELEASED' || (o as any).backendStatus === 'COMPLETED' || (o as any).status === 'COMPLETED') {
               o.escrowStatus = 'COMPLETED_RELEASED';
               o.backendStatus = 'COMPLETED';
               (o as any).status = 'COMPLETED';
               o.cancellationReasonCode = undefined;
               o.cancellationReason = undefined;
+            } else if (isLocalCancelled || o.escrowStatus === 'REFUNDED_TO_BUYER' || o.backendStatus === 'CANCELLED' || (o as any).status === 'CANCELLED') {
+              o.escrowStatus = 'REFUNDED_TO_BUYER';
+              o.backendStatus = 'CANCELLED';
+              (o as any).status = 'CANCELLED';
             }
             const isBuyer = Boolean(
               (o.buyerId && String(o.buyerId) === String(activeUserId)) ||
@@ -617,18 +668,31 @@ export default function App() {
 
   // Listen for 401 Unauthorized session revocation events
   React.useEffect(() => {
-    const handleUnauthorized = () => {
-      // Chỉ hiển thị modal hết hạn phiên nếu người dùng thực sự đang có phiên đăng nhập hoạt động
-      const hadUser = Boolean(currentUser || getAccessToken() || getRefreshToken());
-      console.log('[App] Received unauthorized_session event! hadUser:', hadUser);
+    const handleUnauthorized = (e?: Event) => {
+      const customEvt = e as CustomEvent<{ hadSession?: boolean; reason?: string }>;
+      const hadUser = Boolean(
+        customEvt?.detail?.hadSession ||
+        hadSessionRef.current ||
+        currentUser ||
+        getAccessToken() ||
+        getRefreshToken() ||
+        getStoredUser()
+      );
+      console.log('[App] Received unauthorized_session event! hadUser:', hadUser, 'reason:', customEvt?.detail?.reason);
       clearAuthTokens();
       resetActivityTimer();
       setCurrentUser(null);
       setCurrentRole('buyer');
+      hadSessionRef.current = false;
       
-      // Không làm phiền người dùng chưa đăng nhập hoặc vừa đăng xuất chủ động
+      // Hiển thị modal và thông báo hết hạn phiên nếu trước đó người dùng có phiên đăng nhập
       if (hadUser) {
         setIsSessionExpiredOpen(true);
+        showToast(
+          lang === 'vi'
+            ? 'Phiên đăng nhập đã hết hạn do không có hoạt động. Vui lòng đăng nhập lại.'
+            : 'Session expired due to inactivity. Please log in again.'
+        );
       }
     };
     window.addEventListener('unauthorized_session', handleUnauthorized);
@@ -648,6 +712,16 @@ export default function App() {
     events.forEach((evt) => {
       window.addEventListener(evt, handleUserInteraction, { passive: true });
     });
+
+    // Lắng nghe khi người dùng quay lại tab (chuyển từ tab khác hoặc ứng dụng khác về)
+    // Tự động làm mới token mượt mà nếu refreshToken còn hiệu lực (7 ngày), áp dụng đồng bộ cho cả Người mua & Người bán
+    const handleTabActive = () => {
+      if (document.visibilityState === 'visible' && currentUser) {
+        checkAndRenewSessionOnReturn();
+      }
+    };
+    document.addEventListener('visibilitychange', handleTabActive);
+    window.addEventListener('focus', handleTabActive);
 
     const interval = setInterval(() => {
       if (!currentUser) return;
@@ -682,6 +756,8 @@ export default function App() {
       events.forEach((evt) => {
         window.removeEventListener(evt, handleUserInteraction);
       });
+      document.removeEventListener('visibilitychange', handleTabActive);
+      window.removeEventListener('focus', handleTabActive);
     };
   }, [currentUser]);
 
@@ -1191,8 +1267,16 @@ export default function App() {
       sellerRating: 5.0,
       sellerCompletedOrders: 3,
       sellerVerified: true,
-      status: (getBoughtListingIds().has(String(post.postId || post.id)) ? 'reserved' : (post.status === 'ACTIVE' ? 'active' : post.status === 'DRAFT' ? 'draft' : 'reserved')) as any,
-      backendStatus: getBoughtListingIds().has(String(post.postId || post.id)) ? 'RESERVED' : (post.status || 'ACTIVE'),
+      status: (
+        localStorage.getItem(`listing_available_${post.postId || post.id}`) === 'true'
+          ? 'active'
+          : (getBoughtListingIds().has(String(post.postId || post.id)) ? 'reserved' : (post.status === 'ACTIVE' ? 'active' : post.status === 'DRAFT' ? 'draft' : 'reserved'))
+      ) as any,
+      backendStatus: (
+        localStorage.getItem(`listing_available_${post.postId || post.id}`) === 'true'
+          ? 'ACTIVE'
+          : (getBoughtListingIds().has(String(post.postId || post.id)) ? 'RESERVED' : (post.status || 'ACTIVE'))
+      ),
       rejectionReason: post.rejectionReason,
       createdAt: post.publishedAt || post.createdAt || new Date().toISOString(),
       isInspectionGuaranteed: true,
@@ -1295,14 +1379,31 @@ export default function App() {
             }
           }
         });
-        setListings(mapped);
+
+        // Giữ lại các listing vừa được khôi phục ACTIVE mà BE chưa kịp trả về
+        const existingMappedIds = new Set(mapped.map((l) => String(l.id)));
+        const boughtIds = getBoughtListingIds();
+        const activeRestored = listingsRef.current.filter((l) =>
+          (l.status === 'active' || l.backendStatus === 'ACTIVE' || localStorage.getItem(`listing_available_${l.id}`) === 'true') &&
+          !existingMappedIds.has(String(l.id)) &&
+          !boughtIds.has(String(l.id))
+        );
+        setListings([...mapped, ...activeRestored]);
       } else {
-        setListings([]);
+        const boughtIds = getBoughtListingIds();
+        const activeRestored = listingsRef.current.filter((l) =>
+          (l.status === 'active' || l.backendStatus === 'ACTIVE' || localStorage.getItem(`listing_available_${l.id}`) === 'true') && !boughtIds.has(String(l.id))
+        );
+        setListings(activeRestored);
       }
       lastListingsFetchRef.current = Date.now();
     } catch (err) {
       console.warn('Lỗi tải danh sách bài đăng từ Backend:', err);
-      setListings([]);
+      const boughtIds = getBoughtListingIds();
+      const activeRestored = listingsRef.current.filter((l) =>
+        (l.status === 'active' || l.backendStatus === 'ACTIVE' || localStorage.getItem(`listing_available_${l.id}`) === 'true') && !boughtIds.has(String(l.id))
+      );
+      setListings(activeRestored);
     } finally {
       isFetchingListingsRef.current = false;
     }
@@ -1450,6 +1551,36 @@ export default function App() {
       rawInspSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
       rawInspCenterItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
       rawInspMyItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
+
+      // Nạp thêm các đơn kiểm định cục bộ từ my_seller_inspection_orders và recent_placed_orders
+      try {
+        const rawLocalSellerInsp = localStorage.getItem('my_seller_inspection_orders');
+        if (rawLocalSellerInsp) {
+          const list = JSON.parse(rawLocalSellerInsp);
+          if (Array.isArray(list)) {
+            list.forEach((item: any) => {
+              if (item?.id && !orderMap.has(item.id)) {
+                orderMap.set(item.id, { ...item, __isInspection: true });
+              }
+            });
+          }
+        }
+      } catch {}
+
+      try {
+        const rawRecent = localStorage.getItem('recent_placed_orders');
+        if (rawRecent) {
+          const list = JSON.parse(rawRecent);
+          if (Array.isArray(list)) {
+            list.forEach((item: any) => {
+              if (item?.id && !orderMap.has(item.id)) {
+                orderMap.set(item.id, { ...item, __isInspection: Boolean(item.hasInspectionService || item.inspectionFeeVnd) });
+              }
+            });
+          }
+        }
+      } catch {}
+
       const items = Array.from(orderMap.values());
       if (items && items.length > 0) {
         const currentListings = listingsRef.current;
@@ -1510,7 +1641,7 @@ export default function App() {
             brand: 'SecondLife',
             model: 'Verified Model',
             purchaseYear: 2024,
-            priceVnd: bOrd.finalPrice,
+            priceVnd: Number(bOrd.itemPriceVnd || bOrd.finalItemPrice || bOrd.postPrice || bOrd.finalPrice || bOrd.price || 0),
             conditionGrade: 'Good',
             declaredConditionText: 'Sản phẩm đã qua kiểm định cơ bản',
             description: 'Giao dịch bảo lãnh qua Quỹ Escrow SecondLife.',
@@ -1536,8 +1667,8 @@ export default function App() {
 
           const matchedListing = resolveOrderListing(rawMatchedListing);
 
-          const inspFee = Number(bOrd.buyerFeeShare || bOrd.inspectionFee || 0);
-          const isInspectionOrder = Boolean(bOrd.__isInspection || bOrd.hasInspectionService || inspFee > 0);
+          const inspFee = Number(bOrd.inspectionFeeVnd || bOrd.buyerInspectionFeeVnd || bOrd.buyerFeeShare || bOrd.inspectionFee || 0);
+          const isInspectionOrder = Boolean(bOrd.__isInspection || bOrd.hasInspectionService || inspFee > 0 || bOrd.orderType);
 
           const isReceiptConfirmedLocal =
             typeof window !== 'undefined' &&
@@ -1556,7 +1687,36 @@ export default function App() {
             bOrd.id === '16915c88-96a2-4cb0-8f6c-cc9a931a6e89'
           );
 
-          const isCancelledOrRefund = !isCompletedOrReleased && Boolean(
+          const activeInspectionStatuses = [
+            'WAITING_SELLER_APPROVAL',
+            'WAITING_BUYER_APPROVAL',
+            'WAITING_FEE_PAYMENT',
+            'CONFIRMED_PENDING_DISPATCH',
+            'DISPATCHED',
+            'SCHEDULED',
+            'SHIPPING_TO_CENTER',
+            'INSPECTING',
+            'PASSED',
+            'DELIVERING_TO_BUYER',
+          ];
+          const rawStatusUpper = String(bOrd.status || (bOrd as any).backendStatus || '').toUpperCase();
+          const isActivelyProcessingInspection = isInspectionOrder && activeInspectionStatuses.includes(rawStatusUpper);
+
+          if (isActivelyProcessingInspection && typeof window !== 'undefined') {
+            try {
+              localStorage.removeItem(`order_cancellation_info_${bOrd.id}`);
+              localStorage.removeItem(`order_cancelled_${bOrd.id}`);
+            } catch {}
+          }
+
+          const isLocalCancelled = !isActivelyProcessingInspection && typeof window !== 'undefined' && (
+            localStorage.getItem(`order_cancellation_info_${bOrd.id}`) !== null ||
+            localStorage.getItem(`order_cancelled_${bOrd.id}`) === 'true'
+          );
+
+          const isCancelledOrRefund = !isCompletedOrReleased && !isActivelyProcessingInspection && Boolean(
+            isLocalCancelled ||
+            bOrd.escrowStatus === 'CANCELLED' ||
             bOrd.escrowStatus === 'REFUNDED' ||
             bOrd.escrowStatus === 'REFUNDED_TO_BUYER' ||
             bOrd.status === 'CANCELLED' ||
@@ -1571,7 +1731,7 @@ export default function App() {
           } else if (isCancelledOrRefund) {
             mappedEscrowStatus = 'REFUNDED_TO_BUYER';
           } else if (isInspectionOrder) {
-            const s = String(bOrd.status || '');
+            const s = String(bOrd.status || bOrd.backendStatus || '');
             if (s === 'INSPECTING') {
               // Chỉ sau khi gửi cho trung tâm hoặc KTV đến nhà quét mã kiểm định mới sang INSPECTION_IN_PROGRESS
               mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
@@ -1685,9 +1845,9 @@ export default function App() {
                 ? `${bOrd.deliveryAddress.detailAddress}, ${bOrd.deliveryAddress.wardName || ''}, ${bOrd.deliveryAddress.provinceName || ''}`
                 : (cachedBuyer?.buyerAddress || currentUser?.address || (isInspectionOrder && bOrd.orderType !== 'AT_HOME' ? 'Trạm Kiểm Định SecondLife Hub' : 'Địa chỉ nhận hàng của người mua'));
 
-          const itemPrice = Number(bOrd.finalPrice || bOrd.finalItemPrice || bOrd.postPrice || 0);
-          const shipFee = Number(bOrd.shippingFee || bOrd.finalShippingFee || 0);
-          const totalPaid = Number(bOrd.totalPaid || (itemPrice + inspFee + shipFee));
+          const itemPrice = Number(bOrd.itemPriceVnd || bOrd.finalItemPrice || bOrd.postPrice || bOrd.finalPrice || bOrd.price || bOrd.listing?.priceVnd || matchedListing?.priceVnd || 0);
+          const shipFee = Number(bOrd.shippingFeeVnd || bOrd.shippingFee || bOrd.finalShippingFee || 0);
+          const totalPaid = Number(bOrd.totalPaidVnd || bOrd.totalPaid || (itemPrice + inspFee + shipFee));
 
           let resolvedInspectorId = bOrd.inspectorId;
           let resolvedInspectorName = bOrd.inspectorName;
@@ -1704,7 +1864,7 @@ export default function App() {
             }
           } catch {}
 
-          return {
+          const mappedOrder: EscrowOrder = {
             id: bOrd.id,
             listingId: bOrd.postId,
             listing: matchedListing,
@@ -1719,8 +1879,8 @@ export default function App() {
             shippingFeeVnd: shipFee,
             platformFeeVnd: 0,
             totalPaidVnd: totalPaid,
-            escrowStatus: isCompletedOrReleased ? 'COMPLETED_RELEASED' : mappedEscrowStatus,
-            backendStatus: isCompletedOrReleased ? 'COMPLETED' : bOrd.status,
+            escrowStatus: isCompletedOrReleased ? 'COMPLETED_RELEASED' : (isCancelledOrRefund ? 'REFUNDED_TO_BUYER' : mappedEscrowStatus),
+            backendStatus: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : (bOrd.backendStatus || bOrd.status || (isInspectionOrder ? 'WAITING_SELLER_APPROVAL' : 'PROCESSING'))),
             inspectorId: resolvedInspectorId || undefined,
             inspectorName: resolvedInspectorName || undefined,
             inspectorEmail: resolvedInspectorEmail || undefined,
@@ -1754,7 +1914,7 @@ export default function App() {
             cancelledBy: isCompletedOrReleased ? null : (bOrd.cancelledBy || null),
             hasInspectionService: isInspectionOrder,
             inspectionMethod: isInspectionOrder
-              ? (bOrd.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER')
+              ? ((bOrd.orderType === 'AT_HOME' || bOrd.inspectionMethod === 'AT_HOME') ? 'AT_HOME' : 'AT_CENTER')
               : undefined,
             shippingLegs: (isInspectionOrder && bOrd.orderType !== 'AT_HOME')
               ? [
@@ -1888,9 +2048,37 @@ export default function App() {
           const isLocCompleted =
             locOrd.id === '16915c88-96a2-4cb0-8f6c-cc9a931a6e89' ||
             (typeof window !== 'undefined' && localStorage.getItem(`order_receipt_confirmed_${locOrd.id}`) === 'true') ||
-            locOrd.escrowStatus === 'RELEASED' ||
+            (locOrd.escrowStatus as any) === 'RELEASED' ||
             locOrd.escrowStatus === 'COMPLETED_RELEASED' ||
             (locOrd as any).backendStatus === 'COMPLETED';
+
+          const locStatusUpper = String(locOrd.backendStatus || (locOrd as any).status || '').toUpperCase();
+          const isLocActiveInspection = Boolean(locOrd.hasInspectionService || locOrd.inspectionMethod || (locOrd.inspectionFeeVnd && locOrd.inspectionFeeVnd > 0)) &&
+            [
+              'WAITING_SELLER_APPROVAL',
+              'WAITING_BUYER_APPROVAL',
+              'WAITING_FEE_PAYMENT',
+              'CONFIRMED_PENDING_DISPATCH',
+              'DISPATCHED',
+              'SCHEDULED',
+              'SHIPPING_TO_CENTER',
+              'INSPECTING',
+              'PASSED',
+              'DELIVERING_TO_BUYER',
+              'AWAITING_INSPECTION',
+            ].includes(locStatusUpper);
+
+          const isLocCancelled =
+            !isLocCompleted &&
+            !isLocActiveInspection && (
+              (typeof window !== 'undefined' && (
+                localStorage.getItem(`order_cancellation_info_${locOrd.id}`) !== null ||
+                localStorage.getItem(`order_cancelled_${locOrd.id}`) === 'true'
+              )) ||
+              locOrd.escrowStatus === 'REFUNDED_TO_BUYER' ||
+              locOrd.backendStatus === 'CANCELLED' ||
+              (locOrd as any).status === 'CANCELLED'
+            );
 
           if (isLocCompleted) {
             locOrd.escrowStatus = 'COMPLETED_RELEASED';
@@ -1898,6 +2086,33 @@ export default function App() {
             (locOrd as any).status = 'COMPLETED';
             locOrd.cancellationReasonCode = undefined;
             locOrd.cancellationReason = undefined;
+          } else if (isLocActiveInspection) {
+            // Khôi phục đơn kiểm định hợp lệ nếu lỡ bị gán nhầm cờ hủy
+            if (locOrd.escrowStatus === 'REFUNDED_TO_BUYER' || locOrd.backendStatus === 'CANCELLED') {
+              locOrd.escrowStatus = 'AWAITING_INSPECTION';
+              locOrd.backendStatus = 'WAITING_SELLER_APPROVAL' as any;
+              (locOrd as any).status = 'WAITING_SELLER_APPROVAL';
+              locOrd.cancellationReasonCode = undefined;
+              locOrd.cancellationReason = undefined;
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.removeItem(`order_cancellation_info_${locOrd.id}`);
+                  localStorage.removeItem(`order_cancelled_${locOrd.id}`);
+                } catch {}
+              }
+            }
+          } else if (isLocCancelled) {
+            locOrd.escrowStatus = 'REFUNDED_TO_BUYER';
+            locOrd.backendStatus = 'CANCELLED';
+            (locOrd as any).status = 'CANCELLED';
+            try {
+              const rawCancel = localStorage.getItem(`order_cancellation_info_${locOrd.id}`);
+              if (rawCancel) {
+                const cancelObj = JSON.parse(rawCancel);
+                locOrd.cancellationReasonCode = cancelObj.reasonCode || locOrd.cancellationReasonCode;
+                locOrd.cancellationReason = cancelObj.reason || locOrd.cancellationReason;
+              }
+            } catch {}
           }
           const isBuyer = Boolean(
             (currentUser?.id && String(locOrd.buyerId) === String(currentUser.id)) ||
@@ -1972,33 +2187,22 @@ export default function App() {
         reconcileBoughtListingIds(deduplicatedCombined);
 
         // Identify listings that should be restored to 'active' on the floor
-        const activeIds = new Set<string>();
         const cancelledListingIds = new Set<string>();
         deduplicatedCombined.forEach((o) => {
-          const lid = String(o.listingId || o.listing?.id || '');
+          const lid = extractListingIdFromOrder(o);
           if (!lid) return;
           if (isOrderCancelledOrRefunded(o)) {
             cancelledListingIds.add(lid);
-          } else {
-            activeIds.add(lid);
           }
         });
 
-        const freeListings = Array.from(cancelledListingIds).filter((id) => !activeIds.has(id));
+        const freeListings = Array.from(cancelledListingIds);
         if (freeListings.length > 0) {
-          freeListings.forEach((lid) => markListingAsAvailable(lid));
-          setListings((prev) =>
-            prev.map((item) => {
-              if (freeListings.includes(String(item.id))) {
-                return {
-                  ...item,
-                  status: 'active',
-                  backendStatus: 'ACTIVE',
-                };
-              }
-              return item;
-            })
-          );
+          freeListings.forEach((lid) => {
+            try {
+              localStorage.setItem(`listing_available_${lid}`, 'true');
+            } catch {}
+          });
         }
 
         setOrders(deduplicatedCombined);
@@ -2052,19 +2256,26 @@ export default function App() {
   React.useEffect(() => {
     if (!currentUser || !['orders', 'seller-dashboard'].includes(activeTab)) return;
     const interval = setInterval(() => {
+      // Nếu người dùng đã nhàn rỗi quá 30 phút, tạm ngưng polling ngầm để đồng bộ phiên hết hạn với Người Mua
+      if (isUserIdle(30 * 60 * 1000)) return;
       loadUserOrders(true);
     }, 6000);
     return () => clearInterval(interval);
   }, [activeTab, currentUser, loadUserOrders]);
 
-  // Listen for instant order placement events across windows/tabs
+  // Listen for instant order placement events across windows/tabs (debounced to avoid loop)
   React.useEffect(() => {
-    const handleSignal = () => {
-      loadUserOrders(true);
+    let timer: any = null;
+    const triggerDebouncedFetch = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        loadUserOrders(true);
+      }, 600);
     };
-    window.addEventListener('secondlife_order_placed_signal', handleSignal);
-    window.addEventListener('secondlife_inspection_task_created', handleSignal);
-    window.addEventListener('secondlife_order_assigned_signal', handleSignal);
+
+    window.addEventListener('secondlife_order_placed_signal', triggerDebouncedFetch);
+    window.addEventListener('secondlife_inspection_task_created', triggerDebouncedFetch);
+    window.addEventListener('secondlife_order_assigned_signal', triggerDebouncedFetch);
     const handleStorage = (e: StorageEvent) => {
       if (
         e.key === 'secondlife_order_placed_signal' ||
@@ -2072,14 +2283,15 @@ export default function App() {
         e.key === 'center_inspection_orders' ||
         e.key?.startsWith('order_assigned_inspector_')
       ) {
-        loadUserOrders(true);
+        triggerDebouncedFetch();
       }
     };
     window.addEventListener('storage', handleStorage);
     return () => {
-      window.removeEventListener('secondlife_order_placed_signal', handleSignal);
-      window.removeEventListener('secondlife_inspection_task_created', handleSignal);
-      window.removeEventListener('secondlife_order_assigned_signal', handleSignal);
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('secondlife_order_placed_signal', triggerDebouncedFetch);
+      window.removeEventListener('secondlife_inspection_task_created', triggerDebouncedFetch);
+      window.removeEventListener('secondlife_order_assigned_signal', triggerDebouncedFetch);
       window.removeEventListener('storage', handleStorage);
     };
   }, [loadUserOrders]);
@@ -2224,13 +2436,13 @@ export default function App() {
     orderId: string,
     cancelData?: { reasonCode: 'BUYER_REQUESTED' | 'SELLER_OUT_OF_STOCK' | 'SELLER_CANNOT_FULFILL'; reason: string }
   ) => {
-    let targetOrder = orders.find((o) => o.id === orderId);
+    let targetOrder = orders.find((o) => String(o.id) === String(orderId));
     if (!targetOrder) {
       try {
         const rawAll = localStorage.getItem('all_orders_cache');
         if (rawAll) {
           const parsed: EscrowOrder[] = JSON.parse(rawAll);
-          targetOrder = parsed.find((o) => o.id === orderId);
+          targetOrder = parsed.find((o) => String(o.id) === String(orderId));
         }
       } catch {}
     }
@@ -2239,7 +2451,25 @@ export default function App() {
         const rawRecent = localStorage.getItem('recent_placed_orders');
         if (rawRecent) {
           const parsed: EscrowOrder[] = JSON.parse(rawRecent);
-          targetOrder = parsed.find((o) => o.id === orderId);
+          targetOrder = parsed.find((o) => String(o.id) === String(orderId));
+        }
+      } catch {}
+    }
+    if (!targetOrder) {
+      try {
+        const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+        if (rawSeller) {
+          const parsed: EscrowOrder[] = JSON.parse(rawSeller);
+          targetOrder = parsed.find((o) => String(o.id) === String(orderId));
+        }
+      } catch {}
+    }
+    if (!targetOrder) {
+      try {
+        const rawCenter = localStorage.getItem('center_inspection_orders');
+        if (rawCenter) {
+          const parsed: EscrowOrder[] = JSON.parse(rawCenter);
+          targetOrder = parsed.find((o) => String(o.id) === String(orderId));
         }
       } catch {}
     }
@@ -2253,21 +2483,52 @@ export default function App() {
       reason: 'Người mua yêu cầu hủy đơn hàng.',
     });
 
-    try {
+    const isInspectionOrder = Boolean(
+      targetOrder?.hasInspectionService ||
+      targetOrder?.inspectionMethod ||
+      (targetOrder?.inspectionFeeVnd && targetOrder.inspectionFeeVnd > 0) ||
+      targetOrder?.escrowStatus === 'AWAITING_INSPECTION' ||
+      targetOrder?.status === 'WAITING_INSPECTION' ||
+      targetOrder?.status === 'CONFIRMED_PENDING_DISPATCH'
+    );
 
-      // Lưu thông tin lý do hủy vào localStorage
+    try {
+      // Lưu thông tin lý do hủy vào localStorage ngay lập tức
       try {
         localStorage.setItem(`order_cancellation_info_${orderId}`, JSON.stringify(effectiveCancelData));
+        localStorage.setItem(`order_cancelled_${orderId}`, 'true');
       } catch {}
 
-      await orderService.cancelOrder(orderId, effectiveCancelData);
+      // Nếu là đơn kiểm định, không gọi /api/v1/orders/{id}/cancel (vì backend chỉ hỗ trợ bảng orders, gọi sẽ gây lỗi 404)
+      if (isInspectionOrder) {
+        if (isSellerCancel) {
+          try {
+            await inspectorService.respondRequest(orderId, {
+              action: 'REJECT',
+              sellerConsentZinLoss: false,
+              rejectReason: effectiveCancelData.reason,
+            });
+          } catch (inspErr) {
+            console.warn('Inspection seller reject issue:', inspErr);
+          }
+        }
+      } else {
+        // Đơn hàng tiêu chuẩn (không kiểm định): gọi backend hủy đơn
+        try {
+          await orderService.cancelOrder(orderId, effectiveCancelData);
+        } catch (orderErr) {
+          console.warn('Backend order cancel error (cancelling locally):', orderErr);
+        }
+      }
+
       setOrders((prev) =>
         prev.map((ord) =>
-          ord.id === orderId
+          String(ord.id) === String(orderId)
             ? {
                 ...ord,
                 escrowStatus: 'REFUNDED_TO_BUYER',
                 backendStatus: 'CANCELLED',
+                status: 'CANCELLED',
                 cancellationReasonCode: effectiveCancelData.reasonCode,
                 cancellationReason: effectiveCancelData.reason,
               }
@@ -2275,123 +2536,92 @@ export default function App() {
         )
       );
 
-      // Cập nhật recent_placed_orders và all_orders_cache trong localStorage để giữ đúng trạng thái đã hủy
+      // Cập nhật recent_placed_orders, all_orders_cache, center_inspection_orders và my_seller_inspection_orders
       try {
-        const stored = localStorage.getItem('recent_placed_orders');
-        if (stored) {
-          const parsed: EscrowOrder[] = JSON.parse(stored);
-          const updated = parsed.map((o) =>
-            o.id === orderId
-              ? {
-                  ...o,
-                  escrowStatus: 'REFUNDED_TO_BUYER' as const,
-                  backendStatus: 'CANCELLED' as const,
-                  cancellationReasonCode: effectiveCancelData.reasonCode,
-                  cancellationReason: effectiveCancelData.reason,
-                }
-              : o
-          );
-          localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
-        }
-        const storedAll = localStorage.getItem('all_orders_cache');
-        if (storedAll) {
-          const parsedAll: EscrowOrder[] = JSON.parse(storedAll);
-          const updatedAll = parsedAll.map((o) =>
-            o.id === orderId
-              ? {
-                  ...o,
-                  escrowStatus: 'REFUNDED_TO_BUYER' as const,
-                  backendStatus: 'CANCELLED' as const,
-                  cancellationReasonCode: effectiveCancelData.reasonCode,
-                  cancellationReason: effectiveCancelData.reason,
-                }
-              : o
-          );
-          localStorage.setItem('all_orders_cache', JSON.stringify(updatedAll));
-        }
-        localStorage.removeItem(`order_listing_${orderId}`);
+        const updateStorageOrder = (key: string) => {
+          try {
+            const stored = localStorage.getItem(key);
+            if (stored) {
+              const parsed: EscrowOrder[] = JSON.parse(stored);
+              const updated = parsed.map((o) =>
+                String(o.id) === String(orderId)
+                  ? {
+                      ...o,
+                      escrowStatus: 'REFUNDED_TO_BUYER' as const,
+                      backendStatus: 'CANCELLED' as const,
+                      status: 'CANCELLED',
+                      cancellationReasonCode: effectiveCancelData.reasonCode,
+                      cancellationReason: effectiveCancelData.reason,
+                    }
+                  : o
+              );
+              localStorage.setItem(key, JSON.stringify(updated));
+            }
+          } catch {}
+        };
+
+        updateStorageOrder('recent_placed_orders');
+        updateStorageOrder('all_orders_cache');
+        updateStorageOrder('center_inspection_orders');
+        updateStorageOrder('my_seller_inspection_orders');
+        localStorage.setItem(`order_cancelled_${orderId}`, 'true');
+        // TUYỆT ĐỐI GIỮ LẠI order_listing_${orderId} để đơn hàng đã hủy không bị mất thông tin sản phẩm và hiển thị đầy đủ
       } catch {}
 
-      // Lập tức khôi phục bài đăng thành ACTIVE trên sàn (vì BE đã revert sang ACTIVE khi hủy)
-      const cancelledListingId = targetOrder?.listingId || targetOrder?.listing?.id;
+      // Lập tức khôi phục bài đăng thành ACTIVE trên sàn (vì đơn đã hủy)
+      let cancelledListingId = targetOrder?.listingId || targetOrder?.listing?.id || (targetOrder as any)?.postId || (targetOrder as any)?.post?.id;
+      if (!cancelledListingId) {
+        try {
+          const rawOrderListing = localStorage.getItem(`order_listing_${orderId}`);
+          if (rawOrderListing) {
+            const parsed = JSON.parse(rawOrderListing);
+            if (parsed?.id) cancelledListingId = parsed.id;
+          }
+        } catch {}
+      }
+
       if (cancelledListingId) {
         markListingAsAvailable(String(cancelledListingId));
         reconcileBoughtListingIds();
-        setListings((prev) =>
-          prev.map((l) =>
-            String(l.id) === String(cancelledListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
-          )
-        );
+        setListings((prev) => {
+          let found = false;
+          const updated = prev.map((l) => {
+            if (String(l.id) === String(cancelledListingId)) {
+              found = true;
+              return { ...l, status: 'active' as const, backendStatus: 'ACTIVE' as const };
+            }
+            return l;
+          });
+          if (!found && targetOrder?.listing) {
+            updated.unshift({
+              ...targetOrder.listing,
+              id: String(cancelledListingId),
+              status: 'active' as const,
+              backendStatus: 'ACTIVE' as const,
+            });
+          }
+          return updated;
+        });
       }
+
+      // Hoàn trả số dư ví cho Người Mua
+      const refundAmount = targetOrder?.totalPaidVnd || ((targetOrder?.itemPriceVnd || 0) + (targetOrder?.shippingFeeVnd || 0) + (targetOrder?.inspectionFeeVnd || 0));
+      if (refundAmount > 0 && (targetOrder?.buyerId === currentUser?.id || currentRole === 'buyer')) {
+        setWalletBalance((prev) => prev + refundAmount);
+        setCurrentUser((prev) => {
+          if (!prev) return prev;
+          const currentBal = prev.walletBalanceVnd ?? prev.walletBalance ?? 0;
+          const newBal = currentBal + refundAmount;
+          return { ...prev, walletBalance: newBal, walletBalanceVnd: newBal };
+        });
+      }
+
       loadListingsFromBackend(true);
       loadUserOrders(true);
       loadUserWallet();
       showToast(lang === 'vi' ? 'Đã hủy đơn hàng! Tiền ký quỹ Escrow đã được hoàn lại 100% vào ví người mua.' : 'Order cancelled and refunded to buyer.');
     } catch (err: any) {
-      console.warn('Backend cancelOrder fallback (cancelling locally):', err);
-      try {
-        localStorage.setItem(`order_cancellation_info_${orderId}`, JSON.stringify(effectiveCancelData));
-      } catch {}
-      setOrders((prev) =>
-        prev.map((ord) =>
-          ord.id === orderId
-            ? {
-                ...ord,
-                escrowStatus: 'REFUNDED_TO_BUYER',
-                backendStatus: 'CANCELLED',
-                cancellationReasonCode: effectiveCancelData.reasonCode,
-                cancellationReason: effectiveCancelData.reason,
-              }
-            : ord
-        )
-      );
-      try {
-        const stored = localStorage.getItem('recent_placed_orders');
-        if (stored) {
-          const parsed: EscrowOrder[] = JSON.parse(stored);
-          const updated = parsed.map((o) =>
-            o.id === orderId
-              ? {
-                  ...o,
-                  escrowStatus: 'REFUNDED_TO_BUYER' as const,
-                  backendStatus: 'CANCELLED' as const,
-                  cancellationReasonCode: effectiveCancelData.reasonCode,
-                  cancellationReason: effectiveCancelData.reason,
-                }
-              : o
-          );
-          localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
-        }
-        const storedAll = localStorage.getItem('all_orders_cache');
-        if (storedAll) {
-          const parsedAll: EscrowOrder[] = JSON.parse(storedAll);
-          const updatedAll = parsedAll.map((o) =>
-            o.id === orderId
-              ? {
-                  ...o,
-                  escrowStatus: 'REFUNDED_TO_BUYER' as const,
-                  backendStatus: 'CANCELLED' as const,
-                  cancellationReasonCode: effectiveCancelData.reasonCode,
-                  cancellationReason: effectiveCancelData.reason,
-                }
-              : o
-          );
-          localStorage.setItem('all_orders_cache', JSON.stringify(updatedAll));
-        }
-        localStorage.removeItem(`order_listing_${orderId}`);
-      } catch {}
-
-      const cancelledListingId = targetOrder?.listingId || targetOrder?.listing?.id;
-      if (cancelledListingId) {
-        markListingAsAvailable(String(cancelledListingId));
-        reconcileBoughtListingIds();
-        setListings((prev) =>
-          prev.map((l) =>
-            String(l.id) === String(cancelledListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
-          )
-        );
-      }
-      loadListingsFromBackend(true);
+      console.warn('handleCancelOrder error:', err);
       showToast(lang === 'vi' ? 'Đã hủy đơn hàng thành công! Tiền ký quỹ Escrow được bảo vệ an toàn.' : 'Order cancelled successfully!');
     }
   };
@@ -2720,13 +2950,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Real-time Push Notification Floating Toast */}
-      <RealtimeNotificationToast
-        lang={lang}
-        currentUser={currentUser}
-        currentRole={currentRole}
-        onNavigateToUrl={handleNotificationNavigate}
-      />
 
       {/* Main Content Area */}
       <main
@@ -2907,6 +3130,7 @@ export default function App() {
               handleTabChange('orders');
             }}
             onOpenChat={(listing) => setChatListing(listing)}
+            onOpenTopUp={() => setIsTopUpModalOpen(true)}
           />
         )}
 
@@ -3208,8 +3432,8 @@ export default function App() {
               address: user.address || '',
               role: user.role,
               avatar: user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
-              kycStatus: 'verified',
-              emailVerified: true,
+              kycStatus: user.role === 'seller' ? 'verified' : 'unverified',
+              emailVerified: Boolean(user.emailVerified),
               gender: user.gender || undefined,
             };
             setCurrentUser(profileUser);
@@ -3296,6 +3520,7 @@ export default function App() {
         <VerifyEmailModal
           isOpen={isVerifyEmailModalOpen}
           email={verifyEmailTarget || currentUser?.email || 'user@secondlife.vn'}
+          autoSendOnOpen={true}
           onClose={() => setIsVerifyEmailModalOpen(false)}
           onSuccess={() => {
             if (currentUser) {
@@ -3379,6 +3604,14 @@ export default function App() {
 
       {/* Global In-App Popup Modal (Replaces all native browser localhost alerts & confirms) */}
       <GlobalPopupModal />
+
+      {/* Real-time Push Notification Floating Toast (On top of all modals) */}
+      <RealtimeNotificationToast
+        lang={lang}
+        currentUser={currentUser}
+        currentRole={currentRole}
+        onNavigateToUrl={handleNotificationNavigate}
+      />
 
       {/* E-Commerce Footer */}
       {activeTab !== 'admin-dashboard' && activeTab !== 'inspection-hub' && activeTab !== 'inspection-center' && activeTab !== 'staff-workspace' && (

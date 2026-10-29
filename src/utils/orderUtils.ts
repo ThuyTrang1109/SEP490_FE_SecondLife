@@ -84,8 +84,178 @@ export const getSortableOrderTimestamp = (ord: any): number => {
   return 0;
 };
 
+export const getSortablePostTimestamp = (item: any): number => {
+  if (!item) return 0;
+  const candidates = [
+    item.createdAt,
+    item.createdDate,
+    item.created_at,
+    item.publishedAt,
+    item.publishDate,
+    item.updatedAt,
+    item.updatedDate,
+    item.timestamp,
+  ];
+
+  for (const val of candidates) {
+    if (val === undefined || val === null || val === '') continue;
+
+    if (val instanceof Date) {
+      const t = val.getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+
+    if (typeof val === 'number') {
+      if (isNaN(val) || val <= 0) continue;
+      if (val < 1e11) return Math.round(val * 1000);
+      return Math.round(val);
+    }
+
+    if (Array.isArray(val) && val.length >= 3) {
+      const y = val[0];
+      const m = (val[1] || 1) - 1;
+      const d = val[2] || 1;
+      const h = val[3] || 0;
+      const min = val[4] || 0;
+      const s = val[5] || 0;
+      const dt = new Date(y, m, d, h, min, s);
+      const t = dt.getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+
+    if (typeof val === 'string') {
+      const s = val.trim();
+      if (!s) continue;
+
+      if (/^\d+(\.\d+)?$/.test(s)) {
+        const num = parseFloat(s);
+        if (!isNaN(num) && num > 0) {
+          if (num < 1e11) return Math.round(num * 1000);
+          return Math.round(num);
+        }
+      }
+
+      const parsedIso = Date.parse(s);
+      if (!isNaN(parsedIso) && parsedIso > 0) {
+        return parsedIso;
+      }
+
+      const dmy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+      if (dmy) {
+        const day = parseInt(dmy[1], 10);
+        const month = parseInt(dmy[2], 10) - 1;
+        const year = parseInt(dmy[3], 10);
+        const hour = dmy[4] ? parseInt(dmy[4], 10) : 0;
+        const min = dmy[5] ? parseInt(dmy[5], 10) : 0;
+        const sec = dmy[6] ? parseInt(dmy[6], 10) : 0;
+        const dt = new Date(year, month, day, hour, min, sec);
+        const t = dt.getTime();
+        if (!isNaN(t) && t > 0) return t;
+      }
+    }
+  }
+
+  if (typeof item.id === 'string') {
+    const match = item.id.match(/(\d{10,13})/);
+    if (match) {
+      const num = Number(match[1]);
+      if (num < 1e11) return num * 1000;
+      return num;
+    }
+  }
+
+  return 0;
+};
+
+export const extractListingIdFromOrder = (o: any): string => {
+  if (!o) return '';
+  return String(
+    o.listingId ||
+    o.listing?.id ||
+    o.listing?.postId ||
+    (o.listing && (o.listing as any).id) ||
+    (o.post && (o.post.id || o.post.postId)) ||
+    o.postId ||
+    ''
+  );
+};
+
 export const isOrderCancelledOrRefunded = (o: any): boolean => {
   if (!o) return false;
+
+  // 1. Kiểm tra trực tiếp metadata hủy đơn và cờ hủy trong localStorage
+  if (typeof window !== 'undefined' && o.id) {
+    try {
+      const orderIdStr = String(o.id);
+      const bStat = String(o.backendStatus || (o as any).status || '').toUpperCase();
+      const activeInspectionList = [
+        'WAITING_SELLER_APPROVAL',
+        'WAITING_BUYER_APPROVAL',
+        'WAITING_FEE_PAYMENT',
+        'CONFIRMED_PENDING_DISPATCH',
+        'DISPATCHED',
+        'SCHEDULED',
+        'SHIPPING_TO_CENTER',
+        'INSPECTING',
+        'PASSED',
+        'DELIVERING_TO_BUYER',
+      ];
+      if (activeInspectionList.includes(bStat)) {
+        return false;
+      }
+
+      if (
+        localStorage.getItem(`order_cancellation_info_${orderIdStr}`) !== null ||
+        localStorage.getItem(`order_cancelled_${orderIdStr}`) === 'true'
+      ) {
+        return true;
+      }
+    } catch {}
+  }
+
+  // 1b. Kiểm tra nếu bài đăng của đơn này đã được giải phóng (hủy đơn để đưa về sàn)
+  const lid = extractListingIdFromOrder(o);
+  if (typeof window !== 'undefined' && lid) {
+    try {
+      const bStat = String(o.backendStatus || (o as any).status || '').toUpperCase();
+      const activeInspectionList = [
+        'WAITING_SELLER_APPROVAL',
+        'WAITING_BUYER_APPROVAL',
+        'WAITING_FEE_PAYMENT',
+        'CONFIRMED_PENDING_DISPATCH',
+        'DISPATCHED',
+        'SCHEDULED',
+        'SHIPPING_TO_CENTER',
+        'INSPECTING',
+        'PASSED',
+        'DELIVERING_TO_BUYER',
+      ];
+      if (activeInspectionList.includes(bStat)) {
+        return false;
+      }
+
+      if (localStorage.getItem(`listing_available_${lid}`) === 'true') {
+        const isCompleted =
+          o.escrowStatus === 'COMPLETED_RELEASED' ||
+          o.escrowStatus === 'RELEASED' ||
+          o.backendStatus === 'COMPLETED' ||
+          o.status === 'COMPLETED' ||
+          o.status === 'DELIVERED';
+        const isActivelyProcessing =
+          o.backendStatus === 'PROCESSING' ||
+          o.backendStatus === 'SHIPPED' ||
+          o.status === 'PROCESSING' ||
+          o.status === 'SHIPPED' ||
+          o.escrowStatus === 'HELD_IN_ESCROW' ||
+          o.escrowStatus === 'AWAITING_INSPECTION' ||
+          o.escrowStatus === 'INSPECTION_IN_PROGRESS';
+        if (!isCompleted && !isActivelyProcessing) {
+          return true;
+        }
+      }
+    } catch {}
+  }
+
   const escrow = String(o.escrowStatus || '').toUpperCase();
   const backend = String(o.backendStatus || '').toUpperCase();
   const status = String(o.status || '').toUpperCase();
@@ -149,7 +319,7 @@ export const reconcileBoughtListingIds = (ordersList?: any[]): Set<string> => {
 
   const processOrder = (o: any) => {
     if (!o) return;
-    const lid = String(o.listingId || o.listing?.id || o.postId || '');
+    const lid = extractListingIdFromOrder(o);
     if (!lid) return;
 
     if (isOrderCancelledOrRefunded(o)) {
@@ -175,18 +345,37 @@ export const reconcileBoughtListingIds = (ordersList?: any[]): Set<string> => {
     if (Array.isArray(ords)) ords.forEach(processOrder);
   } catch {}
 
-  // Any listing that has a cancelled/refunded/unpaid order and NO active uncancelled order must be released
-  const toRemove = new Set<string>(Array.from(cancelledListingIds).filter((id) => !activeOrderListingIds.has(id)));
+  try {
+    const rawSellerInsp = localStorage.getItem('my_seller_inspection_orders');
+    const sellerInspOrds = safeJsonParse<any[]>(rawSellerInsp, []);
+    if (Array.isArray(sellerInspOrds)) sellerInspOrds.forEach(processOrder);
+  } catch {}
+
+  try {
+    const rawCenterInsp = localStorage.getItem('center_inspection_orders');
+    const centerInspOrds = safeJsonParse<any[]>(rawCenterInsp, []);
+    if (Array.isArray(centerInspOrds)) centerInspOrds.forEach(processOrder);
+  } catch {}
+
+  // Bất kỳ listing nào có đơn hàng đã hủy / hoàn tiền thì lập tức giải phóng về sàn
+  const toRemove = new Set<string>();
+  cancelledListingIds.forEach((id) => {
+    toRemove.add(id);
+    activeOrderListingIds.delete(id);
+    try {
+      localStorage.setItem(`listing_available_${id}`, 'true');
+    } catch {}
+  });
 
   try {
     const raw = localStorage.getItem('bought_listing_ids');
     const list = safeJsonParse<any[]>(raw, []);
     if (Array.isArray(list)) {
-      const hasOrderSource = (Array.isArray(ordersList) && ordersList.length > 0) || !!localStorage.getItem('all_orders_cache');
       list.forEach((id: any) => {
         const sId = String(id);
-        if (cancelledListingIds.has(sId) || (hasOrderSource && !activeOrderListingIds.has(sId))) {
+        if (localStorage.getItem(`listing_available_${sId}`) === 'true') {
           toRemove.add(sId);
+          activeOrderListingIds.delete(sId);
         }
       });
       const nextList = list.filter((id: any) => !toRemove.has(String(id)));
@@ -198,43 +387,71 @@ export const reconcileBoughtListingIds = (ordersList?: any[]): Set<string> => {
 };
 
 export const getBoughtListingIds = (ordersList?: any[]): Set<string> => {
-  reconcileBoughtListingIds(ordersList);
+  const activeOrderListingIds = reconcileBoughtListingIds(ordersList);
 
   const set = new Set<string>();
   try {
     const raw = localStorage.getItem('bought_listing_ids');
     const ids = safeJsonParse<any[]>(raw, []);
-    if (Array.isArray(ids)) ids.forEach((id: any) => set.add(String(id)));
+    if (Array.isArray(ids)) {
+      ids.forEach((id: any) => {
+        const sId = String(id);
+        if (localStorage.getItem(`listing_available_${sId}`) !== 'true') {
+          set.add(sId);
+        }
+      });
+    }
   } catch {}
 
-  const processOrder = (o: any) => {
-    if (!o) return;
-    const isCancelled = isOrderCancelledOrRefunded(o);
-    const lid = String(o.listingId || o.listing?.id || o.postId || '');
-    if (!lid) return;
+  // Thêm tất cả ID của đơn hàng còn đang hoạt động
+  activeOrderListingIds.forEach((id) => {
+    if (localStorage.getItem(`listing_available_${id}`) !== 'true') {
+      set.add(id);
+    }
+  });
 
-    if (!isCancelled) {
-      set.add(lid);
-    } else {
-      set.delete(lid);
+  // Thu thập danh sách đã hủy để loại bỏ triệt để khỏi set trả về
+  const cancelledListingIds = new Set<string>();
+  const checkOrder = (o: any) => {
+    if (!o) return;
+    const lid = extractListingIdFromOrder(o);
+    if (!lid) return;
+    if (isOrderCancelledOrRefunded(o)) {
+      cancelledListingIds.add(lid);
     }
   };
 
   try {
     const rawAll = localStorage.getItem('all_orders_cache');
     const allOrds = safeJsonParse<any[]>(rawAll, []);
-    if (Array.isArray(allOrds)) allOrds.forEach(processOrder);
+    if (Array.isArray(allOrds)) allOrds.forEach(checkOrder);
   } catch {}
-
   try {
     const rawOrders = localStorage.getItem('recent_placed_orders');
     const ords = safeJsonParse<any[]>(rawOrders, []);
-    if (Array.isArray(ords)) ords.forEach(processOrder);
+    if (Array.isArray(ords)) ords.forEach(checkOrder);
+  } catch {}
+  try {
+    const rawSellerInsp = localStorage.getItem('my_seller_inspection_orders');
+    const sellerInspOrds = safeJsonParse<any[]>(rawSellerInsp, []);
+    if (Array.isArray(sellerInspOrds)) sellerInspOrds.forEach(checkOrder);
+  } catch {}
+  try {
+    const rawCenterInsp = localStorage.getItem('center_inspection_orders');
+    const centerInspOrds = safeJsonParse<any[]>(rawCenterInsp, []);
+    if (Array.isArray(centerInspOrds)) centerInspOrds.forEach(checkOrder);
   } catch {}
 
   if (Array.isArray(ordersList)) {
-    ordersList.forEach(processOrder);
+    ordersList.forEach(checkOrder);
   }
+
+  cancelledListingIds.forEach((id) => {
+    set.delete(id);
+    try {
+      localStorage.setItem(`listing_available_${id}`, 'true');
+    } catch {}
+  });
 
   return set;
 };
@@ -243,6 +460,10 @@ export const markListingAsBought = (listingId: string): void => {
   if (!listingId) return;
   try {
     const target = String(listingId);
+    try {
+      localStorage.removeItem(`listing_available_${target}`);
+      localStorage.removeItem(`listing_cancelled_at_${target}`);
+    } catch {}
     const raw = localStorage.getItem('bought_listing_ids');
     const list = safeJsonParse<any[]>(raw, []);
     if (Array.isArray(list) && !list.map(String).includes(target)) {
@@ -256,11 +477,19 @@ export const markListingAsAvailable = (listingId: string): void => {
   if (!listingId) return;
   try {
     const target = String(listingId);
+    try {
+      localStorage.setItem(`listing_available_${target}`, 'true');
+      localStorage.setItem(`listing_cancelled_at_${target}`, String(Date.now()));
+    } catch {}
     const raw = localStorage.getItem('bought_listing_ids');
     const list = safeJsonParse<any[]>(raw, []);
     if (Array.isArray(list)) {
       const nextList = list.filter((id: any) => String(id) !== target);
       localStorage.setItem('bought_listing_ids', JSON.stringify(nextList));
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('secondlife_listing_status_changed', { detail: { listingId: target, status: 'active' } }));
     }
   } catch {}
 };

@@ -63,7 +63,9 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
       const status = err?.response?.status || err?.status;
       const rawMsg = err?.response?.data?.message || err?.message || '';
       
-      if (rawMsg.toLowerCase().includes('not eligible for outbound shipping') || (order.escrowStatus === 'AWAITING_PAYMENT')) {
+      if (rawMsg.toLowerCase().includes('already active') || rawMsg.toLowerCase().includes('uncertain')) {
+        setErrorMsg('Đơn hàng này đã có vận đơn Lalamove đang hoạt động! Bạn không cần tạo lại. Vui lòng đóng cửa sổ này và bấm nút "Theo Dõi Lalamove" để xem lộ trình tài xế.');
+      } else if (rawMsg.toLowerCase().includes('not eligible for outbound shipping') || (order.escrowStatus === 'AWAITING_PAYMENT')) {
         setErrorMsg('Người mua chưa nộp tiền ký quỹ Escrow (trạng thái: Chờ Khách Ký Quỹ). Hệ thống chỉ cho phép gọi bưu tá Lalamove sau khi tiền đã được bảo chứng giữ trong Quỹ Escrow.');
       } else if (rawMsg.toLowerCase().includes('must match the paid shipping quote')) {
         setErrorMsg('Chặng vận chuyển không khớp với báo giá thanh toán của đơn hàng. Với đơn kiểm định Hub, chặng chuyển về Hub do Trung tâm kiểm định điều phối.');

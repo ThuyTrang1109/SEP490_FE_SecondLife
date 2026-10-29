@@ -67,9 +67,9 @@ import {
   fitsVehicle,
   suggestVehicle
 } from '../services';
-import { parseQuestionItem, splitCompoundQuestion } from '../utils/questionParser';
+import { parseQuestionItem, splitCompoundQuestion, getStandardProductQuestions } from '../utils/questionParser';
 import { extractWardAndCity, getSavedSellerAddress, cleanFullAddress } from '../utils/addressUtils';
-import { savePostMetadata } from '../utils/catalogCache';
+import { savePostMetadata, extractSellerOriginalPrice } from '../utils/catalogCache';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 
 
@@ -112,6 +112,40 @@ export const cleanDescriptionFromQuestionTemplate = (desc: string): string => {
   });
 
   return filtered.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+};
+
+export const generateUUID = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try {
+      return crypto.randomUUID();
+    } catch {}
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
+/**
+ * Chuẩn hóa mô tả sản phẩm trước khi gửi sang Backend để AI kiểm duyệt (aiScanPost).
+ * Lý do: AI Gemini ở Backend không được truyền năm hiện tại (2026) trong prompt,
+ * dẫn đến AI Gemini bị nhầm lẫn năm hiện tại là "năm trong tương lai" và tự động từ chối (REJECTED).
+ * Hàm này chuẩn hóa "Năm mua: 2026" thành "Thời gian mua: Mua mới đầu năm nay (đã qua sử dụng)"
+ * giúp AI duyệt hợp lệ và người mua vẫn hiểu chính xác thời gian sản phẩm được mua.
+ */
+export const sanitizeDescriptionForAiScan = (desc: string, currentYear: number = new Date().getFullYear()): string => {
+  if (!desc) return '';
+  let res = desc;
+  // Khớp: "Năm mua: 2026", "Mua năm: 2026", "Năm sản xuất: 2026",...
+  const yearHeaderRegex = new RegExp(`(năm\\s*mua|mua\\s*năm|thời\\s*gian\\s*mua|sản\\s*xuất\\s*năm|năm\\s*sản\\s*xuất)[:\\s]*${currentYear}`, 'gi');
+  res = res.replace(yearHeaderRegex, (match, prefix) => `${prefix}: Mua mới đầu năm nay (đã qua sử dụng)`);
+
+  // Khớp: "mua năm 2026", "mua vào năm 2026", "sở hữu từ năm 2026"
+  const buyInYearRegex = new RegExp(`(mua|sắm|tậu|dùng|sở hữu)\\s+(?:vào\\s+|trong\\s+)?(?:năm\\s+)?${currentYear}`, 'gi');
+  res = res.replace(buyInYearRegex, (match, verb) => `${verb} đầu năm nay (đã qua sử dụng)`);
+
+  return res;
 };
 
 interface CreateListingViewProps {
@@ -331,14 +365,71 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       controller.abort();
     };
   }, [pickupKey, refreshVersion]);
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+  const maxAllowedPurchaseYear = currentYear;
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
-  const [purchaseYear, setPurchaseYear] = useState<number>(new Date().getFullYear());
+  const [purchaseYear, setPurchaseYear] = useState<number>(() => {
+    return currentYear;
+  });
   const [originalPriceVnd, setOriginalPriceVnd] = useState<number | ''>('');
   const [itemCondition, setItemCondition] = useState<string>('USED_GOOD');
   const [description, setDescription] = useState('');
   const [finalPriceVnd, setFinalPriceVnd] = useState<number>(0);
   const [isManualPricingInStep3, setIsManualPricingInStep3] = useState<boolean>(false);
+
+  // Images state: Raw files for FormData & previews
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
+  // Trạng thái theo dõi khi người dùng bấm Tiếp tục ở các bước để kích hoạt hiển thị lỗi inline
+  const [hasSubmittedStep1, setHasSubmittedStep1] = useState(false);
+  const [hasSubmittedStep2, setHasSubmittedStep2] = useState(false);
+  const [hasSubmittedStep3, setHasSubmittedStep3] = useState(false);
+
+  // Validation lỗi tại chỗ (Inline Validation)
+  const purchaseYearError = useMemo(() => {
+    if (!purchaseYear && purchaseYear !== 0) return 'Vui lòng nhập năm mua sản phẩm.';
+    if (purchaseYear > maxAllowedPurchaseYear) {
+      return `Năm mua không hợp lý (${purchaseYear} là năm tương lai). Sản phẩm đồ cũ đã qua sử dụng phải có năm mua từ năm 1990 đến năm ${maxAllowedPurchaseYear}.`;
+    }
+    if (purchaseYear < 1990) {
+      return 'Năm mua không hợp lý (tối thiểu từ năm 1990).';
+    }
+    return null;
+  }, [purchaseYear, maxAllowedPurchaseYear]);
+
+  const brandError = useMemo(() => {
+    if (!brand || !brand.trim()) return 'Vui lòng nhập hoặc chọn thương hiệu sản phẩm.';
+    return null;
+  }, [brand]);
+
+  const categoryError = useMemo(() => {
+    if (!selectedCategoryId) return 'Vui lòng chọn danh mục sản phẩm.';
+    return null;
+  }, [selectedCategoryId]);
+
+  const itemError = useMemo(() => {
+    const itemsForCat = backendItems.filter(i => i.categoryId === selectedCategoryId);
+    if (itemsForCat.length > 0 && !selectedItemId) {
+      return 'Vui lòng chọn loại thiết bị.';
+    }
+    return null;
+  }, [selectedCategoryId, selectedItemId, backendItems]);
+
+  const photoError = useMemo(() => {
+    if (photoPreviews.length < 1) return 'Vui lòng tải lên ít nhất 1 ảnh sản phẩm thực tế (tối đa 6 ảnh).';
+    return null;
+  }, [photoPreviews.length]);
+
+  const originalPriceError = useMemo(() => {
+    if (typeof originalPriceVnd === 'number') {
+      if (originalPriceVnd > 1000000000) return 'Giá sản phẩm không được vượt quá 1.000.000.000đ (1 tỷ VNĐ).';
+      if (originalPriceVnd <= 0) return 'Giá sản phẩm phải lớn hơn 0đ.';
+    }
+    return null;
+  }, [originalPriceVnd]);
 
   // Gợi ý thương hiệu đồ gia dụng thông minh theo Danh mục và Loại sản phẩm
   const brandSuggestionsData = useMemo(() => {
@@ -547,10 +638,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
 
 
-  // Images state: Raw files for FormData & previews
-  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
-  const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   // Video state (POST /api/v1/media/upload-video)
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -650,6 +737,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         if (draft.imageUrls && draft.imageUrls.length > 0) {
           setPhotoPreviews(draft.imageUrls);
         }
+        try {
+          const savedMsg = localStorage.getItem(`post_ai_initial_msg_${cleanId}`);
+          if (savedMsg) setAiInitialMessage(savedMsg);
+          const savedReport = localStorage.getItem(`post_ai_visual_report_${cleanId}`);
+          if (savedReport) setAiVisualReport(savedReport);
+          const savedAns = localStorage.getItem(`post_question_answers_${cleanId}`);
+          if (savedAns) {
+            const parsed = JSON.parse(savedAns);
+            if (parsed && typeof parsed === 'object') setQuestionAnswers(parsed);
+          }
+        } catch {}
         showToast(lang === 'vi' ? `Đã tải lại bản nháp #${cleanId.slice(0, 8)} thành công!` : 'Draft loaded successfully!');
         setIsLoadDraftModalOpen(false);
       }
@@ -783,17 +881,31 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         status: 'DRAFT',
       });
 
+      // Khôi phục câu hỏi AI, nhận xét ảnh và câu trả lời khảo sát từ localStorage nếu có
+      try {
+        const savedMsg = localStorage.getItem(`post_ai_initial_msg_${initialDraft.id}`);
+        if (savedMsg) setAiInitialMessage(savedMsg);
+        const savedReport = localStorage.getItem(`post_ai_visual_report_${initialDraft.id}`);
+        if (savedReport) setAiVisualReport(savedReport);
+        const savedAns = localStorage.getItem(`post_question_answers_${initialDraft.id}`);
+        if (savedAns) {
+          const parsed = JSON.parse(savedAns);
+          if (parsed && typeof parsed === 'object') setQuestionAnswers(parsed);
+        }
+      } catch {}
+
       // Nếu bản nháp đã có ảnh, tự động chuyển ngay sang Bước 2 để người dùng tiếp tục chỉnh sửa bài
       if ((initialDraft.photoGallery && initialDraft.photoGallery.length > 0) || (initialDraft.photos && initialDraft.photos.front)) {
         setCurrentStep(2);
       }
 
-      // Tải bổ sung thông tin chi tiết nhất từ backend nếu có
+      // Tải bổ sung thông tin chi tiết nhất từ backend nếu có (sử dụng getDraft cho bản nháp chưa công khai)
       if (initialDraft.id) {
-        postService.getPost(initialDraft.id).then((freshDraft: any) => {
+        postService.getDraft(initialDraft.id).then((freshDraft: any) => {
           if (freshDraft) {
             if (freshDraft.title) setTitle(freshDraft.title);
             if (freshDraft.description) setDescription(cleanDescriptionFromQuestionTemplate(freshDraft.description));
+            if (freshDraft.descriptionAccepted) setDescriptionAccepted(true);
             if (freshDraft.price) {
               setOriginalPriceVnd(Number(freshDraft.price));
               setFinalPriceVnd(Number(freshDraft.price));
@@ -1002,7 +1114,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
 
     // Lọc bỏ câu hỏi về Hãng / Thương hiệu vì người bán đã chọn hoặc điền ở bước đầu tiên
-    return uniqueQuestions.filter(q => {
+    const filtered = uniqueQuestions.filter(q => {
       const lower = q.toLowerCase().trim();
       // Giữ lại các câu hỏi liên quan đến bảo hành (ví dụ: "Bảo hành chính hãng không")
             if (lower.includes('bảo hành') || lower.includes('bo hnh')) return true;
@@ -1038,7 +1150,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       }
       return true;
     });
-  }, [parsedAiQuestions]);
+
+    if (filtered.length > 0) {
+      return filtered;
+    }
+
+    // Fallback: Khi bản nháp chưa có tin nhắn AI hoặc mở trực tiếp, luôn cung cấp 4 câu hỏi chuẩn theo danh mục & thiết bị
+    const selectedCat = backendCategories.find(c => c.id === selectedCategoryId);
+    const selectedItm = backendItems.find(i => i.id === selectedItemId);
+    const catName = selectedCat?.name || '';
+    const itmName = selectedItm?.name || '';
+    return getStandardProductQuestions(catName, itmName, brand);
+  }, [parsedAiQuestions, aiInitialMessage, postId, initialDraft, selectedCategoryId, selectedItemId, backendCategories, backendItems, brand]);
 
   
   // Questionnaire Answers State
@@ -1070,7 +1193,16 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   }, [questionAnswers]);
 
   const handleAnswerChange = (idx: number, val: string) => {
-    setQuestionAnswers((prev) => ({ ...prev, [idx]: val }));
+    setQuestionAnswers((prev) => {
+      const next = { ...prev, [idx]: val };
+      const curId = postId || initialDraft?.id;
+      if (curId) {
+        try {
+          localStorage.setItem(`post_question_answers_${curId}`, JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
     const qText = effectiveQuestions[idx] || '';
     if (qText.toLowerCase().includes('thương hiệu') || qText.toLowerCase().includes('hãng')) {
       const cleanBrand = val.trim();
@@ -1187,7 +1319,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     const basicSpecs: string[] = [];
     if (brand && brand.trim()) basicSpecs.push(`• Thương hiệu: ${brand.trim()}`);
     if (model && model.trim()) basicSpecs.push(`• Model: ${model.trim()}`);
-    if (purchaseYear) basicSpecs.push(`• Năm mua: ${purchaseYear}`);
+    if (purchaseYear) {
+      if (purchaseYear >= currentYear) {
+        basicSpecs.push('• Thời gian mua: Mua mới đầu năm nay (đã qua sử dụng)');
+      } else {
+        basicSpecs.push(`• Năm mua: ${purchaseYear}`);
+      }
+    }
 
     if (basicSpecs.length > 0) {
       sections.push('📌 Thông số cơ bản:\n' + basicSpecs.join('\n'));
@@ -1272,7 +1410,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     const basicInfoParts: string[] = [];
     if (brand && brand.trim()) basicInfoParts.push(`Thương hiệu: ${brand.trim()}`);
     if (model && model.trim()) basicInfoParts.push(`Model: ${model.trim()}`);
-    if (purchaseYear) basicInfoParts.push(`Năm mua: ${purchaseYear}`);
+    if (purchaseYear) {
+      if (purchaseYear >= currentYear) {
+        basicInfoParts.push('Thời gian mua: Mua mới đầu năm nay (đã qua sử dụng)');
+      } else {
+        basicInfoParts.push(`Năm mua: ${purchaseYear}`);
+      }
+    }
 
     const basicStr = basicInfoParts.length > 0 ? `Thông tin sản phẩm: ${basicInfoParts.join(', ')}.\n` : '';
     const visualStr = aiVisualReport ? `Ghi nhận ngoại quan từ ảnh chụp: ${aiVisualReport}.\n` : '';
@@ -1383,16 +1527,33 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [showAiScanConfirmModal, setShowAiScanConfirmModal] = useState<boolean>(false);
 
   // Load Seller Credits
-  const loadCredits = async () => {
+  const loadCredits = async (showFeedback?: boolean | unknown) => {
+    const isExplicit = showFeedback === true;
     setIsLoadingCredits(true);
     try {
       const res = await sellerCreditService.getCredits();
-      if (res) setCredits(res);
+      if (res) {
+        setCredits(res);
+        if (isExplicit) {
+          showToast(
+            lang === 'vi'
+              ? `✅ Đã làm mới số dư Credit: ${res.postCredits ?? 0} Đăng bài · ${res.valuationCredits ?? 0} Định giá AI · ${res.chatCredits ?? 0} Chat AI`
+              : `✅ Credits refreshed: ${res.postCredits ?? 0} Listing · ${res.valuationCredits ?? 0} Valuation · ${res.chatCredits ?? 0} Chat`
+          );
+        }
+      }
     } catch (err) {
       console.warn('Không tải được số dư credit:', err);
+      if (isExplicit) {
+        showToast(lang === 'vi' ? 'Không thể tải lại số dư credit lúc này.' : 'Failed to reload credits.');
+      }
     } finally {
       setIsLoadingCredits(false);
     }
+  };
+
+  const handleCheckCreditsManual = () => {
+    loadCredits(true);
   };
 
   useEffect(() => {
@@ -1568,21 +1729,64 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // =========================================================================
   // STEP 1: Init Post (POST /api/v1/posts/init with multipart/form-data)
   // =========================================================================
-  const handleTriggerAiChat = () => {
-    if (typeof originalPriceVnd === 'number' && originalPriceVnd > 1000000000) {
-      showToast(lang === 'vi' ? 'Giá sản phẩm không được vượt quá 1.000.000.000đ (1 tỷ VNĐ)' : 'Price cannot exceed 1 billion VND');
-      return;
+  const validateStep1 = (): boolean => {
+    setHasSubmittedStep1(true);
+
+    if (categoryError) {
+      showToast(categoryError);
+      const el = document.getElementById('category-select') || document.querySelector('select');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      (el as HTMLElement)?.focus?.();
+      return false;
     }
+
+    if (itemError) {
+      showToast(itemError);
+      const el = document.getElementById('item-select') || document.querySelectorAll('select')[1];
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      (el as HTMLElement)?.focus?.();
+      return false;
+    }
+
+    if (brandError) {
+      showToast(brandError);
+      const el = document.getElementById('brand-input') || document.querySelector('input[placeholder*="Philips"], input[placeholder*="Hãng"]');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      (el as HTMLElement)?.focus?.();
+      return false;
+    }
+
+    if (purchaseYearError) {
+      showToast(purchaseYearError);
+      const el = document.getElementById('purchase-year-input') || document.querySelector('input[type="number"]');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      (el as HTMLElement)?.focus?.();
+      return false;
+    }
+
+    if (originalPriceError) {
+      showToast(originalPriceError);
+      const el = document.getElementById('original-price-input') || document.querySelector('input[inputmode="numeric"]');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      (el as HTMLElement)?.focus?.();
+      return false;
+    }
+
+    if (photoError) {
+      showToast(photoError);
+      const el = document.getElementById('photos-section') || document.querySelector('input[type="file"]')?.parentElement;
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleTriggerAiChat = () => {
+    if (!validateStep1()) return;
+
     if (postId || initialDraft?.id) {
       handleInitPost('ai');
-      return;
-    }
-    if (!selectedCategoryId) {
-      showToast(lang === 'vi' ? 'Vui lòng chọn Danh mục sản phẩm trước khi quét AI' : 'Please select a Category');
-      return;
-    }
-    if (photoPreviews.length < 1) {
-      showToast(lang === 'vi' ? 'Vui lòng tải lên ít nhất 1 ảnh sản phẩm thực tế' : 'Please upload at least 1 product image');
       return;
     }
     if ((credits?.chatCredits ?? 0) < 1) {
@@ -1596,10 +1800,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   };
 
   const handleInitPost = async (mode: 'ai' | 'manual' = 'ai') => {
-    if (typeof originalPriceVnd === 'number' && originalPriceVnd > 1000000000) {
-      showToast(lang === 'vi' ? 'Giá sản phẩm không được vượt quá 1.000.000.000đ (1 tỷ VNĐ)' : 'Price cannot exceed 1 billion VND');
-      return;
-    }
+    if (!validateStep1()) return;
+
     // Nếu bản nháp đã tồn tại (đã có postId hoặc initialDraft.id):
     // KHÔNG gọi postService.initPost nữa để tránh tạo bản nháp trùng lặp trong DB và xóa trắng mô tả của người dùng!
     if (postId || initialDraft?.id) {
@@ -1610,16 +1812,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       if (mode === 'ai') {
         setShowAiChatDrawer(true);
       }
+      try {
+        const savedMsg = localStorage.getItem(`post_ai_initial_msg_${activePostId}`);
+        if (savedMsg) setAiInitialMessage(savedMsg);
+        const savedReport = localStorage.getItem(`post_ai_visual_report_${activePostId}`);
+        if (savedReport) setAiVisualReport(savedReport);
+        const savedAns = localStorage.getItem(`post_question_answers_${activePostId}`);
+        if (savedAns) {
+          const parsed = JSON.parse(savedAns);
+          if (parsed && typeof parsed === 'object') setQuestionAnswers(prev => ({ ...parsed, ...prev }));
+        }
+      } catch {}
       setCurrentStep(2);
-      return;
-    }
-
-    if (!selectedCategoryId) {
-      showToast(lang === 'vi' ? 'Vui lòng chọn Danh mục sản phẩm' : 'Please select a Category');
-      return;
-    }
-    if (photoPreviews.length < 1) {
-      showToast(lang === 'vi' ? 'Vui lòng tải lên ít nhất 1 ảnh sản phẩm thực tế' : 'Please upload at least 1 product image');
       return;
     }
 
@@ -1657,6 +1861,14 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         const visualAssessment = initRes.aiDescription || '';
         setAiInitialMessage(questionnaireTemplate);
         setAiVisualReport(visualAssessment);
+        try {
+          if (questionnaireTemplate) {
+            localStorage.setItem(`post_ai_initial_msg_${initRes.postId}`, questionnaireTemplate);
+          }
+          if (visualAssessment) {
+            localStorage.setItem(`post_ai_visual_report_${initRes.postId}`, visualAssessment);
+          }
+        } catch {}
 
         // Auto-generate title from selections if empty
         const selectedCat = backendCategories.find(c => c.id === selectedCategoryId);
@@ -1904,11 +2116,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
 
     if (!currentTitle) {
-      showToast(lang === 'vi' ? 'Vui lòng nhập Tiêu đề bài đăng.' : 'Please enter Listing Title.');
+      showToast(lang === 'vi' ? 'Vui lòng nhập Tiêu đề bài đăng (tối thiểu 5 ký tự).' : 'Please enter Listing Title.');
+      const el = document.getElementById('title-input') || document.querySelector('input[placeholder*="Nồi Cơm"]');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      (el as HTMLElement)?.focus?.();
       return;
     }
-    if (!currentDesc) {
-      showToast(lang === 'vi' ? 'Vui lòng nhập Mô tả sản phẩm hoặc trò chuyện với AI để tạo mô tả.' : 'Please provide a Description or chat with AI.');
+    if (!currentDesc || currentDesc.length < 10) {
+      showToast(lang === 'vi' ? 'Vui lòng nhập Mô tả sản phẩm (tối thiểu 10 ký tự) hoặc trò chuyện với AI để tạo mô tả.' : 'Please provide a Description or chat with AI.');
+      const el = document.getElementById('description-input') || document.querySelector('textarea');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      (el as HTMLElement)?.focus?.();
       return;
     }
     if (!pickupCoords) {
@@ -1957,6 +2175,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           ? `Vui lòng nhập đầy đủ và hợp lệ trọng lượng kiện hàng (≥ 1 g) và kích thước (≥ ${catalog?.minDimensionCm || 1} cm).`
           : `Please enter valid package weight (>= 1g) and dimensions (>= ${catalog?.minDimensionCm || 1} cm).`
       );
+      const el = document.querySelector('input[inputmode="decimal"]');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     if (fitting.length === 0) {
@@ -1965,6 +2185,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           ? 'Không có loại xe Lalamove đủ tải trọng và kích thước cho kiện hàng tại điểm lấy hàng.'
           : 'No Lalamove vehicle fits this package at pickup location.'
       );
+      const el = document.querySelector('input[inputmode="decimal"]');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
@@ -1975,6 +2197,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // STEP 3: Save Draft & Accept Description (PUT /draft & POST /accept-description)
   // =========================================================================
   const handleSaveAndAcceptDescription = async () => {
+    setHasSubmittedStep3(true);
     if (!postId) return;
     if (!title.trim()) {
       showToast(lang === 'vi' ? 'Vui lòng nhập Tiêu đề bài đăng' : 'Please enter Title');
@@ -1988,6 +2211,14 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     if (isManualPricingInStep3) {
       if (!finalPriceVnd || finalPriceVnd < 1000) {
         showToast(lang === 'vi' ? 'Vui lòng nhập giá bán hợp lệ (ít nhất 1.000đ)' : 'Please enter a valid price (min 1,000)');
+        const el = document.querySelector('input[placeholder*="500.000"]');
+        (el as HTMLElement)?.focus?.();
+        return;
+      }
+      if (finalPriceVnd > 1000000000) {
+        showToast(lang === 'vi' ? 'Giá bán không được vượt quá 1.000.000.000đ (1 tỷ VNĐ)' : 'Price cannot exceed 1 billion VND');
+        const el = document.querySelector('input[placeholder*="500.000"]');
+        (el as HTMLElement)?.focus?.();
         return;
       }
     }
@@ -2003,20 +2234,19 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       const cleanDesc = description.trim().replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '').trim();
       const descToSend = numOrig > 0 ? `${cleanDesc}\n\n<!--sl_orig_price:${numOrig}-->` : cleanDesc;
 
-      // 1 & 2. Chạy song song updateDraft và acceptDescription bằng Promise.all để giảm 50% thời gian chờ ở Bước 3
-      const [, acceptRes] = await Promise.all([
-        postService.updateDraft(postId, {
-          title: title.trim(),
-          description: descToSend,
-          itemCondition: itemCondition || 'USED',
-          price: isManualPricingInStep3 ? finalPriceVnd : null,
-          shippingWeight: shippingWeight ? Number(shippingWeight) : undefined,
-          shippingLength: shippingLength ? Number(shippingLength) : undefined,
-          shippingWidth: shippingWidth ? Number(shippingWidth) : undefined,
-          shippingHeight: shippingHeight ? Number(shippingHeight) : undefined,
-        }),
-        postService.acceptDescription(postId, descToSend),
-      ]);
+      // Cập nhật draft trước, sau đó mới xác nhận mô tả để tránh race condition làm descriptionAccepted bị ghi đè về false
+      await postService.updateDraft(postId, {
+        title: title.trim(),
+        description: descToSend,
+        itemCondition: itemCondition || 'USED',
+        price: isManualPricingInStep3 ? finalPriceVnd : null,
+        shippingWeight: shippingWeight ? Number(shippingWeight) : undefined,
+        shippingLength: shippingLength ? Number(shippingLength) : undefined,
+        shippingWidth: shippingWidth ? Number(shippingWidth) : undefined,
+        shippingHeight: shippingHeight ? Number(shippingHeight) : undefined,
+      });
+
+      const acceptRes = await postService.acceptDescription(postId, descToSend);
 
       setDescriptionAccepted(true);
       setDraftPost(acceptRes);
@@ -2042,12 +2272,49 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   // =========================================================================
   const handleRunAiValuation = async () => {
     if (!postId) return;
+    if (!title?.trim() || !description?.trim()) {
+      showToast(lang === 'vi' ? 'Vui lòng nhập tiêu đề và mô tả sản phẩm trước khi định giá AI' : 'Please provide title and description before AI valuation');
+      return;
+    }
+
     setIsEstimatingPrice(true);
-    const reqId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `req-${Date.now()}`;
+    const reqId = generateUUID();
     setValuationRequestId(reqId);
 
     try {
-      const res = await postService.estimatePrice(postId, reqId);
+      const numOrig = typeof originalPriceVnd === 'number' && originalPriceVnd > 0 ? originalPriceVnd : Number(localStorage.getItem(`post_original_price_${postId}`) || 0);
+      const cleanDesc = (description || '').trim().replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '').trim();
+      const descToSend = numOrig > 0 ? `${cleanDesc}\n\n<!--sl_orig_price:${numOrig}-->` : cleanDesc;
+
+      // Đảm bảo mô tả đã được chấp nhận trên Backend để tránh lỗi 409 Conflict
+      try {
+        await postService.acceptDescription(postId, descToSend);
+        setDescriptionAccepted(true);
+      } catch (acceptErr) {
+        console.warn('Đồng bộ xác nhận mô tả trước định giá:', acceptErr);
+      }
+
+      let res: AiPriceEstimationResponse;
+      try {
+        res = await postService.estimatePrice(postId, reqId);
+      } catch (firstErr: any) {
+        // Nếu backend trả về 409 Conflict (yêu cầu accept description hoặc requestId bị trùng)
+        if (
+          firstErr?.status === 409 ||
+          firstErr?.message?.includes('409') ||
+          firstErr?.message?.toLowerCase().includes('accept') ||
+          firstErr?.message?.toLowerCase().includes('requestid')
+        ) {
+          await postService.acceptDescription(postId, descToSend);
+          setDescriptionAccepted(true);
+          const retryReqId = generateUUID();
+          setValuationRequestId(retryReqId);
+          res = await postService.estimatePrice(postId, retryReqId);
+        } else {
+          throw firstErr;
+        }
+      }
+
       setValuationResult(res);
       if (res.suggestedPrice) {
         setFinalPriceVnd(res.suggestedPrice);
@@ -2139,7 +2406,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
     try {
       const numericOrigPrice = typeof originalPriceVnd === 'number' && originalPriceVnd > 0 ? originalPriceVnd : Number(localStorage.getItem(`post_original_price_${postId}`) || 0);
-      const cleanDesc = description.trim().replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '').trim();
+      const sanitizedDesc = sanitizeDescriptionForAiScan(description.trim(), currentYear);
+      if (sanitizedDesc !== description.trim()) {
+        setDescription(sanitizedDesc);
+      }
+      const cleanDesc = sanitizedDesc.replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '').trim();
       const descToSend = numericOrigPrice > 0 ? `${cleanDesc}\n\n<!--sl_orig_price:${numericOrigPrice}-->` : cleanDesc;
 
       const submitRes = await postService.submitPost(postId, {
@@ -2161,6 +2432,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       const submitCat = backendCategories.find((c) => c.id === selectedCategoryId);
       const submitItm = backendItems.find((i) => i.id === selectedItemId);
       const submitCatName = submitCat?.name || '';
+      const submitItmName = submitItm?.name || '';
       const finalOrigPrice = numericOrigPrice > 0 ? numericOrigPrice : undefined;
 
       savePostMetadata({
@@ -2370,7 +2642,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               )}
               <button
                 type="button"
-                onClick={loadCredits}
+                onClick={handleCheckCreditsManual}
                 disabled={isLoadingCredits}
                 className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition cursor-pointer"
                 title={lang === 'vi' ? 'Làm mới số dư credit' : 'Refresh credits'}
@@ -2476,17 +2748,29 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 {lang === 'vi' ? 'Danh Mục Sản Phẩm (Category) *' : 'Product Category *'}
               </label>
               <select
+                id="category-select"
                 value={selectedCategoryId}
                 onChange={(e) => setSelectedCategoryId(e.target.value)}
                 disabled={isLoadingCategories}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none transition ${
+                  hasSubmittedStep1 && categoryError
+                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                    : 'border-gray-200 focus:border-[#c34c36]'
+                }`}
               >
+                <option value="">-- Chọn danh mục sản phẩm --</option>
                 {backendCategories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
                 ))}
               </select>
+              {hasSubmittedStep1 && categoryError && (
+                <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{categoryError}</span>
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -2494,32 +2778,57 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 {lang === 'vi' ? 'Loại Thiết Bị (Item/Model thuộc Category)' : 'Item Type'}
               </label>
               <select
+                id="item-select"
                 value={selectedItemId}
                 onChange={(e) => setSelectedItemId(e.target.value)}
                 disabled={isLoadingItems || backendItems.length === 0}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none transition ${
+                  hasSubmittedStep1 && itemError
+                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                    : 'border-gray-200 focus:border-[#c34c36]'
+                }`}
               >
                 {backendItems.length > 0 ? (
-                  backendItems.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name}
-                    </option>
-                  ))
+                  <>
+                    <option value="">-- Chọn loại thiết bị --</option>
+                    {backendItems.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.name}
+                      </option>
+                    ))}
+                  </>
                 ) : (
                   <option value="">{isLoadingItems ? 'Đang tải vật phẩm...' : 'Chung theo danh mục'}</option>
                 )}
               </select>
+              {hasSubmittedStep1 && itemError && (
+                <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{itemError}</span>
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-[#24263e]">Thương hiệu (Brand) *</label>
               <input
+                id="brand-input"
                 type="text"
                 value={brand}
                 onChange={(e) => setBrand(e.target.value)}
                 placeholder={brandSuggestionsData.placeholder}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs text-[#24263e] focus:outline-none transition ${
+                  hasSubmittedStep1 && brandError
+                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                    : 'border-gray-200 focus:border-[#c34c36]'
+                }`}
               />
+              {hasSubmittedStep1 && brandError && (
+                <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{brandError}</span>
+                </p>
+              )}
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {brandSuggestionsData.brands.map((b) => (
                   <button
@@ -2535,15 +2844,30 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[#24263e]">Năm mua</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-[#24263e]">Năm mua *</label>
+                <span className="text-[10px] text-slate-400 font-medium">(Tối đa: {maxAllowedPurchaseYear})</span>
+              </div>
               <input
+                id="purchase-year-input"
                 type="number"
                 value={purchaseYear}
                 onChange={(e) => setPurchaseYear(Number(e.target.value))}
-                min={2018}
-                max={2026}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                min={1990}
+                max={maxAllowedPurchaseYear}
+                placeholder={`VD: 2022 (tối đa ${maxAllowedPurchaseYear})`}
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs text-[#24263e] focus:outline-none transition ${
+                  purchaseYearError
+                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                    : 'border-gray-200 focus:border-[#c34c36]'
+                }`}
               />
+              {purchaseYearError && (
+                <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{purchaseYearError}</span>
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -2553,6 +2877,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   : (lang === 'vi' ? 'Giá sản phẩm lúc mua (VNĐ)' : 'Original Purchase Price (VND)')}
               </label>
               <input
+                id="original-price-input"
                 type="text"
                 inputMode="numeric"
                 maxLength={15}
@@ -2574,29 +2899,33 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   }
                 }}
                 placeholder={initialDraft ? (lang === 'vi' ? 'VD: 600.000' : 'E.g. 600,000') : (lang === 'vi' ? 'VD: 5.000.000' : 'E.g. 5,000,000')}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-medium text-[#24263e] focus:outline-none focus:border-[#c34c36] tabular-nums"
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs font-medium text-[#24263e] focus:outline-none tabular-nums transition ${
+                  originalPriceError
+                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                    : 'border-gray-200 focus:border-[#c34c36]'
+                }`}
               />
-              {originalPriceVnd !== '' && (
+              {originalPriceVnd !== '' && !originalPriceError && (
                 <p className="text-[11px] text-emerald-600 font-medium italic">
                   {numberToVietnameseWords(Number(originalPriceVnd))}
                 </p>
               )}
-              {typeof originalPriceVnd === 'number' && originalPriceVnd > 0 && originalPriceVnd < 10000 && (
+              {originalPriceError && (
+                <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{originalPriceError}</span>
+                </p>
+              )}
+              {typeof originalPriceVnd === 'number' && originalPriceVnd > 0 && originalPriceVnd < 10000 && !originalPriceError && (
                 <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                   <span>{lang === 'vi' ? 'Giá bạn nhập có vẻ quá thấp (< 10.000đ). Vui lòng kiểm tra lại.' : 'Price seems too low (< 10,000 VND). Please verify.'}</span>
                 </p>
               )}
-              {typeof originalPriceVnd === 'number' && originalPriceVnd > 100000000 && originalPriceVnd <= 1000000000 && (
+              {typeof originalPriceVnd === 'number' && originalPriceVnd > 100000000 && originalPriceVnd <= 1000000000 && !originalPriceError && (
                 <p className="text-[11px] text-amber-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                   <span>{lang === 'vi' ? 'Giá bạn nhập có vẻ bất hợp lý (> 100 triệu). Hãy kiểm tra lại số lượng số 0.' : 'Price seems unusually high (> 100M VND). Please check zeros.'}</span>
-                </p>
-              )}
-              {typeof originalPriceVnd === 'number' && originalPriceVnd > 1000000000 && (
-                <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  <span>{lang === 'vi' ? 'Giá sản phẩm không được vượt quá 1.000.000.000đ (1 tỷ VNĐ).' : 'Price cannot exceed 1,000,000,000 VND.'}</span>
                 </p>
               )}
               <p className="text-[10.5px] text-slate-400 italic mt-1 leading-tight">
@@ -2608,7 +2937,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           </div>
 
           {/* Photo Checklist 3-6 Photos */}
-          <div className="space-y-3 pt-2 border-t border-gray-100">
+          <div id="photos-section" className={`space-y-3 pt-2 border-t ${hasSubmittedStep1 && photoError ? 'p-3 rounded-2xl border-2 border-rose-300 bg-rose-50/20' : 'border-gray-100'}`}>
             <div>
               <label className="text-xs font-bold text-[#24263e] flex items-center gap-2">
                 <span>Ảnh chụp sản phẩm thực tế (Tối đa 6 ảnh) *</span>
@@ -2661,6 +2990,12 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </label>
               )}
             </div>
+            {hasSubmittedStep1 && photoError && (
+              <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 animate-fadeIn pt-1">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                <span>{photoError}</span>
+              </p>
+            )}
 
             {/* Video Upload Section (POST /api/v1/media/upload-video) */}
             <div className="pt-3 border-t border-gray-100 space-y-2">
@@ -2910,7 +3245,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </div>
           )}
 
-          {postMode === 'ai' && effectiveQuestions.length > 0 && (
+          {effectiveQuestions.length > 0 && (
             <div className="bg-gradient-to-br from-amber-50/90 via-orange-50/30 to-white rounded-3xl p-4 sm:p-6 border-2 border-amber-200/90 shadow-xs space-y-5 overflow-hidden">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-amber-200/70 pb-4">
                 <div>
@@ -3160,12 +3495,23 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </button>
               </div>
               <input
+                id="title-input"
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="VD: Nồi Cơm Điện BlueStone 1.8L - Hàng Lướt Like New 99%"
-                className="w-full px-4 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36]"
+                className={`w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none transition ${
+                  hasSubmittedStep2 && (!title || !title.trim())
+                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                    : 'border-gray-200 focus:border-[#c34c36]'
+                }`}
               />
+              {hasSubmittedStep2 && (!title || !title.trim()) && (
+                <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>Vui lòng nhập tiêu đề bài đăng (tối thiểu 5 ký tự).</span>
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -3192,12 +3538,23 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <span className="text-[10px] text-slate-400">{description.length}/10.000 ký tự</span>
               </div>
               <textarea
+                id="description-input"
                 rows={6}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Mô tả chi tiết tình trạng máy móc, thời gian sử dụng, phụ kiện kèm theo... (hoặc trả lời 4 câu hỏi bên trên rồi bấm 'Gửi AI Hoàn Thiện Mô Tả' để AI viết bài)"
-                className="w-full px-4 py-3 bg-slate-50 border border-gray-200 rounded-xl text-xs text-slate-800 leading-relaxed focus:outline-none focus:border-[#c34c36]"
+                className={`w-full px-4 py-3 bg-slate-50 border rounded-xl text-xs text-slate-800 leading-relaxed focus:outline-none transition ${
+                  hasSubmittedStep2 && (!description || description.trim().length < 10)
+                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                    : 'border-gray-200 focus:border-[#c34c36]'
+                }`}
               />
+              {hasSubmittedStep2 && (!description || description.trim().length < 10) && (
+                <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>Vui lòng nhập mô tả chi tiết sản phẩm (tối thiểu 10 ký tự) hoặc trả lời 4 câu hỏi phía trên rồi bấm 'Chèn vào mô tả' / 'Gửi AI Hoàn Thiện Mô Tả'.</span>
+                </p>
+              )}
               {postMode === 'manual' && (
                 <p className="text-[11px] text-slate-500 italic mt-1">
                   * Đối với tự mô tả bài đăng, bạn cần mô tả cụ thể và kỹ càng tình trạng, chức năng, phụ kiện đi kèm để tránh khiếu nại sau này.
@@ -3824,6 +4181,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <div className="relative max-w-sm">
                   <input
                     type="text"
+                    id="manual-price-step3-input"
                     inputMode="numeric"
                     maxLength={15}
                     value={finalPriceVnd > 0 ? formatVndInput(finalPriceVnd.toString()) : ''}
@@ -3832,13 +4190,23 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                       setFinalPriceVnd(numericValue ? Number(numericValue) : 0);
                     }}
                     placeholder="VD: 500.000"
-                    className="w-full pl-4 pr-12 py-3 rounded-xl border border-slate-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 outline-none font-black text-slate-800 transition-all tabular-nums"
+                    className={`w-full pl-4 pr-12 py-3 rounded-xl border ${
+                      hasSubmittedStep3 && (!finalPriceVnd || finalPriceVnd < 1000 || finalPriceVnd > 1000000000)
+                        ? 'border-rose-500 ring-2 ring-rose-200 bg-rose-50/20'
+                        : 'border-slate-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20'
+                    } outline-none font-black text-slate-800 transition-all tabular-nums`}
                   />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">đ</span>
                 </div>
-                {finalPriceVnd > 0 && (
+                {finalPriceVnd > 0 && finalPriceVnd <= 1000000000 && (
                   <p className="text-[11px] text-emerald-600 font-medium italic mt-1.5">
                     {numberToVietnameseWords(finalPriceVnd)}
+                  </p>
+                )}
+                {hasSubmittedStep3 && (!finalPriceVnd || finalPriceVnd < 1000) && (
+                  <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{lang === 'vi' ? 'Vui lòng nhập giá bán tối thiểu 1.000đ.' : 'Please enter a minimum price of 1,000 VND.'}</span>
                   </p>
                 )}
                 {finalPriceVnd > 1000000000 && (
@@ -4121,6 +4489,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             <div className="relative">
               <input
                 type="text"
+                id="final-price-step4-input"
                 inputMode="numeric"
                 maxLength={15}
                 value={finalPriceVnd > 0 ? formatVndInput(finalPriceVnd.toString()) : ''}
@@ -4128,10 +4497,20 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   const numericValue = cleanVndInput(e.target.value, 11);
                   setFinalPriceVnd(numericValue ? Number(numericValue) : 0);
                 }}
-                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:border-[#c34c36] tabular-nums"
+                className={`w-full px-4 py-3 bg-white border ${
+                  !finalPriceVnd || finalPriceVnd < 1000 || finalPriceVnd > 1000000000
+                    ? 'border-rose-400 focus:border-rose-500 ring-2 ring-rose-200'
+                    : 'border-gray-200 focus:border-[#c34c36]'
+                } rounded-xl text-sm font-black text-slate-900 focus:outline-none tabular-nums`}
               />
             </div>
-            {finalPriceVnd > 0 && (
+            {(!finalPriceVnd || finalPriceVnd < 1000) && (
+              <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                <span>{lang === 'vi' ? 'Vui lòng nhập giá bán tối thiểu 1.000đ.' : 'Please enter a minimum price of 1,000 VND.'}</span>
+              </p>
+            )}
+            {finalPriceVnd > 0 && finalPriceVnd <= 1000000000 && (
               <p className="text-[11px] text-emerald-600 font-medium italic mt-1">
                 {numberToVietnameseWords(finalPriceVnd)}
               </p>
@@ -4443,16 +4822,53 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </div>
               )}
 
+              {/* Thẻ hiển thị số dư Credit hiện tại của người bán */}
+              <div className="p-3 bg-white/95 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                <div className="flex items-center gap-2">
+                  <Coins className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span className="font-bold text-slate-800">Số dư Credit hiện tại:</span>
+                </div>
+                <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                  <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200">
+                    <span className="text-[11px] text-slate-500 font-medium">Đăng bài:</span>
+                    <span className="font-mono font-black text-emerald-700 text-xs">
+                      {credits?.postCredits ?? 0}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200">
+                    <span className="text-[11px] text-slate-500 font-medium">Định giá AI:</span>
+                    <span className="font-mono font-black text-amber-800 text-xs">
+                      {credits?.valuationCredits ?? 0}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200">
+                    <span className="text-[11px] text-slate-500 font-medium">Chat AI:</span>
+                    <span className="font-mono font-black text-cyan-800 text-xs">
+                      {credits?.chatCredits ?? 0}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
                 {submitResult.status === 'INSUFFICIENT_CREDIT' ? (
                   <>
                     <button
                       type="button"
-                      onClick={() => showToast('Vui lòng truy cập trang Ví để nạp Credit.')}
+                      onClick={() => onOpenTopUp ? onOpenTopUp() : showToast('Vui lòng truy cập trang Ví để nạp Credit.')}
                       className="px-4 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83c28] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5 text-amber-300" />
                       <span>Nạp thêm Credit ngay</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCheckCreditsManual}
+                      disabled={isLoadingCredits}
+                      className="px-3.5 py-2 rounded-xl bg-white border border-gray-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60 shadow-2xs"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingCredits ? 'animate-spin text-amber-500' : 'text-slate-500'}`} />
+                      <span>{isLoadingCredits ? 'Đang kiểm tra...' : 'Kiểm tra lại số dư credit'}</span>
                     </button>
                     <button
                       type="button"
@@ -4466,24 +4882,67 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 ) : (
                   <>
                     {submitResult.status === 'REJECTED' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSubmitResult(null);
-                          setCurrentStep(3);
-                        }}
-                        className="px-4 py-1.5 rounded-xl bg-[#c34c36] hover:bg-[#a83c28] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
-                      >
-                        <ArrowLeft className="w-3.5 h-3.5" />
-                        <span>Sửa lại thông tin</span>
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const reason = ((submitResult.reviewReason || submitResult.message || '') + '').toLowerCase();
+                            setSubmitResult(null);
+                            if (reason.includes('tương lai') || reason.includes('năm mua') || reason.includes('2026')) {
+                              setDescription((prev) => sanitizeDescriptionForAiScan(prev, currentYear));
+                            }
+                            if (
+                              reason.includes('năm mua') ||
+                              reason.includes('mua') ||
+                              reason.includes('tương lai') ||
+                              reason.includes('ảnh') ||
+                              reason.includes('hình ảnh') ||
+                              reason.includes('danh mục') ||
+                              reason.includes('loại sản phẩm') ||
+                              reason.includes('thương hiệu') ||
+                              reason.includes('giá gốc')
+                            ) {
+                              setCurrentStep(1);
+                            } else if (
+                              reason.includes('mô tả') ||
+                              reason.includes('tiêu đề') ||
+                              reason.includes('nội dung')
+                            ) {
+                              setCurrentStep(2);
+                            } else if (reason.includes('giá') || reason.includes('price')) {
+                              setCurrentStep(4);
+                            } else {
+                              setCurrentStep(1);
+                            }
+                          }}
+                          className="px-4 py-1.5 rounded-xl bg-[#c34c36] hover:bg-[#a83c28] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                        >
+                          <ArrowLeft className="w-3.5 h-3.5" />
+                          <span>Sửa lại thông tin</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const sanitized = sanitizeDescriptionForAiScan(description.trim(), currentYear);
+                            setDescription(sanitized);
+                            setSubmitResult(null);
+                            await handleSubmitPostFinal();
+                          }}
+                          className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Tối ưu mô tả & Gửi duyệt lại</span>
+                        </button>
+                      </>
                     )}
                     <button
                       type="button"
-                      onClick={loadCredits}
-                      className="px-3.5 py-1.5 rounded-xl bg-white border border-gray-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                      onClick={handleCheckCreditsManual}
+                      disabled={isLoadingCredits}
+                      className="px-3.5 py-1.5 rounded-xl bg-white border border-gray-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60 shadow-2xs"
                     >
-                      Kiểm tra lại số dư credit
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingCredits ? 'animate-spin text-amber-500' : 'text-slate-500'}`} />
+                      <span>{isLoadingCredits ? 'Đang kiểm tra...' : 'Kiểm tra lại số dư credit'}</span>
                     </button>
                     <button
                       type="button"

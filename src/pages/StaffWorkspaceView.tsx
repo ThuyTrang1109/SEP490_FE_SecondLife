@@ -46,6 +46,7 @@ import { staffService, staffListingService, adminPostService, SellerVerification
 import { dialogService } from '../utils/dialogService';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { ListingComparisonModal } from '../components/staff/ListingComparisonModal';
+import { StaffDisputeManagement } from '../components/staff/StaffDisputeManagement';
 import logoImg from '../assets/logo.png';
 import { User, LogOut } from 'lucide-react';
 
@@ -1388,133 +1389,16 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
           {/* ======================================================== */}
           {activeTab === 'disputes' && (
             <div className="space-y-5">
-              <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] space-y-4">
-                <div>
+              <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36]">
+                <div className="mb-4">
                   <h3 className="font-extrabold text-sm text-slate-900 uppercase">
-                    5. GIẢI QUYẾT TRANH CHẤP & YÊU CẦU CUNG CẤP THÊM BẰNG CHỨNG
+                    5. GIẢI QUYẾT TRANH CHẤP & VẬN HÀNH HOÀN HÀNG (DISPUTE WORKSPACE)
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Phân xử khiếu nại giữa Người Mua & Người Bán khi đơn hàng bị tạm giữ ký quỹ Escrow
+                    Phân xử khiếu nại giữa Người Mua & Người Bán, đối chiếu bằng chứng hai bên, tạo chuyến hoàn Lalamove và quyết toán hoàn tiền/phí.
                   </p>
                 </div>
-
-                <div className="space-y-4">
-                  {disputes.map((dsp) => (
-                    <div key={dsp.id} className="p-4 rounded-xl border border-amber-200 bg-amber-50/50 text-xs space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200 pb-2">
-                        <div>
-                          <span className="font-mono font-bold text-slate-900 text-sm">
-                            Mã Tranh Chấp: {dsp.id} (Đơn hàng #{dsp.orderId})
-                          </span>
-                          <p className="text-slate-600 mt-0.5">
-                            Người mua: <strong>{dsp.buyer}</strong> vs Người bán: <strong>{dsp.seller}</strong>
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-[11px] text-slate-500 block font-bold">Số tiền Escrow đóng băng:</span>
-                          <span className="text-base font-black text-rose-700">{formatVND(dsp.amount)}</span>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                        <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
-                          <span className="font-black text-slate-800 block text-[11px]">BẰNG CHỨNG PHÍA NGƯỜI MUA:</span>
-                          <p className="text-rose-800 font-bold">Lý do: {dsp.reason}</p>
-                          <p className="text-slate-600 font-mono text-[11px]">Tập tin: {dsp.buyerEvidence}</p>
-                        </div>
-                        <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
-                          <span className="font-black text-slate-800 block text-[11px]">BẰNG CHỨNG PHÍA NGƯỜI BÁN:</span>
-                          <p className="text-slate-700 font-bold">Hồ sơ giao hàng: Đã gửi biên bản Hub</p>
-                          <p className="text-slate-600 font-mono text-[11px]">Tập tin: {dsp.sellerEvidence}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-amber-200">
-                        <span className="text-[11px] font-bold text-amber-900">
-                          Trọng tài phán quyết:
-                        </span>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleResolveDispute(dsp, 'BUYER')}
-                            className="px-3 py-1.5 bg-emerald-700 text-white rounded-lg font-bold hover:bg-emerald-800 transition cursor-pointer"
-                          >
-                            Hoàn Tiền Cho Người Mua
-                          </button>
-                          <button
-                            onClick={() => handleResolveDispute(dsp, 'SELLER')}
-                            className="px-3 py-1.5 bg-[#24263e] text-white rounded-lg font-bold hover:bg-[#c34c36] transition cursor-pointer"
-                          >
-                            Giải Ngân Cho Người Bán
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Form Yêu Cầu Bổ Sung Bằng Chứng (Theo đúng ảnh người dùng gửi) */}
-                <div className="pt-4 border-t border-slate-200">
-                  <div className="p-5 rounded-2xl border-2 border-slate-300 bg-white space-y-4 shadow-sm">
-                    <div>
-                      <h4 className="font-black text-sm text-slate-900 uppercase tracking-wide">
-                        7. REQUEST ADDITIONAL EVIDENCE (YÊU CẦU BỔ SUNG BẰNG CHỨNG)
-                      </h4>
-                      <p className="text-xs text-slate-500">
-                        Gửi thông báo yêu cầu người mua / người bán quay video mở hộp / chụp lại tem mác
-                      </p>
-                    </div>
-
-                    <form onSubmit={handleSendEvidenceRequest} className="space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                        <div>
-                          <label className="font-bold text-slate-800 block mb-1">Đối tượng cần yêu cầu:</label>
-                          <select
-                            value={evidenceTarget}
-                            onChange={(e) => setEvidenceTarget(e.target.value as any)}
-                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-[#24263e]"
-                          >
-                            <option value="BUYER">Người Mua (Buyer)</option>
-                            <option value="SELLER">Người Bán (Seller)</option>
-                            <option value="BOTH">Cả Hai Bên (Both Parties)</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="font-bold text-slate-800 block mb-1">Thời hạn bổ sung bằng chứng:</label>
-                          <select
-                            value={evidenceDeadline}
-                            onChange={(e) => setEvidenceDeadline(e.target.value)}
-                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-[#24263e]"
-                          >
-                            <option value="12 Giờ">12 Giờ</option>
-                            <option value="24 Giờ">24 Giờ</option>
-                            <option value="48 Giờ">48 Giờ</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="font-bold text-slate-800 block text-xs mb-1.5">
-                          Nội dung yêu cầu bổ sung bằng chứng:
-                        </label>
-                        <textarea
-                          rows={4}
-                          value={evidenceContent}
-                          onChange={(e) => setEvidenceContent(e.target.value)}
-                          placeholder="VD: Yêu cầu người mua cung cấp video quay lại quá trình cắm điện tủ lạnh lần đầu..."
-                          className="w-full p-3.5 bg-white border-2 border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-[#24263e] shadow-inner"
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="px-6 py-2.5 bg-[#24263e] hover:bg-[#c34c36] text-white rounded-xl text-xs font-black shadow-md transition cursor-pointer flex items-center gap-2"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        Gửi Yêu Cầu
-                      </button>
-                    </form>
-                  </div>
-                </div>
+                <StaffDisputeManagement currentUserId={currentUser?.id} />
               </div>
             </div>
           )}

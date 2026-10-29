@@ -40,6 +40,7 @@ interface AuthModalProps {
     address?: string;
     avatar?: string;
     gender?: 'male' | 'female' | 'other' | '';
+    emailVerified?: boolean;
   }) => void;
   lang: Language;
 }
@@ -313,6 +314,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         avatar: res.user.avatarUrl || undefined,
         address: '',
         gender: normalizedGender || undefined,
+        emailVerified: Boolean(res.user.emailVerified),
       });
       onClose();
     } catch (err: any) {
@@ -426,6 +428,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         avatar: res.user.avatarUrl || undefined,
         address: '',
         gender: normalizedGender || undefined,
+        emailVerified: Boolean(res.user.emailVerified),
       });
       setEmailOrPhone('');
       onClose();

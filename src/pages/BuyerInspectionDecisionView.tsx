@@ -37,6 +37,7 @@ interface BuyerInspectionDecisionViewProps {
   onBack: () => void;
   onSuccess?: () => void;
   onOpenChat?: (listing: any) => void;
+  onOpenTopUp?: () => void;
 }
 
 export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewProps> = ({
@@ -47,8 +48,9 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   onBack,
   onSuccess,
   onOpenChat,
+  onOpenTopUp,
 }) => {
-  const effectiveOrderId = orderId || order?.id || '';
+  const effectiveOrderId = orderId || (order as any)?.inspectionOrderId || order?.id || '';
   const [inspectionDto, setInspectionDto] = useState<InspectionOrderDto | null>(null);
   const [wallet, setWallet] = useState<WalletBackend | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -102,19 +104,37 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   const shippingFeePaid = inspectionDto?.shippingFee || order?.shippingFeeVnd || 30000;
   const finalPriceToPay = postPrice;
 
-  // Countdown timer for 6 hours final payment window
-  const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number }>({ hours: 5, minutes: 48, seconds: 20 });
+  // Countdown timer for 6 hours final payment window based on backend finalPaymentDeadline
+  const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number; isExpired: boolean }>({
+    hours: 6,
+    minutes: 0,
+    seconds: 0,
+    isExpired: false,
+  });
+
   useEffect(() => {
+    const calculateTimeRemaining = () => {
+      if (!inspectionDto?.finalPaymentDeadline) {
+        return { hours: 6, minutes: 0, seconds: 0, isExpired: false };
+      }
+      const deadlineMs = new Date(inspectionDto.finalPaymentDeadline).getTime();
+      const diffMs = deadlineMs - Date.now();
+      if (diffMs <= 0) {
+        return { hours: 0, minutes: 0, seconds: 0, isExpired: true };
+      }
+      const totalSeconds = Math.floor(diffMs / 1000);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      return { hours, minutes, seconds, isExpired: false };
+    };
+
+    setTimeLeft(calculateTimeRemaining());
     const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev.seconds > 0) return { ...prev, seconds: prev.seconds - 1 };
-        if (prev.minutes > 0) return { ...prev, minutes: prev.minutes - 1, seconds: 59 };
-        if (prev.hours > 0) return { hours: prev.hours - 1, minutes: 59, seconds: 59 };
-        return prev;
-      });
+      setTimeLeft(calculateTimeRemaining());
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [inspectionDto?.finalPaymentDeadline]);
 
   // Parse checklist results
   const checklistItems = useMemo(() => {
@@ -636,9 +656,20 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     Đủ số dư
                   </span>
                 ) : (
-                  <span className="px-2 py-1 rounded-lg bg-amber-100 text-amber-800 text-[11px] font-bold">
-                    Thiếu {formatVND(finalPriceToPay - currentWalletBal)}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="px-2 py-1 rounded-lg bg-amber-100 text-amber-800 text-[11px] font-bold">
+                      Thiếu {formatVND(finalPriceToPay - currentWalletBal)}
+                    </span>
+                    {onOpenTopUp && (
+                      <button
+                        type="button"
+                        onClick={onOpenTopUp}
+                        className="px-2.5 py-1 rounded-lg bg-[#c34c36] hover:bg-[#a83c28] text-white text-[11px] font-bold cursor-pointer transition shadow-2xs"
+                      >
+                        Nạp ngay
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -711,6 +742,27 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               Bằng việc bấm xác nhận, số tiền <strong>{formatVND(finalPriceToPay)}</strong> sẽ được chuyển vào quỹ Escrow bảo lãnh. Trạm kiểm định sẽ đóng gói với tem niêm phong QR và bàn giao bưu tá Lalamove để giao tới địa chỉ của bạn.
             </p>
 
+            {!isWalletSufficient && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2">
+                <div>
+                  <span className="font-bold block">Số dư ví không đủ:</span>
+                  <span>Cần nạp thêm {formatVND(finalPriceToPay - currentWalletBal)}</span>
+                </div>
+                {onOpenTopUp && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowConfirmModal(false);
+                      onOpenTopUp();
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-[#c34c36] hover:bg-[#a83c28] text-white text-xs font-bold cursor-pointer transition shrink-0"
+                  >
+                    Nạp Tiền Ngay
+                  </button>
+                )}
+              </div>
+            )}
+
             <div className="flex items-center gap-3 pt-2">
               <button
                 type="button"
@@ -722,14 +774,16 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               <button
                 type="button"
                 onClick={handleConfirmPurchase}
-                disabled={isSubmitting}
-                className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white text-xs font-black shadow-md transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+                disabled={isSubmitting || !isWalletSufficient || timeLeft.isExpired}
+                className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white text-xs font-black shadow-md transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span>Đang xử lý...</span>
                   </>
+                ) : timeLeft.isExpired ? (
+                  <span>Đã Hết Hạn 6 Giờ</span>
                 ) : (
                   <span>Xác Nhận & Thanh Toán</span>
                 )}

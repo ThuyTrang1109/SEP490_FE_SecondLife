@@ -1,4 +1,4 @@
-import { getAccessToken, clearAuthTokens, resolveApiUrl, refreshAccessToken, isUserIdle, isTokenExpired } from './apiClient';
+import { getAccessToken, clearAuthTokens, resolveApiUrl, refreshAccessToken, isUserIdle, isTokenExpired, notifySessionExpired } from './apiClient';
 
 export interface CloudinaryUploadResponseDto {
   url: string;
@@ -17,12 +17,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     }
   }
   if (!token) {
-    if (isUserIdle()) {
-      clearAuthTokens();
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new Event('unauthorized_session'));
-      }
-    }
+    notifySessionExpired('MEDIA_TOKEN_MISSING_OR_EXPIRED');
     throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tải ảnh lên.');
   }
   return { Authorization: `Bearer ${token}` };
@@ -57,10 +52,7 @@ export const mediaService = {
           headers = { Authorization: `Bearer ${newToken}` };
           response = await doUpload(headers);
         } else {
-          clearAuthTokens();
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new Event('unauthorized_session'));
-          }
+          notifySessionExpired('MEDIA_UPLOAD_UNAUTHORIZED');
           throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
         }
       }
@@ -112,10 +104,7 @@ export const mediaService = {
           headers = { Authorization: `Bearer ${newToken}` };
           response = await doUpload(headers);
         } else {
-          clearAuthTokens();
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new Event('unauthorized_session'));
-          }
+          notifySessionExpired('MEDIA_MULTI_UPLOAD_UNAUTHORIZED');
           throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
         }
       }
@@ -164,10 +153,7 @@ export const mediaService = {
           headers = { Authorization: `Bearer ${newToken}` };
           response = await doUpload(headers);
         } else {
-          clearAuthTokens();
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new Event('unauthorized_session'));
-          }
+          notifySessionExpired('MEDIA_VIDEO_UPLOAD_UNAUTHORIZED');
           throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
         }
       }

@@ -83,6 +83,7 @@ type OrderFilterTab =
   | 'shipping'
   | 'delivered'
   | 'completed'
+  | 'cancelled'
   | 'disputed'
   | 'with_inspection';
 
@@ -93,6 +94,7 @@ export const VALID_ORDER_FILTER_TABS: OrderFilterTab[] = [
   'shipping',
   'delivered',
   'completed',
+  'cancelled',
   'disputed',
   'with_inspection'
 ];
@@ -163,10 +165,99 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
   const resolvedOrders = useMemo(() => {
     return (orders || []).map((ord) => {
-      if (!ord || !ord.listing) return ord;
+      if (!ord) return ord;
+      let finalOrd = ord;
+
+      // Kiểm tra trạng thái hủy từ localStorage nếu backend chưa đồng bộ
+      if (typeof window !== 'undefined' && ord.id) {
+        try {
+          const rawCancel = localStorage.getItem(`order_cancellation_info_${ord.id}`);
+          const isCancelledFlag = localStorage.getItem(`order_cancelled_${ord.id}`) === 'true';
+          const activeInspectionStatuses = [
+            'WAITING_SELLER_APPROVAL',
+            'WAITING_BUYER_APPROVAL',
+            'WAITING_FEE_PAYMENT',
+            'CONFIRMED_PENDING_DISPATCH',
+            'DISPATCHED',
+            'SCHEDULED',
+            'SHIPPING_TO_CENTER',
+            'INSPECTING',
+            'PASSED',
+            'DELIVERING_TO_BUYER',
+          ];
+          const backend = String((ord as any).backendStatus || '').toUpperCase();
+          const status = String((ord as any).status || '').toUpperCase();
+          const isActivelyProcessing = activeInspectionStatuses.includes(backend) || activeInspectionStatuses.includes(status);
+
+          if (!isActivelyProcessing && (rawCancel || isCancelledFlag) && !isOrderReceiptConfirmed(ord)) {
+            const parsedCancel = rawCancel ? JSON.parse(rawCancel) : null;
+            finalOrd = {
+              ...finalOrd,
+              escrowStatus: 'REFUNDED_TO_BUYER',
+              backendStatus: 'CANCELLED' as any,
+              status: 'CANCELLED',
+              cancellationReasonCode: parsedCancel?.reasonCode || 'SELLER_CONFIRMATION_TIMEOUT',
+              cancellationReason: parsedCancel?.reason || 'Đơn hàng đã tự động hủy và hoàn tiền 100% về ví do hết hạn xác nhận hoặc người mua/người bán hủy đơn.',
+            };
+          }
+        } catch {}
+      }
+
+      let resolvedListing = finalOrd.listing;
+      if (!resolvedListing || !resolvedListing.title) {
+        try {
+          const rawOrderListing = localStorage.getItem(`order_listing_${finalOrd.id}`);
+          if (rawOrderListing) {
+            resolvedListing = JSON.parse(rawOrderListing);
+          }
+        } catch {}
+      }
+      if (!resolvedListing || !resolvedListing.title) {
+        try {
+          const lid = finalOrd.listingId || (finalOrd as any).postId;
+          if (lid) {
+            const rawPost = localStorage.getItem(`cached_post_${lid}`);
+            if (rawPost) resolvedListing = JSON.parse(rawPost);
+          }
+        } catch {}
+      }
+
+      if (!resolvedListing || !resolvedListing.title) {
+        resolvedListing = {
+          id: finalOrd.listingId || finalOrd.id,
+          title: (finalOrd as any).postTitle || 'Thiết bị gia dụng SecondLife',
+          category: 'Nội thất & Gia dụng',
+          brand: 'SecondLife',
+          model: 'Standard',
+          purchaseYear: 2024,
+          priceVnd: finalOrd.itemPriceVnd || finalOrd.totalPaidVnd || 0,
+          conditionGrade: 'Good',
+          declaredConditionText: 'Đã bảo lãnh Escrow',
+          description: 'Giao dịch qua sàn SecondLife',
+          location: 'Hà Nội',
+          sellerId: finalOrd.sellerId || '',
+          sellerName: finalOrd.sellerName || 'Người bán SecondLife',
+          sellerRating: 5.0,
+          sellerCompletedOrders: 3,
+          sellerVerified: true,
+          status: 'reserved',
+          createdAt: finalOrd.createdAt,
+          isInspectionGuaranteed: true,
+          requiresInspection: false,
+          photos: {
+            front: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=800',
+            back: '',
+            screenOrDetails: '',
+            accessoriesOrBox: '',
+            serialOrReceipt: ''
+          },
+          photoGallery: ['https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=800']
+        };
+      }
+
       return {
-        ...ord,
-        listing: resolveOrderListing(ord.listing),
+        ...finalOrd,
+        listing: resolveOrderListing(resolvedListing),
       };
     });
   }, [orders]);
@@ -466,9 +557,27 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     if (ord.id === '16915c88-96a2-4cb0-8f6c-cc9a931a6e89' || isOrderReceiptConfirmed(ord)) {
       return false;
     }
+
     const escrow = String(ord.escrowStatus || '').toUpperCase();
     const backend = String((ord as any).backendStatus || '').toUpperCase();
     const status = String((ord as any).status || '').toUpperCase();
+
+    // Các trạng thái đang được xử lý thực tế tuyệt đối không coi là đơn hủy
+    const activeInspectionStatuses = [
+      'WAITING_SELLER_APPROVAL',
+      'WAITING_BUYER_APPROVAL',
+      'WAITING_FEE_PAYMENT',
+      'CONFIRMED_PENDING_DISPATCH',
+      'DISPATCHED',
+      'SCHEDULED',
+      'SHIPPING_TO_CENTER',
+      'INSPECTING',
+      'PASSED',
+      'DELIVERING_TO_BUYER',
+    ];
+    if (activeInspectionStatuses.includes(backend) || activeInspectionStatuses.includes(status)) {
+      return false;
+    }
 
     // Nếu đơn đã giải ngân, hoàn tất, đã giao hàng, hoặc người mua đã xác nhận thì TUYỆT ĐỐI KHÔNG coi là đơn hủy
     if (
@@ -483,6 +592,18 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       Boolean(ord.shippingDeliveredAt)
     ) {
       return false;
+    }
+
+    // Kiểm tra trực tiếp metadata hủy đơn trong localStorage
+    if (typeof window !== 'undefined' && ord.id) {
+      try {
+        if (
+          localStorage.getItem(`order_cancellation_info_${ord.id}`) ||
+          localStorage.getItem(`order_cancelled_${ord.id}`) === 'true'
+        ) {
+          return true;
+        }
+      } catch {}
     }
 
     return (
@@ -1019,22 +1140,19 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             console.warn('Lalamove shipment creation on mark ready notice:', shipErr);
           }
 
-          if (readyShipment?.orderCode) {
+          const trackingCode = readyShipment?.orderCode || readyShipment?.shipmentId;
+          if (trackingCode) {
             setInspectionActionNotice(
               lang === 'vi'
-                ? `Đã ghi nhận kiện hàng sẵn sàng! Mã vận đơn Lalamove: #${readyShipment.orderCode}. Tài xế đang được điều phối đến kho lấy hàng.`
-                : `Package marked ready! Lalamove Tracking: #${readyShipment.orderCode}. Driver is being dispatched.`
+                ? `Đã ghi nhận kiện hàng sẵn sàng! Mã vận đơn Lalamove: #${trackingCode}. Tài xế đang được điều phối đến kho lấy hàng.`
+                : `Package marked ready! Lalamove Tracking: #${trackingCode}. Driver is being dispatched.`
             );
           } else {
             setInspectionActionNotice(
               lang === 'vi'
-                ? 'Đã ghi nhận kiện hàng đóng gói an toàn! Bạn có thể phát lệnh gọi tài xế Lalamove bất kỳ lúc nào.'
+                ? 'Đã ghi nhận kiện hàng đóng gói an toàn! Hệ thống đang phát tín hiệu điều phối tài xế Lalamove.'
                 : 'Package marked packed and ready for carrier pickup!'
             );
-            // Mở modal tạo vận đơn Lalamove để Người bán phát lệnh nếu chưa có vận đơn
-            if (targetOrder && isOrderSeller(targetOrder) && targetOrder.escrowStatus !== 'AWAITING_PAYMENT') {
-              setCreateShipmentOrder(targetOrder);
-            }
           }
           onRefreshOrders?.();
           setTimeout(() => setInspectionActionNotice(null), 5000);
@@ -1080,6 +1198,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           onCancelOrder(ord.id, cancelPayload);
         }
         setConfirmDialog(null);
+        if (detailModalOrder?.id === ord.id) {
+          setDetailModalOrder(null);
+        }
+        setActiveTab('cancelled');
       }
     });
   };
@@ -1178,35 +1300,41 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     .filter((ord) => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const matchTitle = ord.listing.title.toLowerCase().includes(q);
-        const matchId = ord.id.toLowerCase().includes(q);
-        const matchSeller = ord.sellerName.toLowerCase().includes(q);
-        const matchBuyer = ord.buyerName.toLowerCase().includes(q);
+        const matchTitle = ord.listing?.title ? ord.listing.title.toLowerCase().includes(q) : false;
+        const matchId = ord.id ? ord.id.toLowerCase().includes(q) : false;
+        const matchSeller = ord.sellerName ? ord.sellerName.toLowerCase().includes(q) : false;
+        const matchBuyer = ord.buyerName ? ord.buyerName.toLowerCase().includes(q) : false;
         if (!matchTitle && !matchId && !matchSeller && !matchBuyer) return false;
       }
 
       switch (activeTab) {
         case 'awaiting_pickup':
           return (
-            ord.escrowStatus === 'AWAITING_PAYMENT' ||
-            ord.escrowStatus === 'HELD_IN_ESCROW' ||
-            ord.escrowStatus === 'AWAITING_INSPECTION'
+            !isOrderCancelledOrRefunded(ord) && (
+              ord.escrowStatus === 'AWAITING_PAYMENT' ||
+              ord.escrowStatus === 'HELD_IN_ESCROW' ||
+              ord.escrowStatus === 'AWAITING_INSPECTION'
+            )
           );
         case 'inspecting':
           return (
-            ord.escrowStatus === 'AWAITING_INSPECTION' ||
-            ord.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
-            ord.escrowStatus === 'INSPECTION_PASSED' ||
-            (ord.escrowStatus === 'HELD_IN_ESCROW' && Boolean(ord.hasInspectionService || (ord.inspectionFeeVnd && ord.inspectionFeeVnd > 0)))
+            !isOrderCancelledOrRefunded(ord) && (
+              ord.escrowStatus === 'AWAITING_INSPECTION' ||
+              ord.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
+              ord.escrowStatus === 'INSPECTION_PASSED' ||
+              (ord.escrowStatus === 'HELD_IN_ESCROW' && Boolean(ord.hasInspectionService || (ord.inspectionFeeVnd && ord.inspectionFeeVnd > 0)))
+            )
           );
         case 'shipping':
-          return ord.escrowStatus === 'SHIPPED_TO_BUYER';
+          return !isOrderCancelledOrRefunded(ord) && ord.escrowStatus === 'SHIPPED_TO_BUYER';
         case 'delivered':
-          return !isOrderReceiptConfirmed(ord) && ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW';
+          return !isOrderCancelledOrRefunded(ord) && !isOrderReceiptConfirmed(ord) && ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW';
         case 'completed':
-          return isOrderReceiptConfirmed(ord) || ord.escrowStatus === 'COMPLETED_RELEASED';
+          return !isOrderCancelledOrRefunded(ord) && (isOrderReceiptConfirmed(ord) || ord.escrowStatus === 'COMPLETED_RELEASED');
+        case 'cancelled':
+          return isOrderCancelledOrRefunded(ord);
         case 'disputed':
-          return ord.escrowStatus === 'DISPUTED' || ord.escrowStatus === 'REFUNDED_TO_BUYER';
+          return !isOrderCancelledOrRefunded(ord) && (ord.escrowStatus === 'DISPUTED' || (ord as any).status === 'DISPUTED');
         case 'with_inspection':
           return Boolean(ord.hasInspectionService || (ord.inspectionFeeVnd && ord.inspectionFeeVnd > 0) || ord.inspectionReport || ord.inspectionCenterId || (ord as any).inspectionStatus);
         case 'all':
@@ -1230,27 +1358,31 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       case 'awaiting_pickup':
         return userOrders.filter(
           (o) =>
-            o.escrowStatus === 'AWAITING_PAYMENT' ||
-            o.escrowStatus === 'HELD_IN_ESCROW' ||
-            o.escrowStatus === 'AWAITING_INSPECTION'
+            !isOrderCancelledOrRefunded(o) &&
+            (o.escrowStatus === 'AWAITING_PAYMENT' ||
+              o.escrowStatus === 'HELD_IN_ESCROW' ||
+              o.escrowStatus === 'AWAITING_INSPECTION')
         ).length;
       case 'inspecting':
         return userOrders.filter(
           (o) =>
-            o.escrowStatus === 'AWAITING_INSPECTION' ||
-            o.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
-            o.escrowStatus === 'INSPECTION_PASSED' ||
-            (o.escrowStatus === 'HELD_IN_ESCROW' && Boolean(o.hasInspectionService || (o.inspectionFeeVnd && o.inspectionFeeVnd > 0)))
+            !isOrderCancelledOrRefunded(o) &&
+            (o.escrowStatus === 'AWAITING_INSPECTION' ||
+              o.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
+              o.escrowStatus === 'INSPECTION_PASSED' ||
+              (o.escrowStatus === 'HELD_IN_ESCROW' && Boolean(o.hasInspectionService || (o.inspectionFeeVnd && o.inspectionFeeVnd > 0))))
         ).length;
       case 'shipping':
-        return userOrders.filter((o) => o.escrowStatus === 'SHIPPED_TO_BUYER').length;
+        return userOrders.filter((o) => !isOrderCancelledOrRefunded(o) && o.escrowStatus === 'SHIPPED_TO_BUYER').length;
       case 'delivered':
-        return userOrders.filter((o) => !isOrderReceiptConfirmed(o) && o.escrowStatus === 'DELIVERED_INSPECTION_WINDOW').length;
+        return userOrders.filter((o) => !isOrderCancelledOrRefunded(o) && !isOrderReceiptConfirmed(o) && o.escrowStatus === 'DELIVERED_INSPECTION_WINDOW').length;
       case 'completed':
-        return userOrders.filter((o) => isOrderReceiptConfirmed(o) || o.escrowStatus === 'COMPLETED_RELEASED').length;
+        return userOrders.filter((o) => !isOrderCancelledOrRefunded(o) && (isOrderReceiptConfirmed(o) || o.escrowStatus === 'COMPLETED_RELEASED')).length;
+      case 'cancelled':
+        return userOrders.filter((o) => isOrderCancelledOrRefunded(o)).length;
       case 'disputed':
         return userOrders.filter(
-          (o) => o.escrowStatus === 'DISPUTED' || o.escrowStatus === 'REFUNDED_TO_BUYER'
+          (o) => !isOrderCancelledOrRefunded(o) && (o.escrowStatus === 'DISPUTED' || (o as any).status === 'DISPUTED')
         ).length;
       case 'with_inspection':
         return userOrders.filter(
@@ -1262,9 +1394,43 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     }
   };
 
-  const getStatusBadge = (status: EscrowOrder['escrowStatus'] | string, hasInspection?: boolean, isCurrentOrderSeller?: boolean) => {
+  const getStatusBadge = (status: EscrowOrder['escrowStatus'] | string, hasInspection?: boolean, isCurrentOrderSeller?: boolean, orderItem?: EscrowOrder) => {
+    if (orderItem && isOrderCancelledOrRefunded(orderItem)) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+          <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+          <span>{lang === 'vi' ? 'Đã Hủy • Hoàn Tiền' : 'Cancelled & Refunded'}</span>
+        </span>
+      );
+    }
     const isSellerForThisOrder = isCurrentOrderSeller !== undefined ? isCurrentOrderSeller : isSeller;
     const s = String(status || '').toUpperCase();
+    const bStatus = String((orderItem as any)?.backendStatus || '').toUpperCase();
+
+    if (bStatus === 'WAITING_SELLER_APPROVAL' || (s === 'AWAITING_INSPECTION' && bStatus === 'WAITING_SELLER_APPROVAL')) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-800 border border-amber-500/30">
+          <Clock className="w-3.5 h-3.5 text-amber-600" />
+          <span>
+            {lang === 'vi'
+              ? isSellerForThisOrder ? 'Yêu Cầu Kiểm Định Mới • Chờ Bạn Xác Nhận' : 'Đã Gửi Yêu Cầu • Chờ Người Bán Xác Nhận'
+              : isSellerForThisOrder ? 'New Inspection Request • Awaiting Your Approval' : 'Inspection Requested • Awaiting Seller Approval'}
+          </span>
+        </span>
+      );
+    }
+    if (bStatus === 'WAITING_FEE_PAYMENT') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-orange-500/15 text-orange-800 border border-orange-500/30">
+          <Clock className="w-3.5 h-3.5 text-orange-600" />
+          <span>
+            {lang === 'vi'
+              ? isSellerForThisOrder ? 'Chờ Đóng Phí Kiểm Định (Hạn 6h)' : 'Chờ Bạn Đóng Phí Kiểm Định (Hạn 6h)'
+              : 'Awaiting Inspection Fee Deposit (6h limit)'}
+          </span>
+        </span>
+      );
+    }
     switch (s) {
       case 'AWAITING_PAYMENT':
         return (
@@ -1283,8 +1449,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             <Clock className="w-3.5 h-3.5 text-amber-600" />
             <span>
               {lang === 'vi'
-                ? isSellerForThisOrder ? 'Chờ Bạn Xác Nhận Kiểm Định' : 'Chờ Kiểm Định'
-                : isSellerForThisOrder ? 'Awaiting Your Inspection Confirmation' : 'Awaiting Inspection'}
+                ? isSellerForThisOrder ? 'Chờ Bạn Xác Nhận Kiểm Định' : 'Đã Gửi Yêu Cầu • Chờ Người Bán Xác Nhận'
+                : isSellerForThisOrder ? 'Awaiting Your Inspection Confirmation' : 'Inspection Requested • Awaiting Seller'}
             </span>
           </span>
         );
@@ -1403,6 +1569,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         { key: 'shipping', label: lang === 'vi' ? 'Đang giao hàng' : 'Delivering' },
         { key: 'delivered', label: lang === 'vi' ? 'Đã nhận (48h)' : 'Review (48h)' },
         { key: 'completed', label: lang === 'vi' ? 'Hoàn thành' : 'Completed' },
+        { key: 'cancelled', label: lang === 'vi' ? 'Đã Hủy' : 'Cancelled' },
         { key: 'disputed', label: lang === 'vi' ? 'Khiếu nại / Trả hàng' : 'Disputes' },
         { key: 'with_inspection', label: lang === 'vi' ? '🛡️ Có kiểm định Hub' : '🛡️ With Inspection' },
       ]
@@ -1413,6 +1580,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         { key: 'shipping', label: lang === 'vi' ? 'Đang giao hàng' : 'Delivering' },
         { key: 'delivered', label: lang === 'vi' ? 'Đã nhận hàng' : 'Delivered' },
         { key: 'completed', label: lang === 'vi' ? 'Hoàn thành' : 'Completed' },
+        { key: 'cancelled', label: lang === 'vi' ? 'Đã Hủy' : 'Cancelled' },
         { key: 'disputed', label: lang === 'vi' ? 'Trả hàng / Tranh chấp' : 'Disputes' },
         { key: 'with_inspection', label: lang === 'vi' ? '🛡️ Có kiểm định Hub' : '🛡️ With Inspection' },
       ];
@@ -1649,6 +1817,37 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         </div>
       </div>
 
+      {/* Seller Awaiting Inspection Confirmation Banner */}
+      {isSeller && userOrders.some((o) => !isOrderCancelledOrRefunded(o) && isOrderSeller(o) && (o.backendStatus === 'WAITING_SELLER_APPROVAL' || (o.hasInspectionService && !o.sellerConfirmedAt && o.confirmationStatus !== 'CONFIRMED'))) && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 via-orange-50 to-amber-100/70 border-2 border-amber-300 text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md animate-fadeIn">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
+              <AlertTriangle className="w-5 h-5 text-white animate-bounce" />
+            </div>
+            <div>
+              <div className="text-xs sm:text-sm font-black text-amber-950 flex items-center gap-1.5">
+                <span>{lang === 'vi' ? 'Cần Phản Hồi: Có đơn hàng kiểm định mới đang chờ bạn xác nhận!' : 'Action Required: New inspection order awaiting your confirmation!'}</span>
+                <span className="px-2 py-0.5 rounded text-[10px] bg-amber-600 text-white font-black uppercase tracking-wide">Cần xử lý</span>
+              </div>
+              <p className="text-[11px] text-amber-900 font-medium mt-0.5">
+                {lang === 'vi'
+                  ? 'Khách mua đã đặt cọc kiểm định cho sản phẩm của bạn. Vui lòng bấm "Đồng Ý Kiểm Định" bên dưới đơn hàng để chuyển tiếp thông tin cho Trung tâm kiểm định điều phối KTV.'
+                  : 'Buyer requested quality inspection. Please confirm the inspection order below to forward it to the Inspection Center.'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setActiveTab('all');
+            }}
+            className="px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl text-xs font-black shadow-xs transition shrink-0 cursor-pointer flex items-center justify-center gap-1"
+          >
+            <span>{lang === 'vi' ? 'Xem Đơn Ngay' : 'View Orders'}</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Seller Inspection Alert Banner */}
       {isSeller && inHubInspectionCount > 0 && activeTab !== 'inspecting' && (
         <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border border-purple-200 text-purple-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-fadeIn">
@@ -1801,7 +2000,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                       })()}
                     </span>
                   </div>
-                  <div>{getStatusBadge(isOrderReceiptConfirmed(ord) ? 'COMPLETED_RELEASED' : ord.escrowStatus, hasInspection, orderIsSeller)}</div>
+                  <div>{getStatusBadge(isOrderReceiptConfirmed(ord) ? 'COMPLETED_RELEASED' : ord.escrowStatus, hasInspection, orderIsSeller, ord)}</div>
                 </div>
 
                 {/* Order Main Body: Product Snippet */}
@@ -1935,26 +2134,123 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
                 {/* Seller Inspection Request Alert Banner */}
                 {orderIsSeller && hasInspection && !isOrderCancelledOrRefunded(ord) && !isOrderReceiptConfirmed(ord) && (
-                  <div className="mx-4 sm:mx-6 mb-3 p-3 rounded-2xl bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 text-orange-900 text-xs flex flex-wrap items-center justify-between gap-2.5 shadow-2xs">
-                    <div className="flex items-center gap-2.5">
-                      <ShieldCheck className="w-4 h-4 text-orange-600 shrink-0" />
-                      <div>
-                        <span className="font-bold">
-                          {ord.inspectionMethod === 'AT_HOME'
-                            ? (lang === 'vi' ? 'Đơn hàng yêu cầu kiểm định tận nhà:' : 'At-Home Inspection Request:')
-                            : (lang === 'vi' ? 'Đơn hàng kiểm định 2 chặng qua Hub:' : '2-Leg Hub Inspection Order:')}
-                        </span>
-                        <span className="text-[11px] text-orange-800 ml-1">
-                          {ord.inspectionMethod === 'AT_HOME'
-                            ? (savedAppointment?.scheduledAt
-                                ? (lang === 'vi' ? ` Đã đặt lịch hẹn KTV: ${new Date(savedAppointment.scheduledAt).toLocaleString('vi-VN')}` : ` Scheduled visit: ${new Date(savedAppointment.scheduledAt).toLocaleString()}`)
-                                : (lang === 'vi' ? ' Vui lòng bấm nút "Hẹn Giờ Kiểm Định" bên dưới để Kỹ thuật viên đến lấy máy/kiểm định tận nơi.' : ' Please click "Schedule Inspect" below.'))
-                            : (lang === 'vi'
-                                ? ' Lalamove sẽ vận chuyển kiện hàng từ người bán sang Trung tâm kiểm định Hub SecondLife trước khi chuyển tiếp cho người mua. Không cần hẹn KTV, chỉ cần đóng gói dán mã QR và gọi tài xế Lalamove.'
-                                : ' Lalamove 2-leg delivery: courier will deliver parcel to SecondLife Hub for inspection first.')}
-                        </span>
+                  <div className="mx-4 sm:mx-6 mb-3 p-3.5 rounded-2xl border text-xs shadow-2xs transition-all animate-fadeIn">
+                    {ord.inspectionMethod === 'AT_HOME' ? (
+                      /* TRƯỜNG HỢP 1: KIỂM ĐỊNH TẬN NHÀ (KTV ĐẾN NHÀ) */
+                      <div className="bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-amber-50/90 p-3.5 rounded-xl border border-amber-200 text-amber-950 space-y-2">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-0.5 rounded-md bg-amber-600 text-white text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs">
+                              <Calendar className="w-3.5 h-3.5" />
+                              <span>{lang === 'vi' ? 'Kiểm Định Tận Nhà (KTV Đến Nhà)' : 'At-Home Inspection (Technician Visit)'}</span>
+                            </span>
+                            <span className="text-xs font-bold text-amber-900">
+                              {savedAppointment?.scheduledAt
+                                ? (lang === 'vi' ? 'Đã lên lịch hẹn với KTV' : 'Technician Visit Scheduled')
+                                : (lang === 'vi' ? 'Chờ người bán hẹn lịch đón KTV' : 'Awaiting Appointment Schedule')}
+                            </span>
+                          </div>
+                          {savedAppointment?.scheduledAt && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSchedulingOrder(ord);
+                                setSchedulingReadOnly(false);
+                              }}
+                              className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline cursor-pointer"
+                            >
+                              {lang === 'vi' ? 'Đổi lịch hẹn khác' : 'Reschedule'}
+                            </button>
+                          )}
+                        </div>
+
+                        {savedAppointment?.scheduledAt ? (
+                          <div className="p-2.5 rounded-lg bg-white/90 border border-amber-200/80 text-[11px] text-amber-900 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-amber-950">
+                                📅 {lang === 'vi' ? 'Thời gian KTV đến nhà:' : 'Scheduled Arrival:'}
+                              </span>
+                              <span className="font-extrabold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded">
+                                {new Date(savedAppointment.scheduledAt).toLocaleString('vi-VN', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                })}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="font-bold">📍 {lang === 'vi' ? 'Địa chỉ đón KTV:' : 'Address:'}</span>{' '}
+                              <span>{ord.shippingLegs?.[0]?.origin || ord.listing?.location || 'Địa chỉ kho người bán'}</span>
+                            </div>
+                            {savedAppointment.note && (
+                              <div className="italic text-amber-800/80">
+                                💬 {lang === 'vi' ? 'Ghi chú đón KTV:' : 'Note:'} {savedAppointment.note}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="p-2.5 rounded-lg bg-amber-100/60 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+                            👉 <strong>{lang === 'vi' ? 'Lưu ý người bán:' : 'Seller note:'}</strong>{' '}
+                            {lang === 'vi'
+                              ? 'Khách mua đã đăng ký gói kiểm định tận nơi. Kỹ thuật viên SecondLife sẽ trực tiếp đến nhà bạn để kiểm tra thiết bị. Vui lòng bấm nút "Xác Nhận & Hẹn Lịch Đón KTV" bên dưới để chọn ngày giờ làm việc thuận tiện!'
+                              : 'Buyer opted for at-home inspection. Technician will visit your location. Please click "Confirm & Schedule Visit" below to choose appointment date and time.'}
+                          </div>
+                        )}
                       </div>
-                    </div>
+                    ) : (
+                      /* TRƯỜNG HỢP 2: ĐƯA QUA TRUNG TÂM KIỂM ĐỊNH (SHIP 2 CHẶNG) */
+                      <div className="bg-gradient-to-r from-blue-50/90 via-indigo-50/70 to-blue-50/90 p-3.5 rounded-xl border border-blue-200 text-blue-950 space-y-2.5">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-0.5 rounded-md bg-blue-700 text-white text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs">
+                              <Truck className="w-3.5 h-3.5" />
+                              <span>{lang === 'vi' ? 'Kiểm Định Qua Hub (Ship 2 Chặng)' : 'Hub Inspection (2-Leg Delivery)'}</span>
+                            </span>
+                            <span className="text-xs font-bold text-blue-900">
+                              {ord.sellerConfirmedAt || ord.confirmationStatus === 'CONFIRMED'
+                                ? (lang === 'vi' ? 'Đã xác nhận • Đang thực hiện Chặng 1 đến Hub' : 'Leg 1 In Progress to Hub')
+                                : (lang === 'vi' ? 'Chờ người bán xác nhận gửi hàng Chặng 1' : 'Awaiting Seller Confirmation for Leg 1')}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Visual 2-Leg Journey Breakdown */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                          {/* Chặng 1 */}
+                          <div className="p-2.5 rounded-lg bg-white/90 border border-blue-200 text-blue-950 space-y-1">
+                            <div className="flex items-center justify-between font-bold">
+                              <span className="text-blue-700">📦 {lang === 'vi' ? 'Chặng 1: Gửi Hàng Đến Hub' : 'Leg 1: Send to Hub'}</span>
+                              <span className="px-1.5 py-0.2 rounded text-[10px] bg-blue-100 text-blue-800 font-extrabold">
+                                {ord.sellerConfirmedAt ? (lang === 'vi' ? 'Đang chuẩn bị' : 'In Progress') : (lang === 'vi' ? 'Cần xác nhận' : 'Pending')}
+                              </span>
+                            </div>
+                            <div className="text-slate-600">
+                              {lang === 'vi'
+                                ? 'Người bán dán tem QR kiểm định lên kiện hàng và bàn giao cho Lalamove vận chuyển đến Trung tâm kiểm định Hub SecondLife.'
+                                : 'Seller packs item with QR tag and hands over to Lalamove courier to deliver to SecondLife Hub.'}
+                            </div>
+                          </div>
+
+                          {/* Chặng 2 */}
+                          <div className="p-2.5 rounded-lg bg-slate-50/90 border border-slate-200 text-slate-700 space-y-1">
+                            <div className="flex items-center justify-between font-bold">
+                              <span className="text-slate-700">🚚 {lang === 'vi' ? 'Chặng 2: Hub Giao Người Mua' : 'Leg 2: Hub to Buyer'}</span>
+                              <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-200 text-slate-600 font-extrabold">
+                                {lang === 'vi' ? 'Kích hoạt sau khi ĐẠT' : 'After Passed'}
+                              </span>
+                            </div>
+                            <div className="text-slate-500">
+                              {lang === 'vi'
+                                ? 'Sau khi KTV Hub kiểm định ĐẠT chuẩn 48 bước và dán tem niêm phong, Hub sẽ tự động chuyển phát tiếp đến tận tay người mua.'
+                                : 'Once item passes 48-step Hub inspection and seal is applied, Hub dispatches package directly to buyer.'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2035,22 +2331,44 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             <>
                               {hasInspection ? (
                                 <>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleSellerConfirmOrder(ord.id);
-                                    }}
-                                    disabled={orderActionLoading === ord.id}
-                                    className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0"
-                                    title="Đồng ý yêu cầu kiểm định của người mua và chuẩn bị hàng"
-                                  >
-                                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                                    <span>
-                                      {orderActionLoading === ord.id
-                                        ? (lang === 'vi' ? 'Đang xử lý...' : 'Processing...')
-                                        : (lang === 'vi' ? 'Đồng Ý Kiểm Định' : 'Accept Inspection')}
-                                    </span>
-                                  </button>
+                                  {ord.inspectionMethod === 'AT_HOME' ? (
+                                    /* Nút Hẹn Lịch Tiếp Đón KTV (Kiểm định tại nhà) */
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSchedulingOrder(ord);
+                                        setSchedulingReadOnly(false);
+                                      }}
+                                      disabled={orderActionLoading === ord.id}
+                                      className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0"
+                                      title="Chọn ngày giờ kỹ thuật viên SecondLife đến nhà kiểm tra thiết bị"
+                                    >
+                                      <Calendar className="w-3.5 h-3.5" />
+                                      <span>
+                                        {savedAppointment?.scheduledAt
+                                          ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Visit')
+                                          : (lang === 'vi' ? 'Xác Nhận & Hẹn Lịch Đón KTV' : 'Confirm & Schedule Visit')}
+                                      </span>
+                                    </button>
+                                  ) : (
+                                    /* Nút Xác Nhận Đồng Ý Kiểm Định & Gửi Hub (Chặng 1) */
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSellerConfirmOrder(ord.id);
+                                      }}
+                                      disabled={orderActionLoading === ord.id}
+                                      className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0"
+                                      title="Xác nhận đồng ý kiểm định và chuẩn bị gửi hàng Chặng 1 đến Trung tâm Hub SecondLife"
+                                    >
+                                      <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                                      <span>
+                                        {orderActionLoading === ord.id
+                                          ? (lang === 'vi' ? 'Đang xác nhận...' : 'Confirming...')
+                                          : (lang === 'vi' ? '✓ Đồng Ý Kiểm Định' : 'Accept Inspection')}
+                                      </span>
+                                    </button>
+                                  )}
 
                                   <button
                                     onClick={(e) => {
@@ -2120,23 +2438,27 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                 <span>{lang === 'vi' ? 'Đã Xác Nhận Đơn' : 'Order Confirmed'}</span>
                               </span>
 
-                              {/* Nút Đóng Gói (Báo Shipper) */}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleSellerMarkReadyForPickup(ord.id);
-                                }}
-                                disabled={orderActionLoading === ord.id}
-                                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50 whitespace-nowrap shrink-0"
-                                title="Báo hệ thống kiện hàng đã đóng gói an toàn và phát tín hiệu điều phối tài xế Lalamove"
-                              >
-                                <Package className="w-3.5 h-3.5" />
-                                <span>
-                                  {orderActionLoading === ord.id
-                                    ? (lang === 'vi' ? 'Đang cập nhật...' : 'Updating...')
-                                    : (lang === 'vi' ? 'Đã Đóng Gói (Báo Shipper)' : 'Packed (Call Shipper)')}
-                                </span>
-                              </button>
+                              {/* Nút Đóng Gói (Báo Shipper) cho Chặng 1 hoặc đơn thông thường */}
+                              {(!hasInspection || ord.inspectionMethod !== 'AT_HOME') && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSellerMarkReadyForPickup(ord.id);
+                                  }}
+                                  disabled={orderActionLoading === ord.id}
+                                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50 whitespace-nowrap shrink-0"
+                                  title="Báo hệ thống kiện hàng đã đóng gói an toàn và phát tín hiệu điều phối tài xế Lalamove Chặng 1 đến Hub"
+                                >
+                                  <Package className="w-3.5 h-3.5" />
+                                  <span>
+                                    {orderActionLoading === ord.id
+                                      ? (lang === 'vi' ? 'Đang cập nhật...' : 'Updating...')
+                                      : hasInspection
+                                      ? (lang === 'vi' ? 'Đã Đóng Gói (Gửi Chặng 1 Đến Hub)' : 'Packed (Send Leg 1 to Hub)')
+                                      : (lang === 'vi' ? 'Đã Đóng Gói (Báo Shipper)' : 'Packed (Call Shipper)')}
+                                  </span>
+                                </button>
+                              )}
 
                               {/* In Tem QR Kiểm Định nếu là đơn kiểm định */}
                               {hasInspection && (
@@ -2146,7 +2468,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                     setPrintInspectionQrOrder(ord);
                                   }}
                                   className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:opacity-90 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0 animate-fadeIn"
-                                  title="Xem và In mã QR dán lên kiện hàng kiểm định để Trung tâm quét tiếp nhận"
+                                  title={ord.inspectionMethod === 'AT_HOME' ? 'Mã QR để KTV quét khi đến nhà kiểm định' : 'In tem mã QR dán lên kiện hàng gửi Chặng 1 đến Hub'}
                                 >
                                   <QrCode className="w-3.5 h-3.5" />
                                   <span>{lang === 'vi' ? 'Mã QR Kiểm Định' : 'Inspection QR'}</span>
@@ -2167,45 +2489,25 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                   <Calendar className="w-3.5 h-3.5 text-orange-600" />
                                   <span>
                                     {savedAppointment?.scheduledAt
-                                      ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Inspect')
-                                      : (lang === 'vi' ? 'Hẹn Giờ Kiểm Định' : 'Schedule Inspect')}
+                                      ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Visit')
+                                      : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit')}
                                   </span>
                                 </button>
                               )}
 
-                              {/* Nút Gọi Tài Xế Lalamove (Cách 1) */}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (ord.escrowStatus === 'AWAITING_PAYMENT') {
-                                    setInspectionActionNotice(
-                                      lang === 'vi'
-                                        ? 'Đơn hàng đang chờ người mua nộp tiền ký quỹ Escrow. Chỉ có thể phát lệnh gọi bưu tá Lalamove sau khi tiền đã được giữ trong Escrow.'
-                                        : 'Order is awaiting buyer escrow deposit before driver dispatch.'
-                                    );
-                                    setTimeout(() => setInspectionActionNotice(null), 5000);
-                                    return;
-                                  }
-                                  setCreateShipmentOrder(ord);
-                                }}
-                                className="px-3.5 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm whitespace-nowrap shrink-0"
-                                title="Gọi tài xế Lalamove đến lấy hàng"
-                              >
-                                <Truck className="w-3.5 h-3.5 text-white" />
-                                <span>{lang === 'vi' ? 'Gọi Tài Xế Lalamove' : 'Call Lalamove'}</span>
-                              </button>
-
                               {/* Nút Theo Dõi Lalamove */}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setTrackingOrder(ord);
-                                }}
-                                className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                              >
-                                <Truck className="w-3.5 h-3.5 text-blue-600" />
-                                <span>{lang === 'vi' ? 'Theo Dõi Lalamove' : 'Lalamove Tracking'}</span>
-                              </button>
+                              {(!hasInspection || ord.inspectionMethod !== 'AT_HOME') && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setTrackingOrder(ord);
+                                  }}
+                                  className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                                >
+                                  <Truck className="w-3.5 h-3.5 text-blue-600" />
+                                  <span>{lang === 'vi' ? 'Theo Dõi Lalamove Chặng 1' : 'Track Leg 1 Courier'}</span>
+                                </button>
+                              )}
                             </>
                           )}
 
@@ -2245,27 +2547,6 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                 </button>
                               )}
 
-                              {/* Nút Gọi Tài Xế Lalamove (Cách 1) */}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (ord.escrowStatus === 'AWAITING_PAYMENT') {
-                                    setInspectionActionNotice(
-                                      lang === 'vi'
-                                        ? 'Đơn hàng đang chờ người mua nộp tiền ký quỹ Escrow. Chỉ có thể phát lệnh gọi bưu tá Lalamove sau khi tiền đã được giữ trong Escrow.'
-                                        : 'Order is awaiting buyer escrow deposit before driver dispatch.'
-                                    );
-                                    setTimeout(() => setInspectionActionNotice(null), 5000);
-                                    return;
-                                  }
-                                  setCreateShipmentOrder(ord);
-                                }}
-                                className="px-3.5 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm whitespace-nowrap shrink-0"
-                                title="Gọi tài xế Lalamove đến lấy hàng"
-                              >
-                                <Truck className="w-3.5 h-3.5 text-white" />
-                                <span>{lang === 'vi' ? 'Gọi Tài Xế Lalamove' : 'Call Lalamove'}</span>
-                              </button>
 
                               {/* Nút Theo Dõi Lalamove */}
                               <button
@@ -2544,7 +2825,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 </div>
 
                 {/* 48h Auto-release notice banner on the order card */}
-                {ord.shippingDeliveredAt && !isOrderReceiptConfirmed(ord) && ord.escrowStatus !== 'COMPLETED_RELEASED' && ord.escrowStatus !== 'RELEASED' && (ord as any).backendStatus !== 'COMPLETED' && ord.escrowStatus !== 'DISPUTED' && ord.id !== '16915c88-96a2-4cb0-8f6c-cc9a931a6e89' && (
+                {ord.shippingDeliveredAt && !isOrderReceiptConfirmed(ord) && ord.escrowStatus !== 'COMPLETED_RELEASED' && (ord.escrowStatus as any) !== 'RELEASED' && (ord as any).backendStatus !== 'COMPLETED' && ord.escrowStatus !== 'DISPUTED' && ord.id !== '16915c88-96a2-4cb0-8f6c-cc9a931a6e89' && (
                   <div className="mt-3 mx-4 sm:mx-6 mb-3 p-3 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
                     <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                     <div>
@@ -3148,7 +3429,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               </div>
 
               {/* 48h Auto-release notice banner in Modal */}
-              {detailModalOrder.shippingDeliveredAt && !isOrderReceiptConfirmed(detailModalOrder) && detailModalOrder.escrowStatus !== 'COMPLETED_RELEASED' && detailModalOrder.escrowStatus !== 'RELEASED' && (detailModalOrder as any).backendStatus !== 'COMPLETED' && detailModalOrder.escrowStatus !== 'DISPUTED' && detailModalOrder.id !== '16915c88-96a2-4cb0-8f6c-cc9a931a6e89' && (
+              {detailModalOrder.shippingDeliveredAt && !isOrderReceiptConfirmed(detailModalOrder) && detailModalOrder.escrowStatus !== 'COMPLETED_RELEASED' && (detailModalOrder.escrowStatus as any) !== 'RELEASED' && (detailModalOrder as any).backendStatus !== 'COMPLETED' && detailModalOrder.escrowStatus !== 'DISPUTED' && detailModalOrder.id !== '16915c88-96a2-4cb0-8f6c-cc9a931a6e89' && (
                 <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1.5">
                   <div className="flex items-center gap-2 font-bold text-amber-900">
                     <Clock className="w-4 h-4 text-amber-600 shrink-0" />
@@ -3369,25 +3650,6 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                 </button>
                               )}
 
-                              <button
-                                onClick={() => {
-                                  if (detailModalOrder.escrowStatus === 'AWAITING_PAYMENT') {
-                                    setInspectionActionNotice(
-                                      lang === 'vi'
-                                        ? 'Đơn hàng đang chờ người mua nộp tiền ký quỹ Escrow. Chỉ có thể phát lệnh gọi bưu tá Lalamove sau khi tiền đã được giữ trong Escrow.'
-                                        : 'Order is awaiting buyer escrow deposit before driver dispatch.'
-                                    );
-                                    setTimeout(() => setInspectionActionNotice(null), 5000);
-                                    return;
-                                  }
-                                  setCreateShipmentOrder(detailModalOrder);
-                                }}
-                                className="py-3 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-                                title="Gọi tài xế Lalamove đến lấy hàng"
-                              >
-                                <Truck className="w-4 h-4 text-white" />
-                                <span>{lang === 'vi' ? 'Gọi Tài Xế Lalamove' : 'Call Lalamove Driver'}</span>
-                              </button>
 
                               <button
                                 onClick={() => setTrackingOrder(detailModalOrder)}
@@ -3440,25 +3702,6 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                 </button>
                               )}
 
-                              <button
-                                onClick={() => {
-                                  if (detailModalOrder.escrowStatus === 'AWAITING_PAYMENT') {
-                                    setInspectionActionNotice(
-                                      lang === 'vi'
-                                        ? 'Đơn hàng đang chờ người mua nộp tiền ký quỹ Escrow. Chỉ có thể phát lệnh gọi bưu tá Lalamove sau khi tiền đã được giữ trong Escrow.'
-                                        : 'Order is awaiting buyer escrow deposit before driver dispatch.'
-                                    );
-                                    setTimeout(() => setInspectionActionNotice(null), 5000);
-                                    return;
-                                  }
-                                  setCreateShipmentOrder(detailModalOrder);
-                                }}
-                                className="py-3 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-                                title="Gọi tài xế Lalamove đến lấy hàng"
-                              >
-                                <Truck className="w-4 h-4 text-white" />
-                                <span>{lang === 'vi' ? 'Gọi Tài Xế Lalamove' : 'Call Lalamove Driver'}</span>
-                              </button>
 
                               <button
                                 onClick={() => setTrackingOrder(detailModalOrder)}

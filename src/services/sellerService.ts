@@ -149,4 +149,65 @@ export const sellerService = {
     });
     return (res as any)?.data || res;
   },
+
+  /**
+   * Lấy thông tin Onboarding của Người Bán
+   * GET /api/v1/seller-onboarding/me
+   */
+  async getOnboarding(): Promise<any> {
+    const res = await request<any>('/seller-onboarding/me', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Lưu thông tin Onboarding cửa hàng trước eKYC
+   * PUT /api/v1/seller-onboarding/me
+   */
+  async saveOnboarding(data: {
+    shopName: string;
+    pickupAddress: {
+      name: string;
+      phone: string;
+      address: string;
+      latitude?: number;
+      longitude?: number;
+    };
+    email: string;
+    phone: string;
+  }): Promise<any> {
+    const res = await request<any>('/seller-onboarding/me', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Gửi mã xác thực OTP 6 số qua Email khi bắt đầu Onboarding
+   * POST /api/v1/seller-onboarding/email/send-code
+   */
+  async sendOnboardingEmailCode(): Promise<any> {
+    const res = await request<any>('/seller-onboarding/email/send-code', {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Xác thực mã OTP Email Onboarding
+   * POST /api/v1/seller-onboarding/email/verify
+   */
+  async verifyOnboardingEmailCode(otp: string): Promise<any> {
+    const res = await request<any>('/seller-onboarding/email/verify', {
+      method: 'POST',
+      body: JSON.stringify({ otp }),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
 };

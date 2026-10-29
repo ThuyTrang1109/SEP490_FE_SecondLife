@@ -22,8 +22,21 @@ export default defineConfig(() => {
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
       proxy: {
         '/api': {
-          target: 'http://localhost:3000',
+          target: process.env.VITE_API_TARGET || 'http://localhost:8080',
           changeOrigin: true,
+        },
+      },
+    },
+    build: {
+      chunkSizeWarningLimit: 2000,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom'],
+            'vendor-icons': ['lucide-react'],
+            'vendor-ws': ['@stomp/stompjs', 'sockjs-client'],
+            'vendor-three': ['three'],
+          },
         },
       },
     },

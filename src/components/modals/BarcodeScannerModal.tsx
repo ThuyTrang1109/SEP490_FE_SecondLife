@@ -15,6 +15,7 @@ import {
   Info
 } from 'lucide-react';
 import { EscrowOrder, Language } from '../../types';
+import { dialogService } from '../../utils/dialogService';
 
 interface BarcodeScannerModalProps {
   isOpen: boolean;
@@ -285,10 +286,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       }
 
       // Nếu không tự động quét được từ file ảnh
-      alert(
+      dialogService.warning(
         lang === 'vi'
           ? 'Không tìm thấy mã vạch rõ nét trong ảnh tải lên. Vui lòng thử ảnh khác hoặc nhập mã trực tiếp.'
-          : 'Could not detect a clear barcode in this image. Please try another image.'
+          : 'Could not detect a clear barcode in this image. Please try another image.',
+        lang === 'vi' ? 'Không Nhận Diện Được Mã' : 'Scan Notice'
       );
     } catch (err: any) {
       console.warn('File barcode scan error:', err);

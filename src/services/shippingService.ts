@@ -5,6 +5,8 @@ import {
   CreateShipmentRequestDto,
   ShipmentBackend,
   ShipmentEventBackend,
+  GeocodedAddressDto,
+  LalamoveTrackingResponse,
 } from '../types';
 
 export interface ShippingParcel {
@@ -12,6 +14,116 @@ export interface ShippingParcel {
   length: number;
   width: number;
   height: number;
+}
+
+export interface VehicleLimit {
+  serviceType: string;
+  description: string;
+  minWeightGram: number;
+  maxWeightGram: number;
+  maxLengthCm: number;
+  maxWidthCm: number;
+  maxHeightCm: number;
+}
+
+export interface VehicleCity {
+  locode: string;
+  name: string;
+  vehicles: VehicleLimit[];
+}
+
+export interface VehicleCatalog {
+  provider: 'LALAMOVE';
+  minWeightSource: 'APPLICATION';
+  minDimensionCm: number;
+  allowLengthWidthSwap: boolean;
+  keepUpright: boolean;
+  cities: VehicleCity[];
+}
+
+export interface PickupCoordinates {
+  latitude: number;
+  longitude: number;
+}
+
+export interface Parcel {
+  weight: number; // g
+  length: number; // cm
+  width: number;  // cm
+  height: number; // cm
+}
+
+export function toBaseInteger(raw: string, decimalPlaces: number): number | null {
+  const normalized = raw.trim().replace(',', '.');
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) return null;
+  const [whole, fraction = ''] = normalized.split('.');
+  if (/[1-9]/.test(fraction.slice(decimalPlaces))) return null;
+  const digits = fraction.slice(0, decimalPlaces).padEnd(decimalPlaces, '0');
+  const value = Number(whole + digits);
+  return Number.isSafeInteger(value) && value >= 1 && value <= 2147483647
+    ? value : null;
+}
+
+export function fromBaseInteger(value: number, decimalPlaces: number): string {
+  const factor = 10 ** decimalPlaces;
+  const whole = Math.floor(value / factor);
+  const fraction = String(value % factor)
+    .padStart(decimalPlaces, '0').replace(/0+$/, '');
+  return fraction ? String(whole) + '.' + fraction : String(whole);
+}
+
+export function validParcel(parcel: Parcel, catalog: VehicleCatalog): boolean {
+  return [parcel.weight, parcel.length, parcel.width, parcel.height]
+    .every(value => Number.isSafeInteger(value) && value <= 2147483647)
+    && parcel.weight >= 1
+    && [parcel.length, parcel.width, parcel.height]
+      .every(value => value >= catalog.minDimensionCm);
+}
+
+export function fitsVehicle(
+  parcel: Parcel,
+  vehicle: VehicleLimit,
+  catalog: VehicleCatalog,
+): boolean {
+  if (!validParcel(parcel, catalog)) return false;
+  if (parcel.weight < vehicle.minWeightGram
+      || parcel.weight > vehicle.maxWeightGram
+      || parcel.height > vehicle.maxHeightCm) return false;
+  const normal = parcel.length <= vehicle.maxLengthCm
+    && parcel.width <= vehicle.maxWidthCm;
+  const swapped = catalog.allowLengthWidthSwap
+    && parcel.length <= vehicle.maxWidthCm
+    && parcel.width <= vehicle.maxLengthCm;
+  return normal || swapped;
+}
+
+export function suggestVehicle(fitting: VehicleLimit[]): VehicleLimit | undefined {
+  return fitting.reduce<VehicleLimit | undefined>(
+    (best, vehicle) => !best || vehicle.maxWeightGram < best.maxWeightGram
+      ? vehicle : best,
+    undefined,
+  );
+}
+
+export async function getVehicleCatalog(
+  pickup?: PickupCoordinates,
+  signal?: AbortSignal,
+): Promise<VehicleCatalog> {
+  const query = pickup
+    ? '?' + new URLSearchParams({
+        latitude: String(pickup.latitude),
+        longitude: String(pickup.longitude),
+      }).toString()
+    : '';
+  const response = await request<VehicleCatalog>('/shipping/vehicles' + query, {
+    method: 'GET',
+    requiresAuth: true,
+    signal,
+  });
+  if (!response.success || !response.data) {
+    throw new Error(response.message || 'Chưa tải được danh mục xe');
+  }
+  return response.data;
 }
 
 export interface GhnLocation {
@@ -25,7 +137,10 @@ export interface GhnLocation {
 export interface ShippingAddressDto {
   name: string;
   phone: string;
-  address: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  city?: string;
   provinceName?: string;
   districtName?: string;
   wardName?: string;
@@ -50,9 +165,11 @@ export interface SellerOnboardingResponseDto {
 export interface SellerPickupAddressRequestDto {
   name: string;
   phone: string;
-  address: string;
-  provinceId: number;
-  wardId: number;
+  latitude?: number;
+  longitude?: number;
+  address?: string;
+  provinceId?: number;
+  wardId?: number;
 }
 
 export interface SellerOnboardingRequestDto {
@@ -61,6 +178,7 @@ export interface SellerOnboardingRequestDto {
   phone: string;
   pickupAddress: SellerPickupAddressRequestDto;
 }
+
 
 // Full 63 provinces of Vietnam fallback
 export const FALLBACK_PROVINCES: GhnLocation[] = [
@@ -373,7 +491,7 @@ export function resolveProvinceFromText(
 
 export const shippingService = {
   /**
-   * Lấy danh sách Tỉnh/Thành phố từ BE (GHN catalogue)
+   * Lấy danh sách Tỉnh/Thành phố từ BE (Lalamove catalogue)
    * GET /api/v1/shipping/provinces
    */
   async getProvinces(): Promise<GhnLocation[]> {
@@ -403,42 +521,16 @@ export const shippingService = {
   },
 
   /**
-   * Lấy danh sách Phường/Xã từ BE theo provinceId
-   * GET /api/v1/shipping/wards?provinceId={provinceId}
+   * Lấy danh sách Phường/Xã theo provinceId (sử dụng danh mục địa chỉ hỗ trợ của sàn)
    */
   async getWards(provinceId: number | string): Promise<GhnLocation[]> {
     if (!provinceId) return [];
     const pIdNum = Number(provinceId) || 0;
-    try {
-      const res = await request<any>(`/shipping/wards?provinceId=${provinceId}`, {
-        method: 'GET',
-        requiresAuth: false,
-      });
-      const raw = Array.isArray(res?.data)
-        ? res.data
-        : Array.isArray(res?.data?.data)
-          ? res.data.data
-          : [];
-      if (raw && raw.length > 0) {
-        return raw.map((item: any) => ({
-          _id: item._id ?? item.WardCode ?? item.id,
-          name: item.name ?? item.WardName ?? 'Phường/Xã',
-          type: item.type ?? 'ward',
-          status: item.status ?? 1,
-          parent_id: item.parent_id ?? pIdNum,
-        }));
-      }
-      return FALLBACK_WARDS[provinceId] || FALLBACK_WARDS[pIdNum] || [
-        { _id: pIdNum * 1000 + 1, name: 'Phường Trung Tâm 1', type: 'ward', status: 1, parent_id: pIdNum },
-        { _id: pIdNum * 1000 + 2, name: 'Phường Trung Tâm 2', type: 'ward', status: 1, parent_id: pIdNum },
-      ];
-    } catch (err) {
-      console.warn(`Backend /shipping/wards?provinceId=${provinceId} failed:`, err);
-      return FALLBACK_WARDS[provinceId] || FALLBACK_WARDS[pIdNum] || [
-        { _id: pIdNum * 1000 + 1, name: 'Phường Trung Tâm 1', type: 'ward', status: 1, parent_id: pIdNum },
-        { _id: pIdNum * 1000 + 2, name: 'Phường Trung Tâm 2', type: 'ward', status: 1, parent_id: pIdNum },
-      ];
-    }
+    return FALLBACK_WARDS[provinceId] || FALLBACK_WARDS[pIdNum] || [
+      { _id: pIdNum * 1000 + 1, name: 'Phường Trung Tâm 1', type: 'ward', status: 1, parent_id: pIdNum },
+      { _id: pIdNum * 1000 + 2, name: 'Phường Trung Tâm 2', type: 'ward', status: 1, parent_id: pIdNum },
+      { _id: pIdNum * 1000 + 3, name: 'Phường Trung Tâm 3', type: 'ward', status: 1, parent_id: pIdNum },
+    ];
   },
 
   /**
@@ -459,6 +551,44 @@ export const shippingService = {
   },
 
   /**
+   * Reverse geocode tọa độ GPS sang địa chỉ dạng chữ qua BE (Geoapify)
+   * POST /api/v1/shipping/reverse-geocode
+   */
+  async reverseGeocode(latitude: number, longitude: number): Promise<GeocodedAddressDto> {
+    const res = await request<GeocodedAddressDto>('/shipping/reverse-geocode', {
+      method: 'POST',
+      body: JSON.stringify({ latitude, longitude }),
+      requiresAuth: true,
+    });
+    return ((res as any)?.data ?? res) as GeocodedAddressDto;
+  },
+
+  /**
+   * Lấy danh sách thành phố và dịch vụ vận chuyển Lalamove từ BE
+   * GET /api/v1/shipping/cities
+   */
+  async getCities(): Promise<any> {
+    try {
+      const res = await request<any>('/shipping/cities', {
+        method: 'GET',
+        requiresAuth: true,
+      });
+      return (res as any)?.data ?? res;
+    } catch (err) {
+      console.warn('Backend /shipping/cities failed:', err);
+      return null;
+    }
+  },
+
+  /**
+   * Lấy danh mục xe chuẩn hóa và giới hạn kích thước theo điểm lấy hàng
+   * GET /api/v1/shipping/vehicles
+   */
+  async getVehicleCatalog(pickup?: PickupCoordinates, signal?: AbortSignal): Promise<VehicleCatalog> {
+    return getVehicleCatalog(pickup, signal);
+  },
+
+  /**
    * Lấy địa chỉ lấy hàng đã lưu của người bán từ BE
    * GET /api/v1/shipping/pickup-address
    */
@@ -468,11 +598,24 @@ export const shippingService = {
         method: 'GET',
         requiresAuth: true,
       });
-      return res.data;
+      return (res as any)?.data ?? res;
     } catch (err) {
       console.warn('Backend /shipping/pickup-address not available:', err);
       return null;
     }
+  },
+
+  /**
+   * Cập nhật địa chỉ lấy hàng của người bán trên BE
+   * PUT /api/v1/shipping/pickup-address
+   */
+  async savePickupAddress(data: { name: string; phone: string; latitude: number; longitude: number }): Promise<ShippingAddressDto> {
+    const res = await request<ShippingAddressDto>('/shipping/pickup-address', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return ((res as any)?.data ?? res) as ShippingAddressDto;
   },
 
   /**
@@ -517,7 +660,7 @@ export const shippingService = {
   },
 
   /**
-   * Lấy báo giá vận chuyển GHN (Tiền hàng, phí giao, tổng tiền, thời gian giao)
+   * Lấy báo giá vận chuyển Lalamove (Tiền hàng, phí giao, tổng tiền, thời gian giao)
    * POST /api/v1/shipping/quotes
    */
   async getShippingQuote(body: ShippingQuoteRequestDto): Promise<ShippingQuoteResponseDto> {
@@ -535,6 +678,9 @@ export const shippingService = {
    * PUT /api/v1/posts/{postId}/shipping-package
    */
   async updateShippingPackage(postId: string, body: ShippingParcel): Promise<ShippingParcel> {
+    try {
+      localStorage.setItem(`post_parcel_${postId}`, JSON.stringify(body));
+    } catch {}
     const res = await request<ShippingParcel>(`/posts/${postId}/shipping-package`, {
       method: 'PUT',
       body: JSON.stringify(body),
@@ -544,8 +690,7 @@ export const shippingService = {
   },
 
   /**
-   * Người bán hoặc Kỹ sư Hub tạo vận đơn GHN cho đơn hàng
-
+   * Người bán hoặc Kỹ sư Hub tạo vận đơn Lalamove cho đơn hàng
    * POST /api/v1/orders/{orderId}/shipments
    */
   async createShipment(orderId: string, body: CreateShipmentRequestDto): Promise<ShipmentBackend> {
@@ -572,7 +717,33 @@ export const shippingService = {
   },
 
   /**
-   * Lấy dòng thời gian các sự kiện vận chuyển từ GHN
+   * Nhân viên Staff / Admin tạo vận đơn giao nhận hàng kiểm định
+   * POST /api/v1/inspection-orders/{inspectionId}/shipments
+   */
+  async createInspectionShipment(inspectionId: string, body: CreateShipmentRequestDto): Promise<ShipmentBackend> {
+    const res = await request<ShipmentBackend>(`/inspection-orders/${inspectionId}/shipments`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      requiresAuth: true,
+    });
+    return ((res as any)?.data ?? res) as ShipmentBackend;
+  },
+
+  /**
+   * Lấy danh sách vận đơn của đơn kiểm định
+   * GET /api/v1/inspection-orders/{inspectionId}/shipments
+   */
+  async getInspectionShipments(inspectionId: string): Promise<ShipmentBackend[]> {
+    const res = await request<ShipmentBackend[]>(`/inspection-orders/${inspectionId}/shipments`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data ?? res;
+    return Array.isArray(data) ? data : [];
+  },
+
+  /**
+   * Lấy dòng thời gian các sự kiện vận chuyển từ Lalamove
    * GET /api/v1/shipments/{shipmentId}/events
    */
   async getShipmentEvents(shipmentId: string): Promise<ShipmentEventBackend[]> {
@@ -585,7 +756,19 @@ export const shippingService = {
   },
 
   /**
-   * Đồng bộ trạng thái mới nhất từ GHN sang SecondLife
+   * Lấy trạng thái, thông tin tài xế Lalamove, link chia sẻ và GPS khi có
+   * GET /api/v1/shipments/{shipmentId}/tracking
+   */
+  async getShipmentTracking(shipmentId: string): Promise<LalamoveTrackingResponse> {
+    const res = await request<LalamoveTrackingResponse>(`/shipments/${shipmentId}/tracking`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return ((res as any)?.data ?? res) as LalamoveTrackingResponse;
+  },
+
+  /**
+   * Đồng bộ trạng thái mới nhất từ Lalamove sang SecondLife
    * POST /api/v1/shipments/{shipmentId}/sync
    */
   async syncShipment(shipmentId: string): Promise<ShipmentBackend> {
@@ -598,7 +781,7 @@ export const shippingService = {
   },
 
   /**
-   * Hủy vận đơn GHN trước khi bưu tá lấy hàng
+   * Hủy vận đơn Lalamove trước khi tài xế lấy hàng
    * POST /api/v1/shipments/{shipmentId}/cancel
    */
   async cancelShipment(shipmentId: string): Promise<ShipmentBackend> {
@@ -610,41 +793,35 @@ export const shippingService = {
     return shipment as ShipmentBackend;
   },
 
+
   /**
-   * Lấy nhãn bưu gửi GHN để in phiếu đóng gói
-   * GET /api/v1/shipments/{shipmentId}/label
+   * Đối soát / Kích hoạt lại tạo vận đơn khi API đối tác bị timeout hoặc thất bại
+   * POST /api/v1/shipments/{shipmentId}/reconcile-creation
    */
-  async getShipmentLabel(shipmentId: string): Promise<any> {
-    const res = await request<any>(`/shipments/${shipmentId}/label`, {
-      method: 'GET',
+  async reconcileCreation(shipmentId: string, orderCode?: string): Promise<ShipmentBackend> {
+    const res = await request<ShipmentBackend>(`/shipments/${shipmentId}/reconcile-creation`, {
+      method: 'POST',
+      body: JSON.stringify({ orderCode: orderCode || '' }),
       requiresAuth: true,
     });
-    return (res as any)?.data ?? res;
+    const shipment = (res as any)?.data ?? res;
+    return shipment as ShipmentBackend;
   },
 
   /**
-   * Giả lập GHN Webhook callback cho localhost / môi trường test (Mục 10 Tracking Guide)
-   * POST /api/v1/shipping/callback
+   * Hoàn tiền phí vận chuyển hoặc tiền hàng hoàn khi bưu tá giao hàng hoàn thành công
+   * POST /api/v1/shipments/{shipmentId}/refund
    */
-  async simulateWebhookCallback(
-    body: {
-      ShopID: number;
-      OrderCode: string;
-      Type: string;
-      Status: string;
-      Time: string;
-    },
-    secret: string = 'test-secret'
-  ): Promise<any> {
-    const res = await request<any>('/shipping/callback', {
+  async refundShipment(shipmentId: string, payload?: { reason: string; responsibleParty?: string }): Promise<ShipmentBackend> {
+    const body = payload || {
+      reason: 'Carrier đã xác nhận giao hàng hoàn về seller. Hoàn toàn bộ tiền hàng vào ví buyer theo quyết định đã duyệt.',
+    };
+    const res = await request<ShipmentBackend>(`/shipments/${shipmentId}/refund`, {
       method: 'POST',
-      headers: {
-        'X-GHN-Secret': secret,
-      },
       body: JSON.stringify(body),
-      requiresAuth: false,
+      requiresAuth: true,
     });
-    return res;
+    return ((res as any)?.data ?? res) as ShipmentBackend;
   },
 };
 

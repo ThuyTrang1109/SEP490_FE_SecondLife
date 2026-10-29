@@ -21,6 +21,7 @@ import {
   AdminCategoryQuestionTemplate
 } from '../../services/adminCatalogService';
 import { parseQuestionItem } from '../../utils/questionParser';
+import { dialogService } from '../../utils/dialogService';
 
 interface CatalogAiTabProps {
   lang: Language;
@@ -112,7 +113,10 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang }) => {
 
   // CATEGORY ACTIONS
   const handleSaveCategory = async () => {
-    if (!catName.trim()) return alert('Vui lòng nhập tên danh mục');
+    if (!catName.trim()) {
+      await dialogService.warning('Vui lòng nhập tên danh mục');
+      return;
+    }
     try {
       if (editingCategory) {
         await adminCatalogService.updateCategory(editingCategory.id, { name: catName, description: catDesc });
@@ -121,18 +125,22 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang }) => {
       }
       setIsCategoryModalOpen(false);
       loadCategories();
-    } catch (err) {
-      alert('Lỗi khi lưu danh mục');
+    } catch (err: any) {
+      dialogService.error(err?.message || 'Lỗi khi lưu danh mục');
     }
   };
 
   const handleDeleteCategory = async (id: string) => {
-    if (!window.confirm('Bạn có chắc chắn muốn xóa danh mục này? Các sản phẩm thuộc danh mục cũng có thể bị ảnh hưởng.')) return;
+    const confirmed = await dialogService.confirm(
+      'Bạn có chắc chắn muốn xóa danh mục này? Các sản phẩm thuộc danh mục cũng có thể bị ảnh hưởng.',
+      { title: 'Xác Nhận Xóa Danh Mục', type: 'warning' }
+    );
+    if (!confirmed) return;
     try {
       await adminCatalogService.deleteCategory(id);
       loadCategories();
-    } catch (err) {
-      alert('Lỗi khi xóa danh mục');
+    } catch (err: any) {
+      dialogService.error(err?.message || 'Lỗi khi xóa danh mục');
     }
   };
 
@@ -151,7 +159,10 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang }) => {
 
   // ITEM ACTIONS
   const handleSaveItem = async () => {
-    if (!itemName.trim() || !itemCategoryId) return alert('Vui lòng nhập tên và chọn danh mục');
+    if (!itemName.trim() || !itemCategoryId) {
+      await dialogService.warning('Vui lòng nhập tên và chọn danh mục');
+      return;
+    }
     try {
       if (editingItem) {
         await adminCatalogService.updateItem(editingItem.id, { name: itemName, categoryId: itemCategoryId });
@@ -160,18 +171,22 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang }) => {
       }
       setIsItemModalOpen(false);
       loadItems();
-    } catch (err) {
-      alert('Lỗi khi lưu loại sản phẩm');
+    } catch (err: any) {
+      dialogService.error(err?.message || 'Lỗi khi lưu loại sản phẩm');
     }
   };
 
   const handleDeleteItem = async (id: string) => {
-    if (!window.confirm('Bạn có chắc chắn muốn xóa loại sản phẩm này?')) return;
+    const confirmed = await dialogService.confirm(
+      'Bạn có chắc chắn muốn xóa loại sản phẩm này?',
+      { title: 'Xác Nhận Xóa Loại Sản Phẩm', type: 'warning' }
+    );
+    if (!confirmed) return;
     try {
       await adminCatalogService.deleteItem(id);
       loadItems();
-    } catch (err) {
-      alert('Lỗi khi xóa loại sản phẩm');
+    } catch (err: any) {
+      dialogService.error(err?.message || 'Lỗi khi xóa loại sản phẩm');
     }
   };
 
@@ -190,7 +205,10 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang }) => {
 
   // TEMPLATE ACTIONS
   const handleSaveTemplate = async () => {
-    if (!templateCategoryId || !templateItemId || !templateText.trim()) return alert('Vui lòng chọn đầy đủ Danh mục, Loại sản phẩm và nhập nội dung kịch bản');
+    if (!templateCategoryId || !templateItemId || !templateText.trim()) {
+      await dialogService.warning('Vui lòng chọn đầy đủ Danh mục, Loại sản phẩm và nhập nội dung kịch bản');
+      return;
+    }
     try {
       if (editingTemplate) {
         await adminCatalogService.updateTemplate(editingTemplate.id, { 
@@ -207,18 +225,22 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang }) => {
       }
       setIsTemplateModalOpen(false);
       loadTemplates();
-    } catch (err) {
-      alert('Lỗi khi lưu kịch bản');
+    } catch (err: any) {
+      dialogService.error(err?.message || 'Lỗi khi lưu kịch bản');
     }
   };
 
   const handleDeleteTemplate = async (id: string) => {
-    if (!window.confirm('Bạn có chắc chắn muốn xóa kịch bản này?')) return;
+    const confirmed = await dialogService.confirm(
+      'Bạn có chắc chắn muốn xóa kịch bản này?',
+      { title: 'Xác Nhận Xóa Kịch Bản', type: 'warning' }
+    );
+    if (!confirmed) return;
     try {
       await adminCatalogService.deleteTemplate(id);
       loadTemplates();
-    } catch (err) {
-      alert('Lỗi khi xóa kịch bản');
+    } catch (err: any) {
+      dialogService.error(err?.message || 'Lỗi khi xóa kịch bản');
     }
   };
 

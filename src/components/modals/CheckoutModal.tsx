@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Listing, EscrowOrder, Language, UserWallet, ShippingQuoteResponseDto, ShippingLeg, InspectionCenter } from '../../types';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Listing, EscrowOrder, EscrowStatus, Language, UserWallet, ShippingQuoteResponseDto, ShippingLeg, InspectionCenter, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import { mockInspectionCenters } from '../../data/mockData';
+import { getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, safeJsonParse, getResolvedPostParcel } from '../../utils/orderUtils';
 import {
   ShieldCheck,
   Truck,
@@ -27,19 +28,236 @@ import {
   BadgeCheck,
   Check,
   Edit3,
-  ListFilter
+  ListFilter,
+  XCircle,
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  Package,
 } from 'lucide-react';
-import { orderService, walletService, shippingService, GhnLocation } from '../../services';
+import { orderService, walletService, shippingService, GhnLocation, inspectorService, InspectionQuoteResponse, InspectionTravelTierDto } from '../../services';
+import { translateApiError } from '../../services/apiClient';
+import { LalamoveAddressPicker, getCityCoordinates } from '../common/LalamoveAddressPicker';
+import { saveScopedLocalNotification } from '../../utils/notificationStorage';
+import { resolveListingCategory, resolveOrderListing } from '../../utils/catalogCache';
+import { translateSystemNotification } from '../../utils/systemNotificationTranslator';
+
+export const formatLalamoveVehicle = (serviceType?: string): { name: string; icon: string; desc: string; standard?: string } => {
+  if (!serviceType) {
+    return {
+      name: 'Phương tiện tối ưu tự chọn',
+      icon: '🚚',
+      desc: 'Hệ thống tự động chọn phương tiện có phí thấp nhất phù hợp kích thước kiện hàng',
+      standard: 'Phương tiện do Lalamove chỉ định',
+    };
+  }
+  const rawCode = serviceType.toUpperCase();
+  const code = rawCode.replace(/^LD_/, '');
+
+  if (code === 'MOTORCYCLE' || code === 'BIKE') {
+    return {
+      name: 'Xe máy',
+      icon: '🏍️',
+      desc: 'Giao nhanh hàng nhỏ gọn nội thành',
+      standard: 'Cân nặng ≤ 30kg • Kích thước ≤ 50x40x50cm',
+    };
+  }
+  if (code === 'VAN_1000' || code === 'VAN1000') {
+    return {
+      name: 'Xe Van 1 tấn',
+      icon: '🚐',
+      desc: 'Chở hàng cồng kềnh, tải trọng lớn che chắn mưa nắng',
+      standard: 'Cân nặng ≤ 1.000kg • Thùng xe Van 1 tấn',
+    };
+  }
+  if (code === 'VAN' || code === 'VAN500' || code === 'VAN_500' || code.includes('VAN')) {
+    return {
+      name: 'Xe bán tải / Van',
+      icon: '🚐',
+      desc: 'Chở hàng cồng kềnh, tải trọng lớn che chắn mưa nắng',
+      standard: 'Cân nặng ≤ 500kg • Kích thước ≤ 170x120x120cm',
+    };
+  }
+  if (code === 'PICK_UP_TRUCK' || code === 'PICKUP_TRUCK' || code.includes('PICK_UP') || code.includes('PICKUP')) {
+    return {
+      name: 'Xe bán tải (Pick-up)',
+      icon: '🛻',
+      desc: 'Chở hàng cồng kềnh, kiện hàng lớn hoặc vận chuyển đường dài',
+      standard: 'Cân nặng ≤ 500kg • Thùng 140x150x50cm',
+    };
+  }
+  if (code === 'TRUCK500' || code === 'TRUCK_500' || code === 'TRUCK_500KG') {
+    return {
+      name: 'Xe tải 500kg',
+      icon: '🚚',
+      desc: 'Chở hàng nặng, kích thước lớn an toàn',
+      standard: 'Cân nặng ≤ 500kg • Thùng 190x140x140cm',
+    };
+  }
+  if (code === 'TRUCK1000' || code === 'TRUCK_1000' || code === 'TRUCK_1000KG' || code === 'TRUCK_1T') {
+    return {
+      name: 'Xe tải 1 tấn',
+      icon: '🚛',
+      desc: 'Xe tải trọng tải lớn',
+      standard: 'Cân nặng ≤ 1.000kg • Thùng 300x160x160cm',
+    };
+  }
+  if (code === 'TRUCK1500' || code === 'TRUCK_1500' || code === 'TRUCK_1500KG') {
+    return {
+      name: 'Xe tải 1.5 tấn',
+      icon: '🚛',
+      desc: 'Xe tải trọng tải lớn',
+      standard: 'Cân nặng ≤ 1.500kg • Thùng 320x160x170cm',
+    };
+  }
+  if (code === 'TRUCK175' || code === 'TRUCK_175') {
+    return {
+      name: 'Xe tải 1.75 tấn',
+      icon: '🚛',
+      desc: 'Xe tải thùng rộng đường dài',
+      standard: 'Cân nặng ≤ 1.750kg • Thùng 190x140x140cm',
+    };
+  }
+  if (code === 'TRUCK2000' || code === 'TRUCK_2000' || code === 'TRUCK_2000KG' || code === 'TRUCK_2T') {
+    return {
+      name: 'Xe tải 2 tấn',
+      icon: '🚛',
+      desc: 'Xe tải hạng nặng',
+      standard: 'Cân nặng ≤ 2.000kg • Thùng 400x170x170cm',
+    };
+  }
+  if (code === 'TRUCK2500' || code === 'TRUCK_2500' || code === 'TRUCK_2500KG') {
+    return {
+      name: 'Xe tải 2.5 tấn',
+      icon: '🚛',
+      desc: 'Xe tải hạng nặng',
+      standard: 'Cân nặng ≤ 2.500kg • Thùng 420x170x180cm',
+    };
+  }
+  if (code === 'TRUCK330' || code === 'TRUCK_330') {
+    return {
+      name: 'Xe tải 3.3 tấn',
+      icon: '🚛',
+      desc: 'Xe tải siêu trường siêu trọng',
+      standard: 'Cân nặng ≤ 3.300kg • Thùng 300x160x160cm',
+    };
+  }
+  if (code === 'TRUCK550' || code === 'TRUCK_550') {
+    return {
+      name: 'Xe tải 5.5 tấn',
+      icon: '🚛',
+      desc: 'Xe tải siêu trường siêu trọng',
+      standard: 'Cân nặng ≤ 5.500kg • Thùng 400x170x170cm',
+    };
+  }
+  return {
+    name: serviceType,
+    icon: '🚚',
+    desc: 'Phương tiện Lalamove do hệ thống tự động báo giá',
+    standard: 'Tiêu chuẩn phương tiện Lalamove',
+  };
+};
+
+export const parseLalamoveVehicleLimits = (text: string) => {
+  if (!text) return [];
+  const marker = 'Giới hạn từng loại xe tại điểm lấy hàng (dài x rộng x cao):';
+  const idx = text.indexOf(marker);
+  const rawLimits = idx !== -1 ? text.slice(idx + marker.length).trim() : text;
+  const items = rawLimits.split(';').map(s => s.trim()).filter(Boolean);
+
+  return items.map(item => {
+    const colonIdx = item.indexOf(':');
+    const rawCode = colonIdx !== -1 ? item.slice(0, colonIdx).trim() : item;
+    const limitText = colonIdx !== -1 ? item.slice(colonIdx + 1).trim() : '';
+    const formatted = formatLalamoveVehicle(rawCode);
+    return {
+      rawCode,
+      name: formatted.name && formatted.name !== rawCode ? formatted.name : rawCode,
+      icon: formatted.icon || '🚚',
+      limitText: limitText || formatted.standard || '',
+    };
+  });
+};
+
+export interface VehicleClassification {
+  type: 'MOTORCYCLE' | 'VAN' | 'PICK_UP_TRUCK' | 'TRUCK';
+  name: string;
+  icon: string;
+  standard: string;
+  desc: string;
+  isMotorcycleEligible: boolean;
+}
+
+/**
+ * Phân loại phương tiện giao hàng theo kích thước và khối lượng của kiện hàng sản phẩm
+ */
+export const classifyVehicleByProduct = (
+  weightG?: number,
+  lengthCm?: number,
+  widthCm?: number,
+  heightCm?: number
+): VehicleClassification => {
+  const w = Number(weightG || 0);
+  const l = Number(lengthCm || 0);
+  const wi = Number(widthCm || 0);
+  const h = Number(heightCm || 0);
+
+  // 1. Xe máy (MOTORCYCLE):
+  // Trọng lượng <= 30kg (30.000g), kích thước 3 chiều <= 50cm, 40cm, 50cm
+  const fitsMotorcycleDimensions =
+    ((l <= 50 && wi <= 40) || (l <= 40 && wi <= 50)) && h <= 50;
+  const fitsMotorcycleWeight = w > 0 ? w <= 30000 : true;
+
+  if (fitsMotorcycleWeight && (l === 0 || fitsMotorcycleDimensions)) {
+    return {
+      type: 'MOTORCYCLE',
+      name: 'Xe máy',
+      icon: '🏍️',
+      standard: 'Cân nặng ≤ 30kg • Kích thước ≤ 50x40x50cm',
+      desc: 'Phù hợp kiện hàng nhỏ gọn, giao nhanh nội thành tiết kiệm chi phí',
+      isMotorcycleEligible: true,
+    };
+  }
+
+  // 2. Xe bán tải / Van 500kg (VAN / PICK_UP_TRUCK):
+  // Trọng lượng <= 500kg (500.000g), kích thước <= 160cm x 110cm x 110cm
+  const fitsVanDimensions =
+    ((l <= 160 && wi <= 110) || (l <= 110 && wi <= 160)) && h <= 110;
+  const fitsVanWeight = w <= 500000;
+
+  if (fitsVanWeight && fitsVanDimensions) {
+    return {
+      type: 'PICK_UP_TRUCK',
+      name: 'Xe bán tải / Van 500kg',
+      icon: '🛻',
+      standard: 'Cân nặng ≤ 500kg • Kích thước ≤ 160x110x110cm',
+      desc: 'Phù hợp kiện hàng cồng kềnh, tải trọng trung bình che chắn an toàn',
+      isMotorcycleEligible: false,
+    };
+  }
+
+  // 3. Xe tải 1 - 2 tấn (TRUCK):
+  return {
+    type: 'TRUCK',
+    name: 'Xe tải 1 - 2 tấn',
+    icon: '🚚',
+    standard: 'Cân nặng > 500kg hoặc kiện hàng kích thước lớn',
+    desc: 'Phù hợp hàng nặng, kích thước lớn cần xe tải chuyên dụng',
+    isMotorcycleEligible: false,
+  };
+};
 
 interface CheckoutModalProps {
   listing: Listing;
   onClose: () => void;
   onOrderPlaced: (order: EscrowOrder) => void;
   lang: Language;
-  currentUser?: { id: string; name: string; email?: string; phone?: string; address?: string } | null;
+  currentUser?: UserProfile | null;
   agreedPrice?: number;
   negotiationId?: string;
   onOpenDeposit?: () => void;
+  onCancelUnpaid?: (msg?: string) => void;
+  showToast?: (msg: string) => void;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
@@ -51,6 +269,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   agreedPrice,
   negotiationId,
   onOpenDeposit,
+  onCancelUnpaid,
+  showToast,
 }) => {
   const t = translations[lang];
 
@@ -66,8 +286,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [walletLoading, setWalletLoading] = useState(false);
   const [submittingOrder, setSubmittingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'WALLET' | 'BANK_TRANSFER'>('WALLET');
+  const [currentRequestId, setCurrentRequestId] = useState<string>(() => crypto.randomUUID());
+  const [bankPaymentInfo, setBankPaymentInfo] = useState<any | null>(null);
+  const [createdOrder, setCreatedOrder] = useState<EscrowOrder | null>(null);
+  const [checkingBankPayment, setCheckingBankPayment] = useState<boolean>(false);
+  const [copiedBankField, setCopiedBankField] = useState<string | null>(null);
+  const [paymentSecondsLeft, setPaymentSecondsLeft] = useState<number | null>(null);
+  const [isPaymentExpired, setIsPaymentExpired] = useState<boolean>(false);
+  const [isPaymentSuccess, setIsPaymentSuccess] = useState<boolean>(false);
+  const [bankCheckMessage, setBankCheckMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
-  // GHN Address & Catalogue States
+  // Shipping Address & Catalogue States
   const [provinces, setProvinces] = useState<GhnLocation[]>([]);
   const [loadingProvinces, setLoadingProvinces] = useState(false);
   const [selectedProvinceId, setSelectedProvinceId] = useState<number | ''>('');
@@ -80,31 +310,75 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [wardMode, setWardMode] = useState<'select' | 'manual'>('select');
 
   // Buyer Form Information
+  const sellerCityInfo = getCityCoordinates(listing.sellerAddress || listing.location);
+  const hasProfileAddress = Boolean(currentUser?.address?.trim() || currentUser?.streetAddress?.trim());
+  const initialDeliveryLat = (hasProfileAddress && typeof currentUser?.latitude === 'number')
+    ? currentUser.latitude
+    : sellerCityInfo.lat;
+  const initialDeliveryLng = (hasProfileAddress && typeof currentUser?.longitude === 'number')
+    ? currentUser.longitude
+    : sellerCityInfo.lng;
+
   const [buyerName, setBuyerName] = useState(currentUser?.name || '');
   const [buyerPhone, setBuyerPhone] = useState(currentUser?.phone || '');
   const [buyerEmail, setBuyerEmail] = useState(currentUser?.email || '');
-  const [streetAddress, setStreetAddress] = useState(currentUser?.address || '');
+  const [streetAddress, setStreetAddress] = useState(currentUser?.address || currentUser?.streetAddress || '');
+  const [deliveryLatitude, setDeliveryLatitude] = useState<number>(initialDeliveryLat);
+  const [deliveryLongitude, setDeliveryLongitude] = useState<number>(initialDeliveryLng);
   const [addressType, setAddressType] = useState<'home' | 'office'>('home');
   const [deliveryNote, setDeliveryNote] = useState('');
+  const [isLocationConfirmed, setIsLocationConfirmed] = useState(false);
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
+  const quoteDebounceTimerRef = useRef<any>(null);
 
   // Delivery & Protection Option: 'INSPECTION' (Verify Then Ship) or 'DIRECT' (Direct Door-to-Door)
-  const [deliveryOption, setDeliveryOption] = useState<'INSPECTION' | 'DIRECT'>('INSPECTION');
+  const [deliveryOption, setDeliveryOption] = useState<'INSPECTION' | 'DIRECT'>(
+    listing.priceVnd > 5000000 || listing.requiresInspection ? 'INSPECTION' : 'DIRECT'
+  );
 
   // Confirmation of disassembly and voiding of original "zin" condition
   const [agreedZinLoss, setAgreedZinLoss] = useState(false);
 
   // Inspection Center, Method & Fee Splitting States
+  const [inspectionCenters, setInspectionCenters] = useState<InspectionCenter[]>(mockInspectionCenters);
+  const [loadingCenters, setLoadingCenters] = useState<boolean>(false);
   const [selectedCenterId, setSelectedCenterId] = useState<string>(mockInspectionCenters[0]?.id || 'center-hcm-01');
   const [inspectionMethod, setInspectionMethod] = useState<'AT_CENTER' | 'AT_HOME'>('AT_CENTER');
   const [feeSplit, setFeeSplit] = useState<'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100'>('BUYER_100');
 
+  // Load Inspection Centers / Hubs from API
+  useEffect(() => {
+    let isMounted = true;
+    const fetchCenters = async () => {
+      try {
+        setLoadingCenters(true);
+        const hubs = await inspectorService.getInspectionCenters();
+        if (isMounted && hubs && hubs.length > 0) {
+          setInspectionCenters(hubs);
+          // If current selectedCenterId is not in new list, pick the first one
+          setSelectedCenterId((prev) => {
+            if (hubs.some((h) => h.id === prev)) return prev;
+            return hubs[0].id;
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to load inspection centers:', err);
+      } finally {
+        if (isMounted) setLoadingCenters(false);
+      }
+    };
+    fetchCenters();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Auto suggest/select inspection center based on buyer province
   useEffect(() => {
-    if (!selectedProvinceName) return;
+    if (!selectedProvinceName || inspectionCenters.length === 0) return;
     const provLower = selectedProvinceName.toLowerCase();
     if (provLower.includes('hà nội') || provLower.includes('ha noi')) {
-      const hn = mockInspectionCenters.find((c) => c.id.includes('hn'));
+      const hn = inspectionCenters.find((c) => c.id.includes('hn') || c.city.toLowerCase().includes('hà nội'));
       if (hn) setSelectedCenterId(hn.id);
     } else if (
       provLower.includes('đà nẵng') ||
@@ -112,7 +386,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       provLower.includes('huế') ||
       provLower.includes('quảng')
     ) {
-      const dn = mockInspectionCenters.find((c) => c.id.includes('dn'));
+      const dn = inspectionCenters.find((c) => c.id.includes('dn') || c.city.toLowerCase().includes('đà nẵng'));
       if (dn) setSelectedCenterId(dn.id);
     } else if (
       provLower.includes('hồ chí minh') ||
@@ -121,15 +395,21 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       provLower.includes('bình dương') ||
       provLower.includes('đồng nai')
     ) {
-      const hcm = mockInspectionCenters.find((c) => c.id.includes('hcm'));
+      const hcm = inspectionCenters.find((c) => c.id.includes('hcm') || c.city.toLowerCase().includes('hồ chí minh'));
       if (hcm) setSelectedCenterId(hcm.id);
     }
-  }, [selectedProvinceName]);
+  }, [selectedProvinceName, inspectionCenters]);
 
-  // GHN Quote State
+  // Lalamove Shipping Quote State
   const [ghnQuote, setGhnQuote] = useState<ShippingQuoteResponseDto | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [showVehicleLimits, setShowVehicleLimits] = useState(false);
+
+  // Live Inspection Quote State (POST /api/v1/inspection/quote)
+  const [inspectionQuote, setInspectionQuote] = useState<InspectionQuoteResponse | null>(null);
+  const [loadingInspectionQuote, setLoadingInspectionQuote] = useState(false);
+  const [showTierBreakdown, setShowTierBreakdown] = useState(false);
 
   // Load wallet on mount
   useEffect(() => {
@@ -149,7 +429,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     return () => { isMounted = false; };
   }, []);
 
-  // Load GHN Provinces on mount
+  // Load Shipping Provinces on mount
   useEffect(() => {
     let isMounted = true;
     const loadProvinces = async () => {
@@ -160,7 +440,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           setProvinces(provs);
         }
       } catch (err) {
-        console.warn('Error loading GHN provinces:', err);
+        console.warn('Error loading shipping provinces:', err);
       } finally {
         if (isMounted) setLoadingProvinces(false);
       }
@@ -203,7 +483,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
-  // Load GHN Wards when selectedProvinceId changes
+  // Load Wards when selectedProvinceId changes
   useEffect(() => {
     if (!selectedProvinceId) {
       setWards([]);
@@ -221,7 +501,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           setWards(w);
         }
       } catch (err) {
-        console.warn('Error loading GHN wards:', err);
+        console.warn('Error loading shipping wards:', err);
       } finally {
         if (isMounted) setLoadingWards(false);
       }
@@ -230,24 +510,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     return () => { isMounted = false; };
   }, [selectedProvinceId]);
 
-  // Request GHN Shipping Quote
-  const calculateGhnQuote = useCallback(async (
-    pName?: string,
-    wName?: string,
+  // Request Lalamove Shipping Quote via BE POST /api/v1/shipping/quotes
+  const calculateLalamoveQuote = useCallback(async (
+    lat?: number,
+    lng?: number,
     addr?: string,
     name?: string,
     phone?: string
   ) => {
-    const province = (pName || selectedProvinceName || '').trim();
-    const ward = (wName || selectedWardName || '').trim();
-    if (!province || !ward) {
+    const currentLat = lat ?? deliveryLatitude;
+    const currentLng = lng ?? deliveryLongitude;
+    if (!currentLat || !currentLng) {
       return;
     }
 
     const rawPhone = (phone || buyerPhone || currentUser?.phone || '').replace(/\D/g, '');
     const validPhone = rawPhone.length >= 9 && rawPhone.length <= 15 ? rawPhone : '0912345678';
     const validName = (name || buyerName || currentUser?.name || 'Khách Hàng').trim() || 'Khách Hàng';
-    const validAddress = (addr || streetAddress || 'Địa chỉ nhận hàng').trim() || 'Địa chỉ nhận hàng';
 
     setQuoteLoading(true);
     setQuoteError(null);
@@ -258,48 +537,90 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         deliveryAddress: {
           name: validName,
           phone: validPhone,
-          address: validAddress,
-          provinceName: province,
-          wardName: ward,
-          newAddress: true,
+          latitude: currentLat,
+          longitude: currentLng,
         },
       });
       setGhnQuote(quote);
       setQuoteError(null);
     } catch (err: any) {
-      console.warn('Failed to calculate GHN quote:', err);
-      let errMsg = err?.response?.data?.message || err?.message || 'Không thể tính phí vận chuyển GHN.';
+      console.warn('Failed to calculate Lalamove quote:', err);
+      setGhnQuote(null);
+      let errMsg = err?.response?.data?.message || err?.message || 'Không thể tính phí vận chuyển Lalamove.';
       if (typeof errMsg === 'string') {
-        if (errMsg.includes('Seller pickup address is not configured')) {
-          errMsg = 'Người bán chưa cấu hình địa chỉ kho lấy hàng GHN. Không thể tạo đơn hàng.';
-        } else if (errMsg.includes('Seller must save the packed weight and dimensions')) {
-          errMsg = 'Người bán chưa cấu hình kích thước và trọng lượng kiện hàng. Không thể tính phí vận chuyển GHN. Vui lòng liên hệ người bán cập nhật bài đăng.';
+        if (errMsg.includes('ERR_RATE_LIMIT_EXCEEDED') || errMsg.includes('429')) {
+          errMsg = 'Hệ thống Lalamove đang bận xử lý nhiều báo giá. Vui lòng chờ 2-3 giây rồi thử lại.';
+        } else if (errMsg.includes('Seller pickup address is not configured')) {
+          errMsg = 'Người bán chưa cấu hình địa chỉ kho lấy hàng Lalamove. Không thể tạo đơn hàng.';
+        } else if (errMsg.includes('Seller must save the packed weight and dimensions') || errMsg.includes('Shipping weight is required')) {
+          errMsg = 'Người bán chưa cấu hình kích thước và trọng lượng kiện hàng. Không thể tính phí vận chuyển Lalamove. Vui lòng liên hệ người bán cập nhật bài đăng.';
+        } else if (
+          errMsg.includes('Shipping supports packages up to 50 kg and 200 cm') ||
+          errMsg.toLowerCase().includes('up to 50 kg and 200 cm')
+        ) {
+          errMsg = 'Dịch vụ vận chuyển chỉ hỗ trợ kiện hàng tối đa 50 kg và kích thước mỗi chiều không quá 200 cm (2 mét).';
         } else if (errMsg.includes('You cannot buy your own post')) {
           errMsg = 'Bạn đang đăng nhập bằng tài khoản người bán. Không thể tạo báo giá mua bài đăng của chính mình.';
         } else if (errMsg.includes('Post is not available')) {
           errMsg = 'Bài đăng hiện không ở trạng thái sẵn sàng để giao dịch.';
+        } else if (
+          errMsg.includes('ERR_OUT_OF_SERVICE_AREA') ||
+          errMsg.includes('OUT_OF_SERVICE_AREA') ||
+          errMsg.includes('ngoài khu vực phục vụ')
+        ) {
+          errMsg = `Vị trí giao hàng nằm ngoài phạm vi phục vụ Lalamove so với kho người bán (${sellerCityInfo.name}). Do Lalamove là dịch vụ giao hàng nhanh nội thành, vui lòng chọn địa chỉ nhận hàng tại cùng khu vực ${sellerCityInfo.name}.`;
+        } else if (errMsg.includes('Chưa cấu hình Geoapify') || errMsg.includes('Geoapify')) {
+          errMsg = 'Dịch vụ bản đồ Backend chưa bật Geoapify key. Đã chuyển sang chế độ định vị dự phòng OpenStreetMap.';
+        } else if (errMsg.includes('Không có loại xe Lalamove đủ tải trọng') || errMsg.includes('Giới hạn từng loại xe')) {
+          // Giữ nguyên raw string để parse danh sách chi tiết các loại xe cho giao diện accordion
+        } else {
+          errMsg = translateApiError(errMsg);
         }
       }
       setQuoteError(errMsg);
     } finally {
       setQuoteLoading(false);
     }
-  }, [selectedProvinceName, selectedWardName, streetAddress, buyerName, buyerPhone, currentUser, listing.id, negotiationId]);
+  }, [deliveryLatitude, deliveryLongitude, buyerPhone, buyerName, streetAddress, currentUser, listing.id, negotiationId]);
 
-  // Debounced auto-quote calculation when address fields change
-  useEffect(() => {
-    if (selectedProvinceName && selectedWardName) {
-      const timer = setTimeout(() => {
-        calculateGhnQuote(selectedProvinceName, selectedWardName, streetAddress, buyerName, buyerPhone);
-      }, 300);
-      return () => clearTimeout(timer);
+  const calculateGhnQuote = calculateLalamoveQuote;
+
+  // Fetch Live Inspection Quote from Backend API
+  const fetchInspectionQuote = useCallback(async (lat?: number, lng?: number) => {
+    if (!listing.id) return;
+    setLoadingInspectionQuote(true);
+    try {
+      const q = await inspectorService.getQuote({
+        postId: listing.id,
+        buyerLatitude: lat || deliveryLatitude,
+        buyerLongitude: lng || deliveryLongitude,
+      });
+      if (q) setInspectionQuote(q);
+    } catch (err) {
+      console.warn('Could not fetch inspection quote:', err);
+    } finally {
+      setLoadingInspectionQuote(false);
     }
-  }, [selectedProvinceName, selectedWardName, streetAddress, calculateGhnQuote]);
+  }, [listing.id, deliveryLatitude, deliveryLongitude]);
+
+  useEffect(() => {
+    if (deliveryOption === 'INSPECTION') {
+      fetchInspectionQuote(deliveryLatitude, deliveryLongitude);
+    }
+  }, [deliveryOption, deliveryLatitude, deliveryLongitude, fetchInspectionQuote]);
 
   // Inspection fee & split calculations
   const isInspected = deliveryOption === 'INSPECTION';
-  const selectedCenter = mockInspectionCenters.find((c) => c.id === selectedCenterId) || mockInspectionCenters[0];
-  const baseInspectionFee = isInspected ? (inspectionMethod === 'AT_HOME' ? 200000 : 120000) : 0;
+  const selectedCenter = inspectionCenters.find((c) => c.id === selectedCenterId) || inspectionCenters[0] || mockInspectionCenters[0];
+
+  const atHomeFee = inspectionQuote?.atHomePackage?.totalFee 
+    ?? inspectionQuote?.atHomeTotalFee 
+    ?? 175000;
+  const atCenterFee = inspectionQuote?.atCenterPackage?.totalFee 
+    ?? inspectionQuote?.atCenterTotalFee 
+    ?? 200000;
+
+  const baseInspectionFee = isInspected ? (inspectionMethod === 'AT_HOME' ? atHomeFee : atCenterFee) : 0;
   const buyerInspectionFee = isInspected
     ? feeSplit === 'BUYER_100'
       ? baseInspectionFee
@@ -310,28 +631,55 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const sellerInspectionFee = isInspected ? baseInspectionFee - buyerInspectionFee : 0;
 
   // Financial values
-  const shippingFee = ghnQuote ? Number(ghnQuote.shippingFee) : 30000;
+  const shippingFee = (isLocationConfirmed && ghnQuote && !quoteError) ? Number(ghnQuote.shippingFee) : 0;
   const productPrice = ghnQuote ? Number(ghnQuote.productPrice) : itemPrice;
   const totalAmount = productPrice + shippingFee + buyerInspectionFee;
+  // Khi mua có kiểm định: CHỈ trả trước phí kiểm định và tiền ship; Tiền sản phẩm trả ở Giai đoạn 2 sau khi kiểm định ĐẠT
+  const upfrontAmount = isInspected ? (shippingFee + buyerInspectionFee) : totalAmount;
+  const stage2ProductAmount = isInspected ? productPrice : 0;
 
-  const fullAddress = `${streetAddress}, ${selectedWardName}, ${selectedProvinceName}`;
+  const fullAddress = [streetAddress, selectedWardName, selectedProvinceName].filter(Boolean).join(', ') || streetAddress;
+
+  const validatePhoneNumber = (phone: string, currentLang: Language = 'vi'): string => {
+    const trimmed = (phone || '').trim();
+    if (!trimmed) {
+      return currentLang === 'vi' ? 'Vui lòng nhập số điện thoại nhận hàng' : 'Phone number is required';
+    }
+    const cleanPhone = trimmed.replace(/\D/g, '');
+    if (/[^\d\s.-]/.test(trimmed)) {
+      return currentLang === 'vi'
+        ? 'Số điện thoại chỉ được chứa các chữ số'
+        : 'Phone number can only contain digits';
+    }
+    if (!cleanPhone.startsWith('0')) {
+      return currentLang === 'vi'
+        ? 'Số điện thoại phải bắt đầu bằng số 0 (ví dụ: 0987...)'
+        : 'Phone number must start with 0';
+    }
+    if (cleanPhone.length < 10) {
+      return currentLang === 'vi'
+        ? `Số điện thoại phải có đúng 10 chữ số (bạn đang nhập thiếu: ${cleanPhone.length}/10 số)`
+        : `Phone number must be exactly 10 digits (currently ${cleanPhone.length}/10)`;
+    }
+    if (cleanPhone.length > 10) {
+      return currentLang === 'vi'
+        ? `Số điện thoại chỉ được đúng 10 chữ số (bạn đang nhập dư: ${cleanPhone.length}/10 số)`
+        : `Phone number must be exactly 10 digits (exceeded: ${cleanPhone.length}/10)`;
+    }
+    return '';
+  };
 
   const validateForm = () => {
     const errors: { [key: string]: string } = {};
     if (!buyerName.trim()) {
       errors.buyerName = lang === 'vi' ? 'Vui lòng nhập họ tên người nhận' : 'Name is required';
     }
-    if (!buyerPhone.trim() || buyerPhone.replace(/\D/g, '').length < 9) {
-      errors.buyerPhone = lang === 'vi' ? 'Số điện thoại không hợp lệ (tối thiểu 9 số)' : 'Valid phone required';
+    const phoneErr = validatePhoneNumber(buyerPhone, lang);
+    if (phoneErr) {
+      errors.buyerPhone = phoneErr;
     }
-    if (!selectedProvinceName.trim()) {
-      errors.city = lang === 'vi' ? 'Vui lòng chọn hoặc tự ghi Tỉnh / Thành phố' : 'Province/City is required';
-    }
-    if (!selectedWardName.trim()) {
-      errors.ward = lang === 'vi' ? 'Vui lòng chọn hoặc tự ghi Phường / Xã' : 'Ward is required';
-    }
-    if (!streetAddress.trim()) {
-      errors.streetAddress = lang === 'vi' ? 'Vui lòng nhập số nhà, tên đường' : 'Street address is required';
+    if (!streetAddress.trim() || !deliveryLatitude || !deliveryLongitude || !isLocationConfirmed || !ghnQuote) {
+      errors.streetAddress = lang === 'vi' ? 'Vui lòng bấm nút "Xác Nhận Vị Trí Này" trên bản đồ để tính phí vận chuyển Lalamove' : 'Please click "Confirm Location" on the map to calculate Lalamove shipping fee';
     }
     if (deliveryOption === 'INSPECTION' && !agreedZinLoss) {
       errors.agreedZinLoss = lang === 'vi'
@@ -339,15 +687,46 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         : 'Please confirm agreement that disassembly inspection will void the product original "zin" status.';
     }
     setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    const firstErr = Object.values(errors)[0];
+    if (firstErr) {
+      setOrderError(firstErr);
+      return false;
+    }
+    setOrderError(null);
+    return true;
   };
 
+  // Automatically clear general order error banner as soon as user types or fixes any field
+  useEffect(() => {
+    if (orderError) {
+      setOrderError(null);
+    }
+  }, [buyerPhone, buyerName, buyerEmail, streetAddress, deliveryLatitude, deliveryLongitude, agreedZinLoss, deliveryOption]);
+
   const handleFillFromProfile = () => {
+    setOrderError(null);
     if (currentUser) {
       if (currentUser.name) setBuyerName(currentUser.name);
-      if (currentUser.phone) setBuyerPhone(currentUser.phone);
+      if (currentUser.phone) {
+        setBuyerPhone(currentUser.phone);
+        const err = validatePhoneNumber(currentUser.phone, lang);
+        if (err) {
+          setFormErrors(prev => ({ ...prev, buyerPhone: err }));
+        } else {
+          setFormErrors(prev => {
+            const updated = { ...prev };
+            delete updated.buyerPhone;
+            return updated;
+          });
+        }
+      }
       if (currentUser.email) setBuyerEmail(currentUser.email);
-      if (currentUser.address) setStreetAddress(currentUser.address);
+      const profileAddr = currentUser.address || currentUser.streetAddress || '';
+      if (profileAddr) setStreetAddress(profileAddr);
+      if (typeof currentUser.latitude === 'number' && typeof currentUser.longitude === 'number') {
+        setDeliveryLatitude(currentUser.latitude);
+        setDeliveryLongitude(currentUser.longitude);
+      }
       const userProv = (currentUser as any).provinceName || (currentUser as any).province || '';
       const userWard = (currentUser as any).wardName || (currentUser as any).ward || '';
       if (userProv) {
@@ -362,19 +741,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const handleConfirmOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) {
-      if (deliveryOption === 'INSPECTION' && !agreedZinLoss) {
-        setOrderError(
-          lang === 'vi'
-            ? 'Vui lòng xác nhận bạn đã hiểu việc tháo máy kiểm định sẽ làm mất trạng thái zin của sản phẩm.'
-            : 'Please confirm agreement that inspection disassembly voids original "zin" status.'
-        );
-      }
       return;
     }
 
     let activeQuote = ghnQuote;
     if (!activeQuote || !activeQuote.quoteId) {
-      if (selectedProvinceName && selectedWardName) {
+      if (deliveryLatitude && deliveryLongitude) {
         setSubmittingOrder(true);
         try {
           const rawPhone = (buyerPhone || currentUser?.phone || '').replace(/\D/g, '');
@@ -385,34 +757,53 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             deliveryAddress: {
               name: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
               phone: validPhone,
-              address: (streetAddress || 'Địa chỉ nhận hàng').trim(),
-              provinceName: selectedProvinceName.trim(),
-              wardName: selectedWardName.trim(),
-              newAddress: true,
+              latitude: deliveryLatitude,
+              longitude: deliveryLongitude,
             },
           });
           setGhnQuote(activeQuote);
         } catch (err: any) {
-          setOrderError(err?.message || 'Không thể lấy báo giá GHN. Vui lòng kiểm tra lại địa chỉ hoặc thử lại.');
+          setOrderError(translateApiError(err?.message) || 'Không thể lấy báo giá Lalamove. Vui lòng kiểm tra lại địa chỉ hoặc thử lại.');
           setSubmittingOrder(false);
           return;
         }
       } else {
         setOrderError(
           lang === 'vi'
-            ? 'Đang chờ báo giá vận chuyển từ GHN. Vui lòng kiểm tra lại địa chỉ hoặc bấm thử lại.'
-            : 'Awaiting GHN shipping quote. Please check your address or retry.'
+            ? 'Đang chờ báo giá vận chuyển từ Lalamove. Vui lòng kiểm tra lại địa chỉ hoặc bấm thử lại.'
+            : 'Awaiting Lalamove shipping quote. Please check your address or retry.'
         );
         return;
       }
     }
 
-    const currentBal = wallet?.balance ?? 0;
-    if (currentBal < totalAmount) {
+    // Kiểm tra số dư ví nếu thanh toán bằng WALLET
+    if (paymentMethod === 'WALLET') {
+      let currentBal = wallet?.balance ?? 0;
+      try {
+        const freshW = await walletService.getMyWallet();
+        if (freshW && typeof freshW.balance === 'number') {
+          setWallet(freshW);
+          currentBal = freshW.balance;
+        }
+      } catch {}
+
+      if (currentBal < upfrontAmount) {
+        setOrderError(
+          lang === 'vi'
+            ? `Số dư ví của bạn (${formatVND(currentBal)}) không đủ để thanh toán ${isInspected ? 'tiền cọc kiểm định & tiền ship' : 'đơn hàng'} (${formatVND(upfrontAmount)}). Vui lòng nạp thêm tiền vào ví hoặc chọn hình thức 'Chuyển Khoản Trực Tiếp'.`
+            : `Your wallet balance (${formatVND(currentBal)}) is insufficient for ${isInspected ? 'inspection deposit & shipping' : 'order checkout'} (${formatVND(upfrontAmount)}). Please top up or choose Direct Bank Transfer.`
+        );
+        return;
+      }
+    }
+
+    const alreadyBoughtIds = getBoughtListingIds();
+    if (alreadyBoughtIds.has(String(listing.id))) {
       setOrderError(
         lang === 'vi'
-          ? `Số dư ví của bạn (${formatVND(currentBal)}) không đủ để thanh toán đơn hàng (${formatVND(totalAmount)}). Vui lòng nạp thêm tiền vào ví để hoàn tất đặt hàng.`
-          : `Your wallet balance (${formatVND(currentBal)}) is insufficient for order checkout (${formatVND(totalAmount)}). Please deposit funds to continue.`
+          ? 'Sản phẩm này đã được người khác đặt mua rồi! Vui lòng không đặt mua trùng lặp.'
+          : 'This listing has already been purchased. Please choose another item.'
       );
       return;
     }
@@ -421,103 +812,229 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setSubmittingOrder(true);
 
     try {
-      // Step 7: Call Backend API: POST /api/v1/orders
-      const requestId = crypto.randomUUID();
-      const backendOrder = await orderService.createOrder({
-        postId: listing.id,
-        shippingQuoteId: ghnQuote.quoteId,
-        requestId,
-        ...(negotiationId ? {
-          negotiationId,
-          agreedPrice: productPrice,
-        } : {}),
-      });
+      let orderId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `f81d4fae-7dec-11d0-a765-${Math.floor(100000000000 + Math.random() * 900000000000)}`;
+      let finalChargedPrice = productPrice;
+      let finalShippingFee = shippingFee;
+      let finalTotalPaid = upfrontAmount;
 
-      const orderId = backendOrder?.id || `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`;
-      const finalChargedPrice = backendOrder?.finalPrice || productPrice;
-      const finalShippingFee = backendOrder?.shippingFee || shippingFee;
-      const finalTotalPaid = backendOrder?.totalPaid ? Number(backendOrder.totalPaid) + (isInspected ? buyerInspectionFee : 0) : totalAmount;
+      if (isInspected) {
+        // Gửi yêu cầu mua có kiểm định tới Backend qua POST /api/v1/inspection/requests
+        const feePayerCode = feeSplit === 'BUYER_100' ? 'BUYER_PAYS' : feeSplit === 'SELLER_100' ? 'SELLER_PAYS' : 'SPLIT_50_50';
+        let validPhone = (buyerPhone || currentUser?.phone || '').replace(/\D/g, '');
+        if (!validPhone.startsWith('0') && !validPhone.startsWith('84')) validPhone = '0' + validPhone;
+        if (validPhone.length < 10 || validPhone.length > 11) validPhone = '0912345678';
+        const buyerLat = Number(deliveryLatitude) || 10.762622;
+        const buyerLng = Number(deliveryLongitude) || 106.660172;
+
+        const hubNote = selectedCenter ? `[Trung tâm tiếp nhận: ${selectedCenter.name} - ${selectedCenter.city}]` : '';
+        const fullNote = [deliveryNote, hubNote].filter(Boolean).join(' | ');
+
+        try {
+          const beInspectionOrder = await inspectorService.createRequest({
+            postId: listing.id,
+            orderType: inspectionMethod,
+            feePayer: feePayerCode,
+            buyerConsentZinLoss: true,
+            buyerLatitude: buyerLat,
+            buyerLongitude: buyerLng,
+            buyerDeliveryAddress: {
+              name: (buyerName || currentUser?.name || 'Khách Hàng').trim().slice(0, 100),
+              phone: validPhone,
+              latitude: buyerLat,
+              longitude: buyerLng,
+            },
+            note: fullNote || undefined,
+          });
+          if (beInspectionOrder?.id) {
+            orderId = String(beInspectionOrder.id);
+          }
+        } catch (inspErr: any) {
+          console.warn('Backend inspection request issue, using client order id:', inspErr);
+          const errMsg = (inspErr?.message || '').toLowerCase();
+          if (errMsg.includes('chính mình') || errMsg.includes('own post')) {
+            setOrderError(lang === 'vi' ? 'Bạn đang đăng nhập bằng tài khoản người bán của bài đăng này. Không thể tự mua hàng của chính mình.' : 'You cannot buy your own post.');
+            setSubmittingOrder(false);
+            return;
+          }
+          if (errMsg.includes('đang diễn ra') || errMsg.includes('active inspection')) {
+            setOrderError(lang === 'vi' ? 'Bài đăng đã có đơn kiểm định khác đang diễn ra. Vui lòng chờ kết quả kiểm định.' : 'Another inspection order is already in progress.');
+            setSubmittingOrder(false);
+            return;
+          }
+        }
+      } else {
+        // Gọi Backend Order trực tiếp qua POST /api/v1/orders
+        const quoteIdToUse = activeQuote?.quoteId || ghnQuote?.quoteId;
+        if (!quoteIdToUse) {
+          throw new Error(lang === 'vi' ? 'Không tìm thấy mã báo giá vận chuyển hợp lệ. Vui lòng thử lại.' : 'Shipping quote ID is missing.');
+        }
+        const backendOrder = await orderService.createOrder({
+          postId: listing.id,
+          shippingQuoteId: quoteIdToUse,
+          requestId: currentRequestId,
+          paymentMethod,
+          ...(negotiationId ? { negotiationId } : {}),
+        });
+        if (backendOrder?.id) orderId = backendOrder.id;
+        finalChargedPrice = backendOrder?.finalPrice || productPrice;
+        finalShippingFee = backendOrder?.shippingFee || shippingFee;
+        finalTotalPaid = backendOrder?.totalPaid ? Number(backendOrder.totalPaid) : totalAmount;
+      }
 
       const shippingLegsData: ShippingLeg[] = isInspected
-        ? [
-            {
-              id: 'LEG-1',
-              legType: 'SELLER_TO_CENTER',
-              carrier: inspectionMethod === 'AT_HOME' ? 'SecondLife On-site Team' : 'GHN Express',
-              trackingNumber: `GHN-HUB-${orderId.slice(0, 8).toUpperCase()}`,
-              status: 'PICKED_UP',
-              origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
-              destination: inspectionMethod === 'AT_HOME'
-                ? `Kiểm định tại nhà người bán (Kỹ sư ${selectedCenter?.name})`
-                : (selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab'),
-              estimatedDelivery: '1-2 ngày',
-              timeline: [
+        ? (inspectionMethod === 'AT_HOME'
+            ? [
                 {
-                  timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-                  description: inspectionMethod === 'AT_HOME'
-                    ? `Cử chuyên viên kỹ thuật từ ${selectedCenter?.name} đến tận nhà người bán kiểm định trực tiếp on-site.`
-                    : `Khởi tạo đơn hàng kiểm định Hub (${selectedCenter?.name}). Bưu tá GHN chuẩn bị lấy hàng chuyển về Hub.`,
-                  location: selectedCenter?.name || 'Hệ thống SecondLife Escrow'
+                  id: 'LEG-1',
+                  legType: 'SELLER_TO_BUYER',
+                  carrier: 'SecondLife On-site Team',
+                  trackingNumber: '',
+                  status: 'PENDING',
+                  origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
+                  destination: `Kiểm định tại nhà người bán (Kỹ sư ${selectedCenter?.name || 'On-site'})`,
+                  estimatedDelivery: 'Kỹ sư đến kiểm định theo lịch hẹn',
+                  timeline: [
+                    {
+                      timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                      description: `Cử chuyên viên kỹ thuật từ ${selectedCenter?.name || 'Trung tâm'} đến tận nhà người bán kiểm định trực tiếp on-site.`,
+                      location: 'Địa chỉ kho người bán'
+                    }
+                  ]
+                },
+                {
+                  id: 'LEG-2',
+                  legType: 'SELLER_TO_BUYER',
+                  carrier: 'Lalamove',
+                  trackingNumber: '',
+                  status: 'PENDING',
+                  origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
+                  destination: fullAddress,
+                  estimatedDelivery: 'Giao nhanh đến người mua sau khi kiểm định đạt chuẩn',
+                  timeline: [
+                    {
+                      timestamp: '--:--',
+                      description: 'Tài xế Lalamove nhận hàng tại nhà người bán và phát thẳng đến người mua sau khi niêm phong tem kiểm định.',
+                      location: fullAddress
+                    }
+                  ]
                 }
               ]
-            },
-            {
-              id: 'LEG-2',
-              legType: 'CENTER_TO_BUYER',
-              carrier: 'GHN Express',
-              trackingNumber: `GHN-BUYER-${orderId.slice(0, 8).toUpperCase()}`,
-              status: 'IN_TRANSIT',
-              origin: selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab',
-              destination: fullAddress,
-              estimatedDelivery: '1-2 ngày sau khi đạt chuẩn kiểm định',
-              timeline: [
+            : [
                 {
-                  timestamp: '--:--',
-                  description: 'Chờ hoàn tất quy trình kiểm định và dán tem niêm phong NFC tại Hub Lab.',
-                  location: selectedCenter?.name || 'Trung tâm kiểm định SecondLife'
+                  id: 'LEG-1',
+                  legType: 'SELLER_TO_CENTER',
+                  carrier: 'Lalamove',
+                  trackingNumber: '',
+                  status: 'PENDING',
+                  origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
+                  destination: selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab',
+                  estimatedDelivery: 'Trong ngày',
+                  timeline: [
+                    {
+                      timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                      description: `Khởi tạo đơn hàng kiểm định Hub (${selectedCenter?.name || 'Hub'}). Chờ bưu tá Lalamove điều phối lấy hàng chuyển về Hub.`,
+                      location: selectedCenter?.name || 'Hệ thống SecondLife Escrow'
+                    }
+                  ]
+                },
+                {
+                  id: 'LEG-2',
+                  legType: 'CENTER_TO_BUYER',
+                  carrier: 'Lalamove',
+                  trackingNumber: '',
+                  status: 'PENDING',
+                  origin: selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab',
+                  destination: fullAddress,
+                  estimatedDelivery: 'Giao nhanh trong ngày sau khi đạt chuẩn kiểm định',
+                  timeline: [
+                    {
+                      timestamp: '--:--',
+                      description: 'Chờ hoàn tất quy trình kiểm định và dán tem niêm phong NFC tại Hub Lab.',
+                      location: selectedCenter?.name || 'Trung tâm kiểm định SecondLife'
+                    }
+                  ]
                 }
               ]
-            }
-          ]
+          )
         : [
             {
               id: 'LEG-1',
               legType: 'SELLER_TO_BUYER',
-              carrier: 'GHN Express',
-              trackingNumber: `GHN-DIRECT-${orderId.slice(0, 8).toUpperCase()}`,
-              status: 'PICKED_UP',
+              carrier: 'Lalamove',
+              trackingNumber: '',
+              status: 'PENDING',
               origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
               destination: fullAddress,
-              estimatedDelivery: ghnQuote?.expectedDeliveryTime || '1-2 ngày',
+              estimatedDelivery: ghnQuote?.expectedDeliveryTime || 'Giao ngay trong ngày',
               timeline: [
                 {
                   timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-                  description: 'Đã thanh toán ví thành công qua Escrow. Bưu tá GHN lấy hàng và giao thẳng trực tiếp đến người mua.',
+                  description: !isInspected && paymentMethod === 'BANK_TRANSFER'
+                    ? 'Đơn hàng đã được khởi tạo. Đang chờ người mua quét mã VietQR để nạp tiền ký quỹ Escrow bảo vệ đơn hàng.'
+                    : 'Đã thanh toán ví thành công qua Escrow. Tiền đã được đóng băng an toàn tại Quỹ Escrow, sẵn sàng cho đơn vị vận chuyển lấy hàng.',
                   location: 'Hệ thống SecondLife Escrow'
                 }
               ]
             }
           ];
 
+      const isBankWaiting = !isInspected && paymentMethod === 'BANK_TRANSFER';
+      const initialEscrowStatus: EscrowStatus = isInspected
+        ? 'AWAITING_INSPECTION'
+        : isBankWaiting
+        ? 'AWAITING_PAYMENT'
+        : 'HELD_IN_ESCROW';
+
+      const targetSellerId = String(
+        listing.sellerId ||
+        (listing as any).seller?.id ||
+        (listing as any).userId ||
+        (listing as any).user?.id ||
+        ''
+      );
+      const targetSellerName = String(
+        listing.sellerName ||
+        (listing as any).seller?.fullName ||
+        (listing as any).seller?.name ||
+        (listing as any).user?.fullName ||
+        (listing as any).user?.profile?.fullName ||
+        (listing as any).user?.name ||
+        'Người bán SecondLife'
+      );
+      const targetSellerEmail = (listing as any).sellerEmail || (listing as any).seller?.email || (listing as any).user?.email || '';
+      const targetSellerAvatar = listing.sellerAvatarUrl || listing.sellerAvatar || (listing as any).seller?.avatarUrl || (listing as any).user?.avatarUrl;
+      const targetSellerAddress = listing.sellerAddress || listing.location || (listing as any).seller?.address || '';
+
       const newOrder: EscrowOrder = {
         id: orderId,
-        listingId: listing.id,
-        listing: {
+        listingId: String(listing.id),
+        listing: resolveOrderListing({
           ...listing,
           priceVnd: finalChargedPrice,
-        },
+          sellerId: targetSellerId,
+          sellerName: targetSellerName,
+          sellerAddress: targetSellerAddress,
+          sellerAvatarUrl: targetSellerAvatar,
+        }),
         buyerId: currentUser?.id || 'buyer-current',
-        buyerName,
-        buyerPhone,
+        buyerName: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
+        buyerPhone: buyerPhone.trim(),
         buyerAddress: fullAddress,
-        sellerId: listing.sellerId,
-        sellerName: listing.sellerName,
+        sellerId: targetSellerId,
+        sellerName: targetSellerName,
+        sellerAvatarUrl: targetSellerAvatar,
         itemPriceVnd: finalChargedPrice,
         inspectionFeeVnd: isInspected ? buyerInspectionFee : 0,
         shippingFeeVnd: finalShippingFee,
         platformFeeVnd: 0,
         totalPaidVnd: finalTotalPaid,
-        escrowStatus: 'HELD_IN_ESCROW',
+        finalPrice: finalChargedPrice,
+        finalItemPrice: finalChargedPrice,
+        postPrice: finalChargedPrice,
+        totalPaid: finalTotalPaid,
+        escrowStatus: initialEscrowStatus,
+        paymentMethod: paymentMethod,
+        backendStatus: isInspected ? 'WAITING_SELLER_APPROVAL' : (isBankWaiting ? 'PENDING_PAYMENT' : 'PROCESSING'),
         hasInspectionService: isInspected,
         inspectionCenterId: isInspected ? selectedCenter?.id : undefined,
         inspectionCenterName: isInspected ? selectedCenter?.name : undefined,
@@ -530,38 +1047,693 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         updatedAt: new Date().toISOString(),
         multiStagePhotos: {
           listingPhotos: [listing.photos.front, listing.photos.back]
-        }
+        },
+        ...((targetSellerEmail ? { sellerEmail: targetSellerEmail } : {}) as any),
+        ...((currentUser?.email ? { buyerEmail: currentUser.email } : {}) as any),
       };
+
+      try {
+        if (!isBankWaiting) {
+          markListingAsBought(String(listing.id));
+        }
+        localStorage.removeItem(`order_cancellation_info_${orderId}`);
+        localStorage.removeItem(`order_cancelled_${orderId}`);
+        if (listing?.id) {
+          localStorage.removeItem(`listing_available_${listing.id}`);
+          localStorage.removeItem(`listing_cancelled_at_${listing.id}`);
+        }
+        localStorage.setItem(`order_listing_${orderId}`, JSON.stringify(newOrder.listing));
+        if (listing?.id) {
+          localStorage.setItem(`cached_post_${listing.id}`, JSON.stringify(newOrder.listing));
+        }
+        localStorage.setItem(`order_buyer_info_${orderId}`, JSON.stringify({
+          buyerName: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
+          buyerPhone: buyerPhone.trim(),
+          buyerAddress: fullAddress,
+        }));
+        if (currentUser?.id) {
+          localStorage.setItem(`buyer_info_${currentUser.id}`, JSON.stringify({
+            name: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
+            phone: buyerPhone.trim(),
+          }));
+        }
+
+        // Only save to recent_placed_orders and dispatch seller notification for instant payment (wallet or inspection)
+        if (!isBankWaiting) {
+          if (paymentMethod === 'WALLET') {
+            try {
+              const currentBal = wallet?.balance ?? 0;
+              const newBal = Math.max(0, currentBal - upfrontAmount);
+              setWallet((prev) => (prev ? { ...prev, balance: newBal } : null));
+              if (currentUser?.id) {
+                localStorage.setItem(`user_wallet_balance_${currentUser.id}`, String(newBal));
+              }
+            } catch {}
+          }
+          const stored = localStorage.getItem('recent_placed_orders');
+          const existingRecent = safeJsonParse<EscrowOrder[]>(stored, []);
+          const updatedRecent = [newOrder, ...existingRecent.filter((o) => o.id !== newOrder.id)].slice(0, 50);
+          localStorage.setItem('recent_placed_orders', JSON.stringify(updatedRecent));
+
+          if (isInspected) {
+            try {
+              // Lưu vào bộ nhớ đơn bán của Người bán để Seller Dashboard và EscrowOrdersView hiển thị ngay tức thì
+              const rawSellerInsp = localStorage.getItem('my_seller_inspection_orders');
+              const existingSellerInsp = safeJsonParse<EscrowOrder[]>(rawSellerInsp, []);
+              const updatedSellerInsp = [newOrder, ...existingSellerInsp.filter((o) => o.id !== newOrder.id)].slice(0, 50);
+              localStorage.setItem('my_seller_inspection_orders', JSON.stringify(updatedSellerInsp));
+
+              // Lưu vào center_inspection_orders để Trung tâm kiểm định đồng bộ
+              const rawCenter = localStorage.getItem('center_inspection_orders');
+              const existingCenter = safeJsonParse<EscrowOrder[]>(rawCenter, []);
+              const updatedCenter = [newOrder, ...existingCenter.filter((o) => o.id !== newOrder.id)].slice(0, 50);
+              localStorage.setItem('center_inspection_orders', JSON.stringify(updatedCenter));
+            } catch {}
+          }
+
+          // Dispatch notification specifically for seller (and buyer)
+          const sellerNotifTitle = isInspected
+            ? (inspectionMethod === 'AT_HOME'
+                ? 'Yêu cầu kiểm định tại nhà mới (Hẹn lịch KTV)'
+                : 'Yêu cầu kiểm định mới (Chờ bạn xác nhận)')
+            : 'Đơn đặt hàng mới cần xác nhận';
+
+          const sellerNotifMsg = isInspected
+            ? (inspectionMethod === 'AT_HOME'
+                ? `Khách mua ${buyerName || 'Khách Hàng'} vừa đặt đơn kiểm định tại nhà cho "${listing.title}". Người bán vui lòng vào đơn hàng để xác nhận và hẹn lịch KTV đến tận nơi thẩm định!`
+                : `Khách mua ${buyerName || 'Khách Hàng'} vừa gửi yêu cầu kiểm định cho sản phẩm "${listing.title}". Người bán vui lòng vào đơn hàng để xác nhận đồng ý kiểm định!`)
+            : `Khách mua ${buyerName || 'Khách Hàng'} vừa đặt mua sản phẩm "${listing.title}". Vui lòng xác nhận đơn hàng!`;
+
+          const sellerNotifItem = {
+            id: `notif-seller-inspection-${orderId}`,
+            recipientId: targetSellerId,
+            recipientRole: 'seller',
+            sellerName: targetSellerName,
+            sellerEmail: targetSellerEmail,
+            recipientName: targetSellerName,
+            recipientEmail: targetSellerEmail,
+            title: sellerNotifTitle,
+            message: sellerNotifMsg,
+            type: 'INSPECTION_SELLER_REQUEST' as const,
+            referenceId: orderId,
+            referenceType: 'INSPECTION_ORDER' as const,
+            actionUrl: '/orders?order_tab=awaiting_pickup',
+            isRead: false,
+            readAt: null,
+            createdAt: new Date().toISOString(),
+            inspectionMethod: isInspected ? inspectionMethod : undefined,
+          };
+          saveScopedLocalNotification(sellerNotifItem as any, targetSellerId, 'seller');
+
+          // Buyer local notification
+          const buyerNotifItem = {
+            id: `notif-buyer-${orderId}`,
+            recipientId: currentUser?.id,
+            recipientRole: 'buyer',
+            title: isInspected ? 'Đặt đơn kiểm định thành công' : 'Đặt đơn hàng thành công',
+            message: `Bạn đã đặt mua sản phẩm "${listing.title}". Đang chờ Người bán xác nhận!`,
+            type: isInspected ? 'INSPECTION' : 'ORDER',
+            referenceId: orderId,
+            referenceType: isInspected ? 'INSPECTION_ORDER' : 'ORDER',
+            actionUrl: isInspected ? '/orders?order_tab=inspecting' : '/orders',
+            isRead: false,
+            readAt: null,
+            createdAt: new Date().toISOString(),
+          };
+          saveScopedLocalNotification(buyerNotifItem as any, currentUser?.id, 'buyer');
+          try {
+            window.dispatchEvent(new CustomEvent('secondlife_order_placed_signal', { detail: newOrder }));
+            window.dispatchEvent(new CustomEvent('secondlife_listing_status_changed', { detail: { id: listing.id, status: 'reserved' } }));
+            window.dispatchEvent(new CustomEvent('secondlife_inspection_task_created', { detail: newOrder }));
+            window.dispatchEvent(new CustomEvent('secondlife_notification', { detail: sellerNotifItem }));
+            localStorage.setItem('secondlife_order_placed_signal', String(Date.now()));
+          } catch {}
+        }
+      } catch {}
+
+      if (!isInspected && paymentMethod === 'BANK_TRANSFER') {
+        try {
+          const payRes = await orderService.getOrderPayment(orderId);
+          setBankPaymentInfo(payRes);
+          const bankWaitingOrder: EscrowOrder = {
+            ...newOrder,
+            escrowStatus: 'AWAITING_PAYMENT',
+            backendStatus: 'PENDING_PAYMENT',
+            paymentMethod: 'BANK_TRANSFER',
+            paymentExpiresAt: payRes?.expiresAt || null,
+            bankPaymentDetails: payRes,
+          };
+          setCreatedOrder(bankWaitingOrder);
+          // KHÔNG lưu bankWaitingOrder vào recent_placed_orders khi CHƯA thanh toán
+          setSubmittingOrder(false);
+          return;
+        } catch (pErr) {
+          console.warn('Could not fetch bank transfer payment instructions:', pErr);
+        }
+      }
 
       onOrderPlaced(newOrder);
     } catch (err: any) {
       console.error('Order creation error:', err);
-      const errMsg = (err?.message || '').toLowerCase();
-      if (
-        errMsg.includes('400') ||
-        errMsg.includes('negotiation') ||
-        errMsg.includes('thương lượng') ||
-        errMsg.includes('bad request') ||
-        errMsg.includes('invalid')
-      ) {
-        if (errMsg.includes('expired') || errMsg.includes('hết hạn')) {
-          alert(lang === 'vi' ? 'Phiên thương lượng đã hết hạn, sản phẩm đã được mở lại cho người khác' : 'Negotiation session has expired, the product is now available to others');
-          window.location.reload();
-          return;
-        }
+      const status = err?.response?.status || err?.status;
+      const beMsg = err?.response?.data?.message || err?.message || '';
+      const errMsg = beMsg.toLowerCase();
+
+      // Mục 8.3: Bắt lỗi 409 khi quote hết hạn hoặc dữ liệu kiện hàng/giá bị thay đổi
+      if (status === 409 || errMsg.includes('quote') || errMsg.includes('expired') || errMsg.includes('hết hạn')) {
+        setGhnQuote(null);
         setOrderError(
           lang === 'vi'
-            ? 'Mức giá thương lượng không hợp lệ, đã bị thay đổi hoặc đã hết hiệu lực (Lỗi 400). Vui lòng kiểm tra lại phòng chat hoặc đàm phán lại mức giá mới.'
-            : 'Invalid or expired negotiation deal price (400 Bad Request). Please review in chat before placing order.'
+            ? 'Báo giá vận chuyển đã hết hạn hoặc thông tin đơn hàng đã thay đổi. Hệ thống đang tự động cập nhật báo giá mới nhất, vui lòng xác nhận lại tổng tiền trước khi đặt hàng.'
+            : 'Shipping quote expired or order details changed. Refreshing quote, please reconfirm total before ordering.'
+        );
+        calculateLalamoveQuote(deliveryLatitude, deliveryLongitude);
+        setCurrentRequestId(crypto.randomUUID());
+        return;
+      }
+
+      if (errMsg.includes('you cannot buy your own post') || errMsg.includes('tự mua')) {
+        setOrderError(lang === 'vi' ? 'Bạn đang đăng nhập bằng tài khoản người bán của bài đăng này. Không thể tự mua hàng của chính mình.' : 'You cannot buy your own post.');
+      } else if (errMsg.includes('expired') || errMsg.includes('hết hạn')) {
+        setOrderError(lang === 'vi' ? 'Phiên thương lượng đã hết hạn. Vui lòng kiểm tra lại phòng chat hoặc thương lượng lại mức giá mới.' : 'Negotiation session has expired.');
+      } else if (errMsg.includes('insufficient') || errMsg.includes('không đủ số dư') || errMsg.includes('balance')) {
+        setOrderError(lang === 'vi' ? 'Số dư ví Escrow không đủ để thanh toán. Vui lòng nạp thêm tiền vào ví hoặc chọn phương thức Chuyển khoản ngân hàng.' : 'Insufficient wallet balance. Please top up or choose bank transfer.');
+      } else if (errMsg.includes('not available for purchase') || errMsg.includes('post is not available')) {
+        setOrderError(lang === 'vi' ? 'Sản phẩm này hiện không còn khả dụng để đặt mua (đã có người mua hoặc bài đăng đã kết thúc).' : 'Post is not available for purchase.');
+      } else if (
+        errMsg.includes('negotiation') ||
+        errMsg.includes('thương lượng')
+      ) {
+        setOrderError(
+          lang === 'vi'
+            ? 'Mức giá thương lượng không hợp lệ hoặc đã hết hiệu lực. Vui lòng kiểm tra lại phòng chat.'
+            : 'Invalid or expired negotiation deal price. Please review in chat before placing order.'
         );
       } else {
-        setOrderError(err?.message || 'Không thể tạo đơn hàng trên hệ thống. Vui lòng kiểm tra lại kết nối backend hoặc số dư ví.');
+        setOrderError(translateApiError(beMsg) || (lang === 'vi' ? 'Không thể tạo đơn hàng trên hệ thống. Vui lòng kiểm tra lại kết nối backend hoặc số dư ví.' : 'Failed to create order on backend.'));
       }
     } finally {
       setSubmittingOrder(false);
     }
   };
 
+
+  // Đồng hồ đếm ngược thời hạn chuyển khoản ký quỹ theo dữ liệu expiresAt từ BE
+  useEffect(() => {
+    if (!bankPaymentInfo) {
+      setPaymentSecondsLeft(null);
+      setIsPaymentExpired(false);
+      return;
+    }
+
+    const calcSeconds = () => {
+      if (!bankPaymentInfo.expiresAt) {
+        return 15 * 60;
+      }
+      const expMs = new Date(bankPaymentInfo.expiresAt).getTime();
+      const nowMs = Date.now();
+      return Math.floor((expMs - nowMs) / 1000);
+    };
+
+    const initialDiff = calcSeconds();
+    if (initialDiff <= 0 || bankPaymentInfo.status === 'EXPIRED') {
+      setPaymentSecondsLeft(0);
+      setIsPaymentExpired(true);
+      return;
+    }
+
+    setPaymentSecondsLeft(initialDiff);
+    setIsPaymentExpired(false);
+
+    const timer = setInterval(() => {
+      const remaining = calcSeconds();
+      if (remaining <= 0) {
+        setPaymentSecondsLeft(0);
+        setIsPaymentExpired(true);
+        clearInterval(timer);
+      } else {
+        setPaymentSecondsLeft(remaining);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [bankPaymentInfo?.expiresAt, bankPaymentInfo?.status]);
+
+  const handlePaymentSuccess = useCallback((paidOrder: EscrowOrder) => {
+    setIsPaymentSuccess(true);
+    setCreatedOrder(paidOrder);
+    if (listing?.id) {
+      markListingAsBought(String(listing.id));
+    }
+    setBankCheckMessage({
+      type: 'success',
+      text: lang === 'vi' ? '🎉 Đã ký quỹ Escrow thành công! Đang chuyển hướng đến đơn hàng...' : '🎉 Escrow deposit verified! Redirecting...',
+    });
+
+    try {
+      const raw = localStorage.getItem('recent_placed_orders');
+      const list = safeJsonParse<any[]>(raw, []);
+      const updated = [paidOrder, ...list.filter((o: any) => o.id !== paidOrder.id)].slice(0, 30);
+      localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
+    } catch {}
+
+    try {
+      const targetSellerId = listing.sellerId || (listing as any).seller?.id;
+      const sellerNotifItem = {
+        id: `notif-seller-${paidOrder.id}`,
+        recipientId: targetSellerId,
+        recipientRole: 'seller',
+        title: 'Đơn đặt hàng mới đã ký quỹ Escrow',
+        message: `Khách mua ${buyerName || 'Khách Hàng'} vừa ký quỹ thành công cho sản phẩm "${listing.title}". Vui lòng xác nhận đơn hàng!`,
+        type: 'ORDER' as const,
+        referenceId: paidOrder.id,
+        referenceType: 'ORDER',
+        actionUrl: '/orders?tab=awaiting_pickup',
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+      };
+      saveScopedLocalNotification(sellerNotifItem, targetSellerId, 'seller');
+
+      const buyerNotifItem = {
+        id: `notif-buyer-${paidOrder.id}`,
+        recipientId: currentUser?.id,
+        recipientRole: 'buyer',
+        title: 'Ký quỹ đơn hàng thành công',
+        message: `Bạn đã ký quỹ Escrow thành công cho đơn #${paidOrder.id.slice(0, 8)}. Người bán sẽ sớm chuẩn bị hàng!`,
+        type: 'ORDER' as const,
+        referenceId: paidOrder.id,
+        referenceType: 'ORDER',
+        actionUrl: '/orders',
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+      };
+      saveScopedLocalNotification(buyerNotifItem, currentUser?.id, 'buyer');
+    } catch {}
+
+    setTimeout(() => {
+      onOrderPlaced(paidOrder);
+      onClose();
+    }, 1800);
+  }, [buyerName, listing.id, listing.title, onOrderPlaced, onClose, lang]);
+
+  const handleCloseUnpaidModal = async () => {
+    if (isPaymentSuccess) {
+      if (createdOrder) {
+        onOrderPlaced(createdOrder);
+      }
+      onClose();
+      return;
+    }
+
+    // Nếu chưa thanh toán mà đã tắt mã:
+    if (createdOrder?.id) {
+      try {
+        await orderService.cancelOrder(createdOrder.id, {
+          reasonCode: 'BUYER_REQUESTED',
+          reason: 'Người mua tắt mã QR thanh toán, chưa hoàn tất chuyển khoản'
+        });
+      } catch (err) {
+        console.warn('Silent cancel unpaid order on backend:', err);
+      }
+
+      // Xóa mọi dữ liệu lưu tạm của đơn chưa thanh toán này
+      try {
+        localStorage.removeItem(`order_listing_${createdOrder.id}`);
+        localStorage.removeItem(`order_buyer_info_${createdOrder.id}`);
+        const raw = localStorage.getItem('recent_placed_orders');
+        const list = safeJsonParse<any[]>(raw, []);
+        const filtered = list.filter((o: any) => o.id !== createdOrder.id);
+        localStorage.setItem('recent_placed_orders', JSON.stringify(filtered));
+
+        const rawAll = localStorage.getItem('all_orders_cache');
+        const listAll = safeJsonParse<any[]>(rawAll, []);
+        const filteredAll = listAll.filter((o: any) => o.id !== createdOrder.id);
+        localStorage.setItem('all_orders_cache', JSON.stringify(filteredAll));
+
+        const rawNotifs = localStorage.getItem('secondlife_local_notifications');
+        const listNotifs = safeJsonParse<any[]>(rawNotifs, []);
+        const filteredNotifs = listNotifs.filter((n: any) => n.referenceId !== createdOrder.id);
+        localStorage.setItem('secondlife_local_notifications', JSON.stringify(filteredNotifs));
+
+        if (currentUser?.id) {
+          const userKey = `secondlife_local_notifications_${currentUser.id}`;
+          const rawUserNotifs = localStorage.getItem(userKey);
+          const listUserNotifs = safeJsonParse<any[]>(rawUserNotifs, []);
+          const filteredUserNotifs = listUserNotifs.filter((n: any) => n.referenceId !== createdOrder.id);
+          localStorage.setItem(userKey, JSON.stringify(filteredUserNotifs));
+        }
+      } catch {}
+    }
+
+    // Giải phóng bài đăng để sản phẩm lập tức hiện lại trên sàn giao dịch
+    const cancelledListingId = String(listing?.id || createdOrder?.listingId || '');
+    if (cancelledListingId) {
+      markListingAsAvailable(cancelledListingId);
+      reconcileBoughtListingIds();
+    }
+
+    const unpaidxMsg = lang === 'vi'
+      ? 'Đơn hàng chưa được thanh toán! Bạn đã đóng mã thanh toán VietQR nên giao dịch ký quỹ chưa hoàn tất.'
+      : 'Order not paid! VietQR code was closed without payment.';
+
+    if (showToast) {
+      showToast(unpaidxMsg);
+    } else {
+      window.dispatchEvent(new CustomEvent('secondlife_toast', { detail: unpaidxMsg }));
+    }
+
+    if (onCancelUnpaid) {
+      onCancelUnpaid(unpaidxMsg);
+    } else {
+      onClose();
+    }
+  };
+
+  // Polling tự động đối soát SePay thời gian thực mỗi 3 giây (Zero-Refresh)
+  useEffect(() => {
+    if (!bankPaymentInfo || !createdOrder || isPaymentExpired || isPaymentSuccess) return;
+
+    const orderId = createdOrder.id;
+    const interval = setInterval(async () => {
+      try {
+        const fresh = await orderService.getOrderPayment(orderId);
+        if (fresh) {
+          setBankPaymentInfo(fresh);
+          const isPaid = fresh.status === 'PAID' || fresh.remainingAmount === 0 || fresh.orderStatus === 'PROCESSING';
+          if (isPaid) {
+            const paidOrder: EscrowOrder = {
+              ...createdOrder,
+              escrowStatus: 'HELD_IN_ESCROW',
+              backendStatus: 'PROCESSING',
+            };
+            handlePaymentSuccess(paidOrder);
+          } else if (fresh.status === 'EXPIRED') {
+            setIsPaymentExpired(true);
+          }
+        }
+      } catch (err) {
+        // quiet polling catch
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [bankPaymentInfo, createdOrder, isPaymentExpired, isPaymentSuccess, handlePaymentSuccess]);
+
+  if (bankPaymentInfo && createdOrder) {
+    const remainingToPay = bankPaymentInfo.remainingAmount ?? bankPaymentInfo.totalAmount ?? totalAmount;
+    const vietQrUrl = `https://img.vietqr.io/image/${bankPaymentInfo.bankName || 'MB'}-${bankPaymentInfo.bankAccountNumber || '0000000000'}-compact2.png?amount=${remainingToPay}&addInfo=${encodeURIComponent(bankPaymentInfo.transferContent || createdOrder.id)}&accountName=${encodeURIComponent(bankPaymentInfo.bankAccountName || 'SECONDLIFE ESCROW')}`;
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto">
+        <div className="bg-[#FFFFFF] rounded-3xl max-w-xl w-full max-h-[92vh] overflow-hidden shadow-2xl border border-gray-200 flex flex-col my-auto text-[#24263e]">
+          {/* Header */}
+          <div className="p-5 border-b border-[#24263e]/15 flex items-center justify-between bg-gradient-to-r from-blue-50 to-[#faf8f5] text-[#24263e] shrink-0 rounded-t-3xl">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-2xl bg-[#24263e] text-white flex items-center justify-center shadow-md">
+                <ShieldCheck className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-[#24263e]">
+                  {lang === 'vi' ? 'Ký Quỹ Escrow Qua Ngân Hàng VietQR (SePay)' : 'Escrow Deposit via VietQR'}
+                </h3>
+                <p className="text-[11px] text-slate-600 font-bold">
+                  Đơn hàng: #{createdOrder.id} • Ký quỹ để đóng băng tiền bảo vệ giao dịch
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={handleCloseUnpaidModal}
+              className="text-[#24263e] hover:bg-white/40 p-1.5 rounded-xl cursor-pointer transition font-bold"
+              title={lang === 'vi' ? 'Đóng và quay lại trang mua hàng' : 'Close and return to product'}
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="p-5 sm:p-6 space-y-4 text-xs flex-1 overflow-y-auto subtle-scrollbar">
+            {/* Status / Success / Expired Banner */}
+            {isPaymentSuccess ? (
+              <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-900 font-semibold flex items-center gap-3 animate-fadeIn">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <div>
+                  <h5 className="font-bold text-sm text-emerald-800">🎉 Đã Ký Quỹ Escrow Thành Công!</h5>
+                  <p className="text-[11px] text-emerald-700">
+                    Số tiền {formatVND(remainingToPay)} đã được hệ thống đóng băng an toàn tại Quỹ Escrow. Đang chuyển hướng...
+                  </p>
+                </div>
+              </div>
+            ) : isPaymentExpired ? (
+              <div className="p-3.5 bg-rose-50 border border-rose-300 rounded-2xl text-rose-900 font-semibold flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                <div>
+                  <h5 className="font-bold text-sm text-rose-800">⚠️ Mã Ký Quỹ Đã Quá Hạn (15 Phút Backend)</h5>
+                  <p className="text-[11px] text-rose-700">
+                    Thời hạn ký quỹ theo dữ liệu Backend đã kết thúc. Vui lòng không chuyển khoản vào mã này nữa để tránh đơn bị tự động hủy.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className={`p-3 rounded-2xl border flex items-center justify-between gap-3 ${
+                (paymentSecondsLeft ?? 900) < 180
+                  ? 'bg-amber-50 border-amber-300 text-amber-900 animate-pulse'
+                  : 'bg-blue-50 border-blue-200 text-blue-900'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <Clock className={`w-4 h-4 ${(paymentSecondsLeft ?? 900) < 180 ? 'text-amber-600 animate-spin' : 'text-blue-600'}`} />
+                  <div>
+                    <span className="font-bold text-xs">
+                      {lang === 'vi' ? 'Thời gian chuyển tiền ký quỹ còn lại:' : 'Remaining deposit window:'}
+                    </span>
+                    {bankPaymentInfo.expiresAt && (
+                      <span className="text-[10px] text-slate-500 block">
+                        Hạn chót BE: {new Date(bankPaymentInfo.expiresAt).toLocaleTimeString('vi-VN')} ({new Date(bankPaymentInfo.expiresAt).toLocaleDateString('vi-VN')})
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className={`text-base font-black font-mono px-2.5 py-1 rounded-xl border ${
+                    (paymentSecondsLeft ?? 900) < 180
+                      ? 'bg-rose-100 border-rose-300 text-rose-700 font-extrabold'
+                      : 'bg-white border-blue-200 text-blue-800'
+                  }`}>
+                    {paymentSecondsLeft !== null
+                      ? `${Math.floor(paymentSecondsLeft / 60).toString().padStart(2, '0')}:${(paymentSecondsLeft % 60).toString().padStart(2, '0')}`
+                      : '15:00'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center bg-[#faf8f5] p-4 rounded-2xl border border-slate-200">
+              {/* QR Image with Expired Blur Overlay */}
+              <div className="relative flex flex-col items-center justify-center bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
+                <img
+                  src={vietQrUrl}
+                  alt="VietQR Code"
+                  className={`w-48 h-48 object-contain rounded-xl transition-all ${
+                    isPaymentExpired ? 'filter blur-sm opacity-40' : ''
+                  }`}
+                />
+                {isPaymentExpired && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 rounded-2xl p-4 text-center">
+                    <XCircle className="w-8 h-8 text-rose-400 mb-1" />
+                    <span className="text-white font-extrabold text-xs uppercase bg-rose-600 px-2 py-0.5 rounded shadow">
+                      MÃ KÝ QUỸ ĐÃ HẾT HẠN
+                    </span>
+                    <span className="text-[10px] text-white/90 mt-1">Không chuyển tiền</span>
+                  </div>
+                )}
+                {!isPaymentExpired && (
+                  <span className="text-[10px] text-slate-500 font-bold mt-1.5 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-[#c34c36]" />
+                    <span>Quét bằng app ngân hàng bất kỳ</span>
+                  </span>
+                )}
+              </div>
+
+              {/* Bank Details */}
+              <div className="space-y-2.5">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Số tiền ký quỹ (Đóng băng Escrow):</span>
+                  <div className="flex items-center justify-between mt-0.5">
+                    <strong className="text-base font-black text-[#c34c36] font-mono">{formatVND(remainingToPay)}</strong>
+                    <button
+                      type="button"
+                      disabled={isPaymentExpired}
+                      onClick={() => {
+                        navigator.clipboard.writeText(String(remainingToPay));
+                        setCopiedBankField('amount');
+                        setTimeout(() => setCopiedBankField(null), 2000);
+                      }}
+                      className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition cursor-pointer disabled:opacity-40"
+                    >
+                      {copiedBankField === 'amount' ? '✓ Đã chép' : 'Sao chép'}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Nội dung CK (Bắt buộc chính xác):</span>
+                  <div className="flex items-center justify-between mt-0.5 bg-amber-50 p-1.5 rounded-xl border border-amber-200">
+                    <strong className="text-xs font-black text-amber-950 font-mono">{bankPaymentInfo.transferContent || createdOrder.id}</strong>
+                    <button
+                      type="button"
+                      disabled={isPaymentExpired}
+                      onClick={() => {
+                        navigator.clipboard.writeText(bankPaymentInfo.transferContent || createdOrder.id);
+                        setCopiedBankField('content');
+                        setTimeout(() => setCopiedBankField(null), 2000);
+                      }}
+                      className="px-2 py-0.5 rounded bg-amber-200 hover:bg-amber-300 text-amber-950 font-bold text-[10px] transition cursor-pointer disabled:opacity-40"
+                    >
+                      {copiedBankField === 'content' ? '✓ Đã chép' : 'Sao chép'}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Ngân hàng thụ hưởng:</span>
+                  <strong className="text-xs text-slate-900 block mt-0.5">{bankPaymentInfo.bankName || 'Ngân hàng đối tác'}</strong>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Số tài khoản:</span>
+                  <div className="flex items-center justify-between mt-0.5">
+                    <strong className="text-xs font-mono text-slate-900">{bankPaymentInfo.bankAccountNumber || 'Chưa cấu hình'}</strong>
+                    <button
+                      type="button"
+                      disabled={isPaymentExpired}
+                      onClick={() => {
+                        navigator.clipboard.writeText(bankPaymentInfo.bankAccountNumber || '');
+                        setCopiedBankField('account');
+                        setTimeout(() => setCopiedBankField(null), 2000);
+                      }}
+                      className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition cursor-pointer disabled:opacity-40"
+                    >
+                      {copiedBankField === 'account' ? '✓ Đã chép' : 'Sao chép'}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Chủ tài khoản:</span>
+                  <strong className="text-xs text-slate-900 block mt-0.5">{bankPaymentInfo.bankAccountName || 'SECONDLIFE ESCROW'}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Escrow Freeze Funds Messaging */}
+            <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-2xl text-[11px] text-blue-950 space-y-1.5">
+              <div className="font-extrabold flex items-center gap-1.5 text-blue-900">
+                <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>Cơ Chế Ký Quỹ Đóng Băng Tiền (Escrow Protection):</span>
+              </div>
+              <p className="text-slate-600 leading-snug">
+                Khoản tiền này sẽ được cổng SePay đối soát và <strong>đóng băng an toàn tại Quỹ Ký Quỹ Escrow</strong> của SecondLife. Người bán <strong>hoàn toàn CHƯA nhận được tiền</strong> cho đến khi bạn nhận được hàng, kiểm tra 48h và bấm xác nhận hài lòng.
+              </p>
+              <div className="flex items-center gap-2 pt-1 text-[10px] font-bold text-emerald-700">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping shrink-0" />
+                <span>Hệ thống đang tự động đối soát theo thời gian thực (mỗi 3 giây)...</span>
+              </div>
+            </div>
+
+            {/* Thông báo kết quả kiểm tra thanh toán nếu có */}
+            {bankCheckMessage && (
+              <div className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 ${
+                bankCheckMessage.type === 'error'
+                  ? 'bg-rose-50 border-rose-200 text-rose-800'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              }`}>
+                {bankCheckMessage.type === 'error' ? (
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                )}
+                <span>{bankCheckMessage.text}</span>
+              </div>
+            )}
+
+            {/* Buttons */}
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={handleCloseUnpaidModal}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-rose-300 text-rose-700 hover:bg-rose-50 font-bold text-xs cursor-pointer flex items-center justify-center gap-1.5 transition"
+              >
+                <X className="w-4 h-4" />
+                <span>{lang === 'vi' ? 'Hủy & Quay Lại Trang Mua Hàng' : 'Cancel & Return to Product'}</span>
+              </button>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                {isPaymentSuccess ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (createdOrder) onOrderPlaced(createdOrder);
+                      onClose();
+                    }}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs cursor-pointer shadow-md transition flex items-center justify-center gap-1.5"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{lang === 'vi' ? 'Xem Đơn Hàng Ngay' : 'View Order Now'}</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setCheckingBankPayment(true);
+                      setBankCheckMessage(null);
+                      try {
+                        const freshPayment = await orderService.getOrderPayment(createdOrder.id);
+                        setBankPaymentInfo(freshPayment);
+                        const isPaid = freshPayment.status === 'PAID' || freshPayment.remainingAmount === 0 || freshPayment.orderStatus === 'PROCESSING';
+                        if (isPaid) {
+                          const paidOrder: EscrowOrder = {
+                            ...createdOrder,
+                            escrowStatus: 'HELD_IN_ESCROW',
+                            backendStatus: 'PROCESSING',
+                          };
+                          handlePaymentSuccess(paidOrder);
+                        } else {
+                          setBankCheckMessage({
+                            type: 'error',
+                            text: lang === 'vi'
+                              ? 'Chưa nhận được thanh toán đối soát từ ngân hàng. Nếu bạn vừa chuyển khoản, vui lòng đợi 5-10 giây để hệ thống SePay tự động ghi nhận.'
+                              : 'Payment not detected yet. If you just transferred, please wait a few seconds.',
+                          });
+                        }
+                      } catch (e) {
+                        setBankCheckMessage({
+                          type: 'error',
+                          text: lang === 'vi' ? 'Không thể kết nối đến máy chủ đối soát. Vui lòng thử lại.' : 'Could not check payment status.',
+                        });
+                      } finally {
+                        setCheckingBankPayment(false);
+                      }
+                    }}
+                    disabled={checkingBankPayment || isPaymentExpired}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#dc4729] text-white font-black text-xs cursor-pointer shadow-md transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${checkingBankPayment ? 'animate-spin' : ''}`} />
+                    <span>
+                      {checkingBankPayment
+                        ? (lang === 'vi' ? 'Đang kiểm tra đối soát...' : 'Checking...')
+                        : (lang === 'vi' ? 'Tôi Đã Chuyển Khoản • Kiểm Tra Ngay' : 'I Have Transferred • Check Now')}
+                    </span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto">
@@ -583,7 +1755,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={bankPaymentInfo || createdOrder ? handleCloseUnpaidModal : onClose}
             className="text-[#24263e] hover:bg-white/40 p-1.5 rounded-xl cursor-pointer transition font-bold"
           >
             <X className="w-5 h-5" />
@@ -603,7 +1775,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-[#c34c36] uppercase font-black">{listing.brand}</span>
                 <span className="text-gray-300">•</span>
-                <span className="text-[10px] text-slate-500 font-semibold">{listing.category}</span>
+                <span className="text-[10px] text-slate-500 font-semibold">{resolveListingCategory(listing)}</span>
                 {hasAgreedDiscount && (
                   <span className="px-2 py-0.2 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
                     {lang === 'vi' ? '⚡ Giá Thỏa Thuận Chat' : '⚡ Chat Deal Price'}
@@ -726,8 +1898,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                   <p className="text-[11px] text-slate-600 leading-relaxed pt-1">
                     {lang === 'vi'
-                      ? 'Bưu tá GHN lấy hàng từ người bán và phát thẳng tới địa chỉ của bạn. Đồng kiểm ngoại quan lúc nhận máy.'
-                      : 'GHN courier picks up from seller and delivers straight to you with co-inspection upon receipt.'}
+                      ? 'Tài xế Lalamove lấy hàng từ người bán và phát thẳng tới địa chỉ của bạn. Đồng kiểm ngoại quan lúc nhận hàng.'
+                      : 'Lalamove courier picks up from seller and delivers straight to you with co-inspection upon receipt.'}
                   </p>
                 </div>
               </div>
@@ -850,9 +2022,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 {/* 1. Chọn Trung Tâm Kiểm Định */}
                 <div className="space-y-2 bg-[#faf8f5] p-3.5 rounded-2xl border border-slate-200">
                   <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5">
+                    <label className="text-[11px] font-extrabold text-[#24263e] uppercase tracking-wide flex items-center gap-1.5 flex-wrap">
                       <Building2 className="w-3.5 h-3.5 text-[#c34c36]" />
                       <span>{lang === 'vi' ? '1. Chọn Trung Tâm Kiểm Định Tiếp Nhận' : '1. Select Inspection Hub'}</span>
+                      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 shadow-xs">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        {lang === 'vi' ? 'Hệ thống Trạm Hub Chính Thức' : 'Official Verified Hubs'}
+                      </span>
                     </label>
                     <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
                       📍 {selectedCenter.city}
@@ -860,7 +2036,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
-                    {mockInspectionCenters.map((hub) => {
+                    {inspectionCenters.map((hub) => {
                       const isSelected = hub.id === selectedCenterId;
                       return (
                         <div
@@ -955,17 +2131,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             </span>
                           </div>
                           <span className="text-[10px] font-black text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-200">
-                            120.000 VNĐ
+                            {formatVND(atCenterFee)}
                           </span>
                         </div>
                         <p className="text-[10px] text-slate-600 leading-relaxed">
                           {lang === 'vi'
-                            ? 'Bưu tá GHN chuyển hàng về Hub Lab SecondLife. Kỹ sư đo kiểm vi mạch, hiệu năng trên dàn máy đo tiêu chuẩn.'
-                            : 'Shipped to Hub Lab. Engineers inspect 20+ technical criteria on test benches.'}
+                            ? `Chuyển hàng về Hub Lab SecondLife. Gồm phí ship trung tâm (${formatVND(inspectionQuote?.atCenterPackage?.shippingToCenterFee || 50000)}) và quỹ dự phòng chiều về (${formatVND(inspectionQuote?.atCenterPackage?.returnReserveFee || 50000)}).`
+                            : 'Shipped to Hub Lab. Includes shipping to center and return reserve fee.'}
                         </p>
                       </div>
                       <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9px] text-blue-700 font-bold">
-                        <span>🏷️ Phí tiêu chuẩn Hub Lab</span>
+                        <span>🏷️ Đã bao gồm dự phòng 2 chiều</span>
                         {inspectionMethod === 'AT_CENTER' && <Check className="w-3.5 h-3.5 text-blue-600" />}
                       </div>
                     </div>
@@ -988,21 +2164,55 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             </span>
                           </div>
                           <span className="text-[10px] font-black text-purple-800 bg-purple-100 px-2 py-0.5 rounded-full border border-purple-200">
-                            200.000 VNĐ
+                            {formatVND(atHomeFee)}
                           </span>
                         </div>
                         <p className="text-[10px] text-slate-600 leading-relaxed">
                           {lang === 'vi'
-                            ? 'Chuyên viên SecondLife mang thiết bị đo lưu động đến tận nhà người bán kiểm tra tại chỗ. Khuyên dùng đồ gia dụng cồng kềnh.'
-                            : 'Technicians bring portable equipment to inspect at seller home. Ideal for bulky appliances.'}
+                            ? `Kỹ thuật viên SecondLife mang thiết bị đến tận nhà người bán (${(inspectionQuote?.atHomePackage?.distanceKm || inspectionQuote?.travelDistanceKm || 10).toFixed(1)} km). Cước di chuyển 6 bậc thang.`
+                            : 'Technicians bring equipment to seller home with 6-tier distance calculation.'}
                         </p>
                       </div>
                       <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9px] text-purple-700 font-bold">
-                        <span>⭐ Khuyên dùng đồ lớn (Tủ lạnh, Máy giặt...)</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowTierBreakdown(!showTierBreakdown);
+                          }}
+                          className="hover:underline flex items-center gap-1 text-purple-800"
+                        >
+                          <span>📊 {showTierBreakdown ? 'Ẩn chi tiết cước' : 'Xem chi tiết 6 bậc cước'}</span>
+                        </button>
                         {inspectionMethod === 'AT_HOME' && <Check className="w-3.5 h-3.5 text-purple-600" />}
                       </div>
                     </div>
                   </div>
+
+                  {/* BẢNG CHI TIẾT 6 BẬC THANG CƯỚC DI CHUYỂN */}
+                  {showTierBreakdown && (
+                    <div className="mt-2 p-3 bg-purple-50/60 rounded-xl border border-purple-200 text-[10px] space-y-1.5 animate-fadeIn">
+                      <div className="font-bold text-purple-900 flex items-center justify-between">
+                        <span>Biểu Phí Cước Di Chuyển KTV (6 Bậc Thang Căn Cước Tuyến Tính):</span>
+                        <span className="text-[9px] bg-purple-200 px-2 py-0.5 rounded-full font-bold">2 Chiều (Khứ hồi)</span>
+                      </div>
+                      <div className="space-y-1 pt-1">
+                        {(inspectionQuote?.atHomePackage?.tiersBreakdown || inspectionQuote?.appliedTiers || [
+                          { tierNumber: 1, name: '0 - 5 km đầu', pricePerKm: 2000 },
+                          { tierNumber: 2, name: 'Trên 5 - 10 km', pricePerKm: 2500 },
+                          { tierNumber: 3, name: 'Trên 10 - 15 km', pricePerKm: 3000 },
+                          { tierNumber: 4, name: 'Trên 15 - 20 km', pricePerKm: 3500 },
+                          { tierNumber: 5, name: 'Trên 20 - 30 km', pricePerKm: 4000 },
+                          { tierNumber: 6, name: 'Trên 30 km', pricePerKm: 4500 }
+                        ]).map((tier: any) => (
+                          <div key={tier.tierNumber} className="flex justify-between items-center text-slate-700 py-0.5 border-b border-purple-100/60 last:border-0">
+                            <span className="font-semibold">Bậc {tier.tierNumber} ({tier.name}):</span>
+                            <span className="font-bold text-purple-900">{formatVND(tier.pricePerKm)} / km</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 3. Chia Tiền Kiểm Định */}
@@ -1139,6 +2349,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     value={buyerName}
                     onChange={(e) => {
                       setBuyerName(e.target.value);
+                      if (orderError) setOrderError(null);
                       if (formErrors.buyerName) setFormErrors({ ...formErrors, buyerName: '' });
                     }}
                     placeholder="Nguyễn Văn A"
@@ -1153,26 +2364,94 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  {lang === 'vi' ? 'Số điện thoại nhận hàng *' : 'Phone Number *'}
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold text-slate-700">
+                    {lang === 'vi' ? 'Số điện thoại nhận hàng *' : 'Phone Number *'}
+                  </label>
+                  {buyerPhone.trim() && (
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                      buyerPhone.replace(/\D/g, '').length === 10 && buyerPhone.trim().startsWith('0')
+                        ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                        : buyerPhone.replace(/\D/g, '').length < 10
+                        ? 'text-amber-700 bg-amber-50 border border-amber-200'
+                        : 'text-rose-700 bg-rose-50 border border-rose-200'
+                    }`}>
+                      {buyerPhone.replace(/\D/g, '').length}/10 số
+                    </span>
+                  )}
+                </div>
                 <div className="relative">
                   <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="tel"
                     value={buyerPhone}
                     onChange={(e) => {
-                      setBuyerPhone(e.target.value);
-                      if (formErrors.buyerPhone) setFormErrors({ ...formErrors, buyerPhone: '' });
+                      const val = e.target.value;
+                      setBuyerPhone(val);
+                      if (orderError) setOrderError(null);
+                      const clean = val.replace(/\D/g, '');
+                      if (!val.trim()) {
+                        setFormErrors(prev => ({
+                          ...prev,
+                          buyerPhone: lang === 'vi' ? 'Vui lòng nhập số điện thoại nhận hàng' : 'Phone number is required'
+                        }));
+                      } else if (/[^\d\s.-]/.test(val)) {
+                        setFormErrors(prev => ({
+                          ...prev,
+                          buyerPhone: lang === 'vi' ? 'Số điện thoại chỉ được chứa các chữ số' : 'Phone number can only contain digits'
+                        }));
+                      } else if (!clean.startsWith('0')) {
+                        setFormErrors(prev => ({
+                          ...prev,
+                          buyerPhone: lang === 'vi' ? 'Số điện thoại phải bắt đầu bằng số 0 (ví dụ: 0987...)' : 'Phone number must start with 0'
+                        }));
+                      } else if (clean.length < 10) {
+                        setFormErrors(prev => ({
+                          ...prev,
+                          buyerPhone: lang === 'vi'
+                            ? `Số điện thoại phải có đúng 10 chữ số (bạn đang nhập thiếu: ${clean.length}/10 số)`
+                            : `Phone number must be exactly 10 digits (currently ${clean.length}/10)`
+                        }));
+                      } else if (clean.length > 10) {
+                        setFormErrors(prev => ({
+                          ...prev,
+                          buyerPhone: lang === 'vi'
+                            ? `Số điện thoại chỉ được đúng 10 chữ số (bạn đang nhập dư: ${clean.length}/10 số)`
+                            : `Phone number must be exactly 10 digits (exceeded: ${clean.length}/10)`
+                        }));
+                      } else {
+                        // Exactly 10 digits and starts with 0
+                        setFormErrors(prev => {
+                          const updated = { ...prev };
+                          delete updated.buyerPhone;
+                          return updated;
+                        });
+                      }
+                    }}
+                    onBlur={() => {
+                      const err = validatePhoneNumber(buyerPhone, lang);
+                      if (err) {
+                        setFormErrors(prev => ({ ...prev, buyerPhone: err }));
+                      } else {
+                        setFormErrors(prev => {
+                          const updated = { ...prev };
+                          delete updated.buyerPhone;
+                          return updated;
+                        });
+                      }
                     }}
                     placeholder="0912 345 678"
+                    maxLength={15}
                     className={`w-full pl-9 pr-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition ${
                       formErrors.buyerPhone ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
                     }`}
                   />
                 </div>
                 {formErrors.buyerPhone && (
-                  <span className="text-[10px] text-rose-500 font-semibold mt-0.5 block">{formErrors.buyerPhone}</span>
+                  <span className="text-[10px] text-rose-500 font-semibold mt-1 flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    {formErrors.buyerPhone}
+                  </span>
                 )}
               </div>
             </div>
@@ -1194,237 +2473,46 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             </div>
 
-            {/* Address fields with GHN Catalogue & Custom Manual Input */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-[11px] font-bold text-slate-700">
-                    {lang === 'vi' ? 'Tỉnh / Thành phố nhận hàng *' : 'Province / City *'}
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextMode = provinceMode === 'select' ? 'manual' : 'select';
-                      setProvinceMode(nextMode);
-                    }}
-                    className="text-[10px] font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer bg-[#faf8f5] px-2 py-0.5 rounded-md border border-slate-200"
-                    title={provinceMode === 'select' ? 'Chuyển sang tự nhập tay' : 'Chuyển sang chọn từ danh sách'}
-                  >
-                    {provinceMode === 'select' ? (
-                      <>
-                        <Edit3 className="w-2.5 h-2.5" />
-                        <span>Tự ghi</span>
-                      </>
-                    ) : (
-                      <>
-                        <ListFilter className="w-2.5 h-2.5" />
-                        <span>Chọn danh sách</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {provinceMode === 'select' ? (
-                  <select
-                    value={selectedProvinceId}
-                    onChange={(e) => {
-                      const id = e.target.value ? Number(e.target.value) : '';
-                      setSelectedProvinceId(id);
-                      const found = provinces.find((p) => p._id === id);
-                      setSelectedProvinceName(found ? found.name : '');
-                      if (formErrors.city) setFormErrors({ ...formErrors, city: '' });
-                    }}
-                    disabled={loadingProvinces}
-                    className={`w-full px-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition cursor-pointer ${
-                      formErrors.city ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
-                    }`}
-                  >
-                    <option value="" disabled hidden>
-                      {loadingProvinces ? 'Đang tải danh mục GHN...' : 'Chọn Tỉnh / Thành phố'}
-                    </option>
-                    {provinces.map((p) => (
-                      <option key={p._id} value={p._id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                      type="text"
-                      list="province-suggestions"
-                      value={selectedProvinceName}
-                      onChange={(e) => handleManualProvinceChange(e.target.value)}
-                      placeholder="Gõ tên Tỉnh/Thành (VD: Hà Nội, TP. HCM...)"
-                      className={`w-full pl-9 pr-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition ${
-                        formErrors.city ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
-                      }`}
-                    />
-                    <datalist id="province-suggestions">
-                      {provinces.map((p) => (
-                        <option key={p._id} value={p.name} />
-                      ))}
-                    </datalist>
-                  </div>
-                )}
-                {formErrors.city && (
-                  <span className="text-[10px] text-rose-500 font-semibold mt-0.5 block">{formErrors.city}</span>
-                )}
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-[11px] font-bold text-slate-700">
-                    {lang === 'vi' ? 'Phường / Xã nhận hàng *' : 'GHN Ward *'}
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextMode = wardMode === 'select' ? 'manual' : 'select';
-                      setWardMode(nextMode);
-                    }}
-                    className="text-[10px] font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer bg-[#faf8f5] px-2 py-0.5 rounded-md border border-slate-200"
-                    title={wardMode === 'select' ? 'Chuyển sang tự nhập tay' : 'Chuyển sang chọn từ danh sách'}
-                  >
-                    {wardMode === 'select' ? (
-                      <>
-                        <Edit3 className="w-2.5 h-2.5" />
-                        <span>Tự ghi</span>
-                      </>
-                    ) : (
-                      <>
-                        <ListFilter className="w-2.5 h-2.5" />
-                        <span>Chọn danh sách</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {wardMode === 'select' ? (
-                  <select
-                    value={selectedWardName}
-                    onChange={(e) => {
-                      const newWard = e.target.value;
-                      setSelectedWardName(newWard);
-                      if (formErrors.ward) setFormErrors({ ...formErrors, ward: '' });
-                      if (selectedProvinceName && newWard) {
-                        calculateGhnQuote(selectedProvinceName, newWard, streetAddress, buyerName, buyerPhone);
-                      }
-                    }}
-                    disabled={!selectedProvinceId || loadingWards}
-                    className={`w-full px-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition cursor-pointer ${
-                      formErrors.ward ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
-                    }`}
-                  >
-                    <option value="" disabled hidden>
-                      {!selectedProvinceId
-                        ? (selectedProvinceName ? 'Bấm "Tự ghi" hoặc chọn từ gợi ý' : 'Vui lòng chọn Tỉnh/Thành trước')
-                        : loadingWards
-                          ? 'Đang tải danh sách Phường/Xã...'
-                          : 'Chọn Phường / Xã'}
-                    </option>
-                    {wards.map((w) => (
-                      <option key={w._id} value={w.name}>
-                        {w.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                      type="text"
-                      list="ward-suggestions"
-                      value={selectedWardName}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setSelectedWardName(val);
-                        if (formErrors.ward) setFormErrors({ ...formErrors, ward: '' });
-                      }}
-                      onBlur={() => {
-                        if (selectedProvinceName && selectedWardName) {
-                          calculateGhnQuote(selectedProvinceName, selectedWardName, streetAddress, buyerName, buyerPhone);
-                        }
-                      }}
-                      placeholder="Gõ tên Phường / Xã..."
-                      className={`w-full pl-9 pr-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition ${
-                        formErrors.ward ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
-                      }`}
-                    />
-                    <datalist id="ward-suggestions">
-                      {wards.map((w) => (
-                        <option key={w._id} value={w.name} />
-                      ))}
-                    </datalist>
-                  </div>
-                )}
-                {formErrors.ward && (
-                  <span className="text-[10px] text-rose-500 font-semibold mt-0.5 block">{formErrors.ward}</span>
-                )}
-              </div>
-            </div>
-
-            {/* Street Address */}
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                {lang === 'vi' ? 'Địa chỉ chi tiết (Số nhà, tên đường, căn hộ/tòa nhà) *' : 'Detailed Street Address *'}
-              </label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  value={streetAddress}
-                  onChange={(e) => {
-                    setStreetAddress(e.target.value);
-                    if (formErrors.streetAddress) setFormErrors({ ...formErrors, streetAddress: '' });
-                  }}
-                  onBlur={(e) => {
-                    if (selectedProvinceName && selectedWardName) {
-                      calculateGhnQuote(selectedProvinceName, selectedWardName, e.target.value, buyerName, buyerPhone);
-                    }
-                  }}
-                  placeholder="Số 92 Phan Châu Trinh, Căn 402"
-                  className={`w-full pl-9 pr-3 py-2 bg-[#faf8f5] border rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none transition ${
-                    formErrors.streetAddress ? 'border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-[#c34c36]'
-                  }`}
-                />
-              </div>
-              {formErrors.streetAddress && (
-                <span className="text-[10px] text-rose-500 font-semibold mt-0.5 block">{formErrors.streetAddress}</span>
-              )}
-            </div>
-
-            {/* Direct GHN Calculation Action Bar */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-3">
-              <div className="text-[11px] text-slate-600">
-                {selectedProvinceName && selectedWardName ? (
-                  <span>
-                    📍 Giao đến: <strong className="text-slate-900">{selectedWardName}, {selectedProvinceName}</strong>
-                  </span>
-                ) : (
-                  <span className="italic text-slate-400">Chọn Tỉnh/Thành và Phường/Xã để tính cước phí GHN</span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => calculateGhnQuote()}
-                disabled={!selectedProvinceName || !selectedWardName || quoteLoading}
-                className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
-              >
-                {quoteLoading ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Đang tính...</span>
-                  </>
-                ) : (
-                  <>
-                    <Truck className="w-3.5 h-3.5" />
-                    <span>Tính Phí GHN</span>
-                  </>
-                )}
-              </button>
-            </div>
+            {/* Lalamove Delivery Address Selection */}
+            <LalamoveAddressPicker
+              initialName={buyerName}
+              initialPhone={buyerPhone}
+              onNameChange={(val) => {
+                setBuyerName(val);
+                if (formErrors.buyerName) setFormErrors({ ...formErrors, buyerName: '' });
+              }}
+              onPhoneChange={(val) => {
+                setBuyerPhone(val);
+              }}
+              initialLatitude={deliveryLatitude}
+              initialLongitude={deliveryLongitude}
+              initialAddress={streetAddress}
+              sellerCity={sellerCityInfo.name}
+              sellerLocation={listing.sellerAddress || listing.location}
+              onAddressConfirmed={(data) => {
+                setDeliveryLatitude(data.latitude);
+                setDeliveryLongitude(data.longitude);
+                setStreetAddress(data.address);
+                setSelectedProvinceName(data.city);
+                if (data.name) setBuyerName(data.name);
+                if (data.phone) setBuyerPhone(data.phone);
+                setIsLocationConfirmed(true);
+                // BẮT ĐẦU TÍNH PHÍ LALAMOVE KHI NGƯỜI MUA BẤM "XÁC NHẬN VỊ TRÍ NÀY"
+                calculateLalamoveQuote(data.latitude, data.longitude, data.address, data.name, data.phone);
+              }}
+              onAddressUnconfirmed={() => {
+                setIsLocationConfirmed(false);
+                setGhnQuote(null);
+                setQuoteError(null);
+              }}
+              lang={lang}
+              title={lang === 'vi' ? 'Địa Chỉ Giao Nhận Hàng Lalamove' : 'Lalamove Delivery Address'}
+              description={
+                hasProfileAddress
+                  ? (lang === 'vi' ? 'Đã tự động đồng bộ từ địa chỉ hồ sơ của bạn. Bạn có thể kéo ghim nếu điểm nhận hàng khác.' : 'Auto-synced from your profile address. Drag pin to adjust if needed.')
+                  : (lang === 'vi' ? 'Hồ sơ chưa có địa chỉ. Bấm "Dùng Vị Trí Hiện Tại" hoặc nhấp vào bản đồ để chọn điểm giao hàng.' : 'No profile address. Click "Use Current Location" or pick on the map.')
+              }
+            />
 
             {/* Address Type Selector */}
             <div className="flex items-center gap-3">
@@ -1456,7 +2544,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             {/* Delivery Note */}
             <div>
               <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                {lang === 'vi' ? 'Ghi chú cho bưu tá giao nhận GHN' : 'Delivery Note for GHN Courier'}
+                {lang === 'vi' ? 'Ghi chú cho tài xế giao nhận Lalamove' : 'Delivery Note for Lalamove Courier'}
               </label>
               <input
                 type="text"
@@ -1467,123 +2555,465 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               />
             </div>
 
-            {/* Live GHN Quote Status Indicator */}
+            {/* Live Lalamove Quote Status Indicator */}
             {quoteLoading && (
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-2.5 text-xs text-blue-800">
-                <Loader2 className="w-4 h-4 text-blue-600 animate-spin shrink-0" />
-                <span>Đang kết nối API GHN tính toán cước phí vận chuyển và thời gian giao hàng...</span>
+              <div className="p-3 bg-orange-50 border border-orange-200 rounded-xl flex items-center gap-2.5 text-xs text-orange-800">
+                <Loader2 className="w-4 h-4 text-orange-600 animate-spin shrink-0" />
+                <span>Đang kết nối API Lalamove tính toán cước phí vận chuyển...</span>
               </div>
             )}
 
-            {quoteError && (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-2.5 text-xs text-amber-900">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>{quoteError}</span>
+            {!isLocationConfirmed && !quoteLoading && (
+              <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl flex items-center gap-2.5 text-xs text-amber-900 animate-fadeIn">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  {lang === 'vi'
+                    ? 'Vui lòng chọn vị trí trên bản đồ và bấm "Xác Nhận Vị Trí Này" để hệ thống tính phí vận chuyển Lalamove.'
+                    : 'Please select a location on the map and click "Confirm Location" to calculate Lalamove shipping fee.'}
+                </span>
+              </div>
+            )}
+
+            {quoteError && (() => {
+              const isVehicleLimit = quoteError.includes('Không có loại xe Lalamove đủ tải trọng') || quoteError.includes('Giới hạn từng loại xe');
+              const isOutOfArea = quoteError.includes('phạm vi phục vụ') || quoteError.includes('ERR_OUT_OF_SERVICE_AREA');
+
+              if (isVehicleLimit) {
+                const parcel = getResolvedPostParcel(
+                  listing.id,
+                  listing,
+                  listing.description,
+                  listing.category
+                );
+                const hasParcel = parcel && (parcel.weight > 0 || parcel.length > 0 || parcel.width > 0 || parcel.height > 0);
+                const vehicleLimits = parseLalamoveVehicleLimits(quoteError);
+
+                return (
+                  <div className="p-4 bg-gradient-to-br from-amber-50 to-orange-50/70 dark:from-amber-950/40 dark:to-orange-950/30 border border-amber-300 dark:border-amber-700/60 rounded-2xl shadow-xs text-amber-950 dark:text-amber-100 space-y-3 animate-fadeIn">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <div className="p-2 bg-amber-100 dark:bg-amber-900/60 rounded-xl text-amber-700 dark:text-amber-300 shrink-0 mt-0.5">
+                          <Package className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm text-amber-900 dark:text-amber-200">
+                            Kiện hàng vượt quá tải trọng / kích thước xe Lalamove
+                          </h4>
+                          <p className="text-xs text-amber-800/90 dark:text-amber-300/90 mt-1 leading-relaxed">
+                            Kích thước hoặc cân nặng của sản phẩm này lớn hơn giới hạn chuyên chở của các loại xe Lalamove tại điểm lấy hàng của người bán.
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          calculateLalamoveQuote(deliveryLatitude, deliveryLongitude, streetAddress, buyerName, buyerPhone);
+                        }}
+                        disabled={quoteLoading}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs transition flex items-center gap-1.5 shrink-0"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${quoteLoading ? 'animate-spin' : ''}`} />
+                        <span>{quoteLoading ? 'Đang tính...' : 'Thử lại'}</span>
+                      </button>
+                    </div>
+
+                    {/* Hiển thị thông số kiện hàng hiện tại nếu có */}
+                    {hasParcel && (
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-amber-900 dark:text-amber-200 bg-amber-100/70 dark:bg-amber-900/40 px-3 py-1.5 rounded-xl border border-amber-200/80 dark:border-amber-800/50">
+                        <span className="font-semibold text-amber-950 dark:text-amber-100">Thông số kiện hàng:</span>
+                        <span>Trọng lượng: <strong>{(parcel.weight / 1000).toLocaleString('vi-VN')} kg</strong></span>
+                        <span>•</span>
+                        <span>Kích thước: <strong>{parcel.length} x {parcel.width} x {parcel.height} cm</strong></span>
+                      </div>
+                    )}
+
+                    {/* Hướng dẫn giải pháp ngắn gọn, thân thiện */}
+                    <div className="text-xs text-amber-800 dark:text-amber-300 bg-white/80 dark:bg-slate-900/60 p-2.5 rounded-xl border border-amber-200/70 dark:border-amber-800/40 flex items-start gap-2">
+                      <span className="text-sm shrink-0">💡</span>
+                      <span className="leading-relaxed text-[11px]">
+                        <strong>Gợi ý:</strong> Bạn có thể nhắn tin trao đổi với người bán để kiểm tra lại thông số đóng gói bài đăng hoặc thỏa thuận phương án vận chuyển riêng.
+                      </span>
+                    </div>
+
+                    {/* Accordion xem chi tiết giới hạn phương tiện (thu gọn mặc định) */}
+                    {vehicleLimits.length > 0 && (
+                      <div className="pt-1 border-t border-amber-200/60 dark:border-amber-800/40">
+                        <button
+                          type="button"
+                          onClick={() => setShowVehicleLimits(!showVehicleLimits)}
+                          className="text-[11px] font-semibold text-amber-800 hover:text-amber-950 dark:text-amber-300 dark:hover:text-amber-100 flex items-center gap-1.5 cursor-pointer transition py-1"
+                        >
+                          <span>{showVehicleLimits ? 'Thu gọn chi tiết các loại xe' : `Xem chi tiết giới hạn ${vehicleLimits.length} loại xe tại điểm lấy hàng`}</span>
+                          {showVehicleLimits ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        </button>
+
+                        {showVehicleLimits && (
+                          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                            {vehicleLimits.map((v, idx) => (
+                              <div key={idx} className="bg-white/80 dark:bg-amber-950/50 p-2 rounded-xl border border-amber-200/70 dark:border-amber-800/40 text-[11px] leading-tight">
+                                <div className="font-bold text-amber-950 dark:text-amber-100 flex items-center gap-1.5">
+                                  <span>{v.icon}</span>
+                                  <span>{v.name}</span>
+                                </div>
+                                {v.limitText && (
+                                  <div className="text-amber-800 dark:text-amber-300 text-[10px] mt-0.5 pl-5">
+                                    {v.limitText}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              // Các trường hợp lỗi quote khác
+              return (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 animate-fadeIn">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-semibold leading-relaxed">{quoteError}</p>
+                      {isOutOfArea && (
+                        <p className="text-[11px] text-amber-700">
+                          👉 Bấm nút bên cạnh để chuyển vị trí giao hàng sang khu vực <strong>{sellerCityInfo.name}</strong>.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                    {isOutOfArea && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeliveryLatitude(sellerCityInfo.lat);
+                          setDeliveryLongitude(sellerCityInfo.lng);
+                          setStreetAddress(`Khu vực trung tâm ${sellerCityInfo.name}`);
+                          setSelectedProvinceName(sellerCityInfo.name);
+                          setIsLocationConfirmed(false);
+                          setGhnQuote(null);
+                          setQuoteError(null);
+                        }}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs transition"
+                      >
+                        Đổi sang {sellerCityInfo.name}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        calculateLalamoveQuote(deliveryLatitude, deliveryLongitude, streetAddress, buyerName, buyerPhone);
+                      }}
+                      disabled={quoteLoading}
+                      className="px-3 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded-xl font-bold text-xs cursor-pointer transition flex items-center gap-1"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${quoteLoading ? 'animate-spin' : ''}`} />
+                      <span>{quoteLoading ? 'Đang tính...' : 'Thử lại'}</span>
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => calculateGhnQuote(selectedProvinceName, selectedWardName, streetAddress, buyerName, buyerPhone)}
-                  className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 rounded-lg font-bold text-[11px] cursor-pointer"
-                >
-                  Thử lại
-                </button>
-              </div>
-            )}
+              );
+            })()}
 
-            {ghnQuote && (
-              <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xl space-y-1.5 text-xs text-emerald-950 animate-fadeIn">
-                <div className="flex items-center justify-between font-bold text-emerald-900">
-                  <div className="flex items-center gap-1.5">
+            {isLocationConfirmed && ghnQuote && !quoteError && (
+              <div className="p-4 bg-emerald-50/90 border border-emerald-300 rounded-2xl space-y-3 text-xs text-emerald-950 animate-fadeIn">
+                <div className="flex items-center justify-between font-bold text-emerald-900 border-b border-emerald-200/80 pb-2">
+                  <div className="flex items-center gap-2">
                     <Truck className="w-4 h-4 text-emerald-700" />
-                    <span>Báo giá Giao Hàng Nhanh (GHN) hợp lệ</span>
+                    <span className="font-extrabold">Báo Giá Vận Chuyển Lalamove</span>
                   </div>
                   <span className="font-mono text-[11px] bg-emerald-200/80 px-2 py-0.5 rounded text-emerald-900 font-semibold">
                     Chặng: {ghnQuote.leg || 'SELLER_TO_BUYER'}
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
-                  <div>
-                    <span className="text-emerald-700">Phí giao GHN: </span>
-                    <strong className="text-emerald-950">{formatVND(ghnQuote.shippingFee)}</strong>
+
+                {/* Thẻ phân loại phương tiện theo kích thước & khối lượng kiện hàng sản phẩm */}
+                {(() => {
+                  const vehicleByQuote = formatLalamoveVehicle(ghnQuote.serviceType);
+                  const parcel = getResolvedPostParcel(
+                    listing.id,
+                    listing,
+                    listing.description,
+                    listing.category
+                  );
+
+                  const actualWeight = parcel.weight;
+                  const actualLength = parcel.length;
+                  const actualWidth = parcel.width;
+                  const actualHeight = parcel.height;
+
+                  const parcelVehicle = classifyVehicleByProduct(
+                    actualWeight,
+                    actualLength,
+                    actualWidth,
+                    actualHeight
+                  );
+
+                  // Phương tiện hiển thị: Ưu tiên loại phương tiện được Lalamove định tuyến thực tế (ghnQuote.serviceType)
+                  const displayVehicle = ghnQuote.serviceType ? vehicleByQuote : parcelVehicle;
+
+                  const weightKg = Number(actualWeight || 0) / 1000;
+                  const weightDisplay = weightKg >= 1
+                    ? `${weightKg.toLocaleString('vi-VN')} kg`
+                    : `${actualWeight || 1000} gram`;
+                  const dimsDisplay = `${actualLength} x ${actualWidth} x ${actualHeight} cm`;
+
+                  // Phát hiện trường hợp sản phẩm nhỏ (Xe máy) nhưng bị Lalamove tính cước xe tải do khoảng cách xa
+                  const isRouteMismatch = parcelVehicle.isMotorcycleEligible && ghnQuote.serviceType !== 'MOTORCYCLE';
+
+                  return (
+                    <div className="space-y-2.5">
+                      <div className="p-3 bg-white/95 border border-emerald-200 rounded-xl space-y-2 shadow-2xs">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-2.5">
+                            <span className="text-2xl shrink-0 mt-0.5">{displayVehicle.icon}</span>
+                            <div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-extrabold text-xs text-slate-900">
+                                  Phương tiện: {displayVehicle.name}
+                                </span>
+                                {ghnQuote.serviceType && (
+                                  <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-semibold border border-slate-200">
+                                    {ghnQuote.serviceType}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                                {displayVehicle.desc}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Chi tiết kích thước và khối lượng của kiện hàng */}
+                        <div className="flex items-center gap-2 pt-2 border-t border-emerald-100 text-[11px] text-slate-700 flex-wrap">
+                          <span className="font-semibold text-emerald-800 flex items-center gap-1">
+                            📦 Kiện hàng:
+                          </span>
+                          <span className="bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200 font-medium">
+                            Khối lượng: <strong className="text-slate-900">{weightDisplay}</strong>
+                          </span>
+                          <span className="bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200 font-medium">
+                            Kích thước: <strong className="text-slate-900">{dimsDisplay}</strong>
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            ({displayVehicle.standard || parcelVehicle.standard})
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Cảnh báo khi sản phẩm nhỏ gọn nhưng bị tính cước xe tải đường dài */}
+                      {isRouteMismatch && (
+                        <div className="p-2.5 bg-amber-50/90 border border-amber-300 rounded-xl flex items-start gap-2 text-[11px] text-amber-900">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <strong className="font-bold block text-amber-950">
+                              Lưu ý về phương tiện và khoảng cách giao hàng:
+                            </strong>
+                            <span>
+                              Theo kích thước ({dimsDisplay}) và khối lượng ({weightDisplay}), sản phẩm này thuộc phân loại <strong>{parcelVehicle.name}</strong> (cước nội thành thông thường ~20.000 đ – 45.000 đ). Tuy nhiên do địa chỉ nhận hàng cách kho người bán quá xa (hoặc khác tỉnh thành), nhà xe không nhận chạy xe máy mà điều động <strong>{vehicleByQuote.name}</strong> đường dài với cước <strong>{formatVND(ghnQuote.shippingFee)}</strong>.
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                  <div className="p-2.5 bg-white/70 rounded-xl border border-emerald-100 space-y-0.5">
+                    <span className="text-emerald-700 font-medium block">Phí giao Lalamove (Người mua trả):</span>
+                    <strong className="text-emerald-950 text-sm font-black">{formatVND(ghnQuote.shippingFee)}</strong>
                   </div>
-                  <div>
-                    <span className="text-emerald-700">Thời gian dự kiến: </span>
-                    <strong className="text-emerald-950">
+                  <div className="p-2.5 bg-white/70 rounded-xl border border-emerald-100 space-y-0.5">
+                    <span className="text-emerald-700 font-medium block">Thời gian dự kiến:</span>
+                    <strong className="text-emerald-950 text-xs font-bold">
                       {ghnQuote.expectedDeliveryTime
-                        ? new Date(ghnQuote.expectedDeliveryTime).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
-                        : '2-3 ngày'}
+                        ? new Date(ghnQuote.expectedDeliveryTime).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
+                        : 'Chưa có dự kiến giao hàng'}
                     </strong>
                   </div>
                 </div>
+
+                {ghnQuote.expiresAt && (
+                  <div className="flex items-center justify-between text-[10px] text-emerald-800 pt-1 border-t border-emerald-200/60">
+                    <span className="flex items-center gap-1 font-medium">
+                      <Clock className="w-3 h-3 text-emerald-600" />
+                      <span>Thời hạn báo giá:</span>
+                    </span>
+                    <span className="font-bold">
+                      {new Date(ghnQuote.expiresAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ({new Date(ghnQuote.expiresAt).toLocaleDateString('vi-VN')})
+                    </span>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* Payment Method Selector & Wallet Balance */}
-          <div className="space-y-2">
+          {/* Payment Method Selector: WALLET vs BANK_TRANSFER (Mục 8) */}
+          <div className="space-y-3">
             <label className="font-extrabold text-[#24263e] uppercase tracking-wider text-[11px] flex items-center justify-between">
-              <span>{lang === 'vi' ? 'Phương thức thanh toán bằng ví điện tử:' : 'Payment Method:'}</span>
+              <span>{lang === 'vi' ? 'Phương thức thanh toán bảo lãnh Escrow:' : 'Payment Method:'}</span>
               <span className="text-emerald-700 font-bold lowercase">
-                {lang === 'vi' ? 'Trừ trực tiếp số dư ví' : 'Direct wallet debit'}
+                {paymentMethod === 'WALLET'
+                  ? (lang === 'vi' ? 'Trừ trực tiếp số dư ví' : 'Direct wallet debit')
+                  : (lang === 'vi' ? 'Quét mã VietQR chuyển khoản' : 'VietQR Bank Transfer')}
               </span>
             </label>
 
-            {/* Wallet Balance Card */}
-            <div className={`p-4 rounded-2xl border transition-all ${
-              (wallet?.balance ?? 0) >= totalAmount
-                ? 'bg-gradient-to-r from-emerald-50 via-teal-50 to-white border-emerald-300'
-                : 'bg-gradient-to-r from-amber-50 via-orange-50 to-white border-amber-300'
-            }`}>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
-                    (wallet?.balance ?? 0) >= totalAmount ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
-                  }`}>
-                    <Wallet className="w-5 h-5" />
+            {/* Selection Tabs */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Option 1: Ví SecondLife Escrow */}
+              <div
+                onClick={() => setPaymentMethod('WALLET')}
+                className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                  paymentMethod === 'WALLET'
+                    ? 'border-[#c34c36] bg-[#faf8f5] shadow-xs'
+                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                      <Wallet className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 className="font-extrabold text-xs text-slate-900 leading-tight">
+                        {lang === 'vi' ? 'Ví Điện Tử SecondLife' : 'SecondLife Wallet'}
+                      </h5>
+                      <span className="text-[10px] text-emerald-700 font-bold block">
+                        {lang === 'vi' ? 'Ký quỹ Escrow tức thì' : 'Instant Escrow hold'}
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-xs font-black text-slate-900 block leading-tight">
-                      {lang === 'vi' ? 'Ví Tiền SecondLife (Ký Quỹ Escrow)' : 'SecondLife Wallet Escrow'}
-                    </span>
-                    <span className="text-xs text-slate-600 font-medium">
-                      {lang === 'vi' ? 'Số dư hiện có: ' : 'Available Balance: '}
-                      <strong className="font-mono text-slate-900 text-sm">{formatVND(wallet?.balance ?? 0)}</strong>
-                    </span>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                    paymentMethod === 'WALLET' ? 'border-[#c34c36] bg-[#c34c36]' : 'border-slate-300'
+                  }`}>
+                    {paymentMethod === 'WALLET' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                   </div>
                 </div>
-
-                {onOpenDeposit && (wallet?.balance ?? 0) < totalAmount ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenDeposit();
-                    }}
-                    className="px-3.5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#dc4729] text-white text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5 shrink-0"
-                  >
-                    <QrCode className="w-3.5 h-3.5" />
-                    <span>{lang === 'vi' ? 'Nạp Tiền Ví' : 'Top Up Wallet'}</span>
-                  </button>
-                ) : (wallet?.balance ?? 0) >= totalAmount ? (
-                  <span className="px-2.5 py-1 rounded-lg bg-emerald-100/90 text-emerald-800 text-[11px] font-bold flex items-center gap-1 shrink-0">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>{lang === 'vi' ? 'Đủ số dư' : 'Sufficient'}</span>
-                  </span>
-                ) : null}
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">Số dư khả dụng:</span>
+                  <strong className="font-mono text-slate-900">{formatVND(wallet?.balance ?? 0)}</strong>
+                </div>
               </div>
 
-              {(wallet?.balance ?? 0) < totalAmount && (
-                <div className="mt-2.5 pt-2 border-t border-amber-200/80 text-[11px] text-amber-800 font-medium flex items-center gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                  <span>
-                    {lang === 'vi'
-                      ? `Số dư ví còn thiếu ${formatVND(totalAmount - (wallet?.balance ?? 0))}. Vui lòng nạp tiền vào ví trước khi xác nhận đặt hàng.`
-                      : `Wallet is short by ${formatVND(totalAmount - (wallet?.balance ?? 0))}. Please top up before ordering.`}
-                  </span>
+              {/* Option 2: Chuyển khoản ngân hàng trực tiếp VietQR */}
+              <div
+                onClick={() => setPaymentMethod('BANK_TRANSFER')}
+                className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                  paymentMethod === 'BANK_TRANSFER'
+                    ? 'border-[#c34c36] bg-[#faf8f5] shadow-xs'
+                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                      <QrCode className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 className="font-extrabold text-xs text-slate-900 leading-tight">
+                        {lang === 'vi' ? 'Chuyển Khoản Trực Tiếp' : 'Direct Bank Transfer'}
+                      </h5>
+                      <span className="text-[10px] text-blue-700 font-bold block">
+                        {lang === 'vi' ? 'Quét mã VietQR (SePay)' : 'VietQR / SePay'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                    paymentMethod === 'BANK_TRANSFER' ? 'border-[#c34c36] bg-[#c34c36]' : 'border-slate-300'
+                  }`}>
+                    {paymentMethod === 'BANK_TRANSFER' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </div>
                 </div>
-              )}
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">Đối soát tự động:</span>
+                  <span className="text-emerald-700 font-bold">24/7 tức thì</span>
+                </div>
+              </div>
             </div>
+
+            {/* Wallet Details Card if WALLET is selected */}
+            {paymentMethod === 'WALLET' && (
+              <div className={`p-4 rounded-2xl border transition-all ${
+                (wallet?.balance ?? 0) >= upfrontAmount
+                  ? 'bg-gradient-to-r from-emerald-50 via-teal-50 to-white border-emerald-300'
+                  : 'bg-gradient-to-r from-amber-50 via-orange-50 to-white border-amber-300'
+              }`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
+                      (wallet?.balance ?? 0) >= upfrontAmount ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+                    }`}>
+                      <Wallet className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-black text-slate-900 block leading-tight">
+                        {lang === 'vi' ? 'Ví Tiền SecondLife (Ký Quỹ Escrow)' : 'SecondLife Wallet Escrow'}
+                      </span>
+                      <span className="text-xs text-slate-600 font-medium">
+                        {lang === 'vi' ? 'Số dư hiện có: ' : 'Available Balance: '}
+                        <strong className="font-mono text-slate-900 text-sm">{formatVND(wallet?.balance ?? 0)}</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  {onOpenDeposit && (wallet?.balance ?? 0) < upfrontAmount ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenDeposit();
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#dc4729] text-white text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1.5 shrink-0"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>{lang === 'vi' ? 'Nạp Tiền Ví' : 'Top Up Wallet'}</span>
+                    </button>
+                  ) : (wallet?.balance ?? 0) >= upfrontAmount ? (
+                    <span className="px-2.5 py-1 rounded-lg bg-emerald-100/90 text-emerald-800 text-[11px] font-bold flex items-center gap-1 shrink-0">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{lang === 'vi' ? 'Đủ số dư' : 'Sufficient'}</span>
+                    </span>
+                  ) : null}
+                </div>
+
+                {(wallet?.balance ?? 0) < upfrontAmount && (
+                  <div className="mt-2.5 pt-2 border-t border-amber-200/80 text-[11px] text-amber-800 font-medium flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>
+                      {lang === 'vi'
+                        ? `Số dư ví còn thiếu ${formatVND(upfrontAmount - (wallet?.balance ?? 0))}. Bạn có thể nạp tiền vào ví hoặc chọn phương thức 'Chuyển Khoản Trực Tiếp'.`
+                        : `Wallet is short by ${formatVND(upfrontAmount - (wallet?.balance ?? 0))}. Please top up or choose Direct Bank Transfer.`}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Bank Transfer Details Card if BANK_TRANSFER is selected */}
+            {paymentMethod === 'BANK_TRANSFER' && (
+              <div className="p-4 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-white text-xs space-y-2">
+                <div className="flex items-center gap-2.5 text-blue-900 font-bold">
+                  <QrCode className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>Thanh toán quét mã VietQR tự động qua SePay</span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  {lang === 'vi'
+                    ? 'Sau khi bấm "Đặt Hàng & Lấy Mã VietQR", hệ thống sẽ hiển thị mã QR kèm nội dung chuyển tiền định danh. Bạn mở app ngân hàng bất kỳ để quét mã và chuyển tiền. Tiền sẽ được đối soát tự động và đưa vào ký quỹ Escrow bảo vệ bạn.'
+                    : 'After clicking Place Order, a dynamic VietQR will be generated with your unique order code. Funds will be verified and held in Escrow.'}
+                </p>
+                <div className="flex items-center gap-1.5 text-[10px] text-blue-700 font-bold pt-1 border-t border-blue-100">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Bảo lãnh Escrow 100% • Người bán chỉ nhận tiền sau khi bạn xác nhận đã nhận hàng</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Financial Breakdown */}
@@ -1625,30 +3055,21 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
 
             <div className="flex justify-between text-slate-600 text-[11px] items-center">
-              <span>{lang === 'vi' ? 'Phí giao hàng Giao Hàng Nhanh (GHN):' : 'GHN Shipping Fee:'}</span>
+              <span>{lang === 'vi' ? 'Phí giao hàng Lalamove On-Demand:' : 'Lalamove Shipping Fee:'}</span>
               <div className="text-right">
                 {quoteLoading ? (
-                  <span className="text-blue-600 font-bold flex items-center gap-1 justify-end">
+                  <span className="text-orange-600 font-bold flex items-center gap-1 justify-end">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Đang tính phí GHN...</span>
+                    <span>Đang tính phí Lalamove...</span>
                   </span>
-                ) : ghnQuote ? (
+                ) : (isLocationConfirmed && ghnQuote && !quoteError) ? (
                   <span className="font-bold text-emerald-700">
                     +{formatVND(shippingFee)}
                   </span>
-                ) : quoteError ? (
-                  <span className="text-amber-800 font-medium">
-                    +{formatVND(shippingFee)} (Tạm tính)
-                  </span>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => calculateGhnQuote()}
-                    disabled={!selectedProvinceName || !selectedWardName}
-                    className="text-blue-600 hover:underline font-bold disabled:text-slate-400 disabled:no-underline cursor-pointer"
-                  >
-                    {selectedProvinceName && selectedWardName ? 'Bấm tính phí ship GHN' : 'Chờ chọn địa chỉ...'}
-                  </button>
+                  <span className="text-slate-400 font-medium">
+                    ---
+                  </span>
                 )}
               </div>
             </div>
@@ -1698,12 +3119,50 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             )}
 
-            <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm text-[#24263e]">
-              <span>{lang === 'vi' ? 'Tổng số tiền trừ ví:' : 'Total Payable from Wallet:'}</span>
-              <span className="text-base sm:text-lg font-black text-[#c34c36]">
-                {formatVND(totalAmount)}
-              </span>
-            </div>
+            {isInspected ? (
+              <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                <div className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 space-y-1 text-xs">
+                  <div className="flex justify-between font-bold text-slate-800">
+                    <span className="flex items-center gap-1.5 text-amber-900">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{lang === 'vi' ? 'Giai đoạn 1 (Trả trước): Phí kiểm định + Ship' : 'Stage 1 (Upfront): Inspection + Shipping'}</span>
+                    </span>
+                    <span className="text-[#c34c36] font-extrabold">{formatVND(upfrontAmount)}</span>
+                  </div>
+                  <div className="flex justify-between text-[11px] text-slate-600">
+                    <span>{lang === 'vi' ? 'Giai đoạn 2 (Sau khi máy ĐẠT kiểm định): Tiền sản phẩm' : 'Stage 2 (After PASSED inspection): Product Price'}</span>
+                    <span className="font-semibold text-slate-700">{formatVND(stage2ProductAmount)}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 italic pt-0.5 border-t border-amber-100">
+                    {lang === 'vi'
+                      ? '* Tiền sản phẩm chỉ thanh toán sau khi bạn xem biên bản kiểm định và đồng ý mua tiếp.'
+                      : '* Product price is paid only after you review inspection report and confirm purchase.'}
+                  </p>
+                </div>
+
+                <div className="flex justify-between font-bold text-sm text-[#24263e] pt-1">
+                  <span>
+                    {paymentMethod === 'WALLET'
+                      ? (lang === 'vi' ? 'Tổng tiền cọc trừ ví ngay:' : 'Total Deposit Payable from Wallet:')
+                      : (lang === 'vi' ? 'Tổng cọc thanh toán VietQR ngay:' : 'Total Deposit Payable via VietQR:')}
+                  </span>
+                  <span className="text-base sm:text-lg font-black text-[#c34c36]">
+                    {formatVND(upfrontAmount)}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm text-[#24263e]">
+                <span>
+                  {paymentMethod === 'WALLET'
+                    ? (lang === 'vi' ? 'Tổng số tiền trừ ví:' : 'Total Payable from Wallet:')
+                    : (lang === 'vi' ? 'Tổng thanh toán qua VietQR:' : 'Total Payable via VietQR:')}
+                </span>
+                <span className="text-base sm:text-lg font-black text-[#c34c36]">
+                  {formatVND(totalAmount)}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Escrow Guarantee Notice */}
@@ -1711,43 +3170,78 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
             <span className="leading-snug">
               <strong>{lang === 'vi' ? 'Cam kết Escrow:' : 'Escrow Custody Guarantee:'}</strong>{' '}
-              {lang === 'vi'
-                ? 'Tiền sẽ được trừ vào ví và phong tỏa an toàn tại quỹ Escrow. Sau khi GHN giao hàng và bạn xác nhận đã nhận hàng thành công, tiền hàng mới được giải ngân cho người bán.'
-                : 'Payment is securely held in Escrow custody. Seller receives funds only after GHN delivers and you confirm receipt.'}
+              {isInspected
+                ? (lang === 'vi'
+                    ? 'Bạn chỉ trả trước phí kiểm định và tiền ship. Sau khi có kết quả kiểm định đạt chuẩn, bạn sẽ có quyền xem biên bản để xác nhận mua tiếp (trả tiền máy) hoặc từ chối hủy đơn bảo lãnh.'
+                    : 'You only pay inspection & shipping deposit upfront. You will review the inspection report to confirm purchase or cancel.')
+                : (lang === 'vi'
+                    ? 'Tiền sẽ được trừ vào ví và phong tỏa an toàn tại quỹ Escrow. Sau khi tài xế Lalamove giao hàng và bạn xác nhận đã nhận hàng thành công, tiền hàng mới được giải ngân cho người bán.'
+                    : 'Payment is securely held in Escrow custody. Seller receives funds only after Lalamove delivers and you confirm receipt.')}
             </span>
           </div>
 
           {/* Order Error Alert */}
           {orderError && (
-            <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 font-semibold flex items-center gap-2.5 animate-fadeIn">
-              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-              <span>{orderError}</span>
+            <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 font-semibold flex items-center justify-between gap-2.5 animate-fadeIn">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                <span className="break-words">{translateSystemNotification(orderError)}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOrderError(null)}
+                className="text-red-400 hover:text-red-700 p-1 rounded-lg transition shrink-0 cursor-pointer"
+                title={lang === 'vi' ? 'Đóng thông báo' : 'Dismiss notice'}
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           )}
 
           {/* Submit */}
           <button
             type="submit"
-            disabled={submittingOrder || !ghnQuote}
+            disabled={submittingOrder || !isLocationConfirmed || !ghnQuote}
             className="w-full py-3.5 px-4 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white rounded-2xl font-black text-xs sm:text-sm shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submittingOrder ? (
               <>
                 <Loader2 className="w-4 h-4 text-white animate-spin" />
-                <span>{lang === 'vi' ? 'Đang kết nối Escrow & trừ tiền ví...' : 'Connecting Escrow & deducting wallet...'}</span>
+                <span>
+                  {paymentMethod === 'WALLET'
+                    ? (lang === 'vi' ? 'Đang kết nối Escrow & trừ tiền ví...' : 'Connecting Escrow & deducting wallet...')
+                    : (lang === 'vi' ? 'Đang tạo đơn & lấy mã VietQR...' : 'Creating order & generating VietQR...')}
+                </span>
               </>
-            ) : !ghnQuote ? (
+            ) : (!isLocationConfirmed || !ghnQuote) ? (
               <>
                 <Truck className="w-4 h-4 text-white" />
-                <span>{lang === 'vi' ? 'Vui lòng chọn địa chỉ để lấy báo giá GHN' : 'Please select address for GHN quote'}</span>
+                <span>{lang === 'vi' ? 'Vui lòng xác nhận vị trí trên bản đồ để tính phí Lalamove' : 'Please confirm location on map to calculate Lalamove fee'}</span>
               </>
-            ) : (
+            ) : paymentMethod === 'WALLET' ? (
               <>
                 <Lock className="w-4 h-4 text-white" />
                 <span>
-                  {lang === 'vi'
-                    ? `Xác Nhận Đặt Hàng & Thanh Toán Ví (${formatVND(totalAmount)})`
-                    : `Confirm Order & Pay with Wallet (${formatVND(totalAmount)})`}
+                  {isInspected
+                    ? (lang === 'vi'
+                        ? `Xác Nhận Đặt Cọc Kiểm Định & Ship (${formatVND(upfrontAmount)})`
+                        : `Confirm Inspection Deposit & Ship (${formatVND(upfrontAmount)})`)
+                    : (lang === 'vi'
+                        ? `Xác Nhận Đặt Hàng & Thanh Toán Ví (${formatVND(totalAmount)})`
+                        : `Confirm Order & Pay with Wallet (${formatVND(totalAmount)})`)}
+                </span>
+              </>
+            ) : (
+              <>
+                <QrCode className="w-4 h-4 text-white" />
+                <span>
+                  {isInspected
+                    ? (lang === 'vi'
+                        ? `Đặt Cọc Kiểm Định & Nhận VietQR (${formatVND(upfrontAmount)})`
+                        : `Inspection Deposit & Get VietQR (${formatVND(upfrontAmount)})`)
+                    : (lang === 'vi'
+                        ? `Đặt Hàng & Nhận Mã VietQR (${formatVND(totalAmount)})`
+                        : `Place Order & Get VietQR Code (${formatVND(totalAmount)})`)}
                 </span>
               </>
             )}

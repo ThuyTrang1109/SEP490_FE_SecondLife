@@ -1,8 +1,9 @@
 import React from 'react';
-import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Phone, Coins, FileCheck, Wallet, Wrench } from 'lucide-react';
+import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Phone, Coins, FileCheck, Wallet, Wrench, Bell, Store, Scale } from 'lucide-react';
 import { UserRole, Language, UserCredit } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import logoImg from '../../assets/logo.png';
+import { NotificationBell } from './NotificationBell';
 
 interface NavbarProps {
   currentRole: UserRole;
@@ -22,6 +23,9 @@ interface NavbarProps {
   userCredit?: UserCredit;
   walletBalance?: number;
   onOpenSellerRegister?: () => void;
+  onNavigateNotification?: (actionUrl: string | null, notification: any) => void;
+  onOpenNotifications?: () => void;
+  token?: string | null;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -42,6 +46,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   userCredit,
   walletBalance = 0,
   onOpenSellerRegister,
+  onNavigateNotification,
+  onOpenNotifications,
+  token,
 }) => {
   const t = translations[lang];
 
@@ -102,6 +109,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           className="flex items-center gap-2.5 cursor-pointer select-none group shrink-0"
           onClick={() => {
             if (currentUser?.role === 'admin' || currentRole === 'admin') onTabChange('admin-dashboard');
+            else if (currentUser?.role === 'inspection_center' || currentRole === 'inspection_center') onTabChange('inspection-center');
             else if (currentUser?.role === 'inspector' || currentRole === 'inspector') onTabChange('inspection-hub');
             else onTabChange('home');
           }}
@@ -143,18 +151,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               <ShieldAlert className="w-4 h-4" />
               <span>{lang === 'vi' ? 'Quản Trị Hệ Thống (Admin)' : 'Admin Dashboard'}</span>
             </button>
-          ) : currentUser && currentRole === 'inspector' ? (
-            /* Inspector role: Single Inspection Center Portal */
+          ) : currentUser && (currentRole === 'inspector' || currentRole === 'inspection_center') ? (
+            /* Inspector & Inspection Center Manager role: Single Inspection Center Portal */
             <button
-              onClick={() => onTabChange('inspection-hub')}
+              onClick={() => onTabChange(currentRole === 'inspection_center' ? 'inspection-center' : 'inspection-hub')}
               className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'inspection-hub'
+                activeTab === 'inspection-center' || activeTab === 'inspection-hub'
                   ? 'bg-[#c34c36] text-white shadow-sm'
                   : 'text-white/80 hover:text-white hover:bg-white/10'
               }`}
             >
               <Building2 className="w-4 h-4" />
-              <span>{lang === 'vi' ? 'Trung Tâm Kiểm Định' : 'Inspection Center'}</span>
+              <span>{lang === 'vi' ? (currentRole === 'inspection_center' ? 'Dashboard Trưởng Trung Tâm' : 'Trung Tâm Kiểm Định') : 'Inspection Center'}</span>
             </button>
           ) : (
             /* Buyer, Seller, Staff & Public roles: Full Marketplace Navigation */
@@ -216,6 +224,21 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
 
+              {currentUser && !['admin', 'inspector'].includes(currentRole) && (
+                <button
+                  onClick={() => onTabChange('disputes')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${
+                    activeTab === 'disputes'
+                      ? 'bg-[#c34c36] text-white shadow-sm font-black'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                  title={lang === 'vi' ? 'Khiếu nại & Trọng tài Escrow' : 'Disputes & Escrow Arbitration'}
+                >
+                  <Scale className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? 'Khiếu Nại' : 'Disputes'}</span>
+                </button>
+              )}
+
               {/* Staff Workspace - Placed at the end of navigation */}
               {currentUser && (currentRole === 'staff' || currentUser.role === 'staff') && (
                 <button
@@ -271,13 +294,31 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
 
+          {/* Notification Bell with Dropdown Popover */}
+          {currentUser && (
+            <NotificationBell
+              lang={lang}
+              token={token}
+              currentUser={currentUser}
+              currentRole={currentRole}
+              onNavigateToUrl={onNavigateNotification}
+              onViewAllNotifications={() => {
+                if (onOpenNotifications) {
+                  onOpenNotifications();
+                } else {
+                  onTabChange('notifications');
+                }
+              }}
+            />
+          )}
+
           {/* Post Listing CTA Button - Buyer, Seller, Staff */}
           {(!currentUser || !['admin', 'inspector'].includes(currentRole)) && (
             <button
               onClick={() => {
                 if (!currentUser) {
                   onTabChange('create-listing');
-                } else if (currentRole !== 'seller' && currentRole !== 'staff') {
+                } else if (currentRole !== 'seller' && currentUser.role !== 'seller' && currentRole !== 'staff') {
                   if (onOpenSellerRegister) {
                     onOpenSellerRegister();
                   } else {
@@ -289,8 +330,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               }}
               className="hidden sm:inline-flex items-center gap-1.5 bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 text-white px-4 py-2 rounded-xl font-black text-xs shadow-md hover:shadow-lg transition cursor-pointer"
             >
-              <Sparkles className="w-3.5 h-3.5 fill-white" />
-              <span>{lang === 'vi' ? 'Đăng Bán AI' : 'Post Listing'}</span>
+              {currentUser && currentRole !== 'seller' && currentUser.role !== 'seller' && currentRole !== 'staff' ? (
+                <>
+                  <Store className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? 'Đăng Ký Người Bán' : 'Register as Seller'}</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5 fill-white" />
+                  <span>{lang === 'vi' ? 'Đăng Bán' : 'Post Listing'}</span>
+                </>
+              )}
             </button>
           )}
 
@@ -371,16 +421,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>Hồ Sơ</span>
             </button>
           </>
-        ) : currentUser && currentRole === 'inspector' ? (
+        ) : currentUser && (currentRole === 'inspector' || currentRole === 'inspection_center') ? (
           <>
             <button
-              onClick={() => onTabChange('inspection-hub')}
+              onClick={() => onTabChange(currentRole === 'inspection_center' ? 'inspection-center' : 'inspection-hub')}
               className={`flex items-center gap-1 py-1 px-2 rounded-md ${
-                activeTab === 'inspection-hub' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
+                activeTab === 'inspection-center' || activeTab === 'inspection-hub' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
               }`}
             >
               <Building2 className="w-3.5 h-3.5" />
-              <span>Trung Tâm KĐ</span>
+              <span>{currentRole === 'inspection_center' ? 'Trưởng Trạm KĐ' : 'Trung Tâm KĐ'}</span>
             </button>
             <button
               onClick={onOpenProfile}
@@ -424,6 +474,24 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <Clock className="w-3.5 h-3.5" />
                 <span>{lang === 'vi' ? 'Đơn hàng' : 'Orders'}</span>
+              </button>
+            )}
+            {currentUser && (
+              <button
+                onClick={() => onTabChange('notifications')}
+                className={`flex items-center gap-1 py-1 px-2 rounded-md relative ${activeTab === 'notifications' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'}`}
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span>{lang === 'vi' ? 'Thông báo' : 'Alerts'}</span>
+              </button>
+            )}
+            {currentUser && !['admin', 'inspector'].includes(currentRole) && (
+              <button
+                onClick={() => onTabChange('disputes')}
+                className={`flex items-center gap-1 py-1 px-2 rounded-md relative ${activeTab === 'disputes' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'}`}
+              >
+                <Scale className="w-3.5 h-3.5" />
+                <span>{lang === 'vi' ? 'Khiếu nại' : 'Disputes'}</span>
               </button>
             )}
             {currentUser && (currentRole === 'staff' || currentUser.role === 'staff') && (

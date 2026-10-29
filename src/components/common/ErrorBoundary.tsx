@@ -31,15 +31,27 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public handleReload = () => {
-    window.location.reload();
+    try {
+      sessionStorage.clear();
+    } catch {}
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set('_v', Date.now().toString());
+    window.location.href = currentUrl.toString();
   };
 
   public handleGoHome = () => {
+    try {
+      sessionStorage.clear();
+    } catch {}
     window.location.href = '/';
   };
 
   public render() {
     if (this.state.hasError) {
+      const isDynamicImport =
+        this.state.error?.message?.includes('Failed to fetch dynamically imported module') ||
+        this.state.error?.message?.includes('dynamically imported');
+
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl border border-gray-100 text-center space-y-5 animate-in fade-in">
@@ -49,10 +61,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
             <div className="space-y-2">
               <h2 className="text-xl font-black text-slate-900">
-                Đã xảy ra sự cố giao diện
+                {isDynamicImport ? 'Cần làm mới kết nối giao diện' : 'Đã xảy ra sự cố giao diện'}
               </h2>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Hệ thống đã tự động ngăn chặn lỗi hiển thị trắng trang. Bạn có thể bấm nút bên dưới để tải lại hoặc quay về trang chủ.
+                {isDynamicImport
+                  ? 'Trình duyệt bị gián đoạn khi tải gói mã nguồn giao diện mới từ máy chủ. Bấm nút "Tải lại trang" để cập nhật phiên bản mới nhất.'
+                  : 'Hệ thống đã tự động ngăn chặn lỗi hiển thị trắng trang. Bạn có thể bấm nút bên dưới để tải lại hoặc quay về trang chủ.'}
               </p>
               {this.state.error?.message && (
                 <div className="p-3 bg-slate-100 rounded-xl text-left font-mono text-[11px] text-slate-700 overflow-x-auto border border-slate-200">

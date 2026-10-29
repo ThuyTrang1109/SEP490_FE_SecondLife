@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { EscrowOrder, Language, ShipmentBackend, ShipmentEventBackend } from '../../types';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { EscrowOrder, Language, ShipmentBackend, ShipmentEventBackend, LalamoveTrackingResponse } from '../../types';
 import { formatVND } from '../../utils/translations';
 import {
   Truck,
@@ -14,10 +14,89 @@ import {
   ExternalLink,
   Camera,
   PlayCircle,
-  Check
+  Check,
+  User,
+  Phone,
+  MapPin,
+  Navigation,
+  Radio,
+  RotateCcw,
+  Sparkles,
+  ShieldCheck,
+  CreditCard,
+  Loader2,
+  Info
 } from 'lucide-react';
 import { shippingService } from '../../services/shippingService';
 import { orderService } from '../../services/orderService';
+import { dialogService } from '../../utils/dialogService';
+import { translateApiError } from '../../services/apiClient';
+import { resolveListingCategory, resolveOrderListing } from '../../utils/catalogCache';
+
+interface GroupedShipmentEvent {
+  key: string;
+  status: string;
+  type: string;
+  title: string;
+  description: string;
+  badgeClass: string;
+  firstOccurredAt: string;
+  lastOccurredAt: string;
+  count: number;
+  reason?: string | null;
+  isLatest: boolean;
+}
+
+const getLalamoveStatusDetails = (status: string | null | undefined, type?: string) => {
+  const s = (status || type || '').toUpperCase();
+  if (s === 'ASSIGNING_DRIVER') {
+    return {
+      title: 'Đang tìm kiếm tài xế Lalamove',
+      description: 'Hệ thống đang phát chuyến và kết nối tài xế khu vực gần điểm lấy kiện hàng.',
+      badgeClass: 'bg-amber-100 text-amber-800 border-amber-300',
+    };
+  }
+  if (s === 'ON_GOING') {
+    return {
+      title: 'Tài xế đã nhận chuyến & đang di chuyển',
+      description: 'Tài xế đối tác Lalamove đã nhận đơn và đang trên đường đến điểm lấy kiện hàng từ người gửi.',
+      badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+    };
+  }
+  if (s === 'PICKED_UP' || s === 'PICKED' || s === 'SHIPPED') {
+    return {
+      title: 'Tài xế đã lấy kiện hàng',
+      description: 'Tài xế đã nhận kiện hàng từ người gửi và đang trên lộ trình di chuyển tới người nhận.',
+      badgeClass: 'bg-blue-100 text-blue-800 border-blue-300',
+    };
+  }
+  if (s === 'COMPLETED' || s === 'DELIVERED') {
+    return {
+      title: 'Đã giao hàng thành công',
+      description: 'Kiện hàng đã được bàn giao tận tay người nhận thành công.',
+      badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+    };
+  }
+  if (s.includes('CANCEL')) {
+    return {
+      title: 'Vận đơn đã bị hủy',
+      description: 'Vận đơn giao hàng qua đối tác Lalamove đã được hủy.',
+      badgeClass: 'bg-rose-100 text-rose-800 border-rose-300',
+    };
+  }
+  if (s.includes('REJECT') || s.includes('EXPIRE')) {
+    return {
+      title: 'Hết hạn tìm tài xế / Bị từ chối',
+      description: 'Không tìm thấy tài xế khả dụng nhận chuyến hoặc đơn đã hết thời gian chờ tiếp nhận.',
+      badgeClass: 'bg-rose-100 text-rose-800 border-rose-300',
+    };
+  }
+  return {
+    title: s ? `Trạng thái: ${s}` : 'Cập nhật hành trình',
+    description: 'Hệ thống ghi nhận sự kiện cập nhật từ đối tác vận chuyển Lalamove.',
+    badgeClass: 'bg-slate-100 text-slate-800 border-slate-300',
+  };
+};
 
 interface OrderTrackingModalProps {
   order: EscrowOrder;
@@ -27,6 +106,26 @@ interface OrderTrackingModalProps {
   onConfirmReceipt?: (orderId: string) => void;
   onOpenLabelModal?: (shipment: ShipmentBackend) => void;
   onOrderUpdated?: () => void;
+}
+
+function loadLeaflet(): Promise<any> {
+  if (typeof window !== 'undefined' && (window as any).L) {
+    return Promise.resolve((window as any).L);
+  }
+  return new Promise((resolve, reject) => {
+    if (!document.getElementById('leaflet-css')) {
+      const link = document.createElement('link');
+      link.id = 'leaflet-css';
+      link.rel = 'stylesheet';
+      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(link);
+    }
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.onload = () => resolve((window as any).L);
+    script.onerror = (e) => reject(e);
+    document.body.appendChild(script);
+  });
 }
 
 export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
@@ -41,15 +140,56 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   const [shipments, setShipments] = useState<ShipmentBackend[]>([]);
   const [activeShipmentId, setActiveShipmentId] = useState<string | null>(null);
   const [events, setEvents] = useState<ShipmentEventBackend[]>([]);
+  const [trackingData, setTrackingData] = useState<LalamoveTrackingResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isReconciling, setIsReconciling] = useState(false);
+  const [isRefunding, setIsRefunding] = useState(false);
   const [isConfirmingDelivered, setIsConfirmingDelivered] = useState(false);
+  const [isCreatingShipment, setIsCreatingShipment] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const isReceiptConfirmed = Boolean(
+    String(order.escrowStatus) === 'COMPLETED_RELEASED' ||
+    String(order.escrowStatus) === 'RELEASED' ||
+    String(order.escrowStatus) === 'COMPLETED' ||
+    String((order as any).status).toUpperCase() === 'COMPLETED' ||
+    String((order as any).backendStatus).toUpperCase() === 'COMPLETED' ||
+    (order as any).buyerConfirmedAt ||
+    (order as any).buyer_confirmed_at ||
+    (order as any).releasedAt ||
+    (order as any).released_at ||
+    (typeof window !== 'undefined' && localStorage.getItem(`order_receipt_confirmed_${order.id}`) === 'true')
+  );
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
 
-  // Polling state (15 - 20s interval as suggested in section D)
+  const handleManualCreateShipment = async () => {
+    setIsCreatingShipment(true);
+    setErrorMsg(null);
+    try {
+      const shipment = await shippingService.createShipment(order.id, {
+        requestId: crypto.randomUUID(),
+        leg: 'SELLER_TO_BUYER',
+      });
+      showNotification(
+        shipment?.orderCode
+          ? `Đã khởi tạo vận đơn Lalamove thành công! Mã vận đơn: #${shipment.orderCode}`
+          : 'Đã khởi tạo vận đơn Lalamove thành công!'
+      );
+      await loadShipmentData();
+      onOrderUpdated?.();
+    } catch (err: any) {
+      console.error('Failed to create Lalamove shipment:', err);
+      const rawMsg = err?.response?.data?.message || err?.message || '';
+      showNotification(translateApiError(rawMsg) || 'Không thể tạo vận đơn Lalamove. Vui lòng thử lại.', true);
+    } finally {
+      setIsCreatingShipment(false);
+    }
+  };
+
+  // Polling state (10 - 15s interval as specified in Section 10.4 of guide)
   const [pollingActive] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
@@ -57,11 +197,78 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   const [showSandbox, setShowSandbox] = useState(false);
   const [simulatingStatus, setSimulatingStatus] = useState<string | null>(null);
 
+  // Backend Order Extra States (GET /orders/{id}/confirmation, /fulfillment, /payment)
+  const [orderConfirmation, setOrderConfirmation] = useState<any>(null);
+  const [orderFulfillment, setOrderFulfillment] = useState<any>(null);
+  const [orderPayment, setOrderPayment] = useState<any>(null);
+  const [isLoadingPayment, setIsLoadingPayment] = useState<boolean>(false);
+  const [paymentNotice, setPaymentNotice] = useState<string | null>(null);
+  const [countdownText, setCountdownText] = useState<string>('');
+
+  const loadOrderExtraDetails = useCallback(async () => {
+    try {
+      const [confRes, fulfRes] = await Promise.allSettled([
+        orderService.getOrderConfirmation(order.id),
+        orderService.getOrderFulfillment(order.id),
+      ]);
+      if (confRes.status === 'fulfilled') setOrderConfirmation(confRes.value);
+      if (fulfRes.status === 'fulfilled') setOrderFulfillment(fulfRes.value);
+    } catch (e) {
+      console.warn('Failed to load confirmation or fulfillment extra details:', e);
+    }
+  }, [order.id]);
+
+  useEffect(() => {
+    loadOrderExtraDetails();
+  }, [loadOrderExtraDetails]);
+
+  // Countdown timer for seller confirmation deadline
+  useEffect(() => {
+    const deadlineStr = orderConfirmation?.confirmationDeadline || orderFulfillment?.confirmationDeadline;
+    if (!deadlineStr || orderConfirmation?.sellerConfirmedAt || orderFulfillment?.sellerConfirmedAt) {
+      setCountdownText('');
+      return;
+    }
+
+    const updateCountdown = () => {
+      const diff = new Date(deadlineStr).getTime() - Date.now();
+      if (diff <= 0) {
+        setCountdownText('Đã quá hạn xác nhận bàn giao');
+        return;
+      }
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const secs = Math.floor((diff % (1000 * 60)) / 1000);
+      setCountdownText(`${hours}h ${mins}m ${secs}s`);
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [orderConfirmation?.confirmationDeadline, orderConfirmation?.sellerConfirmedAt, orderFulfillment?.confirmationDeadline, orderFulfillment?.sellerConfirmedAt]);
+
+  const handleLookupPayment = async () => {
+    setIsLoadingPayment(true);
+    setPaymentNotice(null);
+    try {
+      const res = await orderService.getOrderPayment(order.id);
+      setOrderPayment(res);
+      setPaymentNotice('Đã cập nhật trạng thái thanh toán từ cổng SePay thành công!');
+    } catch (err: any) {
+      setPaymentNotice(err?.message || 'Không thể tra cứu trạng thái thanh toán.');
+    } finally {
+      setIsLoadingPayment(false);
+    }
+  };
+
+  const mapInstanceRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
+
   const activeShipment = shipments.find((s) => s.shipmentId === activeShipmentId) || shipments[0] || null;
 
   const showNotification = (msg: string, isError = false) => {
     if (isError) {
-      setErrorMsg(msg);
+      setErrorMsg(translateApiError(msg));
       setTimeout(() => setErrorMsg(null), 6000);
     } else {
       setSuccessMsg(msg);
@@ -69,11 +276,11 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     }
   };
 
-  // Fetch shipments and events
+  // Fetch shipments, events and Lalamove tracking details
   const loadShipmentData = useCallback(async (isBackground = false) => {
     if (!isBackground) setIsLoading(true);
     try {
-      const shipList = await shippingService.getOrderShipments(order.id);
+      let shipList = await shippingService.getOrderShipments(order.id);
       setShipments(shipList);
 
       if (shipList.length > 0) {
@@ -85,10 +292,42 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
           setActiveShipmentId(targetId);
         }
 
-        const evList = await shippingService.getShipmentEvents(targetId);
-        setEvents(evList);
+        const currentShipment = shipList.find((s) => s.shipmentId === targetId) || shipList[0];
+        const isTerminal = ['COMPLETED', 'DELIVERED', 'CANCELLED', 'FAILED'].includes(currentShipment.status) ||
+          ['COMPLETED', 'CANCELED', 'EXPIRED', 'REJECTED'].includes(currentShipment.providerStatus || '');
+
+        // Chỉ đồng bộ tự động khi tải chủ động (mở modal lần đầu hoặc người dùng bấm làm mới)
+        // Tuyệt đối không gọi sync trong background polling để tránh Backend lưu sự kiện RECONCILIATION trùng lặp liên tục mỗi 12 giây
+        if (!isBackground && !isTerminal && currentShipment.orderCode) {
+          try {
+            const synced = await shippingService.syncShipment(targetId);
+            if (synced) {
+              shipList = shipList.map((s) => (s.shipmentId === targetId ? { ...s, ...synced } : s));
+              setShipments(shipList);
+            }
+          } catch (syncErr) {
+            console.debug('Initial sync shipment ignored:', syncErr);
+          }
+        }
+
+        // Parallel load tracking and events
+        const [evList, trackRes] = await Promise.allSettled([
+          shippingService.getShipmentEvents(targetId),
+          shippingService.getShipmentTracking(targetId),
+        ]);
+
+        if (evList.status === 'fulfilled') {
+          setEvents(evList.value);
+        } else {
+          setEvents([]);
+        }
+
+        if (trackRes.status === 'fulfilled') {
+          setTrackingData(trackRes.value);
+        }
       } else {
         setEvents([]);
+        setTrackingData(null);
       }
       setLastUpdated(new Date());
     } catch (err: any) {
@@ -106,49 +345,153 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     loadShipmentData();
   }, [loadShipmentData]);
 
-  // Load events when user switches active shipment
+  // Load events and tracking when user switches active shipment
   useEffect(() => {
     if (activeShipmentId) {
       shippingService.getShipmentEvents(activeShipmentId)
         .then((evList) => setEvents(evList))
         .catch(() => {});
+      shippingService.getShipmentTracking(activeShipmentId)
+        .then((data) => setTrackingData(data))
+        .catch(() => {});
     }
   }, [activeShipmentId]);
 
-  // Polling Effect (runs every 20s if polling is active, clean up on unmount)
+  // Polling Effect (12 seconds, tạm dừng khi tab ẩn hoặc khi chuyến đã hoàn tất/hủy)
   useEffect(() => {
     if (!pollingActive) return;
-    const interval = setInterval(() => {
-      loadShipmentData(true);
-    }, 20000);
-    return () => clearInterval(interval);
-  }, [pollingActive, loadShipmentData]);
 
-  // Handle Sync GHN
-  const handleSyncGhn = async () => {
+    // Nếu đơn/chuyến đã hoàn tất hoặc hủy thì dừng polling
+    const terminalStatuses = ['DELIVERED', 'COMPLETED', 'CANCELLED', 'FAILED'];
+    const isTerminal = activeShipment && (
+      terminalStatuses.includes(activeShipment.status) ||
+      terminalStatuses.includes(activeShipment.providerStatus || '')
+    );
+    if (isTerminal) return;
+
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        return; // Tạm dừng khi tab ẩn
+      }
+      loadShipmentData(true);
+    }, 12000);
+    return () => clearInterval(interval);
+  }, [pollingActive, loadShipmentData, activeShipment?.status, activeShipment?.providerStatus]);
+
+  // Render Leaflet map when driver GPS coordinates are AVAILABLE
+  useEffect(() => {
+    const coordinates = trackingData?.driver?.coordinates;
+    const isLocationAvailable = trackingData?.locationStatus === 'AVAILABLE' && coordinates;
+    const lat = coordinates ? Number(coordinates.lat) : NaN;
+    const lng = coordinates ? Number(coordinates.lng) : NaN;
+    const hasValidCoords = isLocationAvailable && Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0);
+
+    if (!hasValidCoords) {
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.remove();
+        } catch (e) {}
+        mapInstanceRef.current = null;
+        markerRef.current = null;
+      }
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      const container = document.getElementById('lalamove-driver-map');
+      if (!container) return;
+
+      loadLeaflet().then((L) => {
+        if (!mapInstanceRef.current) {
+          const map = L.map('lalamove-driver-map', {
+            zoomControl: true,
+            scrollWheelZoom: false,
+          }).setView([lat, lng], 15);
+
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap',
+          }).addTo(map);
+
+          const icon = L.divIcon({
+            className: 'custom-driver-icon',
+            html: '<div style="background-color:#ea580c;color:white;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 8px rgba(0,0,0,0.3);border:2px solid white;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 17h4V5H2v12h3m15 0h2v-3.34a4 4 0 0 0-1.17-2.83L19 8h-5v9h2"/></svg></div>',
+            iconSize: [34, 34],
+            iconAnchor: [17, 17],
+          });
+
+          const marker = L.marker([lat, lng], { icon }).addTo(map);
+          marker.bindPopup(`<b>Vị trí tài xế Lalamove</b><br>${coordinates?.updatedAt ? new Date(coordinates.updatedAt).toLocaleTimeString('vi-VN') : 'Đang giao'}`).openPopup();
+
+          mapInstanceRef.current = map;
+          markerRef.current = marker;
+        } else {
+          mapInstanceRef.current.setView([lat, lng], 15);
+          if (markerRef.current) {
+            markerRef.current.setLatLng([lat, lng]);
+          }
+        }
+      }).catch((e) => console.warn('Leaflet map error:', e));
+    }, 150);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [trackingData?.locationStatus, trackingData?.driver?.coordinates?.lat, trackingData?.driver?.coordinates?.lng]);
+
+  // Clean map on unmount
+  useEffect(() => {
+    return () => {
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.remove();
+        } catch (e) {}
+        mapInstanceRef.current = null;
+        markerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Handle Sync Lalamove
+  const handleSyncLalamove = async () => {
     if (!activeShipment) return;
     setIsSyncing(true);
     setErrorMsg(null);
     try {
       const updated = await shippingService.syncShipment(activeShipment.shipmentId);
-      showNotification(`Đã đồng bộ trạng thái thật từ GHN: ${updated.providerStatus || updated.status}`);
+      const provStatus = (updated.providerStatus || updated.status || '').toUpperCase();
+      let statusDesc = provStatus;
+      if (provStatus === 'ON_GOING') statusDesc = 'Tài xế đã nhận đơn & đang đến lấy hàng';
+      else if (provStatus === 'PICKED_UP') statusDesc = 'Tài xế đã lấy hàng & đang giao';
+      else if (provStatus === 'COMPLETED') statusDesc = 'Đã giao hàng thành công';
+      else if (provStatus === 'ASSIGNING_DRIVER') statusDesc = 'Đang tìm tài xế gần điểm lấy hàng';
+      showNotification(`Đã đồng bộ thành công từ Lalamove: ${statusDesc}`);
       await loadShipmentData();
       onOrderUpdated?.();
     } catch (err: any) {
-      showNotification(err?.message || 'Lỗi khi đồng bộ trạng thái từ hệ thống GHN.', true);
+      showNotification(err?.message || 'Lỗi khi đồng bộ trạng thái từ hệ thống Lalamove.', true);
     } finally {
       setIsSyncing(false);
     }
   };
 
-  // Handle Cancel Shipment
+  // Handle Cancel Shipment with Auto-Refund
   const handleCancelShipment = async () => {
     if (!activeShipment) return;
-    if (!window.confirm('Bạn có chắc chắn muốn hủy vận đơn GHN này trước khi bưu tá đến lấy hàng?')) return;
+    const confirmed = await dialogService.confirm(
+      'Bạn có chắc chắn muốn hủy vận đơn Lalamove này trước khi tài xế đến lấy hàng?',
+      { title: 'Hủy Vận Đơn', type: 'warning' }
+    );
+    if (!confirmed) return;
     setIsCancelling(true);
     try {
       await shippingService.cancelShipment(activeShipment.shipmentId);
-      showNotification('Đã hủy vận đơn GHN thành công.');
+      // Auto refund shipment fee if possible
+      try {
+        await shippingService.refundShipment(activeShipment.shipmentId);
+        showNotification('Đã hủy vận đơn thành công và tự động hoàn cước vận chuyển về Ví SecondLife.');
+      } catch {
+        showNotification('Đã hủy vận đơn Lalamove thành công.');
+      }
       await loadShipmentData();
       onOrderUpdated?.();
     } catch (err: any) {
@@ -158,11 +501,57 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     }
   };
 
+  // Handle Reconcile Creation (when API timeout or creation error)
+  const handleReconcileShipment = async () => {
+    if (!activeShipment) return;
+    setIsReconciling(true);
+    setErrorMsg(null);
+    try {
+      const updated = await shippingService.reconcileCreation(activeShipment.shipmentId);
+      showNotification(`Đã kích hoạt đối soát và tạo lại vận đơn thành công: #${updated.orderCode || updated.shipmentId}`);
+      await loadShipmentData();
+      onOrderUpdated?.();
+    } catch (err: any) {
+      showNotification(err?.message || 'Không thể đối soát tạo lại vận đơn.', true);
+    } finally {
+      setIsReconciling(false);
+    }
+  };
+
+  // Handle Manual Refund Shipment Fee
+  const handleRefundShipment = async () => {
+    if (!activeShipment) return;
+    const confirmed = await dialogService.confirm(
+      'Xác nhận hoàn cước vận chuyển của vận đơn này về Ví SecondLife?',
+      { title: 'Hoàn Cước Vận Chuyển', type: 'confirm' }
+    );
+    if (!confirmed) return;
+    setIsRefunding(true);
+    setErrorMsg(null);
+    try {
+      await shippingService.refundShipment(activeShipment.shipmentId);
+      showNotification('Đã hoàn cước vận chuyển thành công về Ví SecondLife!');
+      await loadShipmentData();
+      onOrderUpdated?.();
+    } catch (err: any) {
+      showNotification(err?.message || 'Không thể hoàn cước vận chuyển.', true);
+    } finally {
+      setIsRefunding(false);
+    }
+  };
+
   // Handle Buyer Confirm Delivery
   const handleConfirmReceived = async () => {
-    if (!window.confirm('Xác nhận bạn đã nhận được hàng và nghiệm thu thiết bị? Tiền sẽ được giải ngân cho người bán.')) return;
+    const confirmed = await dialogService.confirm(
+      'Xác nhận bạn đã nhận được hàng và nghiệm thu thiết bị? Tiền sẽ được giải ngân cho người bán.',
+      { title: 'Xác Nhận Đã Nhận Hàng', type: 'success' }
+    );
+    if (!confirmed) return;
     setIsConfirmingDelivered(true);
     try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`order_receipt_confirmed_${order.id}`, 'true');
+      }
       await orderService.confirmDelivery(order.id);
       showNotification('Đã xác nhận nhận hàng thành công! Đơn hàng hoàn tất và quỹ Escrow đã được giải ngân.');
       onConfirmReceipt?.(order.id);
@@ -171,7 +560,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
         onClose();
       }, 1500);
     } catch (err: any) {
-      showNotification(err?.message || 'Không thể xác nhận nhận hàng. Vui lòng kiểm tra lại trạng thái GHN.', true);
+      showNotification(err?.message || 'Không thể xác nhận nhận hàng. Vui lòng kiểm tra lại trạng thái Lalamove.', true);
     } finally {
       setIsConfirmingDelivered(false);
     }
@@ -185,96 +574,309 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  // Handle Test Simulator (Picked / Delivered)
-  const handleSimulateWebhook = async (status: 'picked' | 'delivered') => {
-    if (!activeShipment?.orderCode) {
-      showNotification('Chưa có mã vận đơn GHN hợp lệ để giả lập.', true);
+  // Handle Test Simulator (Picked / Delivered / Reset)
+  const handleSimulateWebhook = async (status: 'picked' | 'delivered' | 'reset') => {
+    if (!activeShipment) {
+      showNotification('Chưa có vận đơn nào để giả lập.', true);
       return;
     }
     setSimulatingStatus(status);
-    try {
-      const nowIso = new Date().toISOString();
-      await shippingService.simulateWebhookCallback({
-        ShopID: 123456,
-        OrderCode: activeShipment.orderCode,
-        Type: 'switch_status',
-        Status: status,
-        Time: nowIso,
-      });
-      showNotification(`Giả lập thành công: GHN chuyển trạng thái "${status.toUpperCase()}".`);
-      await loadShipmentData();
-      onOrderUpdated?.();
-    } catch (err: any) {
-      showNotification(err?.message || 'Giả lập callback thất bại.', true);
-    } finally {
+    const nowIso = new Date().toISOString();
+
+    // 1. Reset về tìm tài xế
+    if (status === 'reset') {
+      setTrackingData((prev) =>
+        prev
+          ? {
+              ...prev,
+              providerStatus: 'ASSIGNING_DRIVER',
+              status: 'READY_TO_PICK',
+              driverId: null,
+              locationStatus: 'UNAVAILABLE',
+              driver: undefined,
+            }
+          : null
+      );
+      setShipments((prev) =>
+        prev.map((s) =>
+          s.shipmentId === activeShipment.shipmentId
+            ? {
+                ...s,
+                status: 'READY_TO_PICK',
+                providerStatus: 'ASSIGNING_DRIVER',
+                driverId: undefined,
+                deliveredAt: undefined,
+              }
+            : s
+        )
+      );
+      setEvents((prev) => [
+        {
+          id: 'sim-' + Date.now(),
+          shipmentId: activeShipment.shipmentId,
+          type: 'STATUS_CHANGE',
+          status: 'ASSIGNING_DRIVER',
+          occurredAt: nowIso,
+          reason: 'Đang điều phối tìm tài xế Lalamove gần nhất (Môi trường Test)',
+        },
+        ...prev,
+      ]);
+      showNotification('Đã đặt lại trạng thái: Đang tìm kiếm tài xế Lalamove.');
       setSimulatingStatus(null);
+      return;
+    }
+
+    // 2. Giả lập Đã lấy hàng & GPS xe chạy
+    if (status === 'picked') {
+      const mockDriver = {
+        name: 'Nguyễn Thành Long (Lalamove Partner)',
+        phone: '0908123456',
+        plateNumber: '59-X3 789.12',
+        photo: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+        coordinates: {
+          lat: 10.7769,
+          lng: 106.7009,
+          updatedAt: nowIso,
+        },
+      };
+
+      setTrackingData((prev) => ({
+        shipmentId: activeShipment.shipmentId,
+        provider: 'LALAMOVE',
+        orderCode: activeShipment.orderCode || `LLM${activeShipment.shipmentId.slice(0, 8)}`,
+        status: 'SHIPPED',
+        providerStatus: 'PICKED_UP',
+        shareLink: activeShipment.shareLink || 'https://web.lalamove.com',
+        driverId: 'DRV_LLM_78912',
+        locationStatus: 'AVAILABLE',
+        driver: mockDriver,
+        expectedDeliveryTime: new Date(Date.now() + 45 * 60 * 1000).toISOString(),
+      }));
+
+      setShipments((prev) =>
+        prev.map((s) =>
+          s.shipmentId === activeShipment.shipmentId
+            ? {
+                ...s,
+                status: 'SHIPPED',
+                providerStatus: 'PICKED_UP',
+                driverId: 'DRV_LLM_78912',
+              }
+            : s
+        )
+      );
+
+      setEvents((prev) => [
+        {
+          id: 'sim-' + Date.now(),
+          shipmentId: activeShipment.shipmentId,
+          type: 'STATUS_CHANGE',
+          status: 'PICKED_UP',
+          occurredAt: nowIso,
+          reason: 'Tài xế Nguyễn Thành Long đã lấy hàng từ Người Bán và đang trên đường giao (Môi trường Test)',
+        },
+        ...prev,
+      ]);
+
+      showNotification('Giả lập thành công: Tài xế đã lấy hàng & GPS bản đồ đã kích hoạt!');
+      setSimulatingStatus(null);
+      return;
+    }
+
+    // 3. Giả lập Đã giao thành công
+    if (status === 'delivered') {
+      setTrackingData((prev) => ({
+        shipmentId: activeShipment.shipmentId,
+        provider: 'LALAMOVE',
+        orderCode: activeShipment.orderCode || `LLM${activeShipment.shipmentId.slice(0, 8)}`,
+        status: 'DELIVERED',
+        providerStatus: 'COMPLETED',
+        shareLink: activeShipment.shareLink || 'https://web.lalamove.com',
+        driverId: activeShipment.driverId || 'DRV_LLM_78912',
+        locationStatus: 'UNAVAILABLE',
+        driver: prev?.driver || {
+          name: 'Nguyễn Thành Long (Lalamove Partner)',
+          phone: '0908123456',
+          plateNumber: '59-X3 789.12',
+        },
+      }));
+
+      setShipments((prev) =>
+        prev.map((s) =>
+          s.shipmentId === activeShipment.shipmentId
+            ? {
+                ...s,
+                status: 'DELIVERED',
+                providerStatus: 'COMPLETED',
+                deliveredAt: nowIso,
+                podUrl: s.podUrl || 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=600',
+              }
+            : s
+        )
+      );
+
+      setEvents((prev) => [
+        {
+          id: 'sim-' + Date.now(),
+          shipmentId: activeShipment.shipmentId,
+          type: 'STATUS_CHANGE',
+          status: 'COMPLETED',
+          occurredAt: nowIso,
+          reason: 'Tài xế đã bàn giao kiện hàng tận tay Người Mua. Đã lưu ảnh chứng từ giao nhận POD (Môi trường Test)',
+        },
+        ...prev,
+      ]);
+
+      showNotification('Giả lập thành công: Đã giao thành công! Nút giải ngân cho Người Mua đã mở.');
+      setSimulatingStatus(null);
+      return;
     }
   };
 
-  // Step Calculation based on GHN providerStatus
-  const getStepIndex = (providerStatus: string | null | undefined, shipmentStatus: string): number => {
-    const s = (providerStatus || shipmentStatus || '').toLowerCase();
-    if (s.includes('cancel')) return -1;
-    if (s.includes('delivered') || s.includes('finish') || s.includes('complete')) return 4;
-    if (s.includes('delivering') || s.includes('delivery')) return 3;
-    if (s.includes('transport') || s.includes('storing') || s.includes('sorting')) return 2;
-    if (s.includes('picked')) return 1;
-    return 0; // ready_to_pick, picking, pending
+  // Step Calculation based on Lalamove providerStatus (Section 10.2)
+  const getStepIndex = (
+    providerStatus: string | null | undefined,
+    shipmentStatus: string,
+    orderCompleted = false
+  ): number => {
+    const p = (providerStatus || '').toUpperCase();
+    const s = (shipmentStatus || '').toUpperCase();
+    if (p.includes('CANCEL') || s.includes('CANCEL')) return -1;
+    if (p.includes('REJECT') || p.includes('EXPIRE') || s.includes('FAIL')) return -2;
+    if (orderCompleted || (s === 'DELIVERED' && order.backendStatus === 'COMPLETED')) return 4;
+    if (p === 'COMPLETED' || s === 'DELIVERED') return 3;
+    if (p === 'PICKED_UP' || s === 'PICKED' || s === 'SHIPPED') return 2;
+    if (p === 'ON_GOING' || s === 'ASSIGNED') return 1;
+    return 0; // ASSIGNING_DRIVER, READY_TO_PICK, PENDING
   };
 
-  const currentStep = getStepIndex(activeShipment?.providerStatus, activeShipment?.status || '');
+  const effectiveProviderStatus =
+    (trackingData?.driver || activeShipment?.driverId) &&
+    (!trackingData?.providerStatus || trackingData?.providerStatus === 'ASSIGNING_DRIVER') &&
+    (!activeShipment?.providerStatus || activeShipment?.providerStatus === 'ASSIGNING_DRIVER')
+      ? 'ON_GOING'
+      : (trackingData?.providerStatus || activeShipment?.providerStatus);
+
+  const currentStep = getStepIndex(
+    effectiveProviderStatus,
+    activeShipment?.status || '',
+    order.backendStatus === 'COMPLETED' || order.escrowStatus === 'COMPLETED_RELEASED'
+  );
 
   const steps = [
-    { title: 'Chờ lấy hàng', desc: 'Bưu tá GHN được phân công đến lấy kiện' },
-    { title: 'Đã lấy kiện', desc: 'GHN đã nhận hàng từ người gửi' },
-    { title: 'Đang trung chuyển', desc: 'Kiện hàng qua trung tâm phân loại GHN' },
-    { title: 'Đang giao hàng', desc: 'Shipper đang trên đường giao đến bạn' },
-    { title: 'Đã giao thành công', desc: 'Kiện hàng đã bàn giao cho người nhận' },
+    { title: 'Tạo vận đơn', desc: 'Đang điều phối tài xế Lalamove' },
+    { title: 'Tài xế nhận đơn', desc: 'Tài xế đang di chuyển tới lấy hàng' },
+    { title: 'Đã lấy kiện', desc: 'Tài xế đã nhận hàng & đang giao' },
+    { title: 'Đã giao thành công', desc: 'Kiện hàng đã bàn giao tới người nhận' },
+    { title: 'Quyết toán', desc: 'Người mua xác nhận & giải ngân Escrow' },
   ];
 
   const getProviderStatusBadge = (providerStatus: string | null | undefined) => {
-    const p = (providerStatus || 'ready_to_pick').toLowerCase();
-    if (p.includes('delivered')) {
-      return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300">GHN: Đã giao thành công</span>;
+    const p = (providerStatus || 'ASSIGNING_DRIVER').toUpperCase();
+    if (p === 'COMPLETED') {
+      return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300">Lalamove: Đã giao thành công</span>;
     }
-    if (p.includes('delivering')) {
-      return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-blue-100 text-blue-800 border border-blue-300 animate-pulse">GHN: Đang giao hàng</span>;
+    if (p === 'PICKED_UP') {
+      return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-blue-100 text-blue-800 border border-blue-300 animate-pulse">Lalamove: Đã lấy hàng & Đang giao</span>;
     }
-    if (p.includes('transport') || p.includes('storing') || p.includes('sorting')) {
-      return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-indigo-100 text-indigo-800 border border-indigo-300">GHN: Đang luân chuyển kho</span>;
+    if (p === 'ON_GOING') {
+      return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-indigo-100 text-indigo-800 border border-indigo-300 animate-pulse">Lalamove: Tài xế đang đến lấy hàng</span>;
     }
-    if (p.includes('picked')) {
-      return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-cyan-100 text-cyan-800 border border-cyan-300">GHN: Đã lấy kiện từ người bán</span>;
+    if (p === 'ASSIGNING_DRIVER') {
+      return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-amber-100 text-amber-800 border border-amber-300">Lalamove: Đang tìm tài xế</span>;
     }
-    if (p.includes('picking')) {
-      return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-amber-100 text-amber-800 border border-amber-300">GHN: Bưu tá đang đi lấy kiện</span>;
+    if (p.includes('CANCEL')) {
+      return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-rose-100 text-rose-800 border border-rose-300">Lalamove: Vận đơn đã hủy</span>;
     }
-    if (p.includes('cancel')) {
-      return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-rose-100 text-rose-800 border border-rose-300">GHN: Vận đơn đã hủy</span>;
+    if (p.includes('REJECT') || p.includes('EXPIRE')) {
+      return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-rose-100 text-rose-800 border border-rose-300">Lalamove: Từ chối / Hết hạn</span>;
     }
-    return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-amber-100 text-amber-800 border border-amber-300">GHN: Chờ bưu tá lấy hàng</span>;
+    return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-800 border border-slate-300">{providerStatus}</span>;
   };
+
+  const coordinates = trackingData?.driver?.coordinates;
+  const isLocationAvailable = trackingData?.locationStatus === 'AVAILABLE' && coordinates;
+  const lat = coordinates ? Number(coordinates.lat) : NaN;
+  const lng = coordinates ? Number(coordinates.lng) : NaN;
+  const hasValidCoords = isLocationAvailable && Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0);
+
+  // Gộp các sự kiện liên tiếp có cùng trạng thái (do hệ thống ghi nhận mỗi lần đồng bộ)
+  // và hiển thị sự kiện MỚI NHẤT ở trên cùng
+  const groupedEvents: GroupedShipmentEvent[] = useMemo(() => {
+    if (!events || events.length === 0) return [];
+
+    // Sắp xếp tăng dần theo thời gian xảy ra (Ascending) để phân tích chuỗi tiến trình
+    const sorted = [...events].sort(
+      (a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime()
+    );
+
+    const groups: {
+      key: string;
+      status: string;
+      type: string;
+      firstOccurredAt: string;
+      lastOccurredAt: string;
+      count: number;
+      reason?: string | null;
+    }[] = [];
+
+    for (const ev of sorted) {
+      const currentStatus = (ev.status || ev.type || 'UNKNOWN').toUpperCase();
+      const lastGroup = groups[groups.length - 1];
+
+      if (lastGroup && lastGroup.status === currentStatus) {
+        lastGroup.count += 1;
+        lastGroup.lastOccurredAt = ev.occurredAt;
+        if (ev.reason && !lastGroup.reason) {
+          lastGroup.reason = ev.reason;
+        }
+      } else {
+        groups.push({
+          key: ev.id || `${currentStatus}-${ev.occurredAt}`,
+          status: currentStatus,
+          type: ev.type,
+          firstOccurredAt: ev.occurredAt,
+          lastOccurredAt: ev.occurredAt,
+          count: 1,
+          reason: ev.reason,
+        });
+      }
+    }
+
+    // Đảo ngược thứ tự để mốc mới nhất (trạng thái hiện tại) nằm ở TRÊN CÙNG
+    const reversed = groups.reverse();
+    return reversed.map((grp, index) => {
+      const details = getLalamoveStatusDetails(grp.status, grp.type);
+      return {
+        ...grp,
+        title: details.title,
+        description: details.description,
+        badgeClass: details.badgeClass,
+        isLatest: index === 0,
+      };
+    });
+  }, [events]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto">
       <div className="bg-[#FFFFFF] rounded-3xl max-w-3xl w-full max-h-[92vh] overflow-hidden shadow-2xl border border-gray-200 flex flex-col my-auto text-[#24263e]">
         {/* Modal Header */}
-        <div className="p-5 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-[#fce5da] to-[#faf8f5] text-[#24263e] shrink-0">
+        <div className="p-5 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-[#ffe8d6] to-[#faf8f5] text-[#24263e] shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#c34c36] text-white flex items-center justify-center shadow-md">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-r from-orange-600 to-amber-600 text-white flex items-center justify-center shadow-md">
               <Truck className="w-5 h-5 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-extrabold text-base sm:text-lg text-[#24263e]">
-                  Hành Trình Giao Hàng GHN Express
+                  Hành Trình Giao Hàng Lalamove
                 </h3>
                 <span className="text-xs font-mono bg-white/80 px-2 py-0.5 rounded-md border border-[#24263e]/15 font-bold">
                   #{order.id.slice(0, 12)}
                 </span>
               </div>
               <p className="text-[11px] text-[#24263e]/80 mt-0.5 flex items-center gap-2">
-                <span>Đối tác vận chuyển chính thức: <strong>Giao Hàng Nhanh (GHN)</strong></span>
+                <span>Đối tác vận chuyển: <strong>Lalamove Delivery</strong></span>
                 <span>•</span>
                 <span className="flex items-center gap-1">
                   <span className={`w-2 h-2 rounded-full ${pollingActive ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
@@ -286,13 +888,13 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
           <div className="flex items-center gap-2">
             <button
-              onClick={handleSyncGhn}
+              onClick={handleSyncLalamove}
               disabled={isSyncing || !activeShipment}
               className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 border border-slate-300 shadow-2xs cursor-pointer disabled:opacity-50"
-              title="Đồng bộ trực tiếp từ server GHN"
+              title="Đồng bộ trực tiếp từ server Lalamove"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-[#c34c36]' : ''}`} />
-              <span className="hidden sm:inline">Đồng bộ GHN</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-orange-600' : ''}`} />
+              <span className="hidden sm:inline">Đồng bộ Lalamove</span>
             </button>
             <button
               onClick={onClose}
@@ -334,14 +936,134 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
             />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-[#c34c36] uppercase font-black">{order.listing.brand}</span>
+                <span className="text-[10px] text-orange-600 uppercase font-black">{resolveOrderListing(order.listing).brand}</span>
                 <span className="text-gray-300">•</span>
-                <span className="text-[10px] text-slate-500 font-semibold">{order.listing.category}</span>
+                <span className="text-[10px] text-slate-500 font-semibold">{resolveListingCategory(order.listing)}</span>
               </div>
               <h4 className="font-bold text-slate-900 truncate text-xs sm:text-sm">{order.listing.title}</h4>
               <div className="flex items-center justify-between mt-1 text-slate-600 text-[11px]">
                 <span>Người bán: <strong className="text-slate-900">{order.sellerName}</strong></span>
-                <span>Tiền hàng: <strong className="text-[#c34c36] font-bold">{formatVND(order.itemPriceVnd)}</strong></span>
+                <span>Tiền hàng: <strong className="text-orange-600 font-bold">{formatVND(order.itemPriceVnd)}</strong></span>
+              </div>
+            </div>
+          </div>
+
+          {/* ======================================================== */}
+          {/* WIDGET 1: COUNTDOWN CAM KẾT BÀN GIAO HÀNG & FULFILLMENT  */}
+          {/* ======================================================== */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            {/* Box 1: Cam kết giao hàng của Seller (GET /orders/{id}/confirmation) */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/70 to-orange-50/60 border border-amber-200/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                  <Clock className="w-4 h-4 text-orange-600" />
+                  <span>Cam Kết Bàn Giao Hàng</span>
+                </div>
+                {orderConfirmation?.sellerConfirmedAt ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    Đã Xác Nhận
+                  </span>
+                ) : countdownText ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-orange-500 text-white animate-pulse">
+                    Còn {countdownText}
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                    {orderConfirmation?.confirmationStatus || 'Chờ xác nhận'}
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-1 text-[11px] text-slate-700">
+                {orderConfirmation?.confirmationDeadline && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Hạn chót người bán xác nhận:</span>
+                    <strong className="font-mono text-slate-800">
+                      {new Date(orderConfirmation.confirmationDeadline).toLocaleString('vi-VN')}
+                    </strong>
+                  </div>
+                )}
+                {orderConfirmation?.sellerConfirmedAt && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Người bán đã chốt lúc:</span>
+                    <strong className="font-mono text-emerald-700">
+                      {new Date(orderConfirmation.sellerConfirmedAt).toLocaleString('vi-VN')}
+                    </strong>
+                  </div>
+                )}
+                {orderFulfillment?.handoverDeadline && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Hạn chót tài xế nhận kiện:</span>
+                    <strong className="font-mono text-slate-800">
+                      {new Date(orderFulfillment.handoverDeadline).toLocaleString('vi-VN')}
+                    </strong>
+                  </div>
+                )}
+                {orderFulfillment?.lateHandoverCandidate && (
+                  <div className="p-1.5 rounded-lg bg-rose-100/70 border border-rose-200 text-rose-700 text-[10px] font-bold flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
+                    <span>Đơn hàng có nguy cơ trễ hạn bàn giao Lalamove</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Box 2: Tra cứu trạng thái thanh toán SePay (GET /orders/{id}/payment) */}
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-2 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                  <CreditCard className="w-4 h-4 text-indigo-600" />
+                  <span>Trạng Thái Thanh Toán SePay</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleLookupPayment}
+                  disabled={isLoadingPayment}
+                  className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="Tra cứu trực tiếp trạng thái thanh toán đơn qua API SePay"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isLoadingPayment ? 'animate-spin' : ''}`} />
+                  <span>Tra cứu</span>
+                </button>
+              </div>
+
+              {paymentNotice && (
+                <div className="p-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800 text-[10px] font-medium">
+                  {paymentNotice}
+                </div>
+              )}
+
+              <div className="space-y-1 text-[11px] text-slate-600">
+                <div className="flex justify-between">
+                  <span>Trạng thái thanh toán:</span>
+                  <span className="font-bold text-slate-900">
+                    {orderPayment?.status || order.escrowStatus || 'Đang xử lý'}
+                  </span>
+                </div>
+                {orderPayment?.receivedAmount !== undefined && (
+                  <div className="flex justify-between">
+                    <span>Số tiền đã nhận:</span>
+                    <strong className="text-emerald-700 font-mono">
+                      {formatVND(orderPayment.receivedAmount)}
+                    </strong>
+                  </div>
+                )}
+                {orderPayment?.transferContent && (
+                  <div className="flex justify-between">
+                    <span>Nội dung CK:</span>
+                    <span className="font-mono font-bold text-slate-800 bg-slate-100 px-1 rounded text-[10px]">
+                      {orderPayment.transferContent}
+                    </span>
+                  </div>
+                )}
+                {orderPayment?.bankName && (
+                  <div className="flex justify-between">
+                    <span>Ngân hàng thụ hưởng:</span>
+                    <span className="text-slate-800 text-[10px]">
+                      {orderPayment.bankName} - {orderPayment.bankAccountNumber}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -360,7 +1082,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                       : 'bg-gray-100 hover:bg-gray-200 text-slate-700'
                   }`}
                 >
-                  Kiện {idx + 1} ({s.leg || 'GHN'})
+                  Kiện {idx + 1} ({s.leg || 'Lalamove'})
                 </button>
               ))}
             </div>
@@ -369,16 +1091,39 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
           {/* Main Shipment Card */}
           {isLoading ? (
             <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-3">
-              <RefreshCw className="w-8 h-8 animate-spin text-[#c34c36]" />
-              <span className="font-bold text-sm">Đang tải dữ liệu tracking từ hệ thống GHN...</span>
+              <RefreshCw className="w-8 h-8 animate-spin text-orange-600" />
+              <span className="font-bold text-sm">Đang tải dữ liệu tracking từ hệ thống Lalamove...</span>
             </div>
           ) : !activeShipment ? (
-            <div className="p-8 text-center bg-slate-50 border border-dashed border-gray-300 rounded-3xl space-y-3">
+            <div className="p-8 text-center bg-slate-50 border border-dashed border-gray-300 rounded-3xl space-y-4">
               <Package className="w-12 h-12 text-slate-400 mx-auto" />
               <h4 className="font-bold text-sm text-slate-800">Chưa có vận đơn nào được tạo</h4>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Người bán chưa khởi tạo mã vận đơn GHN cho đơn hàng này. Vui lòng chờ người bán đóng gói và tạo vận đơn bàn giao cho bưu tá.
+                {isSeller
+                  ? 'Đơn hàng chưa có mã vận đơn Lalamove. Bạn có thể bấm nút bên dưới để tạo vận đơn và phát lệnh điều phối tài xế Lalamove ngay lập tức.'
+                  : 'Người bán chưa khởi tạo mã vận đơn Lalamove cho đơn hàng này. Vui lòng chờ người bán đóng gói và tạo vận đơn bàn giao cho tài xế.'}
               </p>
+              {isSeller && (
+                <div className="pt-2">
+                  <button
+                    onClick={handleManualCreateShipment}
+                    disabled={isCreatingShipment}
+                    className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-90 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2 mx-auto cursor-pointer disabled:opacity-50"
+                  >
+                    {isCreatingShipment ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        <span>Đang kết nối Lalamove...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Truck className="w-4 h-4 text-white" />
+                        <span>Tạo Vận Đơn Lalamove Ngay</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-6">
@@ -386,7 +1131,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
               <div className="bg-gradient-to-br from-white via-slate-50 to-[#faf8f5] p-5 rounded-3xl border border-gray-200 shadow-xs space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-3.5">
                   <div className="space-y-1">
-                    <span className="text-[10px] text-slate-400 uppercase font-black block">Mã vận đơn GHN</span>
+                    <span className="text-[10px] text-slate-400 uppercase font-black block">Mã vận đơn Lalamove</span>
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-base sm:text-lg font-black text-slate-900 bg-white px-2.5 py-0.5 rounded-lg border border-slate-200 shadow-2xs">
                         {activeShipment.orderCode || 'CHƯA_CÓ_MÃ'}
@@ -404,8 +1149,8 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                   </div>
 
                   <div className="flex flex-col items-end gap-1.5">
-                    <span className="text-[10px] text-slate-400 uppercase font-black">Trạng thái bưu kiện</span>
-                    {getProviderStatusBadge(activeShipment.providerStatus)}
+                    <span className="text-[10px] text-slate-400 uppercase font-black">Trạng thái vận đơn</span>
+                    {getProviderStatusBadge(effectiveProviderStatus)}
                   </div>
                 </div>
 
@@ -413,11 +1158,11 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                   <div className="p-3 bg-white rounded-2xl border border-gray-200/80">
                     <span className="text-[10px] text-slate-400 font-bold uppercase block mb-0.5">Thời gian giao dự kiến</span>
                     <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-[#c34c36]" />
+                      <Clock className="w-3.5 h-3.5 text-orange-600" />
                       <span>
-                        {activeShipment.expectedDeliveryTime
-                          ? new Date(activeShipment.expectedDeliveryTime).toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })
-                          : '1-3 ngày làm việc'}
+                        {trackingData?.expectedDeliveryTime || activeShipment.expectedDeliveryTime
+                          ? new Date(trackingData?.expectedDeliveryTime || activeShipment.expectedDeliveryTime!).toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          : 'Chưa có dự kiến'}
                       </span>
                     </div>
                   </div>
@@ -443,13 +1188,220 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                   </div>
                 </div>
 
+                {/* Logistics Exception & Reconcile / Refund Banner */}
+                {(activeShipment.status === 'FAILED' ||
+                  activeShipment.status === 'PENDING_RETRY' ||
+                  activeShipment.providerStatus === 'REJECTED' ||
+                  activeShipment.providerStatus === 'CANCELED') && (
+                  <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 space-y-2.5">
+                    <div className="flex items-center gap-2 font-black text-xs uppercase tracking-tight text-rose-700">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>Sự Cố Giao Vận / Vận Đơn Bị Gián Đoạn</span>
+                    </div>
+                    <p className="text-[11px] text-rose-800 leading-relaxed">
+                      Vận đơn đang ở trạng thái lỗi hoặc bị hủy kết nối với đơn vị vận chuyển. Bạn có thể kích hoạt đối soát tự động (Reconcile) để tạo lại mã hoặc yêu cầu hoàn phí cước về Ví.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        onClick={handleReconcileShipment}
+                        disabled={isReconciling}
+                        className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-60"
+                      >
+                        {isReconciling && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                        <span>Thử Lại Tạo Vận Đơn (Reconcile)</span>
+                      </button>
+                      <button
+                        onClick={handleRefundShipment}
+                        disabled={isRefunding}
+                        className="px-3.5 py-1.5 bg-white hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                      >
+                        {isRefunding && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                        <span>Hoàn Cước Vận Chuyển Về Ví</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Searching / Assigning Driver Card */}
+                {!trackingData?.driver && (effectiveProviderStatus === 'ASSIGNING_DRIVER' || activeShipment.status === 'READY_TO_PICK' || !activeShipment.providerStatus) && (
+                  <div className="p-4 bg-gradient-to-r from-amber-50 via-orange-50/50 to-amber-50 border border-amber-200/90 rounded-2xl space-y-3 animate-fadeIn">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                        </span>
+                        <span className="text-[10px] font-black uppercase bg-amber-200 text-amber-900 px-2 py-0.5 rounded">
+                          Điều Phối Tài Xế Lalamove
+                        </span>
+                        <span className="font-bold text-amber-950 text-xs">Đang tìm tài xế gần điểm lấy hàng</span>
+                      </div>
+                      <span className="text-[11px] text-amber-700 font-semibold italic">Ước tính: 1 - 3 phút</span>
+                    </div>
+
+                    <p className="text-[11px] text-amber-900 leading-relaxed">
+                      Hệ thống đang tự động chỉ định tài xế xe máy Lalamove trong bán kính gần kho Người Bán nhất.
+                      Ngay khi tài xế nhận chuyến, <strong>Họ tên, SĐT, Biển số xe và Vị trí GPS</strong> sẽ tự động cập nhật lên màn hình.
+                    </p>
+
+                    <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-amber-200/70">
+                      <span className="text-[11px] text-amber-800">
+                        ⚡ Thử nghiệm Sandbox: Nếu vừa bấm cử tài xế trên cổng Lalamove Partner Portal, bạn có thể bấm cập nhật ngay:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleSyncLalamove}
+                        disabled={isSyncing}
+                        className="px-3 py-1.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-xs disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                        <span>Đồng bộ từ Lalamove ngay</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Driver Assigned - Loading details fallback */}
+                {!trackingData?.driver && effectiveProviderStatus === 'ON_GOING' && (
+                  <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-2xl flex items-center justify-between gap-3 animate-fadeIn">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+                        <Truck className="w-5 h-5 animate-pulse" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase bg-indigo-200 text-indigo-900 px-2 py-0.5 rounded">
+                            Tài xế đã nhận chuyến
+                          </span>
+                          {activeShipment.driverId && (
+                            <span className="text-xs font-mono font-bold text-slate-700">#{activeShipment.driverId}</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-indigo-950 font-semibold mt-0.5">
+                          Tài xế Lalamove đang trên đường đến điểm lấy hàng. Đang kết nối tín hiệu tài xế...
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSyncLalamove}
+                      disabled={isSyncing}
+                      className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                      <span>Cập nhật</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Driver Information Card (Section 10.3) */}
+                {trackingData?.driver && (
+                  <div className="p-4 bg-orange-50/70 border border-orange-200 rounded-2xl space-y-3 animate-fadeIn">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase bg-orange-200 text-orange-900 px-2 py-0.5 rounded">
+                          Tài xế Lalamove
+                        </span>
+                        <span className="font-bold text-slate-800 text-xs">Thông tin người vận chuyển</span>
+                      </div>
+                      {trackingData.shareLink && (
+                        <a
+                          href={trackingData.shareLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-2xs"
+                        >
+                          <span>Mở theo dõi Lalamove</span>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-3.5">
+                      {trackingData.driver.photo ? (
+                        <img
+                          src={trackingData.driver.photo}
+                          alt={trackingData.driver.name || 'Tài xế'}
+                          className="w-12 h-12 rounded-full object-cover border-2 border-orange-300 shadow-xs bg-white"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-orange-200 text-orange-800 flex items-center justify-center font-bold">
+                          <User className="w-6 h-6" />
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1">
+                        <div>
+                          <span className="text-[10px] text-slate-500 uppercase font-semibold block">Họ tên tài xế</span>
+                          <span className="font-bold text-slate-900 text-xs">{trackingData.driver.name || 'Đang điều phối'}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 uppercase font-semibold block">Số điện thoại</span>
+                          {trackingData.driver.phone ? (
+                            <a href={`tel:${trackingData.driver.phone}`} className="font-bold text-orange-700 hover:underline flex items-center gap-1">
+                              <Phone className="w-3 h-3" />
+                              <span>{trackingData.driver.phone}</span>
+                            </a>
+                          ) : (
+                            <span className="font-bold text-slate-400 text-xs">Chưa cập nhật</span>
+                          )}
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 uppercase font-semibold block">Biển số xe</span>
+                          <span className="font-bold text-slate-900 text-xs font-mono">{trackingData.driver.plateNumber || 'Chưa cập nhật'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Driver Live GPS Map (Section 10.4) */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-extrabold text-[11px] uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                      <Navigation className="w-3.5 h-3.5 text-orange-600" />
+                      <span>Vị trí GPS thời gian thực của tài xế</span>
+                    </span>
+                    {hasValidCoords && coordinates?.updatedAt && (
+                      <span className="text-[10px] text-slate-400">
+                        Cập nhật lúc: {new Date(coordinates.updatedAt).toLocaleTimeString('vi-VN')}
+                      </span>
+                    )}
+                  </div>
+
+                  {hasValidCoords ? (
+                    <div id="lalamove-driver-map" className="w-full h-56 rounded-2xl border border-gray-200 z-0 shadow-inner" />
+                  ) : activeShipment.providerStatus === 'COMPLETED' || activeShipment.status === 'DELIVERED' || activeShipment.deliveredAt ? (
+                    <div className="p-4 bg-emerald-50/80 rounded-2xl border border-emerald-200 text-emerald-950 space-y-1.5 animate-fadeIn">
+                      <div className="flex items-center gap-2 font-bold text-xs text-emerald-900">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>Chuyến xe Lalamove đã hoàn tất giao hàng thành công!</span>
+                      </div>
+                      <p className="text-[11px] text-emerald-800 leading-relaxed">
+                        Tín hiệu GPS trực tiếp đã được đóng tự động theo chính sách bảo mật của Lalamove sau khi tài xế giao hàng xong.
+                        Biên bản bàn giao và ảnh ký nhận (POD) đã được ghi nhận vào hồ sơ đơn hàng.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 bg-slate-100/80 rounded-2xl border border-gray-200 text-center text-slate-500 text-xs space-y-1">
+                      <div className="flex items-center justify-center gap-1.5 font-semibold text-slate-700">
+                        <MapPin className="w-4 h-4 text-slate-400" />
+                        <span>Chưa có vị trí GPS trực tiếp của tài xế</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        (Tài xế đang nhận đơn hoặc chuẩn bị khởi hành. Tọa độ GPS sẽ tự động hiển thị khi tài xế di chuyển)
+                      </p>
+                    </div>
+                  )}
+                </div>
+
                 {/* POD Proof of delivery if available */}
                 {activeShipment.podUrl && (
                   <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-2xl flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5">
                       <Camera className="w-5 h-5 text-emerald-700" />
                       <div>
-                        <span className="font-bold text-emerald-900 block text-xs">Ảnh chụp bưu tá đã giao hàng thành công (POD)</span>
+                        <span className="font-bold text-emerald-900 block text-xs">Ảnh chụp tài xế đã giao hàng thành công (POD)</span>
                         <span className="text-[11px] text-emerald-700">Biên bản chữ ký / ảnh bưu kiện tại cửa</span>
                       </div>
                     </div>
@@ -470,8 +1422,8 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                   <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs flex items-start gap-2">
                     <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                     <div>
-                      <span className="font-bold block">Ghi chú bưu tá / cảnh báo GHN:</span>
-                      <span>{activeShipment.lastError}</span>
+                      <span className="font-bold block">Ghi chú tài xế / cảnh báo Lalamove:</span>
+                      <span>{translateApiError(activeShipment.lastError)}</span>
                     </div>
                   </div>
                 )}
@@ -480,8 +1432,8 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
               {/* Visual 5-Step Stepper */}
               <div className="p-5 bg-white rounded-3xl border border-gray-200 space-y-4">
                 <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                  <Package className="w-4 h-4 text-[#c34c36]" />
-                  <span>Tiến trình vận chuyển thực tế</span>
+                  <Package className="w-4 h-4 text-orange-600" />
+                  <span>Tiến trình vận chuyển Lalamove</span>
                 </h4>
 
                 <div className="relative pl-6 sm:pl-0 sm:grid sm:grid-cols-5 gap-2">
@@ -505,7 +1457,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                             isDone
                               ? 'bg-emerald-600 text-white shadow-xs'
                               : isCurrent
-                                ? 'bg-[#c34c36] text-white ring-4 ring-[#c34c36]/20 shadow-md animate-pulse'
+                                ? 'bg-orange-600 text-white ring-4 ring-orange-500/20 shadow-md animate-pulse'
                                 : 'bg-gray-100 text-gray-400 border border-gray-300'
                           }`}
                         >
@@ -514,7 +1466,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
                         {/* Text */}
                         <div className="ml-3 sm:ml-0 sm:mt-2.5">
-                          <span className={`block font-extrabold text-xs ${isCurrent ? 'text-[#c34c36]' : isDone ? 'text-slate-900' : 'text-slate-400'}`}>
+                          <span className={`block font-extrabold text-xs ${isCurrent ? 'text-orange-600' : isDone ? 'text-slate-900' : 'text-slate-400'}`}>
                             {step.title}
                           </span>
                           <span className="text-[10px] text-slate-500 hidden sm:block mt-0.5 leading-snug">
@@ -531,32 +1483,87 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
               <div className="p-5 bg-white rounded-3xl border border-gray-200 space-y-4">
                 <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
                   <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                    <Clock className="w-4 h-4 text-[#c34c36]" />
-                    <span>Lịch sử sự kiện & Nhật ký bưu cục ({events.length})</span>
+                    <Clock className="w-4 h-4 text-orange-600" />
+                    <span>Lịch sử sự kiện Lalamove ({groupedEvents.length} mốc tiến trình{events.length > groupedEvents.length ? ` • ${events.length} lần cập nhật` : ''})</span>
                   </h4>
-                  <span className="text-[11px] text-slate-400">Thời gian UTC/Local</span>
+                  <span className="text-[11px] text-slate-400">Thời gian thực</span>
                 </div>
 
-                {events.length === 0 ? (
+                {/* Banner giải thích trực quan khi đơn đang ở trạng thái ON_GOING */}
+                {effectiveProviderStatus === 'ON_GOING' && (
+                  <div className="p-3.5 bg-indigo-50/90 border border-indigo-200 rounded-2xl flex items-start gap-2.5 text-xs text-indigo-900 animate-fadeIn">
+                    <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-bold">Tài xế đã nhận đơn & đang di chuyển tới lấy hàng (ON_GOING)</p>
+                      <p className="text-indigo-800 text-[11px] leading-relaxed">
+                        Tiến trình tiếp theo <strong>&quot;Đã lấy kiện&quot;</strong> sẽ tự động cập nhật khi tài xế đến lấy hàng và xác nhận trên ứng dụng. 
+                        Bạn có thể nhấn nút <strong>&quot;Đồng bộ từ Lalamove&quot;</strong> bên dưới để làm mới dữ liệu bất kỳ lúc nào.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {groupedEvents.length === 0 ? (
                   <div className="py-6 text-center text-slate-400 text-xs italic">
-                    Chưa có nhật ký sự kiện ghi nhận từ GHN. Bưu tá sẽ cập nhật khi có thao tác lấy hoặc xuất kho.
+                    Chưa có nhật ký sự kiện ghi nhận từ Lalamove. Hệ thống sẽ cập nhật khi tài xế nhận đơn và bắt đầu giao.
                   </div>
                 ) : (
                   <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-                    {events.map((ev, index) => (
-                      <div key={ev.id || index} className="relative flex items-start gap-3 group">
-                        <div className="absolute -left-6 top-1 w-3.5 h-3.5 rounded-full bg-white border-2 border-[#c34c36] group-first:bg-[#c34c36]" />
-                        <div className="flex-1 bg-[#faf8f5] p-3 rounded-2xl border border-gray-200 space-y-1">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-extrabold text-slate-900 uppercase">
-                              {ev.status || ev.type || 'CẬP NHẬT TRẠNG THÁI'}
-                            </span>
+                    {groupedEvents.map((ev) => (
+                      <div key={ev.key} className="relative flex items-start gap-3">
+                        {/* Dot indicator: Newest event is active pulsing */}
+                        {ev.isLatest ? (
+                          <div className="absolute -left-6 top-1.5 w-4 h-4 rounded-full bg-orange-600 ring-4 ring-orange-100 flex items-center justify-center animate-pulse">
+                            <div className="w-1.5 h-1.5 bg-white rounded-full" />
+                          </div>
+                        ) : (
+                          <div className="absolute -left-5.5 top-2 w-3 h-3 rounded-full bg-slate-300 border-2 border-white" />
+                        )}
+
+                        <div
+                          className={`flex-1 p-3.5 rounded-2xl border transition-all ${
+                            ev.isLatest
+                              ? 'bg-gradient-to-r from-orange-50/70 via-amber-50/40 to-white border-orange-200 shadow-2xs'
+                              : 'bg-[#faf8f5] border-gray-200'
+                          } space-y-1.5`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded-md text-[11px] font-extrabold border ${ev.badgeClass}`}>
+                                {ev.title}
+                              </span>
+                              {ev.isLatest && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-orange-600 text-white animate-pulse">
+                                  Hiện tại
+                                </span>
+                              )}
+                            </div>
+
                             <span className="text-slate-500 font-mono text-[10px]">
-                              {new Date(ev.occurredAt).toLocaleString('vi-VN')}
+                              {ev.count > 1 && ev.firstOccurredAt !== ev.lastOccurredAt ? (
+                                <span>
+                                  Bắt đầu: {new Date(ev.firstOccurredAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} • Lần cuối: {new Date(ev.lastOccurredAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </span>
+                              ) : (
+                                <span>{new Date(ev.firstOccurredAt).toLocaleString('vi-VN')}</span>
+                              )}
                             </span>
                           </div>
+
+                          <p className="text-slate-700 text-xs leading-relaxed">
+                            {ev.description}
+                          </p>
+
                           {ev.reason && (
-                            <p className="text-slate-600 text-xs">{ev.reason}</p>
+                            <p className="text-slate-500 text-[11px] italic bg-white/70 p-2 rounded-xl border border-slate-200/60 mt-1">
+                              {ev.reason}
+                            </p>
+                          )}
+
+                          {ev.count > 1 && (
+                            <div className="text-[10px] text-slate-400 font-medium pt-0.5 flex items-center gap-1">
+                              <span>ℹ️ Đã đồng bộ tín hiệu {ev.count} lần từ hệ thống đối tác Lalamove</span>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -574,8 +1581,8 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                       onClick={() => onOpenLabelModal(activeShipment)}
                       className="px-4 py-2.5 rounded-2xl bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold transition flex items-center gap-1.5 border border-slate-300 shadow-2xs cursor-pointer"
                     >
-                      <Printer className="w-4 h-4 text-[#c34c36]" />
-                      <span>In Phiếu Gửi GHN</span>
+                      <Printer className="w-4 h-4 text-orange-600" />
+                      <span>In Phiếu Gửi Lalamove</span>
                     </button>
                   )}
 
@@ -586,41 +1593,51 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                       disabled={isCancelling}
                       className="px-3.5 py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition border border-rose-200 cursor-pointer disabled:opacity-50"
                     >
-                      {isCancelling ? 'Đang hủy...' : 'Hủy Vận Đơn GHN'}
+                      {isCancelling ? 'Đang hủy...' : 'Hủy Vận Đơn Lalamove'}
                     </button>
                   )}
                 </div>
 
-                {/* Confirm Receipt for Buyer when Delivered */}
+                {/* Confirm Receipt for Buyer when Delivered (Section 12) */}
                 {!isSeller && (
                   <div>
-                    {activeShipment.providerStatus === 'delivered' || activeShipment.deliveredAt ? (
+                    {isReceiptConfirmed ? (
+                      <span className="px-3.5 py-2 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>Đơn hàng đã hoàn tất & giải ngân thành công</span>
+                      </span>
+                    ) : String(order.escrowStatus) === 'DISPUTED' || String(order.escrowStatus) === 'FROZEN' ? (
+                      <span className="px-3.5 py-2 rounded-xl bg-amber-50 text-amber-800 text-xs font-bold border border-amber-200 flex items-center gap-1.5">
+                        <AlertTriangle className="w-4 h-4 text-amber-600" />
+                        <span>Quỹ Escrow đang tạm đóng băng do khiếu nại / tranh chấp</span>
+                      </span>
+                    ) : activeShipment.providerStatus === 'COMPLETED' || activeShipment.status === 'DELIVERED' || activeShipment.deliveredAt || order.shippingDeliveredAt ? (
                       <button
                         onClick={handleConfirmReceived}
                         disabled={isConfirmingDelivered}
-                        className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:opacity-90 text-white text-xs font-black transition flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50"
+                        className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:opacity-90 text-white text-xs font-black transition flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50 animate-pulse"
                       >
                         <CheckCircle2 className="w-4 h-4" />
                         <span>{isConfirmingDelivered ? 'Đang giải ngân...' : 'Xác Nhận Đã Nhận Hàng (Giải Ngân)'}</span>
                       </button>
                     ) : (
                       <span className="text-[11px] text-slate-500 italic">
-                        (Nút xác nhận nhận hàng sẽ mở sau khi GHN cập nhật giao thành công)
+                        (Nút xác nhận nhận hàng sẽ mở sau khi Lalamove hoàn tất giao hàng và quỹ Escrow đang giữ)
                       </span>
                     )}
                   </div>
                 )}
               </div>
 
-              {/* Sandbox Test Simulator (Section 10 in Tracking_API_GUIDE) */}
+              {/* Sandbox Test Simulator */}
               <div className="mt-4 border border-dashed border-amber-300 bg-amber-50/50 rounded-2xl p-4 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-black uppercase bg-amber-200 text-amber-900 px-2 py-0.5 rounded">
-                      Sandbox Test GHN
+                      Sandbox Test Lalamove
                     </span>
                     <span className="text-xs font-bold text-amber-900">
-                      Công cụ giả lập trạng thái GHN (Bước 10 trong hướng dẫn)
+                      Công cụ giả lập trạng thái vận chuyển (Môi trường Test)
                     </span>
                   </div>
                   <button
@@ -634,25 +1651,34 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                 {showSandbox && (
                   <div className="pt-2 border-t border-amber-200 text-xs space-y-2 text-amber-950 animate-fadeIn">
                     <p className="text-[11px] text-amber-800">
-                      Dùng để kiểm thử toàn diện luồng SecondLife mà không cần bưu tá thật giao ngoài đời. Bấm nút dưới để kích hoạt callback giả lập:
+                      Dùng để kiểm thử toàn diện luồng SecondLife mà không cần tài xế thật giao ngoài đời:
                     </p>
                     <div className="flex flex-wrap items-center gap-2 pt-1">
                       <button
                         onClick={() => handleSimulateWebhook('picked')}
                         disabled={simulatingStatus !== null}
-                        className="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
+                        className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
                       >
                         <PlayCircle className="w-3.5 h-3.5" />
-                        <span>1. Giả lập: GHN Đã Lấy Hàng (picked)</span>
+                        <span>1. Giả lập: Tài xế Đã Lấy Hàng (picked)</span>
                       </button>
 
                       <button
                         onClick={() => handleSimulateWebhook('delivered')}
                         disabled={simulatingStatus !== null}
-                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
+                        className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
                       >
                         <PlayCircle className="w-3.5 h-3.5" />
-                        <span>2. Giả lập: GHN Đã Giao Thành Công (delivered)</span>
+                        <span>2. Giả lập: Lalamove Đã Giao Thành Công (delivered)</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleSimulateWebhook('reset')}
+                        disabled={simulatingStatus !== null}
+                        className="px-3 py-2 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>3. Đặt lại: Chờ Điều Phối (reset)</span>
                       </button>
                     </div>
                   </div>

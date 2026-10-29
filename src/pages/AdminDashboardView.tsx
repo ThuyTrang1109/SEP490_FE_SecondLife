@@ -5,14 +5,19 @@ import {
   Listing,
   Language,
   EscrowStatus,
-  UserProfile
+  UserProfile,
+  TopupPackage
 } from '../types';
 import { translations, formatVND } from '../utils/translations';
+import { dialogService } from '../utils/dialogService';
+import { resolveCategoryAndItem } from '../utils/catalogCache';
+import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import {
   adminService,
   adminPostService,
   adminRbacService,
   adminCreditPricingService,
+  topupService,
   healthService,
   UserAdminResponseDto,
   SellerVerificationResponseDto,
@@ -22,8 +27,9 @@ import {
   UserRolesResponseDto,
   UserRoleAuditResponseDto,
   CreditPricingRuleResponseDto,
-  CreditDiscountTierResponseDto,
-  CreatePermissionRequestDto
+  CreatePermissionRequestDto,
+  reputationService,
+  staffService
 } from '../services';
 import logoImg from '../assets/logo.png';
 import {
@@ -41,6 +47,7 @@ import {
   TrendingUp,
   Wallet,
   Lock,
+  Unlock,
   Search,
   Filter,
   Eye,
@@ -82,14 +89,20 @@ import {
   BadgeCheck,
   User,
   LogOut,
+  Percent,
 } from 'lucide-react';
 import { CatalogAiTab } from '../components/admin/CatalogAiTab';
+import { SystemWalletTab } from '../components/admin/SystemWalletTab';
+import { CommissionRulesTab } from '../components/admin/CommissionRulesTab';
+import { InspectionGovernanceTab } from '../components/admin/InspectionGovernanceTab';
+import { WithdrawalsTab } from '../components/admin/WithdrawalsTab';
+import { PermissionsTab } from '../components/admin/PermissionsTab';
 
 interface AdminDashboardViewProps {
   orders: EscrowOrder[];
-  disputes: DisputeCase[];
+  disputes?: DisputeCase[];
   listings: Listing[];
-  onResolveDispute: (disputeId: string, decision: 'REFUND_BUYER' | 'RELEASE_SELLER') => void;
+  onResolveDispute?: (disputeId: string, decision: 'REFUND_BUYER' | 'RELEASE_SELLER') => void;
   lang: Language;
   onViewWebsite?: () => void;
   currentUser?: UserProfile | null;
@@ -103,40 +116,55 @@ type AdminTab =
   | 'catalog-ai'
   | 'orders'
   | 'listings'
-  | 'disputes'
+  | 'withdrawals'
   | 'hubs'
-  | 'ai-settings'
   | 'customers'
   | 'seller-kyc'
   | 'permissions'
-  | 'credit-pricing';
+  | 'credit-pricing'
+  | 'system-wallet'
+  | 'commission-rules'
+  | 'inspection-governance';
 
-interface BookingAppointment {
-  id: string;
-  stt: number;
-  customerName: string;
-  phone: string;
-  gender: string;
-  content: string;
-  bookingDate: string;
-  status: 'CONFIRMED' | 'IN_PROGRESS' | 'PENDING';
-}
 
-interface CustomerContact {
-  id: string;
-  stt: number;
-  customerName: string;
-  content: string;
-  receivedDate: string;
-  status: 'PENDING' | 'RESOLVED';
-  email: string;
+export const VALID_ADMIN_TABS: AdminTab[] = [
+  'overview',
+  'catalog-ai',
+  'orders',
+  'listings',
+  'withdrawals',
+  'hubs',
+  'customers',
+  'seller-kyc',
+  'permissions',
+  'credit-pricing',
+  'system-wallet',
+  'commission-rules',
+  'inspection-governance'
+];
+
+export const ADMIN_TAB_STORAGE_KEY = 'secondlife_admin_active_tab';
+
+export function getInitialAdminTab(): AdminTab {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const subtab = params.get('subtab') as AdminTab;
+    if (subtab && VALID_ADMIN_TABS.includes(subtab)) {
+      return subtab;
+    }
+    try {
+      const saved = sessionStorage.getItem(ADMIN_TAB_STORAGE_KEY) as AdminTab;
+      if (saved && VALID_ADMIN_TABS.includes(saved)) {
+        return saved;
+      }
+    } catch (e) {}
+  }
+  return 'overview';
 }
 
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   orders: initialOrders,
-  disputes,
   listings: initialListings,
-  onResolveDispute,
   lang,
   onViewWebsite,
   currentUser,
@@ -146,8 +174,33 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 }) => {
   const t = translations[lang];
 
-  // Active sub-tab in Admin Dashboard
-  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  // Active sub-tab in Admin Dashboard (khôi phục từ URL param ?subtab= hoặc sessionStorage khi F5)
+  const [activeTab, setActiveTab] = useState<AdminTab>(getInitialAdminTab);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      sessionStorage.setItem(ADMIN_TAB_STORAGE_KEY, activeTab);
+    } catch (e) {}
+    const currentUrl = new URL(window.location.href);
+    if (activeTab && activeTab !== 'overview') {
+      currentUrl.searchParams.set('subtab', activeTab);
+    } else {
+      currentUrl.searchParams.delete('subtab');
+    }
+    if (currentUrl.toString() !== window.location.href) {
+      window.history.replaceState(null, '', currentUrl.toString());
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const tab = getInitialAdminTab();
+      setActiveTab(tab);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Sidebar toggle state (expanded / collapsed)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -168,10 +221,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState<string>('ALL');
   const [listingCategoryFilter, setListingCategoryFilter] = useState<string>('ALL');
-
-  // Dispute review state
-  const [selectedDisputeId, setSelectedDisputeId] = useState<string>(disputes[0]?.id || '');
-  const activeDispute = disputes.find((d) => d.id === selectedDisputeId) || disputes[0];
 
   // Local state for listings and orders moderation
   const [localListings, setLocalListings] = useState<Listing[]>(initialListings);
@@ -221,19 +270,36 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       .then(res => {
         const items = Array.isArray(res) ? res : res?.items || res?.content || [];
         if (items.length > 0) {
-          const mapped: Listing[] = items.map((post: any) => {
+          // Lọc bỏ hoàn toàn các bản nháp chưa hoàn thành (DRAFT) của các tài khoản người bán
+          const nonDrafts = items.filter((post: any) => post.status !== 'DRAFT');
+          const mapped: Listing[] = nonDrafts.map((post: any) => {
             const rawImages: string[] = Array.isArray(post.imageUrls) && post.imageUrls.length > 0
               ? post.imageUrls
               : (post.coverImageUrl ? [post.coverImageUrl] : post.imageUrl ? [post.imageUrl] : post.thumbnailUrl ? [post.thumbnailUrl] : []);
             const fallbackImage = 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=800';
             const primaryImage = rawImages[0] || fallbackImage;
 
+            const resolved = resolveCategoryAndItem({
+              postId: post.id || post.postId,
+              categoryId: post.categoryId,
+              itemId: post.itemId,
+              title: post.title,
+              description: post.description || post.aiDescription,
+              category: post.category,
+              brand: post.brand,
+              model: post.model,
+            });
+
             return {
               id: post.id || `post-${Date.now()}`,
-              title: post.title || 'Thiết bị gia dụng SecondLife',
-              category: (post.category || 'Tủ lạnh & Tủ đông') as any,
-              brand: post.brand || 'SecondLife',
-              model: post.model || 'Model',
+              categoryId: post.categoryId || resolved.categoryId,
+              itemId: post.itemId || resolved.itemId,
+              categoryName: resolved.categoryName,
+              itemName: resolved.itemName,
+              title: post.title || 'Sản phẩm SecondLife',
+              category: (resolved.displayCategory || 'Đồ gia dụng') as any,
+              brand: resolved.brand,
+              model: post.model || resolved.model || 'Model',
               purchaseYear: 2024,
               priceVnd: Number(post.price || post.priceVnd || 0),
               originalPriceVnd: Number(post.originalPriceVnd || post.aiSuggestedPrice || post.price || 0),
@@ -246,7 +312,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               sellerRating: 5.0,
               sellerCompletedOrders: 1,
               sellerVerified: true,
-              status: (post.status === 'ACTIVE' ? 'active' : post.status === 'DRAFT' ? 'draft' : 'reserved') as any,
+              status: (post.status === 'ACTIVE' ? 'active' : post.status === 'REJECTED' ? 'rejected' : post.status === 'PENDING_REVIEW' || post.status === 'PENDING' ? 'pending' : 'active') as any,
+              backendStatus: post.status,
               createdAt: post.createdAt || new Date().toISOString(),
               isInspectionGuaranteed: true,
               requiresInspection: Number(post.price || post.priceVnd || 0) > 5000000,
@@ -292,8 +359,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   // Modal dialog states
   const [selectedOrderModal, setSelectedOrderModal] = useState<EscrowOrder | null>(null);
-  const [selectedBookingModal, setSelectedBookingModal] = useState<BookingAppointment | null>(null);
-  const [selectedContactModal, setSelectedContactModal] = useState<CustomerContact | null>(null);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const userDropdownRef = React.useRef<HTMLDivElement>(null);
 
@@ -329,178 +394,86 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   };
 
   // =========================================================================
-  // RBAC STATE & HANDLERS (Permissions, Roles, Audit)
+  // GỠ BỎ HẠN CHẾ BÁN HÀNG (POST /admin/sellers/{id}/reputation/lift-restriction)
   // =========================================================================
-  const [rbacSubTab, setRbacSubTab] = useState<'roles' | 'permissions'>('roles');
-  const [permissionsList, setPermissionsList] = useState<PermissionResponseDto[]>([]);
-  const [rolesList, setRolesList] = useState<RolePermissionsResponseDto[]>([]);
-  const [selectedRoleCode, setSelectedRoleCode] = useState<string>('STAFF');
-  const [expectedPermissionCodes, setExpectedPermissionCodes] = useState<string[]>([]);
-  const [selectedPermissionCodes, setSelectedPermissionCodes] = useState<string[]>([]);
-  const [permSearchTerm, setPermSearchTerm] = useState<string>('');
-  const [editingPerm, setEditingPerm] = useState<PermissionResponseDto | null>(null);
-  const [roleAuditModalData, setRoleAuditModalData] = useState<{ roleCode: string; items: RolePermissionAuditResponseDto[] } | null>(null);
-  const [isLoadingRbac, setIsLoadingRbac] = useState<boolean>(false);
-  const [isSavingRbac, setIsSavingRbac] = useState<boolean>(false);
-
-  const loadRbacData = async () => {
-    setIsLoadingRbac(true);
-    try {
-      const [perms, roles] = await Promise.all([
-        adminRbacService.getPermissions(),
-        adminRbacService.getRoles()
-      ]);
-      setPermissionsList(perms || []);
-      setRolesList(roles || []);
-
-      const curRole = (roles || []).find(r => r.code === selectedRoleCode) || (roles || [])[0];
-      if (curRole) {
-        setSelectedRoleCode(curRole.code);
-        setExpectedPermissionCodes([...curRole.permissionCodes]);
-        setSelectedPermissionCodes([...curRole.permissionCodes]);
-      }
-    } catch (err: any) {
-      triggerNotice('Không thể tải dữ liệu RBAC: ' + (err.message || 'Lỗi kết nối'));
-    } finally {
-      setIsLoadingRbac(false);
-    }
-  };
-
-  const handleSelectRole = async (role: RolePermissionsResponseDto) => {
-    setSelectedRoleCode(role.code);
-    setExpectedPermissionCodes([...role.permissionCodes]);
-    setSelectedPermissionCodes([...role.permissionCodes]);
-    try {
-      const fresh = await adminRbacService.getRole(role.code);
-      if (fresh && fresh.permissionCodes) {
-        setExpectedPermissionCodes([...fresh.permissionCodes]);
-        setSelectedPermissionCodes([...fresh.permissionCodes]);
-      }
-    } catch {
-      // Fallback already populated from role object
-    }
-  };
-
-  const handleOpenEditPermission = async (perm: PermissionResponseDto) => {
-    setEditingPerm(perm);
-    try {
-      const fresh = await adminRbacService.getPermission(perm.code);
-      if (fresh) {
-        setEditingPerm(fresh);
-      }
-    } catch {
-      // Fallback already set
-    }
-  };
-
-  const handleTogglePermissionForRole = (permCode: string) => {
-    const curRole = rolesList.find(r => r.code === selectedRoleCode);
-    if (!curRole || !curRole.editable) {
-      triggerNotice('Vai trò ADMIN được quản lý bảo mật cố định, không thể chỉnh sửa.');
-      return;
-    }
-    const perm = permissionsList.find(p => p.code === permCode);
-    if (!perm || !perm.assignableRoles?.includes(selectedRoleCode)) {
-      triggerNotice(`Quyền ${permCode} không thuộc chính sách cho phép gán của vai trò ${selectedRoleCode}`);
-      return;
-    }
-    setSelectedPermissionCodes(prev =>
-      prev.includes(permCode) ? prev.filter(c => c !== permCode) : [...prev, permCode]
-    );
-  };
-
-  const handleSaveRolePermissions = async () => {
-    const curRole = rolesList.find(r => r.code === selectedRoleCode);
-    if (!curRole || !curRole.editable) {
-      triggerNotice('Không thể sửa đổi bộ quyền của vai trò này.');
-      return;
-    }
-    setIsSavingRbac(true);
-    try {
-      await adminRbacService.replaceRolePermissions(selectedRoleCode, {
-        expectedPermissionCodes,
-        permissionCodes: selectedPermissionCodes
-      });
-      triggerNotice(`Đã cập nhật ma trận quyền cho vai trò ${selectedRoleCode} thành công!`);
-      await loadRbacData();
-    } catch (err: any) {
-      if (err?.message?.includes('409') || err?.status === 409) {
-        triggerNotice('⚠️ Xung đột dữ liệu (HTTP 409): Ma trận quyền vừa bị thay đổi bởi quản trị viên khác. Hệ thống đang tải lại...');
-        await loadRbacData();
-      } else {
-        triggerNotice(err?.message || 'Lưu ma trận quyền thất bại');
-      }
-    } finally {
-      setIsSavingRbac(false);
-    }
-  };
-
-  const handleViewRoleAudit = async (roleCode: string) => {
-    try {
-      const res = await adminRbacService.getRolePermissionAudit(roleCode);
-      setRoleAuditModalData({ roleCode, items: res?.items || [] });
-    } catch (err: any) {
-      triggerNotice('Không thể tải nhật ký phân quyền: ' + (err.message || ''));
-    }
-  };
-
-  const handleSaveEditPermission = async () => {
-    if (!editingPerm) return;
-    try {
-      await adminRbacService.updatePermission(editingPerm.code, {
-        name: editingPerm.name,
-        description: editingPerm.description
-      });
-      triggerNotice(`Đã cập nhật thông tin quyền ${editingPerm.code} thành công.`);
-      setEditingPerm(null);
-      await loadRbacData();
-    } catch (err: any) {
-      triggerNotice(err?.message || 'Cập nhật quyền thất bại');
-    }
-  };
-
-  // RBAC Create & Delete Permission Handlers (POST & DELETE /api/admin/permissions)
-  const [isCreatePermModalOpen, setIsCreatePermModalOpen] = useState(false);
-  const [isCreatingPerm, setIsCreatingPerm] = useState(false);
-  const [newPermForm, setNewPermForm] = useState<CreatePermissionRequestDto>({
-    code: '',
-    name: '',
-    description: '',
-    assignableRoles: ['STAFF']
+  const [liftRestrictionModal, setLiftRestrictionModal] = useState<{
+    isOpen: boolean;
+    sellerId: string;
+    sellerName: string;
+    reason: string;
+    isSubmitting: boolean;
+    error: string | null;
+  }>({
+    isOpen: false,
+    sellerId: '',
+    sellerName: '',
+    reason: '',
+    isSubmitting: false,
+    error: null,
   });
 
-  const handleCreatePermissionSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPermForm.code.trim() || !newPermForm.name.trim()) {
-      triggerNotice('Vui lòng nhập mã quyền và tên chức năng.');
+  const handleOpenLiftRestrictionModal = (sellerId: string, sellerName: string) => {
+    setLiftRestrictionModal({
+      isOpen: true,
+      sellerId,
+      sellerName,
+      reason: 'Người bán đã hoàn thành trách nhiệm khắc phục sự cố và cam kết tiêu chuẩn dịch vụ',
+      isSubmitting: false,
+      error: null,
+    });
+  };
+
+  const handleConfirmLiftRestriction = async () => {
+    if (!liftRestrictionModal.sellerId || !liftRestrictionModal.reason.trim()) {
+      setLiftRestrictionModal((prev) => ({ ...prev, error: 'Vui lòng nhập lý do gỡ bỏ hạn chế bán hàng' }));
       return;
     }
-    setIsCreatingPerm(true);
+    setLiftRestrictionModal((prev) => ({ ...prev, isSubmitting: true, error: null }));
     try {
-      await adminRbacService.createPermission(newPermForm);
-      triggerNotice(`Đã khởi tạo quyền ${newPermForm.code} thành công.`);
-      setIsCreatePermModalOpen(false);
-      setNewPermForm({ code: '', name: '', description: '', assignableRoles: ['STAFF'] });
-      await loadRbacData();
+      await reputationService.liftRestriction(liftRestrictionModal.sellerId, liftRestrictionModal.reason.trim());
+      triggerNotice(`Đã gỡ bỏ hạn chế bán hàng cho tài khoản ${liftRestrictionModal.sellerName} thành công!`);
+      setLiftRestrictionModal((prev) => ({ ...prev, isOpen: false }));
     } catch (err: any) {
-      triggerNotice(err?.message || 'Tạo quyền mới thất bại');
-    } finally {
-      setIsCreatingPerm(false);
+      setLiftRestrictionModal((prev) => ({
+        ...prev,
+        isSubmitting: false,
+        error: err?.message || 'Không thể gỡ hạn chế bán hàng.',
+      }));
     }
   };
 
-  const handleDeletePermission = async (permissionCode: string) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa quyền "${permissionCode}" không? Quyền chỉ có thể xóa khi chưa được gán vào vai trò nào.`)) {
-      return;
-    }
+  // Tra cứu hồ sơ eKYC nhanh theo User ID (GET /api/v1/staff/seller-verifications/user/{userId})
+  const [userIdSearchInput, setUserIdSearchInput] = useState('');
+  const [isSearchingByUserId, setIsSearchingByUserId] = useState(false);
+
+  const handleLookupVerificationByUserId = async () => {
+    if (!userIdSearchInput.trim()) return;
+    setIsSearchingByUserId(true);
     try {
-      await adminRbacService.deletePermission(permissionCode);
-      triggerNotice(`Đã xóa quyền ${permissionCode} thành công.`);
-      await loadRbacData();
+      const ver = await staffService.getVerificationByUserId(userIdSearchInput.trim());
+      if (ver) {
+        setSelectedVerificationDetail(ver);
+        triggerNotice(`Đã tìm thấy hồ sơ eKYC của User #${userIdSearchInput.trim().slice(0, 8)}`);
+      } else {
+        triggerNotice('Không tìm thấy hồ sơ eKYC nào cho User ID này');
+      }
     } catch (err: any) {
-      triggerNotice(err?.message || 'Xóa quyền thất bại');
+      triggerNotice(err?.message || 'Không tìm thấy hồ sơ eKYC theo User ID này');
+    } finally {
+      setIsSearchingByUserId(false);
     }
   };
+
+  // =========================================================================
+  // RBAC Roles list for User Role assignment modal
+  // =========================================================================
+  const [rolesList, setRolesList] = useState<RolePermissionsResponseDto[]>([]);
+
+  useEffect(() => {
+    adminRbacService.getRoles().then(roles => {
+      if (roles) setRolesList(roles);
+    }).catch(() => {});
+  }, []);
 
   // Backend Health Status Check (GET /api/health)
   const [healthInfo, setHealthInfo] = useState<{ status: 'UNKNOWN' | 'UP' | 'DOWN'; latency?: number }>({
@@ -540,10 +513,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     try {
       const res = await adminPostService.getAdminPosts();
       const items = res?.items || (res as any)?.content || (Array.isArray(res) ? res : []);
-      if (items.length > 0) {
-        const mappedListings: Listing[] = items.map((p: any) => ({
+      // Lọc bỏ hoàn toàn các bản nháp chưa submit (DRAFT) của các người bán
+      const validPosts = items.filter((p: any) => p.status !== 'DRAFT');
+      if (validPosts.length > 0) {
+        const mappedListings: Listing[] = validPosts.map((p: any) => ({
           id: p.id,
-          title: p.title || 'Bản Nháp (Chưa có tên)',
+          title: p.title || 'Sản phẩm SecondLife',
           category: p.categoryName || 'Sản phẩm',
           brand: p.brand || 'Khác',
           model: p.model || '',
@@ -554,11 +529,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           description: p.description || '',
           location: p.location || 'Toàn quốc',
           sellerId: p.user?.id || p.sellerId || '',
-          sellerName: p.user?.fullName || p.user?.email || p.sellerName || 'Người bán ẩn danh',
+          sellerName: p.user?.fullName || p.user?.email || p.sellerName || 'Người bán',
           sellerRating: 5.0,
           sellerCompletedOrders: 0,
           sellerVerified: true,
-          status: p.status === 'ACTIVE' ? 'active' : p.status === 'DRAFT' ? 'draft' : p.status === 'REJECTED' ? 'rejected' : p.status === 'PENDING_REVIEW' ? 'pending' : 'draft',
+          status: p.status === 'ACTIVE' ? 'active' : p.status === 'REJECTED' ? 'rejected' : p.status === 'PENDING_REVIEW' || p.status === 'PENDING' ? 'pending' : 'active',
+          backendStatus: p.status,
           createdAt: p.createdAt || new Date().toISOString(),
           isInspectionGuaranteed: true,
           requiresInspection: true,
@@ -581,7 +557,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           } : undefined
         }));
         setLocalListings(mappedListings);
-        triggerNotice(`Đã đồng bộ ${mappedListings.length} bài đăng từ máy chủ Backend.`);
+        triggerNotice(`Đã đồng bộ ${mappedListings.length} bài đăng thực tế từ máy chủ Backend.`);
       }
     } catch (err: any) {
       console.warn('Backend load admin posts fallback:', err);
@@ -664,25 +640,37 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   };
 
   // =========================================================================
-  // CREDIT PRICING & DISCOUNT TIERS STATE & HANDLERS
+  // CREDIT PRICING & TOPUP PACKAGES (CHIẾT KHẤU GÓI NẠP) STATE & HANDLERS
   // =========================================================================
   const [creditPrices, setCreditPrices] = useState<CreditPricingRuleResponseDto[]>([]);
-  const [discountTiers, setDiscountTiers] = useState<CreditDiscountTierResponseDto[]>([]);
+  const [topupPackages, setTopupPackages] = useState<TopupPackage[]>([]);
   const [isLoadingPricing, setIsLoadingPricing] = useState<boolean>(false);
   const [editingPriceType, setEditingPriceType] = useState<string | null>(null);
   const [editPriceValue, setEditPriceValue] = useState<number>(0);
-  const [showAddTierModal, setShowAddTierModal] = useState<boolean>(false);
-  const [newTierData, setNewTierData] = useState({ minQuantity: 10, maxQuantity: 50, discountRate: 0.1, active: true });
 
   const loadCreditPricingData = async () => {
     setIsLoadingPricing(true);
     try {
-      const [prices, tiers] = await Promise.all([
+      const [pricesRes, packagesRes] = await Promise.allSettled([
         adminCreditPricingService.getCreditPrices(),
-        adminCreditPricingService.getDiscountTiers()
+        topupService.getTopupPackages()
       ]);
-      setCreditPrices(prices || []);
-      setDiscountTiers(tiers || []);
+
+      if (pricesRes.status === 'fulfilled') {
+        const pricesData = pricesRes.value;
+        const pricesList = Array.isArray(pricesData) ? pricesData : (pricesData as any)?.data || [];
+        setCreditPrices(pricesList);
+      } else {
+        console.warn('Failed to load credit prices:', pricesRes.reason);
+      }
+
+      if (packagesRes.status === 'fulfilled') {
+        const pkgData = packagesRes.value;
+        const pkgList = Array.isArray(pkgData) ? pkgData : (pkgData as any)?.data || [];
+        setTopupPackages(pkgList);
+      } else {
+        console.warn('Failed to load topup packages:', packagesRes.reason);
+      }
     } catch (err: any) {
       triggerNotice('Không thể tải bảng giá credit: ' + (err.message || ''));
     } finally {
@@ -690,7 +678,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   };
 
-  const handleUpdateCreditPrice = async (creditType: 'LISTING' | 'VALUATION', newPrice: number) => {
+  const handleUpdateCreditPrice = async (creditType: string, newPrice: number) => {
     try {
       await adminCreditPricingService.updateCreditPrice(creditType, newPrice);
       triggerNotice(`Đã cập nhật đơn giá ${creditType} thành ${formatVND(newPrice)}`);
@@ -701,44 +689,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   };
 
-  const handleCreateDiscountTier = async () => {
-    try {
-      await adminCreditPricingService.createDiscountTier({
-        minQuantity: Number(newTierData.minQuantity),
-        maxQuantity: newTierData.maxQuantity ? Number(newTierData.maxQuantity) : null,
-        discountRate: Number(newTierData.discountRate),
-        active: newTierData.active
-      });
-      triggerNotice('Đã tạo mới bậc chiết khấu thành công!');
-      setShowAddTierModal(false);
-      await loadCreditPricingData();
-    } catch (err: any) {
-      triggerNotice(err?.message || 'Tạo bậc chiết khấu thất bại');
-    }
-  };
-
-  const handleToggleTierActive = async (tierId: string, newActive: boolean) => {
-    const tier = discountTiers.find((t) => t.id === tierId);
-    if (!tier) return;
-    try {
-      await adminCreditPricingService.updateDiscountTier(tierId, {
-        minQuantity: tier.minQuantity,
-        maxQuantity: tier.maxQuantity,
-        discountRate: tier.discountRate,
-        active: newActive
-      });
-      triggerNotice(`Đã ${newActive ? 'kích hoạt' : 'tạm dừng'} bậc chiết khấu.`);
-      await loadCreditPricingData();
-    } catch (err: any) {
-      triggerNotice(err?.message || 'Cập nhật trạng thái bậc chiết khấu thất bại');
-    }
-  };
-
-  // Tự động load dữ liệu khi chuyển sang tab permissions, credit-pricing hoặc listings
+  // Tự động load dữ liệu khi chuyển sang tab credit-pricing hoặc listings
   useEffect(() => {
-    if (activeTab === 'permissions') {
-      loadRbacData();
-    } else if (activeTab === 'credit-pricing') {
+    if (activeTab === 'credit-pricing') {
       loadCreditPricingData();
     } else if (activeTab === 'listings') {
       loadAdminPosts();
@@ -756,7 +709,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   const triggerNotice = (msg: string) => {
-    setActionNotice(msg);
+    setActionNotice(translateSystemNotification(msg));
     setTimeout(() => setActionNotice(null), 4000);
   };
 
@@ -988,7 +941,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       const res = await adminService.getAdminUsers({ page: 0, size: 20 });
       if (res?.items) setBackendUsers(res.items);
     } catch (err: any) {
-      alert(err.message || 'Cập nhật trạng thái người dùng thất bại');
+      dialogService.error(err.message || 'Cập nhật trạng thái người dùng thất bại', 'Lỗi Cập Nhật');
     }
   };
 
@@ -1015,15 +968,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         address: '',
       });
     } catch (err: any) {
-      alert(err.message || 'Tạo tài khoản Trạm Hub thất bại');
+      dialogService.error(err.message || 'Tạo tài khoản Trạm Hub thất bại', 'Lỗi Tạo Trạm Hub');
     }
   };
-
-  // Bookings Data (Khách hàng đặt lịch)
-  const [bookings, setBookings] = useState<BookingAppointment[]>([]);
-
-  // Customer Contacts (Khách hàng liên hệ)
-  const [contacts, setContacts] = useState<CustomerContact[]>([]);
 
   // Financial & Operational Metrics
   const totalGmv = useMemo(() => {
@@ -1099,9 +1046,20 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     });
   }, [localOrders, searchQuery, orderStatusFilter]);
 
-  // Filtered Listings
+  // Danh sách các bài đăng đã thành công / đang hiển thị trên sàn (loại trừ hoàn toàn bản nháp DRAFT của người bán)
+  const activeListings = useMemo(() => {
+    return localListings.filter((item) => {
+      const isDraft = item.status === 'draft' || (item as any).backendStatus === 'DRAFT';
+      const isSuccessful = item.status === 'active' || (item as any).backendStatus === 'ACTIVE';
+      return isSuccessful && !isDraft;
+    });
+  }, [localListings]);
+
+  // Filtered Listings cho tab Quản Lý Bài Đăng (chỉ hiển thị bài đăng hợp lệ/thành công, tuyệt đối không lấy bản nháp DRAFT)
   const filteredListings = useMemo(() => {
     return localListings.filter((item) => {
+      const isDraft = item.status === 'draft' || (item as any).backendStatus === 'DRAFT';
+      if (isDraft) return false;
       const title = item?.title || '';
       const sellerName = item?.sellerName || '';
       const itemId = item?.id || '';
@@ -1110,8 +1068,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         sellerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         itemId.toLowerCase().includes(searchQuery.toLowerCase());
       const matchCat = listingCategoryFilter === 'ALL' || item.category === listingCategoryFilter;
-      const isNotDraft = item.status !== 'draft';
-      return matchSearch && matchCat && isNotDraft;
+      return matchSearch && matchCat;
     });
   }, [localListings, searchQuery, listingCategoryFilter]);
 
@@ -1222,17 +1179,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     },
     {
       id: 'orders' as AdminTab,
-      label: lang === 'vi' ? 'QUẢN LÝ BÁN HÀNG' : 'SALES ORDERS',
+      label: lang === 'vi' ? 'QUẢN LÝ ĐƠN HÀNG' : 'SALES ORDERS',
       icon: Package,
-      badge: localOrders.length || 1,
+      badge: localOrders.length || null,
       badgeColor: 'bg-[#fce5da]'
     },
     {
-      id: 'disputes' as AdminTab,
-      label: lang === 'vi' ? 'PHÂN XỬ TRANH CHẤP' : 'DISPUTE RESOLUTION',
-      icon: Gavel,
-      badge: disputes.length || 0,
-      badgeColor: 'bg-[#c34c36]'
+      id: 'withdrawals' as AdminTab,
+      label: lang === 'vi' ? 'DUYỆT RÚT TIỀN VÍ' : 'WALLET WITHDRAWALS',
+      icon: Wallet,
+      badge: null
     },
     {
       id: 'seller-kyc' as AdminTab,
@@ -1245,18 +1201,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       id: 'customers' as AdminTab,
       label: lang === 'vi' ? 'QUẢN LÝ KHÁCH HÀNG' : 'CUSTOMERS',
       icon: Users,
-      badge: backendUsers.length || 44
+      badge: backendUsers.length || null
     },
     {
       id: 'hubs' as AdminTab,
-      label: lang === 'vi' ? 'QUẢN LÝ TRẠM HUB' : 'HUB CENTERS',
+      label: lang === 'vi' ? 'TRẠM KIỂM ĐỊNH HUB' : 'HUB CENTERS',
       icon: Building2,
-      badge: 3
-    },
-    {
-      id: 'ai-settings' as AdminTab,
-      label: lang === 'vi' ? 'CẤU HÌNH THUẬT TOÁN AI' : 'AI CONFIGURATION',
-      icon: Sliders,
       badge: null
     },
     {
@@ -1269,6 +1219,24 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       id: 'credit-pricing' as AdminTab,
       label: lang === 'vi' ? 'BẢNG GIÁ & CHIẾT KHẤU' : 'CREDIT & PRICING',
       icon: Tag,
+      badge: null
+    },
+    {
+      id: 'system-wallet' as AdminTab,
+      label: lang === 'vi' ? 'VÍ HỆ THỐNG & ĐỐI SOÁT' : 'SYSTEM WALLET',
+      icon: Wallet,
+      badge: null
+    },
+    {
+      id: 'commission-rules' as AdminTab,
+      label: lang === 'vi' ? 'QUY TẮC HOA HỒNG SÀN' : 'COMMISSION RULES',
+      icon: Percent,
+      badge: null
+    },
+    {
+      id: 'inspection-governance' as AdminTab,
+      label: lang === 'vi' ? 'BIỂU PHÍ KIỂM ĐỊNH' : 'INSPECTION GOVERNANCE',
+      icon: ShieldCheck,
       badge: null
     }
   ];
@@ -1523,7 +1491,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {actionNotice && (
             <div className="p-3.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-md flex items-center gap-3 animate-in fade-in font-bold">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="text-xs">{actionNotice}</span>
+              <span className="text-xs">{translateSystemNotification(actionNotice)}</span>
               <button
                 onClick={() => setActionNotice(null)}
                 className="ml-auto text-emerald-600 hover:text-emerald-800 text-xs cursor-pointer p-1"
@@ -1533,163 +1501,267 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </div>
           )}
 
-          {/* ======================================================== */}
-          {/* TAB: OVERVIEW (EXACT DASHBOARD FROM SCREENSHOT)           */}
-          {/* ======================================================== */}
           {activeTab === 'overview' && (
-            <div className="space-y-5">
-              {/* ROW 1: 4 SMALL STAT BOXES (AdminLTE Small-Boxes) */}
+            <div className="space-y-5 animate-fadeIn">
+              {/* ROW 1: 4 KPI STAT BOXES */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Box 1: ĐƠN HÀNG (SecondLife Brand Beige) */}
+                {/* Box 1: BÀI ĐĂNG THÀNH CÔNG */}
                 <div className="bg-[#fce5da] text-[#24263e] border border-[#24263e]/15 rounded-xl shadow-xs overflow-hidden relative group">
                   <div className="p-4 sm:p-5 pr-14 relative z-10">
-                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#24263e]">
-                      {localOrders.length || 1}
+                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#24263e] font-mono">
+                      {activeListings.length}
                     </div>
                     <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#24263e]/80">
-                      ĐƠN HÀNG
+                      BÀI ĐĂNG THÀNH CÔNG
                     </div>
                   </div>
-                  {/* Watermark Icon */}
-                  <ShoppingBag className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
-                  {/* Footer link */}
-                  <button
-                    onClick={() => setActiveTab('orders')}
-                    className="w-full bg-[#24263e]/10 hover:bg-[#24263e]/20 text-[#24263e] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
-                  >
-                    <span>Xem chi tiết</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {/* Box 2: SẢN PHẨM (SecondLife Brand Beige) */}
-                <div className="bg-[#fce5da] text-[#24263e] border border-[#24263e]/15 rounded-xl shadow-xs overflow-hidden relative group">
-                  <div className="p-4 sm:p-5 pr-14 relative z-10">
-                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#24263e]">
-                      {localListings.length || 65}
-                    </div>
-                    <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#24263e]/80">
-                      SẢN PHẨM
-                    </div>
-                  </div>
-                  {/* Watermark Icon */}
-                  <BarChart3 className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
-                  {/* Footer link */}
+                  <Tag className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
                   <button
                     onClick={() => setActiveTab('listings')}
                     className="w-full bg-[#24263e]/10 hover:bg-[#24263e]/20 text-[#24263e] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
                   >
-                    <span>Xem chi tiết</span>
+                    <span>Quản lý bài đăng ({activeListings.length})</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
-                {/* Box 3: KHÁCH HÀNG (SecondLife Brand Beige) */}
+                {/* Box 2: NGƯỜI DÙNG HỆ THỐNG */}
                 <div className="bg-[#fce5da] text-[#24263e] border border-[#24263e]/15 rounded-xl shadow-xs overflow-hidden relative group">
                   <div className="p-4 sm:p-5 pr-14 relative z-10">
-                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#24263e]">
-                      44
+                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#24263e] font-mono">
+                      {backendUsers.length || 0}
                     </div>
                     <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#24263e]/80">
-                      KHÁCH HÀNG
+                      NGƯỜI DÙNG TOÀN SÀN
                     </div>
                   </div>
-                  {/* Watermark Icon */}
-                  <UserPlus className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
-                  {/* Footer link */}
+                  <Users className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
                   <button
                     onClick={() => setActiveTab('customers')}
                     className="w-full bg-[#24263e]/10 hover:bg-[#24263e]/20 text-[#24263e] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
                   >
-                    <span>Xem chi tiết</span>
+                    <span>Xem danh sách tài khoản</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
-                {/* Box 4: BÀI VIẾT / TRANH CHẤP (SecondLife Brand Beige) */}
+                {/* Box 3: HỒ SƠ eKYC CHỜ DUYỆT */}
                 <div className="bg-[#fce5da] text-[#24263e] border border-[#24263e]/15 rounded-xl shadow-xs overflow-hidden relative group">
                   <div className="p-4 sm:p-5 pr-14 relative z-10">
-                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#24263e]">
-                      {disputes.length || 12}
+                    <div className="text-3xl sm:text-4xl font-black tracking-tight text-[#c34c36] font-mono">
+                      {backendVerifications.filter(v => v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING').length}
                     </div>
                     <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#24263e]/80">
-                      BÀI VIẾT & TRANH CHẤP
+                      eKYC NGƯỜI BÁN CHỜ DUYỆT
                     </div>
                   </div>
-                  {/* Watermark Icon */}
-                  <PieChart className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
-                  {/* Footer link */}
+                  <ShieldCheck className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
                   <button
-                    onClick={() => setActiveTab('disputes')}
+                    onClick={() => setActiveTab('seller-kyc')}
                     className="w-full bg-[#24263e]/10 hover:bg-[#24263e]/20 text-[#24263e] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
                   >
-                    <span>Xem chi tiết</span>
+                    <span>Thẩm định hồ sơ</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Box 4: LỆNH RÚT TIỀN VÍ */}
+                <div className="bg-[#fce5da] text-[#24263e] border border-[#24263e]/15 rounded-xl shadow-xs overflow-hidden relative group">
+                  <div className="p-4 sm:p-5 pr-14 relative z-10">
+                    <div className="text-2xl sm:text-3xl font-black tracking-tight text-[#24263e]">
+                      RÚT TIỀN
+                    </div>
+                    <div className="text-xs uppercase font-black tracking-wider mt-1 text-[#24263e]/80">
+                      GIẢI NGÂN NGÂN HÀNG
+                    </div>
+                  </div>
+                  <Wallet className="w-18 h-18 text-[#24263e]/15 absolute -right-2 top-2 z-0 group-hover:scale-110 transition-transform duration-300" />
+                  <button
+                    onClick={() => setActiveTab('withdrawals')}
+                    className="w-full bg-[#24263e]/10 hover:bg-[#24263e]/20 text-[#24263e] py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
+                  >
+                    <span>Duyệt yêu cầu rút tiền</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
 
-              {/* ROW 2: FULL-WIDTH TABLE: KHÁCH HÀNG ĐẶT LỊCH (Orange top-border) */}
-              <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#fce5da] overflow-hidden">
+              {/* ROW 2: BÀI ĐĂNG THÀNH CÔNG GẦN ĐÂY TRÊN SÀN (CHỈ LẤY BÀI ĐĂNG THÀNH CÔNG, LOẠI BỎ BẢN NHÁP DRAFT) */}
+              <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] overflow-hidden">
                 {/* Header */}
-                <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                  <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
-                    KHÁCH HÀNG ĐẶT LỊCH
-                  </h3>
+                <div className="px-4 py-3.5 border-b border-slate-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Tag className="w-4 h-4 text-[#c34c36]" />
+                    <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
+                      DANH SÁCH BÀI ĐĂNG THÀNH CÔNG GẦN ĐÂY TRÊN SÀN
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      {activeListings.length} tin hoạt động
+                    </span>
+                  </div>
                   <button
-                    onClick={() => toggleCardCollapse('booking')}
-                    className="p-1 rounded text-slate-400 hover:text-slate-600 transition cursor-pointer"
-                    title={collapsedCards.booking ? 'Mở rộng' : 'Thu nhỏ'}
+                    onClick={() => setActiveTab('listings')}
+                    className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer"
                   >
-                    {collapsedCards.booking ? (
-                      <Plus className="w-4 h-4" />
-                    ) : (
-                      <Minus className="w-4 h-4" />
-                    )}
+                    <span>Xem tất cả</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
-                {/* Table Content */}
-                {!collapsedCards.booking && (
+                {/* Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50/80 text-slate-600 text-[11px] font-bold">
+                        <th className="py-2.5 px-4 w-12">#</th>
+                        <th className="py-2.5 px-4">Sản Phẩm / Tin Đăng</th>
+                        <th className="py-2.5 px-4">Giá Bán</th>
+                        <th className="py-2.5 px-4">Người Bán</th>
+                        <th className="py-2.5 px-4">Trạng Thái</th>
+                        <th className="py-2.5 px-4 text-center">Thao Tác</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {activeListings.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-slate-400">
+                            Hiện chưa có bài đăng nào được duyệt thành công trên sàn.
+                          </td>
+                        </tr>
+                      ) : (
+                        activeListings.slice(0, 5).map((listing, idx) => (
+                          <tr key={listing.id} className="hover:bg-slate-50/70 transition">
+                            <td className="py-3 px-4 font-mono font-medium text-slate-400">
+                              {idx + 1}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-3">
+                                {listing.photoGallery?.[0] || listing.photos?.front || (listing as any).imageUrl ? (
+                                  <img
+                                    src={listing.photoGallery?.[0] || listing.photos?.front || (listing as any).imageUrl}
+                                    alt={listing.title}
+                                    className="w-10 h-10 object-cover rounded-lg border border-slate-200 shrink-0"
+                                  />
+                                ) : (
+                                  <div className="w-10 h-10 bg-slate-100 rounded-lg border border-slate-200 flex items-center justify-center shrink-0 text-slate-400">
+                                    <Tag className="w-4 h-4" />
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <div className="font-bold text-slate-900 truncate max-w-xs sm:max-w-md">
+                                    {listing.title}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                                    <span>ID: #{listing.id.substring(0, 8)}</span>
+                                    {listing.brand && <span>• {listing.brand}</span>}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 font-mono font-bold text-[#c34c36] whitespace-nowrap">
+                              {formatVND(listing.priceVnd || (listing as any).price || 0)}
+                            </td>
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              <div className="font-medium text-slate-800">{listing.sellerName || 'Người bán'}</div>
+                              <div className="text-[10px] text-slate-400 truncate max-w-[150px]">{listing.sellerAddress || ''}</div>
+                            </td>
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                Đang hiển thị
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center whitespace-nowrap">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => handleToggleListingStatus(listing.id)}
+                                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-[#24263e] hover:text-white text-slate-700 text-[11px] font-semibold transition cursor-pointer"
+                                >
+                                  Ẩn tin
+                                </button>
+                                {onOpenListingDetail && (
+                                  <button
+                                    onClick={() => onOpenListingDetail(listing)}
+                                    className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                                    title="Xem chi tiết tin đăng"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="p-3 border-t border-slate-100 flex justify-end">
+                  <button
+                    onClick={() => setActiveTab('listings')}
+                    className="px-3.5 py-1.5 rounded-lg border border-slate-300 hover:border-[#c34c36] hover:text-[#c34c36] text-xs font-semibold text-slate-700 transition cursor-pointer flex items-center gap-1"
+                  >
+                    <span>Quản lý tất cả {activeListings.length} bài đăng thành công</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* ROW 3: TWO 50% WIDTH CARDS (eKYC REVIEW & SYSTEM FINANCIAL OVERVIEW) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                {/* Left Card: HỒ SƠ eKYC NGƯỜI BÁN CẦN XÉT DUYỆT */}
+                <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-rose-500 overflow-hidden flex flex-col justify-between">
                   <div>
+                    <div className="px-4 py-3.5 border-b border-slate-100 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-rose-600" />
+                        <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
+                          HỒ SƠ eKYC NGƯỜI BÁN MỚI NHẤT
+                        </h3>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                        {backendVerifications.filter(v => v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING').length} chờ duyệt
+                      </span>
+                    </div>
+
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs">
                         <thead>
                           <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                            <th className="py-2.5 px-4 w-14">STT</th>
-                            <th className="py-2.5 px-4">Tên khách hàng</th>
-                            <th className="py-2.5 px-4">SĐT</th>
-                            <th className="py-2.5 px-4">Giới Tính</th>
-                            <th className="py-2.5 px-4">nội dung</th>
-                            <th className="py-2.5 px-4 whitespace-nowrap">BOOK NGÀY</th>
-                            <th className="py-2.5 px-4 text-center w-16">Xem</th>
+                            <th className="py-2.5 px-4">Người Dùng</th>
+                            <th className="py-2.5 px-4">Giấy Tờ</th>
+                            <th className="py-2.5 px-4">Trạng Thái</th>
+                            <th className="py-2.5 px-4 text-center">Xử Lý</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {bookings.map((item) => (
-                            <tr key={item.id} className="hover:bg-slate-50/70 transition">
-                              <td className="py-3 px-4 font-mono font-medium text-slate-500">
-                                {item.stt}
-                              </td>
-                              <td className="py-3 px-4 font-bold text-slate-900 whitespace-nowrap">
-                                {item.customerName}
+                          {backendVerifications.slice(0, 4).map((v) => (
+                            <tr key={v.id} className="hover:bg-slate-50/70 transition">
+                              <td className="py-3 px-4 font-medium text-slate-800">
+                                <div className="font-bold text-slate-900">{v.userFullName || 'Người bán'}</div>
+                                <div className="text-[10px] text-slate-400">{v.userEmail || ''}</div>
                               </td>
                               <td className="py-3 px-4 font-mono text-slate-600 whitespace-nowrap">
-                                {item.phone}
+                                <div>{v.verificationType || 'CCCD'}</div>
+                                <div className="text-[10px] text-slate-400">{v.documentNumberMasked || '••••••••'}</div>
                               </td>
-                              <td className="py-3 px-4 text-slate-700 whitespace-nowrap">
-                                {item.gender}
-                              </td>
-                              <td className="py-3 px-4 text-slate-700 max-w-xs truncate" title={item.content}>
-                                {item.content}
-                              </td>
-                              <td className="py-3 px-4 font-mono text-slate-600 whitespace-nowrap">
-                                {item.bookingDate}
+                              <td className="py-3 px-4 whitespace-nowrap">
+                                <span
+                                  className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    v.status === 'APPROVED'
+                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                      : v.status === 'REJECTED'
+                                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                      : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  }`}
+                                >
+                                  {v.status === 'APPROVED' ? 'Đã duyệt' : v.status === 'REJECTED' ? 'Từ chối' : 'Cần thẩm định'}
+                                </span>
                               </td>
                               <td className="py-3 px-4 text-center">
                                 <button
-                                  onClick={() => setSelectedBookingModal(item)}
-                                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-[#fce5da] hover:text-white text-slate-700 text-[11px] font-medium transition cursor-pointer"
+                                  onClick={() => setActiveTab('seller-kyc')}
+                                  className="px-2.5 py-1 rounded bg-[#24263e] hover:bg-[#c34c36] text-white text-[11px] font-semibold transition cursor-pointer"
                                 >
                                   Xem
                                 </button>
@@ -1699,181 +1771,90 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         </tbody>
                       </table>
                     </div>
-
-                    {/* Bottom Action */}
-                    <div className="p-3 border-t border-slate-100 flex justify-end">
-                      <button
-                        onClick={() => triggerNotice('Đang tải danh sách toàn bộ 85 lịch hẹn khách hàng đặt kiểm định & bưu tá...')}
-                        className="px-3.5 py-1.5 rounded-lg border border-slate-300 hover:border-[#fce5da] hover:text-[#fce5da] text-xs font-semibold text-slate-700 transition cursor-pointer"
-                      >
-                        Xem tất cả
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* ROW 3: TWO 50% WIDTH CARDS */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                {/* Left Card: ĐƠN ĐẶT HÀNG MỚI (SecondLife Dark Navy / Pink accent) */}
-                <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] overflow-hidden flex flex-col justify-between">
-                  <div>
-                    {/* Header */}
-                    <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                      <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
-                        ĐƠN ĐẶT HÀNG MỚI
-                      </h3>
-                      <button
-                        onClick={() => toggleCardCollapse('newOrders')}
-                        className="p-1 rounded text-slate-400 hover:text-slate-600 transition cursor-pointer"
-                      >
-                        {collapsedCards.newOrders ? (
-                          <Plus className="w-4 h-4" />
-                        ) : (
-                          <Minus className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-
-                    {/* Table Content */}
-                    {!collapsedCards.newOrders && (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs">
-                          <thead>
-                            <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                              <th className="py-2.5 px-4">Mã đơn hàng</th>
-                              <th className="py-2.5 px-4">Tên khách hàng</th>
-                              <th className="py-2.5 px-4">Trạng thái</th>
-                              <th className="py-2.5 px-4">Ngày đặt hàng</th>
-                              <th className="py-2.5 px-4 text-center">Chi tiết</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {localOrders.slice(0, 4).map((ord, idx) => (
-                              <tr key={ord.id} className="hover:bg-slate-50/70 transition">
-                                <td className="py-3 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
-                                  {idx === 0 ? 'DH-QK1NA' : ord.id}
-                                </td>
-                                <td className="py-3 px-4 font-medium text-slate-800 whitespace-nowrap">
-                                  {idx === 0 ? 'kt05' : ord.buyerName}
-                                </td>
-                                <td className="py-3 px-4 whitespace-nowrap">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#c34c36]/15 text-[#24263e] border border-[#c34c36]/30">
-                                    Đơn hàng mới
-                                  </span>
-                                </td>
-                                <td className="py-3 px-4 font-mono text-slate-600 whitespace-nowrap">
-                                  {idx === 0 ? '2025-04-10' : new Date(ord.createdAt).toISOString().split('T')[0]}
-                                </td>
-                                <td className="py-3 px-4 text-center">
-                                  <button
-                                    onClick={() => setSelectedOrderModal(ord)}
-                                    className="px-2.5 py-1 rounded bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-90 text-white text-[11px] font-semibold transition cursor-pointer flex items-center justify-center gap-1 mx-auto shadow-xs"
-                                  >
-                                    <ExternalLink className="w-3 h-3" />
-                                    <span>Chi tiết</span>
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
                   </div>
 
-                  {/* Bottom Action */}
-                  {!collapsedCards.newOrders && (
-                    <div className="p-3 border-t border-slate-100 flex justify-end">
-                      <button
-                        onClick={() => setActiveTab('orders')}
-                        className="px-3.5 py-1.5 rounded-lg border border-slate-300 hover:border-[#c34c36] hover:text-[#24263e] text-xs font-semibold text-slate-700 transition cursor-pointer"
-                      >
-                        Xem tất cả đơn hàng
-                      </button>
-                    </div>
-                  )}
+                  <div className="p-3 border-t border-slate-100 flex justify-end">
+                    <button
+                      onClick={() => setActiveTab('seller-kyc')}
+                      className="px-3.5 py-1.5 rounded-lg border border-slate-300 hover:border-rose-400 hover:text-rose-600 text-xs font-semibold text-slate-700 transition cursor-pointer"
+                    >
+                      Mở trang Thẩm định eKYC
+                    </button>
+                  </div>
                 </div>
 
-                {/* Right Card: KHÁCH HÀNG LIÊN HỆ (Pink top-border) */}
-                <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] overflow-hidden flex flex-col justify-between">
+                {/* Right Card: TỔNG QUAN TÀI CHÍNH & VÍ HỆ THỐNG */}
+                <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-emerald-500 overflow-hidden flex flex-col justify-between">
                   <div>
-                    {/* Header */}
-                    <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                      <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
-                        KHÁCH HÀNG LIÊN HỆ
-                      </h3>
-                      <button
-                        onClick={() => toggleCardCollapse('contacts')}
-                        className="p-1 rounded text-slate-400 hover:text-slate-600 transition cursor-pointer"
-                      >
-                        {collapsedCards.contacts ? (
-                          <Plus className="w-4 h-4" />
-                        ) : (
-                          <Minus className="w-4 h-4" />
-                        )}
-                      </button>
+                    <div className="px-4 py-3.5 border-b border-slate-100 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Wallet className="w-4 h-4 text-emerald-600" />
+                        <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
+                          TỔNG QUAN TÀI CHÍNH & VÍ HỆ THỐNG
+                        </h3>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        VND
+                      </span>
                     </div>
 
-                    {/* Table Content */}
-                    {!collapsedCards.contacts && (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs">
-                          <thead>
-                            <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                              <th className="py-2.5 px-4 w-12">STT</th>
-                              <th className="py-2.5 px-4">Tên khách hàng</th>
-                              <th className="py-2.5 px-4">nội dung</th>
-                              <th className="py-2.5 px-4 whitespace-nowrap">Ngày nhận</th>
-                              <th className="py-2.5 px-4 text-center w-14">Xem</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {contacts.map((c) => (
-                              <tr key={c.id} className="hover:bg-slate-50/70 transition">
-                                <td className="py-3 px-4 font-mono font-medium text-slate-500">
-                                  {c.stt}
-                                </td>
-                                <td className="py-3 px-4 font-bold text-slate-900 whitespace-nowrap">
-                                  {c.customerName}
-                                </td>
-                                <td className="py-3 px-4 text-slate-700 max-w-xs truncate" title={c.content}>
-                                  {c.content}
-                                </td>
-                                <td className="py-3 px-4 font-mono text-slate-600 whitespace-nowrap">
-                                  {c.receivedDate}
-                                </td>
-                                <td className="py-3 px-4 text-center">
-                                  <button
-                                    onClick={() => setSelectedContactModal(c)}
-                                    className="px-2.5 py-1 rounded bg-slate-100 hover:bg-[#c34c36] hover:text-white text-slate-700 text-[11px] font-medium transition cursor-pointer"
-                                  >
-                                    Xem
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                    <div className="p-4 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                          <span className="text-[11px] text-slate-500 block">Ký quỹ đang tạm giữ (Escrow)</span>
+                          <span className="text-base sm:text-lg font-black text-slate-900 font-mono mt-0.5 block">
+                            {formatVND(escrowHeld)}
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                          <span className="text-[11px] text-slate-500 block">Doanh thu sàn tạm tính</span>
+                          <span className="text-base sm:text-lg font-black text-emerald-700 font-mono mt-0.5 block">
+                            {formatVND(platformEarnings)}
+                          </span>
+                        </div>
                       </div>
-                    )}
+
+                      <div className="p-3 rounded-xl bg-[#faf8f5] border border-slate-200/80 flex items-center justify-between">
+                        <div>
+                          <span className="text-[11px] text-slate-500 block">Tổng giá trị đơn hàng (GMV)</span>
+                          <span className="text-sm font-black text-[#24263e] font-mono">
+                            {formatVND(totalGmv)}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[11px] text-slate-500 block">Đơn hoàn thành</span>
+                          <span className="text-sm font-bold text-slate-800 font-mono">
+                            {completedOrdersCount} đơn
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-slate-500 italic">
+                        * Quản lý chi tiết từng bút toán giao dịch, tiền ship và hoa hồng chiết khấu trong mục Ví hệ thống và Quy tắc hoa hồng sàn.
+                      </p>
+                    </div>
                   </div>
 
-                  {/* Bottom Action */}
-                  {!collapsedCards.contacts && (
-                    <div className="p-3 border-t border-slate-100 flex justify-end">
-                      <button
-                        onClick={() => triggerNotice('Đang tải toàn bộ hòm thư hỗ trợ khách hàng...')}
-                        className="px-3.5 py-1.5 rounded-lg border border-slate-300 hover:border-[#c34c36] hover:text-[#24263e] text-xs font-semibold text-slate-700 transition cursor-pointer"
-                      >
-                        Xem tất cả liên hệ
-                      </button>
-                    </div>
-                  )}
+                  <div className="p-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => setActiveTab('commission-rules')}
+                      className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition cursor-pointer"
+                    >
+                      Biểu phí hoa hồng
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('system-wallet')}
+                      className="px-3.5 py-1.5 rounded-lg bg-[#24263e] hover:bg-[#c34c36] text-white text-xs font-bold transition cursor-pointer flex items-center gap-1"
+                    >
+                      <span>Xem Ví Hệ Thống</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
           )}
+
 
           {/* ======================================================== */}
           {/* TAB: CATALOG & AI */}
@@ -1889,6 +1870,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* ======================================================== */}
           {activeTab === 'orders' && (
             <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] p-5 space-y-4">
+              {/* Unlinked Backend Notice */}
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2.5 text-xs font-bold text-rose-800">
+                <span className="w-5 h-5 rounded-full bg-rose-200 text-rose-800 flex items-center justify-center shrink-0 text-[11px]">❌</span>
+                <span>[GIAO DIỆN MOCK / CHƯA LIÊN KẾT BACKEND API] Mục quản lý đơn hàng bán lẻ này hiện đang sử dụng dữ liệu tĩnh cục bộ, Backend chưa cung cấp endpoint quản trị đơn hàng.</span>
+              </div>
+
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 uppercase">
@@ -2114,27 +2101,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             <div className="flex items-center justify-center gap-1.5">
                               <button
                                 onClick={() => onOpenListingDetail?.(item as any)}
-                                className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] transition cursor-pointer shadow-xs flex items-center gap-1"
+                                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] transition cursor-pointer shadow-xs flex items-center gap-1.5"
                                 title="Xem chi tiết bài đăng"
                               >
                                 <Eye className="w-3.5 h-3.5" />
                                 <span>{lang === 'vi' ? 'Chi tiết' : 'View'}</span>
-                              </button>
-                              <button
-                                onClick={() => handleToggleListingStatus(item.id)}
-                                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition cursor-pointer shadow-xs flex items-center gap-1"
-                                title="Phê duyệt bài đăng công khai"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                                <span>{lang === 'vi' ? 'Duyệt' : 'Approve'}</span>
-                              </button>
-                              <button
-                                onClick={() => handleDeleteListing(item.id)}
-                                className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] transition cursor-pointer shadow-xs flex items-center gap-1"
-                                title="Từ chối / Gỡ bài đăng"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                                <span>{lang === 'vi' ? 'Từ Chối' : 'Reject'}</span>
                               </button>
                             </div>
                           </td>
@@ -2143,122 +2114,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     })}
                   </tbody>
                 </table>
-              </div>
-            </div>
-          )}
-
-          {/* ======================================================== */}
-          {/* TAB: DISPUTES (PHÂN XỬ TRANH CHẤP & AI EVIDENCE)         */}
-          {/* ======================================================== */}
-          {activeTab === 'disputes' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              {/* Left: Cases */}
-              <div className="lg:col-span-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <Gavel className="w-4 h-4 text-[#24263e]" />
-                    <span>Hồ Sơ Cần Phán Quyết ({disputes.length})</span>
-                  </h3>
-                  <span className="text-[11px] bg-[#c34c36]/15 text-[#24263e] font-bold px-2 py-0.5 rounded border border-[#c34c36]/30">
-                    Chờ Quyết Định
-                  </span>
-                </div>
-
-                <div className="space-y-2.5">
-                  {disputes.map((disp) => {
-                    const isSelected = disp.id === activeDispute?.id;
-                    return (
-                      <div
-                        key={disp.id}
-                        onClick={() => setSelectedDisputeId(disp.id)}
-                        className={`p-3.5 rounded-xl border transition cursor-pointer ${isSelected
-                            ? 'bg-[#c34c36] text-white border-[#c34c36] shadow-sm'
-                            : 'bg-white border-slate-200 hover:border-[#c34c36] text-slate-800'
-                          }`}
-                      >
-                        <div className="flex items-center justify-between text-[11px] opacity-80">
-                          <span className="font-mono font-bold">#{disp.id}</span>
-                          <span>{new Date(disp.openedAt).toLocaleDateString('vi-VN')}</span>
-                        </div>
-                        <div className="text-xs font-bold mt-1">
-                          Lý do: {disp.reason === 'NOT_AS_DESCRIBED' ? 'Hàng không đúng mô tả' : 'Hàng va đập khi vận chuyển'}
-                        </div>
-                        <p className="text-xs opacity-75 mt-1 line-clamp-2">"{disp.description}"</p>
-                        <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[11px]">
-                          <span className="opacity-70">Người mua: {disp.buyerName}</span>
-                          <span className="font-bold text-[#24263e]">Xem chứng cứ &rarr;</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Right: Dispute Evidence Review */}
-              <div className="lg:col-span-8">
-                {activeDispute ? (
-                  <div className="bg-white rounded-xl p-5 border border-slate-200 border-t-4 border-t-[#c34c36] shadow-xs space-y-4">
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                      <div>
-                        <h4 className="text-sm font-bold text-slate-900">
-                          Hồ Sơ Trọng Tài #{activeDispute.id} (Đơn #{activeDispute.orderId})
-                        </h4>
-                        <div className="text-xs text-slate-500 mt-0.5">
-                          Người mua: <strong className="text-slate-800">{activeDispute.buyerName}</strong> vs Người bán: <strong className="text-slate-800">{activeDispute.sellerName}</strong>
-                        </div>
-                      </div>
-                      <span className="bg-[#c34c36]/15 text-[#24263e] text-xs font-bold px-2 py-0.5 rounded">
-                        Chờ Phán Quyết
-                      </span>
-                    </div>
-
-                    {/* AI Engine Box */}
-                    <div className="bg-[#fce5da] text-[#24263e] rounded-xl p-4 border border-[#24263e]/15 space-y-3">
-                      <div className="flex items-center justify-between pb-2 border-b border-[#24263e]/15">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded bg-[#24263e] text-white flex items-center justify-center">
-                            <Sparkles className="w-3.5 h-3.5" />
-                          </div>
-                          <h5 className="font-bold text-xs text-[#24263e]">
-                            AI Evidence Engine - Phân Tích Bằng Chứng Hình Ảnh
-                          </h5>
-                        </div>
-                        <span className="text-[10px] font-black text-emerald-950 bg-emerald-100 px-2 py-0.5 rounded">94.8% Match</span>
-                      </div>
-
-                      <div className="text-xs space-y-1.5 text-[#24263e]/90 font-medium">
-                        <p>• Đối chiếu ảnh Hub vs Ảnh người mua: Phát hiện xước móp 4.2mm phát sinh trong quá trình vận chuyển bưu tá.</p>
-                        <p>• Khuyến nghị: <strong className="text-[#24263e] font-black underline">HOÀN TIỀN 100% CHO NGƯỜI MUA</strong> từ quỹ bảo hiểm Escrow.</p>
-                      </div>
-
-                      <div className="pt-2 flex flex-wrap gap-2 justify-end">
-                        <button
-                          onClick={() => {
-                            onResolveDispute(activeDispute.id, 'REFUND_BUYER');
-                            triggerNotice(`Admin đã phán quyết HOÀN TIỀN 100% cho người mua #${activeDispute.buyerName}.`);
-                          }}
-                          className="px-3 py-1.5 bg-[#24263e] hover:bg-black text-white rounded-lg text-xs font-bold transition cursor-pointer"
-                        >
-                          Duyệt Hoàn Tiền Buyer
-                        </button>
-                        <button
-                          onClick={() => {
-                            onResolveDispute(activeDispute.id, 'RELEASE_SELLER');
-                            triggerNotice('Admin đã phán quyết Bác khiếu nại, giải ngân cho người bán.');
-                          }}
-                          className="px-3 py-1.5 bg-white/60 hover:bg-white/80 text-[#24263e] rounded-lg text-xs font-bold transition cursor-pointer border border-[#24263e]/20"
-                        >
-                          Bác Khiếu Nại (Giải Ngân Seller)
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-white rounded-xl p-8 text-center border border-slate-200">
-                    <CheckCircle2 className="w-8 h-8 text-[#24263e] mx-auto mb-2" />
-                    <p className="font-bold text-slate-800 text-xs">Không có tranh chấp nào cần giải quyết</p>
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -2556,25 +2411,48 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       </button>
                     </div>
 
-                    {/* Search Input Bar */}
-                    <div className="relative w-full lg:w-72 shrink-0">
-                      <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                      <input
-                        type="text"
-                        value={verificationSearchTerm}
-                        onChange={(e) => setVerificationSearchTerm(e.target.value)}
-                        placeholder="Tìm Shop, Tên, CCCD, SĐT..."
-                        className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 bg-white transition shadow-2xs"
-                      />
-                      {verificationSearchTerm && (
+                    {/* Search Bars: Text filter and Fast User ID lookup */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
+                      <div className="relative w-full lg:w-60 shrink-0">
+                        <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                        <input
+                          type="text"
+                          value={verificationSearchTerm}
+                          onChange={(e) => setVerificationSearchTerm(e.target.value)}
+                          placeholder="Tìm Shop, Tên, CCCD, SĐT..."
+                          className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 bg-white transition shadow-2xs"
+                        />
+                        {verificationSearchTerm && (
+                          <button
+                            type="button"
+                            onClick={() => setVerificationSearchTerm('')}
+                            className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Fast lookup by User ID (GET /staff/seller-verifications/user/{userId}) */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <input
+                          type="text"
+                          value={userIdSearchInput}
+                          onChange={(e) => setUserIdSearchInput(e.target.value)}
+                          placeholder="User ID..."
+                          className="w-32 sm:w-36 px-2.5 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-indigo-500 bg-white font-mono shadow-2xs"
+                        />
                         <button
                           type="button"
-                          onClick={() => setVerificationSearchTerm('')}
-                          className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                          onClick={handleLookupVerificationByUserId}
+                          disabled={isSearchingByUserId || !userIdSearchInput.trim()}
+                          className="px-3 py-2 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-2xs disabled:opacity-50 shrink-0"
+                          title="Tra cứu hồ sơ eKYC theo User ID (GET /staff/seller-verifications/user/{userId})"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          {isSearchingByUserId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                          <span>Tìm ID</span>
                         </button>
-                      )}
+                      </div>
                     </div>
                   </div>
 
@@ -2844,6 +2722,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             </td>
                             <td className="py-3 px-4 text-right">
                               <div className="flex items-center justify-end gap-1.5">
+                                {user.roles?.includes('SELLER') && (
+                                  <button
+                                    onClick={() => handleOpenLiftRestrictionModal(user.id, user.fullName || user.email)}
+                                    className="px-2 py-1 rounded-lg text-[10px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 flex items-center gap-1 transition cursor-pointer"
+                                    title="Gỡ bỏ hạn chế bán hàng (POST /admin/sellers/{id}/reputation/lift-restriction)"
+                                  >
+                                    <Unlock className="w-3 h-3 text-amber-600" />
+                                    <span>Gỡ hạn chế</span>
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => handleOpenUserRolesModal(user.id, user.fullName || user.email)}
                                   className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 flex items-center gap-1 transition cursor-pointer"
@@ -2915,31 +2803,41 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* TAB: HUBS (QUẢN LÝ TRẠM HUB KIỂM ĐỊNH)                   */}
           {/* ======================================================== */}
           {activeTab === 'hubs' && (
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+            <div className="space-y-4 animate-fadeIn">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900 uppercase flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-[#fce5da]" />
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 uppercase flex items-center gap-2">
+                    <Building2 className="w-5 h-5 text-[#c34c36]" />
                     <span>Danh Sách Trạm Kiểm Định Hub & Quản Lý Kỹ Thuật Viên</span>
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    Tạo tài khoản Trạm Kiểm Định Hub mới và quản lý năng lực xử lý kiểm định thiết bị
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Tạo tài khoản Trạm Kiểm Định Hub mới và quản trị đối tác kiểm định trên hệ thống
                   </p>
                 </div>
-                <button
-                  onClick={() => setShowAddHubModal(true)}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-xs font-bold shadow-sm hover:opacity-95 transition cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Tạo Tài Khoản Hub Mới</span>
-                </button>
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <button
+                    onClick={() => setActiveTab('inspection-governance')}
+                    className="px-3.5 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-amber-600" />
+                    <span>Biểu Phí Kiểm Định</span>
+                  </button>
+                  <button
+                    onClick={() => setShowAddHubModal(true)}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-xs font-bold shadow-sm hover:opacity-95 transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Tạo Tài Khoản Hub Mới</span>
+                  </button>
+                </div>
               </div>
 
+              {/* Hub Cards */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {hubCenters.map((hub) => (
                   <div
                     key={hub.id}
-                    className="bg-white rounded-xl p-5 border border-slate-200 border-t-4 border-t-[#fce5da] shadow-xs space-y-3"
+                    className="bg-white rounded-xl p-5 border border-slate-200 border-t-4 border-t-[#c34c36] shadow-xs space-y-3"
                   >
                     <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                       <div className="p-2 rounded-lg bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white">
@@ -2985,470 +2883,20 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           )}
 
           {/* ======================================================== */}
-          {/* TAB: AI-SETTINGS (CẤU HÌNH THUẬT TOÁN AI & RỦI RO)        */}
+          {/* TAB: WITHDRAWALS (DUYỆT YÊU CẦU RÚT TIỀN VÍ)             */}
           {/* ======================================================== */}
-          {activeTab === 'ai-settings' && (
-            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] p-5 sm:p-6 space-y-5">
-              <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
-                <div className="w-9 h-9 rounded-lg bg-[#c34c36] text-[#24263e] flex items-center justify-center">
-                  <Sliders className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Tham Số Thuật Toán AI & Ngưỡng Kiểm Soát Rủi Ro Sàn
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Phiên bản mô hình: <span className="font-mono font-bold text-[#24263e]">{modelVersion}</span>
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                {/* Setting 1 */}
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="font-bold text-slate-800">
-                      Ngưỡng Phát Hiện Ảnh Trùng Lặp:
-                    </label>
-                    <span className="font-bold text-sm text-[#24263e] font-mono">{duplicateThreshold}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={60}
-                    max={98}
-                    value={duplicateThreshold}
-                    onChange={(e) => setDuplicateThreshold(Number(e.target.value))}
-                    className="w-full accent-[#c34c36] cursor-pointer"
-                  />
-                  <p className="text-[11px] text-slate-500">
-                    Từ chối tin nếu ảnh trùng lặp &gt; {duplicateThreshold}% so với thư viện tin cũ.
-                  </p>
-                </div>
-
-                {/* Setting 2 */}
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="font-bold text-slate-800">
-                      Cảnh Báo Giá Bất Thường:
-                    </label>
-                    <span className="font-bold text-sm text-[#24263e] font-mono">&lt; {priceAnomalyThreshold}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={20}
-                    max={60}
-                    value={priceAnomalyThreshold}
-                    onChange={(e) => setPriceAnomalyThreshold(Number(e.target.value))}
-                    className="w-full accent-[#c34c36] cursor-pointer"
-                  />
-                  <p className="text-[11px] text-slate-500">
-                    Cảnh báo kiểm tra nếu giá người bán thấp hơn {priceAnomalyThreshold}% so với AI định giá.
-                  </p>
-                </div>
-
-                {/* Setting 3 */}
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="font-bold text-slate-800">
-                      Tỷ Lệ Thu Phí Sàn Escrow:
-                    </label>
-                    <span className="font-bold text-sm text-slate-900 font-mono">{commissionRate}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={5}
-                    step={0.1}
-                    value={commissionRate}
-                    onChange={(e) => setCommissionRate(Number(e.target.value))}
-                    className="w-full accent-[#c34c36] cursor-pointer"
-                  />
-                  <p className="text-[11px] text-slate-500">
-                    Tỷ lệ tính trên giá trị giao dịch mỗi đơn hàng thành công.
-                  </p>
-                </div>
-
-                {/* Setting 4 */}
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="font-bold text-slate-800">
-                      Độ Tin Cậy AI Khuyến Nghị Phán Quyết:
-                    </label>
-                    <span className="font-bold text-sm text-emerald-600 font-mono">{autoApproveAiConfidence}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={80}
-                    max={99}
-                    value={autoApproveAiConfidence}
-                    onChange={(e) => setAutoApproveAiConfidence(Number(e.target.value))}
-                    className="w-full accent-[#c34c36] cursor-pointer"
-                  />
-                  <p className="text-[11px] text-slate-500">
-                    Độ tin cậy của mô hình vision để đưa ra đề xuất cho trọng tài Admin.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  onClick={() => triggerNotice('Đã lưu thành công cấu hình tham số thuật toán AI.')}
-                  className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-xs font-bold transition cursor-pointer shadow-xs"
-                >
-                  Lưu Cấu Hình
-                </button>
-              </div>
-            </div>
+          {activeTab === 'withdrawals' && (
+            <WithdrawalsTab lang={lang} onNotice={triggerNotice} />
           )}
 
           {/* ======================================================== */}
           {/* TAB: PERMISSIONS (PHÂN QUYỀN HỆ THỐNG - RBAC)            */}
           {/* ======================================================== */}
           {activeTab === 'permissions' && (
-            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] p-5 space-y-5">
-              {/* Header & Sub-tab switcher */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 uppercase">
-                    Hệ Thống Phân Quyền Vai Trò & Bảo Mật (RBAC Matrix)
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Quản trị danh mục quyền hạn, chính sách gán quyền và ma trận phân quyền giữa các vai trò
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <div className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => setRbacSubTab('roles')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                        rbacSubTab === 'roles'
-                          ? 'bg-white text-slate-900 shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      Ma Trận Quyền Vai Trò
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRbacSubTab('permissions')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                        rbacSubTab === 'permissions'
-                          ? 'bg-white text-slate-900 shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      Danh Mục Quyền Hệ Thống
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={loadRbacData}
-                    disabled={isLoadingRbac}
-                    className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition cursor-pointer"
-                    title="Tải lại dữ liệu"
-                  >
-                    <RefreshCw className={`w-4 h-4 ${isLoadingRbac ? 'animate-spin' : ''}`} />
-                  </button>
-                </div>
-              </div>
-
-              {isLoadingRbac ? (
-                <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
-                  <Loader2 className="w-6 h-6 animate-spin text-[#c34c36]" />
-                  <span className="text-xs">Đang tải ma trận phân quyền RBAC...</span>
-                </div>
-              ) : rbacSubTab === 'roles' ? (
-                /* SCREEN 2: ROLE MATRIX VIEW */
-                <div className="space-y-4">
-                  {/* Role Selector Tabs */}
-                  <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-slate-100">
-                    <span className="text-xs font-bold text-slate-500 mr-1">Vai trò:</span>
-                    {rolesList.map((role) => (
-                      <button
-                        key={role.code}
-                        type="button"
-                        onClick={() => handleSelectRole(role)}
-                        className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                          selectedRoleCode === role.code
-                            ? 'bg-[#24263e] text-white shadow-xs'
-                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                        }`}
-                      >
-                        <span>{role.name || role.code}</span>
-                        {!role.editable && (
-                          <span title="Vai trò bảo mật cố định">
-                            <Lock className="w-3 h-3 text-amber-300" />
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Role Detail Banner */}
-                  {(() => {
-                    const curRole = rolesList.find((r) => r.code === selectedRoleCode);
-                    const isEditable = curRole?.editable ?? false;
-                    return (
-                      <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm font-extrabold text-[#24263e]">
-                              {curRole?.code}
-                            </span>
-                            <span className="text-xs text-slate-600 font-medium">— {curRole?.name}</span>
-                            {isEditable ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                Cho phép tùy biến quyền
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 flex items-center gap-1">
-                                <Lock className="w-3 h-3" /> Cố định (Không thể chỉnh sửa)
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-500">
-                            Đang gán {selectedPermissionCodes.length}/{permissionsList.length} quyền hệ thống
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleViewRoleAudit(selectedRoleCode)}
-                            className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-white text-xs font-bold text-slate-700 flex items-center gap-1.5 transition cursor-pointer"
-                          >
-                            <History className="w-3.5 h-3.5" />
-                            <span>Nhật ký thay đổi</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleSaveRolePermissions}
-                            disabled={!isEditable || isSavingRbac}
-                            className={`px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                              !isEditable
-                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                : 'bg-[#c34c36] hover:bg-[#a63f2d] text-white shadow-xs'
-                            }`}
-                          >
-                            {isSavingRbac && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                            <span>Lưu Ma Trận Quyền</span>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Search Permissions */}
-                  <div className="relative max-w-sm">
-                    <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
-                    <input
-                      type="text"
-                      value={permSearchTerm}
-                      onChange={(e) => setPermSearchTerm(e.target.value)}
-                      placeholder="Tìm kiếm mã quyền, chức năng..."
-                      className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-[#c34c36]"
-                    />
-                  </div>
-
-                  {/* Permissions Checklist Table */}
-                  <div className="overflow-x-auto border border-slate-100 rounded-xl">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                          <th className="py-2.5 px-4 w-12 text-center">Gán</th>
-                          <th className="py-2.5 px-4">Mã quyền (Code)</th>
-                          <th className="py-2.5 px-4">Tên chức năng</th>
-                          <th className="py-2.5 px-4">Mô tả chi tiết</th>
-                          <th className="py-2.5 px-4">Chính sách gán</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {permissionsList
-                          .filter(
-                            (p) =>
-                              !permSearchTerm ||
-                              p.code.toLowerCase().includes(permSearchTerm.toLowerCase()) ||
-                              p.name.toLowerCase().includes(permSearchTerm.toLowerCase()) ||
-                              (p.description && p.description.toLowerCase().includes(permSearchTerm.toLowerCase()))
-                          )
-                          .map((perm) => {
-                            const isChecked = selectedPermissionCodes.includes(perm.code);
-                            const curRole = rolesList.find((r) => r.code === selectedRoleCode);
-                            const isRoleEditable = curRole?.editable ?? false;
-                            const isAssignable = perm.assignableRoles?.includes(selectedRoleCode) ?? false;
-                            const canToggle = isRoleEditable && isAssignable;
-
-                            return (
-                              <tr
-                                key={perm.code}
-                                className={`transition ${
-                                  isChecked ? 'bg-amber-50/20' : 'hover:bg-slate-50/50'
-                                }`}
-                              >
-                                <td className="py-2.5 px-4 text-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    disabled={!canToggle}
-                                    onChange={() => handleTogglePermissionForRole(perm.code)}
-                                    className={`w-4 h-4 rounded border-slate-300 text-[#c34c36] focus:ring-[#c34c36] ${
-                                      !canToggle ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-                                    }`}
-                                  />
-                                </td>
-                                <td className="py-2.5 px-4 font-mono font-bold text-slate-900">
-                                  <div className="flex items-center gap-1.5">
-                                    <span>{perm.code}</span>
-                                    {perm.systemPermission && (
-                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
-                                        SYSTEM
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="py-2.5 px-4 font-semibold text-slate-800">{perm.name}</td>
-                                <td className="py-2.5 px-4 text-slate-500 text-[11px] max-w-xs">
-                                  {perm.description || '—'}
-                                </td>
-                                <td className="py-2.5 px-4">
-                                  {perm.assignableRoles && perm.assignableRoles.length > 0 ? (
-                                    <div className="flex flex-wrap gap-1">
-                                      {perm.assignableRoles.map((r) => (
-                                        <span
-                                          key={r}
-                                          className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
-                                            r === selectedRoleCode
-                                              ? 'bg-emerald-100 text-emerald-800'
-                                              : 'bg-slate-100 text-slate-600'
-                                          }`}
-                                        >
-                                          {r}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <span className="text-[10px] text-slate-400">Tất cả</span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : (
-                /* SCREEN 1: PERMISSION CATALOG VIEW */
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="relative max-w-sm">
-                        <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
-                        <input
-                          type="text"
-                          value={permSearchTerm}
-                          onChange={(e) => setPermSearchTerm(e.target.value)}
-                          placeholder="Tìm kiếm mã quyền, tên..."
-                          className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-[#c34c36]"
-                        />
-                      </div>
-                      <span className="text-xs text-slate-500">
-                        Tổng số: <strong>{permissionsList.length}</strong> quyền chức năng hệ thống
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsCreatePermModalOpen(true)}
-                      className="px-3.5 py-1.5 rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer self-start sm:self-auto"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Thêm Quyền Mới (Custom Permission)</span>
-                    </button>
-                  </div>
-
-                  <div className="overflow-x-auto border border-slate-100 rounded-xl">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                          <th className="py-2.5 px-4">Mã Quyền (Code)</th>
-                          <th className="py-2.5 px-4">Tên Hiển Thị</th>
-                          <th className="py-2.5 px-4">Mô Tả Chức Năng</th>
-                          <th className="py-2.5 px-4">Loại Quyền</th>
-                          <th className="py-2.5 px-4">Vai Trò Được Phép Gán</th>
-                          <th className="py-2.5 px-4 text-right">Thao Tác</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {permissionsList
-                          .filter(
-                            (p) =>
-                              !permSearchTerm ||
-                              p.code.toLowerCase().includes(permSearchTerm.toLowerCase()) ||
-                              p.name.toLowerCase().includes(permSearchTerm.toLowerCase()) ||
-                              (p.description && p.description.toLowerCase().includes(permSearchTerm.toLowerCase()))
-                          )
-                          .map((perm) => (
-                            <tr key={perm.code} className="hover:bg-slate-50/50 transition">
-                              <td className="py-3 px-4 font-mono font-bold text-slate-900">{perm.code}</td>
-                              <td className="py-3 px-4 font-semibold text-slate-800">{perm.name}</td>
-                              <td className="py-3 px-4 text-slate-500 text-[11px] max-w-sm">
-                                {perm.description || '—'}
-                              </td>
-                              <td className="py-3 px-4">
-                                {perm.systemPermission ? (
-                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
-                                    Cốt lõi (System)
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">
-                                    Tiêu chuẩn
-                                  </span>
-                                )}
-                              </td>
-                              <td className="py-3 px-4">
-                                <div className="flex flex-wrap gap-1">
-                                  {(perm.assignableRoles || []).map((r) => (
-                                    <span
-                                      key={r}
-                                      className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-700"
-                                    >
-                                      {r}
-                                    </span>
-                                  ))}
-                                </div>
-                              </td>
-                              <td className="py-3 px-4 text-right">
-                                <div className="flex items-center justify-end gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenEditPermission(perm)}
-                                    className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
-                                  >
-                                    Sửa
-                                  </button>
-                                  {!perm.systemPermission && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeletePermission(perm.code)}
-                                      title="Xóa quyền tùy biến khỏi hệ thống"
-                                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-600 transition cursor-pointer"
-                                    >
-                                      Xóa
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
+            <PermissionsTab
+              triggerNotice={triggerNotice}
+              onRolesUpdated={(updatedRoles) => setRolesList(updatedRoles)}
+            />
           )}
 
           {/* ======================================================== */}
@@ -3506,7 +2954,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                               </span>
                             </div>
                             <p className="text-xs text-slate-600">
-                              {(rule as any).description || (rule.creditType === 'LISTING' ? 'Phí nạp lượt đăng tin sản phẩm trên sàn' : 'Phí lượt kiểm định và thẩm định chất lượng')}
+                              {(rule as any).description || (
+                                rule.creditType === 'LISTING'
+                                  ? 'Phí nạp lượt đăng tin sản phẩm trên sàn'
+                                  : rule.creditType === 'VALUATION'
+                                    ? 'Phí lượt kiểm định và thẩm định chất lượng'
+                                    : 'Phí lượt trò chuyện và tư vấn định giá cùng AI'
+                              )}
                             </p>
 
                             <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
@@ -3564,77 +3018,133 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Section 2: Discount Tiers */}
-                  <div className="space-y-3 pt-4 border-t border-slate-100">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
-                        <TrendingUp className="w-4 h-4 text-emerald-600" />
-                        2. Các Bậc Chiết Khấu Ưu Đãi Nạp Số Lượng Lớn (Discount Tiers)
-                      </h4>
-                      <button
-                        type="button"
-                        onClick={() => setShowAddTierModal(true)}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Thêm bậc mới</span>
-                      </button>
+                  {/* Section 2: Gói Nạp & Chính Sách Chiết Khấu Ưu Đãi (Topup Packages from Backend) */}
+                  <div className="space-y-4 pt-5 border-t border-slate-100">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
+                          <TrendingUp className="w-4 h-4 text-emerald-600" />
+                          2. Danh Sách Gói Nạp & Chính Sách Chiết Khấu Ưu Đãi (Topup Packages)
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Các gói nạp định sẵn (Combo & Gói lẻ) đang mở bán cho người bán kèm tỷ lệ chiết khấu (%) thực tế từ Backend
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {topupPackages.length} gói nạp hệ thống
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="overflow-x-auto border border-slate-100 rounded-xl">
+                    {/* Quick Metrics for Topup Packages */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                        <div className="text-[10px] text-slate-500 font-bold uppercase">Tổng Gói Nạp</div>
+                        <div className="text-xl font-black text-slate-900 mt-0.5">{topupPackages.length}</div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-purple-50/60 border border-purple-200">
+                        <div className="text-[10px] text-purple-800 font-bold uppercase">Gói Combo</div>
+                        <div className="text-xl font-black text-purple-800 mt-0.5">
+                          {topupPackages.filter(p => (p.postCredits || 0) > 0 && ((p.chatCredits || 0) > 0 || (p.valuationCredits || 0) > 0)).length}
+                        </div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-blue-50/60 border border-blue-200">
+                        <div className="text-[10px] text-blue-800 font-bold uppercase">Gói Chuyên Biệt</div>
+                        <div className="text-xl font-black text-blue-800 mt-0.5">
+                          {topupPackages.filter(p => !((p.postCredits || 0) > 0 && ((p.chatCredits || 0) > 0 || (p.valuationCredits || 0) > 0))).length}
+                        </div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-rose-50/60 border border-rose-200">
+                        <div className="text-[10px] text-rose-800 font-bold uppercase">Chiết Khấu Cao Nhất</div>
+                        <div className="text-xl font-black text-rose-700 mt-0.5">
+                          {topupPackages.length > 0
+                            ? `-${Math.max(...topupPackages.map(p => Number(p.discountPercentage || 0))).toFixed(1)}%`
+                            : '0%'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Topup Packages Table */}
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl">
                       <table className="w-full text-left text-xs">
                         <thead>
-                          <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-600 text-[11px] font-bold">
-                            <th className="py-2.5 px-4">Số lượng tối thiểu</th>
-                            <th className="py-2.5 px-4">Số lượng tối đa</th>
-                            <th className="py-2.5 px-4">Mức giảm giá (%)</th>
-                            <th className="py-2.5 px-4">Trạng thái áp dụng</th>
-                            <th className="py-2.5 px-4 text-right">Thao tác</th>
+                          <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 text-[11px] font-bold">
+                            <th className="py-2.5 px-4">Tên Gói & Mô Tả</th>
+                            <th className="py-2.5 px-3 text-center">Đăng Tin</th>
+                            <th className="py-2.5 px-3 text-center">Chat AI</th>
+                            <th className="py-2.5 px-3 text-center">Định Giá AI</th>
+                            <th className="py-2.5 px-4 text-right">Giá Gói (VNĐ)</th>
+                            <th className="py-2.5 px-4 text-center">Ưu Đãi Chiết Khấu</th>
+                            <th className="py-2.5 px-4 text-center">Trạng Thái</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {discountTiers.length > 0 ? (
-                            discountTiers.map((tier) => (
-                              <tr key={tier.id} className="hover:bg-slate-50/50 transition">
-                                <td className="py-3 px-4 font-mono font-bold text-slate-900">
-                                  {tier.minQuantity} credits
-                                </td>
-                                <td className="py-3 px-4 font-mono text-slate-600">
-                                  {tier.maxQuantity ? `${tier.maxQuantity} credits` : 'Không giới hạn (∞)'}
-                                </td>
-                                <td className="py-3 px-4 font-bold text-emerald-700">
-                                  {(tier.discountRate * 100).toFixed(0)}%
-                                </td>
-                                <td className="py-3 px-4">
-                                  <span
-                                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                      tier.active
-                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                        : 'bg-slate-100 text-slate-500'
-                                    }`}
-                                  >
-                                    {tier.active ? 'Đang hoạt động' : 'Tạm dừng'}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-4 text-right">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleToggleTierActive(tier.id, !tier.active)}
-                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-                                      tier.active
-                                        ? 'bg-rose-50 hover:bg-rose-100 text-rose-700'
-                                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
-                                    }`}
-                                  >
-                                    {tier.active ? 'Tắt' : 'Kích hoạt'}
-                                  </button>
-                                </td>
-                              </tr>
-                            ))
+                          {topupPackages.length > 0 ? (
+                            topupPackages.map((pkg) => {
+                              const isCombo = (pkg.postCredits || 0) > 0 && ((pkg.chatCredits || 0) > 0 || (pkg.valuationCredits || 0) > 0);
+                              const discount = Number(pkg.discountPercentage || 0);
+
+                              return (
+                                <tr key={pkg.id} className="hover:bg-slate-50/70 transition">
+                                  <td className="py-3 px-4">
+                                    <div className="flex items-center gap-2.5">
+                                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold text-xs ${
+                                        isCombo ? 'bg-purple-100 text-purple-800' : 'bg-emerald-100 text-emerald-800'
+                                      }`}>
+                                        {isCombo ? '🎁' : '⚡'}
+                                      </div>
+                                      <div>
+                                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                          <span>{pkg.name || pkg.packageName}</span>
+                                          {isCombo && (
+                                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-purple-100 text-purple-700 uppercase">
+                                              Combo
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="text-[11px] text-slate-400">
+                                          {pkg.description || 'Gói nạp điểm dịch vụ SecondLife'}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-3 text-center font-mono font-bold text-slate-800">
+                                    {pkg.postCredits ? `${pkg.postCredits} tin` : '—'}
+                                  </td>
+                                  <td className="py-3 px-3 text-center font-mono font-bold text-slate-800">
+                                    {pkg.chatCredits ? `${pkg.chatCredits} lượt` : '—'}
+                                  </td>
+                                  <td className="py-3 px-3 text-center font-mono font-bold text-slate-800">
+                                    {pkg.valuationCredits ? `${pkg.valuationCredits} lượt` : '—'}
+                                  </td>
+                                  <td className="py-3 px-4 text-right font-mono font-extrabold text-[#c34c36] whitespace-nowrap text-sm">
+                                    {formatVND(pkg.price || pkg.priceVnd || 0)}
+                                  </td>
+                                  <td className="py-3 px-4 text-center whitespace-nowrap">
+                                    {discount > 0 ? (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200">
+                                        Tiết kiệm {discount.toFixed(1)}%
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                                        Giá chuẩn (0%)
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-4 text-center whitespace-nowrap">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                      Đang mở bán
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })
                           ) : (
                             <tr>
-                              <td colSpan={5} className="py-8 text-center text-slate-400">
-                                Chưa có bậc chiết khấu nào được cấu hình.
+                              <td colSpan={7} className="py-8 text-center text-slate-400">
+                                Chưa có gói nạp nào được khởi tạo trên máy chủ Backend.
                               </td>
                             </tr>
                           )}
@@ -3644,6 +3154,33 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB: SYSTEM WALLET & ACCOUNTING RECONCILIATION           */}
+          {/* ======================================================== */}
+          {activeTab === 'system-wallet' && (
+            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#24263e] p-5">
+              <SystemWalletTab />
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB: COMMISSION RULES & REVISION ENGINE                 */}
+          {/* ======================================================== */}
+          {activeTab === 'commission-rules' && (
+            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] p-5">
+              <CommissionRulesTab />
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB: INSPECTION GOVERNANCE & TRAVEL TIERS                */}
+          {/* ======================================================== */}
+          {activeTab === 'inspection-governance' && (
+            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-amber-500 p-5">
+              <InspectionGovernanceTab lang={lang} />
             </div>
           )}
         </div>
@@ -3718,126 +3255,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </div>
       )}
 
-      {/* ======================================================== */}
-      {/* MODAL: BOOKING DETAILS (FROM "Xem" BUTTON)               */}
-      {/* ======================================================== */}
-      {selectedBookingModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-[#fce5da]" />
-                <h3 className="font-bold text-sm text-slate-900">
-                  Thông Tin Lịch Hẹn #{selectedBookingModal.id}
-                </h3>
-              </div>
-              <button
-                onClick={() => setSelectedBookingModal(null)}
-                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
 
-            <div className="space-y-2.5 text-xs text-slate-700">
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-500">Khách hàng:</span>
-                <span className="font-bold text-slate-900">{selectedBookingModal.customerName}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-500">Số điện thoại:</span>
-                <span className="font-mono font-bold text-slate-900">{selectedBookingModal.phone}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-500">Thời gian hẹn:</span>
-                <span className="font-mono text-slate-900">{selectedBookingModal.bookingDate}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-500">Giới tính / Nhóm:</span>
-                <span>{selectedBookingModal.gender}</span>
-              </div>
-              <div className="py-2">
-                <span className="text-slate-500 block mb-1">Nội dung yêu cầu:</span>
-                <p className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-slate-800 leading-relaxed">
-                  {selectedBookingModal.content}
-                </p>
-              </div>
-            </div>
-
-            <div className="pt-2 flex justify-end">
-              <button
-                onClick={() => setSelectedBookingModal(null)}
-                className="px-4 py-1.5 rounded-lg bg-[#c34c36] text-white text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
-              >
-                Đã xem
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* MODAL: CONTACT DETAILS (FROM "Xem" BUTTON)               */}
-      {/* ======================================================== */}
-      {selectedContactModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Mail className="w-5 h-5 text-[#24263e]" />
-                <h3 className="font-bold text-sm text-slate-900">
-                  Nội Dung Khách Hàng Liên Hệ
-                </h3>
-              </div>
-              <button
-                onClick={() => setSelectedContactModal(null)}
-                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-2.5 text-xs text-slate-700">
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-500">Khách hàng:</span>
-                <span className="font-bold text-slate-900">{selectedContactModal.customerName}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-500">Email:</span>
-                <span className="text-slate-900">{selectedContactModal.email}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-500">Thời gian nhận:</span>
-                <span className="font-mono text-slate-900">{selectedContactModal.receivedDate}</span>
-              </div>
-              <div className="py-2">
-                <span className="text-slate-500 block mb-1">Nội dung phản ánh / yêu cầu:</span>
-                <p className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-slate-800 leading-relaxed">
-                  {selectedContactModal.content}
-                </p>
-              </div>
-            </div>
-
-            <div className="pt-2 flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  triggerNotice(`Đã gửi phản hồi qua email cho khách hàng ${selectedContactModal.customerName}.`);
-                  setSelectedContactModal(null);
-                }}
-                className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-[#c34c36] to-[#fce5da] text-white text-xs font-semibold transition cursor-pointer"
-              >
-                Gửi Phản Hồi
-              </button>
-              <button
-                onClick={() => setSelectedContactModal(null)}
-                className="px-4 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ======================================================== */}
       {/* MODAL: SELLER eKYC VERIFICATION DETAIL & REVIEW          */}
@@ -4778,280 +4196,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       )}
 
       {/* ======================================================== */}
-      {/* MODAL: CREATE CUSTOM PERMISSION (POST /admin/permissions) */}
-      {/* ======================================================== */}
-      {isCreatePermModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
-          <form
-            onSubmit={handleCreatePermissionSubmit}
-            className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200"
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Plus className="w-5 h-5 text-[#c34c36]" />
-                <h3 className="font-bold text-sm text-slate-900">
-                  Thêm Quyền Mới (Custom Permission)
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCreatePermModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">Mã Quyền (Code) *:</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="VÍ DỤ: REPORT_EXPORT_SELF"
-                  value={newPermForm.code}
-                  onChange={(e) => setNewPermForm({ ...newPermForm, code: e.target.value.toUpperCase() })}
-                  className="w-full px-3 py-2 rounded-lg font-mono border border-slate-300 outline-none focus:border-[#c34c36]"
-                />
-              </div>
-
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">Tên Chức Năng *:</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ví dụ: Xuất báo cáo thống kê cá nhân"
-                  value={newPermForm.name}
-                  onChange={(e) => setNewPermForm({ ...newPermForm, name: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:border-[#c34c36]"
-                />
-              </div>
-
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">Mô Tả Nghiệp Vụ:</label>
-                <textarea
-                  rows={2}
-                  placeholder="Mô tả quyền hạn..."
-                  value={newPermForm.description || ''}
-                  onChange={(e) => setNewPermForm({ ...newPermForm, description: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:border-[#c34c36]"
-                />
-              </div>
-
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">Các Vai Trò Cho Phép Gán:</label>
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  {['ADMIN', 'STAFF', 'SELLER', 'BUYER', 'INSPECTOR'].map((r) => {
-                    const checked = newPermForm.assignableRoles.includes(r);
-                    return (
-                      <label key={r} className="flex items-center gap-1.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => {
-                            setNewPermForm(prev => ({
-                              ...prev,
-                              assignableRoles: checked
-                                ? prev.assignableRoles.filter(x => x !== r)
-                                : [...prev.assignableRoles, r]
-                            }));
-                          }}
-                          className="w-3.5 h-3.5 rounded text-[#c34c36] focus:ring-[#c34c36]"
-                        />
-                        <span className="font-semibold text-slate-800">{r}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setIsCreatePermModalOpen(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer"
-              >
-                Hủy
-              </button>
-              <button
-                type="submit"
-                disabled={isCreatingPerm}
-                className="px-5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-              >
-                {isCreatingPerm && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Khởi Tạo Quyền</span>
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* MODAL: EDIT PERMISSION INFO (MÀN HÌNH 1)                 */}
-      {/* ======================================================== */}
-      {editingPerm && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Sliders className="w-5 h-5 text-[#c34c36]" />
-                <h3 className="font-bold text-sm text-slate-900">
-                  Chỉnh Sửa Thông Tin Quyền
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditingPerm(null)}
-                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="text-slate-500 font-bold block mb-1">Mã Quyền (Code - Không thể sửa):</label>
-                <input
-                  type="text"
-                  disabled
-                  value={editingPerm.code}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-100 font-mono text-slate-600 border border-slate-200"
-                />
-              </div>
-
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">Tên Hiển Thị Chức Năng:</label>
-                <input
-                  type="text"
-                  value={editingPerm.name}
-                  onChange={(e) => setEditingPerm({ ...editingPerm, name: e.target.value })}
-                  placeholder="Ví dụ: Thẩm định hồ sơ bán hàng..."
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:border-[#c34c36]"
-                />
-              </div>
-
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">Mô Tả Chi Tiết:</label>
-                <textarea
-                  rows={3}
-                  value={editingPerm.description || ''}
-                  onChange={(e) => setEditingPerm({ ...editingPerm, description: e.target.value })}
-                  placeholder="Nhập mô tả nghiệp vụ của quyền hạn..."
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:border-[#c34c36]"
-                />
-              </div>
-            </div>
-
-            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setEditingPerm(null)}
-                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer"
-              >
-                Hủy
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveEditPermission}
-                className="px-5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] text-white text-xs font-bold transition cursor-pointer"
-              >
-                Lưu Thay Đổi
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* MODAL: ROLE AUDIT LOGS (MÀN HÌNH 2)                      */}
-      {/* ======================================================== */}
-      {roleAuditModalData && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <History className="w-5 h-5 text-[#24263e]" />
-                <h3 className="font-bold text-sm text-slate-900">
-                  Nhật Ký Thay Đổi Quyền Của Vai Trò: <span className="font-mono text-[#c34c36]">{roleAuditModalData.roleCode}</span>
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setRoleAuditModalData(null)}
-                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="max-h-96 overflow-y-auto space-y-3 text-xs pr-1">
-              {roleAuditModalData.items && roleAuditModalData.items.length > 0 ? (
-                roleAuditModalData.items.map((item, idx) => (
-                  <div key={idx} className="p-3 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-bold text-slate-800">
-                        Hành động: <span className="text-[#c34c36] font-mono">{item.action}</span>
-                      </span>
-                      <span className="text-slate-500 font-mono">
-                        {new Date(item.changedAt).toLocaleString('vi-VN')}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-[10px]">
-                      <div className="p-2 rounded bg-rose-50/60 border border-rose-100">
-                        <span className="font-bold text-rose-800 block mb-1">Quyền bị thu hồi (Revoked):</span>
-                        <div className="flex flex-wrap gap-1">
-                          {item.revokedPermissions && item.revokedPermissions.length > 0 ? (
-                            item.revokedPermissions.map((p, i) => (
-                              <span key={i} className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-mono">
-                                {p}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-slate-400 italic">Không có</span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="p-2 rounded bg-emerald-50/60 border border-emerald-100">
-                        <span className="font-bold text-emerald-800 block mb-1">Quyền được bổ sung (Granted):</span>
-                        <div className="flex flex-wrap gap-1">
-                          {item.grantedPermissions && item.grantedPermissions.length > 0 ? (
-                            item.grantedPermissions.map((p, i) => (
-                              <span key={i} className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono">
-                                {p}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-slate-400 italic">Không có</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="py-8 text-center text-slate-400">
-                  Chưa có nhật ký thay đổi nào cho vai trò này.
-                </div>
-              )}
-            </div>
-
-            <div className="pt-2 flex justify-end border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setRoleAuditModalData(null)}
-                className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
       {/* MODAL: USER ROLES MANAGEMENT (MÀN HÌNH 3)                */}
       {/* ======================================================== */}
       {userRoleModalUserId && (
@@ -5251,92 +4395,76 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </div>
       )}
 
-      {/* ======================================================== */}
-      {/* MODAL: ADD DISCOUNT TIER                                 */}
-      {/* ======================================================== */}
-      {showAddTierModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+      {/* MODAL: GỠ BỎ HẠN CHẾ BÁN HÀNG CHO SELLER (POST /admin/sellers/{id}/reputation/lift-restriction) */}
+      {liftRestrictionModal.isOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <Plus className="w-5 h-5 text-emerald-600" />
-                <h3 className="font-bold text-sm text-slate-900">
-                  Thêm Bậc Chiết Khấu Mới (Discount Tier)
-                </h3>
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+                  <Unlock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">Gỡ Bỏ Hạn Chế Bán Hàng</h3>
+                  <p className="text-[11px] text-slate-400 font-mono">POST /api/v1/admin/sellers/{'{id}'}/reputation/lift-restriction</p>
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => setShowAddTierModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
+                onClick={() => setLiftRestrictionModal((prev) => ({ ...prev, isOpen: false }))}
+                className="text-slate-400 hover:text-slate-700 font-bold"
               >
                 ✕
               </button>
             </div>
 
+            {liftRestrictionModal.error && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+                {liftRestrictionModal.error}
+              </div>
+            )}
+
             <div className="space-y-3 text-xs">
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">Số Lượng Credit Tối Thiểu (Min):</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={newTierData.minQuantity}
-                  onChange={(e) => setNewTierData({ ...newTierData, minQuantity: Number(e.target.value) })}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:border-emerald-600 font-mono font-bold"
-                />
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <div>Người bán: <strong className="text-slate-900">{liftRestrictionModal.sellerName}</strong></div>
+                <div className="text-[11px] font-mono text-slate-500">ID: {liftRestrictionModal.sellerId}</div>
               </div>
 
               <div>
-                <label className="text-slate-700 font-bold block mb-1">Số Lượng Credit Tối Đa (Max - để trống nếu ∞):</label>
-                <input
-                  type="number"
-                  min={newTierData.minQuantity}
-                  value={newTierData.maxQuantity || ''}
-                  onChange={(e) =>
-                    setNewTierData({
-                      ...newTierData,
-                      maxQuantity: e.target.value ? Number(e.target.value) : (undefined as any)
-                    })
-                  }
-                  placeholder="Ví dụ: 100 (Bỏ trống nếu không giới hạn)"
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:border-emerald-600 font-mono"
+                <label className="font-bold text-slate-700 block mb-1">Lý do gỡ hạn chế & bảo chứng uy tín:</label>
+                <textarea
+                  rows={3}
+                  required
+                  value={liftRestrictionModal.reason}
+                  onChange={(e) => setLiftRestrictionModal((prev) => ({ ...prev, reason: e.target.value }))}
+                  placeholder="Nhập lý do gỡ bỏ hạn chế bán hàng..."
+                  className="w-full p-2.5 rounded-xl border border-slate-200 text-xs focus:border-amber-500 outline-none"
                 />
-              </div>
-
-              <div>
-                <label className="text-slate-700 font-bold block mb-1">Tỷ Lệ Giảm Giá (%):</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={99}
-                  value={(newTierData.discountRate * 100).toFixed(0)}
-                  onChange={(e) =>
-                    setNewTierData({ ...newTierData, discountRate: Number(e.target.value) / 100 })
-                  }
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:border-emerald-600 font-mono font-bold text-emerald-700"
-                />
-                <span className="text-[10px] text-slate-400 mt-0.5 block">Ví dụ: Nhập 15 tương đương giảm 15%</span>
               </div>
             </div>
 
-            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setShowAddTierModal(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer"
+                onClick={() => setLiftRestrictionModal((prev) => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
               >
                 Hủy
               </button>
               <button
                 type="button"
-                onClick={handleCreateDiscountTier}
-                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer shadow-xs"
+                onClick={handleConfirmLiftRestriction}
+                disabled={liftRestrictionModal.isSubmitting}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white transition flex items-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
               >
-                Tạo Bậc Chiết Khấu
+                {liftRestrictionModal.isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Xác Nhận Gỡ Hạn Chế</span>
               </button>
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 };

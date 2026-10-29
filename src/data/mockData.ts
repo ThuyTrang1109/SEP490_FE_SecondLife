@@ -170,6 +170,74 @@ export const mockStandardChecklist: Record<string, InspectionChecklistItem[]> = 
       status: 'pass',
       testedValue: 'Khóa nắp cơ học an toàn, bộ lọc hơi sạch nguyên bản'
     }
+  ],
+  'Điều hòa & Máy lọc': [
+    {
+      id: 'chk-dh-1',
+      category: 'Máy nén Inverter & Gas làm lạnh',
+      title: 'Máy nén biến tần Dual Inverter & Áp suất Gas R32 / R410A',
+      description: 'Kiểm tra máy nén khởi động êm, không gầm rung; áp suất gas đường hút 130-150 PSI, nhiệt độ cửa gió đạt 12°C - 16°C sau 5 phút',
+      status: 'pass',
+      testedValue: 'Dòng điện máy nén 3.8A ổn định, áp suất Gas R32 đạt 140 PSI, gió lạnh sâu 13.5°C'
+    },
+    {
+      id: 'chk-dh-2',
+      category: 'Dàn tản nhiệt & Quạt gió',
+      title: 'Dàn tản nhiệt mạ vàng Golden Fin / BlueFin & Quạt lồng sóc',
+      description: 'Kiểm tra dàn đồng tản nhiệt không móp méo gãy cánh, quạt dàn lạnh quay êm không kêu cọ sát',
+      status: 'pass',
+      testedValue: 'Cánh tản nhiệt sáng bóng không oxy hóa, quạt lồng sóc êm ái dưới 38dB'
+    },
+    {
+      id: 'chk-dh-3',
+      category: 'Màng lọc & Diệt khuẩn',
+      title: 'Hệ thống lọc bụi mịn PM2.5, màng lọc than hoạt tính & Tạo ion Nanoe',
+      description: 'Kiểm tra lưới lọc bụi, màng lọc HEPA/than hoạt tính, chức năng phát ion diệt khuẩn khử mùi',
+      status: 'pass',
+      testedValue: 'Màng lọc sạch nguyên bản 98%, bộ phát ion âm hoạt động ổn định'
+    },
+    {
+      id: 'chk-dh-4',
+      category: 'Bo mạch & Bơm thoát nước',
+      title: 'Bo mạch điều khiển, Cảm biến nhiệt & Đường thoát nước ngưng',
+      description: 'Mắt thần bắt sóng điều khiển remote nhạy, cảm biến nhiệt độ chuẩn xác, máng nước thoát thông thoáng không rò rỉ',
+      status: 'pass',
+      testedValue: 'Bo mạch khô ráo nguyên tem niêm phong, nước ngưng thoát nhanh không ứ đọng'
+    }
+  ],
+  'Lò vi sóng & Lò nướng': [
+    {
+      id: 'chk-lvs-1',
+      category: 'Đèn phát sóng Magnetron',
+      title: 'Đèn phát sóng Magnetron & Đo rò rỉ bức xạ vi sóng an toàn',
+      description: 'Dùng máy đo rò bức xạ vi sóng quanh khe cửa và vỏ ngoài; mật độ rò < 5 mW/cm² đạt tiêu chuẩn an toàn sinh học',
+      status: 'pass',
+      testedValue: 'Rò rỉ bức xạ 0.4 mW/cm² (chuẩn an toàn tuyệt đối < 5 mW/cm²), đun sôi 200ml nước trong 60s'
+    },
+    {
+      id: 'chk-lvs-2',
+      category: 'Khóa cửa liên động an toàn',
+      title: 'Khóa liên động Micro-switch an toàn 3 lớp cánh cửa',
+      description: 'Thử mở cửa lò khi đang phát sóng; hệ thống ngắt nguồn Magnetron ngay lập tức 100%, không phát tia lửa điện',
+      status: 'pass',
+      testedValue: 'Cảm biến vi công tắc ngắt nguồn tức thì khi hé cửa 2mm'
+    },
+    {
+      id: 'chk-lvs-3',
+      category: 'Thanh nhiệt nướng & Đối lưu',
+      title: 'Thanh nhiệt nướng Grill & Quạt đối lưu phân bổ nhiệt',
+      description: 'Kiểm tra điện trở thanh nhiệt hồng đều trong 2 phút, quạt đối lưu phân tán khí nóng đồng đều',
+      status: 'pass',
+      testedValue: 'Thanh nhiệt đạt 220°C ổn định, quạt đối lưu chạy êm'
+    },
+    {
+      id: 'chk-lvs-4',
+      category: 'Khoang lò & Đĩa xoay',
+      title: 'Khoang lò tráng men Ceramic chống dính & Đĩa thủy tinh chịu nhiệt',
+      description: 'Mô-tơ đĩa quay đều êm ái, lớp men khoang lò sáng bóng không bong tróc gỉ sét',
+      status: 'pass',
+      testedValue: 'Khoang tráng men nguyên bản, đĩa xoay thủy tinh quay đều nhịp nhàng'
+    }
   ]
 };
 

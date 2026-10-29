@@ -29,21 +29,29 @@ export interface SendMessageRequest {
   messageContent: string;
 }
 
+import { SystemInspectionProposalPayload } from '../types';
+
 // System negotiation offer structure if backend sends JSON inside "SYSTEM: ..."
 export interface SystemOfferPayload {
   type: 'OFFER';
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
   price: number;
   negotiationId: string;
+  senderRole?: 'buyer' | 'seller';
 }
 
-export function parseSystemMessage(content: string): { isSystem: boolean; cleanText: string; offer?: SystemOfferPayload } {
+export function parseSystemMessage(content: string): {
+  isSystem: boolean;
+  cleanText: string;
+  offer?: SystemOfferPayload;
+  inspectionProposal?: SystemInspectionProposalPayload;
+} {
   if (!content) return { isSystem: false, cleanText: '' };
   
   const trimmed = content.trim();
   if (trimmed.startsWith('SYSTEM:')) {
     const rawBody = trimmed.replace(/^SYSTEM:\s*/i, '').trim();
-    // Try parse as JSON (in case it is an OFFER payload)
+    // Try parse as JSON (OFFER or INSPECTION_PROPOSAL)
     try {
       const parsed = JSON.parse(rawBody);
       if (parsed && parsed.type === 'OFFER') {
@@ -51,6 +59,13 @@ export function parseSystemMessage(content: string): { isSystem: boolean; cleanT
           isSystem: true,
           cleanText: rawBody,
           offer: parsed as SystemOfferPayload
+        };
+      }
+      if (parsed && parsed.type === 'INSPECTION_PROPOSAL') {
+        return {
+          isSystem: true,
+          cleanText: rawBody,
+          inspectionProposal: parsed as SystemInspectionProposalPayload
         };
       }
     } catch {
@@ -200,7 +215,7 @@ class ChatWebSocketManager {
     };
   }
 
-  private notifyMessage(msg: ChatMessageDto): void {
+  public notifyMessage(msg: ChatMessageDto): void {
     this.messageListeners.forEach((fn) => {
       try {
         fn(msg);
@@ -294,9 +309,28 @@ export const chatService = {
       body: JSON.stringify({ messageContent }),
       requiresAuth: true,
     });
-    return ((response as any)?.data !== undefined && (response as any)?.data !== null
+    const dto = (((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
-      : response) as ChatMessageDto;
+      : response) as ChatMessageDto) || {
+        id: `msg-${Date.now()}`,
+        conversationId: roomId,
+        senderId: '',
+        messageContent,
+        sentAt: new Date().toISOString()
+      };
+
+    try {
+      chatWsManager.notifyMessage(dto);
+      localStorage.setItem(`chat_room_latest_touch_${roomId}`, Date.now().toString());
+      localStorage.setItem(`chat_room_latest_msg_${roomId}`, messageContent);
+      window.dispatchEvent(
+        new CustomEvent('chat_message_sent', {
+          detail: { roomId, message: messageContent, timestamp: Date.now() }
+        })
+      );
+    } catch {}
+
+    return dto;
   },
 
   /**

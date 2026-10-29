@@ -15,6 +15,9 @@ import {
   Calendar
 } from 'lucide-react';
 import { shippingService } from '../../services/shippingService';
+import { translateApiError } from '../../services/apiClient';
+import { translateSystemNotification } from '../../utils/systemNotificationTranslator';
+import { resolveOrderListing } from '../../utils/catalogCache';
 
 interface CreateShipmentModalProps {
   order: EscrowOrder;
@@ -31,7 +34,8 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [leg, setLeg] = useState<'SELLER_TO_BUYER' | 'SELLER_TO_CENTER'>('SELLER_TO_BUYER');
+
+  const [requestId, setRequestId] = useState<string>(() => crypto.randomUUID());
 
   const handleCreateShipment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,16 +43,41 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
     setErrorMsg(null);
 
     try {
-      const requestId = crypto.randomUUID();
+      // Backend /api/v1/orders/{orderId}/shipments endpoint strictly requires leg: 'SELLER_TO_BUYER' matching paid quote
       const shipment = await shippingService.createShipment(order.id, {
         requestId,
-        leg,
+        leg: 'SELLER_TO_BUYER',
       });
+
+      // Kiểm tra trạng thái vận đơn trả về theo mục 10
+      if (shipment.lastError && !shipment.orderCode) {
+        setErrorMsg(`Lalamove từ chối tạo chuyến: ${translateApiError(shipment.lastError)}`);
+        // Tạo requestId mới cho lần tạo lại sau khi đã sửa lỗi
+        setRequestId(crypto.randomUUID());
+        return;
+      }
 
       onShipmentCreated(shipment);
     } catch (err: any) {
-      console.error('Failed to create GHN shipment:', err);
-      setErrorMsg(err?.message || 'Không thể tạo vận đơn GHN. Vui lòng kiểm tra lại cấu hình kho lấy hàng hoặc thử lại.');
+      console.error('Failed to create Lalamove shipment:', err);
+      const status = err?.response?.status || err?.status;
+      const rawMsg = err?.response?.data?.message || err?.message || '';
+      
+      if (rawMsg.toLowerCase().includes('already active') || rawMsg.toLowerCase().includes('uncertain')) {
+        setErrorMsg('Đơn hàng này đã có vận đơn Lalamove đang hoạt động! Bạn không cần tạo lại. Vui lòng đóng cửa sổ này và bấm nút "Theo Dõi Lalamove" để xem lộ trình tài xế.');
+      } else if (rawMsg.toLowerCase().includes('not eligible for outbound shipping') || (order.escrowStatus === 'AWAITING_PAYMENT')) {
+        setErrorMsg('Người mua chưa nộp tiền ký quỹ Escrow (trạng thái: Chờ Khách Ký Quỹ). Hệ thống chỉ cho phép gọi bưu tá Lalamove sau khi tiền đã được bảo chứng giữ trong Quỹ Escrow.');
+      } else if (rawMsg.toLowerCase().includes('must match the paid shipping quote')) {
+        setErrorMsg('Chặng vận chuyển không khớp với báo giá thanh toán của đơn hàng. Với đơn kiểm định Hub, chặng chuyển về Hub do Trung tâm kiểm định điều phối.');
+      } else if (rawMsg.toLowerCase().includes('seller must confirm')) {
+        setErrorMsg('Người bán cần bấm xác nhận đơn hàng trước khi tạo vận đơn giao hàng.');
+      } else if (status === 409 || rawMsg.toLowerCase().includes('fee') || rawMsg.toLowerCase().includes('phí') || rawMsg.toLowerCase().includes('tăng')) {
+        setErrorMsg('Cước phí vận chuyển Lalamove hiện tại đã tăng so với số tiền phí người mua đã thanh toán lúc đặt hàng. Hệ thống không thể tự trừ thêm tiền của người mua. Vui lòng kiểm tra lại đơn hàng hoặc hỗ trợ hủy đơn theo quy định.');
+      } else if (rawMsg.toLowerCase().includes('disabled') || rawMsg.includes('503')) {
+        setErrorMsg('Lalamove chưa được kích hoạt trên máy chủ (LALAMOVE_ENABLED=false). Vui lòng cấu hình API Key đối tác trên Backend hoặc kiểm tra thông tin kho.');
+      } else {
+        setErrorMsg(translateApiError(rawMsg) || 'Không thể tạo vận đơn Lalamove. Vui lòng kiểm tra lại cấu hình kho lấy hàng hoặc thử lại.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -65,7 +94,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             </div>
             <div>
               <h3 className="text-base sm:text-lg font-black text-slate-900">
-                Tạo Vận Đơn Giao Hàng Nhanh (GHN)
+                Tạo Vận Đơn Giao Hàng Lalamove
               </h3>
               <p className="text-xs text-slate-500">Đơn hàng: #{order.id.slice(0, 12)}</p>
             </div>
@@ -84,7 +113,14 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
           {errorMsg && (
             <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-700 font-semibold flex items-center gap-2.5">
               <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-              <span>{errorMsg}</span>
+              <span>{translateSystemNotification(errorMsg)}</span>
+            </div>
+          )}
+
+          {order.escrowStatus === 'AWAITING_PAYMENT' && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 font-semibold flex items-center gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>Đơn hàng đang chờ người mua nộp tiền ký quỹ Escrow. Theo quy định, chỉ có thể điều phối tài xế Lalamove sau khi tiền đã được giữ trong Quỹ Escrow (trạng thái Ký Quỹ Thành Công).</span>
             </div>
           )}
 
@@ -96,7 +132,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               className="w-14 h-14 rounded-xl object-cover border border-gray-200 shrink-0 bg-white"
             />
             <div className="flex-1 min-w-0">
-              <span className="text-[10px] text-[#c34c36] uppercase font-black">{order.listing.brand}</span>
+              <span className="text-[10px] text-[#c34c36] uppercase font-black">{resolveOrderListing(order.listing).brand}</span>
               <h4 className="font-bold text-slate-900 truncate text-xs sm:text-sm">{order.listing.title}</h4>
               <div className="text-[11px] text-slate-500 mt-0.5">
                 Giá trị hàng: <strong className="text-slate-900">{formatVND(order.itemPriceVnd)}</strong>
@@ -107,7 +143,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
           {/* Logistics Route Visualizer */}
           <div className="space-y-3 bg-[#faf8f5] p-4 rounded-2xl border border-gray-200">
             <span className="font-extrabold uppercase text-[10px] text-slate-400 block tracking-wider">
-              Lộ trình nhận & giao hàng GHN
+              Lộ trình nhận & giao hàng Lalamove
             </span>
 
             {/* From (Seller warehouse) */}
@@ -116,12 +152,17 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                 1
               </div>
               <div className="space-y-0.5 min-w-0">
-                <span className="font-bold text-slate-900 text-xs block">Kho lấy hàng (Người bán)</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-bold text-slate-900 text-xs">Kho lấy hàng (Người bán)</span>
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold border border-emerald-200">
+                    GPS Sẵn Sàng
+                  </span>
+                </div>
                 <span className="text-slate-600 text-[11px] block leading-snug">
                   {order.listing.location || 'Địa chỉ kho đã lưu trong hồ sơ người bán'}
                 </span>
                 <span className="text-[10px] text-amber-700 italic block">
-                  Bưu tá GHN sẽ đến địa chỉ này lấy kiện hàng
+                  Tài xế Lalamove sẽ đến địa chỉ này lấy kiện hàng
                 </span>
               </div>
             </div>
@@ -134,9 +175,14 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                 2
               </div>
               <div className="space-y-0.5 min-w-0">
-                <span className="font-bold text-slate-900 text-xs block">
-                  Người nhận: {order.buyerName} ({order.buyerPhone})
-                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-bold text-slate-900 text-xs">
+                    Người nhận: {order.buyerName} ({order.buyerPhone})
+                  </span>
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold border border-emerald-200">
+                    GPS Sẵn Sàng
+                  </span>
+                </div>
                 <span className="text-slate-600 text-[11px] block leading-snug">
                   {order.buyerAddress}
                 </span>
@@ -144,55 +190,31 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             </div>
           </div>
 
-          {/* Leg Selection */}
-          <div className="space-y-2">
-            <label className="font-extrabold text-[11px] uppercase tracking-wider text-slate-600">
-              Chặng giao hàng:
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                onClick={() => setLeg('SELLER_TO_BUYER')}
-                className={`p-3 rounded-2xl border text-left transition cursor-pointer ${
-                  leg === 'SELLER_TO_BUYER'
-                    ? 'border-[#c34c36] bg-[#c34c36]/5 text-slate-900 font-bold ring-2 ring-[#c34c36]/20'
-                    : 'border-gray-200 bg-white text-slate-600 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
-                  <Truck className="w-3.5 h-3.5 text-[#c34c36]" />
-                  <span>Giao thẳng (Seller → Buyer)</span>
-                </div>
-                <p className="text-[10px] text-slate-500 mt-1 font-normal">
-                  Áp dụng giao hàng trực tiếp bưu tá đến nhà người mua.
+          {/* Route Overview */}
+          <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Truck className="w-4 h-4 text-orange-600 shrink-0" />
+              <div>
+                <span className="font-bold text-xs text-slate-800">
+                  {order.hasInspectionService && order.inspectionMethod !== 'AT_HOME'
+                    ? 'Chặng vận chuyển bàn giao Trung tâm Hub'
+                    : 'Chặng vận chuyển trực tiếp (Người bán → Người mua)'}
+                </span>
+                <p className="text-[10px] text-slate-500">
+                  Tài xế Lalamove sẽ đến địa chỉ kho lấy hàng và phát thẳng theo điều phối hệ thống.
                 </p>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setLeg('SELLER_TO_CENTER')}
-                className={`p-3 rounded-2xl border text-left transition cursor-pointer ${
-                  leg === 'SELLER_TO_CENTER'
-                    ? 'border-[#c34c36] bg-[#c34c36]/5 text-slate-900 font-bold ring-2 ring-[#c34c36]/20'
-                    : 'border-gray-200 bg-white text-slate-600 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Qua Hub Kiểm Định (Seller → Hub)</span>
-                </div>
-                <p className="text-[10px] text-slate-500 mt-1 font-normal">
-                  Chuyển kiện hàng đến trung tâm kiểm định SecondLife.
-                </p>
-              </button>
+              </div>
             </div>
+            <span className="text-[10px] font-extrabold text-orange-800 bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200 shrink-0">
+              Lalamove Sandbox
+            </span>
           </div>
 
           {/* Info notice */}
           <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl flex items-start gap-2 text-[11px] text-blue-900">
             <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
             <span className="leading-snug">
-              Sau khi tạo vận đơn, hệ thống sẽ cấp mã vận đơn GHN chính thức. Bạn có thể in phiếu gửi và chuẩn bị đóng gói để bàn giao cho bưu tá.
+              Sau khi tạo vận đơn, hệ thống sẽ cấp mã vận đơn Lalamove chính thức. Bạn có thể in phiếu gửi và chuẩn bị đóng gói để bàn giao cho tài xế.
             </span>
           </div>
 
@@ -208,18 +230,27 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="px-6 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#dc4729] text-white font-black text-xs transition cursor-pointer shadow-md flex items-center gap-2 disabled:opacity-50"
+              disabled={isSubmitting || order.escrowStatus === 'AWAITING_PAYMENT'}
+              className={`px-6 py-2.5 rounded-xl font-black text-xs transition shadow-md flex items-center gap-2 ${
+                order.escrowStatus === 'AWAITING_PAYMENT'
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-[#c34c36] hover:bg-[#dc4729] text-white cursor-pointer disabled:opacity-50'
+              }`}
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-4 h-4 text-white animate-spin" />
-                  <span>Đang kết nối GHN...</span>
+                  <span>Đang kết nối Lalamove...</span>
+                </>
+              ) : order.escrowStatus === 'AWAITING_PAYMENT' ? (
+                <>
+                  <AlertTriangle className="w-4 h-4 text-gray-500" />
+                  <span>Chờ Khách Ký Quỹ Escrow</span>
                 </>
               ) : (
                 <>
                   <Truck className="w-4 h-4 text-white" />
-                  <span>Xác Nhận Tạo Vận Đơn GHN</span>
+                  <span>Xác Nhận Tạo Vận Đơn Lalamove</span>
                 </>
               )}
             </button>

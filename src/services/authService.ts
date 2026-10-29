@@ -8,6 +8,7 @@ export interface UserSummaryDto {
   avatarUrl?: string;
   accountStatus?: string;
   emailVerified?: boolean;
+  gender?: string;
 }
 
 export interface AuthResponseDto {
@@ -35,6 +36,7 @@ export interface RegisterRequestDto {
   password: string;
   fullName: string;
   phone?: string;
+  gender?: 'MALE' | 'FEMALE' | 'OTHER' | null;
 }
 
 export interface VerifyEmailRequestDto {
@@ -86,7 +88,7 @@ export const authService = {
 
   async refreshToken(): Promise<TokenResponseDto> {
     const refreshToken = getRefreshToken();
-    if (!refreshToken) throw new Error('No refresh token available');
+    if (!refreshToken) throw new Error('Phiên đăng nhập đã hết hạn hoặc không tìm thấy refresh token');
     const res = await request<TokenResponseDto>('/auth/refresh', {
       method: 'POST',
       body: JSON.stringify({ refreshToken }),

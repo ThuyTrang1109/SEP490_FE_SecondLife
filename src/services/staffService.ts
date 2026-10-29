@@ -105,4 +105,50 @@ export const staffService = {
       return (res as any)?.data || res;
     }
   },
+
+  /**
+   * Staff giám sát các đơn hàng cần người bán xác nhận (hàng đợi đơn hàng)
+   */
+  async getStaffOrderQueue(
+    params: GetStaffOrdersParams = {}
+  ): Promise<PageResponse<StaffOrderConfirmationResponse>> {
+    const queryParams = new URLSearchParams();
+    if (params.status) queryParams.append('status', params.status);
+    if (params.page !== undefined) queryParams.append('page', params.page.toString());
+    if (params.size !== undefined) queryParams.append('size', params.size.toString());
+    if (params.sort && params.sort.length > 0) {
+      params.sort.forEach((s) => queryParams.append('sort', s));
+    }
+    const queryString = queryParams.toString();
+    const endpoint = `/staff/orders${queryString ? `?${queryString}` : ''}`;
+    const res = await request<PageResponse<StaffOrderConfirmationResponse>>(endpoint, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return res.data;
+  },
 };
+
+export interface StaffOrderConfirmationResponse {
+  orderId: string;
+  postId: string;
+  postTitle: string;
+  buyerId: string;
+  sellerId: string;
+  status: string;
+  confirmationStatus: 'CONFIRMED' | 'NOT_REQUIRED' | 'CANCELLED' | 'PENDING' | string;
+  paidAt?: string;
+  confirmationDeadline?: string;
+  confirmationCancelAt?: string;
+  sellerConfirmedAt?: string;
+  latePenaltyPoints?: number;
+  timeoutPenaltyPoints?: number;
+}
+
+export interface GetStaffOrdersParams {
+  status?: string;
+  page?: number;
+  size?: number;
+  sort?: string[];
+}
+

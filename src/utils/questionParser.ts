@@ -215,3 +215,53 @@ export const splitCompoundQuestion = (q: string): string[] => {
 
   return [qClean];
 };
+
+/**
+ * Bộ 4 câu hỏi chuẩn theo mẫu Backend SecondLife khi chưa có aiInitialMessage hoặc mở bản nháp
+ */
+export const getStandardProductQuestions = (
+  categoryName?: string,
+  itemName?: string,
+  brand?: string
+): string[] => {
+  const cat = (categoryName || '').toLowerCase();
+  const itm = (itemName || '').toLowerCase();
+  const isBedOrFurniture = /phòng ngủ|nệm|đệm|giường|sofa|ghế|bàn|tủ|kệ|gỗ/i.test(`${cat} ${itm}`);
+  const isMattress = /nệm|đệm/i.test(`${cat} ${itm}`);
+  const isWasher = /giặt|sấy/i.test(`${cat} ${itm}`);
+  const isFridge = /tủ lạnh|tủ đông|tủ mát/i.test(`${cat} ${itm}`);
+  const isCooker = /nồi cơm|nồi chiên|lò vi sóng|lò nướng|bếp/i.test(`${cat} ${itm}`);
+
+  // Câu 1: Tần suất & mức độ sử dụng
+  const q1 = '**Tần suất và mức độ sử dụng thực tế của bạn?** (Ví dụ: Mới dùng vài lần cất hộp, Dùng thỉnh thoảng cuối tuần, Dùng thường xuyên hằng ngày, Ít khi sử dụng)';
+
+  // Câu 2: Hiện trạng ngoại quan & phụ kiện
+  let q2 = '**Hiện trạng ngoại quan và phụ kiện đi kèm?** (Ví dụ: Đẹp như mới fullbox đủ phụ kiện, Trầy xước nhẹ đủ phụ kiện, Có cấn móp nhẹ, Thiếu phụ kiện)';
+  if (isMattress) {
+    q2 = '**Hiện trạng ngoại quan và áo bọc nệm đi kèm?** (Ví dụ: Đẹp như mới không vết ố, Áo nệm nguyên vẹn sạch sẽ, Có vết ố nhẹ có thể giặt, Khung viền chắc chắn)';
+  } else if (isBedOrFurniture) {
+    q2 = '**Hiện trạng bề mặt và kết cấu chịu lực?** (Ví dụ: Bề mặt đẹp không trầy xước, Kết cấu vững chắc không mối mọt, Có trầy xước nhẹ, Tháo lắp dễ dàng)';
+  }
+
+  // Câu 3: Kỹ thuật / hoạt động / bảo hành
+  let q3 = '**Tình trạng hoạt động kỹ thuật và bảo hành hãng?** (Ví dụ: Vận hành nguyên bản chạy êm, Còn bảo hành chính hãng, Hoạt động tốt hết bảo hành, Chưa từng sửa chữa)';
+  if (isMattress) {
+    q3 = '**Tình trạng độ đàn hồi và nguồn gốc chất liệu?** (Ví dụ: Đàn hồi cực tốt không xẹp lún, Cao su thiên nhiên 100%, Lò xo túi êm ái không kêu, Còn bảo hành hãng)';
+  } else if (isBedOrFurniture) {
+    q3 = '**Chất liệu chính và độ bền kết cấu?** (Ví dụ: Gỗ tự nhiên nguyên khối, Khung sắt sơn tĩnh điện, Gỗ MDF chống ẩm, Chắc chắn không lung lay)';
+  }
+
+  // Câu 4: Thông số kỹ thuật / kích thước đặc thù
+  let q4 = `**Thông số kỹ thuật, kích thước hoặc phiên bản của ${itemName || categoryName || 'sản phẩm'}?** (Ví dụ: Bản tiêu chuẩn chính hãng, Kích thước chuẩn gia đình, Công suất tiết kiệm điện, Đầy đủ tính năng)`;
+  if (isMattress) {
+    q4 = '**Kích thước, độ dày và loại nệm cụ thể?** (Ví dụ: 1m6 x 2m dày 10cm, 1m8 x 2m dày 15cm lò xo túi, 1m2 x 2m cao su, 1m4 x 2m gấp 3)';
+  } else if (isWasher) {
+    q4 = '**Khối lượng giặt và kiểu máy giặt?** (Ví dụ: 8.5kg cửa trước Inverter, 9kg cửa ngang, 7.5kg cửa trên lồng đứng, 10kg giặt sấy)';
+  } else if (isFridge) {
+    q4 = '**Dung tích và kiểu dáng tủ lạnh?** (Ví dụ: 180L - 250L 2 cánh Inverter, Mini 90L, Trên 400L Side-by-side không đóng tuyết, Ngăn đá dưới)';
+  } else if (isCooker) {
+    q4 = '**Dung tích, công suất hoặc loại bảng điều khiển?** (Ví dụ: 1.8 lít điện tử cao tần, 5.5 lít cơ núm vặn, Bếp đôi âm 4000W, Mặt kính chống trầy)';
+  }
+
+  return [q1, q2, q3, q4];
+};

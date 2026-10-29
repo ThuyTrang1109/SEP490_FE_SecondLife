@@ -11,6 +11,7 @@ interface VerifyEmailModalProps {
   onSuccess?: () => void;
   lang: Language;
   onChangeEmail?: () => void;
+  autoSendOnOpen?: boolean;
 }
 
 export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
@@ -19,7 +20,8 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
   onClose,
   onSuccess,
   lang,
-  onChangeEmail
+  onChangeEmail,
+  autoSendOnOpen,
 }) => {
   const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [isLoading, setIsLoading] = useState(false);
@@ -28,6 +30,7 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
   const [countdown, setCountdown] = useState(60);
 
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const hasAutoSentRef = useRef<boolean>(false);
 
   // Reset and focus when modal opens
   useEffect(() => {
@@ -39,8 +42,27 @@ export const VerifyEmailModal: React.FC<VerifyEmailModalProps> = ({
       setTimeout(() => {
         inputRefs.current[0]?.focus();
       }, 100);
+
+      if (autoSendOnOpen && email && !hasAutoSentRef.current) {
+        hasAutoSentRef.current = true;
+        authService.resendVerification(email.trim())
+          .then(() => {
+            soundFx.playChime();
+            setSuccessMsg(
+              lang === 'vi'
+                ? `Mã OTP xác thực 6 chữ số vừa được gửi đến ${email}!`
+                : `6-digit OTP code has been sent to ${email}!`
+            );
+            setTimeout(() => setSuccessMsg(null), 4000);
+          })
+          .catch((err: any) => {
+            console.warn('Auto send verification OTP failed/rate-limited:', err);
+          });
+      }
+    } else {
+      hasAutoSentRef.current = false;
     }
-  }, [isOpen, email]);
+  }, [isOpen, email, autoSendOnOpen, lang]);
 
   // Countdown timer for resend code
   useEffect(() => {

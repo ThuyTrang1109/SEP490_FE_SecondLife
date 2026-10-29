@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   X,
   User,
@@ -35,9 +35,13 @@ import {
   AlertTriangle,
   Copy,
   PlusCircle,
+  Eye,
+  ChevronDown,
 } from 'lucide-react';
 import { UserProfile, UserRole, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
+import { WithdrawalModal } from './WithdrawalModal';
+import { dialogService } from '../../utils/dialogService';
 import {
   userService,
   sellerService,
@@ -53,15 +57,67 @@ import {
   OpenApiWard,
   walletService,
   orderService,
+  userReportService,
+  UserReportResponseDto,
 } from '../../services';
 import { LiveFaceScannerModal, VnptEkycResultData } from './LiveFaceScannerModal';
-import { saveSellerAddress } from '../../utils/addressUtils';
+import { saveSellerAddress, extractWardAndCity, getSavedSellerAddress, cleanFullAddress, formatCombinedAddress } from '../../utils/addressUtils';
+import { LalamoveAddressPicker } from '../common/LalamoveAddressPicker';
 
-export type ProfileTab = 'info' | 'wallet' | 'kyc' | 'security' | 'settings';
+export type ProfileTab = 'info' | 'wallet' | 'kyc' | 'reports' | 'security' | 'settings';
 
 const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 const isStrongPassword = (pass: string): boolean => {
   return STRONG_PASSWORD_REGEX.test(pass);
+};
+
+export const POPULAR_VIETNAM_BANKS = [
+  { code: 'VCB', name: 'Vietcombank', fullName: 'Ngoại Thương Việt Nam' },
+  { code: 'MB', name: 'MBBank', fullName: 'Quân Đội' },
+  { code: 'TCB', name: 'Techcombank', fullName: 'Kỹ Thương Việt Nam' },
+  { code: 'CTG', name: 'VietinBank', fullName: 'Công Thương Việt Nam' },
+  { code: 'BIDV', name: 'BIDV', fullName: 'Đầu Tư và Phát Triển Việt Nam' },
+  { code: 'ACB', name: 'ACB', fullName: 'Á Châu' },
+  { code: 'VPB', name: 'VPBank', fullName: 'Việt Nam Thịnh Vượng' },
+  { code: 'TPB', name: 'TPBank', fullName: 'Tiên Phong' },
+  { code: 'STB', name: 'Sacombank', fullName: 'Sài Gòn Thương Tín' },
+  { code: 'HDB', name: 'HDBank', fullName: 'Phát Triển TP.HCM' },
+  { code: 'VIB', name: 'VIB', fullName: 'Quốc Tế Việt Nam' },
+  { code: 'SHB', name: 'SHB', fullName: 'Sài Gòn - Hà Nội' },
+  { code: 'VBA', name: 'Agribank', fullName: 'Nông Nghiệp và PTNT' },
+  { code: 'MSB', name: 'MSB', fullName: 'Hàng Hải Việt Nam' },
+  { code: 'OCB', name: 'OCB', fullName: 'Phương Đông' },
+  { code: 'SSB', name: 'SeABank', fullName: 'Đông Nam Á' },
+  { code: 'LPB', name: 'LPBank', fullName: 'Lộc Phát Việt Nam' },
+  { code: 'EIB', name: 'Eximbank', fullName: 'Xuất Nhập Khẩu Việt Nam' },
+  { code: 'BAB', name: 'Bac A Bank', fullName: 'Bắc Á' },
+  { code: 'NAB', name: 'Nam A Bank', fullName: 'Nam Á' },
+  { code: 'PVC', name: 'PVcomBank', fullName: 'Đại Chúng Việt Nam' },
+  { code: 'KLB', name: 'KienlongBank', fullName: 'Kiên Long' },
+  { code: 'BVB', name: 'BaoViet Bank', fullName: 'Bảo Việt' },
+  { code: 'SGB', name: 'Saigonbank', fullName: 'Sài Gòn Công Thương' },
+  { code: 'SHINHAN', name: 'Shinhan Bank', fullName: 'Shinhan Bank Việt Nam' },
+  { code: 'WOORI', name: 'Woori Bank', fullName: 'Woori Bank Việt Nam' },
+];
+
+export const getMatchedBankName = (val: string): string => {
+  if (!val) return '';
+  const trimmed = val.trim();
+  // Exact match
+  const exact = POPULAR_VIETNAM_BANKS.find((b) => b.name.toLowerCase() === trimmed.toLowerCase());
+  if (exact) return exact.name;
+  // Code match
+  const byCode = POPULAR_VIETNAM_BANKS.find((b) => b.code.toLowerCase() === trimmed.toLowerCase());
+  if (byCode) return byCode.name;
+  // Partial match: e.g. "MB Bank" -> matches "MBBank" or "MB"
+  const cleanVal = trimmed.replace(/\s+/g, '').toLowerCase();
+  const partial = POPULAR_VIETNAM_BANKS.find((b) => {
+    const cleanName = b.name.replace(/\s+/g, '').toLowerCase();
+    const cleanCode = b.code.replace(/\s+/g, '').toLowerCase();
+    return cleanName === cleanVal || cleanName.includes(cleanVal) || cleanVal.includes(cleanName) || cleanVal.includes(cleanCode);
+  });
+  if (partial) return partial.name;
+  return trimmed;
 };
 
 interface ProfileDialogProps {
@@ -75,6 +131,7 @@ interface ProfileDialogProps {
   onChangePassword?: () => void;
   onOpenVerifyEmail?: (email: string) => void;
   onOpenTopUp?: () => void;
+  onOpenSellerRegister?: () => void;
   lang?: Language;
   initialTab?: ProfileTab;
 }
@@ -90,21 +147,34 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   onChangePassword,
   onOpenVerifyEmail,
   onOpenTopUp,
+  onOpenSellerRegister,
   lang = 'vi',
   initialTab = 'info',
 }) => {
   if (!isOpen || !currentUser) return null;
 
-  const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<ProfileTab>(
+    initialTab === 'settings' && !(currentUser.role === 'seller' || currentRole === 'seller')
+      ? 'info'
+      : initialTab
+  );
 
   // Form states
   const [name, setName] = useState(currentUser.name || '');
   const [email, setEmail] = useState(currentUser.email || '');
+  const [isEmailVerified, setIsEmailVerified] = useState<boolean>(() => Boolean(currentUser.emailVerified));
+
+  useEffect(() => {
+    setIsEmailVerified(Boolean(currentUser.emailVerified));
+  }, [currentUser.emailVerified]);
   const [phone, setPhone] = useState(currentUser.phone || '');
   const [address, setAddress] = useState(currentUser.address || '');
-  const [gender, setGender] = useState<'male' | 'female' | 'other'>(currentUser.gender || 'male');
+  const [gender, setGender] = useState<'male' | 'female' | 'other' | ''>(
+    currentUser.gender ? (currentUser.gender.toLowerCase() as 'male' | 'female' | 'other') : ''
+  );
   const [birthday, setBirthday] = useState(currentUser.birthday || '');
   const [bankName, setBankName] = useState(currentUser.bankAccount?.bankName || '');
+  const [isCustomBank, setIsCustomBank] = useState(false);
   const [accountNumber, setAccountNumber] = useState(
     currentUser.bankAccount?.accountNumber || ''
   );
@@ -120,6 +190,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     currentUser.escrowLockedVnd ?? 0
   );
   const [isLoadingWallet, setIsLoadingWallet] = useState<boolean>(false);
+  const [isWithdrawalModalOpen, setIsWithdrawalModalOpen] = useState(false);
 
   const fetchWalletAndEscrow = React.useCallback(async () => {
     setIsLoadingWallet(true);
@@ -166,18 +237,83 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     }
   }, [isOpen, fetchWalletAndEscrow]);
 
+  // Reports State (GET /api/v1/reports/me & GET /api/v1/reports/{id})
+  const [myReports, setMyReports] = useState<UserReportResponseDto[]>([]);
+  const [isLoadingReports, setIsLoadingReports] = useState(false);
+  const [reportPage, setReportPage] = useState(0);
+  const [reportTotalPages, setReportTotalPages] = useState(1);
+  const [selectedReportDetail, setSelectedReportDetail] = useState<UserReportResponseDto | null>(null);
+  const [isLoadingReportDetail, setIsLoadingReportDetail] = useState(false);
+  const [detailEvidenceUrls, setDetailEvidenceUrls] = useState<string[]>([]);
+  const [reportStatusFilter, setReportStatusFilter] = useState<'ALL' | 'OPEN' | 'IN_REVIEW' | 'CONFIRMED' | 'DISMISSED'>('ALL');
+
+  const fetchMyReports = useCallback(async (page = 0) => {
+    setIsLoadingReports(true);
+    try {
+      const res = await userReportService.getMyReports(page, 10);
+      setMyReports(res.items || []);
+      setReportPage(res.page || 0);
+      setReportTotalPages(res.totalPages || 1);
+    } catch (err) {
+      console.warn('Lỗi tải danh sách khiếu nại cá nhân:', err);
+    } finally {
+      setIsLoadingReports(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'reports') {
+      fetchMyReports(0);
+    }
+  }, [activeTab, fetchMyReports]);
+
+  const handleOpenReportDetail = async (reportId: string) => {
+    setIsLoadingReportDetail(true);
+    setSelectedReportDetail(null);
+    setDetailEvidenceUrls([]);
+    try {
+      const detail = await userReportService.getReportById(reportId);
+      setSelectedReportDetail(detail);
+
+      if (detail.evidenceUrls && detail.evidenceUrls.length > 0) {
+        const loadedUrls: string[] = [];
+        for (const ev of detail.evidenceUrls) {
+          if (!ev.startsWith('http://') && !ev.startsWith('https://')) {
+            try {
+              const bUrl = await userReportService.getEvidenceBlobUrl(ev);
+              loadedUrls.push(bUrl);
+            } catch {
+              loadedUrls.push(ev);
+            }
+          } else {
+            loadedUrls.push(ev);
+          }
+        }
+        setDetailEvidenceUrls(loadedUrls);
+      }
+    } catch (err) {
+      console.warn('Lỗi lấy chi tiết khiếu nại:', err);
+    } finally {
+      setIsLoadingReportDetail(false);
+    }
+  };
+
   const [isSaved, setIsSaved] = useState(false);
 
-  // Seller registration & switching states
-  const [isSellerRegistered, setIsSellerRegistered] = useState<boolean>(
-    Boolean(
-      currentUser.isSellerRegistered ||
-      currentUser.role === 'seller' ||
-      currentUser.shopName ||
-      (currentUser.id && localStorage.getItem(`seller_registered_${currentUser.id}`) === 'true') ||
-      (currentUser.email && localStorage.getItem(`seller_registered_${currentUser.email}`) === 'true')
-    )
+  // Seller verification & registration state
+  const [existingVerification, setExistingVerification] = useState<any>(null);
+  const isApprovedSeller = currentUser.role === 'seller' || currentRole === 'seller' || existingVerification?.status === 'APPROVED';
+  const verStatus = existingVerification?.status || null;
+  const isPendingReview = Boolean(
+    existingVerification &&
+    ['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(verStatus)
   );
+  const isResubmitRequired = Boolean(verStatus === 'RESUBMIT_REQUIRED');
+  const isRejected = Boolean(verStatus === 'REJECTED');
+  const hasRegistered = Boolean(isApprovedSeller || isPendingReview || isResubmitRequired || isRejected);
+
+  // Seller registration & switching states
+  const [isSellerRegistered, setIsSellerRegistered] = useState<boolean>(currentUser.role === 'seller');
   const [shopName, setShopName] = useState(
     currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : '')
   );
@@ -185,10 +321,17 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [pickupAddress, setPickupAddress] = useState(
     currentUser.pickupAddress || currentUser.address || ''
   );
+  const [pickupLatitude, setPickupLatitude] = useState<number | null>(
+    currentUser.latitude ?? null
+  );
+  const [pickupLongitude, setPickupLongitude] = useState<number | null>(
+    currentUser.longitude ?? null
+  );
   const [idCardNumber, setIdCardNumber] = useState(currentUser.idCardNumber || '');
   const [sellerBankName, setSellerBankName] = useState(
     currentUser.bankAccount?.bankName || ''
   );
+  const [isCustomSellerBank, setIsCustomSellerBank] = useState(false);
   const [sellerAccountNumber, setSellerAccountNumber] = useState(
     currentUser.bankAccount?.accountNumber || ''
   );
@@ -197,7 +340,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   );
   const [sellerProductTypes, setSellerProductTypes] = useState(currentUser.productTypes || '');
   const [sellerTermsAgreed, setSellerTermsAgreed] = useState(true);
-  const [showSellerRegistrationForm, setShowSellerRegistrationForm] = useState(false);
+  const [showSellerRegistrationForm, setShowSellerRegistrationForm] = useState(currentUser.role !== 'seller');
   const [sellerFormSuccess, setSellerFormSuccess] = useState<string | null>(null);
   const [sellerFormError, setSellerFormError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -228,12 +371,6 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [vnptClientSession, setVnptClientSession] = useState<string>('');
   const [vnptToken, setVnptToken] = useState<string>('');
   const [vnptLivenessResult, setVnptLivenessResult] = useState<any>(null);
-
-  const [existingVerification, setExistingVerification] = useState<any>(null);
-  const verStatus = existingVerification?.status || (currentUser?.kycStatus === 'pending' ? 'NEEDS_REVIEW' : null);
-  const isPendingReview = verStatus === 'SUBMITTED' || verStatus === 'EKYC_PENDING' || verStatus === 'NEEDS_REVIEW' || verStatus === 'PENDING';
-  const isResubmitRequired = verStatus === 'RESUBMIT_REQUIRED';
-  const isRejected = verStatus === 'REJECTED';
 
   // Change password modal state
   const [isChangePassModalOpen, setIsChangePassModalOpen] = useState(false);
@@ -266,19 +403,20 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [selectedWardCode, setSelectedWardCode] = useState<number | ''>('');
   const [selectedWardName, setSelectedWardName] = useState<string>(currentUser.ward || currentUser.wardName || '');
   const [userStreetAddress, setUserStreetAddress] = useState<string>(currentUser.streetAddress || '');
+  const [userLatitude, setUserLatitude] = useState<number | null>(currentUser.latitude ?? null);
+  const [userLongitude, setUserLongitude] = useState<number | null>(currentUser.longitude ?? null);
 
   const [isLoadingUserProvinces, setIsLoadingUserProvinces] = useState(false);
   const [isLoadingUserDistricts, setIsLoadingUserDistricts] = useState(false);
   const [isLoadingUserWards, setIsLoadingUserWards] = useState(false);
 
   const computeFullAddress = () => {
-    const parts = [
-      userStreetAddress.trim(),
-      selectedWardName.trim(),
-      selectedDistrictName.trim(),
-      selectedProvinceName.trim(),
-    ].filter(Boolean);
-    return parts.join(', ');
+    return formatCombinedAddress(
+      userStreetAddress,
+      selectedWardName,
+      selectedDistrictName,
+      selectedProvinceName
+    );
   };
 
   // Tải danh sách Open API và khớp địa chỉ người dùng
@@ -473,7 +611,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       setAddress(currentUser.address || '');
       setAvatarUrl(currentUser.avatar || '');
       setImgError(false);
-      if (currentUser.gender) setGender(currentUser.gender);
+      if (currentUser.gender) {
+        setGender(currentUser.gender.toLowerCase() as 'male' | 'female' | 'other');
+      } else {
+        setGender('');
+      }
       if (currentUser.birthday) setBirthday(currentUser.birthday);
       if (currentUser.bankAccount) {
         if (currentUser.bankAccount.bankName) setBankName(currentUser.bankAccount.bankName);
@@ -492,17 +634,18 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       if (currentUser.streetAddress) {
         setUserStreetAddress(currentUser.streetAddress || '');
       }
-      const isKnownSeller = Boolean(
-        currentUser.isSellerRegistered ||
-        currentUser.role === 'seller' ||
-        currentUser.shopName ||
-        (currentUser.id && localStorage.getItem(`seller_registered_${currentUser.id}`) === 'true') ||
-        (currentUser.email && localStorage.getItem(`seller_registered_${currentUser.email}`) === 'true')
-      );
+      const isKnownSeller = currentUser.role === 'seller';
       setIsSellerRegistered(isKnownSeller);
+      if (currentUser.role !== 'seller' && !existingVerification) {
+        setShowSellerRegistrationForm(true);
+      }
       setShopName(currentUser.shopName || (currentUser.name ? `Gian Hàng ${currentUser.name}` : 'SecondLife Shop'));
       setSellerPhone(currentUser.phone || '');
       setPickupAddress(currentUser.pickupAddress || currentUser.address || '');
+      setPickupLatitude(currentUser.latitude ?? null);
+      setPickupLongitude(currentUser.longitude ?? null);
+      setUserLatitude(currentUser.latitude ?? null);
+      setUserLongitude(currentUser.longitude ?? null);
       const isInternalRole = ['admin', 'staff', 'inspector'].includes(currentUser.role);
       if (initialTab && !(isInternalRole && initialTab === 'settings')) {
         setActiveTab(initialTab);
@@ -518,6 +661,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       userService.getMyProfile()
         .then((fresh) => {
           if (fresh) {
+            if (typeof fresh.emailVerified === 'boolean') {
+              setIsEmailVerified(fresh.emailVerified);
+              if (fresh.emailVerified !== currentUser.emailVerified) {
+                onUpdateProfile({
+                  ...currentUser,
+                  emailVerified: fresh.emailVerified,
+                });
+              }
+            }
             if (fresh.fullName) setName(fresh.fullName);
             if (fresh.email) setEmail(fresh.email);
             if (fresh.phone) setPhone(fresh.phone);
@@ -529,6 +681,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             if (fresh.district) setSelectedDistrictName(fresh.district);
             if (fresh.ward) setSelectedWardName(fresh.ward);
             if (fresh.streetAddress) setUserStreetAddress(fresh.streetAddress);
+            if (fresh.latitude !== undefined && fresh.latitude !== null) {
+              setUserLatitude(fresh.latitude);
+              setPickupLatitude(fresh.latitude);
+            }
+            if (fresh.longitude !== undefined && fresh.longitude !== null) {
+              setUserLongitude(fresh.longitude);
+              setPickupLongitude(fresh.longitude);
+            }
+            if (fresh.gender) {
+              setGender(fresh.gender.toLowerCase() as 'male' | 'female' | 'other');
+            } else if (!currentUser.gender) {
+              setGender('');
+            }
 
             syncOpenApiAddress(
               fresh.province || currentUser?.province || currentUser?.provinceName,
@@ -562,17 +727,30 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             if (verif.selfieUrl) {
               setSelfieUrl(verif.selfieUrl);
             }
-            if (verif.status === 'RESUBMIT_REQUIRED') {
-              setShowSellerRegistrationForm(true);
-            } else if (['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING', 'APPROVED'].includes(verif.status)) {
-              setShowSellerRegistrationForm(false);
+            if (verif.status === 'APPROVED') {
               setIsSellerRegistered(true);
-              if (currentUser?.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
-              if (currentUser?.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
+              setShowSellerRegistrationForm(false);
+            } else if (verif.status === 'RESUBMIT_REQUIRED') {
+              setIsSellerRegistered(false);
+              setShowSellerRegistrationForm(false);
+            } else if (verif.status === 'REJECTED') {
+              setIsSellerRegistered(false);
+              setShowSellerRegistrationForm(false);
+            } else if (['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(verif.status)) {
+              setIsSellerRegistered(false);
+              setShowSellerRegistrationForm(false);
             }
+          } else {
+            setExistingVerification(null);
+            setIsSellerRegistered(currentUser.role === 'seller');
+            setShowSellerRegistrationForm(currentUser.role !== 'seller');
           }
         })
-        .catch(() => setExistingVerification(null));
+        .catch(() => {
+          setExistingVerification(null);
+          setIsSellerRegistered(currentUser.role === 'seller');
+          setShowSellerRegistrationForm(currentUser.role !== 'seller');
+        });
     }
   }, [isOpen]);
 
@@ -580,14 +758,18 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const fetchAddressFromBackend = async (showNotification = false) => {
     setIsLoadingAddressFromBe(true);
     try {
-      const [onboardingData, pickupData] = await Promise.allSettled([
-        shippingService.getSellerOnboarding(),
-        shippingService.getPickupAddress(),
-      ]);
+      const isSeller = currentUser?.role === 'seller' || (currentUser as any)?.roles?.some((r: string) => r === 'SELLER' || r === 'ROLE_SELLER');
+      const tasks: Promise<any>[] = [shippingService.getSellerOnboarding()];
+      if (isSeller) {
+        tasks.push(shippingService.getPickupAddress());
+      }
+      const results = await Promise.allSettled(tasks);
+      const onboardingData = results[0];
+      const pickupData = isSeller ? results[1] : null;
 
       let addressFound = false;
 
-      if (onboardingData.status === 'fulfilled' && onboardingData.value) {
+      if (onboardingData && onboardingData.status === 'fulfilled' && onboardingData.value) {
         const ob = onboardingData.value;
         if (ob.shopName) setShopName(ob.shopName);
         if (ob.phone) setSellerPhone(ob.phone);
@@ -597,10 +779,26 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         if (ob.pickupAddress) {
           const pa = ob.pickupAddress;
           const fullAddr = [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
-          if (fullAddr) {
+          const saved = getSavedSellerAddress();
+          const userCurrentAddr = currentUser?.pickupAddress || currentUser?.address || saved?.address;
+          if (userCurrentAddr) {
+            setPickupAddress(userCurrentAddr);
+            setStreetAddress(userCurrentAddr);
+            addressFound = true;
+          } else if (fullAddr) {
             setPickupAddress(fullAddr);
             setStreetAddress(pa.address || '');
             addressFound = true;
+          }
+          if (currentUser?.latitude) {
+            setPickupLatitude(currentUser.latitude);
+          } else if (pa.latitude) {
+            setPickupLatitude(pa.latitude);
+          }
+          if (currentUser?.longitude) {
+            setPickupLongitude(currentUser.longitude);
+          } else if (pa.longitude) {
+            setPickupLongitude(pa.longitude);
           }
         }
         if (ob.provinceId) {
@@ -614,19 +812,39 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         }
       }
 
-      if (!addressFound && pickupData.status === 'fulfilled' && pickupData.value) {
+      if (!addressFound && pickupData && pickupData.status === 'fulfilled' && pickupData.value) {
         const pa = pickupData.value;
         const fullAddr = [pa.address, pa.wardName, pa.provinceName].filter(Boolean).join(', ');
-        if (fullAddr) {
+        const saved = getSavedSellerAddress();
+        const userCurrentAddr = currentUser?.pickupAddress || currentUser?.address || saved?.address;
+        if (userCurrentAddr) {
+          setPickupAddress(userCurrentAddr);
+          setStreetAddress(userCurrentAddr);
+          addressFound = true;
+        } else if (fullAddr) {
           setPickupAddress(fullAddr);
           setStreetAddress(pa.address || '');
           addressFound = true;
         }
+        if (currentUser?.latitude) {
+          setPickupLatitude(currentUser.latitude);
+        } else if (pa.latitude) {
+          setPickupLatitude(pa.latitude);
+        }
+        if (currentUser?.longitude) {
+          setPickupLongitude(currentUser.longitude);
+        } else if (pa.longitude) {
+          setPickupLongitude(pa.longitude);
+        }
       }
 
-      if (!addressFound && currentUser?.address) {
-        setPickupAddress(currentUser.address);
-        setStreetAddress(currentUser.address);
+      if (!addressFound) {
+        const saved = getSavedSellerAddress();
+        const fallbackAddr = currentUser?.pickupAddress || currentUser?.address || saved?.address || '';
+        if (fallbackAddr) {
+          setPickupAddress(fallbackAddr);
+          setStreetAddress(fallbackAddr);
+        }
       }
 
       if (showNotification) {
@@ -647,13 +865,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const updateCombinedAddress = (pId: number | string | '', wId: number | string | '', street: string) => {
     const pObj = Array.isArray(provinces) ? provinces.find((p) => String(p._id) === String(pId)) : undefined;
     const wObj = Array.isArray(wards) ? wards.find((w) => String(w._id) === String(wId)) : undefined;
-    const parts = [
-      street.trim(),
-      wObj ? wObj.name : '',
-      pObj ? pObj.name : '',
-    ].filter(Boolean);
-    if (parts.length > 0) {
-      setPickupAddress(parts.join(', '));
+    const combined = formatCombinedAddress(street, wObj ? wObj.name : '', '', pObj ? pObj.name : '');
+    if (combined) {
+      setPickupAddress(combined);
     }
   };
 
@@ -899,7 +1113,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       if (field === 'back') setDocBackUrl(uploaded.url);
       if (field === 'selfie') setSelfieUrl(uploaded.url);
     } catch (err: any) {
-      alert(err.message || 'Tải ảnh lên không thành công');
+      dialogService.error(err.message || 'Tải ảnh lên không thành công', 'Lỗi Tải Ảnh');
     } finally {
       setUploadingField(null);
     }
@@ -934,14 +1148,27 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           name: cleanShop,
           phone: cleanPhone,
           address: streetAddress.trim() || pickupAddress.trim() || 'Hà Nội',
+          latitude: pickupLatitude || 21.028510,
+          longitude: pickupLongitude || 105.854167,
           provinceId: Number(selectedProvinceId) || 1000001,
           wardId: Number(selectedWardId) || 1003646,
         },
       });
 
+      if (pickupLatitude && pickupLongitude) {
+        try {
+          await shippingService.savePickupAddress({
+            name: cleanShop,
+            phone: cleanPhone,
+            latitude: pickupLatitude,
+            longitude: pickupLongitude,
+          });
+        } catch (_) {}
+      }
+
       const selProv = provinces.find((p) => String(p._id) === String(selectedProvinceId) || String((p as any).id) === String(selectedProvinceId));
       const selWard = wards.find((w) => String(w._id) === String(selectedWardId) || String((w as any).id) === String(selectedWardId));
-      saveSellerAddress(pickupAddress.trim() || streetAddress.trim(), selWard?.name, selProv?.name);
+      saveSellerAddress(cleanFullAddress(pickupAddress.trim() || streetAddress.trim()), selWard?.name, selProv?.name);
 
       await shippingService.sendSellerOnboardingEmailCode();
       setHasSentShopOtp(true);
@@ -1014,9 +1241,112 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       return;
     }
     if (!pickupAddress.trim()) {
-      setSellerFormError('Vui lòng nhập địa chỉ kho bưu tá lấy hàng.');
+      setSellerFormError('Vui lòng nhập hoặc xác nhận địa chỉ kho trên bản đồ.');
       return;
     }
+
+    // NẾU ĐÃ LÀ NGƯỜI BÁN ĐÃ XÁC THỰC (Cập nhật thông tin gian hàng & kho không cần gọi lại eKYC)
+    const isAlreadySeller = Boolean(
+      isApprovedSeller ||
+      currentUser?.role === 'seller' ||
+      existingVerification?.status === 'APPROVED' ||
+      (existingVerification?.status as any) === 'VERIFIED'
+    );
+
+    if (isAlreadySeller) {
+      setIsSubmittingSeller(true);
+      try {
+        const cleanPhone = (sellerPhone || '').replace(/\s+/g, '').trim();
+        const cleanShop = (shopName || '').trim().slice(0, 30);
+
+        // 1. Cập nhật địa chỉ kho lấy hàng Lalamove có tọa độ GPS
+        if (pickupLatitude && pickupLongitude) {
+          try {
+            await shippingService.savePickupAddress({
+              name: cleanShop,
+              phone: cleanPhone,
+              latitude: pickupLatitude,
+              longitude: pickupLongitude,
+            });
+          } catch (err: any) {
+            console.warn('savePickupAddress endpoint warning:', err);
+          }
+        }
+
+        // 2. Cập nhật thông tin gian hàng vào onboarding
+        try {
+          await shippingService.saveSellerOnboarding({
+            shopName: cleanShop,
+            email: (shopEmail || currentUser?.email || email || 'seller@secondlife.vn').trim(),
+            phone: cleanPhone,
+            pickupAddress: {
+              name: cleanShop,
+              phone: cleanPhone,
+              address: streetAddress.trim() || pickupAddress.trim(),
+              latitude: pickupLatitude || 21.028510,
+              longitude: pickupLongitude || 105.854167,
+              provinceId: Number(selectedProvinceId) || 1000001,
+              wardId: Number(selectedWardId) || 1003646,
+            },
+          });
+        } catch (onboardingErr: any) {
+          console.warn('saveSellerOnboarding warning:', onboardingErr);
+        }
+
+        // 3. Cập nhật thông tin profile cá nhân
+        try {
+          await userService.updateMyProfile({
+            fullName: name.trim(),
+            phone: cleanPhone || undefined,
+            streetAddress: streetAddress.trim() || undefined,
+            latitude: pickupLatitude ?? null,
+            longitude: pickupLongitude ?? null,
+          });
+        } catch (_) {}
+
+        // 4. Lưu cache localStorage để duy trì trạng thái seller
+        if (currentUser?.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
+        if (currentUser?.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
+
+        // 5. Cập nhật state UserProfile & đóng form chỉnh sửa
+        const updated: UserProfile = {
+          ...currentUser,
+          isSellerRegistered: true,
+          role: 'seller',
+          kycStatus: 'verified',
+          shopName: cleanShop,
+          pickupAddress: pickupAddress.trim(),
+          latitude: pickupLatitude ?? currentUser.latitude,
+          longitude: pickupLongitude ?? currentUser.longitude,
+          phone: cleanPhone,
+          idCardNumber: idCardNumber.trim(),
+          bankAccount: {
+            bankName: sellerBankName.trim() || bankName,
+            accountNumber: sellerAccountNumber.trim() || accountNumber,
+            accountHolder: sellerAccountHolder.trim() || accountHolder,
+          },
+        };
+
+        setIsSellerRegistered(true);
+        setShowSellerRegistrationForm(false);
+        onUpdateProfile(updated);
+        setSellerFormSuccess(
+          lang === 'vi'
+            ? '🎉 Cập nhật hồ sơ gian hàng và địa chỉ kho lấy hàng thành công!'
+            : '🎉 Store profile and warehouse pickup address updated successfully!'
+        );
+        setTimeout(() => setSellerFormSuccess(null), 6000);
+        return;
+      } catch (err: any) {
+        setSellerFormError(err.message || 'Cập nhật hồ sơ gian hàng thất bại. Vui lòng thử lại.');
+        setTimeout(() => setSellerFormError(null), 6000);
+      } finally {
+        setIsSubmittingSeller(false);
+      }
+      return;
+    }
+
+    // LUỒNG DÀNH CHO NGƯỜI DÙNG ĐĂNG KÝ MỚI eKYC
     if (!idCardNumber.trim()) {
       setSellerFormError('Vui lòng nhập số CCCD để xác minh danh tính người bán.');
       return;
@@ -1057,10 +1387,23 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               name: cleanShop,
               phone: cleanPhone,
               address: streetAddress.trim() || pickupAddress.trim(),
+              latitude: pickupLatitude || 21.028510,
+              longitude: pickupLongitude || 105.854167,
               provinceId: Number(selectedProvinceId) || 1000001,
               wardId: Number(selectedWardId) || 1003646,
             },
           });
+
+          if (pickupLatitude && pickupLongitude) {
+            try {
+              await shippingService.savePickupAddress({
+                name: cleanShop,
+                phone: cleanPhone,
+                latitude: pickupLatitude,
+                longitude: pickupLongitude,
+              });
+            } catch (_) {}
+          }
         } catch (onboardingErr) {
           console.warn('Backend saveSellerOnboarding notification:', onboardingErr);
         }
@@ -1078,19 +1421,34 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             clientSession: vnptClientSession || undefined,
             token: vnptToken || undefined,
           });
+        } else if (checkVerif?.status === 'APPROVED' || (checkVerif?.status as any) === 'VERIFIED') {
+          verificationResponse = checkVerif;
         }
       } catch (_) { }
 
       if (!verificationResponse) {
-        verificationResponse = await sellerService.submitVerification({
-          verificationType: 'CITIZEN_ID',
-          documentNumber: idCardNumber.trim(),
-          documentFrontUrl: docFrontUrl,
-          documentBackUrl: docBackUrl,
-          selfieUrl: selfieUrl || undefined,
-          clientSession: vnptClientSession || `ANDROID_Web_1.0_Device_1.0.0_web_${Date.now()}`,
-          token: vnptToken || `vnpt-token-${Date.now()}`,
-        });
+        try {
+          verificationResponse = await sellerService.submitVerification({
+            verificationType: 'CITIZEN_ID',
+            documentNumber: idCardNumber.trim(),
+            documentFrontUrl: docFrontUrl,
+            documentBackUrl: docBackUrl,
+            selfieUrl: selfieUrl || undefined,
+            clientSession: vnptClientSession || `ANDROID_Web_1.0_Device_1.0.0_web_${Date.now()}`,
+            token: vnptToken || `vnpt-token-${Date.now()}`,
+          });
+        } catch (verifErr: any) {
+          const is409 =
+            verifErr?.response?.status === 409 ||
+            verifErr?.status === 409 ||
+            (verifErr?.message && verifErr.message.includes('409'));
+          if (is409) {
+            console.log('Seller verification already exists (409 Conflict), treating as approved');
+            verificationResponse = { status: 'APPROVED' };
+          } else {
+            throw verifErr;
+          }
+        }
       }
 
       const status = verificationResponse?.status;
@@ -1225,12 +1583,29 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSave = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
     setSaveError(null);
     setIsSaving(true);
 
-    const fullAddr = computeFullAddress() || address.trim();
+    const rawFull = address || userStreetAddress.trim() || computeFullAddress();
+    const fullAddr = cleanFullAddress(rawFull);
+    const cleanedPickup = cleanFullAddress(pickupAddress || fullAddr);
+    const cleanedStreet = cleanFullAddress(userStreetAddress.trim() || fullAddr);
+
+    // Tự động suy luận Ward & Province từ fullAddr nếu dropdown chưa chọn
+    let effectiveWard = selectedWardName.trim() || currentUser?.wardName || currentUser?.ward || '';
+    let effectiveProv = selectedProvinceName.trim() || currentUser?.provinceName || currentUser?.province || '';
+    if ((!effectiveWard || !effectiveProv) && fullAddr) {
+      const extracted = extractWardAndCity(fullAddr);
+      if (extracted) {
+        const [w, c] = extracted.split(',').map((s) => s.trim());
+        if (!effectiveWard && w) effectiveWard = w;
+        if (!effectiveProv && c) effectiveProv = c;
+      }
+    }
 
     const updated: UserProfile = {
       ...currentUser,
@@ -1238,14 +1613,17 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       email,
       phone: phone.trim(),
       address: fullAddr,
-      province: selectedProvinceName.trim() || undefined,
-      provinceName: selectedProvinceName.trim() || undefined,
+      province: effectiveProv || undefined,
+      provinceName: effectiveProv || undefined,
       district: selectedDistrictName.trim() || undefined,
-      ward: selectedWardName.trim() || undefined,
-      wardName: selectedWardName.trim() || undefined,
-      streetAddress: userStreetAddress.trim() || undefined,
+      ward: effectiveWard || undefined,
+      wardName: effectiveWard || undefined,
+      streetAddress: cleanedStreet || fullAddr || undefined,
+      latitude: userLatitude ?? pickupLatitude ?? currentUser?.latitude,
+      longitude: userLongitude ?? pickupLongitude ?? currentUser?.longitude,
+      pickupAddress: cleanedPickup || fullAddr,
       avatar: avatarUrl || currentUser.avatar,
-      gender,
+      gender: gender || undefined,
       birthday,
       bankAccount: {
         bankName,
@@ -1255,9 +1633,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
     };
 
     saveSellerAddress(
-      pickupAddress || fullAddr,
-      selectedWardName.trim() || currentUser?.wardName,
-      selectedProvinceName.trim() || currentUser?.provinceName
+      cleanedPickup || fullAddr,
+      effectiveWard || undefined,
+      effectiveProv || undefined
     );
 
     try {
@@ -1265,13 +1643,51 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         fullName: name.trim(),
         phone: phone.trim() || undefined,
         avatarUrl: avatarUrl || undefined,
+        gender: gender ? (gender.toUpperCase() as 'MALE' | 'FEMALE' | 'OTHER') : null,
         province: selectedProvinceName.trim() || undefined,
         district: selectedDistrictName.trim() || undefined,
         ward: selectedWardName.trim() || undefined,
-        streetAddress: userStreetAddress.trim() || undefined,
-        latitude: null,
-        longitude: null,
+        streetAddress: cleanedStreet || fullAddr || undefined,
+        latitude: userLatitude ?? pickupLatitude ?? currentUser?.latitude ?? null,
+        longitude: userLongitude ?? pickupLongitude ?? currentUser?.longitude ?? null,
       });
+
+      if (pickupLatitude && pickupLongitude) {
+        try {
+          await shippingService.savePickupAddress({
+            name: shopName || name.trim() || currentUser?.name || 'Gian Hàng',
+            phone: sellerPhone || phone.trim() || currentUser?.phone || '0900000000',
+            latitude: pickupLatitude,
+            longitude: pickupLongitude,
+          });
+        } catch (_) {}
+      }
+
+      // Luôn cập nhật thông tin địa chỉ kho bưu tá lấy hàng lên Backend Onboarding
+      try {
+        const cleanShop = (shopName || name.trim() || currentUser?.name || 'Gian Hàng').trim().slice(0, 30);
+        const cleanPhone = (sellerPhone || phone.trim() || currentUser?.phone || '0900000000').replace(/\s+/g, '').trim();
+        await shippingService.saveSellerOnboarding({
+          shopName: cleanShop,
+          email: (shopEmail || currentUser?.email || email || 'seller@secondlife.vn').trim(),
+          phone: cleanPhone,
+          pickupAddress: {
+            name: cleanShop,
+            phone: cleanPhone,
+            address: fullAddr,
+            latitude: userLatitude ?? pickupLatitude ?? 10.84362,
+            longitude: userLongitude ?? pickupLongitude ?? 106.76575,
+            provinceId: Number(selectedProvinceId) || 1000001,
+            wardId: Number(selectedWardId) || 1003646,
+          },
+        });
+      } catch (onboardingErr) {
+        console.warn('saveSellerOnboarding in handleSave warning:', onboardingErr);
+      }
+
+      setPickupAddress(fullAddr);
+      if (userLatitude) setPickupLatitude(userLatitude);
+      if (userLongitude) setPickupLongitude(userLongitude);
 
       onUpdateProfile(updated);
       setIsSaved(true);
@@ -1292,9 +1708,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const getRoleBadge = (role: UserRole) => {
     switch (role) {
       case 'buyer':
+        if (isEmailVerified) {
+          return {
+            label: lang === 'vi' ? 'Người Mua Xác Thực (Verified Buyer)' : 'Verified Buyer',
+            className: 'bg-blue-500/15 text-blue-600 border-blue-500/30',
+          };
+        }
         return {
-          label: lang === 'vi' ? 'Người Mua Xác Thực (Verified Buyer)' : 'Verified Buyer',
-          className: 'bg-blue-500/15 text-blue-600 border-blue-500/30',
+          label: lang === 'vi' ? 'Người Mua (Chờ Xác Thực OTP)' : 'Buyer (Pending OTP)',
+          className: 'bg-amber-500/15 text-amber-700 border-amber-500/30',
         };
       case 'seller':
         return {
@@ -1328,26 +1750,25 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-2xl max-h-[92vh] overflow-hidden rounded-3xl bg-[#FFFFFF] border border-gray-200 shadow-2xl text-[#24263e] flex flex-col my-auto"
+        className="relative w-full max-w-5xl lg:max-w-6xl xl:max-w-7xl h-[95vh] sm:h-[92vh] max-h-[96vh] overflow-hidden rounded-3xl bg-[#FFFFFF] border border-gray-200/80 shadow-2xl text-[#24263e] flex flex-col my-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header Profile Cover */}
-        <div className="relative">
-          {/* Cover gradient banner */}
-          <div className="h-28 sm:h-32 bg-gradient-to-r from-[#1e2238] via-[#2d2a45] to-[#c34c36] rounded-t-3xl relative overflow-hidden">
-            {/* Ambient glows */}
-            <div className="absolute -top-12 -right-12 w-48 h-48 bg-[#c34c36]/30 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute -bottom-10 left-1/4 w-36 h-36 bg-[#fce5da]/20 rounded-full blur-2xl pointer-events-none" />
-
-            {/* Top Bar inside Cover */}
-            <div className="relative z-10 p-4 sm:p-5 flex items-center justify-between">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/40 backdrop-blur-md text-white text-[11px] font-semibold border border-white/15 shadow-xs">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span className="font-mono">
+        {/* Header Profile Section - Clean Modern White Design */}
+        <div className="bg-white rounded-t-3xl border-b border-slate-100 shrink-0">
+          {/* Top Bar: Title & Member ID on Left, Close on Right */}
+          <div className="px-6 sm:px-8 pt-4 pb-3 flex items-center justify-between border-b border-slate-100/80">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
+                {lang === 'vi' ? 'Hồ Sơ Tài Khoản' : 'Account Profile'}
+              </span>
+              <span className="text-slate-300 hidden sm:inline">•</span>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-50 text-slate-700 text-xs font-semibold border border-slate-200 shadow-2xs">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="font-mono text-[11px] text-slate-800">
                   {currentUser.id.length > 16
                     ? `ID: ${currentUser.id.slice(0, 8)}...${currentUser.id.slice(-6)}`
                     : `ID: ${currentUser.id}`}
@@ -1360,415 +1781,483 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     setTimeout(() => setCopiedId(false), 2000);
                   }}
                   title={lang === 'vi' ? 'Sao chép Member ID' : 'Copy Member ID'}
-                  className="ml-1 p-0.5 rounded hover:bg-white/20 text-white/80 hover:text-white transition cursor-pointer"
+                  className="ml-0.5 p-0.5 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition cursor-pointer"
                 >
-                  {copiedId ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  {copiedId ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
               </div>
-
-              {/* Close Button */}
-              <button
-                onClick={onClose}
-                aria-label="Close"
-                className="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white backdrop-blur-md transition cursor-pointer hover:rotate-90 duration-200"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
+
+            {/* Close Button */}
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition cursor-pointer hover:rotate-90 duration-200 border border-slate-200/60"
+            >
+              <X className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+            </button>
           </div>
-        </div>
 
-        {/* Profile Identity Bar - 100% on White Background (Zero Overlap Issues) */}
-        <div className="px-6 sm:px-8 pt-0 pb-2 bg-white">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          {/* Profile Identity Bar */}
+          <div className="px-6 sm:px-8 lg:px-10 py-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              {/* Left: Avatar + User Name & Role */}
+              <div className="flex items-center gap-4 sm:gap-5">
+                {/* Avatar with Camera upload overlay */}
+                <div className="relative group shrink-0">
+                  <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-2xl bg-gradient-to-tr from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center font-black text-2xl sm:text-3xl shadow-md border-2 border-white ring-2 ring-slate-100 overflow-hidden relative">
+                    {(avatarUrl || currentUser.avatar) && !imgError ? (
+                      <img
+                        src={avatarUrl || currentUser.avatar}
+                        alt={name || currentUser.name}
+                        className="w-full h-full object-cover"
+                        onError={() => setImgError(true)}
+                      />
+                    ) : (
+                      ((name && name !== 'string' ? name : currentUser.name && currentUser.name !== 'string' ? currentUser.name : 'U').charAt(0).toUpperCase())
+                    )}
+                  </div>
 
-            {/* Left: Avatar (overlaps banner cleanly) + User Name & Role */}
-            <div className="flex items-end gap-3.5 sm:gap-4">
-              {/* Avatar overlapping banner */}
-              <div className="relative group shrink-0 -mt-12 sm:-mt-14 z-20">
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-tr from-[#c34c36] to-[#fce5da] text-white flex items-center justify-center font-black text-2xl sm:text-3xl shadow-xl ring-4 ring-white overflow-hidden bg-white relative">
-                  {(avatarUrl || currentUser.avatar) && !imgError ? (
-                    <img
-                      src={avatarUrl || currentUser.avatar}
-                      alt={name || currentUser.name}
-                      className="w-full h-full object-cover"
-                      onError={() => setImgError(true)}
-                    />
-                  ) : (
-                    ((name && name !== 'string' ? name : currentUser.name && currentUser.name !== 'string' ? currentUser.name : 'U').charAt(0).toUpperCase())
-                  )}
-                </div>
-
-                {/* Hidden File Input for Avatar upload */}
-                <input
-                  ref={avatarInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => handleFileUpload(e, 'avatar')}
-                />
-                <button
-                  type="button"
-                  onClick={() => avatarInputRef.current?.click()}
-                  disabled={uploadingField === 'avatar'}
-                  title={lang === 'vi' ? 'Thay đổi ảnh đại diện' : 'Change avatar'}
-                  className="absolute -bottom-1 -right-1 p-2 rounded-xl bg-white shadow-md border border-slate-200 text-slate-700 hover:text-[#c34c36] hover:scale-105 active:scale-95 transition cursor-pointer"
-                >
-                  {uploadingField === 'avatar' ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[#c34c36]" />
-                  ) : (
-                    <Camera className="w-3.5 h-3.5" />
-                  )}
-                </button>
-              </div>
-
-              {/* Name & Role Badge - completely readable on clean white */}
-              <div className="space-y-1.5 pb-0.5">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                    {name || currentUser.name}
-                  </h2>
-                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${roleInfo.className}`}
+                  {/* Hidden File Input for Avatar upload */}
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleFileUpload(e, 'avatar')}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={uploadingField === 'avatar'}
+                    title={lang === 'vi' ? 'Thay đổi ảnh đại diện' : 'Change avatar'}
+                    className="absolute -bottom-1 -right-1 p-1.5 rounded-lg bg-white shadow-md border border-slate-200 text-slate-700 hover:text-[#c34c36] hover:scale-105 active:scale-95 transition cursor-pointer"
                   >
-                    <span>{roleInfo.label}</span>
-                  </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                    SecondLife Member
-                  </span>
+                    {uploadingField === 'avatar' ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#c34c36]" />
+                    ) : (
+                      <Camera className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Name & Role Badges */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                      {name || currentUser.name}
+                    </h2>
+                    {isEmailVerified ? (
+                      <span title={lang === 'vi' ? 'Tài khoản đã xác thực' : 'Verified account'}>
+                        <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300 shadow-2xs">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        {lang === 'vi' ? 'Chưa xác thực OTP' : 'Unverified OTP'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold border ${roleInfo.className}`}
+                    >
+                      <span>{roleInfo.label}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                      SecondLife Member
+                    </span>
+                    {!isEmailVerified && onOpenVerifyEmail && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenVerifyEmail(email || currentUser.email)}
+                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#c34c36] hover:bg-[#a83b27] text-white shadow-xs cursor-pointer transition active:scale-95"
+                      >
+                        <Mail className="w-3 h-3" />
+                        <span>{lang === 'vi' ? 'Xác thực ngay' : 'Verify now'}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              {/* Right: Trust Badges */}
+              {currentUser.role !== 'buyer' && (
+                <div className="flex flex-row sm:flex-col items-start sm:items-end gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('security')}
+                    title={lang === 'vi' ? 'Xem chứng nhận định danh eKYC' : 'View eKYC certificate'}
+                    className="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-3.5 py-1.5 rounded-xl border border-emerald-200/80 font-bold text-xs shadow-2xs cursor-pointer transition active:scale-95"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span>{lang === 'vi' ? 'eKYC: Đã Xác Thực CCCD' : 'eKYC: ID Verified'}</span>
+                  </button>
+                  <div className="inline-flex items-center gap-1.5 bg-amber-50/90 text-slate-800 px-3.5 py-1.5 rounded-xl border border-amber-200/80 text-xs shadow-2xs">
+                    <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                    <span>{lang === 'vi' ? 'Điểm Uy Tín: ' : 'Trust Score: '}</span>
+                    <strong className="font-black text-amber-700">99/100</strong>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Right: Trust Badges */}
-            {currentUser.role !== 'buyer' && (
-              <div className="flex flex-row sm:flex-col items-start sm:items-end gap-1.5 w-full sm:w-auto pt-1 sm:pt-0">
+            {/* Tab Navigation - Pill Segmented Control Layout */}
+            <div className="mt-4">
+              <div className="p-1.5 bg-slate-100/90 rounded-2xl flex items-center justify-between gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none border border-slate-200/60">
                 <button
                   type="button"
-                  onClick={() => setActiveTab('security')}
-                  title={lang === 'vi' ? 'Xem chứng nhận định danh eKYC' : 'View eKYC certificate'}
-                  className="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-3 py-1 rounded-xl border border-emerald-200/80 font-bold text-xs shadow-xs cursor-pointer transition active:scale-95"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>{lang === 'vi' ? 'eKYC: Đã Xác Thực CCCD' : 'eKYC: ID Verified'}</span>
-                </button>
-                <div className="inline-flex items-center gap-1 bg-amber-50/90 text-slate-800 px-3 py-1 rounded-xl border border-amber-200/80 text-xs shadow-xs">
-                  <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                  <span>{lang === 'vi' ? 'Điểm Uy Tín: ' : 'Trust Score: '}</span>
-                  <strong className="font-black text-amber-700">99/100</strong>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Tab Navigation - Pill Segmented Control Layout: 4 Tabs */}
-          <div className="px-6 sm:px-8 mt-5">
-            <div className="p-1 sm:p-1.5 bg-slate-100/90 rounded-2xl flex items-center justify-between gap-1 sm:gap-1.5 overflow-x-auto scrollbar-none border border-slate-200/50">
-              <button
-                type="button"
-                onClick={() => setActiveTab('info')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                  activeTab === 'info'
-                    ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <User className={`w-4 h-4 shrink-0 ${activeTab === 'info' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                <span>{lang === 'vi' ? 'Cá Nhân' : 'Profile'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('wallet')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                  activeTab === 'wallet'
-                    ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <Wallet className={`w-4 h-4 shrink-0 ${activeTab === 'wallet' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                <span>{lang === 'vi' ? 'Ví Escrow' : 'Wallet'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('security')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                  activeTab === 'security' || activeTab === 'kyc'
-                    ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-              >
-                <Shield className={`w-4 h-4 shrink-0 ${activeTab === 'security' || activeTab === 'kyc' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                <span>{lang === 'vi' ? 'Bảo Mật' : 'Security'}</span>
-              </button>
-
-              {!['admin', 'staff', 'inspector'].includes(currentUser.role) && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('settings')}
-                  className={`flex-1 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                    activeTab === 'settings'
+                  onClick={() => setActiveTab('info')}
+                  className={`flex-1 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+                    activeTab === 'info'
                       ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                   }`}
                 >
-                  <Store className={`w-4 h-4 shrink-0 ${activeTab === 'settings' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                  <span>{lang === 'vi' ? 'Gian Hàng' : 'Store'}</span>
+                  <User className={`w-4 h-4 shrink-0 ${activeTab === 'info' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                  <span>{lang === 'vi' ? 'Cá Nhân' : 'Profile'}</span>
                 </button>
-              )}
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('wallet')}
+                  className={`flex-1 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+                    activeTab === 'wallet'
+                      ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                  }`}
+                >
+                  <Wallet className={`w-4 h-4 shrink-0 ${activeTab === 'wallet' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                  <span>{lang === 'vi' ? 'Ví Escrow' : 'Wallet'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('security')}
+                  className={`flex-1 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+                    activeTab === 'security' || activeTab === 'kyc'
+                      ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                  }`}
+                >
+                  <Shield className={`w-4 h-4 shrink-0 ${activeTab === 'security' || activeTab === 'kyc' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                  <span>{lang === 'vi' ? 'Bảo Mật' : 'Security'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('reports')}
+                  className={`flex-1 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+                    activeTab === 'reports'
+                      ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                  }`}
+                >
+                  <AlertTriangle className={`w-4 h-4 shrink-0 ${activeTab === 'reports' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                  <span>{lang === 'vi' ? 'Khiếu Nại' : 'Reports'}</span>
+                </button>
+
+                {isApprovedSeller && !['admin', 'staff', 'inspector'].includes(currentUser.role) && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('settings')}
+                    className={`flex-1 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+                      activeTab === 'settings'
+                        ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                    }`}
+                  >
+                    <Store className={`w-4 h-4 shrink-0 ${activeTab === 'settings' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                    <span>{lang === 'vi' ? 'Gian Hàng' : 'Store'}</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
         {/* Tab Content Body */}
-        <div className="p-6 sm:p-8 flex-1 overflow-y-auto subtle-scrollbar">
+        <div className="p-6 sm:p-8 lg:p-10 flex-1 overflow-y-auto subtle-scrollbar">
           {/* TAB 1: THÔNG TIN CÁ NHÂN */}
           {activeTab === 'info' && (
-            <form onSubmit={handleSave} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                    {lang === 'vi' ? 'Họ và Tên' : 'Full Name'}
-                  </label>
-                  <div className="relative">
-                    <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      required
-                      placeholder={lang === 'vi' ? 'Nhập họ và tên' : 'Enter full name'}
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
-                    />
-                  </div>
-                </div>
+            <form onSubmit={handleSave} className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                {/* Left Column: Personal Information & Bank Card Preview (lg:col-span-5) */}
+                <div className="lg:col-span-5 space-y-4">
+                  <div className="bg-slate-50/70 p-4 sm:p-5 rounded-2xl border border-slate-200/90 space-y-4 shadow-2xs">
+                    <div className="border-b border-slate-200/80 pb-2">
+                      <h3 className="font-extrabold text-[#24263e] text-sm flex items-center gap-2">
+                        <User className="w-4 h-4 text-[#c34c36]" />
+                        <span>{lang === 'vi' ? 'Thông Tin Cá Nhân Cơ Bản' : 'Personal Information'}</span>
+                      </h3>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {lang === 'vi' ? 'Thông tin dùng để định danh tài khoản và liên hệ khi có giao dịch' : 'Details used for identification and transactions'}
+                      </p>
+                    </div>
 
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold text-slate-700 block">
-                      {lang === 'vi' ? 'Địa Chỉ Email' : 'Email Address'}
-                    </label>
-                    {currentUser.emailVerified ? (
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 inline-flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> {lang === 'vi' ? 'Đã xác thực' : 'Verified'}
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => onOpenVerifyEmail?.(email || currentUser.email)}
-                        className="text-[10px] font-bold text-[#c34c36] bg-[#fce5da]/50 hover:bg-[#fce5da] px-2 py-0.5 rounded-md border border-[#c34c36]/20 inline-flex items-center gap-1 cursor-pointer transition shadow-2xs"
-                      >
-                        <Mail className="w-3 h-3" /> {lang === 'vi' ? 'Xác thực OTP ngay' : 'Verify OTP now'}
-                      </button>
+                    {!isEmailVerified && (
+                      <div className="p-3 sm:p-3.5 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                        <div className="flex items-start gap-2.5">
+                          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-xs font-black text-amber-950">
+                              {lang === 'vi' ? 'Tài khoản chưa xác thực Email OTP' : 'Email OTP Not Verified'}
+                            </p>
+                            <p className="text-[11px] text-amber-800 leading-snug mt-0.5">
+                              {lang === 'vi'
+                                ? 'Hòm thư của bạn chưa được kích hoạt mã OTP. Vui lòng xác thực bổ sung để bảo vệ tài khoản và mở khóa đầy đủ quyền giao dịch.'
+                                : 'Your email has not been verified. Please complete OTP verification to secure your account.'}
+                            </p>
+                          </div>
+                        </div>
+                        {onOpenVerifyEmail && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenVerifyEmail(email || currentUser.email)}
+                            className="shrink-0 px-3.5 py-1.5 rounded-lg bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition cursor-pointer active:scale-95 whitespace-nowrap"
+                          >
+                            <Mail className="w-3.5 h-3.5" />
+                            <span>{lang === 'vi' ? 'Xác thực OTP ngay' : 'Verify OTP Now'}</span>
+                          </button>
+                        )}
+                      </div>
                     )}
-                  </div>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      placeholder="email@example.com"
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
-                    />
-                  </div>
-                </div>
 
-                {currentRole !== 'admin' && (
-                  <>
-                    <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                    {lang === 'vi' ? 'Số Điện Thoại (Nhận mã OTP / Bưu tá gọi)' : 'Phone Number (OTP / Courier)'}
-                  </label>
-                  <div className="relative">
-                    <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      required
-                      placeholder="0912 345 678"
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
-                    />
-                  </div>
-                </div>
+                    <div className="space-y-3.5">
+                      {/* Name */}
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 mb-1.5 block">
+                          {lang === 'vi' ? 'Họ và Tên' : 'Full Name'}
+                        </label>
+                        <div className="relative">
+                          <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            required
+                            placeholder={lang === 'vi' ? 'Nhập họ và tên' : 'Enter full name'}
+                            className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
+                          />
+                        </div>
+                      </div>
 
-                <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                    {lang === 'vi' ? 'Ngày Sinh' : 'Date of Birth'}
-                  </label>
-                  <div className="relative">
-                    <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="date"
-                      value={birthday}
-                      onChange={(e) => setBirthday(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
-                    />
-                  </div>
-                </div>
-                </>
-                )}
-              </div>
+                      {/* Email */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-xs font-bold text-slate-700 block">
+                            {lang === 'vi' ? 'Địa Chỉ Email' : 'Email Address'}
+                          </label>
+                          {isEmailVerified ? (
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 inline-flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" /> {lang === 'vi' ? 'Đã xác thực' : 'Verified'}
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-300 inline-flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3 text-amber-600" /> {lang === 'vi' ? 'Chưa xác thực' : 'Unverified'}
+                              </span>
+                              {onOpenVerifyEmail && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenVerifyEmail(email || currentUser.email)}
+                                  className="text-[11px] font-bold text-white bg-[#c34c36] hover:bg-[#a83b27] px-2.5 py-0.5 rounded-md border border-[#c34c36] inline-flex items-center gap-1 cursor-pointer transition shadow-2xs hover:shadow-xs active:scale-95"
+                                  title={lang === 'vi' ? 'Bấm để nhận mã OTP và xác thực email' : 'Click to verify email OTP'}
+                                >
+                                  <Mail className="w-3 h-3 text-white" /> {lang === 'vi' ? 'Xác thực OTP ngay' : 'Verify OTP now'}
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                            placeholder="email@example.com"
+                            className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
+                          />
+                        </div>
+                        {!isEmailVerified && (
+                          <div className="mt-1.5 flex items-center justify-between text-[11px] text-amber-700 px-0.5">
+                            <span className="flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
+                              {lang === 'vi' ? 'Hộp thư chưa được xác thực mã OTP' : 'Email OTP not confirmed'}
+                            </span>
+                            {onOpenVerifyEmail && (
+                              <button
+                                type="button"
+                                onClick={() => onOpenVerifyEmail(email || currentUser.email)}
+                                className="font-bold text-[#c34c36] hover:underline cursor-pointer"
+                              >
+                                {lang === 'vi' ? 'Xác thực bổ sung ngay →' : 'Verify now →'}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
 
-              {currentRole !== 'admin' && (
-                <div>
-                <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                  {lang === 'vi' ? 'Giới Tính' : 'Gender'}
-                </label>
-                <div className="grid grid-cols-3 gap-2.5 max-w-sm">
-                  {(['male', 'female', 'other'] as const).map((g) => {
-                    const isSelected = gender === g;
-                    const labels = {
-                      male: lang === 'vi' ? 'Nam' : 'Male',
-                      female: lang === 'vi' ? 'Nữ' : 'Female',
-                      other: lang === 'vi' ? 'Khác' : 'Other',
-                    };
-                    return (
-                      <button
-                        key={g}
-                        type="button"
-                        onClick={() => setGender(g)}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                          isSelected
-                            ? 'bg-[#c34c36]/10 border-[#c34c36] text-[#c34c36] shadow-2xs font-black'
-                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                        }`}
-                      >
-                        <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-[#c34c36]' : 'bg-slate-300'}`} />
-                        <span>{labels[g]}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              )}
+                      {/* Phone & Birthday */}
+                      {currentRole !== 'admin' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs font-bold text-slate-700 mb-1.5 block">
+                              {lang === 'vi' ? 'Số Điện Thoại' : 'Phone Number'}
+                            </label>
+                            <div className="relative">
+                              <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                              <input
+                                type="text"
+                                value={phone}
+                                onChange={(e) => setPhone(e.target.value)}
+                                required
+                                placeholder="0912 345 678"
+                                className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
+                              />
+                            </div>
+                          </div>
 
-              {/* Địa Chỉ Hành Chính 3 Cấp & Chi Tiết (Open API) */}
-              {currentRole !== 'admin' && (
-                <div className="p-3.5 bg-gradient-to-br from-[#faf8f5] to-orange-50/20 border border-slate-200 rounded-2xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <MapPin className="w-4 h-4 text-[#c34c36]" />
-                    <span>{lang === 'vi' ? 'Địa Chỉ Cư Trú / Nhận Hàng' : 'Residential / Delivery Address'}</span>
-                  </label>
-                  <span className="text-[10px] text-slate-400 font-medium">
-                    {lang === 'vi' ? 'Dữ liệu hành chính chuẩn (Open API)' : 'Standard administrative data'}
-                  </span>
-                </div>
+                          <div>
+                            <label className="text-xs font-bold text-slate-700 mb-1.5 block">
+                              {lang === 'vi' ? 'Ngày Sinh' : 'Date of Birth'}
+                            </label>
+                            <div className="relative">
+                              <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                              <input
+                                type="date"
+                                value={birthday}
+                                onChange={(e) => setBirthday(e.target.value)}
+                                className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
-                {/* 3 Dropdown: Tỉnh / Quận / Phường */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      {lang === 'vi' ? 'Tỉnh / Thành Phố' : 'Province / City'} <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={selectedProvinceCode}
-                      onChange={handleUserProvinceChange}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition cursor-pointer"
-                    >
-                      <option value="">
-                        {isLoadingUserProvinces
-                          ? (lang === 'vi' ? 'Đang tải tỉnh/thành...' : 'Loading provinces...')
-                          : `-- ${lang === 'vi' ? 'Chọn Tỉnh / Thành' : 'Select Province'} --`}
-                      </option>
-                      {userProvinces.map((p) => (
-                        <option key={p.code} value={p.code}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      {lang === 'vi' ? 'Quận / Huyện' : 'District'} <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={selectedDistrictCode}
-                      onChange={handleUserDistrictChange}
-                      disabled={!selectedProvinceCode || isLoadingUserDistricts}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
-                    >
-                      <option value="">
-                        {isLoadingUserDistricts
-                          ? (lang === 'vi' ? 'Đang tải quận/huyện...' : 'Loading districts...')
-                          : !selectedProvinceCode
-                            ? (lang === 'vi' ? '-- Chọn tỉnh trước --' : '-- Select province first --')
-                            : `-- ${lang === 'vi' ? 'Chọn Quận / Huyện' : 'Select District'} --`}
-                      </option>
-                      {userDistricts.map((d) => (
-                        <option key={d.code} value={d.code}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      {lang === 'vi' ? 'Phường / Xã' : 'Ward / Commune'} <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={selectedWardCode}
-                      onChange={handleUserWardChange}
-                      disabled={!selectedDistrictCode || isLoadingUserWards}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
-                    >
-                      <option value="">
-                        {isLoadingUserWards
-                          ? (lang === 'vi' ? 'Đang tải phường/xã...' : 'Loading wards...')
-                          : !selectedDistrictCode
-                            ? (lang === 'vi' ? '-- Chọn quận trước --' : '-- Select district first --')
-                            : `-- ${lang === 'vi' ? 'Chọn Phường / Xã' : 'Select Ward'} --`}
-                      </option>
-                      {userWards.map((w) => (
-                        <option key={w.code} value={w.code}>
-                          {w.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Input Text: Số nhà, tên đường chi tiết */}
-                <div>
-                  <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                    {lang === 'vi' ? 'Số nhà, tên đường, ngõ ngách chi tiết' : 'Street address / House number'}
-                  </label>
-                  <input
-                    type="text"
-                    value={userStreetAddress}
-                    onChange={handleUserStreetAddressChange}
-                    placeholder={lang === 'vi' ? 'Ví dụ: Số 202, Đường số 8, Khu phố 6' : 'e.g. 202 Street 8'}
-                    className="w-full px-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
-                  />
-                </div>
-
-                {/* Xem trước địa chỉ hoàn chỉnh */}
-                {(computeFullAddress() || address) && (
-                  <div className="p-2.5 bg-white/80 rounded-xl border border-orange-200/60 flex items-start gap-2 text-xs">
-                    <MapPin className="w-3.5 h-3.5 text-[#c34c36] shrink-0 mt-0.5" />
-                    <div className="text-slate-700">
-                      <span className="font-bold text-slate-800">{lang === 'vi' ? 'Địa chỉ đầy đủ: ' : 'Full Address: '}</span>
-                      <span>{computeFullAddress() || address}</span>
+                      {/* Gender */}
+                      {currentRole !== 'admin' && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="text-xs font-bold text-slate-700">
+                              {lang === 'vi' ? 'Giới Tính' : 'Gender'}
+                            </label>
+                            {!gender && (
+                              <span className="text-[11px] text-slate-400 italic">
+                                {lang === 'vi' ? '(Chưa chọn)' : '(Unspecified)'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            {(['male', 'female', 'other'] as const).map((g) => {
+                              const isSelected = gender?.toLowerCase() === g;
+                              const labels = {
+                                male: lang === 'vi' ? 'Nam' : 'Male',
+                                female: lang === 'vi' ? 'Nữ' : 'Female',
+                                other: lang === 'vi' ? 'Khác' : 'Other',
+                              };
+                              return (
+                                <button
+                                  key={g}
+                                  type="button"
+                                  onClick={() => setGender(isSelected ? '' : g)}
+                                  className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                                    isSelected
+                                      ? 'bg-[#c34c36]/10 border-[#c34c36] text-[#c34c36] shadow-2xs font-black'
+                                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-[#c34c36]' : 'bg-slate-300'}`} />
+                                  <span>{labels[g]}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                )}
+
+                  {/* Quick Card: Bank & Wallet Status Summary */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/70 to-orange-50/50 border border-amber-200/80 flex items-center justify-between gap-3 shadow-2xs">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-orange-100 text-[#c34c36] flex items-center justify-center font-bold shrink-0">
+                        <Wallet className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 block">
+                          {lang === 'vi' ? 'Ví & Tài Khoản Ngân Hàng' : 'Wallet & Bank Account'}
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          {bankName && accountNumber
+                            ? `${bankName} •••• ${accountNumber.slice(-4)}`
+                            : (lang === 'vi' ? 'Chưa liên kết tài khoản nhận tiền' : 'No payout account linked')}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('wallet')}
+                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-orange-50 text-[#c34c36] border border-orange-200 font-bold text-xs shadow-2xs transition cursor-pointer shrink-0"
+                    >
+                      {lang === 'vi' ? 'Chi tiết ví →' : 'View wallet →'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right Column: Lalamove Leaflet Map Address Picker (lg:col-span-7) */}
+                <div className="lg:col-span-7 space-y-4">
+                  {currentRole !== 'admin' && (
+                    <div className="space-y-2">
+                      <LalamoveAddressPicker
+                        initialName={name || currentUser?.name || ''}
+                        initialPhone={phone || currentUser?.phone || ''}
+                        onNameChange={(val) => setName(val)}
+                        onPhoneChange={(val) => setPhone(val)}
+                        initialLatitude={userLatitude ?? undefined}
+                        initialLongitude={userLongitude ?? undefined}
+                        initialAddress={address || userStreetAddress || currentUser?.address || ''}
+                        onAddressConfirmed={(data) => {
+                          setUserLatitude(data.latitude);
+                          setUserLongitude(data.longitude);
+                          setAddress(data.address);
+                          setUserStreetAddress(data.address);
+                          setPickupLatitude(data.latitude);
+                          setPickupLongitude(data.longitude);
+                          setPickupAddress(data.address);
+
+                          const extracted = extractWardAndCity(data.address);
+                          let extWard = '';
+                          let extProv = data.city || '';
+                          if (extracted) {
+                            const [w, c] = extracted.split(',').map((s) => s.trim());
+                            if (w && c) {
+                              extWard = w;
+                              extProv = c;
+                            } else if (w) {
+                              extWard = w;
+                            }
+                          }
+                          if (extWard) setSelectedWardName(extWard);
+                          if (extProv) setSelectedProvinceName(extProv);
+                          if (data.name && !name) setName(data.name);
+                          if (data.phone && !phone) setPhone(data.phone);
+                          saveSellerAddress(data.address, extWard || undefined, extProv || data.city);
+                        }}
+                        lang={lang}
+                        title={lang === 'vi' ? 'Địa Chỉ Cư Trú / Nhận Hàng Của Bạn' : 'Your Residential / Delivery Address'}
+                        description={lang === 'vi' ? 'Định vị GPS và ghim trên bản đồ để tự động đồng bộ khi mua hàng hoặc đăng ký bán hàng.' : 'Set GPS coordinates to auto-sync for checkout and selling.'}
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
-              )}
 
-
-
-              {/* Action Buttons inside Tab 1 */}
-              <div className="pt-3 flex items-center justify-between border-t border-slate-100">
-                <div>
+              {/* Action Feedback inside Tab 1 */}
+              {(isSaved || saveError) && (
+                <div className="pt-4 flex items-center justify-start border-t border-slate-100">
                   {isSaved && (
                     <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 animate-in fade-in">
                       <CheckCircle2 className="w-4 h-4" />
@@ -1782,25 +2271,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     </span>
                   )}
                 </div>
-
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="px-6 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#b03e29] active:scale-95 text-white font-bold text-xs sm:text-sm shadow-md hover:shadow-lg disabled:opacity-50 transition flex items-center gap-2 cursor-pointer"
-                >
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>{lang === 'vi' ? 'Đang lưu...' : 'Saving...'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4" />
-                      <span>{lang === 'vi' ? 'Lưu Thay Đổi' : 'Save Changes'}</span>
-                    </>
-                  )}
-                </button>
-              </div>
+              )}
             </form>
           )}
 
@@ -1842,8 +2313,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       ? 'Tiền trong ví dùng để thanh toán mua hàng an toàn qua Quỹ Escrow hoặc rút về tài khoản ngân hàng.'
                       : 'Funds in your wallet used for secure Escrow transactions or bank withdrawal.'}
                   </p>
-                  {onOpenTopUp && (
-                    <div className="pt-1">
+                  <div className="pt-1 flex flex-wrap items-center gap-2">
+                    {onOpenTopUp && (
                       <button
                         type="button"
                         onClick={onOpenTopUp}
@@ -1852,8 +2323,16 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         <PlusCircle className="w-3.5 h-3.5" />
                         <span>{lang === 'vi' ? 'Nạp Tiền Vào Ví (VietQR)' : 'Top Up Wallet (VietQR)'}</span>
                       </button>
-                    </div>
-                  )}
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsWithdrawalModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-[#24263e] border border-[#24263e]/20 text-xs font-black shadow-sm transition cursor-pointer"
+                    >
+                      <ArrowUpRight className="w-3.5 h-3.5 text-[#c34c36]" />
+                      <span>{lang === 'vi' ? 'Rút Tiền Về Ngân Hàng' : 'Withdraw to Bank'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-[#faf8f5] to-[#faf8f5] border border-[#c34c36]/30 text-[#24263e] space-y-2 relative overflow-hidden shadow-xs">
@@ -1904,13 +2383,55 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1">
                   <div>
                     <label className="text-slate-500 text-[11px] block">{lang === 'vi' ? 'Ngân hàng' : 'Bank name'}</label>
-                    <input
-                      type="text"
-                      value={bankName}
-                      onChange={(e) => setBankName(e.target.value)}
-                      placeholder={lang === 'vi' ? 'VD: Vietcombank, MB Bank...' : 'e.g. Vietcombank'}
-                      className="mt-1 w-full p-2 bg-white rounded-lg border border-gray-200 font-semibold text-slate-900 placeholder:text-slate-400 placeholder:font-normal"
-                    />
+                    {isCustomBank ? (
+                      <div className="relative mt-1 flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={bankName}
+                          onChange={(e) => setBankName(e.target.value)}
+                          placeholder={lang === 'vi' ? 'Nhập tên ngân hàng...' : 'Enter bank name...'}
+                          autoFocus
+                          className="w-full p-2 bg-white rounded-lg border border-[#24263e] font-semibold text-slate-900 text-xs placeholder:text-slate-400 placeholder:font-normal focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCustomBank(false);
+                            setBankName(POPULAR_VIETNAM_BANKS[0].name);
+                          }}
+                          className="px-2.5 py-2 rounded-lg border border-gray-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-[11px] font-semibold whitespace-nowrap cursor-pointer transition shadow-sm"
+                        >
+                          {lang === 'vi' ? 'Chọn lại' : 'Select'}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative mt-1">
+                        <select
+                          value={getMatchedBankName(bankName)}
+                          onChange={(e) => {
+                            if (e.target.value === '__OTHER__') {
+                              setIsCustomBank(true);
+                              setBankName('');
+                            } else {
+                              setBankName(e.target.value);
+                            }
+                          }}
+                          className="w-full p-2 pr-9 bg-white rounded-lg border border-gray-200 font-semibold text-slate-900 text-xs appearance-none focus:outline-none focus:border-[#24263e] cursor-pointer"
+                        >
+                          <option value="">{lang === 'vi' ? '-- Chọn ngân hàng --' : '-- Select bank --'}</option>
+                          {POPULAR_VIETNAM_BANKS.map((b) => (
+                            <option key={b.code} value={b.name}>
+                              {b.name} - {b.fullName} ({b.code})
+                            </option>
+                          ))}
+                          {Boolean(bankName && !POPULAR_VIETNAM_BANKS.some((b) => b.name.toLowerCase() === bankName.trim().toLowerCase())) && (
+                            <option value={bankName}>{bankName}</option>
+                          )}
+                          <option value="__OTHER__">{lang === 'vi' ? '➕ Ngân hàng khác...' : '➕ Other bank...'}</option>
+                        </select>
+                        <ChevronDown className="w-4 h-4 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="text-slate-500 text-[11px] block">{lang === 'vi' ? 'Số tài khoản' : 'Account number'}</label>
@@ -2003,18 +2524,37 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         : 'Account not yet verified via eKYC'}
                     </h4>
                     <p className="text-xs text-slate-600 leading-relaxed">
-                      {lang === 'vi'
-                        ? 'Vui lòng hoàn tất xác thực thông tin tại mục "Gian Hàng" để bảo vệ tài khoản và mở khóa tính năng Người Bán.'
-                        : 'Please complete eKYC verification in the "Store" tab to unlock seller capabilities.'}
+                      {isApprovedSeller
+                        ? (lang === 'vi'
+                            ? 'Vui lòng hoàn tất xác thực thông tin tại mục "Gian Hàng" để bảo vệ tài khoản và mở khóa tính năng Người Bán.'
+                            : 'Please complete eKYC verification in the "Store" tab to unlock seller capabilities.')
+                        : (lang === 'vi'
+                            ? 'Đăng ký tài khoản Người Bán để kích hoạt tính năng định danh eKYC và mở khóa gian hàng đăng bán thiết bị.'
+                            : 'Register as a Seller to activate eKYC verification and unlock your store capabilities.')}
                     </p>
                     <div className="pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('settings')}
-                        className="text-xs font-bold text-[#c34c36] hover:underline cursor-pointer"
-                      >
-                        {lang === 'vi' ? 'Tiến hành định danh eKYC ngay →' : 'Complete eKYC now →'}
-                      </button>
+                      {isApprovedSeller ? (
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('settings')}
+                          className="text-xs font-bold text-[#c34c36] hover:underline cursor-pointer"
+                        >
+                          {lang === 'vi' ? 'Tiến hành định danh eKYC ngay →' : 'Complete eKYC now →'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onOpenSellerRegister) {
+                              onClose();
+                              onOpenSellerRegister();
+                            }
+                          }}
+                          className="text-xs font-bold text-[#c34c36] hover:underline cursor-pointer"
+                        >
+                          {lang === 'vi' ? 'Đăng ký Người Bán ngay →' : 'Register as Seller now →'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2060,6 +2600,44 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                   {lang === 'vi' ? 'Cài Đặt An Toàn & Bảo Vệ Tài Khoản' : 'Security & Account Protection Settings'}
                 </h4>
+
+                {/* Email Verification Checklist Card */}
+                <div className="p-3.5 rounded-xl border border-gray-200 bg-white flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Mail className="w-4 h-4 text-slate-500" />
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 block">
+                        {lang === 'vi' ? 'Xác thực hòm thư Email (OTP)' : 'Email Verification (OTP)'}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        Email: {email || currentUser.email}
+                      </span>
+                    </div>
+                  </div>
+                  {isEmailVerified ? (
+                    <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 inline-flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      {lang === 'vi' ? 'Đã Xác Thực' : 'Verified'}
+                    </span>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-300 inline-flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 text-amber-600" />
+                        {lang === 'vi' ? 'Chưa Xác Thực' : 'Unverified'}
+                      </span>
+                      {onOpenVerifyEmail && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenVerifyEmail(email || currentUser.email)}
+                          className="px-2.5 py-1 rounded-lg bg-[#c34c36] hover:bg-[#a83b27] text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition cursor-pointer active:scale-95"
+                        >
+                          <Mail className="w-3 h-3" />
+                          <span>{lang === 'vi' ? 'Xác thực ngay' : 'Verify now'}</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 <div className="p-3.5 rounded-xl border border-gray-200 bg-white flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -2129,7 +2707,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           )}
 
           {/* TAB 4: ĐỔI VAI TRÒ */}
-          {activeTab === 'settings' && (
+          {activeTab === 'settings' && isApprovedSeller && (
             ['admin', 'staff', 'inspector'].includes(currentUser.role) ? (
               <div className="py-12 px-4 text-center max-w-md mx-auto space-y-4 animate-in fade-in">
                 <div className="w-16 h-16 rounded-3xl bg-rose-50 text-[#c34c36] flex items-center justify-center mx-auto shadow-inner">
@@ -2206,14 +2784,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     </p>
                   </div>
                 </div>
-                {isSellerRegistered && (
+                {isApprovedSeller && (
                   <div className="shrink-0 flex items-center gap-2">
                     {currentUser.role === 'seller' ? (
                       <button
                         type="button"
                         onClick={() => {
-                          if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
-                          if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
                           setIsSellerRegistered(true);
                           setShowSellerRegistrationForm(false);
                           onRoleChange('buyer');
@@ -2233,8 +2809,6 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
-                          if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
                           setIsSellerRegistered(true);
                           setShowSellerRegistrationForm(false);
                           onRoleChange('seller');
@@ -2263,8 +2837,16 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 </div>
               )}
 
+              {/* Error Notification */}
+              {sellerFormError && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium flex items-center gap-2.5 animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{sellerFormError}</span>
+                </div>
+              )}
+
               {/* THÔNG TIN GIAN HÀNG ĐÃ ĐĂNG KÝ (HIỂN THỊ KHI ĐÃ LÀ SELLER HOẶC ĐÃ ĐĂNG KÝ) */}
-              {isSellerRegistered && !showSellerRegistrationForm && (
+              {hasRegistered && !showSellerRegistrationForm && (
                 <div className="p-4 rounded-2xl bg-slate-50 border border-gray-200 space-y-3 animate-in fade-in">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -2273,7 +2855,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         {lang === 'vi' ? 'Hồ Sơ Gian Hàng Của Bạn' : 'Your Seller Store Profile'}
                       </span>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        currentUser.role === 'seller' || currentUser.kycStatus === 'verified' || existingVerification?.status === 'APPROVED'
+                        isApprovedSeller
                           ? 'bg-emerald-100 text-emerald-800'
                           : isRejected
                             ? 'bg-rose-100 text-rose-800'
@@ -2281,9 +2863,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                               ? 'bg-orange-100 text-orange-800'
                               : 'bg-amber-100 text-amber-800 border border-amber-200'
                       }`}>
-                        {currentUser.kycStatus === 'pending'
-                          ? (lang === 'vi' ? 'Đang Chờ Quản Trị Viên Duyệt' : 'Pending Review')
-                          : (currentUser.role === 'seller' || currentUser.kycStatus === 'verified')
+                        {isApprovedSeller
                           ? (lang === 'vi' ? 'Đã Kích Hoạt' : 'Active')
                           : isRejected
                             ? (lang === 'vi' ? 'Đã Bị Từ Chối' : 'Rejected')
@@ -2293,48 +2873,42 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       </span>
                     </div>
                     <div className="flex items-center gap-3">
-                      {currentUser.role === 'seller' ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
-                            if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
-                            setIsSellerRegistered(true);
-                            setShowSellerRegistrationForm(false);
-                            onRoleChange('buyer');
-                            onUpdateProfile({ ...currentUser, role: 'buyer', isSellerRegistered: true });
-                            setSellerFormSuccess(
-                              lang === 'vi'
-                                ? 'Đã chuyển sang vai trò Người Mua (Buyer).'
-                                : 'Switched to Buyer role.'
-                            );
-                            setTimeout(() => setSellerFormSuccess(null), 3000);
-                          }}
-                          className="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
-                        >
-                          {lang === 'vi' ? 'Chuyển về Người Mua' : 'Switch to Buyer'}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (currentUser.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
-                            if (currentUser.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
-                            setIsSellerRegistered(true);
-                            setShowSellerRegistrationForm(false);
-                            onRoleChange('seller');
-                            onUpdateProfile({ ...currentUser, role: 'seller', isSellerRegistered: true });
-                            setSellerFormSuccess(
-                              lang === 'vi'
-                                ? 'Đã chuyển sang vai trò Người Bán (Seller).'
-                                : 'Switched to Seller role.'
-                            );
-                            setTimeout(() => setSellerFormSuccess(null), 3000);
-                          }}
-                          className="text-xs font-bold text-[#c34c36] hover:text-[#24263e] cursor-pointer"
-                        >
-                          {lang === 'vi' ? 'Chuyển về Người Bán' : 'Switch to Seller'}
-                        </button>
+                      {isApprovedSeller && (
+                        currentUser.role === 'seller' ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onRoleChange('buyer');
+                              onUpdateProfile({ ...currentUser, role: 'buyer', isSellerRegistered: true });
+                              setSellerFormSuccess(
+                                lang === 'vi'
+                                  ? 'Đã chuyển sang vai trò Người Mua (Buyer).'
+                                  : 'Switched to Buyer role.'
+                              );
+                              setTimeout(() => setSellerFormSuccess(null), 3000);
+                            }}
+                            className="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
+                          >
+                            {lang === 'vi' ? 'Chuyển về Người Mua' : 'Switch to Buyer'}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onRoleChange('seller');
+                              onUpdateProfile({ ...currentUser, role: 'seller', isSellerRegistered: true });
+                              setSellerFormSuccess(
+                                lang === 'vi'
+                                  ? 'Đã chuyển sang vai trò Người Bán (Seller).'
+                                  : 'Switched to Seller role.'
+                              );
+                              setTimeout(() => setSellerFormSuccess(null), 3000);
+                            }}
+                            className="text-xs font-bold text-[#c34c36] hover:text-[#24263e] cursor-pointer"
+                          >
+                            {lang === 'vi' ? 'Chuyển về Người Bán' : 'Switch to Seller'}
+                          </button>
+                        )
                       )}
                       {!isPendingReview && (
                         <button
@@ -2371,10 +2945,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <div className="p-2.5 bg-white rounded-xl border border-gray-200/80 sm:col-span-2">
                       <span className="text-[10px] text-slate-400 block mb-0.5">{lang === 'vi' ? 'Địa chỉ kho bưu tá lấy hàng' : 'Courier pickup warehouse address'}</span>
                       <span className="font-medium text-slate-800">
-                        {pickupAddress || address || (
+                        {pickupAddress || address || currentUser.pickupAddress || currentUser.address || (
                           <span className="text-slate-400 italic">{lang === 'vi' ? 'Chưa cập nhật địa chỉ kho (Bấm Chỉnh sửa thông tin bên trên để thêm)' : 'Not updated'}</span>
                         )}
                       </span>
+                      {(pickupLatitude || currentUser.latitude || userLatitude) && (pickupLongitude || currentUser.longitude || userLongitude) && (
+                        <span className="block text-[10px] text-orange-600 font-mono mt-0.5 font-semibold">
+                          📍 GPS: {(pickupLatitude ?? currentUser.latitude ?? userLatitude)?.toFixed(5)}, {(pickupLongitude ?? currentUser.longitude ?? userLongitude)?.toFixed(5)}
+                        </span>
+                      )}
                     </div>
                     <div className="p-2.5 bg-white rounded-xl border border-gray-200/80">
                       <span className="text-[10px] text-slate-400 block mb-0.5">{lang === 'vi' ? 'Số CCCD định danh' : 'Citizen ID number'}</span>
@@ -2394,7 +2973,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
                   {/* Status explanation */}
                   <div className="text-xs space-y-2 pt-1">
-                    {currentUser.role === 'seller' || existingVerification?.status === 'APPROVED' ? (
+                    {isApprovedSeller ? (
                       <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex items-center justify-between gap-3">
                         <div>
                           <span className="font-bold block text-emerald-800">{lang === 'vi' ? 'Tài khoản người bán đã kích hoạt!' : 'Seller account is active!'}</span>
@@ -2439,7 +3018,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           </button>
                         </div>
                       </div>
-                    ) : (
+                    ) : isPendingReview ? (
                       <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-900 space-y-1.5">
                         <div className="flex items-center gap-2 font-bold text-amber-800">
                           <Clock className="w-4 h-4 text-amber-600 shrink-0 animate-spin" />
@@ -2451,13 +3030,13 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                             : 'Your profile is awaiting review by SecondLife administrators. Please wait for approval within 24 working hours. You cannot edit or resubmit during this time.'}
                         </p>
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               )}
 
               {/* FORM ĐĂNG KÝ CHUYỂN TÀI KHOẢN NGƯỜI BÁN */}
-              {(showSellerRegistrationForm || (!isSellerRegistered && currentUser.role !== 'seller')) && !isPendingReview && (
+              {(!hasRegistered || showSellerRegistrationForm) && !isPendingReview && (
                 <form
                   onSubmit={handleRegisterSeller}
                   className="p-4 sm:p-5 rounded-3xl bg-gradient-to-b from-white to-slate-50 border-2 border-[#c34c36]/30 shadow-md space-y-4 animate-in fade-in"
@@ -2469,18 +3048,18 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       </div>
                       <div>
                         <h5 className="text-xs font-black text-slate-900 uppercase tracking-wide">
-                          {isSellerRegistered
+                          {isApprovedSeller
                             ? (lang === 'vi' ? 'Cập Nhật Thông Tin Gian Hàng' : 'Update Store Information')
                             : (lang === 'vi' ? 'Đơn Đăng Ký Chuyển Tài Khoản Người Bán' : 'Seller Registration Form')}
                         </h5>
                         <p className="text-[11px] text-slate-500">
                           {lang === 'vi'
-                            ? 'Điền thông tin để Kỹ sư Hub và đơn vị vận chuyển (GHTK/GHN) đến nhận thiết bị giám định'
-                            : 'Fill in details so Hub inspectors and couriers (GHTK/GHN) can collect devices for inspection'}
+                            ? 'Điền thông tin để Kỹ sư Hub và đơn vị vận chuyển (Lalamove) đến nhận thiết bị giám định'
+                            : 'Fill in details so Hub inspectors and couriers (Lalamove) can collect devices for inspection'}
                         </p>
                       </div>
                     </div>
-                    {isSellerRegistered && (
+                    {hasRegistered && (
                       <button
                         type="button"
                         onClick={() => setShowSellerRegistrationForm(false)}
@@ -2678,151 +3257,27 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       )}
                     </div>
 
-                    {/* Warehouse Pickup Address Section - Powered by BE API */}
-                    <div className="space-y-2.5 p-3.5 bg-gradient-to-br from-[#faf8f5] to-orange-50/20 rounded-2xl border border-gray-200">
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <label className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
-                          <MapPin className="w-3.5 h-3.5 text-[#c34c36]" />
-                          <span>{lang === 'vi' ? 'Địa Chỉ Kho / Nơi Bưu Tá Đến Lấy Hàng Giao Hub' : 'Warehouse / Pickup Location for Hub'}</span>
-                          <span className="text-red-500">*</span>
-                        </label>
-
-                        <div className="flex items-center gap-1.5 sm:gap-2">
-                          {/* Live GPS Geolocation Button */}
-                          <button
-                            type="button"
-                            onClick={handleUseCurrentLocation}
-                            disabled={isDetectingLocation}
-                            title={lang === 'vi' ? 'Định vị GPS vị trí hiện tại và tự động điền' : 'Detect current GPS location and auto-fill'}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition shadow-2xs cursor-pointer disabled:opacity-50"
-                          >
-                            <LocateFixed className={`w-3 h-3 ${isDetectingLocation ? 'animate-spin' : ''}`} />
-                            <span>
-                              {isDetectingLocation
-                                ? (lang === 'vi' ? 'Đang định vị...' : 'Locating...')
-                                : (lang === 'vi' ? 'Vị trí hiện tại' : 'Current location')}
-                            </span>
-                          </button>
-
-                          {/* Call API BE Button */}
-                          <button
-                            type="button"
-                            onClick={() => fetchAddressFromBackend(true)}
-                            disabled={isLoadingAddressFromBe}
-                            title={lang === 'vi' ? 'Gọi API BE để lấy địa chỉ kho đã lưu' : 'Call BE API to get saved warehouse address'}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-[#24263e] hover:bg-[#343759] text-white transition shadow-2xs cursor-pointer disabled:opacity-50"
-                          >
-                            <RefreshCw className={`w-3 h-3 ${isLoadingAddressFromBe ? 'animate-spin' : ''}`} />
-                            <span>
-                              {isLoadingAddressFromBe
-                                ? (lang === 'vi' ? 'Đang gọi...' : 'Calling...')
-                                : (lang === 'vi' ? 'Làm mới' : 'Refresh')}
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Location Accuracy Tip Banner */}
-                      <div className="text-[10px] text-amber-800 bg-amber-50/90 px-3 py-1.5 rounded-xl border border-amber-200/80 flex items-start gap-1.5 leading-snug">
-                        <span className="shrink-0 font-bold">💡</span>
-                        <span>
-                          {lang === 'vi'
-                            ? 'Lưu ý: Trên máy tính (PC/Laptop), định vị qua IP/Wi-Fi nên có thể lệch so với GPS điện thoại. Bạn có thể tự do bấm chọn lại Tỉnh / Phường hoặc gõ sửa địa chỉ bên dưới.'
-                            : 'Note: On PC/Laptop, location is estimated via IP/Wi-Fi. You can freely re-select Province / Ward or edit the address below.'}
-                        </span>
-                      </div>
-
-                      {/* Cascade selects: Tỉnh / Thành & Phường / Xã từ BE GHN */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="text-[10px] font-bold text-slate-600 block mb-1">
-                            {lang === 'vi' ? 'Tỉnh / Thành Phố' : 'Province / City'}
-                          </label>
-                          <select
-                            value={selectedProvinceId}
-                            onChange={handleProvinceChange}
-                            className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900 cursor-pointer"
-                          >
-                            <option value="">-- {lang === 'vi' ? 'Chọn Tỉnh / Thành Phố' : 'Select Province'} --</option>
-                            {Array.isArray(provinces) && provinces.map((p, idx) => (
-                              <option key={p._id ? `${p._id}-${idx}` : idx} value={p._id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="text-[10px] font-bold text-slate-600 block mb-1">
-                            {lang === 'vi' ? 'Phường / Xã' : 'Ward / Commune'}
-                          </label>
-                          <select
-                            value={selectedWardId}
-                            onChange={handleWardChange}
-                            disabled={!selectedProvinceId || isLoadingWards}
-                            className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900 disabled:bg-gray-100 disabled:cursor-not-allowed cursor-pointer"
-                          >
-                            <option value="">
-                              {isLoadingWards
-                                ? (lang === 'vi' ? 'Đang tải phường/xã ...' : 'Loading wards...')
-                                : `-- ${lang === 'vi' ? 'Chọn Phường / Xã' : 'Select Ward'} --`}
-                            </option>
-                            {Array.isArray(wards) && wards.map((w, idx) => (
-                              <option key={w._id ? `${w._id}-${idx}` : idx} value={w._id}>
-                                {w.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* Detail Street Address */}
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-600 block mb-1">
-                          {lang === 'vi' ? 'Số nhà, ngõ ngách, tên đường chi tiết' : 'Street address / House number'}
-                        </label>
-                        <input
-                          type="text"
-                          value={streetAddress}
-                          onChange={handleStreetAddressChange}
-                          placeholder={lang === 'vi' ? 'VD: Số 123 đường Giải Phóng, Ngõ 4' : 'e.g., 123 Giai Phong St'}
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
-                        />
-                      </div>
-
-                      {/* Full combined address input */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-[10px] font-bold text-slate-700 block">
-                            {lang === 'vi' ? 'Địa chỉ đầy đủ bưu tá đến lấy (Tự động tổng hợp hoặc tự do sửa)' : 'Full Pickup Address (Auto-synced / Editable)'} <span className="text-red-500">*</span>
-                          </label>
-                          <span className="text-[9px] text-[#c34c36] font-semibold">
-                            {lang === 'vi' ? '✎ Có thể sửa trực tiếp' : '✎ Editable'}
-                          </span>
-                        </div>
-                        <input
-                          type="text"
-                          required
-                          value={pickupAddress}
-                          onChange={(e) => setPickupAddress(e.target.value)}
-                          placeholder={lang === 'vi' ? 'Số nhà, tên đường, phường/xã, tỉnh/thành phố' : 'Street address, ward, city'}
-                          className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900 font-medium"
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between flex-wrap gap-1 text-[10px] text-slate-500 font-medium">
-                        <span className="flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          <span>
-                            {lang === 'vi'
-                              ? 'Địa chỉ xác thực: Bưu tá sẽ đến tận kho nhận thiết bị bàn giao sang Hub kiểm định 48 bước.'
-                              : 'Verified address: Couriers will pick up devices from this address for 48-step Hub inspection.'}
-                          </span>
-                        </span>
-                        <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[9px] font-semibold">
-                          {lang === 'vi' ? '✓ Bạn có thể chỉnh sửa mọi ô trên' : '✓ All fields above are editable'}
-                        </span>
-                      </div>
+                    {/* Warehouse Pickup Address Section - Powered by Lalamove & Geoapify GPS */}
+                    <div className="space-y-2">
+                      <LalamoveAddressPicker
+                        initialName={shopName || name || currentUser?.name || ''}
+                        initialPhone={sellerPhone || phone || currentUser?.phone || ''}
+                        initialLatitude={pickupLatitude ?? undefined}
+                        initialLongitude={pickupLongitude ?? undefined}
+                        initialAddress={pickupAddress}
+                        onAddressConfirmed={(data) => {
+                          setPickupLatitude(data.latitude);
+                          setPickupLongitude(data.longitude);
+                          setPickupAddress(data.address);
+                          setStreetAddress(data.address);
+                          if (data.name && !shopName) setShopName(data.name);
+                          if (data.phone && !sellerPhone) setSellerPhone(data.phone);
+                          saveSellerAddress(data.address, undefined, data.city);
+                        }}
+                        lang={lang}
+                        title={lang === 'vi' ? 'Địa Chỉ Kho Lấy Hàng Lalamove' : 'Lalamove Pickup Location'}
+                        description={lang === 'vi' ? 'Kéo ghim trên bản đồ để tài xế Lalamove định vị chính xác kho lấy hàng.' : 'Drag pin on map to set Lalamove pickup location.'}
+                      />
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3037,13 +3492,55 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                         <div>
                           <label className="text-[10px] font-bold text-slate-500 block mb-0.5">{lang === 'vi' ? 'Ngân hàng' : 'Bank name'}</label>
-                          <input
-                            type="text"
-                            value={sellerBankName}
-                            onChange={(e) => setSellerBankName(e.target.value)}
-                            placeholder={lang === 'vi' ? 'VD: Vietcombank, MB Bank...' : 'e.g. Vietcombank'}
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs outline-none focus:border-[#c34c36]"
-                          />
+                          {isCustomSellerBank ? (
+                            <div className="relative flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={sellerBankName}
+                                onChange={(e) => setSellerBankName(e.target.value)}
+                                placeholder={lang === 'vi' ? 'Nhập tên ngân hàng...' : 'Enter bank name...'}
+                                autoFocus
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-[#c34c36] text-xs outline-none font-semibold text-slate-900"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsCustomSellerBank(false);
+                                  setSellerBankName(POPULAR_VIETNAM_BANKS[0].name);
+                                }}
+                                className="px-2 py-1.5 rounded-lg border border-gray-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-[10px] font-semibold whitespace-nowrap cursor-pointer transition shadow-sm"
+                              >
+                                {lang === 'vi' ? 'Chọn lại' : 'Select'}
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="relative">
+                              <select
+                                value={getMatchedBankName(sellerBankName)}
+                                onChange={(e) => {
+                                  if (e.target.value === '__OTHER__') {
+                                    setIsCustomSellerBank(true);
+                                    setSellerBankName('');
+                                  } else {
+                                    setSellerBankName(e.target.value);
+                                  }
+                                }}
+                                className="w-full px-2.5 py-1.5 pr-8 rounded-lg border border-gray-200 text-xs font-semibold text-slate-900 outline-none focus:border-[#c34c36] appearance-none cursor-pointer bg-white"
+                              >
+                                <option value="">{lang === 'vi' ? '-- Chọn ngân hàng --' : '-- Select bank --'}</option>
+                                {POPULAR_VIETNAM_BANKS.map((b) => (
+                                  <option key={b.code} value={b.name}>
+                                    {b.name} - {b.fullName} ({b.code})
+                                  </option>
+                                ))}
+                                {Boolean(sellerBankName && !POPULAR_VIETNAM_BANKS.some((b) => b.name.toLowerCase() === sellerBankName.trim().toLowerCase())) && (
+                                  <option value={sellerBankName}>{sellerBankName}</option>
+                                )}
+                                <option value="__OTHER__">{lang === 'vi' ? '➕ Ngân hàng khác...' : '➕ Other bank...'}</option>
+                              </select>
+                              <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            </div>
+                          )}
                         </div>
                         <div>
                           <label className="text-[10px] font-bold text-slate-500 block mb-0.5">{lang === 'vi' ? 'Số tài khoản' : 'Account number'}</label>
@@ -3078,15 +3575,29 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       />
                       <span className="text-[11px] text-slate-600 leading-relaxed">
                         {lang === 'vi'
-                          ? 'Tôi cam kết mọi thiết bị đăng bán là chính hãng, đúng tình trạng; sẵn sàng giao hàng cho bưu tá để Kỹ sư Hub kiểm định dán tem NFC và tuân thủ quy chế giải ngân qua quỹ tín thác Escrow của SecondLife.'
-                          : 'I commit that all listed appliances are authentic and match their described condition; I agree to hand them over to couriers for Hub inspection and NFC sealing, and abide by the SecondLife Escrow payout terms.'}
+                          ? 'Tôi cam kết mọi thiết bị đăng bán là chính hãng, đúng tình trạng; sẵn sàng giao hàng cho tài xế Lalamove để Kỹ sư Hub kiểm định dán tem NFC và tuân thủ quy chế giải ngân qua quỹ tín thác Escrow của SecondLife.'
+                          : 'I commit that all listed appliances are authentic and match their described condition; I agree to hand them over to Lalamove couriers for Hub inspection and NFC sealing, and abide by the SecondLife Escrow payout terms.'}
                       </span>
                     </label>
                   </div>
 
+                  {/* Inline Error & Success Feedback right above Action Buttons */}
+                  {sellerFormError && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>{sellerFormError}</span>
+                    </div>
+                  )}
+                  {sellerFormSuccess && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{sellerFormSuccess}</span>
+                    </div>
+                  )}
+
                   {/* Action Buttons */}
                   <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-gray-100">
-                    {isSellerRegistered && (
+                    {hasRegistered && (
                       <button
                         type="button"
                         onClick={() => setShowSellerRegistrationForm(false)}
@@ -3104,7 +3615,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       <span>
                         {isSubmittingSeller
                           ? (lang === 'vi' ? 'Đang Gửi Hồ Sơ...' : 'Submitting...')
-                          : isSellerRegistered
+                          : isApprovedSeller
                             ? (lang === 'vi' ? 'Cập Nhật Hồ Sơ Gian Hàng' : 'Update Store Profile')
                             : (lang === 'vi' ? 'Xác Nhận Đăng Ký & Gửi Duyệt eKYC' : 'Confirm Registration & Submit eKYC')}
                       </span>
@@ -3114,6 +3625,253 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               )}
             </div>
             )
+          )}
+
+          {/* TAB: KHIẾU NẠI & BÁO CÁO CỦA TÔI (MY REPORTS) */}
+          {activeTab === 'reports' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              {/* Header Box */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 via-[#24263e] to-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-amber-400 shrink-0">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-sm uppercase tracking-wide">
+                      {lang === 'vi' ? 'Khiếu Nại & Tố Cáo Của Tôi' : 'My Reports & Disputes'}
+                    </h4>
+                    <p className="text-[11px] text-slate-300">
+                      {lang === 'vi'
+                        ? 'Theo dõi tiến trình giải quyết vi phạm của Ban Quản Trị & Trust Team'
+                        : 'Track resolution progress of your reports with Trust & Safety Team'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => fetchMyReports(reportPage)}
+                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 self-start sm:self-auto shrink-0"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingReports ? 'animate-spin' : ''}`} />
+                  <span>{lang === 'vi' ? 'Làm mới' : 'Refresh'}</span>
+                </button>
+              </div>
+
+              {/* Status Filter Tabs */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs">
+                {(['ALL', 'OPEN', 'IN_REVIEW', 'CONFIRMED', 'DISMISSED'] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setReportStatusFilter(st)}
+                    className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer shrink-0 ${
+                      reportStatusFilter === st
+                        ? 'bg-[#24263e] text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {st === 'ALL' && (lang === 'vi' ? 'Tất cả' : 'All')}
+                    {st === 'OPEN' && (lang === 'vi' ? 'Chờ tiếp nhận' : 'Open')}
+                    {st === 'IN_REVIEW' && (lang === 'vi' ? 'Đang thẩm định' : 'In Review')}
+                    {st === 'CONFIRMED' && (lang === 'vi' ? 'Đã xác nhận' : 'Confirmed')}
+                    {st === 'DISMISSED' && (lang === 'vi' ? 'Đã bác bỏ' : 'Dismissed')}
+                  </button>
+                ))}
+              </div>
+
+              {/* Reports List */}
+              {isLoadingReports ? (
+                <div className="py-12 text-center text-slate-400">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-[#c34c36]" />
+                  <span className="text-xs">{lang === 'vi' ? 'Đang tải danh sách khiếu nại...' : 'Loading reports...'}</span>
+                </div>
+              ) : myReports.length === 0 ? (
+                <div className="py-12 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mx-auto mb-2">
+                    <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                  </div>
+                  <h5 className="font-bold text-slate-800 text-sm">
+                    {lang === 'vi' ? 'Bạn chưa gửi khiếu nại nào' : 'No reports submitted'}
+                  </h5>
+                  <p className="text-slate-500 text-xs mt-1 max-w-sm mx-auto">
+                    {lang === 'vi'
+                      ? 'Nếu phát hiện bài đăng vi phạm hoặc sản phẩm nhận được có dấu hiệu bất thường, bạn có thể gửi tố cáo trực tiếp.'
+                      : 'You can report suspicious listings or disputed orders anytime.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {myReports
+                    .filter((r) => reportStatusFilter === 'ALL' || r.status === reportStatusFilter)
+                    .map((rep) => (
+                      <div
+                        key={rep.id}
+                        className="p-4 rounded-2xl border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/50 transition shadow-2xs space-y-2.5"
+                      >
+                        <div className="flex items-start justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-md font-mono text-[11px] font-black bg-slate-100 text-slate-800 border border-slate-200">
+                              #{rep.id.slice(0, 8)}
+                            </span>
+                            <span className="text-xs font-bold text-slate-900">
+                              {rep.postId ? `Bài đăng #${rep.postId.slice(0, 8)}` : rep.orderId ? `Đơn hàng #${rep.orderId.slice(0, 8)}` : 'Báo cáo chung'}
+                            </span>
+                          </div>
+
+                          {/* Status Badge */}
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                              rep.status === 'CONFIRMED'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : rep.status === 'DISMISSED'
+                                ? 'bg-slate-100 text-slate-600 border border-slate-300'
+                                : rep.status === 'IN_REVIEW'
+                                ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                                : 'bg-amber-100 text-amber-800 border border-amber-300'
+                            }`}
+                          >
+                            {rep.status === 'OPEN' && (lang === 'vi' ? '● Chờ tiếp nhận' : '● Open')}
+                            {rep.status === 'IN_REVIEW' && (lang === 'vi' ? '⚡ Đang thẩm định' : '⚡ In Review')}
+                            {rep.status === 'CONFIRMED' && (lang === 'vi' ? '✓ Đã xác nhận' : '✓ Confirmed')}
+                            {rep.status === 'DISMISSED' && (lang === 'vi' ? '✕ Đã bác bỏ' : '✕ Dismissed')}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                          <div className="font-semibold text-slate-900 mb-0.5">
+                            Lý do: <span className="font-bold text-[#c34c36]">{rep.reasonCode}</span>
+                          </div>
+                          <p className="line-clamp-2 text-slate-600">{rep.description}</p>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
+                          <span>Ngày tạo: {new Date(rep.createdAt).toLocaleString('vi-VN')}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenReportDetail(rep.id)}
+                            className="px-3 py-1 rounded-lg bg-[#24263e] hover:bg-[#c34c36] text-white font-bold text-xs transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>{lang === 'vi' ? 'Xem Kết Quả' : 'View Detail'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+
+              {/* Report Detail Modal */}
+              {selectedReportDetail && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+                  <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 border border-slate-200 shadow-2xl text-[#24263e]">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-black">
+                          <AlertTriangle className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm text-slate-900">Chi Tiết Khiếu Nại #{selectedReportDetail.id.slice(0, 8)}</h4>
+                          <span className="text-[10px] text-slate-400 font-mono">Request: {selectedReportDetail.requestId}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedReportDetail(null)}
+                        className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-3 text-xs max-h-[60vh] overflow-y-auto pr-1">
+                      <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <div>
+                          <span className="text-slate-400 block text-[10px] uppercase font-bold">Trạng Thái</span>
+                          <span className="font-bold text-slate-900">{selectedReportDetail.status}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px] uppercase font-bold">Lý Do Vi Phạm</span>
+                          <span className="font-bold text-[#c34c36]">{selectedReportDetail.reasonCode}</span>
+                        </div>
+                        {selectedReportDetail.postId && (
+                          <div className="col-span-2">
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Mã Bài Đăng Tố Cáo</span>
+                            <span className="font-mono text-slate-700 font-bold">{selectedReportDetail.postId}</span>
+                          </div>
+                        )}
+                        {selectedReportDetail.orderId && (
+                          <div className="col-span-2">
+                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Mã Đơn Hàng</span>
+                            <span className="font-mono text-slate-700 font-bold">{selectedReportDetail.orderId}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <span className="text-[11px] font-bold text-slate-600 block mb-1">Mô tả khiếu nại của bạn:</span>
+                        <p className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 leading-relaxed font-medium">
+                          {selectedReportDetail.description}
+                        </p>
+                      </div>
+
+                      {/* Evidence Images */}
+                      {detailEvidenceUrls.length > 0 && (
+                        <div>
+                          <span className="text-[11px] font-bold text-slate-600 block mb-1.5">Bằng chứng đính kèm:</span>
+                          <div className="grid grid-cols-3 gap-2">
+                            {detailEvidenceUrls.map((url, i) => (
+                              <a
+                                key={i}
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block h-20 rounded-xl overflow-hidden border border-slate-200 hover:opacity-90 relative group"
+                              >
+                                <img src={url} alt={`Evidence ${i + 1}`} className="w-full h-full object-cover" />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-[10px] font-bold">
+                                  Xem ảnh
+                                </div>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Resolution Box */}
+                      {selectedReportDetail.decisionReason && (
+                        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 space-y-1">
+                          <span className="font-bold block text-emerald-800 text-[11px] uppercase tracking-wide">
+                            Kết luận xử lý từ Ban Quản Trị:
+                          </span>
+                          <p className="text-slate-800 leading-relaxed">{selectedReportDetail.decisionReason}</p>
+                          {selectedReportDetail.responsibleParty && (
+                            <div className="text-[10px] text-slate-500 pt-1">
+                              Bên chịu trách nhiệm: <strong className="text-slate-800">{selectedReportDetail.responsibleParty}</strong>
+                            </div>
+                          )}
+                          {selectedReportDetail.resolvedAt && (
+                            <div className="text-[10px] text-slate-400">
+                              Ngày giải quyết: {new Date(selectedReportDetail.resolvedAt).toLocaleString('vi-VN')}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedReportDetail(null)}
+                        className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                      >
+                        Đóng
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -3139,10 +3897,20 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             </button>
             <button
               onClick={handleSave}
-              className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+              disabled={isSaving}
+              className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
-              <Save className="w-3.5 h-3.5" />
-              <span>{lang === 'vi' ? 'Lưu Hồ Sơ' : 'Save Profile'}</span>
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>{lang === 'vi' ? 'Đang lưu...' : 'Saving...'}</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? 'Lưu Hồ Sơ' : 'Save Profile'}</span>
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -3282,6 +4050,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           setSellerFormError(null);
         }}
         lang={lang}
+      />
+
+      {/* Modal Rút Tiền Về Ngân Hàng */}
+      <WithdrawalModal
+        isOpen={isWithdrawalModalOpen}
+        onClose={() => setIsWithdrawalModalOpen(false)}
+        availableBalance={walletBalance}
+        initialBankName={bankName}
+        initialAccountNumber={accountNumber}
+        initialAccountHolder={accountHolder}
+        onSuccess={() => {
+          fetchWalletAndEscrow();
+        }}
       />
     </div>
   );

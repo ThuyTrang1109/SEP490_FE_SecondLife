@@ -110,13 +110,106 @@ export const orderService = {
    * Hủy đơn hàng (Trước khi giao) - Hoàn trả 100% tiền Escrow về Ví người mua
    * PUT /api/v1/orders/{id}/cancel
    */
-  async cancelOrder(id: string): Promise<OrderBackend> {
+  async cancelOrder(
+    id: string,
+    cancelData?: { reasonCode: 'BUYER_REQUESTED' | 'SELLER_OUT_OF_STOCK' | 'SELLER_CANNOT_FULFILL'; reason: string }
+  ): Promise<OrderBackend> {
     const response = await request<OrderBackend>(`/v1/orders/${id}/cancel`, {
       method: 'PUT',
+      ...(cancelData ? { body: JSON.stringify(cancelData) } : {}),
       requiresAuth: true,
     });
     return ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
       : response) as OrderBackend;
+  },
+
+  /**
+   * Xem thông tin quyết toán theo đơn hàng (sau khi đơn hoàn tất hoặc giải ngân)
+   * GET /api/v1/orders/{orderId}/settlement
+   * Trả về 404 nếu đơn chưa được quyết toán
+   */
+  async getOrderSettlement(orderId: string): Promise<import('../types').OrderSettlementDTO> {
+    const response = await request<import('../types').OrderSettlementDTO>(`/v1/orders/${orderId}/settlement`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return ((response as any)?.data !== undefined && (response as any)?.data !== null
+      ? (response as any).data
+      : response) as import('../types').OrderSettlementDTO;
+  },
+
+  /**
+   * Xem snapshot hoa hồng của đơn hàng
+   * GET /api/v1/orders/{orderId}/commission
+   */
+  async getOrderCommission(orderId: string): Promise<import('../types').OrderCommissionDTO> {
+    const response = await request<import('../types').OrderCommissionDTO>(`/v1/orders/${orderId}/commission`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return ((response as any)?.data !== undefined && (response as any)?.data !== null
+      ? (response as any).data
+      : response) as import('../types').OrderCommissionDTO;
+  },
+
+  /**
+   * Người bán xác nhận đơn hàng đã thanh toán
+   * PUT /api/v1/orders/{orderId}/confirm
+   */
+  async confirmOrder(orderId: string): Promise<any> {
+    const response = await request<any>(`/orders/${orderId}/confirm`, {
+      method: 'PUT',
+      requiresAuth: true,
+    });
+    return (response as any)?.data || response;
+  },
+
+  /**
+   * Xem hạn chót và trạng thái xác nhận đơn hàng
+   * GET /api/v1/orders/{orderId}/confirmation
+   */
+  async getOrderConfirmation(orderId: string): Promise<any> {
+    const response = await request<any>(`/orders/${orderId}/confirmation`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return (response as any)?.data || response;
+  },
+
+  /**
+   * Người bán xác nhận hàng đã đóng gói xong, sẵn sàng cho Shipper lấy
+   * PUT /api/v1/orders/{orderId}/ready-for-pickup
+   */
+  async markReadyForPickup(orderId: string): Promise<any> {
+    const response = await request<any>(`/orders/${orderId}/ready-for-pickup`, {
+      method: 'PUT',
+      requiresAuth: true,
+    });
+    return (response as any)?.data || response;
+  },
+
+  /**
+   * Xem hạn chót và trạng thái sẵn sàng giao hàng
+   * GET /api/v1/orders/{orderId}/fulfillment
+   */
+  async getOrderFulfillment(orderId: string): Promise<any> {
+    const response = await request<any>(`/orders/${orderId}/fulfillment`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return (response as any)?.data || response;
+  },
+
+  /**
+   * Tra cứu thông tin chuyển khoản SePay của đơn hàng
+   * GET /api/v1/orders/{orderId}/payment
+   */
+  async getOrderPayment(orderId: string): Promise<any> {
+    const response = await request<any>(`/orders/${orderId}/payment`, {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    return (response as any)?.data || response;
   },
 };

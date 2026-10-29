@@ -53,6 +53,30 @@ const getPkgCredits = (pkg?: TopupPackage | null) => Number(pkg?.postCredits ?? 
 const getPkgBonus = (pkg?: TopupPackage | null) => Number(pkg?.chatCredits ?? pkg?.bonusPoints ?? 0);
 const getPkgTotalCredits = (pkg?: TopupPackage | null) => getPkgCredits(pkg) + getPkgBonus(pkg);
 
+export const getPackageType = (pkg: TopupPackage): 'combo' | 'listing' | 'valuation' | 'chat' => {
+  const posts = Number(pkg.postCredits || 0);
+  const chats = Number(pkg.chatCredits || 0);
+  const valuations = Number(pkg.valuationCredits || 0);
+  const name = (pkg.name || '').toLowerCase();
+
+  const typesCount = (posts > 0 ? 1 : 0) + (chats > 0 ? 1 : 0) + (valuations > 0 ? 1 : 0);
+  if (typesCount > 1 || name.includes('combo') || name.includes('trọn gói')) {
+    return 'combo';
+  }
+
+  if (valuations > 0 || name.includes('valuation') || name.includes('định giá')) {
+    return 'valuation';
+  }
+  if (chats > 0 || name.includes('chat')) {
+    return 'chat';
+  }
+  if (posts > 0 || name.includes('post') || name.includes('tin') || name.includes('bài')) {
+    return 'listing';
+  }
+
+  return 'valuation';
+};
+
 export const TopUpModal: React.FC<TopUpModalProps> = ({
   isOpen,
   onClose,
@@ -81,7 +105,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const [creatingDeposit, setCreatingDeposit] = useState(false);
   const [depositError, setDepositError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [timeLeft, setTimeLeft] = useState<number>(300); // 5 minutes in seconds
+  const [timeLeft, setTimeLeft] = useState<number>(900); // 15 minutes in seconds (matches BE config)
   const [isZoomQrOpen, setIsZoomQrOpen] = useState<boolean>(false);
 
   // Packages State
@@ -100,8 +124,8 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   // Sub-category inside packages: 'combo' (Gói Combo) vs 'single' (Gói Lẻ)
   const [packageCategory, setPackageCategory] = useState<'combo' | 'single'>('combo');
 
-  // Filter inside Gói Lẻ: 'all' | 'listing' | 'valuation'
-  const [singleFilter, setSingleFilter] = useState<'all' | 'listing' | 'valuation'>('all');
+  // Filter inside Gói Lẻ: 'all' | 'valuation' | 'chat' | 'listing'
+  const [singleFilter, setSingleFilter] = useState<'all' | 'valuation' | 'chat' | 'listing'>('all');
 
   const [userCredit, setUserCredit] = useState<UserCredit>(
     initialUserCredit || { postCredits: currentCredit || 10, valuationCredits: 0, chatCredits: 20 }
@@ -112,6 +136,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const [transactionsLoading, setTransactionsLoading] = useState<boolean>(false);
 
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const preDepositBalanceRef = useRef<number>(0);
 
   // Load wallet & packages when modal opens
   useEffect(() => {
@@ -173,19 +198,37 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   useEffect(() => {
     let timerInterval: NodeJS.Timeout | null = null;
     if (depositRequest && depositRequest.status === 'PENDING') {
+      const getInitialSeconds = () => {
+        if (depositRequest.expiresAt) {
+          const diff = Math.floor((new Date(depositRequest.expiresAt).getTime() - Date.now()) / 1000);
+          return Math.max(0, diff);
+        }
+        if (depositRequest.createdAt) {
+          const diff = Math.floor((new Date(depositRequest.createdAt).getTime() + 15 * 60 * 1000 - Date.now()) / 1000);
+          return Math.max(0, diff);
+        }
+        return 900;
+      };
+
+      const initialSec = getInitialSeconds();
+      setTimeLeft(initialSec);
+
       timerInterval = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
             clearInterval(timerInterval!);
             setDepositRequest(null);
-            setDepositError('Hết thời gian giao dịch (5 phút). Vui lòng tạo yêu cầu nạp tiền mới nếu vẫn muốn giao dịch.');
+            const durationMin = depositRequest.expiresAt && depositRequest.createdAt
+              ? Math.max(1, Math.round((new Date(depositRequest.expiresAt).getTime() - new Date(depositRequest.createdAt).getTime()) / 60000))
+              : 15;
+            setDepositError(`Hết thời gian giao dịch (${durationMin} phút). Vui lòng tạo yêu cầu nạp tiền mới nếu vẫn muốn giao dịch.`);
             return 0;
           }
           return prev - 1;
         });
       }, 1000);
     } else {
-      setTimeLeft(300);
+      setTimeLeft(900);
     }
     return () => {
       if (timerInterval) clearInterval(timerInterval);
@@ -195,12 +238,17 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   // Polling wallet balance when a deposit request is pending
   useEffect(() => {
     if (depositRequest && depositRequest.status === 'PENDING') {
-      const initialBalance = wallet?.balance ?? 0;
+      const baselineBalance = preDepositBalanceRef.current;
       pollingRef.current = setInterval(async () => {
         try {
           const freshWallet = await walletService.getMyWallet();
-          if (freshWallet && freshWallet.balance > initialBalance) {
+          const hasBalanceIncreased = freshWallet && (
+            freshWallet.balance > baselineBalance ||
+            (baselineBalance === 0 && freshWallet.balance >= depositRequest.amount)
+          );
+          if (hasBalanceIncreased) {
             setWallet(freshWallet);
+            preDepositBalanceRef.current = freshWallet.balance;
             if (onWalletUpdated) onWalletUpdated(freshWallet.balance);
             if (pollingRef.current) {
               clearInterval(pollingRef.current);
@@ -248,6 +296,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   const finalWallet = await walletService.getMyWallet().catch(() => null);
                   if (finalWallet) {
                     setWallet(finalWallet);
+                    preDepositBalanceRef.current = finalWallet.balance;
                     if (onWalletUpdated) onWalletUpdated(finalWallet.balance);
                   }
 
@@ -280,7 +329,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         }
       };
     }
-  }, [depositRequest, wallet?.balance, pendingPackage, userCredit]);
+  }, [depositRequest, pendingPackage, userCredit]);
 
   const loadWallet = async () => {
     setWalletLoading(true);
@@ -288,6 +337,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       const w = await walletService.getMyWallet();
       if (w) {
         setWallet(w);
+        preDepositBalanceRef.current = w.balance;
         if (onWalletUpdated) onWalletUpdated(w.balance);
 
         // Nếu đang có pendingPackage và số dư ví đã đủ
@@ -322,11 +372,19 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       ]);
 
       const pkgsList = Array.isArray(pkgsRes) ? pkgsRes : (pkgsRes as any)?.data || [];
-      const allPkgs: TopupPackage[] = [...pkgsList];
+      const seen = new Set<string>();
+      const uniquePkgs: TopupPackage[] = [];
+      for (const p of pkgsList) {
+        const key = p.id || `${p.name}_${p.postCredits}_${p.chatCredits}_${p.valuationCredits}_${p.price}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniquePkgs.push(p);
+        }
+      }
 
-      setPackages(allPkgs);
-      if (allPkgs.length > 0) {
-        setSelectedPkg(allPkgs[0]);
+      setPackages(uniquePkgs);
+      if (uniquePkgs.length > 0) {
+        setSelectedPkg(uniquePkgs[0]);
       }
 
       if (aiCreditObj || sellerCreditObj) {
@@ -346,31 +404,27 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   };
 
   const comboPackages = useMemo(() => {
-    return packages.filter((p) => {
-      const posts = Number(p.postCredits || 0);
-      const chats = Number(p.chatCredits || 0);
-      const name = (p.name || '').toLowerCase();
-      return (posts > 0 && chats > 0) || name.includes('combo') || name.includes('trọn gói');
-    });
+    return packages.filter((p) => getPackageType(p) === 'combo');
   }, [packages]);
 
   const singlePackages = useMemo(() => {
-    return packages.filter((p) => {
-      const posts = Number(p.postCredits || 0);
-      const chats = Number(p.chatCredits || 0);
-      const name = (p.name || '').toLowerCase();
-      const isCombo = (posts > 0 && chats > 0) || name.includes('combo') || name.includes('trọn gói');
-      if (isCombo) return false;
+    return packages
+      .filter((p) => {
+        const type = getPackageType(p);
+        if (type === 'combo') return false;
 
-      const singleType = (p as any).singleType || (posts > 0 ? 'listing' : 'valuation');
-      if (singleFilter === 'listing') {
-        return singleType === 'listing';
-      }
-      if (singleFilter === 'valuation') {
-        return singleType === 'valuation';
-      }
-      return true;
-    });
+        if (singleFilter === 'valuation') {
+          return type === 'valuation';
+        }
+        if (singleFilter === 'chat') {
+          return type === 'chat';
+        }
+        if (singleFilter === 'listing') {
+          return type === 'listing';
+        }
+        return true;
+      })
+      .sort((a, b) => getPkgPrice(a) - getPkgPrice(b));
   }, [packages, singleFilter]);
 
   // Handle Create Deposit Request
@@ -383,6 +437,14 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     setDepositError(null);
     setCreatingDeposit(true);
     try {
+      const freshW = await walletService.getMyWallet().catch(() => null);
+      if (freshW) {
+        setWallet(freshW);
+        preDepositBalanceRef.current = freshW.balance;
+        if (onWalletUpdated) onWalletUpdated(freshW.balance);
+      } else {
+        preDepositBalanceRef.current = wallet?.balance ?? 0;
+      }
       const res = await walletService.createDepositRequest(amountNum);
       setDepositRequest(res);
     } catch (err: any) {
@@ -418,6 +480,14 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       setPurchaseError(null);
       setDepositError(null);
       try {
+        const freshW = await walletService.getMyWallet().catch(() => null);
+        if (freshW) {
+          setWallet(freshW);
+          preDepositBalanceRef.current = freshW.balance;
+          if (onWalletUpdated) onWalletUpdated(freshW.balance);
+        } else {
+          preDepositBalanceRef.current = wallet?.balance ?? 0;
+        }
         const res = await walletService.createDepositRequest(neededAmount);
         setDepositRequest(res);
         setActiveTab('wallet');
@@ -746,7 +816,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   )}
 
                   {depositRequest.status === 'SUCCESS' ? (
-                    <div className="py-5 text-center space-y-3 bg-emerald-50 rounded-2xl border border-emerald-200 p-5">
+                    <div className="py-5 text-center space-y-3 bg-emerald-50 rounded-2xl border border-emerald-200 p-5 animate-fadeIn">
                       <div className="w-12 h-12 mx-auto rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-md">
                         <CheckCircle2 className="w-7 h-7" />
                       </div>
@@ -756,8 +826,27 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                           : 'Nạp Tiền Thành Công!'}
                       </h4>
                       <p className="text-xs text-emerald-700">
-                        Hệ thống đã nhận được khoản thanh toán <strong>{formatVND(depositRequest.amount)}</strong>. Số dư ví của bạn hiện tại: <strong>{formatVND(wallet?.balance ?? 0)}</strong>.
+                        Hệ thống đã nhận được khoản thanh toán <strong>{formatVND(depositRequest.amount)}</strong>. Số dư ví của bạn hiện tại: <strong className="text-emerald-950 font-black">{formatVND(wallet?.balance ?? 0)}</strong>.
                       </p>
+                      
+                      <div className="flex items-center justify-center gap-2 pt-0.5 pb-1">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const fresh = await walletService.getMyWallet().catch(() => null);
+                            if (fresh) {
+                              setWallet(fresh);
+                              preDepositBalanceRef.current = fresh.balance;
+                              if (onWalletUpdated) onWalletUpdated(fresh.balance);
+                            }
+                          }}
+                          className="px-3.5 py-1.5 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${walletLoading ? 'animate-spin' : ''}`} />
+                          <span>Làm Mới Số Dư Live</span>
+                        </button>
+                      </div>
+
                       {pendingPackage ? (
                         <div className="pt-1.5 flex items-center justify-center gap-2.5">
                           <button
@@ -779,10 +868,19 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                           </button>
                         </div>
                       ) : (
-                        <div className="pt-1.5 flex items-center justify-center gap-2.5">
+                        <div className="pt-1.5 flex flex-wrap items-center justify-center gap-2.5">
+                          <button
+                            onClick={() => {
+                              setDepositRequest(null);
+                              onClose();
+                            }}
+                            className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-extrabold transition cursor-pointer shadow-sm"
+                          >
+                            Xác Nhận & Quay Lại Mua Hàng
+                          </button>
                           <button
                             onClick={() => setDepositRequest(null)}
-                            className="px-4 py-2 bg-white text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold hover:bg-emerald-100 transition cursor-pointer"
+                            className="px-4 py-2.5 bg-white text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold hover:bg-emerald-100 transition cursor-pointer"
                           >
                             Nạp Thêm Lần Nữa
                           </button>
@@ -1167,43 +1265,58 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                       {packageCategory === 'single' && (
                         <div className="space-y-4 animate-fadeIn">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                            <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
                               <button
                                 type="button"
                                 onClick={() => setSingleFilter('all')}
-                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${singleFilter === 'all'
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                  singleFilter === 'all'
                                     ? 'bg-white text-[#24263e] shadow-xs'
                                     : 'text-slate-600 hover:text-slate-900'
-                                  }`}
+                                }`}
                               >
-                                Tất Cả Gói Lẻ ({packages.filter(p => !((Number(p.postCredits || 0) > 0 && Number(p.chatCredits || 0) > 0) || (p.name || '').toLowerCase().includes('combo'))).length})
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setSingleFilter('listing')}
-                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${singleFilter === 'listing'
-                                    ? 'bg-white text-[#c34c36] shadow-xs'
-                                    : 'text-slate-600 hover:text-slate-900'
-                                  }`}
-                              >
-                                <Tag className="w-3 h-3" />
-                                <span>Chỉ Lượt Đăng Bài</span>
+                                Tất Cả Gói Lẻ ({packages.filter((p) => getPackageType(p) !== 'combo').length})
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setSingleFilter('valuation')}
-                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${singleFilter === 'valuation'
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                                  singleFilter === 'valuation'
+                                    ? 'bg-white text-blue-600 shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                <Search className="w-3 h-3 text-blue-600" />
+                                <span>Chỉ Định Giá AI ({packages.filter((p) => getPackageType(p) === 'valuation').length})</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSingleFilter('chat')}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                                  singleFilter === 'chat'
                                     ? 'bg-white text-indigo-600 shadow-xs'
                                     : 'text-slate-600 hover:text-slate-900'
-                                  }`}
+                                }`}
                               >
-                                <Sparkles className="w-3 h-3" />
-                                <span>Chỉ Lượt Chat AI</span>
+                                <Sparkles className="w-3 h-3 text-indigo-500" />
+                                <span>Chỉ Chat AI ({packages.filter((p) => getPackageType(p) === 'chat').length})</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSingleFilter('listing')}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                                  singleFilter === 'listing'
+                                    ? 'bg-white text-[#c34c36] shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                <Tag className="w-3 h-3 text-[#c34c36]" />
+                                <span>Chỉ Đăng Bài ({packages.filter((p) => getPackageType(p) === 'listing').length})</span>
                               </button>
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                             {singlePackages.map((pkg) => {
                               const isSelected = selectedPkg?.id === pkg.id;
                               const pkgName = getPkgName(pkg);
@@ -1211,8 +1324,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                               const postCredits = Number(pkg.postCredits || 0);
                               const chatCredits = Number(pkg.chatCredits || 0);
                               const valuationCredits = Number(pkg.valuationCredits || 0);
-                              const isListingType = postCredits > 0;
-                              const isValuationType = valuationCredits > 0;
+                              const pkgType = getPackageType(pkg);
+                              const isListingType = pkgType === 'listing';
+                              const isValuationType = pkgType === 'valuation';
                               const isAffordable = currentWalletBalance >= pkgPrice;
 
                               return (
@@ -1222,10 +1336,11 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                                     setSelectedPkg(pkg);
                                     setPurchaseError(null);
                                   }}
-                                  className={`relative p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${isSelected
+                                  className={`relative p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+                                    isSelected
                                       ? 'bg-white border-2 border-[#24263e] shadow-md ring-2 ring-[#24263e]/20 transform -translate-y-0.5'
                                       : 'bg-white border-slate-200 hover:border-[#24263e]/60 hover:shadow-xs'
-                                    }`}
+                                  }`}
                                 >
                                   {(pkg.discountPercentage ?? 0) > 0 && (
                                     <span className="absolute -top-2 right-2 px-1.5 py-0.2 text-[9px] font-black rounded-md bg-emerald-600 text-white">
@@ -1235,12 +1350,21 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
                                   <div>
                                     <span
-                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black ${isListingType
-                                          ? 'bg-orange-100 text-orange-900'
-                                          : isValuationType ? 'bg-blue-100 text-blue-900' : 'bg-indigo-100 text-indigo-900'
-                                        }`}
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black ${
+                                        isListingType
+                                          ? 'bg-orange-100 text-orange-900 border border-orange-200'
+                                          : isValuationType
+                                          ? 'bg-blue-100 text-blue-900 border border-blue-200'
+                                          : 'bg-indigo-100 text-indigo-900 border border-indigo-200'
+                                      }`}
                                     >
-                                      {isListingType ? <Tag className="w-3 h-3" /> : isValuationType ? <Search className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
+                                      {isListingType ? (
+                                        <Tag className="w-3 h-3" />
+                                      ) : isValuationType ? (
+                                        <Search className="w-3 h-3" />
+                                      ) : (
+                                        <Sparkles className="w-3 h-3" />
+                                      )}
                                       <span>{isListingType ? 'Đăng Bài' : isValuationType ? 'Định Giá AI' : 'Chat AI'}</span>
                                     </span>
 

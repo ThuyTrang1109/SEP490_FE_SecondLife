@@ -1,4 +1,4 @@
-export type UserRole = 'buyer' | 'seller' | 'inspector' | 'staff' | 'admin';
+export type UserRole = 'buyer' | 'seller' | 'inspector' | 'staff' | 'admin' | 'inspection_center';
 
 export type Language = 'vi' | 'en';
 
@@ -12,9 +12,16 @@ export type ItemCategory =
   | 'Điều hòa & Máy lọc'
   | 'Robot & Máy hút bụi'
   | 'Lò vi sóng & Lò nướng'
-  | 'Nồi cơm & Bếp từ';
+  | 'Nồi cơm & Bếp từ'
+  | 'Phòng ngủ'
+  | 'Bếp & Phòng ăn'
+  | 'Ban công & Giặt giũ'
+  | 'Phòng tắm & Vệ sinh'
+  | 'Phòng khách'
+  | 'Khác'
+  | string;
 
-export type ListingStatus = 'active' | 'pending' | 'reserved' | 'sold' | 'draft' | 'RESERVED';
+export type ListingStatus = 'active' | 'pending' | 'reserved' | 'sold' | 'draft' | 'RESERVED' | 'rejected' | 'pending_inspection';
 
 export interface PhotoChecklist {
   front: string;
@@ -44,6 +51,10 @@ export interface MultiStagePhotos {
 
 export interface Listing {
   id: string;
+  categoryId?: string;
+  itemId?: string;
+  categoryName?: string;
+  itemName?: string;
   title: string;
   category: ItemCategory;
   brand: string;
@@ -83,6 +94,7 @@ export interface Listing {
     confidence: number;
     daysToSell: number;
   };
+  aiSuggestedPrice?: number;
   aiFraudCheck?: {
     anomaly: boolean;
     trustScore: number;
@@ -95,6 +107,7 @@ export interface Listing {
 export type EscrowStatus =
   | 'AWAITING_PAYMENT'
   | 'HELD_IN_ESCROW'
+  | 'AWAITING_INSPECTION'
   | 'INSPECTION_IN_PROGRESS'
   | 'INSPECTION_PASSED'
   | 'INSPECTION_FAILED'
@@ -102,7 +115,9 @@ export type EscrowStatus =
   | 'DELIVERED_INSPECTION_WINDOW'
   | 'COMPLETED_RELEASED'
   | 'DISPUTED'
-  | 'REFUNDED_TO_BUYER';
+  | 'REFUNDED_TO_BUYER'
+  | 'CANCELLED'
+  | 'CANCELED';
 
 export interface InspectionReport {
   id: string;
@@ -111,6 +126,7 @@ export interface InspectionReport {
   centerName: string;
   inspectorName: string;
   inspectedAt: string;
+  completedAt?: string;
   verdict: 'PASS' | 'FAIL';
   detectedGrade: ConditionGrade;
   conditionScore: number; // 0 - 100
@@ -124,7 +140,7 @@ export interface InspectionReport {
 export interface ShippingLeg {
   id: string;
   legType: 'SELLER_TO_CENTER' | 'CENTER_TO_BUYER' | 'DIRECT' | string;
-  carrier: 'GHTK' | 'GHN' | 'GHN Express' | string;
+  carrier: 'Lalamove' | 'GHN' | string;
   trackingNumber: string;
   status: 'PICKED_UP' | 'IN_TRANSIT' | 'DELIVERED' | string;
   origin: string;
@@ -158,6 +174,10 @@ export interface EscrowOrder {
   inspectionCenterId?: string;
   inspectionCenterName?: string;
   inspectionMethod?: 'AT_CENTER' | 'AT_HOME';
+  inspectorId?: string;
+  inspectorName?: string;
+  inspectorEmail?: string;
+  inspectorPhone?: string;
   inspectionFeeSplit?: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
   buyerInspectionFeeVnd?: number;
   sellerInspectionFeeVnd?: number;
@@ -170,9 +190,25 @@ export interface EscrowOrder {
   isReviewed?: boolean;
   userReview?: ProductReview;
   backendStatus?: OrderBackendStatus;
+  status?: OrderBackendStatus | string | null;
   shippingQuoteId?: string;
   shippingDeliveredAt?: string;
   deliveryAddress?: any;
+  sellerConfirmedAt?: string | null;
+  confirmationDeadline?: string | null;
+  confirmationCancelAt?: string | null;
+  confirmationStatus?: string | null;
+  sellerReadyAt?: string | null;
+  carrierPickedUpAt?: string | null;
+  handoverDeadline?: string | null;
+  appointmentScheduledAt?: string | null;
+  appointmentNote?: string | null;
+  paymentMethod?: 'WALLET' | 'BANK_TRANSFER' | string;
+  paymentExpiresAt?: string | null;
+  bankPaymentDetails?: any;
+  cancellationReasonCode?: string | null;
+  cancellationReason?: string | null;
+  cancelledBy?: string | null;
 }
 
 export interface ProductReview {
@@ -244,9 +280,27 @@ export interface ChatMessage {
   isOffer?: boolean;
   offerAmountVnd?: number;
   offerStatus?: 'pending' | 'accepted' | 'declined' | 'countered';
+  offerSenderRole?: 'buyer' | 'seller';
   negotiationId?: string;
   safetyWarning?: string;
   isUnsent?: boolean;
+  isInspectionProposal?: boolean;
+  inspectionProposal?: SystemInspectionProposalPayload;
+  isSending?: boolean;
+  isFailed?: boolean;
+  errorReason?: string;
+}
+
+export interface SystemInspectionProposalPayload {
+  type: 'INSPECTION_PROPOSAL';
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
+  method: 'AT_CENTER' | 'AT_HOME';
+  feeSplit: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
+  estimatedFeeVnd: number;
+  proposedByRole: 'buyer' | 'seller';
+  proposalId?: string;
+  orderId?: string;
+  note?: string;
 }
 
 export interface InspectionCenter {
@@ -271,7 +325,7 @@ export interface UserProfile {
   phone?: string;
   address?: string;
   avatar?: string;
-  gender?: 'male' | 'female' | 'other';
+  gender?: 'male' | 'female' | 'other' | 'MALE' | 'FEMALE' | 'OTHER' | '';
   birthday?: string;
   walletBalanceVnd?: number;
   walletBalance?: number;
@@ -368,6 +422,7 @@ export interface DepositResponseDTO {
   bankAccountNumber: string;
   bankName: string;
   createdAt: string;
+  expiresAt?: string;
 }
 
 export interface WalletTransaction {
@@ -406,7 +461,7 @@ export interface Negotiation {
 // ==========================================
 // 3. Order & Escrow Types
 // ==========================================
-export type OrderStatusBackend = 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED';
+export type OrderStatusBackend = 'PENDING' | 'PENDING_PAYMENT' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED' | 'WAITING_SELLER_APPROVAL';
 export type OrderBackendStatus = OrderStatusBackend;
 export type EscrowStatusBackend = 'HELD' | 'RELEASED' | 'REFUNDED' | 'FROZEN';
 
@@ -414,6 +469,7 @@ export interface OrderRequestDTO {
   postId: string;
   shippingQuoteId: string;
   requestId: string;
+  paymentMethod?: 'WALLET' | 'BANK_TRANSFER';
   negotiationId?: string;
   agreedPrice?: number;
 }
@@ -434,24 +490,44 @@ export interface OrderBackend {
   status: OrderStatusBackend;
   escrowStatus: EscrowStatusBackend;
   createdAt: string;
+  sellerConfirmedAt?: string | null;
+  confirmationDeadline?: string | null;
+  confirmationCancelAt?: string | null;
+  confirmationStatus?: string | null;
+  sellerReadyAt?: string | null;
+  carrierPickedUpAt?: string | null;
+  handoverDeadline?: string | null;
 }
 
 // ==========================================
-// 4. GHN Shipping & Tracking Types
+// 4. Lalamove Shipping & Tracking Types
 // ==========================================
+export interface GeocodedAddressDto {
+  address: string;
+  latitude: number;
+  longitude: number;
+  city: string;
+  countryCode: string;
+  placeId?: string;
+}
+
 export interface ShippingQuoteDeliveryAddressDto {
   name: string;
   phone: string;
-  address: string;
-  provinceName: string;
-  wardName: string;
-  newAddress: boolean;
+  latitude: number;
+  longitude: number;
+  address?: string;
+  // Legacy fields kept for backward compatibility if needed
+  provinceName?: string;
+  wardName?: string;
+  newAddress?: boolean;
 }
 
 export interface ShippingQuoteRequestDto {
   postId: string;
   negotiationId?: string;
   deliveryAddress: ShippingQuoteDeliveryAddressDto;
+  serviceType?: string;
 }
 
 export interface ShippingQuoteResponseDto {
@@ -463,6 +539,10 @@ export interface ShippingQuoteResponseDto {
   insuranceValue?: number;
   expiresAt: string;
   expectedDeliveryTime?: string;
+  carrier?: string;
+  provider?: string;
+  serviceType?: string;
+  providerQuotationId?: string;
 }
 
 export interface CreateShipmentRequestDto {
@@ -471,6 +551,7 @@ export interface CreateShipmentRequestDto {
   fromAddress?: any;
   toAddress?: any;
   reason?: string;
+  reportId?: string;
 }
 
 export interface ShipmentBackend {
@@ -480,7 +561,7 @@ export interface ShipmentBackend {
   leg: string;
   orderCode: string | null;
   status: string; // PENDING, READY_TO_PICK, PICKING, PICKED, DELIVERING, DELIVERED, CANCELLED
-  providerStatus: string | null; // GHN status: ready_to_pick, picking, picked, storing, transporting, delivering, delivered, cancel
+  providerStatus: string | null; // Lalamove status: ASSIGNING_DRIVER, ON_GOING, PICKED_UP, COMPLETED, CANCELED, REJECTED, EXPIRED
   quotedFee?: number;
   actualFee?: number;
   expectedDeliveryTime: string | null;
@@ -488,6 +569,17 @@ export interface ShipmentBackend {
   reason?: string | null;
   lastError?: string | null;
   podUrl?: string | null;
+  driverId?: string | null;
+  driverName?: string | null;
+  driverPhone?: string | null;
+  driverPlateNumber?: string | null;
+  senderName?: string | null;
+  senderPhone?: string | null;
+  senderAddress?: string | null;
+  receiverName?: string | null;
+  receiverPhone?: string | null;
+  receiverAddress?: string | null;
+  shareLink?: string | null;
 }
 
 export interface ShipmentEventBackend {
@@ -501,5 +593,104 @@ export interface ShipmentEventBackend {
   payload?: string;
 }
 
+export interface LalamoveDriverCoordinates {
+  lat: string | number;
+  lng: string | number;
+  updatedAt?: string;
+}
 
+export interface LalamoveDriverInfo {
+  name?: string;
+  phone?: string;
+  plateNumber?: string;
+  photo?: string;
+  coordinates?: LalamoveDriverCoordinates | null;
+}
+
+export interface LalamoveTrackingResponse {
+  status?: string;
+  providerStatus?: string;
+  locationStatus: 'AVAILABLE' | 'UNAVAILABLE';
+  driver?: LalamoveDriverInfo | null;
+  shareLink?: string | null;
+  expectedDeliveryTime?: string | null;
+}
+
+export interface SystemWalletData {
+  id: string;
+  currency: string;
+  heldBalance: number;
+  shippingBalance: number;
+  revenueBalance: number;
+  totalBalance: number;
+  updatedAt: string;
+}
+
+export interface SystemWalletTransaction {
+  id: number;
+  orderId: string;
+  type: 'OPENING_BALANCE' | 'PAYMENT_HOLD' | 'SETTLEMENT' | 'REFUND' | string;
+  heldDelta: number;
+  shippingDelta: number;
+  revenueDelta: number;
+  heldBalanceAfter: number;
+  shippingBalanceAfter: number;
+  revenueBalanceAfter: number;
+  createdAt: string;
+}
+
+export interface SystemWalletTransactionsPage {
+  items: SystemWalletTransaction[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  isLast: boolean;
+}
+
+export interface OrderSettlementDTO {
+  settlementId?: string;
+  orderId?: string;
+  commissionSnapshotId?: string;
+  commissionBase: number;
+  rawCommission: number;
+  platformCommission: number;
+  sellerPayout: number;
+  shippingFee: number;
+  currency: string;
+  roundingMode?: string;
+  settledAt: string;
+}
+
+export interface OrderCommissionDTO {
+  orderId?: string;
+  commissionBase?: number;
+  ratePercent?: number;
+  minFee?: number;
+  maxFee?: number;
+  platformCommission?: number;
+  ruleCode?: string;
+  status?: string;
+}
+
+export interface StaffListingItemDTO {
+  postId: string;
+  categoryId?: string | null;
+  itemId?: string | null;
+  title: string;
+  description: string;
+  itemCondition?: string;
+  imageUrl?: string;
+  imageUrls: string[];
+  price: number;
+  aiSuggestedPrice?: number | null;
+  status: string;
+  rejectionReason?: string | null;
+  listingCreditCharged?: boolean;
+  aiDescription?: string | null;
+  descriptionAccepted?: boolean;
+  reviewReason?: string | null;
+  duplicateMatches?: string[];
+}
+export * from './notification';
 

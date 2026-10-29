@@ -24,6 +24,7 @@ import { UserRole, Language } from '../../types';
 import { soundFx } from '../../utils/soundEffects';
 import { authService } from '../../services/authService';
 import { setAuthTokens } from '../../services/apiClient';
+import { translateSystemNotification } from '../../utils/systemNotificationTranslator';
 import logoImg from '../../assets/logo.png';
 
 interface AuthModalProps {
@@ -38,6 +39,8 @@ interface AuthModalProps {
     phone?: string;
     address?: string;
     avatar?: string;
+    gender?: 'male' | 'female' | 'other' | '';
+    emailVerified?: boolean;
   }) => void;
   lang: Language;
 }
@@ -89,6 +92,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [registerGender, setRegisterGender] = useState<'MALE' | 'FEMALE' | 'OTHER' | ''>('');
   const [agreedTerms, setAgreedTerms] = useState(true);
 
   // Form states - Email Verification (/auth/verify-email & /auth/resend-verification)
@@ -263,6 +267,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const mapBackendRole = (roles?: string[]): UserRole => {
     if (!roles || roles.length === 0) return 'buyer';
     if (roles.includes('ROLE_ADMIN') || roles.includes('ADMIN')) return 'admin';
+    if (roles.includes('ROLE_INSPECTION_CENTER') || roles.includes('INSPECTION_CENTER')) return 'inspection_center';
     if (roles.includes('ROLE_INSPECTOR') || roles.includes('INSPECTOR') || roles.includes('HUB_INSPECTOR')) return 'inspector';
     if (roles.includes('ROLE_STAFF') || roles.includes('STAFF')) return 'staff';
     if (roles.includes('ROLE_SELLER') || roles.includes('SELLER')) return 'seller';
@@ -293,6 +298,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const res = await authService.googleLogin(idToken);
       soundFx.playChime();
       const mappedRole = mapBackendRole(res.roles);
+      let normalizedGender: 'male' | 'female' | 'other' | '' = '';
+      if (res.user.gender) {
+        const g = res.user.gender.toLowerCase();
+        if (g === 'male' || g === 'female' || g === 'other') {
+          normalizedGender = g as 'male' | 'female' | 'other';
+        }
+      }
       onLoginSuccess({
         id: res.user.id,
         name: res.user.fullName || res.user.email,
@@ -300,7 +312,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         role: mappedRole,
         phone: res.user.phone || '',
         avatar: res.user.avatarUrl || undefined,
-        address: ''
+        address: '',
+        gender: normalizedGender || undefined,
+        emailVerified: Boolean(res.user.emailVerified),
       });
       onClose();
     } catch (err: any) {
@@ -398,6 +412,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setPassword('');
       soundFx.playChime();
       const mappedRole = mapBackendRole(res.roles);
+      let normalizedGender: 'male' | 'female' | 'other' | '' = '';
+      if (res.user.gender) {
+        const g = res.user.gender.toLowerCase();
+        if (g === 'male' || g === 'female' || g === 'other') {
+          normalizedGender = g as 'male' | 'female' | 'other';
+        }
+      }
       onLoginSuccess({
         id: res.user.id,
         name: res.user.fullName || res.user.email,
@@ -405,7 +426,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         role: mappedRole,
         phone: res.user.phone || '',
         avatar: res.user.avatarUrl || undefined,
-        address: ''
+        address: '',
+        gender: normalizedGender || undefined,
+        emailVerified: Boolean(res.user.emailVerified),
       });
       setEmailOrPhone('');
       onClose();
@@ -444,11 +467,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         email: registerEmail.trim(),
         password: registerPassword,
         fullName: fullName.trim(),
-        phone: phoneNumber.trim() || undefined
+        phone: phoneNumber.trim() || undefined,
+        gender: registerGender ? registerGender : undefined,
       });
       // FE-01: Wipe registration passwords from state
       setRegisterPassword('');
       setConfirmPassword('');
+      setRegisterGender('');
       soundFx.playChime();
       setVerifyEmailAddress(registerEmail.trim());
       setVerifyOtpCode('');
@@ -819,7 +844,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {errorMsg && (
               <div className="p-3 rounded-2xl bg-rose-50 border border-rose-300 text-rose-800 text-xs flex items-start gap-2.5 animate-fadeIn">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                <span className="font-semibold leading-relaxed">{errorMsg}</span>
+                <span className="font-semibold leading-relaxed">{translateSystemNotification(errorMsg)}</span>
               </div>
             )}
 
@@ -827,7 +852,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {successMsg && (
               <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs flex items-start gap-2.5 animate-fadeIn">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span className="font-semibold leading-relaxed">{successMsg}</span>
+                <span className="font-semibold leading-relaxed">{translateSystemNotification(successMsg)}</span>
               </div>
             )}
 
@@ -1068,6 +1093,40 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         <span>{getRegisterPhoneError()}</span>
                       </div>
                     )}
+                  </div>
+                </div>
+
+                {/* Giới tính (Gender Selection) */}
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#24263e] flex items-center justify-between">
+                    <span>{lang === 'vi' ? 'Giới tính' : 'Gender'}</span>
+                    <span className="text-[11px] font-normal text-slate-400">
+                      {lang === 'vi' ? '(Không bắt buộc)' : '(Optional)'}
+                    </span>
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { value: 'MALE' as const, vi: 'Nam', en: 'Male' },
+                      { value: 'FEMALE' as const, vi: 'Nữ', en: 'Female' },
+                      { value: 'OTHER' as const, vi: 'Khác', en: 'Other' },
+                    ].map((item) => {
+                      const isSelected = registerGender === item.value;
+                      return (
+                        <button
+                          key={item.value}
+                          type="button"
+                          onClick={() => setRegisterGender(isSelected ? '' : item.value)}
+                          className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                            isSelected
+                              ? 'bg-[#c34c36]/10 border-[#c34c36] text-[#c34c36] shadow-2xs font-black'
+                              : 'bg-[#faf8f5] border-gray-200 text-slate-600 hover:border-gray-300 hover:bg-white'
+                          }`}
+                        >
+                          <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-[#c34c36]' : 'bg-slate-300'}`} />
+                          <span>{lang === 'vi' ? item.vi : item.en}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 

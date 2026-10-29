@@ -17,7 +17,7 @@ export const SessionExpiredModal: React.FC<SessionExpiredModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/65 backdrop-blur-md animate-fadeIn select-none font-sans"
+      className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/65 backdrop-blur-md animate-fadeIn select-none font-sans"
     >
       <div
         className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden transform transition-all text-[#24263e]"
@@ -38,10 +38,10 @@ export const SessionExpiredModal: React.FC<SessionExpiredModalProps> = ({
             <h3 className="text-lg font-black text-[#24263e] tracking-tight">
               {lang === 'vi' ? 'Phiên Đăng Nhập Hết Hạn' : 'Session Expired'}
             </h3>
-            <p className="text-sm text-gray-500 leading-relaxed max-w-[260px] mx-auto">
+            <p className="text-sm text-gray-500 leading-relaxed max-w-[280px] mx-auto">
               {lang === 'vi'
-                ? 'Phiên làm việc của bạn đã kết thúc. Vui lòng đăng nhập lại để tiếp tục sử dụng hệ thống an toàn.'
-                : 'Your session has ended. Please log in again to continue using the system securely.'}
+                ? 'Phiên làm việc của bạn đã hết hạn do không có hoạt động trong 30 phút. Vui lòng đăng nhập lại để tiếp tục sử dụng hệ thống an toàn.'
+                : 'Your session has ended due to 30 minutes of inactivity. Please log in again to continue securely.'}
             </p>
           </div>
 

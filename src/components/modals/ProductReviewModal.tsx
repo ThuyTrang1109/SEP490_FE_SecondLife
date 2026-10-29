@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Star, X, CheckCircle2, ShieldCheck, Sparkles, Upload, ThumbsUp } from 'lucide-react';
 import { EscrowOrder, Language, ProductReview } from '../../types';
 import { formatVND } from '../../utils/translations';
+import { resolveListingCategory, resolveOrderListing } from '../../utils/catalogCache';
 
 interface ProductReviewModalProps {
   order: EscrowOrder;
@@ -113,9 +114,14 @@ export const ProductReviewModal: React.FC<ProductReviewModalProps> = ({
               <Star className="w-5 h-5 fill-white" />
             </div>
             <div>
-              <h3 className="font-extrabold text-base text-[#24263e]">
-                {lang === 'vi' ? 'Đánh Giá Sản Phẩm & Người Bán' : 'Review Product & Seller'}
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-base text-[#24263e]">
+                  {lang === 'vi' ? 'Đánh Giá Sản Phẩm & Người Bán' : 'Review Product & Seller'}
+                </h3>
+                <span className="text-[10px] text-rose-600 font-extrabold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                  ❌ [Lưu cục bộ / Chưa có BE Review]
+                </span>
+              </div>
               <p className="text-[11px] text-[#24263e]/70 font-medium">
                 {lang === 'vi' ? 'Đơn hàng đã hoàn thành qua bảo lãnh Escrow' : 'Verified completed Escrow order'}
               </p>
@@ -141,7 +147,7 @@ export const ProductReviewModal: React.FC<ProductReviewModalProps> = ({
             />
             <div className="overflow-hidden">
               <span className="text-[10px] font-bold text-[#c34c36] uppercase tracking-wider">
-                {order.listing.brand} • {order.listing.category}
+                {resolveOrderListing(order.listing).brand} • {resolveListingCategory(order.listing)}
               </span>
               <h4 className="font-bold text-slate-900 truncate">{order.listing.title}</h4>
               <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">

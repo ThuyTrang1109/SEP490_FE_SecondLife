@@ -4,6 +4,7 @@ import { Listing, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
 import { soundFx } from '../../utils/soundEffects';
 import { extractWardAndCity } from '../../utils/addressUtils';
+import { extractSellerOriginalPrice } from '../../utils/catalogCache';
 
 interface ProductCard3DProps {
   item: Listing;
@@ -22,6 +23,10 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
   const [rotateX, setRotateX] = useState(0);
   const [rotateY, setRotateY] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
+
+  const effectiveOriginalPrice = React.useMemo(() => {
+    return extractSellerOriginalPrice(item) || (item.originalPriceVnd && item.originalPriceVnd > 0 ? item.originalPriceVnd : null);
+  }, [item]);
 
   const displayLocation =
     extractWardAndCity(item.sellerAddress || item.location) ||
@@ -77,11 +82,11 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
       className="group relative bg-white rounded-xl border border-slate-200 hover:border-[#c34c36] shadow-2xs hover:shadow-md flex flex-col overflow-hidden cursor-pointer select-none transition-all duration-300"
     >
       {/* Photo container */}
-      <div className="relative aspect-video w-full bg-[#faf8f5] overflow-hidden">
+      <div className="relative aspect-4/3 w-full bg-[#faf8f5] overflow-hidden flex items-center justify-center p-2">
         <img
-          src={item.photos.front}
+          src={item.photoGallery?.[0] || item.photos.front}
           alt={item.title}
-          className="w-full h-full object-cover group-hover:scale-104 transition-transform duration-500"
+          className="w-full h-full object-contain transition-transform duration-300"
           loading="lazy"
         />
 
@@ -110,8 +115,8 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
         <div>
           {/* Brand & Location */}
           <div className="flex items-center justify-between text-[10px] text-[#24263e]/60 mb-0.5">
-            <span className="font-bold text-[#24263e] uppercase tracking-wide truncate max-w-[110px]">
-              {item.brand} • {item.purchaseYear}
+            <span className="font-bold text-[#24263e] uppercase tracking-wide truncate max-w-[120px]">
+              {(item.brand && item.brand !== 'SecondLife' && item.brand !== 'Hãng' ? item.brand : item.itemName || 'Chính hãng')} • {item.purchaseYear}
             </span>
             <span className="flex items-center gap-0.5 text-[#24263e]/70 font-medium shrink-0 max-w-[130px] truncate" title={item.sellerAddress || item.location || displayLocation}>
               <MapPin className="w-2.5 h-2.5 text-[#24263e] shrink-0" />
@@ -145,11 +150,18 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
 
         {/* Price & Seller Info */}
         <div className="pt-2 border-t border-slate-100 space-y-1.5">
-          {/* Row 1: Giá bán nổi bật - Chỉ hiển thị 1 giá bán duy nhất */}
-          <div className="flex items-baseline justify-between gap-1.5">
-            <span className="text-sm sm:text-base font-black text-[#c34c36] leading-none">
-              {formatVND(item.priceVnd)}
-            </span>
+          {/* Row 1: Giá bán nổi bật */}
+          <div className="flex items-baseline justify-between gap-1.5 flex-wrap">
+            <div className="flex items-baseline gap-1.5 flex-wrap">
+              <span className="text-sm sm:text-base font-black text-[#c34c36] leading-none">
+                {formatVND(item.priceVnd)}
+              </span>
+              {effectiveOriginalPrice && effectiveOriginalPrice > 0 && (
+                <span className="text-[10px] text-slate-400 line-through font-medium">
+                  {formatVND(effectiveOriginalPrice)}
+                </span>
+              )}
+            </div>
             <span className="text-[9px] font-medium text-[#24263e]/60 bg-[#faf8f5] px-1.5 py-0.5 rounded border border-slate-200">
               {lang === 'vi' ? 'Giá bán' : 'Price'}
             </span>

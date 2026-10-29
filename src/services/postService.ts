@@ -251,7 +251,23 @@ export const postService = {
   },
 
   /**
-   * Lấy chi tiết thông tin draft bài đăng (GET /api/v1/posts/{postId})
+   * Lấy chi tiết thông tin draft bài đăng của người dùng (GET /api/v1/posts/{postId}/draft)
+   */
+  async getDraft(postId: string): Promise<ListingDraftResponse> {
+    try {
+      const response = await request<ListingDraftResponse>(`/v1/posts/${postId}/draft`, {
+        method: 'GET',
+        requiresAuth: true,
+      });
+      return (response as any)?.data || response;
+    } catch {
+      // Fallback nếu bài đăng đã duyệt / xuất bản thành post công khai
+      return this.getPost(postId);
+    }
+  },
+
+  /**
+   * Lấy chi tiết bài đăng (GET /api/v1/posts/{postId})
    */
   async getPost(postId: string): Promise<ListingDraftResponse> {
     try {
@@ -272,6 +288,7 @@ export const postService = {
       };
     }
   },
+
 
   /**
    * Lưu thông tin draft bài đăng (PUT /api/v1/posts/{postId}/draft)
@@ -319,6 +336,16 @@ export const postService = {
         status: 'DRAFT',
       };
     }
+  },
+
+  /**
+   * Xóa bản nháp bài đăng chưa xuất bản (DELETE /api/v1/posts/{postId}/draft)
+   */
+  async deleteDraft(postId: string): Promise<void> {
+    await request<void>(`/v1/posts/${postId}/draft`, {
+      method: 'DELETE',
+      requiresAuth: true,
+    });
   },
 
   async estimatePrice(postId: string, requestId?: string): Promise<AiPriceEstimationResponse> {
@@ -419,5 +446,28 @@ export const postService = {
       requiresAuth: true,
     });
     return (response as any)?.data || response;
+  },
+
+  /**
+   * Thẩm định giá sản phẩm bằng AI độc lập trực tiếp (không bắt buộc có draft)
+   * POST /api/v1/ai/estimate-price
+   */
+  async estimatePriceDirect(payload: {
+    title: string;
+    category?: string;
+    brand?: string;
+    model?: string;
+    condition?: string;
+    accessories?: string;
+    notes?: string;
+    originalPrice?: number;
+    imageUrls?: string[];
+  }): Promise<AiPriceEstimationResponse> {
+    const res = await request<any>('/v1/ai/estimate-price', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
   },
 };

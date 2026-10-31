@@ -543,7 +543,7 @@ export const shippingService = {
         method: 'GET',
         requiresAuth: true,
       });
-      return res.data;
+      return ((res as any)?.data ?? res) as GeocodedAddressDto;
     } catch (err) {
       console.warn('Backend /seller-onboarding/me not available:', err);
       return null;
@@ -554,10 +554,26 @@ export const shippingService = {
    * Reverse geocode tọa độ GPS sang địa chỉ dạng chữ qua BE (Geoapify)
    * POST /api/v1/shipping/reverse-geocode
    */
-  async reverseGeocode(latitude: number, longitude: number): Promise<GeocodedAddressDto> {
+  /**
+   * Forward geocoding via BE; provider credentials stay on the server.
+   * GET /api/v1/shipping/geocode
+   */
+  async geocode(address: string, signal?: AbortSignal): Promise<GeocodedAddressDto> {
+    const query = new URLSearchParams({ address: address.trim() });
+    const res = await request<GeocodedAddressDto>('/shipping/geocode?' + query.toString(), {
+      method: 'GET',
+      requiresAuth: true,
+      signal,
+    });
+    return ((res as any)?.data ?? res) as GeocodedAddressDto;
+  },
+
+  /** Resolve a manually selected pin through BE. */
+  async reverseGeocode(latitude: number, longitude: number, signal?: AbortSignal): Promise<GeocodedAddressDto> {
     const res = await request<GeocodedAddressDto>('/shipping/reverse-geocode', {
       method: 'POST',
       body: JSON.stringify({ latitude, longitude }),
+      signal,
       requiresAuth: true,
     });
     return ((res as any)?.data ?? res) as GeocodedAddressDto;
@@ -628,7 +644,7 @@ export const shippingService = {
       body: JSON.stringify(data),
       requiresAuth: true,
     });
-    return res.data;
+    return ((res as any)?.data ?? res) as GeocodedAddressDto;
   },
 
   /**
@@ -643,7 +659,7 @@ export const shippingService = {
         requiresAuth: true,
       }
     );
-    return res.data;
+    return ((res as any)?.data ?? res) as GeocodedAddressDto;
   },
 
   /**
@@ -656,7 +672,7 @@ export const shippingService = {
       body: JSON.stringify({ otp: otp.trim() }),
       requiresAuth: true,
     });
-    return res.data;
+    return ((res as any)?.data ?? res) as GeocodedAddressDto;
   },
 
   /**

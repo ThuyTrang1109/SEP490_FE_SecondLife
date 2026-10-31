@@ -146,6 +146,17 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
   const leafletMapRef = useRef<any>(null);
   const leafletMarkerRef = useRef<any>(null);
   const lookupSeqRef = useRef<number>(0);
+  const lookupAbortRef = useRef<AbortController | null>(null);
+  const [isLocationResolved, setIsLocationResolved] = useState(Boolean(
+    initialAddress.trim() && Number.isFinite(initialLatitude) && Number.isFinite(initialLongitude)
+  ));
+  // Leaflet may load after an address search has already completed.
+  const latestSelectionRef = useRef({ latitude, longitude, resolved: isLocationResolved });
+  latestSelectionRef.current = { latitude, longitude, resolved: isLocationResolved };
+  useEffect(() => () => {
+    ++lookupSeqRef.current;
+    lookupAbortRef.current?.abort();
+  }, []);
 
   // Two-way synchronization with parent props
   useEffect(() => {
@@ -165,174 +176,110 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
   const [isSearchingAddress, setIsSearchingAddress] = useState(false);
   const [searchValidationError, setSearchValidationError] = useState<string | null>(null);
 
-  const handleSearchAddressToPin = async () => {
-    const query = searchAddressText.trim();
-    setSearchValidationError(null);
-
-    // 1. Validate empty / length
-    if (!query) {
-      setSearchValidationError(lang === 'vi' ? 'Vui lòng nhập địa chỉ cần xác định vị trí trên bản đồ.' : 'Please enter an address to locate on the map.');
-      return;
+  const validateLocation = (data: GeocodedAddressDto) => {
+    if (!data || !Number.isFinite(data.latitude) || !Number.isFinite(data.longitude)
+      || data.latitude < 8 || data.latitude > 24.5 || data.longitude < 101.5 || data.longitude > 111
+      || !data.address?.trim()) {
+      throw new Error(lang === 'vi' ? 'Dữ liệu vị trí không hợp lệ.' : 'Invalid location response.');
     }
-    if (query.length < 4) {
-      setSearchValidationError(lang === 'vi' ? 'Địa chỉ quá ngắn. Vui lòng nhập tối thiểu 4 ký tự.' : 'Address too short. Please enter at least 4 characters.');
-      return;
+    if (data.countryCode?.toUpperCase() !== 'VN') {
+      throw new Error(lang === 'vi' ? 'Địa chỉ nằm ngoài lãnh thổ Việt Nam.' : 'Location outside Vietnam.');
     }
-
-    setIsSearchingAddress(true);
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6500);
-
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&countrycodes=vn&addressdetails=1`;
-      const res = await fetch(url, {
-        headers: { 'Accept-Language': 'vi,en;q=0.9' },
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      if (!res.ok) {
-        throw new Error('Dịch vụ bản đồ tạm thời gián đoạn.');
-      }
-
-      const results = await res.json();
-
-      // 2. Validate coordinates existence and structure
-      if (!Array.isArray(results) || results.length === 0) {
-        setSearchValidationError(
-          lang === 'vi'
-            ? 'Không tìm thấy tọa độ GPS cho địa chỉ này. Vui lòng nhập chi tiết hơn (số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành) hoặc nhấp trực tiếp trên bản đồ.'
-            : 'Could not resolve GPS coordinates. Please be more specific with street, district, city or pick directly on map.'
-        );
-        return;
-      }
-
-      const item = results[0];
-      const parsedLat = parseFloat(item.lat);
-      const parsedLng = parseFloat(item.lon);
-
-      // 3. Strict Coordinate Validation
-      if (
-        isNaN(parsedLat) ||
-        isNaN(parsedLng) ||
-        !isFinite(parsedLat) ||
-        !isFinite(parsedLng) ||
-        parsedLat < -90 ||
-        parsedLat > 90 ||
-        parsedLng < -180 ||
-        parsedLng > 180
-      ) {
-        setSearchValidationError(lang === 'vi' ? 'Tọa độ trả về không hợp lệ. Vui lòng thử lại với tên địa chỉ khác.' : 'Invalid coordinates returned. Please try another address.');
-        return;
-      }
-
-      // Check Vietnam approximate bounding box
-      if (parsedLat < 8.0 || parsedLat > 24.5 || parsedLng < 101.5 || parsedLng > 111.0) {
-        setSearchValidationError(lang === 'vi' ? 'Tọa độ tìm thấy nằm ngoài lãnh thổ Việt Nam. Vui lòng nhập địa chỉ trong nước.' : 'Coordinates found outside Vietnam. Please enter an address in Vietnam.');
-        return;
-      }
-
-      // 4. Update map, pin, coordinates and address state
-      setLatitude(parsedLat);
-      setLongitude(parsedLng);
-      setResolvedAddress(item.display_name || query);
-      const detectedCity = detectCityFromCoords(parsedLat, parsedLng);
-      setResolvedCity(detectedCity);
-      markUnconfirmed();
-      setLookupError(null);
-
-      // Move Leaflet map & marker
-      if (leafletMarkerRef.current) {
-        leafletMarkerRef.current.setLatLng([parsedLat, parsedLng]);
-      }
-      if (leafletMapRef.current) {
-        leafletMapRef.current.setView([parsedLat, parsedLng], 16);
-      }
-    } catch (err: any) {
-      console.warn('Geocoding search error:', err);
-      setSearchValidationError(
-        err?.name === 'AbortError'
-          ? (lang === 'vi' ? 'Quá thời gian tìm kiếm địa chỉ. Vui lòng kiểm tra mạng và thử lại.' : 'Search timeout. Please check network and retry.')
-          : (err?.message || (lang === 'vi' ? 'Không thể xác định tọa độ từ địa chỉ đã nhập.' : 'Could not resolve coordinates.'))
-      );
-    } finally {
-      setIsSearchingAddress(false);
+    if (normalizeCityKey(data.city) === 'OTHER') {
+      throw new Error(lang === 'vi' ? 'Địa chỉ nằm ngoài khu vực phục vụ (chỉ hỗ trợ Hà Nội, Đà Nẵng, TP. Hồ Chí Minh).' : 'Address outside supported service area (Hanoi, Da Nang, Ho Chi Minh City).');
     }
   };
 
-  // Fallback reverse geocoding via OpenStreetMap Nominatim or heuristic
-  const fallbackReverseGeocode = useCallback(async (lat: number, lng: number): Promise<{ address: string; city: string }> => {
-    const detectedCity = detectCityFromCoords(lat, lng);
+  const handleSearchAddressToPin = async () => {
+    if (isSearchingAddress) return;
+    const query = searchAddressText.trim();
+    setSearchValidationError(null);
+    if (query.length < 4 || query.length > 500) {
+      setSearchValidationError(lang === 'vi' ? 'Vui lòng nhập địa chỉ từ 4 đến 500 ký tự.' : 'Enter an address of 4 to 500 characters.');
+      return;
+    }
+    const seq = ++lookupSeqRef.current;
+    lookupAbortRef.current?.abort();
+    const controller = new AbortController();
+    lookupAbortRef.current = controller;
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    setIsSearchingAddress(true);
+    setIsLookingUp(false);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-        {
-          headers: { 'Accept-Language': 'vi,en;q=0.9' },
-          signal: controller.signal,
-        }
-      );
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.display_name) {
-          const addr = data.address || {};
-          const city = addr.city || addr.town || addr.state || detectedCity;
-          return { address: data.display_name, city };
-        }
+      const result = await shippingService.geocode(query, controller.signal);
+      if (seq !== lookupSeqRef.current) return;
+      validateLocation(result);
+      setLatitude(result.latitude);
+      setLongitude(result.longitude);
+      setResolvedAddress(result.address);
+      setResolvedCity(getShortCityName(result.city));
+      setPlaceId(result.placeId);
+      setIsLocationResolved(true);
+      setLookupError(null);
+      markUnconfirmed();
+      leafletMarkerRef.current?.setLatLng([result.latitude, result.longitude]);
+      leafletMapRef.current?.setView([result.latitude, result.longitude], 16);
+    } catch (error: any) {
+      if (seq !== lookupSeqRef.current) return;
+      let rawMsg = error?.message;
+      if (rawMsg === 'Failed to fetch') {
+        rawMsg = lang === 'vi' ? 'Không thể kết nối đến máy chủ.' : 'Cannot connect to server.';
       }
-    } catch (_) {}
-
-    return {
-      address: `Khu vực ${detectedCity} (Tọa độ GPS: ${lat.toFixed(5)}, ${lng.toFixed(5)})`,
-      city: detectedCity,
-    };
-  }, []);
-
-  // Reverse geocode via Backend API with seamless fallback
-  const executeLookup = useCallback(async (lat: number, lng: number) => {
-    const currentSeq = ++lookupSeqRef.current;
-    setIsLookingUp(true);
-    setLookupError(null);
-    markUnconfirmed();
-
-    try {
-      const res: GeocodedAddressDto = await shippingService.reverseGeocode(lat, lng);
-      // Discard stale responses if user moved pin again
-      if (currentSeq !== lookupSeqRef.current) return;
-
-      if (res && res.address) {
-        setResolvedAddress(res.address);
-        const cityCandidate = res.city ? getShortCityName(res.city) : detectCityFromCoords(lat, lng);
-        setResolvedCity(cityCandidate);
-        setPlaceId(res.placeId);
-        setLookupError(null);
-        return;
-      }
-    } catch (err: any) {
-      if (currentSeq !== lookupSeqRef.current) return;
-      console.warn('Reverse geocode error from BE, falling back to OSM Nominatim:', err);
-      try {
-        const fallback = await fallbackReverseGeocode(lat, lng);
-        if (currentSeq !== lookupSeqRef.current) return;
-        setResolvedAddress(fallback.address);
-        setResolvedCity(fallback.city);
-        setLookupError(null);
-        return;
-      } catch (fbErr) {
-        console.warn('Fallback geocoding also failed:', fbErr);
-        const city = detectCityFromCoords(lat, lng);
-        setResolvedAddress(`Khu vực ${city} (Tọa độ: ${lat.toFixed(5)}, ${lng.toFixed(5)})`);
-        setResolvedCity(city);
-        setLookupError(null);
-      }
+      const message = error?.name === 'AbortError'
+        ? (lang === 'vi' ? 'Quá thời gian tìm kiếm địa chỉ.' : 'Address search timed out.')
+        : (rawMsg || (lang === 'vi' ? 'Không tìm thấy địa chỉ.' : 'Address not found.'));
+      setSearchValidationError(message + (lang === 'vi'
+        ? ' Vị trí đã chọn được giữ nguyên. Bạn có thể nhập chi tiết hơn hoặc chọn điểm trực tiếp trên bản đồ.'
+        : ' The current selection is unchanged. Refine the address or select a point on the map.'));
     } finally {
-      if (currentSeq === lookupSeqRef.current) {
-        setIsLookingUp(false);
+      clearTimeout(timeout);
+      if (seq === lookupSeqRef.current) {
+        setIsSearchingAddress(false);
+        lookupAbortRef.current = null;
       }
     }
-  }, [fallbackReverseGeocode]);
+  };
+
+  // Manual pin selection is resolved by BE; never fabricate an address or city.
+  const executeLookup = useCallback(async (lat: number, lng: number) => {
+    const seq = ++lookupSeqRef.current;
+    lookupAbortRef.current?.abort();
+    const controller = new AbortController();
+    lookupAbortRef.current = controller;
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    setIsSearchingAddress(false);
+    setIsLookingUp(true);
+    setIsLocationResolved(false);
+    setResolvedAddress('');
+    setResolvedCity('');
+    setPlaceId(undefined);
+    setLookupError(null);
+    markUnconfirmed();
+    try {
+      const result = await shippingService.reverseGeocode(lat, lng, controller.signal);
+      if (seq !== lookupSeqRef.current) return;
+      validateLocation(result);
+      if (Math.abs(result.latitude - lat) > 0.000001 || Math.abs(result.longitude - lng) > 0.000001) {
+        throw new Error(lang === 'vi' ? 'Tọa độ phản hồi không khớp vị trí đã chọn.' : 'Coordinates do not match the selected point.');
+      }
+      setResolvedAddress(result.address);
+      setResolvedCity(getShortCityName(result.city));
+      setPlaceId(result.placeId);
+      setIsLocationResolved(true);
+    } catch (error: any) {
+      if (seq !== lookupSeqRef.current) return;
+      setLookupError((error?.name === 'AbortError'
+        ? (lang === 'vi' ? 'Tra địa chỉ quá thời gian.' : 'Address lookup timed out.')
+        : (error?.message || (lang === 'vi' ? 'Không tra được địa chỉ.' : 'Address lookup failed.')))
+        + (lang === 'vi' ? ' Vui lòng thử lại bằng tìm kiếm hoặc chọn vị trí khác trên bản đồ.' : ' Retry searching or select another point on the map.'));
+    } finally {
+      clearTimeout(timeout);
+      if (seq === lookupSeqRef.current) {
+        setIsLookingUp(false);
+        lookupAbortRef.current = null;
+      }
+    }
+  }, [lang, markUnconfirmed]);
 
   // Initialize or update Leaflet map
   useEffect(() => {
@@ -343,8 +290,8 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
       const L = (window as any).L;
       if (!L) return;
 
-      const initialLat = latitude ?? ALLOWED_CITIES[0].lat;
-      const initialLng = longitude ?? ALLOWED_CITIES[0].lng;
+      const initialLat = latestSelectionRef.current.latitude ?? ALLOWED_CITIES[0].lat;
+      const initialLng = latestSelectionRef.current.longitude ?? ALLOWED_CITIES[0].lng;
 
       if (!leafletMapRef.current) {
         // Create Leaflet map
@@ -398,7 +345,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
         leafletMarkerRef.current = marker;
 
         // Perform initial reverse-geocode if not already provided
-        if (!initialAddress) {
+        if (!latestSelectionRef.current.resolved) {
           executeLookup(initialLat, initialLng);
         }
       } else {
@@ -515,8 +462,12 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
       setLookupError(lang === 'vi' ? 'Vui lòng chọn vị trí trên bản đồ hoặc tìm kiếm địa chỉ để có tọa độ GPS hợp lệ.' : 'Please select a spot on the map or search address for valid GPS coordinates.');
       return;
     }
-    const finalCity = resolvedCity || detectCityFromCoords(finalLat, finalLng);
-    const finalAddr = (resolvedAddress || '').trim() || `Tọa độ GPS: ${finalLat.toFixed(5)}, ${finalLng.toFixed(5)}`;
+    if (!isLocationResolved || isLookingUp || isSearchingAddress || !resolvedAddress.trim()) {
+      setLookupError(lang === 'vi' ? 'Vui lòng xác định vị trí hợp lệ trước khi xác nhận.' : 'Resolve a valid location before confirming.');
+      return;
+    }
+    const finalCity = resolvedCity;
+    const finalAddr = resolvedAddress.trim();
 
     setIsConfirmed(true);
     setLookupError(null);
@@ -638,8 +589,14 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
             <div className="relative flex-1">
               <input
                 type="text"
+                maxLength={500}
                 value={searchAddressText}
                 onChange={(e) => {
+                  if (isSearchingAddress) {
+                    ++lookupSeqRef.current;
+                    lookupAbortRef.current?.abort();
+                    setIsSearchingAddress(false);
+                  }
                   setSearchAddressText(e.target.value);
                   setSearchValidationError(null);
                 }}
@@ -658,7 +615,15 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
               {searchAddressText && (
                 <button
                   type="button"
-                  onClick={() => setSearchAddressText('')}
+                  onClick={() => {
+                    if (isSearchingAddress) {
+                      ++lookupSeqRef.current;
+                      lookupAbortRef.current?.abort();
+                      setIsSearchingAddress(false);
+                    }
+                    setSearchAddressText('');
+                    setSearchValidationError(null);
+                  }}
                   className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
                 >
                   ✕
@@ -776,7 +741,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
         <button
           type="button"
           onClick={handleConfirmLocation}
-          disabled={isLookingUp || (!latitude && !resolvedAddress)}
+          disabled={isLookingUp || isSearchingAddress || isLocatingDevice || !isLocationResolved || !resolvedAddress.trim()}
           className={`px-4 py-2 rounded-xl font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs ${
             isConfirmed
               ? 'bg-emerald-600 text-white hover:bg-emerald-700'

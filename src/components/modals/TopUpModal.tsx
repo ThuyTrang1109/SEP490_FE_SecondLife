@@ -4,7 +4,6 @@ import {
   Zap,
   CheckCircle2,
   QrCode,
-  ArrowRight,
   Loader2,
   Sparkles,
   CreditCard,
@@ -14,21 +13,33 @@ import {
   AlertTriangle,
   RefreshCw,
   Tag,
-  Layers,
-  Flame,
-  Award,
   ShoppingBag,
   ShieldCheck,
   Clock,
   Search,
   Coins,
+  Receipt,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
 } from 'lucide-react';
-import { TopupPackage, UserCredit, UserWallet, DepositResponseDTO, UserProfile, UserRole, Language } from '../../types';
-import { topupService, walletService, sellerCreditService } from '../../services';
+import {
+  TopupPackage,
+  UserCredit,
+  UserWallet,
+  DepositResponseDTO,
+  UserProfile,
+  UserRole,
+  Language,
+  TopupPackagePurchaseResponse,
+  WalletTransaction,
+} from '../../types';
+import { topupService, walletService } from '../../services';
 import logoImg from '../../assets/logo.png';
 import { formatVND } from '../../utils/translations';
+import { WalletHistoryPanel } from './WalletHistoryPanel';
 
-interface TopUpModalProps {
+export interface TopUpModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser?: UserProfile | null;
@@ -43,7 +54,36 @@ interface TopUpModalProps {
   lang?: Language;
 }
 
+export interface PendingPurchaseIntent {
+  userId: string;
+  packageId: string;
+  packageVersion: number;
+  expectedPrice: number;
+  requestId: string;
+  timestamp: number;
+}
 
+const getStorageKey = (userId?: string) => `secondlife_topup_intent_${userId || 'guest'}`;
+
+const getPendingIntent = (userId?: string): PendingPurchaseIntent | null => {
+  try {
+    const raw = sessionStorage.getItem(getStorageKey(userId));
+    if (raw) return JSON.parse(raw);
+  } catch (_) { }
+  return null;
+};
+
+const setPendingIntent = (userId: string | undefined, intent: PendingPurchaseIntent) => {
+  try {
+    sessionStorage.setItem(getStorageKey(userId), JSON.stringify(intent));
+  } catch (_) { }
+};
+
+const clearPendingIntent = (userId?: string) => {
+  try {
+    sessionStorage.removeItem(getStorageKey(userId));
+  } catch (_) { }
+};
 
 const PRESET_DEPOSIT_AMOUNTS = [50000, 100000, 200000, 500000, 1000000, 2000000];
 
@@ -91,21 +131,21 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   initialTab = 'wallet',
   lang = 'vi',
 }) => {
-  const isBuyerRole = (currentRole === 'buyer') || (currentUser?.role === 'buyer');
+  const isBuyerRole = currentRole === 'buyer' || currentUser?.role === 'buyer';
 
-  // Active primary tab: 'wallet' (nạp tiền) or 'packages' (mua gói xu). Buyers only need 'wallet'
+  // Active primary tab: 'wallet' | 'packages' | 'history'
   const [activeTab, setActiveTab] = useState<'wallet' | 'packages' | 'history'>(isBuyerRole ? 'wallet' : initialTab);
 
   // Wallet State
   const [wallet, setWallet] = useState<UserWallet | null>(null);
-  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletLoading, setWalletLoading] = useState<boolean>(false);
   const [depositAmount, setDepositAmount] = useState<number>(100000);
   const [customAmount, setCustomAmount] = useState<string>('100.000');
   const [depositRequest, setDepositRequest] = useState<DepositResponseDTO | null>(null);
-  const [creatingDeposit, setCreatingDeposit] = useState(false);
+  const [creatingDeposit, setCreatingDeposit] = useState<boolean>(false);
   const [depositError, setDepositError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [timeLeft, setTimeLeft] = useState<number>(900); // 15 minutes in seconds (matches BE config)
+  const [timeLeft, setTimeLeft] = useState<number>(900); // 15 minutes
   const [isZoomQrOpen, setIsZoomQrOpen] = useState<boolean>(false);
 
   // Packages State
@@ -115,16 +155,14 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const [purchasing, setPurchasing] = useState<boolean>(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [packageSuccess, setPackageSuccess] = useState<boolean>(false);
-  const [purchasedPackage, setPurchasedPackage] = useState<TopupPackage | null>(null);
+  const [, setPurchasedPackage] = useState<TopupPackage | null>(null);
 
   // Pending package to auto-purchase after deficit topup via VietQR
   const [pendingPackage, setPendingPackage] = useState<TopupPackage | null>(null);
   const [autoActivating, setAutoActivating] = useState<boolean>(false);
 
-  // Sub-category inside packages: 'combo' (Gói Combo) vs 'single' (Gói Lẻ)
+  // Sub-category inside packages: 'combo' vs 'single'
   const [packageCategory, setPackageCategory] = useState<'combo' | 'single'>('combo');
-
-  // Filter inside Gói Lẻ: 'all' | 'valuation' | 'chat' | 'listing'
   const [singleFilter, setSingleFilter] = useState<'all' | 'valuation' | 'chat' | 'listing'>('all');
 
   const [userCredit, setUserCredit] = useState<UserCredit>(
@@ -132,16 +170,26 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   );
 
   // History State
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [latestReceipt, setLatestReceipt] = useState<TopupPackagePurchaseResponse | null>(null);
+  const [packagesError, setPackagesError] = useState<string | null>(null);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState<number>(0);
+  const [purchases, setPurchases] = useState<TopupPackagePurchaseResponse[]>([]);
+  const [purchasesLoading, setPurchasesLoading] = useState<boolean>(false);
+  const [purchasesPage, setPurchasesPage] = useState<number>(0);
+  const [purchasesTotalPages, setPurchasesTotalPages] = useState<number>(1);
+  const [purchasesTotalElements, setPurchasesTotalElements] = useState<number>(0);
+  const [transactions, setTransactions] = useState<Array<WalletTransaction & { referenceId?: string }>>([]);
   const [transactionsLoading, setTransactionsLoading] = useState<boolean>(false);
 
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const preDepositBalanceRef = useRef<number>(0);
+  const isFetchingPackagesRef = useRef<boolean>(false);
 
   // Load wallet & packages when modal opens
   useEffect(() => {
     if (isOpen) {
       setActiveTab(isBuyerRole ? 'wallet' : initialTab);
+      setHistoryRefreshKey((prev) => prev + 1);
       setDepositRequest(null);
       setPendingPackage(null);
       setAutoActivating(false);
@@ -161,324 +209,357 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     }
   }, [isOpen, initialTab, isBuyerRole]);
 
-  useEffect(() => {
-    if (activeTab === 'history') {
-      loadHistory();
+  const loadPurchases = async (page = 0) => {
+    setPurchasesLoading(true);
+    try {
+      const res = await topupService.getPurchases(page, 20);
+      const items = res?.items || (Array.isArray(res) ? res : []);
+      setPurchases(items);
+      setPurchasesPage(res?.page ?? page);
+      setPurchasesTotalPages(res?.totalPages ?? 1);
+      setPurchasesTotalElements(res?.totalElements ?? items.length);
+    } catch (err: any) {
+      console.error('Failed to load purchases history:', err);
+      setPurchases([]);
+    } finally {
+      setPurchasesLoading(false);
     }
-  }, [activeTab]);
+  };
 
   const loadHistory = async () => {
     setTransactionsLoading(true);
     try {
       const data = await walletService.getTransactionHistory();
-      const sorted = (Array.isArray(data) ? data : []).sort((a, b) => {
-        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return timeB - timeA;
-      });
-      setTransactions(sorted);
-    } catch (err) {
-      console.error('Failed to load transaction history:', err);
-    } finally {
-      setTransactionsLoading(false);
-    }
-  };
-
-  const handleRefreshTopBar = () => {
-    loadWallet();
-    if (!isBuyerRole) {
-      loadPackagesAndCredit();
-    }
-    if (activeTab === 'history') {
-      loadHistory();
-    }
-  };
-
-  // Timer countdown for deposit request
-  useEffect(() => {
-    let timerInterval: NodeJS.Timeout | null = null;
-    if (depositRequest && depositRequest.status === 'PENDING') {
-      const getInitialSeconds = () => {
-        if (depositRequest.expiresAt) {
-          const diff = Math.floor((new Date(depositRequest.expiresAt).getTime() - Date.now()) / 1000);
-          return Math.max(0, diff);
-        }
-        if (depositRequest.createdAt) {
-          const diff = Math.floor((new Date(depositRequest.createdAt).getTime() + 15 * 60 * 1000 - Date.now()) / 1000);
-          return Math.max(0, diff);
-        }
-        return 900;
-      };
-
-      const initialSec = getInitialSeconds();
-      setTimeLeft(initialSec);
-
-      timerInterval = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            clearInterval(timerInterval!);
-            setDepositRequest(null);
-            const durationMin = depositRequest.expiresAt && depositRequest.createdAt
-              ? Math.max(1, Math.round((new Date(depositRequest.expiresAt).getTime() - new Date(depositRequest.createdAt).getTime()) / 60000))
-              : 15;
-            setDepositError(`Hết thời gian giao dịch (${durationMin} phút). Vui lòng tạo yêu cầu nạp tiền mới nếu vẫn muốn giao dịch.`);
-            return 0;
-          }
-          return prev - 1;
+        const sorted = (Array.isArray(data) ? data : []).sort((a: any, b: any) => {
+          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return timeB - timeA;
         });
-      }, 1000);
-    } else {
-      setTimeLeft(900);
-    }
-    return () => {
-      if (timerInterval) clearInterval(timerInterval);
+        setTransactions(sorted);
+      } catch (err) {
+        console.error('Failed to load transaction history:', err);
+      } finally {
+        setTransactionsLoading(false);
+      }
     };
-  }, [depositRequest]);
 
-  // Polling wallet balance when a deposit request is pending
-  useEffect(() => {
-    if (depositRequest && depositRequest.status === 'PENDING') {
-      const baselineBalance = preDepositBalanceRef.current;
-      pollingRef.current = setInterval(async () => {
-        try {
-          const freshWallet = await walletService.getMyWallet();
-          const hasBalanceIncreased = freshWallet && (
-            freshWallet.balance > baselineBalance ||
-            (baselineBalance === 0 && freshWallet.balance >= depositRequest.amount)
-          );
-          if (hasBalanceIncreased) {
-            setWallet(freshWallet);
-            preDepositBalanceRef.current = freshWallet.balance;
-            if (onWalletUpdated) onWalletUpdated(freshWallet.balance);
-            if (pollingRef.current) {
-              clearInterval(pollingRef.current);
-              pollingRef.current = null;
+    useEffect(() => {
+      if (activeTab === 'history') {
+        if (!isBuyerRole) {
+          loadPurchases(0);
+        }
+        setHistoryRefreshKey((prev) => prev + 1);
+      }
+    }, [activeTab]);
+
+    const handleRefreshTopBar = async () => {
+      await loadWallet();
+      if (!isBuyerRole) {
+        await loadPackagesAndCredit();
+        await loadPurchases(0);
+      }
+      if (activeTab === 'history') {
+        setHistoryRefreshKey((prev) => prev + 1);
+      }
+    };
+
+    // Timer countdown for deposit request
+    useEffect(() => {
+      let timerInterval: NodeJS.Timeout | null = null;
+      if (depositRequest && depositRequest.status === 'PENDING') {
+        const getInitialSeconds = () => {
+          if (depositRequest.expiresAt) {
+            const diff = Math.floor((new Date(depositRequest.expiresAt).getTime() - Date.now()) / 1000);
+            return Math.max(0, diff);
+          }
+          if (depositRequest.createdAt) {
+            const diff = Math.floor((new Date(depositRequest.createdAt).getTime() + 15 * 60 * 1000 - Date.now()) / 1000);
+            return Math.max(0, diff);
+          }
+          return 900;
+        };
+
+        const initialSec = getInitialSeconds();
+        setTimeLeft(initialSec);
+
+        timerInterval = setInterval(() => {
+          setTimeLeft((prev) => {
+            if (prev <= 1) {
+              clearInterval(timerInterval!);
+              setDepositRequest(null);
+              const durationMin = depositRequest.expiresAt && depositRequest.createdAt
+                ? Math.max(1, Math.round((new Date(depositRequest.expiresAt).getTime() - new Date(depositRequest.createdAt).getTime()) / 60000))
+                : 15;
+              setDepositError(`Hết thời gian giao dịch (${durationMin} phút). Vui lòng tạo yêu cầu nạp tiền mới nếu vẫn muốn giao dịch.`);
+              return 0;
             }
+            return prev - 1;
+          });
+        }, 1000);
+      } else {
+        setTimeLeft(900);
+      }
+      return () => {
+        if (timerInterval) clearInterval(timerInterval);
+      };
+    }, [depositRequest]);
 
-            // Nếu người bán đang mua gói bị thiếu tiền, tự động hoàn tất mua gói ngay khi tiền nạp vào ví
-            if (pendingPackage) {
-              const targetPkg = pendingPackage;
-              const pkgPrice = getPkgPrice(targetPkg);
-              if (freshWallet.balance >= pkgPrice) {
-                setAutoActivating(true);
-                try {
-                  let result: any = null;
-                  const isBackendUuid = targetPkg.id && targetPkg.id.length >= 32 && targetPkg.id.includes('-');
-                  if (isBackendUuid) {
-                    try {
-                      result = await topupService.purchasePackage(targetPkg.id);
-                    } catch (err) {
-                      console.warn('topupService.purchasePackage auto notice:', err);
-                    }
+    // Polling wallet balance when a deposit request is pending
+    useEffect(() => {
+      if (depositRequest && depositRequest.status === 'PENDING') {
+        const baselineBalance = preDepositBalanceRef.current;
+        pollingRef.current = setInterval(async () => {
+          try {
+            const freshWallet = await walletService.getMyWallet();
+            const hasBalanceIncreased = freshWallet && (
+              freshWallet.balance > baselineBalance ||
+              (baselineBalance === 0 && freshWallet.balance >= depositRequest.amount)
+            );
+            if (hasBalanceIncreased) {
+              setWallet(freshWallet);
+              preDepositBalanceRef.current = freshWallet.balance;
+              if (onWalletUpdated) onWalletUpdated(freshWallet.balance);
+              if (pollingRef.current) {
+                clearInterval(pollingRef.current);
+                pollingRef.current = null;
+              }
+
+              // Nếu người bán đang mua gói bị thiếu tiền, tự động hoàn tất mua gói ngay khi tiền nạp vào ví
+              if (pendingPackage) {
+                const targetPkg = pendingPackage;
+                const pkgPrice = getPkgPrice(targetPkg);
+                if (freshWallet.balance >= pkgPrice) {
+                  setAutoActivating(true);
+                  let intent = getPendingIntent(currentUser?.id);
+                  if (
+                    !intent ||
+                    intent.packageId !== targetPkg.id ||
+                    intent.packageVersion !== (targetPkg.packageVersion ?? 0) ||
+                    intent.expectedPrice !== pkgPrice
+                  ) {
+                    intent = {
+                      userId: currentUser?.id || '',
+                      packageId: targetPkg.id,
+                      packageVersion: targetPkg.packageVersion ?? 0,
+                      expectedPrice: pkgPrice,
+                      requestId: crypto.randomUUID(),
+                      timestamp: Date.now(),
+                    };
+                    setPendingIntent(currentUser?.id, intent);
                   }
 
                   try {
-                    await sellerCreditService.createPurchase({
-                      listingQuantity: targetPkg.postCredits || 0,
-                      valuationQuantity: targetPkg.valuationCredits || 0,
-                      aiChatQuantity: targetPkg.chatCredits || 0,
+                    const res = await topupService.purchasePackage(targetPkg.id, {
+                      requestId: intent.requestId,
+                      packageVersion: intent.packageVersion,
+                      expectedPrice: intent.expectedPrice,
                     });
-                  } catch (err) {
-                    console.warn('sellerCreditService.createPurchase auto notice:', err);
-                  }
 
-                  const updatedCredit: UserCredit = result || {
-                    postCredits: (userCredit?.postCredits || 0) + (targetPkg.postCredits || 0),
-                    chatCredits: (userCredit?.chatCredits || 0) + (targetPkg.chatCredits || 0),
-                    valuationCredits: (userCredit?.valuationCredits || 0) + (targetPkg.valuationCredits || 0),
-                  };
-                  setUserCredit(updatedCredit);
-                  if (onUserCreditUpdated) onUserCreditUpdated(updatedCredit);
-                  if (onCreditUpdated && typeof updatedCredit.postCredits === 'number') {
-                    onCreditUpdated(updatedCredit.postCredits);
-                  }
+                    const purchaseData: TopupPackagePurchaseResponse = (res as any)?.data || res;
+                    if (purchaseData && purchaseData.id) {
+                      clearPendingIntent(currentUser?.id);
+                      setLatestReceipt(purchaseData);
+                      setPurchasedPackage(targetPkg);
+                      setSelectedPkg(targetPkg);
+                      setPackageSuccess(true);
+                      setPendingPackage(null);
+                      setDepositRequest(null);
+                      setActiveTab('packages');
 
-                  const finalWallet = await walletService.getMyWallet().catch(() => null);
-                  if (finalWallet) {
-                    setWallet(finalWallet);
-                    preDepositBalanceRef.current = finalWallet.balance;
-                    if (onWalletUpdated) onWalletUpdated(finalWallet.balance);
-                  }
+                      // Lấy số dư thực tế từ BE, không cộng suy đoán ở client
+                      const [updatedCredit, finalWallet] = await Promise.all([
+                        topupService.getMyCredit().catch(() => null),
+                        walletService.getMyWallet().catch(() => null),
+                      ]);
 
-                  setDepositRequest(null);
-                  setPendingPackage(null);
-                  setSelectedPkg(targetPkg);
-                  setPurchasedPackage(targetPkg);
-                  setPackageSuccess(true);
-                  setActiveTab('packages');
-                  return;
-                } catch (autoErr) {
-                  console.error('Lỗi tự động kích hoạt gói sau khi nạp tiền:', autoErr);
-                } finally {
-                  setAutoActivating(false);
+                      if (updatedCredit) {
+                        setUserCredit(updatedCredit);
+                        if (onUserCreditUpdated) onUserCreditUpdated(updatedCredit);
+                        if (onCreditUpdated && typeof updatedCredit.postCredits === 'number') {
+                          onCreditUpdated(updatedCredit.postCredits);
+                        }
+                      }
+                      if (finalWallet) {
+                        setWallet(finalWallet);
+                        preDepositBalanceRef.current = finalWallet.balance;
+                        if (onWalletUpdated) onWalletUpdated(finalWallet.balance);
+                      }
+                      return;
+                    } else {
+                      throw new Error((res as any)?.message || 'Không hoàn tất được giao dịch mua gói sau khi nạp tiền.');
+                    }
+                  } catch (autoErr: any) {
+                    console.error('Lỗi tự động mua gói sau khi nạp tiền ví:', autoErr);
+                    setPurchaseError(autoErr?.message || 'Đã nạp tiền vào ví nhưng mua gói tự động thất bại. Vui lòng nhấn Xác nhận mua gói để thử lại.');
+                    setActiveTab('packages');
+                  } finally {
+                    setAutoActivating(false);
+                  }
                 }
               }
+
+              setDepositRequest((prev) => (prev ? { ...prev, status: 'SUCCESS' } : null));
             }
-
-            setDepositRequest((prev) => prev ? { ...prev, status: 'SUCCESS' } : null);
+          } catch {
+            // ignore transient polling errors
           }
-        } catch {
-          // ignore transient polling errors
-        }
-      }, 4000);
+        }, 4000);
 
-      return () => {
-        if (pollingRef.current) {
-          clearInterval(pollingRef.current);
-          pollingRef.current = null;
-        }
-      };
-    }
-  }, [depositRequest, pendingPackage, userCredit]);
-
-  const loadWallet = async () => {
-    setWalletLoading(true);
-    try {
-      const w = await walletService.getMyWallet();
-      if (w) {
-        setWallet(w);
-        preDepositBalanceRef.current = w.balance;
-        if (onWalletUpdated) onWalletUpdated(w.balance);
-
-        // Nếu đang có pendingPackage và số dư ví đã đủ
-        if (depositRequest && depositRequest.status === 'PENDING' && pendingPackage && w.balance >= getPkgPrice(pendingPackage)) {
-          const pkgToActivate = pendingPackage;
-          setPendingPackage(null);
-          await handleConfirmPurchase(pkgToActivate);
-          setDepositRequest(null);
-        }
-      }
-      if (!isBuyerRole) {
-        await loadPackagesAndCredit();
-      }
-    } catch (err: any) {
-      console.warn('Could not load wallet from BE:', err);
-    } finally {
-      setWalletLoading(false);
-    }
-  };
-
-  const loadPackagesAndCredit = async () => {
-    if (isBuyerRole) {
-      setPackagesLoading(false);
-      return;
-    }
-    setPackagesLoading(true);
-    try {
-      const [pkgsRes, aiCreditObj, sellerCreditObj] = await Promise.all([
-        topupService.getTopupPackages().catch(() => []),
-        topupService.getMyCredit().catch(() => null),
-        sellerCreditService.getCredits().catch(() => null),
-      ]);
-
-      const pkgsList = Array.isArray(pkgsRes) ? pkgsRes : (pkgsRes as any)?.data || [];
-      const seen = new Set<string>();
-      const uniquePkgs: TopupPackage[] = [];
-      for (const p of pkgsList) {
-        const key = p.id || `${p.name}_${p.postCredits}_${p.chatCredits}_${p.valuationCredits}_${p.price}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          uniquePkgs.push(p);
-        }
-      }
-
-      setPackages(uniquePkgs);
-      if (uniquePkgs.length > 0) {
-        setSelectedPkg(uniquePkgs[0]);
-      }
-
-      if (aiCreditObj || sellerCreditObj) {
-        const mergedCredit: UserCredit = {
-          ...userCredit,
-          postCredits: sellerCreditObj?.postCredits ?? (aiCreditObj as any)?.postCredits ?? userCredit.postCredits ?? 0,
-          valuationCredits: sellerCreditObj?.valuationCredits ?? (aiCreditObj as any)?.valuationCredits ?? userCredit.valuationCredits ?? 0,
-          chatCredits: sellerCreditObj?.chatCredits ?? (aiCreditObj as any)?.aiChatBalance ?? (aiCreditObj as any)?.chatCredits ?? userCredit.chatCredits ?? 0,
+        return () => {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
         };
-        setUserCredit(mergedCredit);
       }
-    } catch {
-      setPackages([]);
-    } finally {
-      setPackagesLoading(false);
-    }
-  };
+    }, [depositRequest, pendingPackage, userCredit]);
 
-  const comboPackages = useMemo(() => {
-    return packages.filter((p) => getPackageType(p) === 'combo');
-  }, [packages]);
+    const loadWallet = async () => {
+      setWalletLoading(true);
+      try {
+        const w = await walletService.getMyWallet();
+        if (w) {
+          setWallet(w);
+          preDepositBalanceRef.current = w.balance;
+          if (onWalletUpdated) onWalletUpdated(w.balance);
 
-  const singlePackages = useMemo(() => {
-    return packages
-      .filter((p) => {
-        const type = getPackageType(p);
-        if (type === 'combo') return false;
-
-        if (singleFilter === 'valuation') {
-          return type === 'valuation';
+          if (depositRequest && depositRequest.status === 'PENDING' && pendingPackage && w.balance >= getPkgPrice(pendingPackage)) {
+            const pkgToActivate = pendingPackage;
+            setPendingPackage(null);
+            await handleConfirmPurchase(pkgToActivate);
+            setDepositRequest(null);
+          }
         }
-        if (singleFilter === 'chat') {
-          return type === 'chat';
-        }
-        if (singleFilter === 'listing') {
-          return type === 'listing';
-        }
-        return true;
-      })
-      .sort((a, b) => getPkgPrice(a) - getPkgPrice(b));
-  }, [packages, singleFilter]);
+      } catch (err: any) {
+        console.warn('Could not load wallet from BE:', err);
+      } finally {
+        setWalletLoading(false);
+      }
+    };
 
-  // Handle Create Deposit Request
-  const handleCreateDeposit = async () => {
-    const amountNum = Number(depositAmount);
-    if (isNaN(amountNum) || amountNum < 10000) {
-      setDepositError('Số tiền nạp tối thiểu là 10.000 VNĐ');
-      return;
-    }
-    setDepositError(null);
-    setCreatingDeposit(true);
-    try {
-      const freshW = await walletService.getMyWallet().catch(() => null);
-      if (freshW) {
-        setWallet(freshW);
-        preDepositBalanceRef.current = freshW.balance;
-        if (onWalletUpdated) onWalletUpdated(freshW.balance);
+    const loadPackagesAndCredit = async () => {
+      if (isBuyerRole) {
+        setPackagesLoading(false);
+        return;
+      }
+      if (isFetchingPackagesRef.current) return;
+      isFetchingPackagesRef.current = true;
+      setPackagesLoading(true);
+      setPackagesError(null);
+      try {
+        const [pkgsRes, myCreditObj] = await Promise.all([
+          topupService.getTopupPackages(),
+          topupService.getMyCredit().catch(() => null),
+        ]);
+
+        const pkgsList = Array.isArray(pkgsRes) ? pkgsRes : (pkgsRes as any)?.data || [];
+        const validPkgs = pkgsList.filter((p: TopupPackage) => p.active !== false && p.pricingAvailable !== false);
+
+        const seen = new Set<string>();
+        const uniquePkgs: TopupPackage[] = [];
+        for (const p of validPkgs) {
+          const key = p.id || `${p.name}_${p.postCredits}_${p.chatCredits}_${p.valuationCredits}_${p.price}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            uniquePkgs.push(p);
+          }
+        }
+
+        setPackages(uniquePkgs);
+        if (uniquePkgs.length > 0) {
+          setSelectedPkg((prev) => (prev && uniquePkgs.some((p) => p.id === prev.id) ? prev : uniquePkgs[0]));
+        } else {
+          setSelectedPkg(null);
+        }
+
+        if (myCreditObj) {
+          setUserCredit(myCreditObj);
+        }
+      } catch (err: any) {
+        console.warn('Cannot load packages from BE:', err);
+        setPackages([]);
+        setPackagesError(err?.message || 'Không thể tải danh sách gói dịch vụ từ hệ thống. Vui lòng thử lại.');
+      } finally {
+        setPackagesLoading(false);
+        isFetchingPackagesRef.current = false;
+      }
+    };
+
+    const comboPackages = useMemo(() => {
+      return packages
+        .filter((p) => getPackageType(p) === 'combo')
+        .sort((a, b) => getPkgPrice(a) - getPkgPrice(b));
+    }, [packages]);
+
+    const maxComboDiscount = useMemo(() => {
+      const valid = comboPackages
+        .map((p) => {
+          const d = Number(p.discountPercentage || 0);
+          if (d > 0) return d;
+          const ref = p.referencePrice ? Number(p.referencePrice) : 0;
+          const price = getPkgPrice(p);
+          return ref > price ? ((ref - price) / ref) * 100 : 0;
+        })
+        .filter((d) => d > 0);
+      return valid.length > 0 ? Math.max(...valid) : 0;
+    }, [comboPackages]);
+
+    const maxSingleDiscount = useMemo(() => {
+      const valid = packages
+        .filter((p) => getPackageType(p) !== 'combo')
+        .map((p) => {
+          const d = Number(p.discountPercentage || 0);
+          if (d > 0) return d;
+          const ref = p.referencePrice ? Number(p.referencePrice) : 0;
+          const price = getPkgPrice(p);
+          return ref > price ? ((ref - price) / ref) * 100 : 0;
+        })
+        .filter((d) => d > 0);
+      return valid.length > 0 ? Math.max(...valid) : 0;
+    }, [packages]);
+
+    const maxDiscount = Math.max(maxComboDiscount, maxSingleDiscount);
+
+    const singlePackages = useMemo(() => {
+      return packages
+        .filter((p) => {
+          const type = getPackageType(p);
+          if (type === 'combo') return false;
+
+          if (singleFilter === 'valuation') return type === 'valuation';
+          if (singleFilter === 'chat') return type === 'chat';
+          if (singleFilter === 'listing') return type === 'listing';
+          return true;
+        })
+        .sort((a, b) => getPkgPrice(a) - getPkgPrice(b));
+    }, [packages, singleFilter]);
+
+    // Tự động đồng bộ selectedPkg theo category đang xem (combo vs single)
+    useEffect(() => {
+      if (packages.length === 0) return;
+      if (packageCategory === 'combo') {
+        if (!selectedPkg || !comboPackages.some((c) => c.id === selectedPkg.id)) {
+          if (comboPackages.length > 0) {
+            setSelectedPkg(comboPackages[0]);
+          }
+        }
       } else {
-        preDepositBalanceRef.current = wallet?.balance ?? 0;
+        if (!selectedPkg || !singlePackages.some((s) => s.id === selectedPkg.id)) {
+          if (singlePackages.length > 0) {
+            setSelectedPkg(singlePackages[0]);
+          }
+        }
       }
-      const res = await walletService.createDepositRequest(amountNum);
-      setDepositRequest(res);
-    } catch (err: any) {
-      setDepositError(err?.message || 'Không thể tạo yêu cầu nạp tiền. Vui lòng thử lại sau.');
-    } finally {
-      setCreatingDeposit(false);
-    }
-  };
+    }, [packageCategory, comboPackages, singlePackages, packages.length]);
 
-  // Handle Copy helper
-  const handleCopy = (text: string, fieldName: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(fieldName);
-    setTimeout(() => setCopiedField(null), 2000);
-  };
-
-  // Handle Purchase Package via Wallet balance or generate Deficit Deposit QR if balance is insufficient
-  const handleConfirmPurchase = async (pkgToBuy?: TopupPackage | null) => {
-    const targetPkg = pkgToBuy || selectedPkg;
-    if (!targetPkg) return;
-    const pkgPrice = getPkgPrice(targetPkg);
-    const currentBal = wallet?.balance ?? 0;
-
-    // KHI THIẾU TIỀN: Tự động gọi API BE tạo yêu cầu nạp tiền đúng số tiền thiếu cần thanh toán thêm (tối thiểu 10.000đ theo quy định BE)
-    if (currentBal < pkgPrice) {
-      const deficit = pkgPrice - currentBal;
-      const neededAmount = Math.max(deficit, 10000);
-      setPendingPackage(targetPkg);
-      setSelectedPkg(targetPkg);
-      setDepositAmount(neededAmount);
-      setCustomAmount(neededAmount.toLocaleString('vi-VN'));
-      setCreatingDeposit(true);
-      setPurchaseError(null);
+    const handleCreateDeposit = async () => {
+      const amountNum = Number(depositAmount);
+      if (isNaN(amountNum) || amountNum < 10000) {
+        setDepositError('Số tiền nạp tối thiểu là 10.000 VNĐ');
+        return;
+      }
       setDepositError(null);
+      setCreatingDeposit(true);
       try {
         const freshW = await walletService.getMyWallet().catch(() => null);
         if (freshW) {
@@ -488,288 +569,391 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         } else {
           preDepositBalanceRef.current = wallet?.balance ?? 0;
         }
-        const res = await walletService.createDepositRequest(neededAmount);
+        const res = await walletService.createDepositRequest(amountNum);
         setDepositRequest(res);
-        setActiveTab('wallet');
       } catch (err: any) {
-        setPurchaseError(err?.message || 'Không thể tạo mã QR nạp tiền từ hệ thống. Vui lòng thử lại sau.');
+        setDepositError(err?.message || 'Không thể tạo yêu cầu nạp tiền. Vui lòng thử lại sau.');
       } finally {
         setCreatingDeposit(false);
       }
-      return;
-    }
+    };
 
-    setPurchaseError(null);
-    setPurchasing(true);
-    try {
-      if (!targetPkg.id) {
-        throw new Error('ID gói không hợp lệ.');
-      }
-      
-      // Gọi API mua gói
-      await topupService.purchasePackage(targetPkg.id);
+      const handleCopy = (text: string, fieldName: string) => {
+        navigator.clipboard.writeText(text);
+        setCopiedField(fieldName);
+        setTimeout(() => setCopiedField(null), 2000);
+      };
 
-      // Nạp thành công, lấy lại số dư thực tế từ BE
-      const updatedCredit = await topupService.getMyCredit();
-      setUserCredit(updatedCredit);
-      
-      if (onUserCreditUpdated) onUserCreditUpdated(updatedCredit);
-      if (onCreditUpdated && typeof updatedCredit.postCredits === 'number') {
-        onCreditUpdated(updatedCredit.postCredits);
-      }
-      // Re-fetch wallet balance after deduction
-      await loadWallet();
-      setPurchasedPackage(targetPkg);
-      setSelectedPkg(targetPkg);
-      setPackageSuccess(true);
-      setPendingPackage(null);
-    } catch (err: any) {
-      setPurchaseError(err?.message || 'Giao dịch mua gói thất bại. Vui lòng kiểm tra lại số dư ví.');
-    } finally {
-      setPurchasing(false);
-    }
-  };
+      const handleConfirmPurchase = async (pkgToBuy?: TopupPackage | null) => {
+        const targetPkg = pkgToBuy || selectedPkg;
+        if (!targetPkg) return;
+        const pkgPrice = getPkgPrice(targetPkg);
+        const currentBal = wallet?.balance ?? 0;
 
-  if (!isOpen) return null;
+        // Thiết lập ý định mua (Purchase Intent) với requestId bất biến khi retry
+        let intent = getPendingIntent(currentUser?.id);
+        if (
+          !intent ||
+          intent.packageId !== targetPkg.id ||
+          intent.packageVersion !== (targetPkg.packageVersion ?? 0) ||
+          intent.expectedPrice !== pkgPrice
+        ) {
+          intent = {
+            userId: currentUser?.id || '',
+            packageId: targetPkg.id,
+            packageVersion: targetPkg.packageVersion ?? 0,
+            expectedPrice: pkgPrice,
+            requestId: crypto.randomUUID(),
+            timestamp: Date.now(),
+          };
+          setPendingIntent(currentUser?.id, intent);
+        }
 
-  const currentWalletBalance = wallet?.balance ?? initialWalletBalance ?? 0;
+        // THIẾU TIỀN VÍ: Tạo yêu cầu nạp tiền thiếu (tối thiểu 10.000đ theo quy định BE)
+        if (currentBal < pkgPrice) {
+          const deficit = pkgPrice - currentBal;
+          const neededAmount = Math.max(deficit, 10000);
+          setPendingPackage(targetPkg);
+          setSelectedPkg(targetPkg);
+          setDepositAmount(neededAmount);
+          setCustomAmount(neededAmount.toLocaleString('vi-VN'));
+          setCreatingDeposit(true);
+          setPurchaseError(null);
+          setDepositError(null);
+          try {
+            const freshW = await walletService.getMyWallet().catch(() => null);
+            if (freshW) {
+              setWallet(freshW);
+              preDepositBalanceRef.current = freshW.balance;
+              if (onWalletUpdated) onWalletUpdated(freshW.balance);
+            } else {
+              preDepositBalanceRef.current = wallet?.balance ?? 0;
+            }
+            const res = await walletService.createDepositRequest(neededAmount);
+            setDepositRequest(res);
+            setActiveTab('wallet');
+          } catch (err: any) {
+            setPurchaseError(err?.message || 'Không thể tạo mã VietQR nạp tiền từ hệ thống.');
+          } finally {
+            setCreatingDeposit(false);
+          }
+          return;
+        }
 
-  // VietQR dynamic image URL generator using SePay bank details
-  const vietQrUrl = depositRequest
-    ? `https://img.vietqr.io/image/${depositRequest.bankName}-${depositRequest.bankAccountNumber}-compact2.png?amount=${depositRequest.amount}&addInfo=${depositRequest.code}&accountName=${encodeURIComponent(depositRequest.bankAccountName)}`
-    : '';
+        setPurchaseError(null);
+        setPurchasing(true);
+        try {
+          if (!targetPkg.id) {
+            throw new Error('ID gói dịch vụ không hợp lệ.');
+          }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-3xl overflow-hidden rounded-3xl bg-[#faf8f5] border border-[#24263e]/15 text-[#24263e] shadow-2xl flex flex-col max-h-[96vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 sm:py-3.5 border-b border-white/10 bg-[#24263e] shrink-0">
-          <div className="flex items-center space-x-3">
-            <div className="bg-white p-1.5 rounded-xl shadow-xs border border-white/80 flex items-center justify-center shrink-0">
-              <img
-                src={logoImg}
-                alt="SecondLife Logo"
-                className="h-7 sm:h-8 w-auto object-contain shrink-0"
-              />
+          // Gọi API mua gói theo contract V65
+          const res = await topupService.purchasePackage(targetPkg.id, {
+            requestId: intent.requestId,
+            packageVersion: intent.packageVersion,
+            expectedPrice: intent.expectedPrice,
+          });
+
+          const purchaseData: TopupPackagePurchaseResponse = (res as any)?.data || res;
+          if (purchaseData && purchaseData.id) {
+            clearPendingIntent(currentUser?.id);
+            setLatestReceipt(purchaseData);
+            setPurchasedPackage(targetPkg);
+            setSelectedPkg(targetPkg);
+            setPackageSuccess(true);
+            setPendingPackage(null);
+
+            // Lấy lại số dư thực tế từ BE (không tự cộng hoặc suy đoán)
+            const [updatedCredit, freshW] = await Promise.all([
+              topupService.getMyCredit().catch(() => null),
+              walletService.getMyWallet().catch(() => null),
+            ]);
+
+            if (updatedCredit) {
+              setUserCredit(updatedCredit);
+              if (onUserCreditUpdated) onUserCreditUpdated(updatedCredit);
+              if (onCreditUpdated && typeof updatedCredit.postCredits === 'number') {
+                onCreditUpdated(updatedCredit.postCredits);
+              }
+            }
+            if (freshW) {
+              setWallet(freshW);
+              preDepositBalanceRef.current = freshW.balance;
+              if (onWalletUpdated) onWalletUpdated(freshW.balance);
+            }
+          } else {
+            throw new Error((res as any)?.message || 'Máy chủ không trả về biên nhận mua gói.');
+          }
+        } catch (err: any) {
+          const status = err?.status || err?.response?.status;
+          const errMsg = String(err?.message || '');
+          if (status === 409 || errMsg.includes('409') || errMsg.toLowerCase().includes('phiên bản') || errMsg.toLowerCase().includes('ngừng bán')) {
+            await loadPackagesAndCredit();
+            setPurchaseError(`${errMsg || 'Gói dịch vụ đã thay đổi hoặc ngừng bán.'} Danh sách gói đã được cập nhật, vui lòng kiểm tra và xác nhận lại.`);
+          } else {
+            setPurchaseError(errMsg || 'Giao dịch mua gói thất bại. Bạn có thể nhấn nút thử lại giao dịch.');
+          }
+        } finally {
+          setPurchasing(false);
+        }
+      };
+
+      if (!isOpen) return null;
+
+      const currentWalletBalance = wallet?.balance ?? initialWalletBalance ?? 0;
+
+      // VietQR dynamic image URL generator using SePay bank details
+      const vietQrUrl = depositRequest
+        ? `https://img.vietqr.io/image/${depositRequest.bankName}-${depositRequest.bankAccountNumber}-compact2.png?amount=${depositRequest.amount}&addInfo=${depositRequest.code}&accountName=${encodeURIComponent(depositRequest.bankAccountName)}`
+        : '';
+
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn">
+          <div className="relative w-full max-w-3xl h-[680px] sm:h-[720px] max-h-[94vh] overflow-hidden rounded-3xl bg-[#faf8f5] border border-[#24263e]/15 text-[#24263e] shadow-2xl flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3 sm:py-3.5 border-b border-white/10 bg-[#24263e] shrink-0">
+              <div className="flex items-center space-x-3">
+                <div className="bg-white p-1.5 rounded-xl shadow-xs border border-white/80 flex items-center justify-center shrink-0">
+                  <img
+                    src={logoImg}
+                    alt="SecondLife Logo"
+                    className="h-7 sm:h-8 w-auto object-contain shrink-0"
+                  />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-white tracking-tight">
+                    {isBuyerRole
+                      ? 'Ví Escrow & Nạp Tiền SecondLife'
+                      : 'Ví Tiền & Quyền Sử Dụng SecondLife'}
+                  </h3>
+                  <p className="text-[11px] text-[#fce5da] font-medium leading-tight">
+                    {isBuyerRole
+                      ? 'Nạp tiền tự động qua VietQR (SePay) • Bảo đảm giao dịch an toàn qua Quỹ Escrow'
+                      : 'Nạp tiền tự động qua VietQR (SePay) • Mua gói lượt đăng tin AI'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={onClose}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition cursor-pointer border border-white/15 shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <div>
-              <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
-                {isBuyerRole
-                  ? <>Ví Escrow &amp; Nạp Tiền Second<span className="text-[#c34c36]">Life</span></>
-                  : <>Ví Tiền &amp; Quyền Sử Dụng Second<span className="text-[#c34c36]">Life</span></>}
-              </h3>
-              <p className="text-[11px] text-[#fce5da] font-medium leading-tight">
-                {isBuyerRole
-                  ? 'Nạp tiền tự động qua VietQR (SePay) • Bảo đảm giao dịch an toàn qua Quỹ Escrow'
-                  : 'Nạp tiền tự động qua VietQR (SePay) • Mua gói lượt đăng tin AI'}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition cursor-pointer border border-white/15 shrink-0"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
 
-        {/* Balance Status Banner (Chỉ hiện khi chưa ở màn hình quét QR thanh toán) */}
-        {!depositRequest && (
-          <div className="px-5 py-2.5 bg-gradient-to-r from-[#24263e]/5 via-[#fce5da]/30 to-[#24263e]/5 border-b border-[#24263e]/10 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-xl bg-[#24263e] text-white flex items-center justify-center shadow-xs">
-                <Wallet className="w-3.5 h-3.5 text-emerald-400" />
+            {/* Balance Status Banner (Luôn cố định giúp chiều cao modal không bị co giật khi chuyển tab) */}
+            <div className="px-5 py-2.5 bg-gradient-to-r from-[#24263e]/5 via-[#fce5da]/30 to-[#24263e]/5 border-b border-[#24263e]/10 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-xl bg-[#24263e] text-white flex items-center justify-center shadow-xs">
+                  <Wallet className="w-3.5 h-3.5 text-emerald-400" />
+                </div>
+                <div>
+                  <span className="text-[10px] text-[#24263e]/70 font-semibold block leading-tight">Số Dư Ví Khả Dụng:</span>
+                  <span className="text-sm sm:text-base font-black text-[#24263e] font-mono leading-tight">
+                    {formatVND(currentWalletBalance)}
+                  </span>
+                </div>
               </div>
-              <div>
-                <span className="text-[10px] text-[#24263e]/70 font-semibold block leading-tight">Số Dư Ví Khả Dụng:</span>
-                <span className="text-sm sm:text-base font-black text-[#24263e] font-mono leading-tight">
-                  {formatVND(currentWalletBalance)}
-                </span>
-              </div>
-            </div>
 
-            {!isBuyerRole ? (
-              <div className="flex items-center gap-2 text-xs font-bold font-mono">
-                <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
-                  Tin: <span className="font-black text-[#c34c36]">{userCredit?.postCredits ?? 0}</span>
-                </span>
-                <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
-                  AI Chat: <span className="font-black text-[#c34c36]">{userCredit?.chatCredits ?? 0}</span>
-                </span>
-                <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
-                  Định giá: <span className="font-black text-[#c34c36]">{userCredit?.valuationCredits ?? 0}</span>
-                </span>
-                <button
-                  onClick={handleRefreshTopBar}
-                  title="Làm mới số dư và lịch sử"
-                  className="p-1 rounded-lg bg-white border border-[#24263e]/15 text-slate-600 hover:text-[#24263e] cursor-pointer"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${walletLoading ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-xs font-bold">
-                <span className="text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2.5 py-0.5 rounded-xl font-bold flex items-center gap-1 shadow-2xs">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  Bảo Lãnh Ký Quỹ Escrow
-                </span>
-                <button
-                  onClick={handleRefreshTopBar}
-                  title="Làm mới số dư và lịch sử"
-                  className="p-1 rounded-lg bg-white border border-[#24263e]/15 text-slate-600 hover:text-[#24263e] cursor-pointer"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${walletLoading ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tab Switcher - Only show package tab if NOT buyer */}
-        <div className="flex border-b border-[#24263e]/10 bg-white/70 px-5 pt-1.5 pb-1 shrink-0">
-          <button
-            onClick={() => {
-              setActiveTab('wallet');
-              setPurchaseError(null);
-            }}
-            className={`pb-2 px-3.5 text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer border-b-2 ${activeTab === 'wallet'
-                ? 'border-[#c34c36] text-[#c34c36]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-          >
-            <QrCode className="w-3.5 h-3.5" />
-            <span>{isBuyerRole ? 'Nạp Tiền Vào Ví Escrow (VietQR)' : '1. Nạp Tiền Vào Ví (VietQR)'}</span>
-            {depositRequest && depositRequest.status === 'PENDING' && (
-              <span className="w-2 h-2 rounded-full bg-[#c34c36] animate-ping ml-1" title="Có giao dịch nạp đang chờ" />
-            )}
-          </button>
-          {!isBuyerRole && (
-            <button
-              onClick={() => {
-                setActiveTab('packages');
-                setDepositError(null);
-              }}
-              className={`pb-2 px-3.5 text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer border-b-2 ${activeTab === 'packages'
-                  ? 'border-[#c34c36] text-[#c34c36]'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>2. Mua Gói Quyền Sử Dụng (Trừ ví)</span>
-            </button>
-          )}
-          <button
-            onClick={() => {
-              setActiveTab('history');
-              setDepositError(null);
-            }}
-            className={`pb-2 px-3.5 text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer border-b-2 ${activeTab === 'history'
-                ? 'border-[#c34c36] text-[#c34c36]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-          >
-            <Clock className="w-3.5 h-3.5" />
-            <span>Lịch Sử Giao Dịch</span>
-          </button>
-        </div>
-
-        {/* Modal Scrollable Body */}
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-3 sm:space-y-3.5 flex-1">
-          {/* ============================================================== */}
-          {/* TAB 1: WALLET DEPOSIT VIA VIETQR                               */}
-          {/* ============================================================== */}
-          {activeTab === 'wallet' && (
-            <div className="space-y-5">
-              {!depositRequest ? (
-                <>
-                  <div className="bg-white p-5 rounded-2xl border border-[#24263e]/10 shadow-xs space-y-4">
-                    <div>
-                      <h4 className="font-black text-sm text-[#24263e] flex items-center gap-1.5">
-                        <CreditCard className="w-4 h-4 text-[#c34c36]" />
-                        <span>Chọn hoặc nhập số tiền cần nạp</span>
-                      </h4>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Số tiền nạp tối thiểu là 10.000 VNĐ. Tiền được tự động cộng vào ví qua SePay Webhook ngay khi chuyển khoản xong.
-                      </p>
-                    </div>
-
-                    {/* Presets */}
-                    <div className="grid grid-cols-3 gap-2.5">
-                      {PRESET_DEPOSIT_AMOUNTS.map((amt) => (
-                        <button
-                          key={amt}
-                          type="button"
-                          onClick={() => {
-                            setDepositAmount(amt);
-                            setCustomAmount(amt.toLocaleString('vi-VN'));
-                          }}
-                          className={`py-2 px-3 rounded-xl font-mono text-xs font-bold transition-all border cursor-pointer ${depositAmount === amt
-                              ? 'bg-[#c34c36] text-white border-[#c34c36] shadow-sm'
-                              : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-200'
-                            }`}
-                        >
-                          {amt.toLocaleString('vi-VN')} đ
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Custom Input */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                        Số tiền tùy chỉnh (VNĐ):
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={customAmount}
-                          onChange={(e) => {
-                            const rawVal = e.target.value.replace(/\D/g, '');
-                            if (!rawVal) {
-                              setCustomAmount('');
-                              setDepositAmount(0);
-                            } else {
-                              const numVal = parseInt(rawVal, 10);
-                              setCustomAmount(numVal.toLocaleString('vi-VN'));
-                              setDepositAmount(numVal);
-                            }
-                          }}
-                          placeholder="Ví dụ: 150.000"
-                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm font-bold text-slate-900 focus:outline-none focus:border-[#c34c36] focus:bg-white transition"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
-                          VNĐ
-                        </span>
-                      </div>
-                    </div>
-
-                    {depositError && (
-                      <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-semibold flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-                        <span>{depositError}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Create Button */}
+              {!isBuyerRole ? (
+                <div className="flex items-center gap-2 text-xs font-bold font-mono">
+                  <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
+                    Tin: <span className="font-black text-[#c34c36]">{userCredit?.postCredits ?? 0}</span>
+                  </span>
+                  <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
+                    AI Chat: <span className="font-black text-[#c34c36]">{userCredit?.chatCredits ?? 0}</span>
+                  </span>
+                  <span className="text-[#24263e] bg-white border border-[#24263e]/15 px-2.5 py-0.5 rounded-xl shadow-xs">
+                    Định giá: <span className="font-black text-[#c34c36]">{userCredit?.valuationCredits ?? 0}</span>
+                  </span>
                   <button
-                    disabled={creatingDeposit || depositAmount < 10000}
-                    onClick={handleCreateDeposit}
-                    className="w-full py-3.5 rounded-2xl font-black text-sm text-white bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 active:scale-[0.99] transition shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+                    onClick={handleRefreshTopBar}
+                    title="Làm mới số dư và lịch sử"
+                    className="p-1 rounded-lg bg-white border border-[#24263e]/15 text-slate-600 hover:text-[#24263e] cursor-pointer"
                   >
-                    {creatingDeposit ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Đang khởi tạo mã giao dịch...</span>
-                      </>
-                    ) : (
-                      <>
-                        <QrCode className="w-4 h-4" />
-                        <span>Tạo Mã QR VietQR Nạp {depositAmount.toLocaleString('vi-VN')} VNĐ</span>
-                      </>
-                    )}
+                    <RefreshCw className={`w-3.5 h-3.5 ${walletLoading ? 'animate-spin' : ''}`} />
                   </button>
-                </>
+                </div>
               ) : (
+                <div className="flex items-center gap-2 text-xs font-bold">
+                  <span className="text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2.5 py-0.5 rounded-xl font-bold flex items-center gap-1 shadow-2xs">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    Bảo Lãnh Ký Quỹ Escrow
+                  </span>
+                  <button
+                    onClick={handleRefreshTopBar}
+                    title="Làm mới số dư và lịch sử"
+                    className="p-1 rounded-lg bg-white border border-[#24263e]/15 text-slate-600 hover:text-[#24263e] cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${walletLoading ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Tab Switcher - Căn chỉnh đều 3 mục, có số thứ tự rõ ràng */}
+            <div className={`grid ${isBuyerRole ? 'grid-cols-2' : 'grid-cols-3'} border-b border-[#24263e]/10 bg-white/80 shrink-0`}>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('wallet');
+                  setPurchaseError(null);
+                }}
+                className={`py-3 px-2 sm:px-4 text-xs sm:text-sm font-black transition-all flex items-center justify-center gap-2 cursor-pointer border-b-2 text-center ${activeTab === 'wallet'
+                    ? 'border-[#c34c36] text-[#c34c36] bg-[#c34c36]/5 shadow-2xs'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50/80'
+                  }`}
+              >
+                <QrCode className="w-4 h-4 shrink-0" />
+                <span className="truncate">{isBuyerRole ? '1. Nạp Tiền Escrow (VietQR)' : '1. Nạp Tiền Vào Ví (VietQR)'}</span>
+                {depositRequest && depositRequest.status === 'PENDING' && (
+                  <span className="w-2 h-2 rounded-full bg-[#c34c36] animate-ping ml-0.5 shrink-0" title="Có giao dịch nạp đang chờ" />
+                )}
+              </button>
+              {!isBuyerRole && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('packages');
+                    setDepositError(null);
+                  }}
+                  className={`py-3 px-2 sm:px-4 text-xs sm:text-sm font-black transition-all flex items-center justify-center gap-2 cursor-pointer border-b-2 text-center ${activeTab === 'packages'
+                      ? 'border-[#c34c36] text-[#c34c36] bg-[#c34c36]/5 shadow-2xs'
+                      : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50/80'
+                    }`}
+                >
+                  <Sparkles className="w-4 h-4 shrink-0 text-amber-500" />
+                  <span className="truncate">2. Mua Gói Dịch Vụ (Trừ Ví)</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('history');
+                  setDepositError(null);
+                }}
+                className={`py-3 px-2 sm:px-4 text-xs sm:text-sm font-black transition-all flex items-center justify-center gap-2 cursor-pointer border-b-2 text-center ${activeTab === 'history'
+                    ? 'border-[#c34c36] text-[#c34c36] bg-[#c34c36]/5 shadow-2xs'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50/80'
+                  }`}
+              >
+                <Clock className="w-4 h-4 shrink-0" />
+                <span className="truncate">{isBuyerRole ? '2. Lịch Sử Giao Dịch' : '3. Lịch Sử Giao Dịch'}</span>
+              </button>
+            </div>
+
+            {/* Modal Scrollable Body - Giữ nguyên chiều cao cố định giữa các tab, không bị co giật */}
+            <div className="p-4 sm:p-5 flex-1 min-h-0 flex flex-col overflow-hidden">
+              {/* TAB 1: WALLET DEPOSIT VIA VIETQR */}
+              {activeTab === 'wallet' && (
+                <div className="space-y-4 animate-fadeIn flex-1 overflow-y-auto min-h-0 flex flex-col justify-between pr-1">
+                  {!depositRequest ? (
+                    <div className="space-y-4 flex-1 flex flex-col justify-between">
+                      <div className="bg-white p-5 rounded-2xl border border-[#24263e]/10 shadow-xs space-y-4">
+                        <div>
+                          <h4 className="font-black text-sm text-[#24263e] flex items-center gap-1.5">
+                            <CreditCard className="w-4 h-4 text-[#c34c36]" />
+                            <span>Chọn hoặc nhập số tiền cần nạp</span>
+                          </h4>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Số tiền nạp tối thiểu là 10.000 VNĐ. Tiền được tự động cộng vào ví qua SePay Webhook ngay khi chuyển khoản xong.
+                          </p>
+                        </div>
+
+                        {/* Presets */}
+                        <div className="grid grid-cols-3 gap-2.5">
+                          {PRESET_DEPOSIT_AMOUNTS.map((amt) => (
+                            <button
+                              key={amt}
+                              type="button"
+                              onClick={() => {
+                                setDepositAmount(amt);
+                                setCustomAmount(amt.toLocaleString('vi-VN'));
+                              }}
+                              className={`py-2.5 px-3 rounded-xl font-mono text-xs font-bold transition-all border cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${
+                                depositAmount === amt
+                                  ? 'bg-[#c34c36] text-white border-[#c34c36] shadow-sm'
+                                  : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-200'
+                              }`}
+                            >
+                              {amt.toLocaleString('vi-VN')} đ
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Custom Input */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                            Số tiền tùy chỉnh (VNĐ):
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={customAmount}
+                              onChange={(e) => {
+                                const rawVal = e.target.value.replace(/\D/g, '');
+                                if (!rawVal) {
+                                  setCustomAmount('');
+                                  setDepositAmount(0);
+                                } else {
+                                  const numVal = parseInt(rawVal, 10);
+                                  setCustomAmount(numVal.toLocaleString('vi-VN'));
+                                  setDepositAmount(numVal);
+                                }
+                              }}
+                              placeholder="Ví dụ: 150.000"
+                              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm font-bold text-slate-900 focus:outline-none focus:border-[#c34c36] focus:bg-white transition"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                              VNĐ
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Trust & Security features row */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px] text-slate-600">
+                          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center gap-2">
+                            <Zap className="w-4 h-4 text-amber-500 shrink-0" />
+                            <span>Duyệt tự động 30s qua SePay</span>
+                          </div>
+                          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center gap-2">
+                            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span>Bảo lãnh Escrow an toàn</span>
+                          </div>
+                          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center gap-2">
+                            <RefreshCw className="w-4 h-4 text-blue-500 shrink-0" />
+                            <span>Hoàn tiền & tra soát 24/7</span>
+                          </div>
+                        </div>
+
+                        {depositError && (
+                          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-semibold flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                            <span>{depositError}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Create Button */}
+                      <button
+                        disabled={creatingDeposit || depositAmount < 10000}
+                        onClick={handleCreateDeposit}
+                        className="w-full py-3.5 rounded-2xl font-black text-sm text-white bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 active:scale-[0.99] transition shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer mt-auto"
+                      >
+                        {creatingDeposit ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Đang khởi tạo mã giao dịch...</span>
+                          </>
+                        ) : (
+                          <>
+                            <QrCode className="w-4 h-4" />
+                            <span>Tạo Mã QR VietQR Nạp {depositAmount.toLocaleString('vi-VN')} VNĐ</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  ) : (
                 /* QR CODE & BANK TRANSFER DETAILS VIEW */
                 <div className="space-y-4 animate-fadeIn">
                   {/* Context banner when seller is topping up the deficit for a package */}
@@ -821,14 +1005,14 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                         <CheckCircle2 className="w-7 h-7" />
                       </div>
                       <h4 className="text-base sm:text-lg font-black text-emerald-800">
-                        {pendingPackage 
+                        {pendingPackage
                           ? `Chuyển Tiền Thành Công - Đang Kích Hoạt Gói ${getPkgName(pendingPackage)}!`
                           : 'Nạp Tiền Thành Công!'}
                       </h4>
                       <p className="text-xs text-emerald-700">
                         Hệ thống đã nhận được khoản thanh toán <strong>{formatVND(depositRequest.amount)}</strong>. Số dư ví của bạn hiện tại: <strong className="text-emerald-950 font-black">{formatVND(wallet?.balance ?? 0)}</strong>.
                       </p>
-                      
+
                       <div className="flex items-center justify-center gap-2 pt-0.5 pb-1">
                         <button
                           type="button"
@@ -913,7 +1097,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                           </div>
                         </div>
 
-                        {/* Transfer Credentials (2-Column Grid + Full Width Transfer Code) */}
+                        {/* Transfer Credentials */}
                         <div className="flex-1 w-full space-y-2 text-xs">
                           <div className="grid grid-cols-2 gap-2">
                             {/* Ngân hàng */}
@@ -951,7 +1135,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                             </div>
                           </div>
 
-                          {/* Nội dung chuyển khoản - Full width highlighted box */}
+                          {/* Nội dung chuyển khoản */}
                           <div className="bg-amber-50 p-2 sm:p-2.5 rounded-xl border-2 border-amber-300 flex items-center justify-between shadow-xs">
                             <div className="min-w-0 pr-2">
                               <span className="text-[10px] text-amber-800 block font-bold leading-tight">
@@ -1013,169 +1197,315 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                 </div>
               )}
             </div>
-          )}
+              )}
 
-          {/* ============================================================== */}
-          {/* TAB 2: PACKAGES PURCHASE VIA WALLET                            */}
-          {/* ============================================================== */}
-          {activeTab === 'packages' && (
-            <div className="space-y-4">
-              {packageSuccess ? (
-                <div className="py-8 text-center space-y-4 animate-fadeIn bg-emerald-50 rounded-2xl border border-emerald-200 p-6">
-                  <div className="w-16 h-16 mx-auto rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg">
-                    <CheckCircle2 className="w-10 h-10" />
+              {/* TAB 2: PACKAGES PURCHASE VIA WALLET */}
+              {activeTab === 'packages' && (
+                <div className="space-y-4 animate-fadeIn flex-1 flex flex-col min-h-0">
+              {packageSuccess && latestReceipt ? (
+                <div className="py-6 px-5 text-center space-y-4 animate-fadeIn bg-emerald-50 rounded-3xl border border-emerald-200">
+                  <div className="w-14 h-14 mx-auto rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-200">
+                    <CheckCircle2 className="w-8 h-8" />
                   </div>
 
-                  {(() => {
-                    const activePkg = purchasedPackage || selectedPkg;
-                    const pkgName = getPkgName(activePkg);
-                    const pkgPrice = getPkgPrice(activePkg);
-                    const posts = Number(activePkg?.postCredits || 0);
-                    const chats = Number(activePkg?.chatCredits || 0);
-                    const valuations = Number(activePkg?.valuationCredits || 0);
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-black tracking-wider uppercase px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono">
+                      Biên nhận #{latestReceipt.id.slice(0, 8).toUpperCase()} (v{latestReceipt.packageVersion})
+                    </span>
+                    <h3 className="text-lg sm:text-xl font-black text-emerald-950">
+                      Thanh Toán Gói Dịch Vụ Thành Công!
+                    </h3>
+                    <p className="text-xs text-emerald-800 font-medium">
+                      Gói <strong>{latestReceipt.packageName}</strong> đã được thanh toán{' '}
+                      <span className="font-black font-mono text-emerald-900">{formatVND(latestReceipt.price)}</span>{' '}
+                      từ Ví và cấp quyền lợi trực tiếp vào tài khoản của bạn.
+                    </p>
+                  </div>
 
-                    return (
-                      <div className="space-y-3">
-                        <div className="space-y-1">
-                          <h3 className="text-xl font-black text-emerald-900">
-                            Kích Hoạt Gói {pkgName} Thành Công!
-                          </h3>
-                          <p className="text-xs text-emerald-700 font-medium">
-                            Đã thanh toán{' '}
-                            <span className="font-black font-mono text-emerald-800">
-                              {formatVND(pkgPrice)}
-                            </span>{' '}
-                            từ Ví và cộng quyền lợi vào tài khoản của bạn.
-                          </p>
-                        </div>
+                  {/* Quyền lợi đã cấp theo biên nhận */}
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                    {latestReceipt.postCredits > 0 && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-xs font-black text-emerald-800 shadow-2xs">
+                        <Tag className="w-3.5 h-3.5 text-[#c34c36]" />
+                        <span>+{latestReceipt.postCredits} Lượt đăng tin</span>
+                      </span>
+                    )}
+                    {latestReceipt.chatCredits > 0 && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-xs font-black text-emerald-800 shadow-2xs">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                        <span>+{latestReceipt.chatCredits} Lượt Chat AI</span>
+                      </span>
+                    )}
+                    {latestReceipt.valuationCredits > 0 && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-xs font-black text-emerald-800 shadow-2xs">
+                        <Search className="w-3.5 h-3.5 text-blue-500" />
+                        <span>+{latestReceipt.valuationCredits} Lượt định giá AI</span>
+                      </span>
+                    )}
+                  </div>
 
-                        {/* Danh sách quyền lợi thực tế của gói vừa mua - Không hardcode các trường bằng 0 */}
-                        <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                          {posts > 0 && (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-xs font-black text-emerald-800 shadow-2xs">
-                              <Tag className="w-3.5 h-3.5 text-[#c34c36]" />
-                              <span>+{posts} Lượt đăng tin</span>
-                            </span>
-                          )}
-                          {chats > 0 && (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-xs font-black text-emerald-800 shadow-2xs">
-                              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                              <span>+{chats} Lượt Chat AI</span>
-                            </span>
-                          )}
-                          {valuations > 0 && (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-xs font-black text-emerald-800 shadow-2xs">
-                              <Search className="w-3.5 h-3.5 text-blue-500" />
-                              <span>+{valuations} Lượt định giá AI</span>
-                            </span>
-                          )}
-                          {posts === 0 && chats === 0 && valuations === 0 && (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-xs font-bold text-emerald-800 shadow-2xs">
-                              <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>Đã cộng đầy đủ quyền lợi của gói</span>
-                            </span>
-                          )}
-                        </div>
+                  {/* Chi tiết snapshot số dư và thời gian */}
+                  <div className="max-w-md mx-auto p-3.5 bg-white rounded-2xl border border-emerald-200/80 text-left text-xs space-y-2">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 text-[11px]">
+                      <span className="text-slate-500">Mã yêu cầu (Idempotency):</span>
+                      <span className="font-mono text-slate-700 font-semibold truncate max-w-[200px]" title={latestReceipt.requestId}>
+                        {latestReceipt.requestId}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 text-[11px]">
+                      <span className="text-slate-500">Số dư ví trước giao dịch:</span>
+                      <span className="font-mono text-slate-700">{formatVND(latestReceipt.walletBalanceBefore)}</span>
+                    </div>
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 text-[11px]">
+                      <span className="text-slate-500 font-bold">Số dư ví sau giao dịch:</span>
+                      <span className="font-mono font-extrabold text-emerald-700">{formatVND(latestReceipt.walletBalanceAfter)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">Thời gian giao dịch:</span>
+                      <span className="text-slate-700">{new Date(latestReceipt.createdAt).toLocaleString('vi-VN')}</span>
+                    </div>
+                  </div>
 
-                        {/* Tóm tắt số dư và quyền lợi sau khi mua */}
-                        <div className="pt-2 text-[11px] text-emerald-800/80 font-medium flex items-center justify-center gap-3">
-                          <span>Số dư ví còn lại: <strong className="font-mono text-emerald-900">{formatVND(wallet?.balance ?? 0)}</strong></span>
-                          <span>&bull;</span>
-                          <span>Tổng tin bài: <strong className="font-mono text-emerald-900">{userCredit?.postCredits ?? 0}</strong></span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  <div className="pt-3 flex items-center justify-center gap-3">
+                  <div className="pt-2 flex flex-wrap items-center justify-center gap-2.5">
                     <button
+                      type="button"
                       onClick={() => {
                         setPackageSuccess(false);
+                        setLatestReceipt(null);
                         setPurchasedPackage(null);
                       }}
-                      className="px-5 py-2.5 rounded-xl text-xs font-bold bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition cursor-pointer"
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-100 transition cursor-pointer"
                     >
-                      Mua Tiếp Gói Khác
+                      Mua Thêm Gói Khác
                     </button>
                     <button
+                      type="button"
+                      onClick={() => {
+                        setPackageSuccess(false);
+                        setLatestReceipt(null);
+                        setPurchasedPackage(null);
+                        setActiveTab('history');
+                      }}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Receipt className="w-3.5 h-3.5" />
+                      <span>Xem Lịch Sử Giao Dịch</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={onClose}
-                      className="px-6 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition cursor-pointer shadow-md"
+                      className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition cursor-pointer shadow-md"
                     >
                       Đóng
                     </button>
                   </div>
                 </div>
               ) : (
-                <>
-                  {/* Sub-tab Switcher: COMBO vs GÓI LẺ */}
-                  <div className="flex items-center gap-2 p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPackageCategory('combo');
-                        if (comboPackages.length > 0 && (!selectedPkg || !comboPackages.some((c) => c.id === selectedPkg.id))) {
-                          setSelectedPkg(comboPackages[0]);
-                        }
-                        setPurchaseError(null);
-                      }}
-                      className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${packageCategory === 'combo'
-                          ? 'bg-gradient-to-r from-[#c34c36] to-[#dc4729] text-white shadow-sm'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                <div className="flex-1 min-h-0 flex flex-col justify-between overflow-hidden">
+                  {/* 1. Header (Cố định ở đầu Tab 2): Switcher combo/gói lẻ + Banner mô tả / Bộ lọc lẻ */}
+                  <div className="shrink-0 space-y-2 pb-2">
+                    <div className="flex items-center gap-2 p-1.5 bg-slate-200/60 rounded-2xl border border-slate-200/90">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPackageCategory('combo');
+                          setPurchaseError(null);
+                        }}
+                        className={`flex-1 py-2.5 px-3 sm:px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          packageCategory === 'combo'
+                            ? 'bg-[#c34c36] text-white shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
                         }`}
-                    >
-                      <Sparkles className="w-4 h-4 text-amber-200" />
-                      <span>Mua Gói Combo (Đăng Bài + Định Giá)</span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-400 text-slate-950 font-black">
-                        Tiết kiệm tới 35%
-                      </span>
-                    </button>
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-200 shrink-0" />
+                        <span className="whitespace-nowrap">Gói Combo Dịch Vụ</span>
+                        {maxComboDiscount > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-300 text-amber-950 font-black shrink-0 shadow-2xs">
+                            Tiết kiệm tới {maxComboDiscount.toFixed(0)}%
+                          </span>
+                        )}
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPackageCategory('single');
-                        if (singlePackages.length > 0 && (!selectedPkg || !singlePackages.some((s) => s.id === selectedPkg.id))) {
-                          setSelectedPkg(singlePackages[0]);
-                        }
-                        setPurchaseError(null);
-                      }}
-                      className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${packageCategory === 'single'
-                          ? 'bg-[#24263e] text-white shadow-sm'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPackageCategory('single');
+                          setPurchaseError(null);
+                        }}
+                        className={`flex-1 py-2.5 px-3 sm:px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          packageCategory === 'single'
+                            ? 'bg-[#24263e] text-white shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
                         }`}
-                    >
-                      <Zap className="w-4 h-4 text-amber-300" />
-                      <span>Mua Gói Lẻ (Từng Loại Riêng)</span>
-                    </button>
+                      >
+                        <Zap className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                        <span className="whitespace-nowrap">Gói Dịch Vụ Lẻ</span>
+                        {maxSingleDiscount > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-400 text-emerald-950 font-black shrink-0 shadow-2xs">
+                            Giảm tới {maxSingleDiscount.toFixed(0)}%
+                          </span>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Sub-header info: Combo Description vs Single Filters */}
+                    {packageCategory === 'combo' ? (
+                      <div className="p-2.5 sm:p-3 bg-gradient-to-r from-amber-50 to-orange-50/60 rounded-2xl border border-amber-200/80 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-[#c34c36] shrink-0" />
+                          <span className="text-slate-700">
+                            <strong>Gói Combo Dịch Vụ:</strong> Tích hợp cả lượt đăng bài và định giá AI giúp bạn tối ưu chi phí bán hàng.
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-black text-[#c34c36] shrink-0 ml-2">
+                          {comboPackages.length} Gói Combo
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                          <button
+                            type="button"
+                            onClick={() => setSingleFilter('all')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                              singleFilter === 'all'
+                                ? 'bg-white text-[#24263e] shadow-xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            Tất Cả Gói Lẻ ({packages.filter((p) => getPackageType(p) !== 'combo').length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSingleFilter('valuation')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                              singleFilter === 'valuation'
+                                ? 'bg-white text-blue-600 shadow-xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            <Search className="w-3 h-3 text-blue-600" />
+                            <span>Chỉ Định Giá AI ({packages.filter((p) => getPackageType(p) === 'valuation').length})</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSingleFilter('chat')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                              singleFilter === 'chat'
+                                ? 'bg-white text-indigo-600 shadow-xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            <Sparkles className="w-3 h-3 text-indigo-500" />
+                            <span>Chỉ Chat AI ({packages.filter((p) => getPackageType(p) === 'chat').length})</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSingleFilter('listing')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                              singleFilter === 'listing'
+                                ? 'bg-white text-[#c34c36] shadow-xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            <Tag className="w-3 h-3 text-[#c34c36]" />
+                            <span>Chỉ Đăng Bài ({packages.filter((p) => getPackageType(p) === 'listing').length})</span>
+                          </button>
+                        </div>
+                        {maxSingleDiscount > 0 && (
+                          <span className="text-[11px] font-black text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200 hidden sm:inline-flex items-center gap-1 shadow-2xs">
+                            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Ưu đãi giảm tới <strong>{maxSingleDiscount.toFixed(0)}%</strong></span>
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {packagesError && packages.length > 0 && (
+                      <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between gap-3 text-xs text-rose-700 animate-fadeIn">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>{packagesError}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={loadPackagesAndCredit}
+                          className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg transition cursor-pointer shrink-0"
+                        >
+                          Thử lại
+                        </button>
+                      </div>
+                    )}
                   </div>
 
-                  {packagesLoading ? (
-                    <div className="py-12 flex flex-col items-center justify-center space-y-3">
-                      <Loader2 className="w-8 h-8 text-[#24263e] animate-spin" />
-                      <p className="text-sm text-[#24263e]/80 font-bold">Đang tải danh sách gói nạp...</p>
-                    </div>
-                  ) : (
-                    <>
-                      {/* COMBO VIEW */}
-                      {packageCategory === 'combo' && (
-                        <div className="space-y-4 animate-fadeIn">
-                          <div className="p-3.5 bg-gradient-to-r from-amber-50 to-orange-50/60 rounded-2xl border border-amber-200/80 flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-2">
-                              <Sparkles className="w-4 h-4 text-[#c34c36] shrink-0" />
-                              <span className="text-slate-700">
-                                <strong>Gói Combo Toàn Diện:</strong> Tích hợp cả lượt đăng bài chuẩn sàn và lượt định giá AI giúp bạn tối ưu chi phí bán hàng.
+                  {/* 2. Middle Scrollable Cards (Chỉ cuộn ở phần này, thêm padding-top để badge % giảm giá không bị khuất) */}
+                  <div className="flex-1 overflow-y-auto min-h-0 pr-1 pt-4 sm:pt-5 pb-2 space-y-3">
+                    {packagesLoading ? (
+                      <div className="py-12 flex flex-col items-center justify-center space-y-3">
+                        <Loader2 className="w-8 h-8 text-[#24263e] animate-spin" />
+                        <p className="text-sm text-[#24263e]/80 font-bold">Đang tải danh sách gói dịch vụ...</p>
+                      </div>
+                    ) : packages.length === 0 && packagesError ? (
+                      <div className="py-10 px-6 rounded-2xl bg-amber-50/70 border border-amber-200 text-center space-y-4 animate-fadeIn">
+                        <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-xs">
+                          <AlertTriangle className="w-6 h-6" />
+                        </div>
+                        <div className="max-w-md mx-auto space-y-2">
+                          <h4 className="text-sm font-black text-slate-900">
+                            Bảng Giá Dịch Vụ Chưa Được Cấu Hình Hoặc Đang Cập Nhật
+                          </h4>
+                          <p className="text-xs text-slate-600">
+                            {packagesError}
+                          </p>
+                          {currentUser?.role === 'admin' ? (
+                            <div className="p-3 bg-amber-100/70 border border-amber-300 rounded-xl text-left text-[11px] text-amber-900 mt-2 space-y-1">
+                              <span className="font-bold block">💡 Hướng dẫn dành cho Quản trị viên (Admin):</span>
+                              <span>
+                                Backend yêu cầu phải có đơn giá chuẩn đang hoạt động cho 3 loại credit (ĐĂNG TIN, KIỂM ĐỊNH, CHAT AI).
+                                Vui lòng mở menu <strong>BẢNG GIÁ & CHIẾT KHẤU</strong> trên trang Quản trị để cấu hình đơn giá chuẩn.
                               </span>
                             </div>
-                            <span className="text-[11px] font-black text-[#c34c36] shrink-0 ml-2">
-                              {comboPackages.length} Gói Combo
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                          ) : (
+                            <p className="text-[11px] text-slate-500">
+                              Hệ thống đang đồng bộ bảng giá từ Quản trị viên. Quý khách vui lòng thử lại sau ít phút.
+                            </p>
+                          )}
+                        </div>
+                        <div className="pt-1 flex items-center justify-center gap-3 flex-wrap">
+                          {currentUser?.role === 'admin' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onClose();
+                                window.location.href = '/?tab=admin-dashboard&subtab=credit-pricing';
+                              }}
+                              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+                            >
+                              <Tag className="w-3.5 h-3.5" />
+                              <span>Mở Bảng Giá & Chiết Khấu Admin</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={loadPackagesAndCredit}
+                            className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition shadow-xs cursor-pointer inline-flex items-center gap-2"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>Tải lại gói dịch vụ</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {/* COMBO VIEW */}
+                        {packageCategory === 'combo' && (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 animate-fadeIn">
                             {comboPackages.map((pkg) => {
                               const isSelected = selectedPkg?.id === pkg.id;
                               const pkgName = getPkgName(pkg);
                               const pkgPrice = getPkgPrice(pkg);
+                              const refPrice = pkg.referencePrice ? Number(pkg.referencePrice) : null;
+                              const discount = Number(pkg.discountPercentage || 0) || (refPrice && refPrice > pkgPrice ? Math.round(((refPrice - pkgPrice) / refPrice) * 1000) / 10 : 0);
                               const postCredits = Number(pkg.postCredits || 0);
                               const chatCredits = Number(pkg.chatCredits || 0);
                               const valuationCredits = Number(pkg.valuationCredits || 0);
@@ -1188,19 +1518,15 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                                     setSelectedPkg(pkg);
                                     setPurchaseError(null);
                                   }}
-                                  className={`relative p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${isSelected
+                                  className={`relative p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+                                    isSelected
                                       ? 'bg-white border-2 border-[#c34c36] shadow-lg ring-2 ring-[#c34c36]/40 transform -translate-y-0.5'
                                       : 'bg-white border-slate-200/90 hover:border-[#c34c36] hover:shadow-md'
-                                    }`}
+                                  }`}
                                 >
-                                  {pkg.isPopular && (
-                                    <span className="absolute -top-2.5 right-3 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-full bg-gradient-to-r from-amber-500 to-[#c34c36] text-white shadow-xs">
-                                      🔥 Phổ Biến Nhất
-                                    </span>
-                                  )}
-                                  {(pkg.discountPercentage ?? 0) > 0 && !pkg.isPopular && (
-                                    <span className="absolute -top-2.5 right-3 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-full bg-emerald-600 text-white shadow-xs">
-                                      Giảm {pkg.discountPercentage}%
+                                  {discount > 0 && (
+                                    <span className="absolute -top-2.5 right-3 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-full bg-emerald-600 text-white shadow-xs z-10 pointer-events-none">
+                                      Giảm {discount.toFixed(1)}%
                                     </span>
                                   )}
 
@@ -1210,9 +1536,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                                       <span className="text-base font-black text-[#c34c36] font-mono">
                                         {formatVND(pkgPrice)}
                                       </span>
-                                      {(pkg.discountPercentage ?? 0) > 0 && (
+                                      {pkg.pricingAvailable && refPrice && refPrice > pkgPrice && (
                                         <span className="text-[10px] text-slate-400 line-through font-mono">
-                                          {formatVND(Math.round(pkgPrice / (1 - pkg.discountPercentage / 100)))}
+                                          {formatVND(refPrice)}
                                         </span>
                                       )}
                                     </div>
@@ -1247,80 +1573,34 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                                     ) : (
                                       <span className="text-amber-600 font-bold flex items-center gap-1">
                                         <QrCode className="w-3.5 h-3.5 text-amber-700" />
-                                        <span>Thiếu {formatVND(pkgPrice - currentWalletBalance)} (Quét QR nạp thêm)</span>
+                                        <span>Thiếu {formatVND(pkgPrice - currentWalletBalance)}</span>
                                       </span>
                                     )}
-                                    <span className="text-[#24263e] font-extrabold text-[10px] bg-slate-100 px-2 py-0.5 rounded-md">
-                                      Combo Trừ Ví
+                                    <span
+                                      className={`font-black text-[10px] px-2 py-0.5 rounded-md transition-colors ${
+                                        isSelected
+                                          ? 'bg-[#c34c36] text-white shadow-2xs'
+                                          : 'bg-slate-100 text-slate-700'
+                                      }`}
+                                    >
+                                      {isSelected ? '✓ Đang chọn' : 'Chọn gói'}
                                     </span>
                                   </div>
                                 </div>
                               );
                             })}
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {/* SINGLE PACKAGES VIEW */}
-                      {packageCategory === 'single' && (
-                        <div className="space-y-4 animate-fadeIn">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                            <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
-                              <button
-                                type="button"
-                                onClick={() => setSingleFilter('all')}
-                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                                  singleFilter === 'all'
-                                    ? 'bg-white text-[#24263e] shadow-xs'
-                                    : 'text-slate-600 hover:text-slate-900'
-                                }`}
-                              >
-                                Tất Cả Gói Lẻ ({packages.filter((p) => getPackageType(p) !== 'combo').length})
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setSingleFilter('valuation')}
-                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
-                                  singleFilter === 'valuation'
-                                    ? 'bg-white text-blue-600 shadow-xs'
-                                    : 'text-slate-600 hover:text-slate-900'
-                                }`}
-                              >
-                                <Search className="w-3 h-3 text-blue-600" />
-                                <span>Chỉ Định Giá AI ({packages.filter((p) => getPackageType(p) === 'valuation').length})</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setSingleFilter('chat')}
-                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
-                                  singleFilter === 'chat'
-                                    ? 'bg-white text-indigo-600 shadow-xs'
-                                    : 'text-slate-600 hover:text-slate-900'
-                                }`}
-                              >
-                                <Sparkles className="w-3 h-3 text-indigo-500" />
-                                <span>Chỉ Chat AI ({packages.filter((p) => getPackageType(p) === 'chat').length})</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setSingleFilter('listing')}
-                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
-                                  singleFilter === 'listing'
-                                    ? 'bg-white text-[#c34c36] shadow-xs'
-                                    : 'text-slate-600 hover:text-slate-900'
-                                }`}
-                              >
-                                <Tag className="w-3 h-3 text-[#c34c36]" />
-                                <span>Chỉ Đăng Bài ({packages.filter((p) => getPackageType(p) === 'listing').length})</span>
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        {/* SINGLE PACKAGES VIEW */}
+                        {packageCategory === 'single' && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 animate-fadeIn">
                             {singlePackages.map((pkg) => {
                               const isSelected = selectedPkg?.id === pkg.id;
                               const pkgName = getPkgName(pkg);
                               const pkgPrice = getPkgPrice(pkg);
+                              const refPrice = pkg.referencePrice ? Number(pkg.referencePrice) : null;
+                              const discount = Number(pkg.discountPercentage || 0) || (refPrice && refPrice > pkgPrice ? Math.round(((refPrice - pkgPrice) / refPrice) * 1000) / 10 : 0);
                               const postCredits = Number(pkg.postCredits || 0);
                               const chatCredits = Number(pkg.chatCredits || 0);
                               const valuationCredits = Number(pkg.valuationCredits || 0);
@@ -1342,9 +1622,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                                       : 'bg-white border-slate-200 hover:border-[#24263e]/60 hover:shadow-xs'
                                   }`}
                                 >
-                                  {(pkg.discountPercentage ?? 0) > 0 && (
-                                    <span className="absolute -top-2 right-2 px-1.5 py-0.2 text-[9px] font-black rounded-md bg-emerald-600 text-white">
-                                      -{pkg.discountPercentage}%
+                                  {discount > 0 && (
+                                    <span className="absolute -top-2.5 right-3 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-full bg-emerald-600 text-white shadow-xs z-10 pointer-events-none">
+                                      Giảm {discount.toFixed(1)}%
                                     </span>
                                   )}
 
@@ -1369,8 +1649,15 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                                     </span>
 
                                     <h4 className="font-black text-xs text-[#24263e] mt-2 line-clamp-1">{pkgName}</h4>
-                                    <div className="text-sm font-black text-[#24263e] font-mono mt-1">
-                                      {formatVND(pkgPrice)}
+                                    <div className="mt-1 flex items-baseline gap-1.5">
+                                      <span className="text-sm font-black text-[#24263e] font-mono">
+                                        {formatVND(pkgPrice)}
+                                      </span>
+                                      {pkg.pricingAvailable && refPrice && refPrice > pkgPrice && (
+                                        <span className="text-[10px] text-slate-400 line-through font-mono">
+                                          {formatVND(refPrice)}
+                                        </span>
+                                      )}
                                     </div>
 
                                     <div className="mt-2 text-xs font-bold text-slate-700 bg-slate-50 p-2 rounded-xl border border-slate-100">
@@ -1395,21 +1682,36 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                                         <span>Thiếu {formatVND(pkgPrice - currentWalletBalance)}</span>
                                       </span>
                                     )}
+                                    <span
+                                      className={`font-black text-[10px] px-2 py-0.5 rounded-md transition-colors ${
+                                        isSelected
+                                          ? 'bg-[#24263e] text-white shadow-2xs'
+                                          : 'bg-slate-100 text-slate-700'
+                                      }`}
+                                    >
+                                      {isSelected ? '✓ Đang chọn' : 'Chọn gói'}
+                                    </span>
                                   </div>
                                 </div>
                               );
                             })}
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </>
+                    )}
+                  </div>
 
+                  {/* 3. Summary & Purchase Action Bar (CỐ ĐỊNH Ở ĐÁY TAB 2 - LUÔN HIỂN THỊ) */}
+                  {packages.length > 0 && (
+                    <div className="shrink-0 pt-2.5 mt-auto border-t border-[#24263e]/10 bg-[#faf8f5]">
                       {purchaseError && (
-                        <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 font-medium flex items-center justify-between gap-3 animate-fadeIn">
+                        <div className="mb-2 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium flex items-center justify-between gap-3 animate-fadeIn">
                           <div className="flex items-center gap-2">
                             <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
                             <span>{purchaseError}</span>
                           </div>
                           <button
+                            type="button"
                             onClick={() => setActiveTab('wallet')}
                             className="px-3 py-1 bg-red-600 text-white rounded-lg font-bold text-[11px] shrink-0 hover:bg-red-700 cursor-pointer"
                           >
@@ -1418,8 +1720,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                         </div>
                       )}
 
-                      {/* Summary & Purchase Action Bar */}
-                      <div className="pt-3.5 pb-2 border-t border-[#24263e]/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white/80 p-3 sm:px-4 rounded-2xl shadow-2xs">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-3 sm:px-4 rounded-2xl shadow-xs border border-slate-200/80">
                         <div className="flex-1 min-w-0">
                           {selectedPkg ? (
                             <div className="space-y-1">
@@ -1447,14 +1748,17 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                               </div>
                             </div>
                           ) : (
-                            <span className="text-xs text-slate-400 italic">Vui lòng chọn một gói nạp ở trên để tiếp tục</span>
+                            <div className="flex items-center gap-2 text-xs text-slate-500 italic">
+                              <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+                              <span>Vui lòng chọn một gói dịch vụ ở danh sách phía trên để thanh toán</span>
+                            </div>
                           )}
                         </div>
 
                         <div className="w-full sm:w-auto shrink-0">
                           <button
                             disabled={!selectedPkg || purchasing || creatingDeposit || packagesLoading}
-                            onClick={() => handleConfirmPurchase(selectedPkg)}
+                            onClick={() => selectedPkg && handleConfirmPurchase(selectedPkg)}
                             className="w-full sm:w-auto px-6 py-3 rounded-2xl font-black text-xs sm:text-sm text-white bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 active:scale-[0.99] transition shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
                           >
                             {creatingDeposit ? (
@@ -1478,148 +1782,35 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                               <>
                                 <ShoppingBag className="w-4 h-4 shrink-0" />
                                 <span>
-                                  Xác Nhận Mua Gói ({selectedPkg ? formatVND(getPkgPrice(selectedPkg)) : ''})
+                                  Xác Nhận Mua Gói {selectedPkg ? `(${formatVND(getPkgPrice(selectedPkg))})` : ''}
                                 </span>
                               </>
                             )}
                           </button>
                         </div>
                       </div>
-                    </>
+                    </div>
                   )}
-                </>
+                </div>
               )}
             </div>
           )}
 
-          {/* ============================================================== */}
-          {/* TAB 3: TRANSACTION HISTORY                                     */}
-          {/* ============================================================== */}
-          {activeTab === 'history' && (
-            <div className="space-y-4 animate-fadeIn h-full flex flex-col">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-[#c34c36]" />
-                  <h4 className="font-black text-sm text-[#24263e]">Lịch sử nạp và giao dịch</h4>
+              {/* TAB 3: TRANSACTION HISTORY (GIAO DỊCH VÍ & GÓI DỊCH VỤ GỘP CHUNG, GỌN GÀNG, ĐỦ CHỖ) */}
+              {activeTab === 'history' && (
+                <div className="animate-fadeIn flex-1 flex flex-col min-h-0">
+                  <WalletHistoryPanel
+                    lang={lang}
+                    refreshKey={historyRefreshKey}
+                    purchases={purchases}
+                    onRefresh={handleRefreshTopBar}
+                  />
                 </div>
-                <button
-                  type="button"
-                  onClick={loadHistory}
-                  disabled={transactionsLoading}
-                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:text-[#c34c36] bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${transactionsLoading ? 'animate-spin' : ''}`} />
-                  <span>Làm mới</span>
-                </button>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-[#24263e]/10 shadow-xs flex-1 overflow-hidden flex flex-col">
-                {transactionsLoading ? (
-                  <div className="flex items-center justify-center p-10 flex-col gap-3">
-                    <Loader2 className="w-6 h-6 text-[#c34c36] animate-spin" />
-                    <span className="text-xs font-semibold text-slate-500">Đang tải lịch sử giao dịch...</span>
-                  </div>
-                ) : transactions.length === 0 ? (
-                  <div className="flex items-center justify-center p-10 flex-col gap-3">
-                    <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center">
-                      <Clock className="w-5 h-5 text-slate-300" />
-                    </div>
-                    <span className="text-sm font-semibold text-slate-500">Chưa có giao dịch nào</span>
-                  </div>
-                ) : (
-                  <div className="overflow-y-auto max-h-[50vh] divide-y divide-[#24263e]/5">
-                    {transactions.map((tx) => {
-                      const isIncome = tx.type === 'DEPOSIT' || tx.type === 'REFUND' || tx.type === 'EARNING' || Number(tx.amount || 0) > 0;
-                      const absAmount = Math.abs(Number(tx.amount || 0));
-                      const isSuccess = !tx.status || tx.status === 'SUCCESS' || tx.status === 'COMPLETED';
-                      const isPending = tx.status === 'PENDING';
-
-                      return (
-                        <div key={tx.id} className="p-4 hover:bg-slate-50 transition flex items-start gap-3">
-                          <div className={`w-10 h-10 rounded-xl flex flex-shrink-0 items-center justify-center shadow-xs ${
-                            tx.type === 'DEPOSIT'
-                              ? 'bg-emerald-100 text-emerald-600'
-                              : tx.type === 'EARNING'
-                              ? 'bg-teal-100 text-teal-600'
-                              : tx.type === 'REFUND'
-                              ? 'bg-blue-100 text-blue-600'
-                              : 'bg-rose-100 text-rose-600'
-                          }`}>
-                            {tx.type === 'DEPOSIT' ? <Wallet className="w-5 h-5" /> :
-                             tx.type === 'EARNING' ? <Coins className="w-5 h-5" /> :
-                             tx.type === 'REFUND' ? <RefreshCw className="w-5 h-5" /> :
-                             tx.type === 'PAYMENT' ? <ShoppingBag className="w-5 h-5" /> :
-                             <RefreshCw className="w-5 h-5" />}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between mb-1">
-                              <div>
-                                <h5 className="text-xs sm:text-sm font-bold text-[#24263e] truncate">
-                                  {tx.description || (
-                                    tx.type === 'DEPOSIT' ? 'Nạp tiền vào ví (VietQR)' :
-                                    tx.type === 'PAYMENT' ? 'Thanh toán mua gói / dịch vụ' :
-                                    tx.type === 'EARNING' ? 'Tiền bán hàng Escrow giải ngân' :
-                                    tx.type === 'REFUND' ? 'Hoàn tiền bảo lãnh Escrow' :
-                                    tx.type === 'WITHDRAW' ? 'Rút tiền về ngân hàng' : 'Giao dịch ví'
-                                  )}
-                                </h5>
-                                {tx.referenceId && (
-                                  <span className="text-[10px] text-slate-400 font-mono block">
-                                    Mã GD: #{String(tx.referenceId).substring(0, 8).toUpperCase()}
-                                  </span>
-                                )}
-                              </div>
-                              <span className={`text-xs sm:text-sm font-black whitespace-nowrap ${isIncome ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                {isIncome ? '+' : '-'}{formatVND(absAmount)}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between pt-0.5">
-                              <span className="text-[10px] sm:text-xs text-slate-500 font-medium">
-                                {tx.createdAt ? new Date(tx.createdAt).toLocaleString('vi-VN') : '—'}
-                              </span>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                isSuccess
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : isPending
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-rose-100 text-rose-700'
-                              }`}>
-                                {isSuccess ? 'Thành công' : isPending ? 'Chờ xử lý' : 'Thất bại'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              )}
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Zoom QR Modal Overlay */}
-      {isZoomQrOpen && vietQrUrl && (
-        <div
-          onClick={() => setIsZoomQrOpen(false)}
-          className="fixed inset-0 z-[60] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="relative bg-white p-5 rounded-3xl max-w-sm w-full flex flex-col items-center shadow-2xl cursor-default animate-fadeIn"
-          >
-            <button onClick={() => setIsZoomQrOpen(false)} className="absolute top-3 right-3 p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 transition cursor-pointer">
-              <X className="w-5 h-5" />
-            </button>
-            <h3 className="text-sm font-black text-slate-800 mb-4 mt-2">Mã VietQR</h3>
-            <img src={vietQrUrl} alt="VietQR Zoom" className="w-full h-auto object-contain rounded-xl border border-slate-200 shadow-xs" />
-            <p className="text-[11px] text-slate-500 font-medium mt-4 text-center">
-              Dùng app ngân hàng bất kỳ để quét mã này
-            </p>
           </div>
+
+          {/* Zoom QR Modal Overlay */}
         </div>
-      )}
-    </div>
-  );
-};
+      );
+    };

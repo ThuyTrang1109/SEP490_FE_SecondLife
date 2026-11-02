@@ -3877,7 +3877,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 <input
                   type="number"
                   min={50000}
-                  step={10000}
+                  step="any"
                   value={proposeBaseFee}
                   onChange={(e) => setProposeBaseFee(Number(e.target.value))}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-900 text-sm"
@@ -3894,7 +3894,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       <input
                         type="number"
                         min={1000}
-                        step={1000}
+                        step="any"
                         value={tier.pricePerKm}
                         onChange={(e) => {
                           const val = Number(e.target.value);

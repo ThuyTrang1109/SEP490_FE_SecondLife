@@ -543,7 +543,7 @@ export const shippingService = {
         method: 'GET',
         requiresAuth: true,
       });
-      return ((res as any)?.data ?? res) as GeocodedAddressDto;
+      return ((res as any)?.data ?? res) as SellerOnboardingResponseDto;
     } catch (err) {
       console.warn('Backend /seller-onboarding/me not available:', err);
       return null;
@@ -644,7 +644,7 @@ export const shippingService = {
       body: JSON.stringify(data),
       requiresAuth: true,
     });
-    return ((res as any)?.data ?? res) as GeocodedAddressDto;
+    return ((res as any)?.data ?? res) as SellerOnboardingResponseDto;
   },
 
   /**
@@ -659,7 +659,7 @@ export const shippingService = {
         requiresAuth: true,
       }
     );
-    return ((res as any)?.data ?? res) as GeocodedAddressDto;
+    return (res as any)?.data ?? res;
   },
 
   /**
@@ -672,7 +672,7 @@ export const shippingService = {
       body: JSON.stringify({ otp: otp.trim() }),
       requiresAuth: true,
     });
-    return ((res as any)?.data ?? res) as GeocodedAddressDto;
+    return ((res as any)?.data ?? res) as SellerOnboardingResponseDto;
   },
 
   /**

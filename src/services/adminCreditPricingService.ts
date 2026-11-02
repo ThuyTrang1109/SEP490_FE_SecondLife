@@ -1,4 +1,15 @@
+export interface TopupPackageRequestDto {
+  name: string;
+  description?: string;
+  postCredits: number;
+  chatCredits: number;
+  valuationCredits: number;
+  price: number;
+  active: boolean;
+}
+
 import { request } from './apiClient';
+import { TopupPackage } from '../types';
 
 export type CreditType = 'LISTING' | 'VALUATION' | 'AI_CHAT' | string;
 
@@ -31,58 +42,40 @@ export interface UpdateCreditPricingRequestDto {
 export const adminCreditPricingService = {
   /**
    * Lấy bảng giá đơn vị hiện hành cho các loại credit (LISTING, VALUATION, AI_CHAT)
+   * GET /api/v1/admin/credit-pricing
    */
   async getCreditPrices(): Promise<CreditPricingRuleResponseDto[]> {
-    try {
-      const res = await request<CreditPricingRuleResponseDto[]>('/admin/credit-pricing', {
-        method: 'GET',
-        requiresAuth: true,
-      });
-      const data = (res as any)?.data || res;
-      if (Array.isArray(data) && data.length > 0) {
-        return data;
-      }
-    } catch (err) {
-      console.warn('Failed to fetch admin credit prices from BE, using fallback prices:', err);
+    const res = await request<CreditPricingRuleResponseDto[]>('/admin/credit-pricing', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data || res;
+    if (Array.isArray(data)) {
+      return data;
     }
-
-    return [
-      { creditType: 'LISTING', unitPrice: 20000, currency: 'VND', active: true },
-      { creditType: 'VALUATION', unitPrice: 50000, currency: 'VND', active: true },
-      { creditType: 'AI_CHAT', unitPrice: 5000, currency: 'VND', active: true },
-    ];
+    return [];
   },
 
   /**
    * Cập nhật đơn giá VNĐ cho một loại credit
+   * PUT /api/v1/admin/credit-pricing/{creditType}
    */
   async updateCreditPrice(
     creditType: CreditType,
     unitPrice: number
   ): Promise<CreditPricingRuleResponseDto> {
-    try {
-      const res = await request<CreditPricingRuleResponseDto>(`/admin/credit-pricing/${creditType}`, {
-        method: 'PUT',
-        body: JSON.stringify({ unitPrice }),
-        requiresAuth: true,
-      });
-      return (res as any)?.data || res;
-    } catch (err) {
-      console.warn(`Update credit price for ${creditType} failed on BE:`, err);
-      return {
-        creditType,
-        unitPrice,
-        currency: 'VND',
-        active: true,
-      };
-    }
+    const res = await request<CreditPricingRuleResponseDto>(`/admin/credit-pricing/${creditType}`, {
+      method: 'PUT',
+      body: JSON.stringify({ unitPrice }),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
   },
 
   /**
    * Lấy danh sách các bậc chiết khấu (Volume discount tiers)
    */
   async getDiscountTiers(): Promise<CreditDiscountTierResponseDto[]> {
-    // Check localStorage for admin created custom tiers
     try {
       const local = localStorage.getItem('secondlife_admin_discount_tiers');
       if (local) {
@@ -93,7 +86,6 @@ export const adminCreditPricingService = {
       }
     } catch (_) {}
 
-    // Fallback: check topup packages from BE /v1/topup/packages
     try {
       const pkgRes = await request<any[]>('/v1/topup/packages', {
         method: 'GET',
@@ -113,7 +105,6 @@ export const adminCreditPricingService = {
       }
     } catch (_) {}
 
-    // Standard fallback discount tiers
     return [
       { id: 'tier-1', minQuantity: 10, maxQuantity: 49, discountRate: 0.05, active: true },
       { id: 'tier-2', minQuantity: 50, maxQuantity: 99, discountRate: 0.10, active: true },
@@ -121,7 +112,6 @@ export const adminCreditPricingService = {
     ];
   },
 
-  /**
   /**
    * Tạo mới bậc chiết khấu khi mua số lượng lớn
    */
@@ -153,5 +143,71 @@ export const adminCreditPricingService = {
       localStorage.setItem('secondlife_admin_discount_tiers', JSON.stringify(updated));
     } catch (_) {}
     return { id: tierId, ...data };
+  },
+
+  /**
+   * Lấy danh sách gói nạp dành riêng cho Admin (bao gồm cả gói ngừng bán)
+   * GET /api/v1/admin/topup-packages
+   */
+  async getAdminTopupPackages(): Promise<TopupPackage[]> {
+    const res = await request<TopupPackage[]>('/admin/topup-packages', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data || res;
+    if (Array.isArray(data)) {
+      return data;
+    }
+    return [];
+  },
+
+  /**
+   * Tạo gói nạp mới
+   * POST /api/v1/admin/topup-packages
+   */
+  async createTopupPackage(data: TopupPackageRequestDto): Promise<TopupPackage> {
+    const res = await request<TopupPackage>('/admin/topup-packages', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Cập nhật thông tin gói nạp
+   * PUT /api/v1/admin/topup-packages/{packageId}
+   */
+  async updateTopupPackage(packageId: string, data: TopupPackageRequestDto): Promise<TopupPackage> {
+    const res = await request<TopupPackage>(`/admin/topup-packages/${packageId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Bật/tắt trạng thái mở bán hoặc ngừng bán gói dịch vụ
+   * PATCH /api/v1/admin/topup-packages/{packageId}/status
+   */
+  async updatePackageStatus(packageId: string, active: boolean): Promise<TopupPackage> {
+    const res = await request<TopupPackage>(`/admin/topup-packages/${packageId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ active }),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Ngừng bán gói dịch vụ (alias của ngừng bán)
+   * DELETE /api/v1/admin/topup-packages/{packageId}
+   */
+  async deleteTopupPackage(packageId: string): Promise<void> {
+    await request<void>(`/admin/topup-packages/${packageId}`, {
+      method: 'DELETE',
+      requiresAuth: true,
+    });
   },
 };

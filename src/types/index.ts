@@ -368,8 +368,43 @@ export interface TopupPackage {
   creditPoints?: number;
   bonusPoints?: number;
   description?: string;
-  discountPercentage?: number;
+  discountPercentage?: number | null;
+  referencePrice?: number | null;
+  pricingAvailable?: boolean;
+  active?: boolean;
+  packageVersion?: number;
   isPopular?: boolean;
+}
+
+export interface TopupPurchaseRequest {
+  requestId: string;
+  packageVersion: number;
+  expectedPrice: number;
+}
+
+export interface TopupPackagePurchaseResponse {
+  id: string;
+  requestId: string;
+  packageId: string;
+  packageVersion: number;
+  packageName: string;
+  packageDescription?: string;
+  postCredits: number;
+  chatCredits: number;
+  valuationCredits: number;
+  price: number;
+  currency: string;
+  referencePrice?: number | null;
+  discountPercentage?: number | null;
+  listingUnitPrice?: number;
+  chatUnitPrice?: number;
+  valuationUnitPrice?: number;
+  walletBalanceBefore: number;
+  walletBalanceAfter: number;
+  postBalanceAfter: number;
+  chatBalanceAfter: number;
+  valuationBalanceAfter: number;
+  createdAt: string;
 }
 
 export interface UserCredit {
@@ -425,14 +460,58 @@ export interface DepositResponseDTO {
   expiresAt?: string;
 }
 
+export type WalletTransactionType =
+  | 'DEPOSIT'
+  | 'WITHDRAW'
+  | 'PAYMENT'
+  | 'EARNING'
+  | 'REFUND'
+  | 'RETURN_SHIPPING_FEE';
+
+export type WalletTransactionReferenceType =
+  | 'ORDER'
+  | 'INSPECTION_ORDER'
+  | 'DEPOSIT_REQUEST'
+  | 'WITHDRAWAL'
+  | 'SHIPMENT'
+  | 'CREDIT_PURCHASE'
+  | 'TOPUP_PACKAGE'
+  | 'UNKNOWN';
+
+export type WalletTransactionDirection = 'CREDIT' | 'DEBIT' | 'NEUTRAL';
+
 export interface WalletTransaction {
   id: string;
   walletId: string;
   amount: number;
-  type: 'DEPOSIT' | 'WITHDRAW' | 'PAYMENT' | 'REFUND' | string;
-  status: 'PENDING' | 'SUCCESS' | 'FAILED' | string;
+  type: WalletTransactionType | string;
+  status?: 'PENDING' | 'SUCCESS' | 'FAILED' | string;
   description: string;
   createdAt: string;
+  referenceId?: string | null;
+  referenceType?: WalletTransactionReferenceType | string;
+  balanceBefore?: number | null;
+  balanceAfter?: number | null;
+  currency?: string;
+  direction?: WalletTransactionDirection;
+}
+
+export interface WalletTransactionsQuery {
+  page?: number;
+  size?: number;
+  sort?: string;
+  type?: WalletTransactionType | '';
+  from?: string;
+  to?: string;
+}
+
+export interface WalletTransactionsPage {
+  items: WalletTransaction[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  isLast: boolean;
 }
 
 

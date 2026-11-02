@@ -66,6 +66,9 @@ import {
   Store,
   Layers,
   Trash2,
+  PenLine,
+  Ban,
+  RotateCcw,
   Menu,
   ShoppingBag,
   BarChart3,
@@ -97,6 +100,7 @@ import { CommissionRulesTab } from '../components/admin/CommissionRulesTab';
 import { InspectionGovernanceTab } from '../components/admin/InspectionGovernanceTab';
 import { WithdrawalsTab } from '../components/admin/WithdrawalsTab';
 import { PermissionsTab } from '../components/admin/PermissionsTab';
+import { PackageFormModal, PackageFormData } from '../components/admin/PackageFormModal';
 
 interface AdminDashboardViewProps {
   orders: EscrowOrder[];
@@ -148,16 +152,19 @@ export const ADMIN_TAB_STORAGE_KEY = 'secondlife_admin_active_tab';
 export function getInitialAdminTab(): AdminTab {
   if (typeof window !== 'undefined') {
     const params = new URLSearchParams(window.location.search);
-    const subtab = params.get('subtab') as AdminTab;
-    if (subtab && VALID_ADMIN_TABS.includes(subtab)) {
-      return subtab;
+    const rawSubtab = params.get('subtab');
+    if (rawSubtab) {
+      const normalized = rawSubtab.replace(/_/g, '-') as AdminTab;
+      if (VALID_ADMIN_TABS.includes(normalized)) {
+        return normalized;
+      }
     }
     try {
       const saved = sessionStorage.getItem(ADMIN_TAB_STORAGE_KEY) as AdminTab;
       if (saved && VALID_ADMIN_TABS.includes(saved)) {
         return saved;
       }
-    } catch (e) {}
+    } catch (e) { }
   }
   return 'overview';
 }
@@ -181,7 +188,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     if (typeof window === 'undefined') return;
     try {
       sessionStorage.setItem(ADMIN_TAB_STORAGE_KEY, activeTab);
-    } catch (e) {}
+    } catch (e) { }
     const currentUrl = new URL(window.location.href);
     if (activeTab && activeTab !== 'overview') {
       currentUrl.searchParams.set('subtab', activeTab);
@@ -256,7 +263,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           setBackendUsers(res.items);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     adminService.getSellerVerifications({ page: 0, size: 20 })
       .then(res => {
@@ -264,7 +271,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           setBackendVerifications(res.items);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     adminPostService.getAdminPosts()
       .then(res => {
@@ -330,7 +337,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           setLocalListings(mapped);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // Seller Verification Review states
@@ -472,7 +479,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   useEffect(() => {
     adminRbacService.getRoles().then(roles => {
       if (roles) setRolesList(roles);
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   // Backend Health Status Check (GET /api/health)
@@ -617,7 +624,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       // Cập nhật lại danh sách users hiển thị
       adminService.getAdminUsers({ page: 0, size: 20 })
         .then(u => { if (u?.items) setBackendUsers(u.items); })
-        .catch(() => {});
+        .catch(() => { });
     } catch (err: any) {
       if (err?.message?.includes('409') || err?.status === 409) {
         triggerNotice('⚠️ Xung đột dữ liệu (HTTP 409): Vai trò của người dùng đã thay đổi trước đó. Đang tải lại...');
@@ -643,25 +650,60 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   // CREDIT PRICING & TOPUP PACKAGES (CHIẾT KHẤU GÓI NẠP) STATE & HANDLERS
   // =========================================================================
   const [creditPrices, setCreditPrices] = useState<CreditPricingRuleResponseDto[]>([]);
+  const [creditPricingError, setCreditPricingError] = useState<string | null>(null);
   const [topupPackages, setTopupPackages] = useState<TopupPackage[]>([]);
   const [isLoadingPricing, setIsLoadingPricing] = useState<boolean>(false);
   const [editingPriceType, setEditingPriceType] = useState<string | null>(null);
   const [editPriceValue, setEditPriceValue] = useState<number>(0);
+
+  // Standard base credit types required by platform
+  const BASE_CREDIT_TYPES: Array<{
+    creditType: 'LISTING' | 'VALUATION' | 'AI_CHAT';
+    label: string;
+    badgeClass: string;
+    defaultDescription: string;
+    defaultSeedPrice: number;
+  }> = [
+      {
+        creditType: 'LISTING',
+        label: 'ĐĂNG TIN (LISTING)',
+        badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+        defaultDescription: 'Phí dịch vụ nạp lượt đăng tin sản phẩm trên sàn SecondLife',
+        defaultSeedPrice: 20000
+      },
+      {
+        creditType: 'VALUATION',
+        label: 'KIỂM ĐỊNH (VALUATION)',
+        badgeClass: 'bg-blue-100 text-blue-800 border-blue-200',
+        defaultDescription: 'Phí dịch vụ kiểm định và thẩm định chất lượng chuyên gia',
+        defaultSeedPrice: 50000
+      },
+      {
+        creditType: 'AI_CHAT',
+        label: 'CHAT AI (AI_CHAT)',
+        badgeClass: 'bg-purple-100 text-purple-800 border-purple-200',
+        defaultDescription: 'Phí dịch vụ trò chuyện và tư vấn định giá cùng trợ lý AI',
+        defaultSeedPrice: 5000
+      }
+    ];
 
   const loadCreditPricingData = async () => {
     setIsLoadingPricing(true);
     try {
       const [pricesRes, packagesRes] = await Promise.allSettled([
         adminCreditPricingService.getCreditPrices(),
-        topupService.getTopupPackages()
+        adminCreditPricingService.getAdminTopupPackages().catch(() => topupService.getTopupPackages())
       ]);
 
       if (pricesRes.status === 'fulfilled') {
         const pricesData = pricesRes.value;
         const pricesList = Array.isArray(pricesData) ? pricesData : (pricesData as any)?.data || [];
         setCreditPrices(pricesList);
+        setCreditPricingError(null);
       } else {
+        const errMsg = (pricesRes as PromiseRejectedResult).reason?.message || 'Không thể tải bảng đơn giá credit từ máy chủ';
         console.warn('Failed to load credit prices:', pricesRes.reason);
+        setCreditPricingError(errMsg);
       }
 
       if (packagesRes.status === 'fulfilled') {
@@ -689,6 +731,75 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   };
 
+  // Topup Package Modal & Popup States (V65 Contract)
+  const [isPackageModalOpen, setIsPackageModalOpen] = useState<boolean>(false);
+  const [editingPackage, setEditingPackage] = useState<TopupPackage | null>(null);
+  const [packageToDeactivate, setPackageToDeactivate] = useState<TopupPackage | null>(null);
+  const [isDeactivatingPackage, setIsDeactivatingPackage] = useState<boolean>(false);
+
+  const handleOpenCreatePackage = () => {
+    setEditingPackage(null);
+    setIsPackageModalOpen(true);
+  };
+
+  const handleOpenEditPackage = (pkg: TopupPackage) => {
+    setEditingPackage(pkg);
+    setIsPackageModalOpen(true);
+  };
+
+  const handleSavePackage = async (data: PackageFormData) => {
+    if (editingPackage) {
+      await adminCreditPricingService.updateTopupPackage(editingPackage.id, {
+        name: data.name,
+        description: data.description || undefined,
+        postCredits: data.postCredits,
+        chatCredits: data.chatCredits,
+        valuationCredits: data.valuationCredits,
+        price: data.price,
+        active: data.active,
+      });
+      triggerNotice(`Đã cập nhật gói dịch vụ "${data.name}" thành công!`);
+    } else {
+      await adminCreditPricingService.createTopupPackage({
+        name: data.name,
+        description: data.description || undefined,
+        postCredits: data.postCredits,
+        chatCredits: data.chatCredits,
+        valuationCredits: data.valuationCredits,
+        price: data.price,
+        active: data.active,
+      });
+      triggerNotice(`Đã tạo mới gói dịch vụ "${data.name}" thành công!`);
+    }
+    await loadCreditPricingData();
+  };
+
+  const handleTogglePackageStatus = async (pkg: TopupPackage, newStatus: boolean) => {
+    const pkgName = pkg.name || pkg.packageName || 'Gói dịch vụ';
+    try {
+      await adminCreditPricingService.updatePackageStatus(pkg.id, newStatus);
+      triggerNotice(`Đã ${newStatus ? 'mở bán lại' : 'ngừng bán'} gói "${pkgName}" thành công!`);
+      await loadCreditPricingData();
+    } catch (err: any) {
+      triggerNotice(err?.message || `Không thể ${newStatus ? 'mở bán lại' : 'ngừng bán'} gói dịch vụ.`);
+    }
+  };
+
+  const handleConfirmDeactivatePackage = async () => {
+    if (!packageToDeactivate) return;
+    const pkgName = packageToDeactivate.name || packageToDeactivate.packageName || 'gói này';
+    setIsDeactivatingPackage(true);
+    try {
+      await adminCreditPricingService.updatePackageStatus(packageToDeactivate.id, false);
+      triggerNotice(`Đã ngừng bán gói dịch vụ "${pkgName}"!`);
+      setPackageToDeactivate(null);
+      await loadCreditPricingData();
+    } catch (err: any) {
+      triggerNotice(err?.message || 'Không thể ngừng bán gói dịch vụ.');
+    } finally {
+      setIsDeactivatingPackage(false);
+    }
+  };
   // Tự động load dữ liệu khi chuyển sang tab credit-pricing hoặc listings
   useEffect(() => {
     if (activeTab === 'credit-pricing') {
@@ -994,7 +1105,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   // Listing moderation actions
   const handleToggleListingStatus = async (id: string) => {
     try {
-      await adminPostService.approvePost(id).catch(() => {});
+      await adminPostService.approvePost(id).catch(() => { });
     } catch (err) {
       console.warn('Admin approve post API info:', err);
     }
@@ -1012,7 +1123,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   const handleDeleteListing = async (id: string) => {
     try {
-      await adminPostService.rejectPost(id, 'Vi phạm quy định đăng bài').catch(() => {});
+      await adminPostService.rejectPost(id, 'Vi phạm quy định đăng bài').catch(() => { });
     } catch (err) {
       console.warn('Admin reject post API info:', err);
     }
@@ -1405,8 +1516,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     setIsMobileSidebarOpen(false);
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs transition cursor-pointer group ${isActive
-                      ? 'bg-white text-[#24263e] shadow-sm font-black'
-                      : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/40 font-bold'
+                    ? 'bg-white text-[#24263e] shadow-sm font-black'
+                    : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/40 font-bold'
                     }`}
                   title={item.label}
                 >
@@ -1747,13 +1858,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                               </td>
                               <td className="py-3 px-4 whitespace-nowrap">
                                 <span
-                                  className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
-                                    v.status === 'APPROVED'
-                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                      : v.status === 'REJECTED'
+                                  className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${v.status === 'APPROVED'
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    : v.status === 'REJECTED'
                                       ? 'bg-rose-50 text-rose-700 border border-rose-200'
                                       : 'bg-amber-50 text-amber-700 border border-amber-200'
-                                  }`}
+                                    }`}
                                 >
                                   {v.status === 'APPROVED' ? 'Đã duyệt' : v.status === 'REJECTED' ? 'Từ chối' : 'Cần thẩm định'}
                                 </span>
@@ -2088,10 +2198,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           <td className="py-3 text-center">
                             <span
                               className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${isVisible
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : isDraft 
-                                    ? 'bg-slate-100 text-slate-500 border border-slate-200'
-                                    : 'bg-gray-100 text-gray-600'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : isDraft
+                                  ? 'bg-slate-100 text-slate-500 border border-slate-200'
+                                  : 'bg-gray-100 text-gray-600'
                                 }`}
                             >
                               {isVisible ? 'Đang Hiển Thị' : isDraft ? 'Bản Nháp' : 'Tạm Ẩn'}
@@ -2193,11 +2303,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setVerificationFilterTab('ALL')}
-                    className={`p-3.5 rounded-2xl text-left transition-all border cursor-pointer ${
-                      verificationFilterTab === 'ALL'
-                        ? 'bg-[#24263e] text-white border-[#24263e] shadow-md ring-2 ring-[#24263e]/15'
-                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 shadow-2xs'
-                    }`}
+                    className={`p-3.5 rounded-2xl text-left transition-all border cursor-pointer ${verificationFilterTab === 'ALL'
+                      ? 'bg-[#24263e] text-white border-[#24263e] shadow-md ring-2 ring-[#24263e]/15'
+                      : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 shadow-2xs'
+                      }`}
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={`text-[10px] font-bold uppercase tracking-wider ${verificationFilterTab === 'ALL' ? 'text-slate-300' : 'text-slate-400'}`}>
@@ -2217,11 +2326,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setVerificationFilterTab('NEEDS_REVIEW')}
-                    className={`p-3.5 rounded-2xl text-left transition-all border cursor-pointer ${
-                      verificationFilterTab === 'NEEDS_REVIEW'
-                        ? 'bg-amber-500 text-white border-amber-500 shadow-md ring-2 ring-amber-500/20'
-                        : 'bg-amber-50/50 hover:bg-amber-50 text-amber-900 border-amber-200 shadow-2xs'
-                    }`}
+                    className={`p-3.5 rounded-2xl text-left transition-all border cursor-pointer ${verificationFilterTab === 'NEEDS_REVIEW'
+                      ? 'bg-amber-500 text-white border-amber-500 shadow-md ring-2 ring-amber-500/20'
+                      : 'bg-amber-50/50 hover:bg-amber-50 text-amber-900 border-amber-200 shadow-2xs'
+                      }`}
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={`text-[10px] font-bold uppercase tracking-wider ${verificationFilterTab === 'NEEDS_REVIEW' ? 'text-white/90' : 'text-amber-800'}`}>
@@ -2241,11 +2349,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setVerificationFilterTab('PROVIDER_ERROR')}
-                    className={`p-3.5 rounded-2xl text-left transition-all border cursor-pointer ${
-                      verificationFilterTab === 'PROVIDER_ERROR'
-                        ? 'bg-rose-600 text-white border-rose-600 shadow-md ring-2 ring-rose-600/20'
-                        : 'bg-rose-50/50 hover:bg-rose-50 text-rose-900 border-rose-200 shadow-2xs'
-                    }`}
+                    className={`p-3.5 rounded-2xl text-left transition-all border cursor-pointer ${verificationFilterTab === 'PROVIDER_ERROR'
+                      ? 'bg-rose-600 text-white border-rose-600 shadow-md ring-2 ring-rose-600/20'
+                      : 'bg-rose-50/50 hover:bg-rose-50 text-rose-900 border-rose-200 shadow-2xs'
+                      }`}
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={`text-[10px] font-bold uppercase tracking-wider ${verificationFilterTab === 'PROVIDER_ERROR' ? 'text-white/90' : 'text-rose-800'}`}>
@@ -2265,11 +2372,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setVerificationFilterTab('RESUBMIT_REQUIRED')}
-                    className={`p-3.5 rounded-2xl text-left transition-all border cursor-pointer ${
-                      verificationFilterTab === 'RESUBMIT_REQUIRED'
-                        ? 'bg-orange-500 text-white border-orange-500 shadow-md ring-2 ring-orange-500/20'
-                        : 'bg-orange-50/50 hover:bg-orange-50 text-orange-900 border-orange-200 shadow-2xs'
-                    }`}
+                    className={`p-3.5 rounded-2xl text-left transition-all border cursor-pointer ${verificationFilterTab === 'RESUBMIT_REQUIRED'
+                      ? 'bg-orange-500 text-white border-orange-500 shadow-md ring-2 ring-orange-500/20'
+                      : 'bg-orange-50/50 hover:bg-orange-50 text-orange-900 border-orange-200 shadow-2xs'
+                      }`}
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={`text-[10px] font-bold uppercase tracking-wider ${verificationFilterTab === 'RESUBMIT_REQUIRED' ? 'text-white/90' : 'text-orange-800'}`}>
@@ -2289,11 +2395,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setVerificationFilterTab('APPROVED')}
-                    className={`p-3.5 rounded-2xl text-left transition-all border cursor-pointer col-span-2 sm:col-span-1 ${
-                      verificationFilterTab === 'APPROVED'
-                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-600/20'
-                        : 'bg-emerald-50/50 hover:bg-emerald-50 text-emerald-900 border-emerald-200 shadow-2xs'
-                    }`}
+                    className={`p-3.5 rounded-2xl text-left transition-all border cursor-pointer col-span-2 sm:col-span-1 ${verificationFilterTab === 'APPROVED'
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-600/20'
+                      : 'bg-emerald-50/50 hover:bg-emerald-50 text-emerald-900 border-emerald-200 shadow-2xs'
+                      }`}
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={`text-[10px] font-bold uppercase tracking-wider ${verificationFilterTab === 'APPROVED' ? 'text-white/90' : 'text-emerald-800'}`}>
@@ -2319,11 +2424,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setVerificationFilterTab('ALL')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${
-                          verificationFilterTab === 'ALL'
-                            ? 'bg-white text-slate-900 shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${verificationFilterTab === 'ALL'
+                          ? 'bg-white text-slate-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                          }`}
                       >
                         Tất Cả ({backendVerifications.length})
                       </button>
@@ -2331,11 +2435,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setVerificationFilterTab('NEEDS_REVIEW')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                          verificationFilterTab === 'NEEDS_REVIEW'
-                            ? 'bg-white text-amber-900 shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${verificationFilterTab === 'NEEDS_REVIEW'
+                          ? 'bg-white text-amber-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                          }`}
                       >
                         <span>Cần Duyệt</span>
                         {needsReviewCount > 0 && (
@@ -2348,11 +2451,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setVerificationFilterTab('PROVIDER_ERROR')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                          verificationFilterTab === 'PROVIDER_ERROR'
-                            ? 'bg-white text-rose-900 shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${verificationFilterTab === 'PROVIDER_ERROR'
+                          ? 'bg-white text-rose-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                          }`}
                       >
                         <span>Lỗi Provider</span>
                         {providerErrorCount > 0 && (
@@ -2365,11 +2467,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setVerificationFilterTab('EKYC_PENDING')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${
-                          verificationFilterTab === 'EKYC_PENDING'
-                            ? 'bg-white text-blue-900 shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${verificationFilterTab === 'EKYC_PENDING'
+                          ? 'bg-white text-blue-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                          }`}
                       >
                         Đang eKYC ({ekycPendingCount})
                       </button>
@@ -2377,11 +2478,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setVerificationFilterTab('RESUBMIT_REQUIRED')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${
-                          verificationFilterTab === 'RESUBMIT_REQUIRED'
-                            ? 'bg-white text-orange-900 shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${verificationFilterTab === 'RESUBMIT_REQUIRED'
+                          ? 'bg-white text-orange-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                          }`}
                       >
                         Yêu Cầu Nộp Lại ({resubmitCount})
                       </button>
@@ -2389,11 +2489,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setVerificationFilterTab('APPROVED')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${
-                          verificationFilterTab === 'APPROVED'
-                            ? 'bg-white text-emerald-900 shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${verificationFilterTab === 'APPROVED'
+                          ? 'bg-white text-emerald-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                          }`}
                       >
                         Đã Duyệt ({approvedCount})
                       </button>
@@ -2401,11 +2500,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setVerificationFilterTab('REJECTED')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${
-                          verificationFilterTab === 'REJECTED'
-                            ? 'bg-white text-rose-900 shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shrink-0 ${verificationFilterTab === 'REJECTED'
+                          ? 'bg-white text-rose-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                          }`}
                       >
                         Đã Từ Chối ({rejectedCount})
                       </button>
@@ -2525,11 +2623,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                               </td>
 
                               <td className="py-3 px-4">
-                                <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                  v.riskStatus === 'CLEAR' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${v.riskStatus === 'CLEAR' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                                   v.riskStatus === 'BLOCK' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                                  'bg-purple-50 text-purple-700 border border-purple-200'
-                                }`}>
+                                    'bg-purple-50 text-purple-700 border border-purple-200'
+                                  }`}>
                                   {v.riskStatus || 'NOT_EVALUATED'}
                                 </span>
                                 <div className="text-[10px] text-slate-400 mt-0.5">
@@ -2539,13 +2636,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
                               <td className="py-3 px-4">
                                 <div className="flex flex-col gap-1 items-start">
-                                  <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                                    v.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                                  <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold ${v.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
                                     v.status === 'REJECTED' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
-                                    v.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-100 text-orange-800 border border-orange-300' :
-                                    v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING' ? 'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse' :
-                                    'bg-blue-100 text-blue-800 border border-blue-300'
-                                  }`}>
+                                      v.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-100 text-orange-800 border border-orange-300' :
+                                        v.status === 'NEEDS_REVIEW' || v.status === 'SUBMITTED' || v.status === 'PENDING' ? 'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse' :
+                                          'bg-blue-100 text-blue-800 border border-blue-300'
+                                    }`}>
                                     {v.status}
                                   </span>
 
@@ -2613,8 +2709,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                 {verificationSearchTerm
                                   ? `Không có kết quả nào phù hợp với từ khóa "${verificationSearchTerm}".`
                                   : verificationFilterTab !== 'ALL'
-                                  ? `Hiện không có hồ sơ nào ở mục "${verificationFilterTab}".`
-                                  : 'Chưa có hồ sơ người bán nào gửi yêu cầu xác thực eKYC.'}
+                                    ? `Hiện không có hồ sơ nào ở mục "${verificationFilterTab}".`
+                                    : 'Chưa có hồ sơ người bán nào gửi yêu cầu xác thực eKYC.'}
                               </p>
                               {(verificationFilterTab !== 'ALL' || verificationSearchTerm) && (
                                 <button
@@ -2699,11 +2795,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                               </span>
                             </td>
                             <td className="py-3 px-4 font-bold text-slate-800">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                user.accountStatus === 'ACTIVE'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-rose-50 text-rose-700 border border-rose-200'
-                              }`}>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${user.accountStatus === 'ACTIVE'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                }`}>
                                 {user.accountStatus}
                               </span>
                             </td>
@@ -2750,11 +2845,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                 </button>
                                 <button
                                   onClick={() => handleToggleUserStatus(user.id, user.accountStatus)}
-                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-                                    user.accountStatus === 'ACTIVE'
-                                      ? 'bg-rose-100 hover:bg-rose-200 text-rose-700'
-                                      : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700'
-                                  }`}
+                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${user.accountStatus === 'ACTIVE'
+                                    ? 'bg-rose-100 hover:bg-rose-200 text-rose-700'
+                                    : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700'
+                                    }`}
                                 >
                                   {user.accountStatus === 'ACTIVE' ? 'Khóa' : 'Mở Khóa'}
                                 </button>
@@ -2933,60 +3027,107 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 <>
                   {/* Section 1: Base Credit Pricing */}
                   <div className="space-y-3">
-                    <h4 className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
-                      <Tag className="w-4 h-4 text-emerald-600" />
-                      1. Đơn Giá Dịch Vụ Cơ Bản Theo Loại Credit
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {creditPrices.map((rule) => {
-                        const isEditing = editingPriceType === rule.creditType;
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
+                          <Tag className="w-4 h-4 text-emerald-600" />
+                          1. Đơn Giá Dịch Vụ Cơ Bản Theo Loại Credit
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Đơn giá chuẩn VNĐ / 1 lượt dịch vụ. Giá tham chiếu và % tiết kiệm của các gói nạp được Backend tự động tính từ các đơn giá này.
+                        </p>
+                      </div>
+                    </div>
+
+                    {creditPricingError && (
+                      <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>{creditPricingError}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={loadCreditPricingData}
+                          className="px-2.5 py-1 rounded-lg bg-amber-200 hover:bg-amber-300 text-amber-900 font-bold text-[11px] cursor-pointer shrink-0 transition"
+                        >
+                          Thử lại
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {BASE_CREDIT_TYPES.map(({ creditType, label, badgeClass, defaultDescription, defaultSeedPrice }) => {
+                        const rule = creditPrices.find((r) => r.creditType === creditType);
+                        const isEditing = editingPriceType === creditType;
+                        const isConfigured = Boolean(
+                          rule && rule.active !== false && typeof rule.unitPrice === 'number' && rule.unitPrice > 0
+                        );
+                        const currentPrice = typeof rule?.unitPrice === 'number' ? rule.unitPrice : 0;
+
                         return (
                           <div
-                            key={rule.creditType}
-                            className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3"
+                            key={creditType}
+                            className={`p-4 rounded-xl border transition-all ${isConfigured
+                              ? 'border-slate-200 bg-slate-50/60 shadow-xs'
+                              : 'border-amber-200 bg-amber-50/30'
+                              } space-y-3 flex flex-col justify-between`}
                           >
-                            <div className="flex items-center justify-between">
-                              <span className="px-2.5 py-0.5 rounded text-xs font-bold font-mono bg-emerald-100 text-emerald-800">
-                                {rule.creditType}
-                              </span>
-                              <span className="text-[10px] text-slate-400">
-                                {(rule as any).updatedAt ? `Cập nhật: ${new Date((rule as any).updatedAt).toLocaleDateString('vi-VN')}` : 'Hệ thống'}
-                              </span>
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className={`px-2.5 py-0.5 rounded text-xs font-bold font-mono border ${badgeClass}`}>
+                                  {creditType}
+                                </span>
+                                {isConfigured ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                                    Đang áp dụng
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 flex items-center gap-1">
+                                    <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                    Chưa cấu hình
+                                  </span>
+                                )}
+                              </div>
+                              <div className="font-bold text-xs text-slate-800">{label}</div>
+                              <p className="text-[11px] text-slate-600 line-clamp-2">
+                                {(rule as any)?.description || defaultDescription}
+                              </p>
                             </div>
-                            <p className="text-xs text-slate-600">
-                              {(rule as any).description || (
-                                rule.creditType === 'LISTING'
-                                  ? 'Phí nạp lượt đăng tin sản phẩm trên sàn'
-                                  : rule.creditType === 'VALUATION'
-                                    ? 'Phí lượt kiểm định và thẩm định chất lượng'
-                                    : 'Phí lượt trò chuyện và tư vấn định giá cùng AI'
-                              )}
-                            </p>
 
-                            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                            <div className="pt-2 border-t border-slate-200/70 flex items-center justify-between gap-2">
                               <div>
                                 <span className="text-[10px] text-slate-400 block font-semibold">Đơn giá / 1 Credit:</span>
                                 {isEditing ? (
-                                  <input
-                                    type="number"
-                                    value={editPriceValue}
-                                    onChange={(e) => setEditPriceValue(Number(e.target.value))}
-                                    className="w-32 px-2 py-1 rounded border border-emerald-400 text-sm font-bold font-mono outline-none"
-                                  />
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      value={editPriceValue}
+                                      onChange={(e) => setEditPriceValue(Number(e.target.value))}
+                                      className="w-28 px-2 py-1 rounded border border-emerald-500 text-sm font-bold font-mono outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
+                                      placeholder="VNĐ..."
+                                      autoFocus
+                                    />
+                                    <span className="text-[11px] font-bold text-slate-500">đ</span>
+                                  </div>
+                                ) : isConfigured ? (
+                                  <span className="text-base font-extrabold text-[#24263e]">
+                                    {formatVND(currentPrice)}
+                                  </span>
                                 ) : (
-                                  <span className="text-lg font-extrabold text-[#24263e]">
-                                    {formatVND(rule.unitPrice || (rule as any).unitPriceVnd || 0)}
+                                  <span className="text-xs font-bold text-amber-600 italic">
+                                    Chưa có đơn giá
                                   </span>
                                 )}
                               </div>
 
                               <div>
                                 {isEditing ? (
-                                  <div className="flex items-center gap-1.5">
+                                  <div className="flex items-center gap-1">
                                     <button
                                       type="button"
-                                      onClick={() => handleUpdateCreditPrice(rule.creditType, editPriceValue)}
-                                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer"
+                                      onClick={() => handleUpdateCreditPrice(creditType, editPriceValue)}
+                                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold transition shadow-xs cursor-pointer"
                                     >
                                       Lưu
                                     </button>
@@ -3002,12 +3143,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      setEditingPriceType(rule.creditType);
-                                      setEditPriceValue(rule.unitPrice || (rule as any).unitPriceVnd || 0);
+                                      setEditingPriceType(creditType);
+                                      setEditPriceValue(currentPrice || defaultSeedPrice);
                                     }}
-                                    className="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-white text-slate-700 text-xs font-bold transition cursor-pointer"
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${isConfigured
+                                      ? 'border border-slate-300 hover:bg-white text-slate-700'
+                                      : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                                      }`}
                                   >
-                                    Đổi giá
+                                    {isConfigured ? 'Đổi giá' : 'Cấu hình giá'}
                                   </button>
                                 )}
                               </div>
@@ -3015,25 +3159,116 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           </div>
                         );
                       })}
+
+                      {creditPrices
+                        .filter((r) => !BASE_CREDIT_TYPES.some((b) => b.creditType === r.creditType))
+                        .map((rule) => {
+                          const isEditing = editingPriceType === rule.creditType;
+                          const currentPrice = typeof rule.unitPrice === 'number' ? rule.unitPrice : 0;
+                          return (
+                            <div
+                              key={rule.creditType}
+                              className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-3 flex flex-col justify-between"
+                            >
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="px-2.5 py-0.5 rounded text-xs font-bold font-mono bg-slate-100 text-slate-800 border border-slate-200">
+                                    {rule.creditType}
+                                  </span>
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                                    Đang áp dụng
+                                  </span>
+                                </div>
+                                <div className="font-bold text-xs text-slate-800">{rule.creditType}</div>
+                                <p className="text-[11px] text-slate-600 line-clamp-2">
+                                  {(rule as any)?.description || 'Loại dịch vụ tùy chỉnh hệ thống'}
+                                </p>
+                              </div>
+
+                              <div className="pt-2 border-t border-slate-200/70 flex items-center justify-between gap-2">
+                                <div>
+                                  <span className="text-[10px] text-slate-400 block font-semibold">Đơn giá / 1 Credit:</span>
+                                  {isEditing ? (
+                                    <div className="flex items-center gap-1 mt-0.5">
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        value={editPriceValue}
+                                        onChange={(e) => setEditPriceValue(Number(e.target.value))}
+                                        className="w-28 px-2 py-1 rounded border border-emerald-500 text-sm font-bold font-mono outline-none bg-white"
+                                        autoFocus
+                                      />
+                                      <span className="text-[11px] font-bold text-slate-500">đ</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-base font-extrabold text-[#24263e]">
+                                      {formatVND(currentPrice)}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div>
+                                  {isEditing ? (
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdateCreditPrice(rule.creditType, editPriceValue)}
+                                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+                                      >
+                                        Lưu
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingPriceType(null)}
+                                        className="px-2 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold transition cursor-pointer"
+                                      >
+                                        Hủy
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingPriceType(rule.creditType);
+                                        setEditPriceValue(currentPrice);
+                                      }}
+                                      className="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-white text-slate-700 text-xs font-bold transition cursor-pointer"
+                                    >
+                                      Đổi giá
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                     </div>
                   </div>
 
-                  {/* Section 2: Gói Nạp & Chính Sách Chiết Khấu Ưu Đãi (Topup Packages from Backend) */}
+                  {/* Section 2: Gói Dịch Vụ & Chính Sách Chiết Khấu Ưu Đãi (Topup Packages from Backend V65) */}
                   <div className="space-y-4 pt-5 border-t border-slate-100">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
                         <h4 className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
                           <TrendingUp className="w-4 h-4 text-emerald-600" />
-                          2. Danh Sách Gói Nạp & Chính Sách Chiết Khấu Ưu Đãi (Topup Packages)
+                          2. Danh Sách Gói Dịch Vụ & Chính Sách Chiết Khấu Ưu Đãi
                         </h4>
                         <p className="text-[11px] text-slate-500 mt-0.5">
-                          Các gói nạp định sẵn (Combo & Gói lẻ) đang mở bán cho người bán kèm tỷ lệ chiết khấu (%) thực tế từ Backend
+                          Quản lý các gói dịch vụ bán lượt đăng bài, chat AI và định giá. Ưu đãi chiết khấu (%) do Backend tính toán tự động dựa trên đơn giá chuẩn.
                         </p>
                       </div>
 
                       <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleOpenCreatePackage}
+                          className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold text-xs flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Tạo gói mới</span>
+                        </button>
                         <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          {topupPackages.length} gói nạp hệ thống
+                          {topupPackages.length} gói dịch vụ
                         </span>
                       </div>
                     </div>
@@ -3041,8 +3276,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     {/* Quick Metrics for Topup Packages */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                        <div className="text-[10px] text-slate-500 font-bold uppercase">Tổng Gói Nạp</div>
+                        <div className="text-[10px] text-slate-500 font-bold uppercase">Tổng Gói</div>
                         <div className="text-xl font-black text-slate-900 mt-0.5">{topupPackages.length}</div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-emerald-50/60 border border-emerald-200">
+                        <div className="text-[10px] text-emerald-800 font-bold uppercase">Đang Mở Bán</div>
+                        <div className="text-xl font-black text-emerald-800 mt-0.5">
+                          {topupPackages.filter(p => p.active !== false).length}
+                        </div>
                       </div>
                       <div className="p-3 rounded-xl bg-purple-50/60 border border-purple-200">
                         <div className="text-[10px] text-purple-800 font-bold uppercase">Gói Combo</div>
@@ -3050,18 +3291,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           {topupPackages.filter(p => (p.postCredits || 0) > 0 && ((p.chatCredits || 0) > 0 || (p.valuationCredits || 0) > 0)).length}
                         </div>
                       </div>
-                      <div className="p-3 rounded-xl bg-blue-50/60 border border-blue-200">
-                        <div className="text-[10px] text-blue-800 font-bold uppercase">Gói Chuyên Biệt</div>
-                        <div className="text-xl font-black text-blue-800 mt-0.5">
-                          {topupPackages.filter(p => !((p.postCredits || 0) > 0 && ((p.chatCredits || 0) > 0 || (p.valuationCredits || 0) > 0))).length}
-                        </div>
-                      </div>
                       <div className="p-3 rounded-xl bg-rose-50/60 border border-rose-200">
                         <div className="text-[10px] text-rose-800 font-bold uppercase">Chiết Khấu Cao Nhất</div>
                         <div className="text-xl font-black text-rose-700 mt-0.5">
-                          {topupPackages.length > 0
-                            ? `-${Math.max(...topupPackages.map(p => Number(p.discountPercentage || 0))).toFixed(1)}%`
-                            : '0%'}
+                          {(() => {
+                            const validDiscounts = topupPackages
+                              .filter(p => p.pricingAvailable !== false && Number(p.discountPercentage || 0) > 0)
+                              .map(p => Number(p.discountPercentage));
+                            return validDiscounts.length > 0 ? `-${Math.max(...validDiscounts).toFixed(1)}%` : '0%';
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -3078,6 +3316,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             <th className="py-2.5 px-4 text-right">Giá Gói (VNĐ)</th>
                             <th className="py-2.5 px-4 text-center">Ưu Đãi Chiết Khấu</th>
                             <th className="py-2.5 px-4 text-center">Trạng Thái</th>
+                            <th className="py-2.5 px-4 text-center">Thao Tác</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -3085,15 +3324,21 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             topupPackages.map((pkg) => {
                               const isCombo = (pkg.postCredits || 0) > 0 && ((pkg.chatCredits || 0) > 0 || (pkg.valuationCredits || 0) > 0);
                               const discount = Number(pkg.discountPercentage || 0);
+                              const isActive = pkg.active !== false;
+                              const pkgPrice = Number(pkg.price || pkg.priceVnd || 0);
+                              const refPrice = pkg.referencePrice ? Number(pkg.referencePrice) : null;
 
                               return (
-                                <tr key={pkg.id} className="hover:bg-slate-50/70 transition">
+                                <tr key={pkg.id} className={`hover:bg-slate-50/70 transition ${!isActive ? 'bg-slate-50/40 opacity-75' : ''}`}>
                                   <td className="py-3 px-4">
                                     <div className="flex items-center gap-2.5">
-                                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold text-xs ${
-                                        isCombo ? 'bg-purple-100 text-purple-800' : 'bg-emerald-100 text-emerald-800'
-                                      }`}>
-                                        {isCombo ? '🎁' : '⚡'}
+                                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold text-xs ${!isActive
+                                        ? 'bg-slate-200 text-slate-500'
+                                        : isCombo
+                                          ? 'bg-purple-100 text-purple-800'
+                                          : 'bg-emerald-100 text-emerald-800'
+                                        }`}>
+                                        {!isActive ? '⏸️' : isCombo ? '🎁' : '⚡'}
                                       </div>
                                       <div>
                                         <div className="font-bold text-slate-900 flex items-center gap-1.5">
@@ -3103,9 +3348,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                               Combo
                                             </span>
                                           )}
+                                          {pkg.packageVersion !== undefined && (
+                                            <span className="text-[9px] text-slate-400 font-mono">v{pkg.packageVersion}</span>
+                                          )}
                                         </div>
                                         <div className="text-[11px] text-slate-400">
-                                          {pkg.description || 'Gói nạp điểm dịch vụ SecondLife'}
+                                          {pkg.description || 'Gói nạp lượt dịch vụ SecondLife'}
                                         </div>
                                       </div>
                                     </div>
@@ -3119,11 +3367,25 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                   <td className="py-3 px-3 text-center font-mono font-bold text-slate-800">
                                     {pkg.valuationCredits ? `${pkg.valuationCredits} lượt` : '—'}
                                   </td>
-                                  <td className="py-3 px-4 text-right font-mono font-extrabold text-[#c34c36] whitespace-nowrap text-sm">
-                                    {formatVND(pkg.price || pkg.priceVnd || 0)}
+                                  <td className="py-3 px-4 text-right whitespace-nowrap">
+                                    <span className="font-mono font-extrabold text-[#c34c36] text-sm block">
+                                      {formatVND(pkgPrice)}
+                                    </span>
+                                    {pkg.pricingAvailable && refPrice && refPrice > pkgPrice && (
+                                      <span className="text-[10px] text-slate-400 line-through font-mono block">
+                                        {formatVND(refPrice)}
+                                      </span>
+                                    )}
                                   </td>
                                   <td className="py-3 px-4 text-center whitespace-nowrap">
-                                    {discount > 0 ? (
+                                    {pkg.pricingAvailable === false ? (
+                                      <span
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200"
+                                        title="Cần cấu hình đơn giá cơ bản cho loại dịch vụ này để tính ưu đãi"
+                                      >
+                                        <AlertTriangle className="w-3 h-3 text-amber-600" /> Cần cấu hình đơn giá
+                                      </span>
+                                    ) : discount > 0 ? (
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200">
                                         Tiết kiệm {discount.toFixed(1)}%
                                       </span>
@@ -3134,17 +3396,54 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                     )}
                                   </td>
                                   <td className="py-3 px-4 text-center whitespace-nowrap">
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                      Đang mở bán
-                                    </span>
+                                    {isActive ? (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        Đang mở bán
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-300">
+                                        Đã ngừng bán
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-4 text-center whitespace-nowrap">
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEditPackage(pkg)}
+                                        className="p-1.5 rounded-lg border border-slate-200 hover:bg-emerald-50 hover:border-emerald-300 text-slate-600 hover:text-emerald-700 transition cursor-pointer"
+                                        title="Chỉnh sửa gói dịch vụ"
+                                      >
+                                        <PenLine className="w-3.5 h-3.5" />
+                                      </button>
+                                      {isActive ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => setPackageToDeactivate(pkg)}
+                                          className="p-1.5 rounded-lg border border-slate-200 hover:bg-rose-50 hover:border-rose-300 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                                          title="Ngừng bán gói dịch vụ"
+                                        >
+                                          <Ban className="w-3.5 h-3.5" />
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleTogglePackageStatus(pkg, true)}
+                                          className="p-1.5 rounded-lg border border-slate-200 hover:bg-blue-50 hover:border-blue-300 text-slate-500 hover:text-blue-600 transition cursor-pointer"
+                                          title="Mở bán lại gói này"
+                                        >
+                                          <RotateCcw className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
                                   </td>
                                 </tr>
                               );
                             })
                           ) : (
                             <tr>
-                              <td colSpan={7} className="py-8 text-center text-slate-400">
-                                Chưa có gói nạp nào được khởi tạo trên máy chủ Backend.
+                              <td colSpan={8} className="py-8 text-center text-slate-400">
+                                Chưa có gói dịch vụ nào được khởi tạo trên máy chủ Backend.
                               </td>
                             </tr>
                           )}
@@ -3154,6 +3453,92 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   </div>
                 </>
               )}
+
+              {/* MODAL 1: CHỈNH SỬA / TẠO MỚI GÓI DỊCH VỤ TOPUP PACKAGE */}
+              <PackageFormModal
+                isOpen={isPackageModalOpen}
+                onClose={() => setIsPackageModalOpen(false)}
+                editingPackage={editingPackage}
+                onSave={handleSavePackage}
+              />
+
+              {/* MODAL 2: POPUP XÁC NHẬN NGỪNG BÁN GÓI DỊCH VỤ */}
+              {packageToDeactivate && (
+                <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+                  <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-rose-100 space-y-5 transform transition-all scale-100">
+                    {/* Header Icon & Warning */}
+                    <div className="text-center space-y-3">
+                      <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center mx-auto text-2xl shadow-inner">
+                        <Ban className="w-8 h-8" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                          Xác Nhận Ngừng Bán Gói Dịch Vụ?
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Gói sẽ được ẩn khỏi danh sách mua của người bán trên sàn. Dữ liệu gói và lịch sử giao dịch trước đây vẫn được lưu trữ nguyên vẹn.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Package Summary Card */}
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
+                        <span className="text-slate-500 font-medium">Tên gói:</span>
+                        <span className="font-extrabold text-slate-900 text-sm">{packageToDeactivate.name || packageToDeactivate.packageName}</span>
+                      </div>
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
+                        <span className="text-slate-500 font-medium">Giá niêm yết:</span>
+                        <span className="font-bold text-[#c34c36] font-mono text-sm">{formatVND(packageToDeactivate.price || packageToDeactivate.priceVnd || 0)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 font-medium">Quyền lợi:</span>
+                        <span className="font-bold text-slate-700">
+                          {packageToDeactivate.postCredits ? `${packageToDeactivate.postCredits} tin ` : ''}
+                          {packageToDeactivate.chatCredits ? `• ${packageToDeactivate.chatCredits} chat ` : ''}
+                          {packageToDeactivate.valuationCredits ? `• ${packageToDeactivate.valuationCredits} định giá` : ''}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-amber-50 border border-amber-200/80 text-amber-800 text-[11px] flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <span>Bạn có thể mở bán lại gói này bất kỳ lúc nào bằng nút "Mở bán lại" trên bảng quản trị.</span>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setPackageToDeactivate(null)}
+                        disabled={isDeactivatingPackage}
+                        className="flex-1 py-3 px-4 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer"
+                      >
+                        Hủy Bỏ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleConfirmDeactivatePackage}
+                        disabled={isDeactivatingPackage}
+                        className="flex-1 py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-[0.99] text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-rose-200 cursor-pointer disabled:opacity-50"
+                      >
+                        {isDeactivatingPackage ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Đang xử lý...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Ban className="w-4 h-4" />
+                            <span>Ngừng Bán Gói</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
 
@@ -3281,12 +3666,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <h3 className="font-black text-sm text-slate-900 uppercase">
                         Thẩm Định eKYC Người Bán #{selectedVerificationDetail.id}
                       </h3>
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                        selectedVerificationDetail.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${selectedVerificationDetail.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
                         selectedVerificationDetail.status === 'REJECTED' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
-                        selectedVerificationDetail.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-100 text-orange-800 border border-orange-300' :
-                        'bg-amber-100 text-amber-800 border border-amber-300'
-                      }`}>
+                          selectedVerificationDetail.status === 'RESUBMIT_REQUIRED' ? 'bg-orange-100 text-orange-800 border border-orange-300' :
+                            'bg-amber-100 text-amber-800 border border-amber-300'
+                        }`}>
                         {selectedVerificationDetail.status}
                       </span>
                       {selectedVerificationDetail.ekycStatus === 'PROVIDER_ERROR' && (
@@ -3316,14 +3700,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
                 {/* Notice message banner */}
                 {reviewNoticeMsg && (
-                  <div className={`p-3.5 rounded-2xl flex items-center gap-2.5 text-xs font-bold ${
-                    reviewNoticeMsg.type === 'success' ? 'bg-emerald-50 text-emerald-900 border border-emerald-200' :
+                  <div className={`p-3.5 rounded-2xl flex items-center gap-2.5 text-xs font-bold ${reviewNoticeMsg.type === 'success' ? 'bg-emerald-50 text-emerald-900 border border-emerald-200' :
                     reviewNoticeMsg.type === 'error' ? 'bg-rose-50 text-rose-900 border border-rose-200' :
-                    'bg-blue-50 text-blue-900 border border-blue-200'
-                  }`}>
+                      'bg-blue-50 text-blue-900 border border-blue-200'
+                    }`}>
                     {reviewNoticeMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> :
-                     reviewNoticeMsg.type === 'error' ? <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" /> :
-                     <Loader2 className="w-4 h-4 text-blue-600 animate-spin shrink-0" />}
+                      reviewNoticeMsg.type === 'error' ? <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" /> :
+                        <Loader2 className="w-4 h-4 text-blue-600 animate-spin shrink-0" />}
                     <span>{reviewNoticeMsg.text}</span>
                   </div>
                 )}
@@ -4107,11 +4490,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     <h4 className="font-extrabold text-slate-900 text-sm">{userDetailModalData.fullName || 'Thành viên SecondLife'}</h4>
                     <p className="text-slate-500 font-mono">{userDetailModalData.email}</p>
                     <div className="flex flex-wrap gap-1.5 pt-0.5">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        userDetailModalData.accountStatus === 'ACTIVE'
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-rose-50 text-rose-700 border border-rose-200'
-                      }`}>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${userDetailModalData.accountStatus === 'ACTIVE'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-rose-50 text-rose-700 border border-rose-200'
+                        }`}>
                         {userDetailModalData.accountStatus}
                       </span>
                       {userDetailModalData.emailVerified ? (
@@ -4258,11 +4640,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       return (
                         <label
                           key={r.code}
-                          className={`p-2.5 rounded-xl border flex items-center gap-2 cursor-pointer transition ${
-                            isSelected
-                              ? 'border-indigo-500 bg-indigo-50/40 text-indigo-900 font-bold'
-                              : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-                          }`}
+                          className={`p-2.5 rounded-xl border flex items-center gap-2 cursor-pointer transition ${isSelected
+                            ? 'border-indigo-500 bg-indigo-50/40 text-indigo-900 font-bold'
+                            : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                            }`}
                         >
                           <input
                             type="checkbox"

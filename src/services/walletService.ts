@@ -1,5 +1,16 @@
 import { request } from './apiClient';
-import { UserWallet, DepositResponseDTO, DepositCreateRequestDTO, WalletTransaction } from '../types';
+import {
+  UserWallet,
+  DepositResponseDTO,
+  DepositCreateRequestDTO,
+  WalletTransaction,
+  WalletTransactionsQuery,
+  WalletTransactionsPage,
+} from '../types';
+import {
+  normalizeWalletTransaction,
+  normalizeWalletTransactionPage,
+} from '../utils/walletTransactions';
 
 export type WalletBackend = UserWallet;
 
@@ -32,6 +43,67 @@ export const walletService = {
     return ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
       : response) as DepositResponseDTO;
+  },
+
+  /**
+   * Lấy danh sách lịch sử giao dịch ví người dùng (hỗ trợ lọc loại, khoảng thời gian và phân trang)
+   * GET /api/v1/wallets/me/transactions
+   */
+  async getTransactions(
+    query: WalletTransactionsQuery = {},
+    signal?: AbortSignal
+  ): Promise<WalletTransactionsPage> {
+    const params = new URLSearchParams();
+    params.set('page', String(query.page ?? 0));
+    params.set('size', String(query.size ?? 10));
+    params.set('sort', query.sort || 'createdAt,desc');
+
+    if (query.type && (query.type as string) !== 'ALL') {
+      params.set('type', query.type);
+    }
+    if (query.from && query.from.trim()) {
+      params.set('from', query.from.trim());
+    }
+    if (query.to && query.to.trim()) {
+      params.set('to', query.to.trim());
+    }
+
+    const response = await request<any>(`/v1/wallets/me/transactions?${params.toString()}`, {
+      method: 'GET',
+      requiresAuth: true,
+      signal,
+    });
+
+    return normalizeWalletTransactionPage(response, query.page ?? 0, query.size ?? 10);
+  },
+
+  /**
+   * Lấy chi tiết một giao dịch ví cụ thể của người dùng
+   * GET /api/v1/wallets/me/transactions/{transactionId}
+   */
+  async getTransactionDetail(
+    transactionId: string,
+    signal?: AbortSignal
+  ): Promise<WalletTransaction> {
+    if (!transactionId) {
+      throw new Error('Mã giao dịch (transactionId) không được để trống.');
+    }
+
+    const response = await request<any>(`/v1/wallets/me/transactions/${encodeURIComponent(transactionId)}`, {
+      method: 'GET',
+      requiresAuth: true,
+      signal,
+    });
+
+    const data =
+      (response as any)?.data !== undefined &&
+      (response as any)?.data !== null &&
+      typeof (response as any)?.data === 'object' &&
+      !('id' in response)
+        ? (response as any).data
+        : response;
+
+    return normalizeWalletTransaction(data);
   },
 
   /**

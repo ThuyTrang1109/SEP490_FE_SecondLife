@@ -89,12 +89,14 @@ export function getInitialActiveTab(): string {
   if (typeof window !== 'undefined') {
     // 1. Kiểm tra URL query param ?tab=
     const params = new URLSearchParams(window.location.search);
-    const tabParam = params.get('tab');
+    const rawTab = params.get('tab');
+    const tabParam = rawTab ? rawTab.replace(/_/g, '-') : null;
     if (tabParam && (VALID_MAIN_TABS as readonly string[]).includes(tabParam)) {
       candidateTab = tabParam;
     } else {
       // Kiểm tra hash #tab nếu có
-      const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
+      const rawHash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
+      const hash = rawHash ? rawHash.replace(/_/g, '-') : '';
       if (hash && (VALID_MAIN_TABS as readonly string[]).includes(hash)) {
         candidateTab = hash;
       }

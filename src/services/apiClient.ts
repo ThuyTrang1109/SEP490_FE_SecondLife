@@ -18,13 +18,34 @@ function isNoV1Path(path: string): boolean {
   return path.startsWith('/auth') || path.startsWith('/video');
 }
 
+function isNgrokTargetUrl(targetUrl: string): boolean {
+  if (!targetUrl || typeof targetUrl !== 'string') return false;
+  return targetUrl.includes('ngrok-free.app') || targetUrl.includes('ngrok-free.dev') || targetUrl.includes('.ngrok.io') || targetUrl.includes('.ngrok.');
+}
+
 export function resolveApiUrl(endpoint: string): string {
   if (!endpoint) return '';
   if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
     return endpoint;
   }
 
-  const rawEnv = (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_ORIGIN || 'http://localhost:8080';
+  let rawEnv = (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_ORIGIN;
+  if (!rawEnv) {
+    if (typeof window !== 'undefined') {
+      const isHttps = window.location.protocol === 'https:';
+      const isNgrok = window.location.hostname.includes('ngrok');
+      const isRemote = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+      // In HTTPS, ngrok, or remote environments, use relative URL to route through server proxy and prevent Mixed Content blocks
+      if (isHttps || isNgrok || isRemote) {
+        rawEnv = '';
+      } else {
+        // In local HTTP dev (e.g. http://localhost:3000), use same-origin proxy to eliminate all CORS & port mismatches
+        rawEnv = '';
+      }
+    } else {
+      rawEnv = 'http://localhost:8080';
+    }
+  }
   const origin = rawEnv.replace(/\/api(\/v1)?\/?$/, '').replace(/\/+$/, '');
 
   let path = endpoint.trim();
@@ -332,10 +353,12 @@ export async function refreshAccessToken(): Promise<string | null> {
 
   refreshPromise = (async () => {
     try {
-      const response = await fetch(resolveApiUrl('/auth/refresh'), {
+      const refreshUrl = resolveApiUrl('/auth/refresh');
+      const response = await fetch(refreshUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(isNgrokTargetUrl(refreshUrl) ? { 'ngrok-skip-browser-warning': 'true' } : {}),
         },
         body: JSON.stringify({ refreshToken: rToken }),
       });
@@ -552,9 +575,11 @@ export async function request<T>(
     recordUserActivity();
   }
 
+  const url = resolveApiUrl(endpoint);
   const isFormData = typeof FormData !== 'undefined' && restOptions.body instanceof FormData;
   const headers: Record<string, string> = {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...(isNgrokTargetUrl(url) ? { 'ngrok-skip-browser-warning': 'true' } : {}),
     ...(customHeaders as Record<string, string>),
   };
 
@@ -592,8 +617,6 @@ export async function request<T>(
     }
     throw new Error('Chưa đăng nhập hoặc phiên làm việc đã kết thúc.');
   }
-
-  const url = resolveApiUrl(endpoint);
 
   try {
     const response = await fetch(url, {

@@ -209,6 +209,15 @@ export interface EscrowOrder {
   cancellationReasonCode?: string | null;
   cancellationReason?: string | null;
   cancelledBy?: string | null;
+  appealDeadline?: string | null;
+  appealStatus?: string | null;
+  appealReason?: string | null;
+  appealEvidenceJson?: string | null;
+  appealResolvedAt?: string | null;
+  appealResolvedById?: string | null;
+  appealResolvedByName?: string | null;
+  reputationPenaltyApplied?: boolean | null;
+  reputationPenaltyPoints?: number | null;
 }
 
 export interface ProductReview {

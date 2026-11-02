@@ -1179,11 +1179,15 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                         ? 'Người bán mới'
                         : sellerReputation?.score !== undefined && sellerReputation?.score !== null
                         ? `${sellerReputation.score}/100 uy tín`
-                        : `${sellerTrust.trustScore} điểm uy tín`}
+                        : 'Chưa có điểm uy tín'}
                     </span>
-                    <span className="text-slate-400">|</span>
-                    <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
-                    <span>{sellerTrust.rating}</span>
+                    {sellerTrust.rating > 0 && (
+                      <>
+                        <span className="text-slate-400">|</span>
+                        <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
+                        <span>{sellerTrust.rating}</span>
+                      </>
+                    )}
                     {sellerReputation?.assessmentStatus && (
                       <span className="ml-1 text-[9px] text-emerald-700 font-bold bg-emerald-50 px-1 rounded border border-emerald-200">
                         {getAssessmentStatusMeta(sellerReputation.assessmentStatus).shortLabel}

@@ -394,7 +394,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                             <span className="text-[11px] font-black">
                               {realReputation?.score !== undefined && realReputation?.score !== null
                                 ? realReputation.score
-                                : sellerTrust.trustScore}
+                                : '--'}
                             </span>
                             <span className="text-[9px] text-white/70">/100</span>
                           </div>
@@ -408,8 +408,8 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                     {/* View Seller Reviews Trigger */}
                     <div className="pt-1.5 border-t border-amber-200/50 flex items-center justify-between text-[10px]">
                       <span className="text-slate-600">
-                        {lang === 'vi' ? 'Đạt chuẩn: ' : 'Pass rate: '}
-                        <strong className="text-emerald-700">{sellerTrust.hubPassRate}%</strong>
+                        {lang === 'vi' ? 'Đơn hoàn thành: ' : 'Completed: '}
+                        <strong className="text-emerald-700">{realReputation?.evaluatedOrders ?? 0} đơn</strong>
                       </span>
 
                       <button

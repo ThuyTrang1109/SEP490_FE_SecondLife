@@ -90,7 +90,7 @@ class ChatWebSocketManager {
     const rawEnv =
       (import.meta as any).env?.VITE_API_BASE_URL ||
       (import.meta as any).env?.VITE_API_ORIGIN ||
-      'http://localhost:8080';
+      (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8080');
     const origin = rawEnv.replace(/\/api(\/v1)?\/?$/, '').replace(/\/+$/, '');
     return `${origin}/ws`;
   }

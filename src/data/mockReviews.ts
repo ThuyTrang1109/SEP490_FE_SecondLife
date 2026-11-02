@@ -39,19 +39,17 @@ export const reviewService = {
     return {
       sellerId,
       sellerName: sellerName || 'Người bán SecondLife',
-      trustScore: 100,
+      trustScore: 0,
       tier: 'Bạc',
-      rating: 5.0,
+      rating: 0,
       reviewCount: 0,
       successfulOrders: 0,
-      completionRate: 100,
-      responseRate: 100,
-      responseTime: 'N/A',
-      hubPassRate: 100,
+      completionRate: 0,
+      responseRate: 0,
+      responseTime: 'Chưa có dữ liệu',
+      hubPassRate: 0,
       cancellationRate: 0,
-      badges: [
-        '100% Giao dịch qua Escrow'
-      ]
+      badges: []
     };
   },
 

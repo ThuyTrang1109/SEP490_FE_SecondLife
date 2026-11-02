@@ -3125,6 +3125,7 @@ export default function App() {
             orderId={inspectionDecisionOrderId || inspectionDecisionOrder?.id}
             order={inspectionDecisionOrder}
             currentUser={currentUser}
+            userRole={currentRole}
             lang={lang}
             onBack={() => handleTabChange('orders')}
             onSuccess={() => {

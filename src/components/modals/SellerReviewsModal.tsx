@@ -1,40 +1,57 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Star,
-  X,
   ShieldCheck,
-  CheckCircle2,
   Award,
-  ThumbsUp,
-  Clock,
-  PackageCheck,
+  CheckCircle2,
+  X,
   MessageSquare,
-  Sparkles,
-  Filter
+  AlertCircle
 } from 'lucide-react';
-import { Language, ProductReview } from '../../types';
+import { Language } from '../../types';
 import { reviewService } from '../../data/mockReviews';
+import { reputationService, SellerReputationDto, getAssessmentStatusMeta } from '../../services';
 
 interface SellerReviewsModalProps {
+  isOpen: boolean;
   sellerId: string;
   sellerName: string;
-  isOpen: boolean;
   onClose: () => void;
   lang?: Language;
 }
 
 export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
+  isOpen,
   sellerId,
   sellerName,
-  isOpen,
   onClose,
   lang = 'vi'
 }) => {
   const [filterRating, setFilterRating] = useState<number | 'ALL'>('ALL');
+  const [reputation, setReputation] = useState<SellerReputationDto | null>(null);
+  const [isLoadingRep, setIsLoadingRep] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || !sellerId) return;
+    let isMounted = true;
+    setIsLoadingRep(true);
+    reputationService.getSellerReputation(sellerId)
+      .then((rep) => {
+        if (isMounted) setReputation(rep);
+      })
+      .catch((err) => {
+        console.warn('Could not fetch seller reputation:', err);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingRep(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, sellerId]);
 
   if (!isOpen) return null;
 
-  const trustProfile = reviewService.getSellerTrustProfile(sellerId, sellerName);
   const allReviews = reviewService.getReviewsBySeller(sellerId);
 
   const filteredReviews = allReviews.filter((r) => {
@@ -49,6 +66,8 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
     2: allReviews.filter((r) => r.rating === 2).length,
     1: allReviews.filter((r) => r.rating === 1).length,
   };
+
+  const statusMeta = reputation ? getAssessmentStatusMeta(reputation.assessmentStatus) : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fadeIn overflow-y-auto">
@@ -67,9 +86,6 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                   <ShieldCheck className="w-3 h-3 text-emerald-300" />
                   eKYC Verified
-                </span>
-                <span className="text-[10px] text-rose-300 font-extrabold bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-500/40">
-                  ❌ [Chỉ số mẫu / Chưa có BE Review]
                 </span>
               </div>
               <p className="text-xs text-white/70 font-medium">
@@ -97,30 +113,32 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
                 {/* Big Score Badge */}
                 <div className="w-18 h-18 rounded-2xl bg-[#24263e] text-white flex flex-col items-center justify-center shadow-md p-2 text-center shrink-0">
                   <span className="text-[10px] text-amber-300 uppercase font-black tracking-wider">UY TÍN</span>
-                  <span className="text-2xl font-black text-white leading-none mt-0.5">{trustProfile.trustScore}</span>
+                  <span className="text-2xl font-black text-white leading-none mt-0.5">
+                    {reputation?.score !== undefined && reputation?.score !== null ? reputation.score : '--'}
+                  </span>
                   <span className="text-[9px] text-white/70">/ 100</span>
                 </div>
 
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-black text-slate-900">
-                      {lang === 'vi' ? 'Hạng Người Bán:' : 'Seller Tier:'}
+                      {lang === 'vi' ? 'Trạng Thái Uy Tín:' : 'Reputation Status:'}
                     </span>
-                    <span className="px-2.5 py-0.5 rounded-lg text-xs font-black bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 shadow-2xs">
+                    <span className={`px-2.5 py-0.5 rounded-lg text-xs font-black border flex items-center gap-1 shadow-2xs ${
+                      statusMeta?.badgeClass || 'bg-slate-100 text-slate-800 border-slate-300'
+                    }`}>
                       <Award className="w-3.5 h-3.5 text-amber-600" />
-                      {trustProfile.tier}
+                      {statusMeta?.shortLabel || 'Chưa đánh giá'}
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-600">
-                    <div className="flex items-center text-amber-500 font-extrabold text-sm">
-                      <Star className="w-4 h-4 fill-amber-400 text-amber-400 mr-1" />
-                      <span>{trustProfile.rating}</span>
-                      <span className="text-slate-400 text-xs font-normal ml-1">/ 5.0</span>
-                    </div>
-                    <span>•</span>
                     <span className="font-semibold text-slate-800">
-                      {allReviews.length} {lang === 'vi' ? 'lượt đánh giá xác thực' : 'verified reviews'}
+                      {allReviews.length} {lang === 'vi' ? 'lượt đánh giá' : 'reviews'}
+                    </span>
+                    <span>•</span>
+                    <span className="text-slate-600">
+                      {reputation?.evaluatedOrders ?? 0} {lang === 'vi' ? 'đơn đã nghiệm thu' : 'evaluated orders'}
                     </span>
                   </div>
                 </div>
@@ -128,35 +146,39 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
 
               {/* Trust Badges */}
               <div className="flex flex-wrap sm:flex-col gap-1.5 text-[11px] font-semibold text-slate-700">
-                {trustProfile.badges.map((b, i) => (
-                  <div key={i} className="flex items-center gap-1.5 bg-white/90 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span>{b}</span>
+                <div className="flex items-center gap-1.5 bg-white/90 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Bảo vệ quỹ tín thác Escrow</span>
+                </div>
+                {reputation?.sellingRestricted && (
+                  <div className="flex items-center gap-1.5 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-300 text-rose-800 shadow-2xs font-bold">
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                    <span>Đang bị giới hạn bán hàng</span>
                   </div>
-                ))}
+                )}
               </div>
             </div>
 
             {/* Performance Metric Counters Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-amber-200/50 text-center">
               <div className="bg-white/80 p-2.5 rounded-xl border border-gray-200 shadow-2xs">
-                <div className="text-[10px] text-slate-500 font-semibold">{lang === 'vi' ? 'Tỷ lệ hoàn thành' : 'Completion Rate'}</div>
-                <div className="text-sm font-black text-emerald-700 mt-0.5">{trustProfile.completionRate}%</div>
+                <div className="text-[10px] text-slate-500 font-semibold">{lang === 'vi' ? 'Giao dịch tốt' : 'Good Orders'}</div>
+                <div className="text-sm font-black text-emerald-700 mt-0.5">{reputation?.goodTransactions ?? 0}</div>
               </div>
 
               <div className="bg-white/80 p-2.5 rounded-xl border border-gray-200 shadow-2xs">
-                <div className="text-[10px] text-slate-500 font-semibold">{lang === 'vi' ? 'Hàng qua Hub đạt chuẩn' : 'Hub Pass Rate'}</div>
-                <div className="text-sm font-black text-emerald-700 mt-0.5">{trustProfile.hubPassRate}%</div>
+                <div className="text-[10px] text-slate-500 font-semibold">{lang === 'vi' ? 'Đơn đã kiểm định' : 'Evaluated Orders'}</div>
+                <div className="text-sm font-black text-emerald-700 mt-0.5">{reputation?.evaluatedOrders ?? 0}</div>
               </div>
 
               <div className="bg-white/80 p-2.5 rounded-xl border border-gray-200 shadow-2xs">
-                <div className="text-[10px] text-slate-500 font-semibold">{lang === 'vi' ? 'Phản hồi tin nhắn' : 'Chat Response'}</div>
-                <div className="text-sm font-black text-[#24263e] mt-0.5">{trustProfile.responseRate}% <span className="text-[10px] text-slate-400 font-normal">({trustProfile.responseTime})</span></div>
+                <div className="text-[10px] text-slate-500 font-semibold">{lang === 'vi' ? 'Đơn hủy do người bán' : 'Seller Cancellations'}</div>
+                <div className="text-sm font-black text-[#24263e] mt-0.5">{reputation?.sellerCancellationOrders ?? 0}</div>
               </div>
 
               <div className="bg-white/80 p-2.5 rounded-xl border border-gray-200 shadow-2xs">
-                <div className="text-[10px] text-slate-500 font-semibold">{lang === 'vi' ? 'Tỷ lệ hủy đơn' : 'Cancellation Rate'}</div>
-                <div className="text-sm font-black text-slate-800 mt-0.5">{trustProfile.cancellationRate}%</div>
+                <div className="text-[10px] text-slate-500 font-semibold">{lang === 'vi' ? 'Giao dịch vi phạm' : 'Bad Orders'}</div>
+                <div className="text-sm font-black text-slate-800 mt-0.5">{reputation?.badTransactions ?? 0}</div>
               </div>
             </div>
           </div>
@@ -172,45 +194,52 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
               </span>
             </div>
 
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setFilterRating('ALL')}
-                className={`px-3 py-1 rounded-xl text-[11px] font-bold transition cursor-pointer border ${
-                  filterRating === 'ALL'
-                    ? 'bg-[#24263e] text-white border-[#24263e]'
-                    : 'bg-white text-slate-600 border-gray-200 hover:border-gray-400'
-                }`}
-              >
-                {lang === 'vi' ? 'Tất cả' : 'All'} ({allReviews.length})
-              </button>
-
-              {[5, 4, 3].map((star) => (
+            {/* Filter Buttons */}
+            {allReviews.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <button
-                  type="button"
-                  key={star}
-                  onClick={() => setFilterRating(star)}
-                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition cursor-pointer border flex items-center gap-1 ${
-                    filterRating === star
-                      ? 'bg-[#24263e] text-white border-[#24263e]'
-                      : 'bg-white text-slate-600 border-gray-200 hover:border-gray-400'
+                  onClick={() => setFilterRating('ALL')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                    filterRating === 'ALL'
+                      ? 'bg-[#24263e] text-white shadow-xs'
+                      : 'bg-gray-100 text-slate-600 hover:bg-gray-200'
                   }`}
                 >
-                  <span>{star}</span>
-                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                  <span>({ratingCounts[star as keyof typeof ratingCounts] || 0})</span>
+                  {lang === 'vi' ? 'Tất cả' : 'All'} ({allReviews.length})
                 </button>
-              ))}
-            </div>
+                {[5, 4, 3, 2, 1].map((star) => (
+                  <button
+                    key={star}
+                    onClick={() => setFilterRating(star)}
+                    className={`px-2 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                      filterRating === star
+                        ? 'bg-[#24263e] text-white shadow-xs'
+                        : 'bg-gray-100 text-slate-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span>{star}</span>
+                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                    <span>({ratingCounts[star as keyof typeof ratingCounts]})</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* List of Buyer Reviews */}
-          <div className="space-y-3.5">
+          {/* Reviews List */}
+          <div className="space-y-3">
             {filteredReviews.length === 0 ? (
-              <div className="text-center py-10 bg-[#faf8f5] rounded-2xl border border-gray-200 text-slate-500">
-                <Star className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                <p className="font-semibold text-xs">
-                  {lang === 'vi' ? 'Chưa có đánh giá nào cho bộ lọc này.' : 'No reviews match this filter.'}
+              <div className="p-8 text-center bg-[#faf8f5] rounded-3xl border border-dashed border-gray-200 space-y-2">
+                <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center mx-auto text-slate-300 shadow-2xs">
+                  <MessageSquare className="w-6 h-6 text-slate-400" />
+                </div>
+                <div className="font-bold text-slate-700 text-xs">
+                  {lang === 'vi' ? 'Người bán này chưa có nhận xét nào từ khách mua' : 'No written reviews from buyers yet'}
+                </div>
+                <p className="text-[11px] text-slate-400 max-w-md mx-auto">
+                  {lang === 'vi'
+                    ? 'Sau khi các giao dịch hoàn tất qua quỹ ký quỹ Escrow và sản phẩm được nghiệm thu, người mua có thể để lại nhận xét công khai tại đây.'
+                    : 'Reviews will appear here after orders are completed and confirmed via Escrow.'}
                 </p>
               </div>
             ) : (
@@ -302,7 +331,7 @@ export const SellerReviewsModal: React.FC<SellerReviewsModalProps> = ({
         <div className="p-4 border-t border-gray-100 flex items-center justify-between bg-slate-50 rounded-b-3xl">
           <div className="text-[11px] text-slate-500 flex items-center gap-1.5 font-medium">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>{lang === 'vi' ? '100% đánh giá là người mua thực tế đã giải ngân Escrow' : '100% reviews verified from completed Escrow transactions'}</span>
+            <span>{lang === 'vi' ? '100% dữ liệu uy tín đồng bộ từ hệ thống Quỹ Tín Thác Escrow' : '100% reputation metrics synced from Escrow system'}</span>
           </div>
 
           <button

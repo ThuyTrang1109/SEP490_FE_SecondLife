@@ -19,6 +19,7 @@ import { staffListingService } from '../../services/staffListingService';
 import { StaffListingItemDTO } from '../../types';
 import { formatVND } from '../../utils/translations';
 import { dialogService } from '../../utils/dialogService';
+import { MarkdownContent } from '../common/MarkdownDescription';
 
 interface ListingComparisonModalProps {
   postId: string;
@@ -308,9 +309,9 @@ export const ListingComparisonModal: React.FC<ListingComparisonModalProps> = ({
 
                     <div className="pt-1 border-t border-slate-100">
                       <span className="text-[10px] text-slate-400 uppercase font-black block mb-0.5">Mô tả sản phẩm:</span>
-                      <p className="text-slate-700 text-xs leading-relaxed max-h-32 overflow-y-auto whitespace-pre-wrap subtle-scrollbar p-2 bg-slate-50 rounded-xl">
-                        {currentPost.description || 'Không có mô tả'}
-                      </p>
+                      <div className="max-h-36 overflow-y-auto subtle-scrollbar p-2.5 bg-slate-50 rounded-xl">
+                        <MarkdownContent content={currentPost.description} emptyText="Không có mô tả" />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -433,9 +434,9 @@ export const ListingComparisonModal: React.FC<ListingComparisonModalProps> = ({
 
                         <div className="pt-1 border-t border-slate-100">
                           <span className="text-[10px] text-slate-400 uppercase font-black block mb-0.5">Mô tả sản phẩm:</span>
-                          <p className="text-slate-700 text-xs leading-relaxed max-h-32 overflow-y-auto whitespace-pre-wrap subtle-scrollbar p-2 bg-slate-50 rounded-xl">
-                            {activeMatchedPost.data.description || 'Không có mô tả'}
-                          </p>
+                          <div className="max-h-36 overflow-y-auto subtle-scrollbar p-2.5 bg-slate-50 rounded-xl">
+                            <MarkdownContent content={activeMatchedPost.data.description} emptyText="Không có mô tả" />
+                          </div>
                         </div>
                       </div>
                     </>

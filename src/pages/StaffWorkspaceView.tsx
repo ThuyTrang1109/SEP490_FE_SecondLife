@@ -47,6 +47,7 @@ import { dialogService } from '../utils/dialogService';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { ListingComparisonModal } from '../components/staff/ListingComparisonModal';
 import { StaffDisputeManagement } from '../components/staff/StaffDisputeManagement';
+import { MarkdownContent } from '../components/common/MarkdownDescription';
 import logoImg from '../assets/logo.png';
 import { User, LogOut } from 'lucide-react';
 
@@ -1809,7 +1810,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
 
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
               <span className="font-bold text-slate-800 block text-[11px]">Mô tả của người bán:</span>
-              <p className="text-slate-700">{selectedListingModal.description}</p>
+              <MarkdownContent content={selectedListingModal.description} />
             </div>
 
             {selectedListingModal.isSuspicious && (

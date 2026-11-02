@@ -242,7 +242,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   // --- STEP 5: VERDICT & SUMMARY ---
   const [overallVerdict, setOverallVerdict] = useState<'PASS' | 'FAIL'>('PASS');
-  const [conditionScore, setConditionScore] = useState<number>(90);
+  const [conditionScore, setConditionScore] = useState<number>(0);
   const [inspectorNotes, setInspectorNotes] = useState('');
   const [isDigitalSigned, setIsDigitalSigned] = useState(false);
 
@@ -292,6 +292,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         setAccessoriesNote('');
         setExteriorNotes('');
         setInspectorNotes('');
+        setConditionScore(0);
+        setSelectedGrade('Like New');
         setProofPhotos([]);
         setVideoProofUrl((activeOrder as any).videoProofUrl || '');
         setUnboxingVideoUrl((activeOrder as any).unboxingVideoUrl || '');

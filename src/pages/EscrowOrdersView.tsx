@@ -309,11 +309,9 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       sessionStorage.setItem(ORDER_TAB_STORAGE_KEY, activeTab);
     } catch (e) {}
     const currentUrl = new URL(window.location.href);
-    if (activeTab && activeTab !== 'all') {
-      currentUrl.searchParams.set('order_tab', activeTab);
-    } else {
-      currentUrl.searchParams.delete('order_tab');
-    }
+    currentUrl.searchParams.delete('order_tab');
+    currentUrl.searchParams.delete('tab');
+    currentUrl.searchParams.delete('tap');
     if (currentUrl.toString() !== window.location.href) {
       window.history.replaceState(null, '', currentUrl.toString());
     }

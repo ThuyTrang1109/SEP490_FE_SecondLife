@@ -567,6 +567,29 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const latestAcceptedOffer = latestAccepted?.price;
   const latestAcceptedNegotiationId = latestAccepted?.id;
 
+  // Kiểm tra xem người mua đã từng gửi bất kỳ yêu cầu trả giá nào trong cuộc trò chuyện này chưa
+  const hasBuyerRequestedNegotiation = useMemo(() => {
+    // 1. Kiểm tra từ negotiationMap (các deal backend hoặc tin nhắn đã parse)
+    for (const [id] of negotiationMap) {
+      if (!id.startsWith('seller-offer-')) return true;
+    }
+    // 2. Quét qua lịch sử tin nhắn
+    return messages.some((m) => {
+      const parsed = parseSystemMessage(m.text);
+      if (parsed.offer) {
+        return parsed.offer.senderRole !== 'seller' && !parsed.offer.negotiationId?.startsWith('seller-offer-');
+      }
+      return Boolean(m.isOffer && !m.negotiationId?.startsWith('seller-offer-'));
+    });
+  }, [messages, negotiationMap]);
+
+  // Điều kiện hiển thị nút đề xuất giá / trả giá:
+  // - Người mua (Buyer): Hiển thị khi không có pending offer và chưa vượt quá số lượt từ chối tối đa
+  // - Người bán (Seller): CHỈ hiển thị khi Người mua ĐÃ có yêu cầu trả giá và không có pending offer
+  const canShowOfferButton = !hasPendingOffer && (
+    isSeller ? hasBuyerRequestedNegotiation : !isMaxRejectionsReached
+  );
+
   const [aiAdvice, setAiAdvice] = useState<{
     counterOfferVnd: number;
     adviceText: string;
@@ -756,6 +779,15 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         lang === 'vi'
           ? `Mức giá mới phải lớn hơn mức giá cao nhất đã bị từ chối (${formatVND(maxRejectedPrice)})`
           : `Offer must be strictly higher than your highest rejected price (${formatVND(maxRejectedPrice)})`
+      );
+      return;
+    }
+
+    if (isSeller && !hasBuyerRequestedNegotiation) {
+      setOfferError(
+        lang === 'vi'
+          ? 'Người bán chỉ có thể đề xuất giá sau khi người mua đã gửi yêu cầu trả giá.'
+          : 'Seller can only propose a price after buyer has requested negotiation.'
       );
       return;
     }
@@ -1157,11 +1189,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 
                 {isSeller ? (
                   <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-200 rounded text-[9px] font-bold border border-blue-400/30">
-                    {lang === 'vi' ? 'Người mua' : 'Buyer'}
+                    {lang === 'vi' ? 'Đối tác: Người mua' : 'Partner: Buyer'}
                   </span>
                 ) : (
                   <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[9px] font-bold border border-emerald-300">
-                    {lang === 'vi' ? 'Người bán' : 'Seller'}
+                    {lang === 'vi' ? 'Đối tác: Người bán' : 'Partner: Seller'}
                   </span>
                 )}
 
@@ -1829,7 +1861,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         </div>
 
         {/* Quick Offer Popup */}
-        {showOfferForm && !hasPendingOffer && (isSeller || !isMaxRejectionsReached) && (
+        {showOfferForm && canShowOfferButton && (
           <div className={`p-3.5 border-t flex items-center gap-3 animate-fadeIn shrink-0 ${
             isSeller ? 'bg-blue-50/30 border-blue-100' : 'bg-[#FFFFFF] border-gray-200'
           }`}>
@@ -2066,7 +2098,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         <div className={`p-3 border-t flex items-center gap-2 shrink-0 ${
           isSeller ? 'bg-slate-50 border-slate-200' : 'bg-[#FFFFFF] border-gray-200'
         }`}>
-          {!hasPendingOffer && (isSeller || !isMaxRejectionsReached) && (
+          {canShowOfferButton && (
             <button
               onClick={() => {
                 if (!isSeller && maxRejectedPrice > 0 && offerInput <= maxRejectedPrice) {

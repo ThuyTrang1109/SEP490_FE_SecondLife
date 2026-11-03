@@ -512,7 +512,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
                         {isEditingTiers ? (
                           <input
                             type="number"
-                            step="1000"
+                            step="any"
                             value={tier.pricePerKm ?? 0}
                             onChange={(e) => handleTierChange(idx, 'pricePerKm', Number(e.target.value))}
                             className="w-28 px-2.5 py-1.5 rounded-lg border border-gray-300 text-xs font-bold text-[#c34c36] focus:ring-2 focus:ring-amber-500 outline-hidden"

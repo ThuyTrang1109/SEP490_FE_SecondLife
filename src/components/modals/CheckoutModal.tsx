@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Listing, EscrowOrder, EscrowStatus, Language, UserWallet, ShippingQuoteResponseDto, ShippingLeg, InspectionCenter, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import { mockInspectionCenters } from '../../data/mockData';
-import { getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, safeJsonParse, getResolvedPostParcel } from '../../utils/orderUtils';
+import { getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, safeJsonParse } from '../../utils/orderUtils';
 import {
   ShieldCheck,
   Truck,
@@ -45,9 +45,9 @@ import { translateSystemNotification } from '../../utils/systemNotificationTrans
 export const formatLalamoveVehicle = (serviceType?: string): { name: string; icon: string; desc: string; standard?: string } => {
   if (!serviceType) {
     return {
-      name: 'Phương tiện tối ưu tự chọn',
+      name: 'Chưa có thông tin phương tiện',
       icon: '🚚',
-      desc: 'Hệ thống tự động chọn phương tiện có phí thấp nhất phù hợp kích thước kiện hàng',
+      desc: 'Vui lòng kiểm tra phương tiện trong báo giá vận chuyển',
       standard: 'Phương tiện do Lalamove chỉ định',
     };
   }
@@ -2579,13 +2579,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               const isOutOfArea = quoteError.includes('phạm vi phục vụ') || quoteError.includes('ERR_OUT_OF_SERVICE_AREA');
 
               if (isVehicleLimit) {
-                const parcel = getResolvedPostParcel(
-                  listing.id,
-                  listing,
-                  listing.description,
-                  listing.category
-                );
-                const hasParcel = parcel && (parcel.weight > 0 || parcel.length > 0 || parcel.width > 0 || parcel.height > 0);
                 const vehicleLimits = parseLalamoveVehicleLimits(quoteError);
 
                 return (
@@ -2617,16 +2610,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         <span>{quoteLoading ? 'Đang tính...' : 'Thử lại'}</span>
                       </button>
                     </div>
-
-                    {/* Hiển thị thông số kiện hàng hiện tại nếu có */}
-                    {hasParcel && (
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-amber-900 dark:text-amber-200 bg-amber-100/70 dark:bg-amber-900/40 px-3 py-1.5 rounded-xl border border-amber-200/80 dark:border-amber-800/50">
-                        <span className="font-semibold text-amber-950 dark:text-amber-100">Thông số kiện hàng:</span>
-                        <span>Trọng lượng: <strong>{(parcel.weight / 1000).toLocaleString('vi-VN')} kg</strong></span>
-                        <span>•</span>
-                        <span>Kích thước: <strong>{parcel.length} x {parcel.width} x {parcel.height} cm</strong></span>
-                      </div>
-                    )}
 
                     {/* Hướng dẫn giải pháp ngắn gọn, thân thiện */}
                     <div className="text-xs text-amber-800 dark:text-amber-300 bg-white/80 dark:bg-slate-900/60 p-2.5 rounded-xl border border-amber-200/70 dark:border-amber-800/40 flex items-start gap-2">
@@ -2733,37 +2716,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                 {/* Thẻ phân loại phương tiện theo kích thước & khối lượng kiện hàng sản phẩm */}
                 {(() => {
-                  const vehicleByQuote = formatLalamoveVehicle(ghnQuote.serviceType);
-                  const parcel = getResolvedPostParcel(
-                    listing.id,
-                    listing,
-                    listing.description,
-                    listing.category
-                  );
-
-                  const actualWeight = parcel.weight;
-                  const actualLength = parcel.length;
-                  const actualWidth = parcel.width;
-                  const actualHeight = parcel.height;
-
-                  const parcelVehicle = classifyVehicleByProduct(
-                    actualWeight,
-                    actualLength,
-                    actualWidth,
-                    actualHeight
-                  );
-
-                  // Phương tiện hiển thị: Ưu tiên loại phương tiện được Lalamove định tuyến thực tế (ghnQuote.serviceType)
-                  const displayVehicle = ghnQuote.serviceType ? vehicleByQuote : parcelVehicle;
-
-                  const weightKg = Number(actualWeight || 0) / 1000;
-                  const weightDisplay = weightKg >= 1
-                    ? `${weightKg.toLocaleString('vi-VN')} kg`
-                    : `${actualWeight || 1000} gram`;
-                  const dimsDisplay = `${actualLength} x ${actualWidth} x ${actualHeight} cm`;
-
-                  // Phát hiện trường hợp sản phẩm nhỏ (Xe máy) nhưng bị Lalamove tính cước xe tải do khoảng cách xa
-                  const isRouteMismatch = parcelVehicle.isMotorcycleEligible && ghnQuote.serviceType !== 'MOTORCYCLE';
+                  const displayVehicle = formatLalamoveVehicle(ghnQuote.serviceType);
+                  // Use the quote snapshot, never inferred listing/category/localStorage defaults.
+                  const { shippingWeight, shippingLength, shippingWidth, shippingHeight } = ghnQuote;
+                  const hasParcel = [shippingWeight, shippingLength, shippingWidth, shippingHeight]
+                    .every(value => typeof value === 'number' && Number.isSafeInteger(value) && value > 0);
+                  const weightDisplay = hasParcel
+                    ? `${(shippingWeight! / 1000).toLocaleString('vi-VN')} kg`
+                    : 'Chưa có thông tin';
+                  const dimsDisplay = hasParcel
+                    ? `${shippingLength} x ${shippingWidth} x ${shippingHeight} cm`
+                    : 'Chưa có thông tin';
 
                   return (
                     <div className="space-y-2.5">
@@ -2801,25 +2764,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             Kích thước: <strong className="text-slate-900">{dimsDisplay}</strong>
                           </span>
                           <span className="text-[10px] text-slate-400">
-                            ({displayVehicle.standard || parcelVehicle.standard})
+                            Số đo đóng gói theo báo giá
                           </span>
                         </div>
                       </div>
 
-                      {/* Cảnh báo khi sản phẩm nhỏ gọn nhưng bị tính cước xe tải đường dài */}
-                      {isRouteMismatch && (
-                        <div className="p-2.5 bg-amber-50/90 border border-amber-300 rounded-xl flex items-start gap-2 text-[11px] text-amber-900">
-                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="font-bold block text-amber-950">
-                              Lưu ý về phương tiện và khoảng cách giao hàng:
-                            </strong>
-                            <span>
-                              Theo kích thước ({dimsDisplay}) và khối lượng ({weightDisplay}), sản phẩm này thuộc phân loại <strong>{parcelVehicle.name}</strong> (cước nội thành thông thường ~20.000 đ – 45.000 đ). Tuy nhiên do địa chỉ nhận hàng cách kho người bán quá xa (hoặc khác tỉnh thành), nhà xe không nhận chạy xe máy mà điều động <strong>{vehicleByQuote.name}</strong> đường dài với cước <strong>{formatVND(ghnQuote.shippingFee)}</strong>.
-                            </span>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   );
                 })()}

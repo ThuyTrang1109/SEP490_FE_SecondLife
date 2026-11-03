@@ -102,6 +102,37 @@ export interface Listing {
   };
   backendStatus?: string;
   rejectionReason?: string;
+  listingCreditCharged?: boolean;
+  aiDescription?: string | null;
+}
+
+export interface SellerPostDetailDto {
+  id: string;
+  categoryId: string;
+  itemId?: string | null;
+  title: string;
+  description: string;
+  imageUrls: string[];
+  status: string; // ACTIVE, RESERVED, PAYMENT_PENDING, SOLD, DRAFT, PENDING, REJECTED
+  createdAt: string;
+  updatedAt?: string;
+  price: number;
+  itemCondition?: string;
+  aiDescription?: string | null;
+  aiSuggestedPrice?: number | null;
+  rejectionReason?: string | null;
+  listingCreditCharged?: boolean;
+  shippingWeight?: number | null;
+  shippingLength?: number | null;
+  shippingWidth?: number | null;
+  shippingHeight?: number | null;
+  user?: {
+    id: string;
+    email: string;
+    fullName: string;
+    avatarUrl?: string | null;
+    address?: string | null;
+  };
 }
 
 export type EscrowStatus =
@@ -631,6 +662,11 @@ export interface ShippingQuoteResponseDto {
   provider?: string;
   serviceType?: string;
   providerQuotationId?: string;
+  /** Packed measurements used by this quotation: grams and centimeters. */
+  shippingWeight?: number;
+  shippingLength?: number;
+  shippingWidth?: number;
+  shippingHeight?: number;
 }
 
 export interface CreateShipmentRequestDto {

@@ -425,12 +425,27 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   }, [photoPreviews.length]);
 
   const originalPriceError = useMemo(() => {
-    if (typeof originalPriceVnd === 'number') {
-      if (originalPriceVnd > 1000000000) return 'Giá sản phẩm không được vượt quá 1.000.000.000đ (1 tỷ VNĐ).';
-      if (originalPriceVnd <= 0) return 'Giá sản phẩm phải lớn hơn 0đ.';
+    if (originalPriceVnd === '' || originalPriceVnd === null || originalPriceVnd === undefined) {
+      if (initialDraft) {
+        return lang === 'vi' ? 'Vui lòng nhập giá bán sản phẩm.' : 'Please enter selling price.';
+      }
+      return null;
+    }
+    const num = Number(originalPriceVnd);
+    if (isNaN(num) || !isFinite(num)) {
+      return lang === 'vi' ? 'Giá sản phẩm không hợp lệ.' : 'Invalid price.';
+    }
+    if (num <= 0) {
+      return lang === 'vi' ? 'Giá sản phẩm phải lớn hơn 0đ.' : 'Price must be greater than 0đ.';
+    }
+    if (num < 1000) {
+      return lang === 'vi' ? 'Giá sản phẩm tối thiểu là 1.000đ.' : 'Minimum price is 1,000 VND.';
+    }
+    if (num > 1000000000) {
+      return lang === 'vi' ? 'Giá sản phẩm không được vượt quá 1.000.000.000đ (1 tỷ VNĐ).' : 'Price cannot exceed 1,000,000,000 VND.';
     }
     return null;
-  }, [originalPriceVnd]);
+  }, [originalPriceVnd, initialDraft, lang]);
 
   // Gợi ý thương hiệu đồ gia dụng thông minh theo Danh mục và Loại sản phẩm
   const brandSuggestionsData = useMemo(() => {
@@ -2881,10 +2896,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 id="original-price-input"
                 type="text"
                 inputMode="numeric"
-                maxLength={15}
+                maxLength={14}
                 value={originalPriceVnd ? formatVndInput(originalPriceVnd.toString()) : ''}
                 onChange={(e) => {
-                  const raw = cleanVndInput(e.target.value, 11);
+                  const raw = cleanVndInput(e.target.value, 10);
                   const numVal = raw ? Number(raw) : '';
                   setOriginalPriceVnd(numVal);
                   if (typeof numVal === 'number' && numVal > 0) {
@@ -5005,11 +5020,19 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         </div>
       )}
 
-      {/* Global Toast for CreateListingView */}
+      {/* Global Toast for CreateListingView (Positioned at top-right below navbar) */}
       {toastMsg && (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 bg-slate-900/95 text-white text-sm font-bold rounded-full shadow-2xl flex items-center gap-2 animate-fadeIn border border-slate-700/50 backdrop-blur-sm">
-          <AlertTriangle className="w-4 h-4 text-amber-400" />
-          <span>{toastMsg}</span>
+        <div className="fixed top-24 sm:top-28 right-4 sm:right-6 lg:right-8 z-[100] max-w-md w-auto px-5 py-3.5 bg-slate-900/95 text-white text-xs sm:text-sm font-bold rounded-2xl shadow-2xl flex items-center gap-2.5 animate-in fade-in slide-in-from-top-3 border border-slate-700/50 backdrop-blur-sm">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+          <span className="flex-1">{toastMsg}</span>
+          <button
+            type="button"
+            onClick={() => setToastMsg(null)}
+            className="w-5 h-5 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white flex items-center justify-center text-xs transition cursor-pointer ml-1"
+            title="Đóng"
+          >
+            ✕
+          </button>
         </div>
       )}
 

@@ -431,11 +431,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       sessionStorage.setItem(CENTER_TAB_STORAGE_KEY, activeTab);
     } catch (e) {}
     const currentUrl = new URL(window.location.href);
-    if (activeTab && activeTab !== 'overview') {
-      currentUrl.searchParams.set('subtab', activeTab);
-    } else {
-      currentUrl.searchParams.delete('subtab');
-    }
+    currentUrl.searchParams.delete('subtab');
+    currentUrl.searchParams.delete('tab');
+    currentUrl.searchParams.delete('tap');
     if (currentUrl.toString() !== window.location.href) {
       window.history.replaceState(null, '', currentUrl.toString());
     }

@@ -485,7 +485,7 @@ export const ListingComparisonModal: React.FC<ListingComparisonModalProps> = ({
                       disabled={isRejecting}
                       className="px-5 py-2 rounded-xl bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs transition cursor-pointer shadow-xs disabled:opacity-50"
                     >
-                      {isRejecting ? 'Đang từ chối...' : 'Xác Nhận Từ Chối Tin'}
+                      {isRejecting ? 'Đang từ chối...' : 'Xác nhận từ chối'}
                     </button>
                   </div>
                 </form>

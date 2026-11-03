@@ -89,7 +89,7 @@ export function getInitialActiveTab(): string {
   if (typeof window !== 'undefined') {
     // 1. Kiểm tra URL query param ?tab=
     const params = new URLSearchParams(window.location.search);
-    const rawTab = params.get('tab');
+    const rawTab = params.get('tab') || params.get('tap');
     const tabParam = rawTab ? rawTab.replace(/_/g, '-') : null;
     if (tabParam && (VALID_MAIN_TABS as readonly string[]).includes(tabParam)) {
       candidateTab = tabParam;
@@ -171,19 +171,12 @@ export default function App() {
     } catch (e) {}
 
     const url = new URL(window.location.href);
-    if (activeTab && activeTab !== 'home') {
-      url.searchParams.set('tab', activeTab);
-    } else {
-      url.searchParams.delete('tab');
-    }
-    if (activeTab !== 'admin-dashboard' && activeTab !== 'staff-workspace' && activeTab !== 'inspection-center') {
-      url.searchParams.delete('subtab');
-    }
+    url.searchParams.delete('tab');
+    url.searchParams.delete('tap');
+    url.searchParams.delete('subtab');
+    url.searchParams.delete('order_tab');
     if (activeTab !== 'buyer-inspection-decision') {
       url.searchParams.delete('orderId');
-    }
-    if (activeTab !== 'orders') {
-      url.searchParams.delete('order_tab');
     }
     if (url.toString() !== window.location.href) {
       window.history.replaceState(null, '', url.toString());
@@ -880,8 +873,12 @@ export default function App() {
           if (targetTab) {
             sessionStorage.setItem('secondlife_orders_filter_tab', targetTab);
             const newUrl = new URL(window.location.href);
-            newUrl.searchParams.set('order_tab', targetTab);
-            window.history.replaceState(null, '', newUrl.toString());
+            newUrl.searchParams.delete('order_tab');
+            newUrl.searchParams.delete('tab');
+            newUrl.searchParams.delete('tap');
+            if (newUrl.toString() !== window.location.href) {
+              window.history.replaceState(null, '', newUrl.toString());
+            }
             window.dispatchEvent(new Event('secondlife_tab_changed'));
           }
         }
@@ -2373,8 +2370,12 @@ export default function App() {
       try {
         sessionStorage.setItem('secondlife_orders_filter_tab', 'inspecting');
         const newUrl = new URL(window.location.href);
-        newUrl.searchParams.set('order_tab', 'inspecting');
-        window.history.replaceState(null, '', newUrl.toString());
+        newUrl.searchParams.delete('order_tab');
+        newUrl.searchParams.delete('tab');
+        newUrl.searchParams.delete('tap');
+        if (newUrl.toString() !== window.location.href) {
+          window.history.replaceState(null, '', newUrl.toString());
+        }
         window.dispatchEvent(new Event('secondlife_tab_changed'));
       } catch {}
     } else {
@@ -2382,7 +2383,11 @@ export default function App() {
         sessionStorage.setItem('secondlife_orders_filter_tab', 'all');
         const newUrl = new URL(window.location.href);
         newUrl.searchParams.delete('order_tab');
-        window.history.replaceState(null, '', newUrl.toString());
+        newUrl.searchParams.delete('tab');
+        newUrl.searchParams.delete('tap');
+        if (newUrl.toString() !== window.location.href) {
+          window.history.replaceState(null, '', newUrl.toString());
+        }
         window.dispatchEvent(new Event('secondlife_tab_changed'));
       } catch {}
     }
@@ -2933,14 +2938,14 @@ export default function App() {
         />
       )}
 
-      {/* Floating Top Welcome Toast Notification */}
+      {/* Floating Welcome & System Toast Notification (Positioned at top-right below navbar) */}
       {toastMessage && (
-        <div className="fixed top-4 sm:top-6 left-1/2 -translate-x-1/2 z-[100] w-[92%] sm:w-auto min-w-[340px] max-w-xl bg-gradient-to-r from-[#fbf8f3] via-[#f5ede3] to-[#ebdccb] backdrop-blur-2xl text-[#2b1d16] px-5 py-3.5 rounded-2xl shadow-2xl border-2 border-[#cea981]/60 flex items-center gap-3.5 transition-all duration-300 transform scale-100 animate-fadeIn">
+        <div className="fixed top-24 sm:top-28 right-4 sm:right-6 lg:right-8 z-[100] w-[calc(100%-2rem)] sm:w-auto min-w-[320px] max-w-md bg-gradient-to-r from-[#fbf8f3] via-[#f5ede3] to-[#ebdccb] backdrop-blur-2xl text-[#2b1d16] px-4.5 py-3.5 rounded-2xl shadow-2xl border-2 border-[#cea981]/60 flex items-center gap-3.5 transition-all duration-300 transform scale-100 animate-in fade-in slide-in-from-top-3">
           <div className="w-9 h-9 rounded-xl bg-[#2b1d16] flex items-center justify-center shrink-0 shadow-md ring-2 ring-[#cea981]/40">
             <Sparkles className="w-5 h-5 text-white animate-pulse" />
           </div>
-          <div className="flex-1 pr-2">
-            <span className="text-xs sm:text-sm font-extrabold tracking-wide text-[#2b1d16] leading-tight block">{toastMessage}</span>
+          <div className="flex-1 pr-2 min-w-0">
+            <span className="text-xs sm:text-sm font-extrabold tracking-wide text-[#2b1d16] leading-tight block break-words">{toastMessage}</span>
           </div>
           <button
             onClick={() => setToastMessage(null)}

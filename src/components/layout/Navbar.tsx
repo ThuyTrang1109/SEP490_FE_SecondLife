@@ -53,10 +53,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   const t = translations[lang];
 
   return (
-    <header className="sticky top-0 z-50 bg-[#24263e] text-white shadow-xl border-b border-black/20 transition-all">
+    <header className="sticky top-0 z-50 bg-[#24263e] text-white shadow-xl border-b border-black/20 transition-all shrink-0">
       {/* Top micro-bar */}
       <div className="bg-[#1b1c2d] text-white/80 text-[11px] border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-1.5 flex items-center justify-between gap-3">
+        <div className="w-full px-3 sm:px-5 lg:px-6 py-1.5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 overflow-hidden">
             <span className="inline-flex items-center gap-1.5 font-black text-white bg-[#c34c36] px-2.5 py-0.5 rounded-full text-[11px] shadow-xs shrink-0">
               <Sparkles className="w-3.5 h-3.5 text-white" />
@@ -103,7 +103,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       {/* Main Navbar */}
-      <div className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      <div className="w-full px-3 sm:px-5 lg:px-6 h-16 flex items-center justify-between gap-4">
         {/* Logo */}
         <div
           className="flex items-center gap-2.5 cursor-pointer select-none group shrink-0"

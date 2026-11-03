@@ -576,7 +576,7 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
             )}
           </div>
         ) : (
-          <div className="overflow-y-auto flex-1 min-h-0 divide-y divide-slate-100">
+          <div className="overflow-y-auto flex-1 min-h-0 divide-y divide-slate-100 subtle-scrollbar">
             {items.map((tx) => {
               const isIncome = tx.amount > 0 || tx.direction === 'CREDIT';
               const absAmount = Math.abs(tx.amount);
@@ -733,10 +733,10 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="relative bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200/90 text-[#24263e] space-y-4 max-h-[92vh] overflow-y-auto animate-scaleUp"
+              className="relative bg-white rounded-3xl max-w-lg w-full p-4.5 sm:p-5.5 shadow-2xl border border-slate-200/90 text-[#24263e] space-y-3 sm:space-y-3.5 max-h-[92vh] overflow-y-auto no-scrollbar animate-scaleUp"
             >
               {/* Modal Header */}
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
                 <div className="flex items-center gap-2.5">
                   <div
                     className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-xs ${getIconBg(
@@ -787,7 +787,7 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
               ) : (
                 <>
                   {/* Số tiền biến động & Chiều giao dịch */}
-                  <div className="text-center py-3 bg-slate-50/90 rounded-2xl border border-slate-200/80 space-y-1.5">
+                  <div className="text-center py-2.5 sm:py-3 bg-slate-50/90 rounded-2xl border border-slate-200/80 space-y-1">
                     <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider block">
                       Số tiền biến động
                     </span>
@@ -817,7 +817,7 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
 
                   {/* THẺ ĐẶC BIỆT NẾU LÀ MUA GÓI DỊCH VỤ (Quyền lợi, version, snapshot) */}
                   {modalInfo.matchingPurchase && (
-                    <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-50 via-purple-50/50 to-amber-50/40 border border-purple-200/80 space-y-3">
+                    <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-purple-50 via-purple-50/50 to-amber-50/40 border border-purple-200/80 space-y-2.5">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
@@ -858,7 +858,7 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
                   )}
 
                   {/* THÔNG TIN CHI TIẾT: LÀM GÌ, DÙNG KHI NÀO, BIẾN ĐỘNG SỐ DƯ */}
-                  <div className="space-y-2.5 text-xs sm:text-sm text-slate-700 p-4 bg-slate-50/70 rounded-2xl border border-slate-200/80">
+                  <div className="space-y-2 text-xs sm:text-sm text-slate-700 p-3.5 sm:p-4 bg-slate-50/70 rounded-2xl border border-slate-200/80">
                     {/* 1. LÀM GÌ */}
                     <div className="pb-2 border-b border-slate-200/60">
                       <span className="text-slate-500 font-bold block text-[11px] mb-0.5">
@@ -960,7 +960,7 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
                     </div>
                   )}
 
-                  <div className="pt-2">
+                  <div className="pt-1">
                     <button
                       type="button"
                       onClick={() => setDetailModalTx(null)}

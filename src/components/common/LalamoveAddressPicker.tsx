@@ -391,6 +391,13 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
 
     return () => {
       isCancelled = true;
+      if (leafletMapRef.current) {
+        try {
+          leafletMapRef.current.remove();
+        } catch (_) {}
+        leafletMapRef.current = null;
+        leafletMarkerRef.current = null;
+      }
     };
   }, [executeLookup, initialAddress]);
 
@@ -539,15 +546,17 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
           </label>
           <input
             type="tel"
+            inputMode="numeric"
+            maxLength={10}
             value={contactPhone}
             onChange={(e) => {
-              const val = e.target.value;
+              const val = e.target.value.replace(/\D/g, '').slice(0, 10);
               setContactPhone(val);
               onPhoneChange?.(val);
               markUnconfirmed();
             }}
             placeholder={lang === 'vi' ? 'VD: 0912345678' : '0912345678'}
-            className="w-full h-9 px-3 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none focus:border-orange-500 shadow-2xs"
+            className="w-full h-9 px-3 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none focus:border-orange-500 shadow-2xs font-mono"
           />
         </div>
       </div>

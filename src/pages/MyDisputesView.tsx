@@ -269,7 +269,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
     <div className="min-h-screen bg-[#faf8f5] text-[#24263e] pb-16">
       {/* Top Banner / Header */}
       <div className="bg-[#24263e] text-white pt-8 pb-12 px-4 sm:px-6 lg:px-8 border-b border-black/10 shadow-lg">
-        <div className="max-w-6xl mx-auto">
+        <div className="w-full">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               {onBack && (
@@ -359,7 +359,7 @@ export const MyDisputesView: React.FC<MyDisputesViewProps> = ({
       </div>
 
       {/* Main Content Area */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 -mt-6">
+      <div className="w-full px-3 sm:px-5 lg:px-6 -mt-6">
         {/* Filter & Search Bar */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-3 sm:p-4 mb-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">

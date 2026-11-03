@@ -41,7 +41,7 @@ export const Footer: React.FC<FooterProps> = ({
     <footer className="mt-auto bg-[#24263e] text-white text-xs border-t-2 border-white/10 shadow-2xl relative">
       {/* 1. Value Proposition Banner (Thanh Cam Kết Chất Lượng TMĐT) */}
       <div className="border-b border-white/10 bg-[#1b1c2d] py-6 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-6">
+        <div className="w-full grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-6">
           {/* Item 1 */}
           <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/5 border border-white/10 hover:border-[#c34c36]/50 hover:bg-white/10 transition group shadow-xs">
             <div className="w-10 h-10 rounded-xl bg-[#c34c36]/20 border border-[#c34c36]/40 flex items-center justify-center text-[#fce5da] shrink-0 group-hover:scale-105 transition-transform">
@@ -105,7 +105,7 @@ export const Footer: React.FC<FooterProps> = ({
       </div>
 
       {/* 2. Main Footer Directory Links */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      <div className="w-full px-3 sm:px-5 lg:px-6 py-10">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
           {/* Cột 1: Thông tin công ty & Hotline */}
           <div className="lg:col-span-2 space-y-4">
@@ -279,7 +279,7 @@ export const Footer: React.FC<FooterProps> = ({
 
       {/* 3. Bottom Legal & Copyright Bar */}
       <div className="border-t border-white/10 bg-[#1b1c2d] py-5 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 text-center md:text-left text-[11px] text-white/70">
+        <div className="w-full flex flex-col md:flex-row items-center justify-between gap-3 text-center md:text-left text-[11px] text-white/70">
           <div>
             <p className="font-extrabold text-white">
               {lang === 'vi'

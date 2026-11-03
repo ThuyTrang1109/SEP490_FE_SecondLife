@@ -1,7 +1,9 @@
 export function numberToVietnameseWords(num: number): string {
     if (num === null || num === undefined || isNaN(num) || num < 0) return '';
     if (num === 0) return 'Không đồng';
-    if (!isFinite(num) || num > 999_999_999_999_999_999) return 'Số tiền vượt quá giới hạn hiển thị';
+    if (!isFinite(num) || num > 999_999_999_999_999 || num > Number.MAX_SAFE_INTEGER) {
+        return 'Số tiền vượt quá giới hạn hiển thị';
+    }
     
     const units = [
         '',
@@ -18,23 +20,30 @@ export function numberToVietnameseWords(num: number): string {
     const digits = ['không', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu', 'bảy', 'tám', 'chín'];
 
     function getUnit(index: number): string {
-        if (index < units.length && units[index] !== undefined) return units[index];
+        if (index < units.length && units[index] !== undefined && units[index] !== null) {
+            return units[index];
+        }
         const tyCount = Math.floor(index / 3);
         const remainder = index % 3;
-        const tyStr = Array(tyCount).fill('tỷ').join(' ');
+        const tyStr = Array(Math.max(1, tyCount)).fill('tỷ').join(' ');
         if (remainder === 0) return tyStr;
         if (remainder === 1) return `nghìn ${tyStr}`;
         return `triệu ${tyStr}`;
     }
     
     function readGroup(group: number, isLast: boolean): string {
+        if (isNaN(group) || group < 0) return '';
         const h = Math.floor(group / 100);
         const d = Math.floor((group % 100) / 10);
         const u = group % 10;
+
+        const hWord = (h >= 0 && h <= 9 && digits[h]) ? digits[h] : '';
+        const dWord = (d >= 0 && d <= 9 && digits[d]) ? digits[d] : '';
+        const uWord = (u >= 0 && u <= 9 && digits[u]) ? digits[u] : '';
         
         let res = '';
         if (h > 0 || !isLast) {
-            res += digits[h] + ' trăm ';
+            res += (hWord || 'không') + ' trăm ';
         }
         
         if (d === 0) {
@@ -44,7 +53,7 @@ export function numberToVietnameseWords(num: number): string {
         } else if (d === 1) {
             res += 'mười ';
         } else {
-            res += digits[d] + ' mươi ';
+            res += (dWord || '') + ' mươi ';
         }
         
         if (u === 1 && d > 1) {
@@ -52,7 +61,7 @@ export function numberToVietnameseWords(num: number): string {
         } else if (u === 5 && d > 0) {
             res += 'lăm ';
         } else if (u > 0) {
-            res += digits[u] + ' ';
+            res += (uWord || '') + ' ';
         }
         
         return res.trim();
@@ -63,14 +72,14 @@ export function numberToVietnameseWords(num: number): string {
     let unitIndex = 0;
     let firstGroup = true;
     
-    while (currentNum > 0) {
+    while (currentNum > 0 && unitIndex < 20) {
         const group = currentNum % 1000;
         currentNum = Math.floor(currentNum / 1000);
         
         if (group > 0 || (unitIndex === 0 && num === 0)) {
             const groupText = readGroup(group, firstGroup && currentNum === 0);
             if (groupText !== '') {
-                const u = getUnit(unitIndex);
+                const u = getUnit(unitIndex) || '';
                 words = groupText + (u ? ' ' + u : '') + ' ' + words;
             }
         }
@@ -80,6 +89,11 @@ export function numberToVietnameseWords(num: number): string {
     
     words = words.trim().replace(/\s+/g, ' ');
     if (!words) return '';
+    
+    // An toàn tuyệt đối: Không bao giờ để rò rỉ từ 'undefined'
+    words = words.replace(/\bundefined\b/gi, '').replace(/\s+/g, ' ').trim();
+    if (!words) return '';
+
     words = words.charAt(0).toUpperCase() + words.slice(1);
     
     // Replace awkward phrases

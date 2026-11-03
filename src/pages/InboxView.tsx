@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Listing, Language, UserRole, UserProfile, Negotiation } from '../types';
 import {
   MessageSquare,
@@ -14,7 +14,9 @@ import {
   ArrowDownLeft,
   CheckCircle2,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  Search,
+  SlidersHorizontal
 } from 'lucide-react';
 import {
   chatService,
@@ -24,31 +26,46 @@ import {
   negotiationService
 } from '../services';
 import { formatVND } from '../utils/translations';
+import { DedicatedChatRoom } from '../components/chat/DedicatedChatRoom';
 
 interface InboxViewProps {
   listings: Listing[];
   currentRole: UserRole;
   lang: Language;
-  onOpenChat: (
+  currentUser?: UserProfile | null;
+  initialListing?: Listing | null;
+  initialRoomId?: string;
+  initialPartnerName?: string;
+  initialPartnerAvatar?: string;
+  initialRoom?: ChatRoomDto;
+  onBuyClick?: (listing: Listing, agreedPrice?: number, negotiationId?: string) => void;
+  onOpenSellerReviews?: (sellerId: string, sellerName: string) => void;
+  onOpenChat?: (
     listing: Listing,
     roomId?: string,
     partnerName?: string,
     partnerAvatar?: string,
     room?: ChatRoomDto
   ) => void;
-  currentUser?: UserProfile | null;
 }
 
 export const InboxView: React.FC<InboxViewProps> = ({
   listings,
   currentRole,
   lang,
-  onOpenChat,
   currentUser,
+  initialListing,
+  initialRoomId,
+  initialRoom,
+  onBuyClick,
+  onOpenSellerReviews,
 }) => {
   const [activeTab, setActiveTab] = useState<'chats' | 'negotiations'>('chats');
   const [rooms, setRooms] = useState<ChatRoomDto[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(initialRoomId || initialRoom?.id || null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterMode, setFilterMode] = useState<'all' | 'unread'>('all');
 
   // Negotiations state
   const [negotiationTab, setNegotiationTab] = useState<'seller' | 'buyer'>('seller');
@@ -57,6 +74,74 @@ export const InboxView: React.FC<InboxViewProps> = ({
   const [loadingNegotiations, setLoadingNegotiations] = useState<boolean>(false);
   const [actionInProgressId, setActionInProgressId] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+
+  // Splitter resizable pane state
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+  const [leftWidth, setLeftWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('inbox_splitter_width');
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed >= 260 && parsed <= 600) return parsed;
+      }
+    } catch {}
+    return 360;
+  });
+  const [isDraggingSplitter, setIsDraggingSplitter] = useState<boolean>(false);
+  const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
+
+  useEffect(() => {
+    const handleResize = () => setIsDesktop(window.innerWidth >= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const handleSplitterMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingSplitter(true);
+  };
+
+  useEffect(() => {
+    if (!isDraggingSplitter) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!splitContainerRef.current) return;
+      const rect = splitContainerRef.current.getBoundingClientRect();
+      const newWidth = e.clientX - rect.left;
+      const minW = 260;
+      const maxW = Math.min(600, rect.width * 0.55);
+      const clamped = Math.max(minW, Math.min(maxW, newWidth));
+      setLeftWidth(clamped);
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingSplitter(false);
+      try {
+        localStorage.setItem('inbox_splitter_width', leftWidth.toString());
+      } catch {}
+    };
+
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingSplitter, leftWidth]);
+
+  const handleResetSplitterWidth = () => {
+    setLeftWidth(360);
+    try {
+      localStorage.setItem('inbox_splitter_width', '360');
+    } catch {}
+  };
+
+  const activeUserId = currentUser?.id ? String(currentUser.id) : '';
 
   const showNotice = (msg: string) => {
     setNoticeMessage(msg);
@@ -97,7 +182,7 @@ export const InboxView: React.FC<InboxViewProps> = ({
       let roleLabel: string;
 
       if (isRoomSeller) {
-        roleLabel = lang === 'vi' ? 'Người Mua' : 'Buyer';
+        roleLabel = lang === 'vi' ? 'Đối tác: Người mua' : 'Partner: Buyer';
         partnerName =
           (!isNameOfMe(room.buyerName) && room.buyerName) ||
           (lang === 'vi' ? 'Khách Hàng' : 'Customer');
@@ -105,7 +190,7 @@ export const InboxView: React.FC<InboxViewProps> = ({
           room.buyerAvatar ||
           'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200';
       } else {
-        roleLabel = lang === 'vi' ? 'Người Bán' : 'Seller';
+        roleLabel = lang === 'vi' ? 'Đối tác: Người bán' : 'Partner: Seller';
         partnerName =
           (!isNameOfMe(room.sellerName) && room.sellerName) ||
           (lang === 'vi' ? 'Người Bán' : 'Seller');
@@ -116,46 +201,50 @@ export const InboxView: React.FC<InboxViewProps> = ({
 
       return { isRoomSeller, partnerName, partnerAvatar, roleLabel };
     },
-    [currentUser, listings, lang]
+    [currentUser, listings, lang, isNameOfMe]
   );
 
-  // Helper to calculate effective timestamp for room sorting
-  const getRoomEffectiveTimestamp = (room: ChatRoomDto): number => {
-    const now = Date.now();
-    // 1. Highest priority: local touch timestamp (when user just chatted in this room or received a message)
-    const localTouch = localStorage.getItem(`chat_room_latest_touch_${room.id}`);
-    const localTouchTime = localTouch ? Number(localTouch) : 0;
+  // Unread status checker for rooms
+  const isRoomUnread = useCallback(
+    (room: ChatRoomDto): boolean => {
+      if (!activeUserId) return false;
+      const readTime = Number(localStorage.getItem(`chat_room_last_read_${room.id}_${activeUserId}`) || 0);
+      const touchTime = Number(localStorage.getItem(`chat_room_latest_touch_${room.id}`) || 0);
+      const serverTime = room.updatedAt ? new Date(room.updatedAt).getTime() : 0;
+      const latestActivity = Math.max(touchTime, serverTime);
 
-    // 2. Room updatedAt from backend
-    let serverTime = 0;
-    if (room.updatedAt) {
-      const parsed = new Date(room.updatedAt).getTime();
-      if (!isNaN(parsed)) {
-        // If server time is in the future (> now + 30s), clamp it so it doesn't artificially pin over live activity
-        serverTime = parsed > (now + 30000) ? (now - 60000) : parsed;
+      // If last message was sent by me, do not mark as unread for me
+      const lastSenderId = localStorage.getItem(`chat_room_latest_sender_${room.id}`);
+      if (lastSenderId && lastSenderId.toLowerCase() === activeUserId.toLowerCase()) {
+        return false;
       }
-    }
 
-    return Math.max(localTouchTime, serverTime);
+      return latestActivity > readTime;
+    },
+    [activeUserId]
+  );
+
+  // Effective timestamp for sorting
+  const getRoomEffectiveTimestamp = (room: ChatRoomDto): number => {
+    const localTouch = localStorage.getItem(`chat_room_latest_touch_${room.id}`);
+    const localTime = localTouch ? Number(localTouch) : 0;
+    const serverTime = room.updatedAt ? new Date(room.updatedAt).getTime() : 0;
+    return Math.max(localTime, serverTime);
   };
 
-  // Fetch rooms from Backend API: GET /api/v1/chats
+  // Fetch chat rooms
   const loadChatRooms = useCallback(async () => {
     try {
-      const data = await chatService.getChatRooms();
-      const rawRooms = Array.isArray(data) ? data : [];
+      const serverRooms = await chatService.getChatRooms();
       const uniqueRooms: ChatRoomDto[] = [];
-      const seen = new Set();
-      for (const r of rawRooms) {
-        if (!r.lastMessage || r.lastMessage.trim() === '') {
-          continue;
-        }
-        const key = r.postId && r.buyerId && r.sellerId ? `${r.postId}_${r.buyerId}_${r.sellerId}` : r.id;
-        if (!seen.has(key)) {
-          seen.add(key);
+      const seenIds = new Set<string>();
+
+      for (const r of serverRooms) {
+        if (!seenIds.has(r.id)) {
+          seenIds.add(r.id);
+          const mergedRoom = { ...r };
           const localMsg = localStorage.getItem(`chat_room_latest_msg_${r.id}`);
           const localTouch = localStorage.getItem(`chat_room_latest_touch_${r.id}`);
-          const mergedRoom = { ...r };
           if (localMsg && localTouch) {
             const touchTime = Number(localTouch);
             const serverTime = r.updatedAt ? new Date(r.updatedAt).getTime() : 0;
@@ -168,40 +257,16 @@ export const InboxView: React.FC<InboxViewProps> = ({
         }
       }
 
-      // Sort rooms by latest message timestamp DESCENDING
-      uniqueRooms.sort((a, b) => {
-        const timeA = getRoomEffectiveTimestamp(a);
-        const timeB = getRoomEffectiveTimestamp(b);
-        return timeB - timeA;
-      });
-
+      uniqueRooms.sort((a, b) => getRoomEffectiveTimestamp(b) - getRoomEffectiveTimestamp(a));
       setRooms(uniqueRooms);
     } catch (err) {
-      console.warn('Failed to load chat rooms from backend:', err);
+      console.warn('Failed to load chat rooms:', err);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const bumpRoomToTop = useCallback((roomId?: string, postId?: string, lastMessage?: string) => {
-    if (!roomId && !postId) return;
-    setRooms((prevRooms) => {
-      const index = prevRooms.findIndex((r) => (roomId && r.id === roomId) || (postId && r.postId === postId));
-      if (index === -1) {
-        loadChatRooms();
-        return prevRooms;
-      }
-      const targetRoom = {
-        ...prevRooms[index],
-        lastMessage: lastMessage || prevRooms[index].lastMessage,
-        updatedAt: new Date().toISOString()
-      };
-      const rest = prevRooms.filter((_, i) => i !== index);
-      return [targetRoom, ...rest];
-    });
-  }, [loadChatRooms]);
-
-  // Fetch negotiations from Backend API: GET /api/v1/negotiations/seller & buyer
+  // Fetch negotiations
   const loadNegotiations = useCallback(async () => {
     setLoadingNegotiations(true);
     try {
@@ -222,6 +287,7 @@ export const InboxView: React.FC<InboxViewProps> = ({
     }
   }, []);
 
+  // Initial loading & background polling
   useEffect(() => {
     loadChatRooms();
     loadNegotiations();
@@ -229,124 +295,146 @@ export const InboxView: React.FC<InboxViewProps> = ({
     chatService.connectWebSocket();
     const unsubscribe = chatService.subscribeToMessages((msg) => {
       if (msg?.conversationId) {
-        bumpRoomToTop(msg.conversationId, undefined, msg.messageContent);
+        localStorage.setItem(`chat_room_latest_touch_${msg.conversationId}`, Date.now().toString());
+        localStorage.setItem(`chat_room_latest_msg_${msg.conversationId}`, msg.messageContent);
+        if (msg.senderId) {
+          localStorage.setItem(`chat_room_latest_sender_${msg.conversationId}`, msg.senderId);
+        }
       }
       loadChatRooms();
-      loadNegotiations();
     });
-
-    const handleMessageSent = (e: any) => {
-      const { roomId, postId, message } = e.detail || {};
-      if (roomId || postId) {
-        bumpRoomToTop(roomId, postId, message);
-      }
-    };
-    window.addEventListener('chat_message_sent', handleMessageSent);
 
     const intervalId = setInterval(() => {
       loadChatRooms();
-      loadNegotiations();
-    }, 10000);
+    }, 12000);
 
     return () => {
       unsubscribe();
-      window.removeEventListener('chat_message_sent', handleMessageSent);
       clearInterval(intervalId);
     };
-  }, [loadChatRooms, loadNegotiations, bumpRoomToTop]);
+  }, [loadChatRooms, loadNegotiations]);
+
+  // Handle external navigation with initialListing or initialRoomId
+  useEffect(() => {
+    if (initialRoomId) {
+      setSelectedRoomId(initialRoomId);
+    } else if (initialListing) {
+      const existing = rooms.find((r) => r.postId === initialListing.id);
+      if (existing) {
+        setSelectedRoomId(existing.id);
+      } else {
+        chatService.getOrCreateRoom(initialListing.id)
+          .then((newRoom) => {
+            if (newRoom?.id) {
+              setRooms((prev) => [newRoom, ...prev.filter((r) => r.id !== newRoom.id)]);
+              setSelectedRoomId(newRoom.id);
+            }
+          })
+          .catch((err) => {
+            console.warn('Failed to get or create room for listing:', err);
+          });
+      }
+    }
+  }, [initialRoomId, initialListing, rooms]);
 
   const handleSelectRoom = (room: ChatRoomDto) => {
-    const { partnerName, partnerAvatar } = getRoomPartnerInfo(room);
-    const found = listings?.find((l) => l.id === room.postId);
-
-    const targetListing: Listing = found
-      ? {
-          ...found,
-          sellerId: room.sellerId || found.sellerId,
-          sellerName: (room.sellerName && !isNameOfMe(room.sellerName) ? room.sellerName : found.sellerName) || 'Người Bán',
-          sellerAvatar: room.sellerAvatar || found.sellerAvatar,
-        }
-      : ({
-          id: room.postId,
-          title: room.postTitle || 'Sản phẩm trao đổi',
-          brand: 'Chính hãng',
-          priceVnd: 500000,
-          description: 'Thông tin sản phẩm trong cuộc hội thoại',
-          category: 'Thiết bị gia dụng',
-          sellerId: room.sellerId,
-          sellerName: room.sellerName || 'Người bán',
-          location: 'Hồ Chí Minh',
-          status: 'active',
-          photos: {
-            front:
-              room.postImageUrl ||
-              'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-            back:
-              room.postImageUrl ||
-              'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-            screenOrDetails: '',
-            accessoriesOrBox: '',
-            serialOrReceipt: '',
-          },
-          createdAt: room.updatedAt || new Date().toISOString(),
-        } as unknown as Listing);
-
-    onOpenChat(targetListing, room.id, partnerName, partnerAvatar, room);
+    setSelectedRoomId(room.id);
+    if (activeUserId) {
+      localStorage.setItem(`chat_room_last_read_${room.id}_${activeUserId}`, Date.now().toString());
+    }
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   };
 
-  const handleOpenChatForNegotiation = (neg: Negotiation) => {
-    const found = listings?.find((l) => l.id === neg.postId);
-    const targetListing: Listing = found
-      ? {
-          ...found,
-          sellerId: neg.sellerId || found.sellerId,
-          sellerName: found.sellerName || 'Người Bán',
-          priceVnd: found.priceVnd || neg.offeredPrice,
+  const selectedRoom = useMemo(() => {
+    if (!selectedRoomId) return null;
+    return rooms.find((r) => r.id === selectedRoomId) || initialRoom || null;
+  }, [selectedRoomId, rooms, initialRoom]);
+
+  const selectedListing = useMemo((): Listing | null => {
+    if (!selectedRoom) return initialListing || null;
+    const found = listings?.find((l) => l.id === selectedRoom.postId);
+    if (found) {
+      return {
+        ...found,
+        sellerId: selectedRoom.sellerId || found.sellerId,
+        sellerName: selectedRoom.sellerName || found.sellerName || 'Người Bán',
+        sellerAvatar: selectedRoom.sellerAvatar || found.sellerAvatar,
+      };
+    }
+    return ({
+      id: selectedRoom.postId,
+      title: selectedRoom.postTitle || initialListing?.title || 'Sản phẩm trao đổi',
+      brand: 'Chính hãng',
+      priceVnd: initialListing?.priceVnd || (selectedRoom as any).postPrice || 0,
+      description: 'Sản phẩm đang được trao đổi trong tin nhắn',
+      category: 'Thiết bị gia dụng',
+      sellerId: selectedRoom.sellerId,
+      status: 'active',
+      photos: {
+        front:
+          selectedRoom.postImageUrl ||
+          initialListing?.photos?.front ||
+          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+        back:
+          selectedRoom.postImageUrl ||
+          initialListing?.photos?.back ||
+          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+        screenOrDetails: '',
+        accessoriesOrBox: '',
+        serialOrReceipt: '',
+      },
+      createdAt: selectedRoom.updatedAt || new Date().toISOString(),
+    } as unknown as Listing);
+  }, [selectedRoom, listings, initialListing]);
+
+  // Format preview message
+  const formatLastMessage = (rawText?: string) => {
+    if (!rawText) return lang === 'vi' ? 'Bắt đầu cuộc trò chuyện...' : 'Start conversation...';
+    const parsed = parseSystemMessage(rawText);
+    if (parsed.isSystem) {
+      if (parsed.offer) {
+        const off = parsed.offer;
+        if (off.status === 'ACCEPTED') {
+          return `🎉 ${lang === 'vi' ? 'Đã chốt giá:' : 'Agreed price:'} ${formatVND(off.price)}`;
         }
-      : ({
-          id: neg.postId,
-          title: neg.postTitle || 'Sản phẩm thương lượng',
-          brand: 'Chính hãng',
-          priceVnd: neg.offeredPrice,
-          description: 'Sản phẩm đang được trao đổi thương lượng giá',
-          category: 'Thiết bị gia dụng',
-          sellerId: neg.sellerId,
-          status: 'active',
-          photos: {
-            front: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-            back: '',
-            screenOrDetails: '',
-            accessoriesOrBox: '',
-            serialOrReceipt: '',
-          },
-          createdAt: neg.createdAt || new Date().toISOString(),
-        } as unknown as Listing);
-
-    const matchedRoom = rooms.find((r) =>
-      r.postId === neg.postId &&
-      (neg.buyerId ? String(r.buyerId) === String(neg.buyerId) : true) &&
-      (neg.sellerId ? String(r.sellerId) === String(neg.sellerId) : true)
-    ) || rooms.find((r) => r.postId === neg.postId);
-
-    const activeUser = currentUser || getStoredUser();
-    const currentUserId = activeUser?.id ? String(activeUser.id) : null;
-    const isMeSeller = Boolean(currentUserId && neg.sellerId && currentUserId === String(neg.sellerId));
-    const partnerName = isMeSeller ? 'Người Mua' : (matchedRoom?.sellerName || targetListing.sellerName || 'Người Bán');
-    const partnerAvatar = isMeSeller ? matchedRoom?.buyerAvatar : (matchedRoom?.sellerAvatar || targetListing.sellerAvatar);
-
-    const roomToPass: ChatRoomDto | undefined = matchedRoom || (neg.sellerId && neg.buyerId ? {
-      id: '',
-      postId: neg.postId,
-      postTitle: neg.postTitle,
-      buyerId: neg.buyerId,
-      sellerId: neg.sellerId,
-      lastMessage: '',
-      updatedAt: neg.createdAt
-    } : undefined);
-
-    onOpenChat(targetListing, matchedRoom?.id, partnerName, partnerAvatar, roomToPass);
+        if (off.status === 'REJECTED') {
+          return `❌ ${lang === 'vi' ? 'Từ chối giá:' : 'Rejected:'} ${formatVND(off.price)}`;
+        }
+        if (off.status === 'CANCELLED') {
+          return `[${lang === 'vi' ? 'Đã hủy trả giá' : 'Cancelled offer'}]`;
+        }
+        return `🤝 ${lang === 'vi' ? 'Đề xuất giá mới:' : 'New offer:'} ${formatVND(off.price)}`;
+      }
+      return `[Hệ thống] ${parsed.cleanText}`;
+    }
+    return rawText;
   };
 
+  // Filtered rooms
+  const unreadCount = useMemo(() => {
+    return rooms.filter(isRoomUnread).length;
+  }, [rooms, isRoomUnread]);
+
+  const filteredRooms = useMemo(() => {
+    return rooms.filter((r) => {
+      // 1. Filter by unread mode
+      if (filterMode === 'unread' && !isRoomUnread(r)) {
+        return false;
+      }
+      // 2. Filter by search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const { partnerName } = getRoomPartnerInfo(r);
+        const matchTitle = (r.postTitle || '').toLowerCase().includes(q);
+        const matchPartner = partnerName.toLowerCase().includes(q);
+        const matchLastMsg = (r.lastMessage || '').toLowerCase().includes(q);
+        return matchTitle || matchPartner || matchLastMsg;
+      }
+      return true;
+    });
+  }, [rooms, filterMode, searchQuery, isRoomUnread, getRoomPartnerInfo]);
+
+  // Negotiation Actions
   const handleAcceptNegotiation = async (id: string) => {
     setActionInProgressId(id);
     try {
@@ -354,13 +442,9 @@ export const InboxView: React.FC<InboxViewProps> = ({
       setSellerNegotiations((prev) =>
         prev.map((item) => (item.id === id ? { ...item, status: updated?.status || 'ACCEPTED' } : item))
       );
-      showNotice(
-        lang === 'vi'
-          ? '🎉 Đã chấp thuận đề xuất giá! Người mua có thể thanh toán theo mức giá này.'
-          : '🎉 Accepted price offer!'
-      );
-    } catch (err: any) {
-      showNotice(err?.message || (lang === 'vi' ? 'Có lỗi khi chấp thuận đề xuất' : 'Failed to accept offer'));
+      showNotice(lang === 'vi' ? 'Đã chấp nhận đề xuất trả giá thành công.' : 'Accepted negotiation successfully.');
+    } catch {
+      showNotice(lang === 'vi' ? 'Lỗi khi chấp nhận đề xuất.' : 'Error accepting negotiation.');
     } finally {
       setActionInProgressId(null);
     }
@@ -373,9 +457,9 @@ export const InboxView: React.FC<InboxViewProps> = ({
       setSellerNegotiations((prev) =>
         prev.map((item) => (item.id === id ? { ...item, status: updated?.status || 'REJECTED' } : item))
       );
-      showNotice(lang === 'vi' ? '❌ Đã từ chối đề xuất giá.' : 'Rejected price offer.');
-    } catch (err: any) {
-      showNotice(err?.message || (lang === 'vi' ? 'Có lỗi khi từ chối đề xuất' : 'Failed to reject offer'));
+      showNotice(lang === 'vi' ? 'Đã từ chối đề xuất trả giá.' : 'Rejected negotiation.');
+    } catch {
+      showNotice(lang === 'vi' ? 'Lỗi khi từ chối đề xuất.' : 'Error rejecting negotiation.');
     } finally {
       setActionInProgressId(null);
     }
@@ -388,44 +472,18 @@ export const InboxView: React.FC<InboxViewProps> = ({
       setBuyerNegotiations((prev) =>
         prev.map((item) => (item.id === id ? { ...item, status: updated?.status || 'CANCELLED' } : item))
       );
-      showNotice(lang === 'vi' ? 'Đã hủy bỏ yêu cầu thương lượng giá.' : 'Cancelled price offer.');
-    } catch (err: any) {
-      showNotice(err?.message || (lang === 'vi' ? 'Có lỗi khi hủy đề xuất' : 'Failed to cancel offer'));
+      showNotice(lang === 'vi' ? 'Đã hủy đề xuất thương lượng.' : 'Cancelled negotiation.');
+    } catch {
+      showNotice(lang === 'vi' ? 'Lỗi khi hủy đề xuất.' : 'Error cancelling negotiation.');
     } finally {
       setActionInProgressId(null);
     }
   };
 
-  const formatLastMessage = (rawText?: string) => {
-    if (!rawText) return lang === 'vi' ? 'Bắt đầu cuộc trò chuyện...' : 'Start conversation...';
-    const parsed = parseSystemMessage(rawText);
-    if (parsed.isSystem) {
-      if (parsed.offer) {
-        const off = parsed.offer;
-        if (off.status === 'ACCEPTED') {
-          return `🎉 ${lang === 'vi' ? 'Đã chốt giá thỏa thuận:' : 'Agreed price:'} ${off.price.toLocaleString('vi-VN')} đ`;
-        }
-        if (off.status === 'REJECTED') {
-          return `❌ ${lang === 'vi' ? 'Đã từ chối đề xuất giá:' : 'Rejected offer:'} ${off.price.toLocaleString('vi-VN')} đ`;
-        }
-        if (off.status === 'CANCELLED') {
-          return `[${lang === 'vi' ? 'Hủy đề xuất' : 'Cancelled offer'}]`;
-        }
-        return `🤝 ${lang === 'vi' ? 'Đề xuất giá mới:' : 'New offer:'} ${off.price.toLocaleString('vi-VN')} đ`;
-      }
-      return `[Hệ thống] ${parsed.cleanText}`;
-    }
-    return rawText;
-  };
-
-  const pendingSellerCount = sellerNegotiations.filter((n) => n.status === 'PENDING').length;
-  const pendingBuyerCount = buyerNegotiations.filter((n) => n.status === 'PENDING').length;
-  const currentNegotiationList = negotiationTab === 'seller' ? sellerNegotiations : buyerNegotiations;
-
   return (
-    <div className="max-w-4xl mx-auto pb-16">
+    <div className="w-full h-full min-h-0 flex-1 flex flex-col overflow-hidden">
       {noticeMessage && (
-        <div className="mb-4 p-3.5 rounded-2xl bg-slate-900 text-white text-xs font-bold shadow-lg animate-in fade-in flex items-center justify-between">
+        <div className="mb-3 p-3.5 rounded-2xl bg-slate-900 text-white text-xs font-bold shadow-lg animate-fadeIn flex items-center justify-between">
           <span>{noticeMessage}</span>
           <button onClick={() => setNoticeMessage(null)} className="text-slate-400 hover:text-white cursor-pointer">
             <X className="w-4 h-4" />
@@ -433,50 +491,134 @@ export const InboxView: React.FC<InboxViewProps> = ({
         </div>
       )}
 
-      <div className="bg-[#FFFFFF] rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-        {/* Main Header with Navigation Tabs */}
-        <div className="p-6 border-b border-slate-100 bg-[#faf8f5] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-bold text-[#24263e] flex items-center gap-2">
-              <MessageSquare className="w-5 h-5 text-[#c34c36]" />
-              {lang === 'vi' ? 'Hộp thư đàm phán & Trò chuyện' : 'Negotiation & Chat Inbox'}
-            </h2>
-            <p className="text-xs text-slate-500 mt-1">
-              {lang === 'vi'
-                ? 'Theo dõi trao đổi tin nhắn trực tiếp và các đề xuất mặc cả giá sản phẩm.'
-                : 'Track direct conversations and buyer price negotiations.'}
-            </p>
-          </div>
-        </div>
+      {/* DEDICATED FULL-PAGE MESSENGER CHAT CONTAINER WITH SPLITTER */}
+      <div
+        ref={splitContainerRef}
+        className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex-1 h-full min-h-0 flex flex-col md:flex-row relative"
+      >
+        
+        {/* LEFT COLUMN: CONVERSATION LIST (Hidden on mobile if a room is active) */}
+        <div
+          style={{ width: isDesktop ? `${leftWidth}px` : '100%' }}
+          className={`w-full md:shrink-0 flex flex-col h-full min-h-0 bg-[#faf8f5] ${
+            selectedRoom ? 'hidden md:flex' : 'flex'
+          }`}
+        >
+          {/* Header of Conversation List */}
+          <div className="p-3.5 sm:p-4 border-b border-slate-200 bg-white shrink-0">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base sm:text-lg font-extrabold text-[#24263e] flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-[#c34c36]" />
+                <span>{lang === 'vi' ? 'Đoạn chat & Đàm phán' : 'Chats & Negotiations'}</span>
+              </h2>
 
-        {/* TAB 1: CHATS LIST */}
-        {activeTab === 'chats' && (
-          <div>
-            {loading ? (
-              <div className="py-16 text-center flex flex-col items-center justify-center gap-3">
-                <Loader2 className="w-8 h-8 text-[#c34c36] animate-spin" />
-                <p className="text-sm font-semibold text-slate-500">
-                  {lang === 'vi' ? 'Đang tải hộp thư trò chuyện...' : 'Loading inbox messages...'}
-                </p>
+              {/* View Switcher: Chats vs Negotiations */}
+              <div className="flex items-center bg-slate-100 p-0.5 rounded-xl text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('chats')}
+                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                    activeTab === 'chats' ? 'bg-white text-[#24263e] shadow-2xs' : 'text-slate-500 hover:text-black'
+                  }`}
+                >
+                  {lang === 'vi' ? 'Chat' : 'Chats'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('negotiations')}
+                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                    activeTab === 'negotiations' ? 'bg-white text-[#24263e] shadow-2xs' : 'text-slate-500 hover:text-black'
+                  }`}
+                >
+                  {lang === 'vi' ? 'Mặc cả' : 'Offers'}
+                </button>
               </div>
-            ) : rooms.length === 0 ? (
-              <div className="p-12 text-center flex flex-col items-center justify-center space-y-3">
-                <div className="w-16 h-16 rounded-full bg-slate-50 text-slate-300 flex items-center justify-center">
-                  <MessageSquare className="w-8 h-8" />
+            </div>
+
+            {activeTab === 'chats' && (
+              <>
+                {/* Search Box */}
+                <div className="relative mb-2.5">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={lang === 'vi' ? 'Tìm kiếm cuộc trò chuyện...' : 'Search conversations...'}
+                    className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36] focus:bg-white transition"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
-                <h3 className="text-base font-bold text-[#24263e]">
-                  {lang === 'vi' ? 'Chưa có cuộc trò chuyện nào' : 'No conversations yet'}
-                </h3>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  {lang === 'vi'
-                    ? 'Khi bạn nhắn tin với người bán hoặc có khách hỏi mua sản phẩm của bạn, tin nhắn sẽ hiển thị tại đây theo thời gian thực.'
-                    : 'When you message a seller or buyers ask about your items, conversations will appear here.'}
-                </p>
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {rooms.map((room) => {
-                  const { isRoomSeller, partnerName, partnerAvatar, roleLabel } = getRoomPartnerInfo(room);
+
+                {/* Filter Tabs: All vs Unread (Messenger Style) */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setFilterMode('all')}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                      filterMode === 'all'
+                        ? 'bg-[#24263e] text-white shadow-2xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {lang === 'vi' ? 'Tất cả' : 'All'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFilterMode('unread')}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                      filterMode === 'unread'
+                        ? 'bg-blue-600 text-white shadow-2xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>{lang === 'vi' ? 'Chưa đọc' : 'Unread'}</span>
+                    {unreadCount > 0 && (
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                        filterMode === 'unread' ? 'bg-white text-blue-600' : 'bg-blue-600 text-white'
+                      }`}>
+                        {unreadCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* ROOMS LIST */}
+          {activeTab === 'chats' ? (
+            <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100">
+              {loading ? (
+                <div className="py-20 text-center flex flex-col items-center justify-center gap-2">
+                  <Loader2 className="w-6 h-6 text-[#c34c36] animate-spin" />
+                  <p className="text-xs font-semibold text-slate-400">
+                    {lang === 'vi' ? 'Đang tải hộp thư...' : 'Loading chats...'}
+                  </p>
+                </div>
+              ) : filteredRooms.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 space-y-2">
+                  <MessageSquare className="w-8 h-8 mx-auto text-slate-300" />
+                  <p className="text-xs font-bold text-slate-600">
+                    {filterMode === 'unread'
+                      ? (lang === 'vi' ? 'Không có tin nhắn chưa đọc nào' : 'No unread messages')
+                      : (lang === 'vi' ? 'Không tìm thấy cuộc trò chuyện nào' : 'No conversations found')}
+                  </p>
+                </div>
+              ) : (
+                filteredRooms.map((room) => {
+                  const { partnerName, partnerAvatar, roleLabel, isRoomSeller } = getRoomPartnerInfo(room);
+                  const isSelected = selectedRoomId === room.id;
+                  const unread = isRoomUnread(room);
                   const timeStr = room.updatedAt
                     ? new Date(room.updatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
                     : '';
@@ -485,286 +627,215 @@ export const InboxView: React.FC<InboxViewProps> = ({
                     <div
                       key={room.id}
                       onClick={() => handleSelectRoom(room)}
-                      className="p-4 sm:p-5 hover:bg-slate-50 transition cursor-pointer flex flex-col sm:flex-row gap-4 items-start sm:items-center group"
+                      className={`p-3.5 transition cursor-pointer flex items-center gap-3 relative ${
+                        isSelected
+                          ? 'bg-white md:border-l-4 md:border-l-[#c34c36] shadow-2xs'
+                          : unread
+                          ? 'bg-blue-50/40 hover:bg-blue-50/60'
+                          : 'hover:bg-slate-100/60'
+                      }`}
                     >
+                      {/* Avatar with Online Dot */}
                       <div className="relative shrink-0">
                         <img
                           src={partnerAvatar}
-                          alt={partnerName || 'User Avatar'}
-                          className="w-14 h-14 rounded-2xl object-cover border border-slate-200"
+                          alt={partnerName}
+                          className="w-12 h-12 rounded-xl object-cover border border-slate-200"
                         />
-                        <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-[#c34c36] text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ring-2 ring-white">
-                          <MessageSquare className="w-3 h-3" />
-                        </div>
+                        <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full ring-2 ring-white" />
                       </div>
 
+                      {/* Content info */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <h3 className="text-sm font-bold text-[#24263e] truncate">
-                            {room.postTitle || 'Sản phẩm đăng bán'}
-                          </h3>
+                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                          <span className={`text-xs truncate ${unread ? 'font-black text-[#24263e]' : 'font-bold text-slate-800'}`}>
+                            {partnerName}
+                          </span>
                           {timeStr && (
-                            <span className="text-[10px] font-medium text-slate-400 shrink-0 flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
+                            <span className={`text-[10px] shrink-0 ${unread ? 'text-blue-600 font-bold' : 'text-slate-400 font-medium'}`}>
                               {timeStr}
                             </span>
                           )}
                         </div>
 
-                        <div className="flex items-center gap-2 text-xs mb-1">
-                          <span
-                            className={`px-2 py-0.5 rounded-md font-bold text-[11px] truncate max-w-[200px] ${
-                              isRoomSeller
-                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                            }`}
-                          >
-                            {roleLabel}: {partnerName}
+                        {/* Partner role & listing title */}
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${
+                            isRoomSeller
+                              ? 'bg-blue-50 text-blue-800 border-blue-200'
+                              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          }`}>
+                            {roleLabel}
+                          </span>
+                          <span className="text-[11px] text-slate-500 truncate" title={room.postTitle}>
+                            • {room.postTitle || 'Sản phẩm'}
                           </span>
                         </div>
 
-                        <p className="text-xs text-slate-500 truncate">{formatLastMessage(room.lastMessage)}</p>
+                        {/* Last message preview */}
+                        <p className={`text-xs truncate ${unread ? 'font-bold text-slate-900' : 'text-slate-500 font-normal'}`}>
+                          {formatLastMessage(room.lastMessage)}
+                        </p>
                       </div>
 
-                      <div className="shrink-0 text-slate-300 group-hover:text-[#c34c36] transition-colors">
-                        <ChevronRight className="w-5 h-5" />
-                      </div>
+                      {/* Messenger Unread Blue Dot Badge */}
+                      {unread && (
+                        <div className="w-2.5 h-2.5 rounded-full bg-blue-600 shrink-0 shadow-xs" title="Tin nhắn chưa đọc" />
+                      )}
                     </div>
                   );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 2: NEGOTIATIONS LIST */}
-        {activeTab === 'negotiations' && (
-          <div>
-            {/* Sub-bar: Seller vs Buyer */}
-            <div className="px-6 py-3 bg-slate-50/80 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setNegotiationTab('seller')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                    negotiationTab === 'seller'
-                      ? 'bg-[#24263e] text-white shadow-2xs'
-                      : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
-                  }`}
-                >
-                  <ArrowDownLeft className="w-3.5 h-3.5" />
-                  <span>{lang === 'vi' ? 'Đề xuất nhận được (Người bán)' : 'Received Offers (Seller)'}</span>
-                  {pendingSellerCount > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] font-black">
-                      {pendingSellerCount}
-                    </span>
-                  )}
-                </button>
-
-                <button
-                  onClick={() => setNegotiationTab('buyer')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                    negotiationTab === 'buyer'
-                      ? 'bg-[#24263e] text-white shadow-2xs'
-                      : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
-                  }`}
-                >
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                  <span>{lang === 'vi' ? 'Đề xuất đã gửi (Người mua)' : 'Sent Offers (Buyer)'}</span>
-                  {pendingBuyerCount > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] font-black">
-                      {pendingBuyerCount}
-                    </span>
-                  )}
-                </button>
-              </div>
-
-              <button
-                onClick={loadNegotiations}
-                disabled={loadingNegotiations}
-                className="px-2.5 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
-                title="Tải lại danh sách đàm phán"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${loadingNegotiations ? 'animate-spin' : ''}`} />
-                <span>{lang === 'vi' ? 'Làm mới' : 'Refresh'}</span>
-              </button>
+                })
+              )}
             </div>
-
-            {loadingNegotiations ? (
-              <div className="py-16 text-center flex flex-col items-center justify-center gap-3">
-                <Loader2 className="w-8 h-8 text-[#c34c36] animate-spin" />
-                <p className="text-sm font-semibold text-slate-500">
-                  {lang === 'vi' ? 'Đang tải danh sách thương lượng...' : 'Loading negotiations...'}
-                </p>
+          ) : (
+            /* NEGOTIATIONS LIST SUB-VIEW */
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              <div className="flex items-center gap-2 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setNegotiationTab('seller')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition ${
+                    negotiationTab === 'seller' ? 'bg-[#24263e] text-white shadow-xs' : 'bg-white border text-slate-600'
+                  }`}
+                >
+                  Khách mặc cả ({sellerNegotiations.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNegotiationTab('buyer')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition ${
+                    negotiationTab === 'buyer' ? 'bg-[#24263e] text-white shadow-xs' : 'bg-white border text-slate-600'
+                  }`}
+                >
+                  Tôi mặc cả ({buyerNegotiations.length})
+                </button>
               </div>
-            ) : currentNegotiationList.length === 0 ? (
-              <div className="p-12 text-center flex flex-col items-center justify-center space-y-3">
-                <div className="w-16 h-16 rounded-full bg-slate-50 text-slate-300 flex items-center justify-center">
-                  <Tag className="w-8 h-8" />
-                </div>
-                <h3 className="text-base font-bold text-[#24263e]">
-                  {negotiationTab === 'seller'
-                    ? lang === 'vi'
-                      ? 'Chưa có đề xuất mặc cả nào gửi đến bạn'
-                      : 'No offers received'
-                    : lang === 'vi'
-                      ? 'Bạn chưa gửi đề xuất giá nào cho người bán'
-                      : 'You have not made any price offers'}
-                </h3>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  {lang === 'vi'
-                    ? 'Tính năng mặc cả cho phép hai bên thỏa thuận mức giá hợp lý trước khi tiến hành đặt hàng.'
-                    : 'Negotiations allow buyers and sellers to agree on a fair price before ordering.'}
-                </p>
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {currentNegotiationList.map((neg) => {
-                  const foundListing = listings?.find((l) => l.id === neg.postId);
-                  const isActionLoading = actionInProgressId === neg.id;
 
-                  const statusConfig = {
-                    PENDING: {
-                      label: lang === 'vi' ? 'Chờ phản hồi' : 'Pending',
-                      color: 'bg-amber-50 text-amber-800 border-amber-200',
-                      icon: Clock,
-                    },
-                    ACCEPTED: {
-                      label: lang === 'vi' ? 'Đã đồng ý giá' : 'Accepted',
-                      color: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-                      icon: CheckCircle2,
-                    },
-                    REJECTED: {
-                      label: lang === 'vi' ? 'Đã từ chối' : 'Rejected',
-                      color: 'bg-rose-50 text-rose-800 border-rose-200',
-                      icon: XCircle,
-                    },
-                    CANCELLED: {
-                      label: lang === 'vi' ? 'Đã hủy' : 'Cancelled',
-                      color: 'bg-slate-100 text-slate-600 border-slate-200',
-                      icon: AlertCircle,
-                    },
-                  }[neg.status] || {
-                    label: neg.status,
-                    color: 'bg-slate-100 text-slate-600 border-slate-200',
-                    icon: AlertCircle,
-                  };
+              {(negotiationTab === 'seller' ? sellerNegotiations : buyerNegotiations).map((neg) => {
+                const foundListing = listings?.find((l) => l.id === neg.postId);
+                const isActionLoading = actionInProgressId === neg.id;
 
-                  const StatusIcon = statusConfig.icon;
+                return (
+                  <div key={neg.id} className="p-3 bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#24263e] truncate max-w-[180px]">
+                        {foundListing?.title || neg.postTitle || 'Sản phẩm'}
+                      </span>
+                      <span className="text-xs font-black text-[#c34c36]">
+                        {formatVND(neg.offeredPrice)}
+                      </span>
+                    </div>
 
-                  return (
-                    <div
-                      key={neg.id}
-                      className="p-4 sm:p-5 hover:bg-slate-50/70 transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
-                    >
-                      <div className="flex items-start gap-3.5 min-w-0 flex-1">
-                        <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center shrink-0">
-                          <ShoppingBag className="w-6 h-6" />
-                        </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-500">
+                      <span>Trạng thái: <strong>{neg.status}</strong></span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const matched = rooms.find((r) => r.postId === neg.postId);
+                          if (matched) {
+                            setSelectedRoomId(matched.id);
+                            setActiveTab('chats');
+                          }
+                        }}
+                        className="text-blue-600 font-bold hover:underline"
+                      >
+                        Vào chat
+                      </button>
+                    </div>
 
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="text-sm font-bold text-[#24263e] truncate">
-                              {neg.postTitle || foundListing?.title || `Sản phẩm #${neg.postId}`}
-                            </h4>
-                            <span
-                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold border flex items-center gap-1 ${statusConfig.color}`}
-                            >
-                              <StatusIcon className="w-3 h-3" />
-                              <span>{statusConfig.label}</span>
-                            </span>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-3 text-xs">
-                            <div>
-                              <span className="text-slate-400">Giá đề xuất: </span>
-                              <span className="font-mono font-black text-sm text-[#c34c36]">
-                                {formatVND(neg.offeredPrice)}
-                              </span>
-                            </div>
-                            {foundListing?.priceVnd && (
-                              <div>
-                                <span className="text-slate-400">Giá niêm yết: </span>
-                                <span className="line-through text-slate-500 font-mono">
-                                  {formatVND(foundListing.priceVnd)}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-
-                          {neg.createdAt && (
-                            <p className="text-[10px] text-slate-400">
-                              Thời gian: {new Date(neg.createdAt).toLocaleString('vi-VN')}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Action buttons */}
-                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    {/* Quick actions for PENDING */}
+                    {neg.status === 'PENDING' && negotiationTab === 'seller' && (
+                      <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
                         <button
                           type="button"
-                          onClick={() => handleOpenChatForNegotiation(neg)}
-                          className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                          onClick={() => handleAcceptNegotiation(neg.id)}
+                          disabled={isActionLoading}
+                          className="flex-1 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold"
                         >
-                          <MessageSquare className="w-3.5 h-3.5" />
-                          <span>{lang === 'vi' ? 'Nhắn tin' : 'Chat'}</span>
+                          Chấp nhận
                         </button>
-
-                        {/* Seller Actions on PENDING */}
-                        {negotiationTab === 'seller' && neg.status === 'PENDING' && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleRejectNegotiation(neg.id)}
-                              disabled={isActionLoading}
-                              className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              <span>{lang === 'vi' ? 'Từ chối' : 'Reject'}</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleAcceptNegotiation(neg.id)}
-                              disabled={isActionLoading}
-                              className="px-3.5 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition cursor-pointer disabled:opacity-50"
-                            >
-                              {isActionLoading ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Check className="w-3.5 h-3.5" />
-                              )}
-                              <span>{lang === 'vi' ? 'Đồng ý giá' : 'Accept'}</span>
-                            </button>
-                          </>
-                        )}
-
-                        {/* Buyer Actions on PENDING */}
-                        {negotiationTab === 'buyer' && neg.status === 'PENDING' && (
-                          <button
-                            type="button"
-                            onClick={() => handleCancelNegotiation(neg.id)}
-                            disabled={isActionLoading}
-                            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
-                          >
-                            {isActionLoading ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <X className="w-3.5 h-3.5" />
-                            )}
-                            <span>{lang === 'vi' ? 'Hủy đề xuất' : 'Cancel'}</span>
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleRejectNegotiation(neg.id)}
+                          disabled={isActionLoading}
+                          className="flex-1 py-1 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg text-xs font-bold"
+                        >
+                          Từ chối
+                        </button>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    )}
+
+                    {neg.status === 'PENDING' && negotiationTab === 'buyer' && (
+                      <div className="pt-1 border-t border-slate-100">
+                        <button
+                          type="button"
+                          onClick={() => handleCancelNegotiation(neg.id)}
+                          disabled={isActionLoading}
+                          className="w-full py-1 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-xs font-bold"
+                        >
+                          Hủy yêu cầu
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* RESIZABLE SPLITTER BAR (DESKTOP) */}
+        <div
+          onMouseDown={handleSplitterMouseDown}
+          onDoubleClick={handleResetSplitterWidth}
+          className={`hidden md:flex w-2 shrink-0 cursor-col-resize select-none relative z-10 items-center justify-center transition-colors group ${
+            isDraggingSplitter ? 'bg-[#c34c36]' : 'bg-slate-200 hover:bg-[#c34c36]/70'
+          }`}
+          title={lang === 'vi' ? 'Kéo để đổi độ rộng (Nhấp đúp để đặt lại)' : 'Drag to resize (Double-click to reset)'}
+        >
+          {/* Subtle grab handle indicator */}
+          <div className="flex flex-col gap-1 items-center justify-center py-2 pointer-events-none">
+            <div className={`w-0.5 h-1.5 rounded-full ${isDraggingSplitter ? 'bg-white' : 'bg-slate-400 group-hover:bg-white'}`} />
+            <div className={`w-0.5 h-1.5 rounded-full ${isDraggingSplitter ? 'bg-white' : 'bg-slate-400 group-hover:bg-white'}`} />
+            <div className={`w-0.5 h-1.5 rounded-full ${isDraggingSplitter ? 'bg-white' : 'bg-slate-400 group-hover:bg-white'}`} />
+            <div className={`w-0.5 h-1.5 rounded-full ${isDraggingSplitter ? 'bg-white' : 'bg-slate-400 group-hover:bg-white'}`} />
           </div>
-        )}
+        </div>
+
+        {/* RIGHT COLUMN: DEDICATED CHAT ROOM & ORDER BANNER */}
+        <div className={`flex-1 flex flex-col h-full min-h-0 min-w-0 bg-white overflow-hidden ${
+          !selectedRoom ? 'hidden md:flex' : 'flex'
+        }`}>
+          {selectedRoom && selectedListing ? (
+            <DedicatedChatRoom
+              room={selectedRoom}
+              listing={selectedListing}
+              currentUser={currentUser}
+              currentRole={currentRole}
+              lang={lang}
+              onBack={() => setSelectedRoomId(null)}
+              onBuyClick={onBuyClick}
+              onOpenSellerReviews={onOpenSellerReviews}
+              onRoomActivity={loadChatRooms}
+            />
+          ) : (
+            /* EMPTY PLACEHOLDER WHEN NO CONVERSATION IS SELECTED */
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400 bg-[#fbfbfa]">
+              <div className="w-16 h-16 rounded-3xl bg-white border border-slate-200 flex items-center justify-center shadow-xs text-slate-300 mb-3">
+                <MessageSquare className="w-8 h-8 text-[#c34c36]" />
+              </div>
+              <h3 className="text-base font-bold text-[#24263e] mb-1">
+                {lang === 'vi' ? 'Chọn một cuộc trò chuyện để bắt đầu' : 'Select a conversation to start chatting'}
+              </h3>
+              <p className="text-xs text-slate-500 max-w-sm">
+                {lang === 'vi'
+                  ? 'Trang chat riêng hỗ trợ trao đổi tin nhắn trực tiếp, đàm phán giá và bảo lãnh giao dịch an toàn 100% qua Quỹ tín thác Escrow của SecondLife Hub.'
+                  : 'Direct private chat supporting negotiations, inspection proposals and 100% Escrow safe transactions.'}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 };
-

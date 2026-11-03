@@ -47,6 +47,7 @@ import { dialogService } from '../utils/dialogService';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { ListingComparisonModal } from '../components/staff/ListingComparisonModal';
 import { StaffDisputeManagement } from '../components/staff/StaffDisputeManagement';
+import { MarkdownContent } from '../components/common/MarkdownDescription';
 import logoImg from '../assets/logo.png';
 import { User, LogOut } from 'lucide-react';
 
@@ -119,11 +120,9 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
       sessionStorage.setItem(STAFF_TAB_STORAGE_KEY, activeTab);
     } catch (e) {}
     const currentUrl = new URL(window.location.href);
-    if (activeTab && activeTab !== 'overview') {
-      currentUrl.searchParams.set('subtab', activeTab);
-    } else {
-      currentUrl.searchParams.delete('subtab');
-    }
+    currentUrl.searchParams.delete('subtab');
+    currentUrl.searchParams.delete('tab');
+    currentUrl.searchParams.delete('tap');
     if (currentUrl.toString() !== window.location.href) {
       window.history.replaceState(null, '', currentUrl.toString());
     }
@@ -1108,7 +1107,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                                 title="Mở giao diện đối soát và kiểm định chi tiết tin đăng"
                               >
                                 <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                                <span>Xem Kiểm Định</span>
+                                <span>Xem chi tiết</span>
                               </button>
                             </td>
                           </tr>
@@ -1809,7 +1808,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
 
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
               <span className="font-bold text-slate-800 block text-[11px]">Mô tả của người bán:</span>
-              <p className="text-slate-700">{selectedListingModal.description}</p>
+              <MarkdownContent content={selectedListingModal.description} />
             </div>
 
             {selectedListingModal.isSuspicious && (

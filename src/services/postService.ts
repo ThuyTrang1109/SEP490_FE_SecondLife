@@ -1,4 +1,5 @@
 import { request, getAccessToken } from './apiClient';
+import { SellerPostDetailDto } from '../types';
 
 export interface PostInitRequest {
   categoryId: string;
@@ -176,6 +177,27 @@ export const postService = {
     } catch (err) {
       console.warn('Lỗi lấy danh sách bài đăng cá nhân từ backend:', err);
       return { content: [] };
+    }
+  },
+
+  /**
+   * Seller: xem chi tiết bài đăng của chính mình (GET /api/v1/posts/my-posts/{postId})
+   * Yêu cầu quyền PROFILE_READ_SELF và access token của seller.
+   * BE kiểm tra chủ sở hữu: token phải thuộc người tạo bài đăng.
+   * Không giới hạn ACTIVE: chủ bài vẫn xem được RESERVED, PAYMENT_PENDING, SOLD, DRAFT, PENDING, REJECTED...
+   * Response 200 trả trực tiếp PostDto không có lớp data/success bọc ngoài.
+   */
+  async getMyPostDetail(postId: string): Promise<SellerPostDetailDto> {
+    try {
+      const cleanId = String(postId || '').trim();
+      const response = await request<SellerPostDetailDto>(`/v1/posts/my-posts/${encodeURIComponent(cleanId)}`, {
+        method: 'GET',
+        requiresAuth: true,
+      });
+      return (response as any)?.data || response;
+    } catch (err: any) {
+      console.warn(`[postService] Lỗi lấy chi tiết bài đăng cá nhân ${postId}:`, err);
+      throw err;
     }
   },
 

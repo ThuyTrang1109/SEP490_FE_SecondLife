@@ -92,6 +92,85 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     }
   };
 
+  const [loadingDetailPostId, setLoadingDetailPostId] = useState<string | null>(null);
+
+  const handleOpenSellerPostDetail = async (item: Listing) => {
+    try {
+      setLoadingDetailPostId(item.id);
+      const detail = await postService.getMyPostDetail(item.id);
+      if (detail && detail.id) {
+        const rawImages: string[] = Array.isArray(detail.imageUrls) && detail.imageUrls.length > 0
+          ? detail.imageUrls
+          : (item.photoGallery || []);
+
+        const enriched: Listing = {
+          ...item,
+          id: detail.id,
+          categoryId: detail.categoryId || item.categoryId,
+          itemId: detail.itemId || item.itemId,
+          title: detail.title || item.title,
+          description: detail.description || item.description,
+          priceVnd: Number(detail.price ?? item.priceVnd),
+          originalPriceVnd: Number(detail.aiSuggestedPrice || detail.price || item.originalPriceVnd),
+          declaredConditionText: detail.itemCondition || item.declaredConditionText,
+          conditionGrade: (detail.itemCondition || item.conditionGrade) as any,
+          status: (
+            detail.status === 'ACTIVE'
+              ? 'active'
+              : detail.status === 'DRAFT'
+              ? 'draft'
+              : detail.status === 'REJECTED'
+              ? 'rejected'
+              : 'reserved'
+          ) as any,
+          backendStatus: detail.status || item.backendStatus,
+          rejectionReason: detail.rejectionReason ?? item.rejectionReason,
+          listingCreditCharged: detail.listingCreditCharged ?? item.listingCreditCharged,
+          shippingWeight: detail.shippingWeight != null ? Number(detail.shippingWeight) : item.shippingWeight,
+          shippingLength: detail.shippingLength != null ? Number(detail.shippingLength) : item.shippingLength,
+          shippingWidth: detail.shippingWidth != null ? Number(detail.shippingWidth) : item.shippingWidth,
+          shippingHeight: detail.shippingHeight != null ? Number(detail.shippingHeight) : item.shippingHeight,
+          sellerAddress: detail.user?.address || item.sellerAddress,
+          sellerName: detail.user?.fullName || currentUser?.name || item.sellerName,
+          sellerId: detail.user?.id || item.sellerId,
+          photoGallery: rawImages,
+          photos: {
+            ...item.photos,
+            front: rawImages[0] || item.photos?.front || '',
+            back: rawImages[1] || item.photos?.back || '',
+            screenOrDetails: rawImages[2] || item.photos?.screenOrDetails || '',
+            accessoriesOrBox: rawImages[3] || item.photos?.accessoriesOrBox || '',
+            serialOrReceipt: rawImages[4] || item.photos?.serialOrReceipt || '',
+            extraDetail: rawImages[5] || item.photos?.extraDetail || '',
+          },
+          createdAt: detail.createdAt || item.createdAt,
+        };
+
+        onSelectListing(enriched);
+        return;
+      }
+    } catch (err: any) {
+      console.warn('Lỗi gọi API GET /v1/posts/my-posts/{postId}, fallback sang item hiện tại:', err);
+      if (err?.status === 404) {
+        showToastNotice('error', lang === 'vi' ? 'Bài đăng không tồn tại hoặc đã bị xóa.' : 'Listing not found.');
+        fetchSellerData();
+        return;
+      }
+      if (err?.status === 403) {
+        showToastNotice('error', lang === 'vi' ? 'Bạn không có quyền xem chi tiết bài đăng này.' : 'You do not have permission to view this listing.');
+        return;
+      }
+      if (err?.status === 400) {
+        showToastNotice('error', lang === 'vi' ? 'Mã bài đăng không hợp lệ.' : 'Invalid listing ID.');
+        return;
+      }
+    } finally {
+      setLoadingDetailPostId(null);
+    }
+    // Fallback nếu có lỗi mạng
+    onSelectListing(item);
+  };
+
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
   const [bankName, setBankName] = useState(currentUser?.bankAccount?.bankName || '');
   const [accountNumber, setAccountNumber] = useState(currentUser?.bankAccount?.accountNumber || '');
@@ -1204,10 +1283,15 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
               <div className="pt-2 border-t border-gray-200 flex items-center justify-between gap-2">
                 <button
-                  onClick={() => onSelectListing(item)}
-                  className="flex-1 py-1.5 px-2 bg-[#24263e] hover:bg-black border border-[#24263e] rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1 cursor-pointer transition"
+                  onClick={() => handleOpenSellerPostDetail(item)}
+                  disabled={loadingDetailPostId === item.id}
+                  className="flex-1 py-1.5 px-2 bg-[#24263e] hover:bg-black border border-[#24263e] rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1 cursor-pointer transition disabled:opacity-60"
                 >
-                  <Eye className="w-3.5 h-3.5" />
+                  {loadingDetailPostId === item.id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Eye className="w-3.5 h-3.5" />
+                  )}
                   <span>{lang === 'vi' ? 'Xem Chi Tiết' : 'View Details'}</span>
                 </button>
                 <button
@@ -2351,9 +2435,9 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         </div>
       )}
 
-      {/* Floating Modern Toast Notification */}
+      {/* Floating Modern Toast Notification (Positioned at top-right below navbar) */}
       {toastNotice && (
-        <div className="fixed bottom-6 right-6 z-50 animate-bounce">
+        <div className="fixed top-24 sm:top-28 right-4 sm:right-6 lg:right-8 z-50 animate-in fade-in slide-in-from-top-3">
           <div className={`px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 text-xs font-bold border ${
             toastNotice.type === 'success'
               ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-200/50'

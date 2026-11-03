@@ -41,6 +41,9 @@ import { reviewService } from '../data/mockReviews';
 import { OrderTrackingModal } from '../components/modals/OrderTrackingModal';
 import { CreateShipmentModal } from '../components/modals/CreateShipmentModal';
 import { ShippingLabelModal } from '../components/modals/ShippingLabelModal';
+import { InspectionCountdownTimer } from '../components/inspection/InspectionCountdownTimer';
+import { InspectionPenaltyPreviewCard } from '../components/inspection/InspectionPenaltyPreviewCard';
+import { InspectionAppealModal } from '../components/inspection/InspectionAppealModal';
 import { DigitalInspectionCertificateModal } from '../components/modals/DigitalInspectionCertificateModal';
 import { InspectionSealVerificationModal } from '../components/modals/InspectionSealVerificationModal';
 import { saveScopedLocalNotification } from '../utils/notificationStorage';
@@ -290,7 +293,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     });
   }, [resolvedOrders, currentUser, userRole]);
 
-  const isSeller = userRole === 'seller' || userOrders.some((o) => isOrderSeller(o));
+  const [orderPerspective, setOrderPerspective] = useState<'all' | 'buyer' | 'seller'>('all');
+
+  const buyerOrdersCount = useMemo(() => userOrders.filter(o => !isOrderSeller(o)).length, [userOrders]);
+  const sellerOrdersCount = useMemo(() => userOrders.filter(o => isOrderSeller(o)).length, [userOrders]);
+
+  const isSellerView = orderPerspective === 'seller' || (orderPerspective === 'all' && (userRole === 'seller' || sellerOrdersCount > 0));
+  const isSeller = isSellerView;
 
   const [activeTab, setActiveTab] = useState<OrderFilterTab>(getInitialOrderFilterTab);
 
@@ -300,11 +309,9 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       sessionStorage.setItem(ORDER_TAB_STORAGE_KEY, activeTab);
     } catch (e) {}
     const currentUrl = new URL(window.location.href);
-    if (activeTab && activeTab !== 'all') {
-      currentUrl.searchParams.set('order_tab', activeTab);
-    } else {
-      currentUrl.searchParams.delete('order_tab');
-    }
+    currentUrl.searchParams.delete('order_tab');
+    currentUrl.searchParams.delete('tab');
+    currentUrl.searchParams.delete('tap');
     if (currentUrl.toString() !== window.location.href) {
       window.history.replaceState(null, '', currentUrl.toString());
     }
@@ -390,6 +397,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   const [createShipmentOrder, setCreateShipmentOrder] = useState<EscrowOrder | null>(null);
   const [activeLabelShipment, setActiveLabelShipment] = useState<{ order: EscrowOrder; shipment: ShipmentBackend } | null>(null);
   const [certificateModalOrder, setCertificateModalOrder] = useState<EscrowOrder | null>(null);
+  const [appealModalOrder, setAppealModalOrder] = useState<EscrowOrder | null>(null);
   const [verifySealId, setVerifySealId] = useState<string>('');
   const [isVerifySealModalOpen, setIsVerifySealModalOpen] = useState(false);
   const [printSealOrder, setPrintSealOrder] = useState<EscrowOrder | null>(null);
@@ -717,6 +725,31 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     setBankPaymentOrder(ord);
     setBankPaymentInfo(paymentInfo);
     setLoadingBankPaymentId(null);
+  };
+
+  const handleAcceptFailedInspection = async (orderId: string) => {
+    const ok = await dialogService.confirm(
+      'Bạn xác nhận đồng ý với kết quả kiểm định KHÔNG ĐẠT. Hệ thống sẽ áp dụng khấu trừ điểm uy tín theo quy định và giải tỏa tiền ký quỹ hoàn lại cho người mua. Thao tác này không thể hoàn tác.',
+      {
+        title: 'Xác Nhận Chấp Nhận Kết Quả Kiểm Định',
+        confirmText: 'Chấp Nhận & Trừ Điểm',
+        cancelText: 'Xem Lại',
+      }
+    );
+    if (!ok) return;
+
+    try {
+      setOrderActionLoading(orderId);
+      await inspectorService.acceptFailedResult(orderId);
+      setInspectionActionNotice('Đã xác nhận chấp nhận kết quả kiểm định. Điểm uy tín đã được cập nhật.');
+      if (detailModalOrder?.id === orderId) {
+        setDetailModalOrder((prev) => prev ? { ...prev, appealStatus: 'UPHELD', reputationPenaltyApplied: true } : null);
+      }
+    } catch (e: any) {
+      setInspectionActionNotice(`Lỗi: ${e.message || 'Không thể chấp nhận kết quả'}`);
+    } finally {
+      setOrderActionLoading(null);
+    }
   };
 
   const handleRespondInspection = async (orderId: string, action: 'ACCEPT' | 'REJECT', rejectReason?: string) => {
@@ -1295,8 +1328,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   ).length;
   const completedPaidCount = userOrders.filter((o) => o.escrowStatus === 'COMPLETED_RELEASED').length;
 
+  const perspectiveOrders = useMemo(() => {
+    if (orderPerspective === 'buyer') return userOrders.filter(o => !isOrderSeller(o));
+    if (orderPerspective === 'seller') return userOrders.filter(o => isOrderSeller(o));
+    return userOrders;
+  }, [userOrders, orderPerspective]);
+
   // Filter logic based on status tabs, sorted by newest first (mới nhất trên cùng)
-  const filteredOrders = userOrders
+  const filteredOrders = perspectiveOrders
     .filter((ord) => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -1587,8 +1626,51 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
   return (
     <div className="space-y-6 pb-16 text-[#24263e]">
+      {/* Perspective switcher (Tất cả / Đơn Tôi Mua / Đơn Tôi Bán) */}
+      {sellerOrdersCount > 0 && buyerOrdersCount > 0 && (
+        <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-white border border-gray-200 shadow-xs w-fit">
+          <button
+            type="button"
+            onClick={() => setOrderPerspective('all')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              orderPerspective === 'all'
+                ? 'bg-[#24263e] text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <span>{lang === 'vi' ? 'Tất Cả' : 'All'} ({userOrders.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setOrderPerspective('buyer')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              orderPerspective === 'buyer'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <User className="w-3.5 h-3.5" />
+            <span>{lang === 'vi' ? 'Đơn Tôi Mua' : 'My Purchases'} ({buyerOrdersCount})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setOrderPerspective('seller')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              orderPerspective === 'seller'
+                ? 'bg-[#c34c36] text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <Store className="w-3.5 h-3.5" />
+            <span>{lang === 'vi' ? 'Đơn Tôi Bán' : 'My Sales'} ({sellerOrdersCount})</span>
+          </button>
+        </div>
+      )}
+
       {/* Top Banner: Switch between Buyer and Seller mode */}
-      {isSeller ? (
+      {isSellerView ? (
         <div className="space-y-4">
           <div className="bg-[#fce5da] text-[#24263e] rounded-3xl p-6 sm:p-7 shadow-xl border border-[#24263e]/15 space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2743,6 +2825,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             </button>
                           )}
 
+                          {/* Inspection Passed: Seller view notice (sellers do NOT buy their own item) */}
+                          {orderIsSeller && (ord.escrowStatus === 'INSPECTION_PASSED' || (ord as any).backendStatus === 'PASSED') && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-200 whitespace-nowrap shrink-0">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>{lang === 'vi' ? 'KTV Đã Duyệt Đạt • Chờ Khách Mua Chốt' : 'Passed • Awaiting Buyer Stage 2'}</span>
+                            </span>
+                          )}
+
                           {/* Nút Đã Nhận Hàng (Giải Ngân): Khi người mua đã xác nhận/giải ngân thì ẩn hoàn toàn nút, không cho bấm lại */}
                           {!isOrderReceiptConfirmed(ord) && (ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.backendStatus === 'DELIVERED' || ord.shippingDeliveredAt) ? (
                             <button
@@ -3524,7 +3614,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   detailModalOrder.escrowStatus !== 'COMPLETED_RELEASED' &&
                   detailModalOrder.escrowStatus !== 'DISPUTED' && (
                     <>
-                      {!isSeller && (detailModalOrder.escrowStatus === 'INSPECTION_PASSED' || (detailModalOrder as any).backendStatus === 'PASSED') && (
+                      {!isOrderSeller(detailModalOrder) && (detailModalOrder.escrowStatus === 'INSPECTION_PASSED' || (detailModalOrder as any).backendStatus === 'PASSED') && (
                         <button
                           onClick={() => {
                             if (onOpenInspectionDecision) {
@@ -3539,6 +3629,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           <ShieldCheck className="w-4 h-4 text-white" />
                           <span>{lang === 'vi' ? 'Xem Kết Quả & Quyết Định Mua Hàng' : 'Review Inspection & Decide'}</span>
                         </button>
+                      )}
+
+                      {isOrderSeller(detailModalOrder) && (detailModalOrder.escrowStatus === 'INSPECTION_PASSED' || (detailModalOrder as any).backendStatus === 'PASSED') && (
+                        <div className="flex-1 py-3 px-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          <span>{lang === 'vi' ? 'Kiểm định Đạt chuẩn • Đang chờ người mua thanh toán tiền hàng' : 'Inspection Passed • Awaiting Buyer Payment'}</span>
+                        </div>
                       )}
 
                       {/* Seller Action Buttons */}

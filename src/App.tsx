@@ -89,7 +89,7 @@ export function getInitialActiveTab(): string {
   if (typeof window !== 'undefined') {
     // 1. Kiểm tra URL query param ?tab=
     const params = new URLSearchParams(window.location.search);
-    const rawTab = params.get('tab');
+    const rawTab = params.get('tab') || params.get('tap');
     const tabParam = rawTab ? rawTab.replace(/_/g, '-') : null;
     if (tabParam && (VALID_MAIN_TABS as readonly string[]).includes(tabParam)) {
       candidateTab = tabParam;
@@ -171,19 +171,12 @@ export default function App() {
     } catch (e) {}
 
     const url = new URL(window.location.href);
-    if (activeTab && activeTab !== 'home') {
-      url.searchParams.set('tab', activeTab);
-    } else {
-      url.searchParams.delete('tab');
-    }
-    if (activeTab !== 'admin-dashboard' && activeTab !== 'staff-workspace' && activeTab !== 'inspection-center') {
-      url.searchParams.delete('subtab');
-    }
+    url.searchParams.delete('tab');
+    url.searchParams.delete('tap');
+    url.searchParams.delete('subtab');
+    url.searchParams.delete('order_tab');
     if (activeTab !== 'buyer-inspection-decision') {
       url.searchParams.delete('orderId');
-    }
-    if (activeTab !== 'orders') {
-      url.searchParams.delete('order_tab');
     }
     if (url.toString() !== window.location.href) {
       window.history.replaceState(null, '', url.toString());
@@ -657,6 +650,7 @@ export default function App() {
   const [chatPartnerName, setChatPartnerName] = useState<string | undefined>(undefined);
   const [chatPartnerAvatar, setChatPartnerAvatar] = useState<string | undefined>(undefined);
   const [chatRoom, setChatRoom] = useState<ChatRoomDto | undefined>(undefined);
+  const [unreadChatsCount, setUnreadChatsCount] = useState<number>(0);
   const [sellerReviewsModalData, setSellerReviewsModalData] = useState<{ sellerId: string; sellerName: string } | null>(null);
   const [reportingOrderForDispute, setReportingOrderForDispute] = useState<EscrowOrder | null>(null);
 
@@ -880,8 +874,12 @@ export default function App() {
           if (targetTab) {
             sessionStorage.setItem('secondlife_orders_filter_tab', targetTab);
             const newUrl = new URL(window.location.href);
-            newUrl.searchParams.set('order_tab', targetTab);
-            window.history.replaceState(null, '', newUrl.toString());
+            newUrl.searchParams.delete('order_tab');
+            newUrl.searchParams.delete('tab');
+            newUrl.searchParams.delete('tap');
+            if (newUrl.toString() !== window.location.href) {
+              window.history.replaceState(null, '', newUrl.toString());
+            }
             window.dispatchEvent(new Event('secondlife_tab_changed'));
           }
         }
@@ -2373,8 +2371,12 @@ export default function App() {
       try {
         sessionStorage.setItem('secondlife_orders_filter_tab', 'inspecting');
         const newUrl = new URL(window.location.href);
-        newUrl.searchParams.set('order_tab', 'inspecting');
-        window.history.replaceState(null, '', newUrl.toString());
+        newUrl.searchParams.delete('order_tab');
+        newUrl.searchParams.delete('tab');
+        newUrl.searchParams.delete('tap');
+        if (newUrl.toString() !== window.location.href) {
+          window.history.replaceState(null, '', newUrl.toString());
+        }
         window.dispatchEvent(new Event('secondlife_tab_changed'));
       } catch {}
     } else {
@@ -2382,7 +2384,11 @@ export default function App() {
         sessionStorage.setItem('secondlife_orders_filter_tab', 'all');
         const newUrl = new URL(window.location.href);
         newUrl.searchParams.delete('order_tab');
-        window.history.replaceState(null, '', newUrl.toString());
+        newUrl.searchParams.delete('tab');
+        newUrl.searchParams.delete('tap');
+        if (newUrl.toString() !== window.location.href) {
+          window.history.replaceState(null, '', newUrl.toString());
+        }
         window.dispatchEvent(new Event('secondlife_tab_changed'));
       } catch {}
     }
@@ -2874,7 +2880,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col font-sans bg-[#faf8f5] text-[#24263e] selection:bg-[#c34c36] selection:text-white">
+    <div className={`min-h-screen flex flex-col font-sans bg-[#faf8f5] text-[#24263e] selection:bg-[#c34c36] selection:text-white ${
+      activeTab === 'chat' ? 'h-screen max-h-screen overflow-hidden' : ''
+    }`}>
       {/* Navigation */}
       {activeTab !== 'admin-dashboard' &&
         activeTab !== 'inspection-center' &&
@@ -2893,6 +2901,7 @@ export default function App() {
             handleTabChange(tab);
           }}
           activeOrdersCount={orders.filter((o) => o.escrowStatus !== 'COMPLETED_RELEASED').length}
+          unreadChatsCount={unreadChatsCount}
           currentUser={currentUser}
           onOpenAuth={(mode) => {
             setAuthModalMode(mode);
@@ -2933,14 +2942,14 @@ export default function App() {
         />
       )}
 
-      {/* Floating Top Welcome Toast Notification */}
+      {/* Floating Welcome & System Toast Notification (Positioned at top-right below navbar) */}
       {toastMessage && (
-        <div className="fixed top-4 sm:top-6 left-1/2 -translate-x-1/2 z-[100] w-[92%] sm:w-auto min-w-[340px] max-w-xl bg-gradient-to-r from-[#fbf8f3] via-[#f5ede3] to-[#ebdccb] backdrop-blur-2xl text-[#2b1d16] px-5 py-3.5 rounded-2xl shadow-2xl border-2 border-[#cea981]/60 flex items-center gap-3.5 transition-all duration-300 transform scale-100 animate-fadeIn">
+        <div className="fixed top-24 sm:top-28 right-4 sm:right-6 lg:right-8 z-[100] w-[calc(100%-2rem)] sm:w-auto min-w-[320px] max-w-md bg-gradient-to-r from-[#fbf8f3] via-[#f5ede3] to-[#ebdccb] backdrop-blur-2xl text-[#2b1d16] px-4.5 py-3.5 rounded-2xl shadow-2xl border-2 border-[#cea981]/60 flex items-center gap-3.5 transition-all duration-300 transform scale-100 animate-in fade-in slide-in-from-top-3">
           <div className="w-9 h-9 rounded-xl bg-[#2b1d16] flex items-center justify-center shrink-0 shadow-md ring-2 ring-[#cea981]/40">
             <Sparkles className="w-5 h-5 text-white animate-pulse" />
           </div>
-          <div className="flex-1 pr-2">
-            <span className="text-xs sm:text-sm font-extrabold tracking-wide text-[#2b1d16] leading-tight block">{toastMessage}</span>
+          <div className="flex-1 pr-2 min-w-0">
+            <span className="text-xs sm:text-sm font-extrabold tracking-wide text-[#2b1d16] leading-tight block break-words">{toastMessage}</span>
           </div>
           <button
             onClick={() => setToastMessage(null)}
@@ -2956,13 +2965,15 @@ export default function App() {
       {/* Main Content Area */}
       <main
         className={
-          activeTab === 'admin-dashboard' ||
-          activeTab === 'inspection-center' ||
-          activeTab === 'inspection-hub' ||
-          activeTab === 'staff-workspace' ||
-          activeTab === 'buyer-inspection-decision'
+          activeTab === 'chat'
+            ? 'flex-1 min-h-0 w-full p-2 sm:p-2.5 m-0 overflow-hidden flex flex-col'
+            : activeTab === 'admin-dashboard' ||
+              activeTab === 'inspection-center' ||
+              activeTab === 'inspection-hub' ||
+              activeTab === 'staff-workspace' ||
+              activeTab === 'buyer-inspection-decision'
             ? 'flex-1 w-full p-0 m-0'
-            : 'flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6'
+            : 'flex-1 w-full px-3 sm:px-5 lg:px-6 pt-3 sm:pt-4 pb-8 m-0'
         }
       >
         <Suspense fallback={<ViewLoadingFallback />}>
@@ -3110,7 +3121,10 @@ export default function App() {
             onRefreshOrders={() => loadUserOrders(true)}
             lang={lang}
             userRole={currentRole}
-            onOpenChat={(listing) => setChatListing(listing)}
+            onOpenChat={(listing) => {
+              setChatListing(listing);
+              handleTabChange('chat');
+            }}
             onOpenInspectionDecision={(ord) => {
               setInspectionDecisionOrder(ord);
               setInspectionDecisionOrderId(ord.id);
@@ -3125,13 +3139,17 @@ export default function App() {
             orderId={inspectionDecisionOrderId || inspectionDecisionOrder?.id}
             order={inspectionDecisionOrder}
             currentUser={currentUser}
+            userRole={currentRole}
             lang={lang}
             onBack={() => handleTabChange('orders')}
             onSuccess={() => {
               loadUserOrders(true);
               handleTabChange('orders');
             }}
-            onOpenChat={(listing) => setChatListing(listing)}
+            onOpenChat={(listing) => {
+              setChatListing(listing);
+              handleTabChange('chat');
+            }}
             onOpenTopUp={() => setIsTopUpModalOpen(true)}
           />
         )}
@@ -3205,16 +3223,25 @@ export default function App() {
             currentRole={currentRole}
             currentUser={currentUser}
             lang={lang}
-            onOpenChat={(listing, roomId, partnerName, partnerAvatar, room) => {
+            initialListing={chatListing}
+            initialRoomId={chatPredefinedRoomId}
+            initialPartnerName={chatPartnerName}
+            initialPartnerAvatar={chatPartnerAvatar}
+            initialRoom={chatRoom}
+            onBuyClick={(item, agreedPrice, negotiationId) => {
               if (!currentUser) {
-                requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để sử dụng tính năng Chat & Đàm phán.' : 'Please log in to chat.');
+                setPendingCheckoutItem(item);
+                requireAuth(undefined, lang === 'vi'
+                  ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
+                  : 'Please log in to purchase with Escrow protection.');
                 return;
               }
-              setChatListing(listing);
-              setChatPredefinedRoomId(roomId);
-              setChatPartnerName(partnerName);
-              setChatPartnerAvatar(partnerAvatar);
-              setChatRoom(room);
+              setCheckoutAgreedPrice(agreedPrice);
+              setCheckoutNegotiationId(negotiationId);
+              setCheckoutListing(item);
+            }}
+            onOpenSellerReviews={(sellerId, sellerName) => {
+              setSellerReviewsModalData({ sellerId, sellerName });
             }}
           />
         )}
@@ -3288,11 +3315,13 @@ export default function App() {
                 showToast(lang === 'vi' ? 'Bạn không thể tự chat hoặc thương lượng với chính mình.' : 'You cannot chat with yourself.');
                 return;
               }
+              setSelectedListing(null);
               setChatListing(item);
               setChatPredefinedRoomId(undefined);
               setChatPartnerName(item.sellerName);
               setChatPartnerAvatar(item.sellerAvatar);
               setChatRoom(undefined);
+              handleTabChange('chat');
             }}
             onOpenSellerReviews={(sellerId, sellerName) => {
               setSellerReviewsModalData({ sellerId, sellerName });
@@ -3348,46 +3377,7 @@ export default function App() {
           />
         )}
 
-        {/* Chat & Negotiation Modal */}
-        {chatListing && (
-          <ChatModal
-            listing={chatListing}
-            predefinedRoomId={chatPredefinedRoomId}
-            partnerName={chatPartnerName}
-            partnerAvatar={chatPartnerAvatar}
-            initialRoom={chatRoom}
-            currentUser={currentUser}
-            currentRole={currentRole}
-            onClose={() => {
-              setChatListing(null);
-              setChatPredefinedRoomId(undefined);
-              setChatPartnerName(undefined);
-              setChatPartnerAvatar(undefined);
-              setChatRoom(undefined);
-            }}
-            onBuyClick={(item, agreedPrice, negotiationId) => {
-              if (!currentUser) {
-                setPendingCheckoutItem(item);
-                requireAuth(undefined, lang === 'vi'
-                  ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
-                  : 'Please log in to purchase with Escrow protection.');
-                return;
-              }
-              setChatListing(null);
-              setChatPredefinedRoomId(undefined);
-              setChatPartnerName(undefined);
-              setChatPartnerAvatar(undefined);
-              setChatRoom(undefined);
-              setCheckoutAgreedPrice(agreedPrice);
-              setCheckoutNegotiationId(negotiationId);
-              setCheckoutListing(item);
-            }}
-            onOpenSellerReviews={(sellerId, sellerName) => {
-              setSellerReviewsModalData({ sellerId, sellerName });
-            }}
-            lang={lang}
-          />
-        )}
+{/* ChatModal popup has been replaced by the dedicated full-page Messenger chat view */}
 
         {/* Seller Reviews & Trust Modal Popup */}
         {sellerReviewsModalData && (
@@ -3616,7 +3606,7 @@ export default function App() {
       />
 
       {/* E-Commerce Footer */}
-      {activeTab !== 'admin-dashboard' && activeTab !== 'inspection-hub' && activeTab !== 'inspection-center' && activeTab !== 'staff-workspace' && (
+      {activeTab !== 'admin-dashboard' && activeTab !== 'inspection-hub' && activeTab !== 'inspection-center' && activeTab !== 'staff-workspace' && activeTab !== 'chat' && (
         <Footer
           lang={lang}
           currentRole={currentRole}

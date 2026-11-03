@@ -22,7 +22,9 @@ import {
   RefreshCw,
   LocateFixed,
   XCircle,
-  Clock
+  Clock,
+  ArrowLeft,
+  Check
 } from 'lucide-react';
 import {
   sellerService,
@@ -185,6 +187,78 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
   const [isFaceScannerOpen, setIsFaceScannerOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // 3-step registration wizard state
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+
+  const validateStep1 = (): boolean => {
+    setErrorMsg(null);
+    const cleanShop = shopName.trim();
+    if (!cleanShop) {
+      setErrorMsg(lang === 'vi' ? 'Vui lòng nhập tên gian hàng / cửa hàng.' : 'Please enter store name.');
+      return false;
+    }
+    if (cleanShop.length < 3) {
+      setErrorMsg(lang === 'vi' ? 'Tên gian hàng tối thiểu 3 ký tự.' : 'Store name must be at least 3 characters.');
+      return false;
+    }
+
+    const cleanPhone = sellerPhone.replace(/\s+/g, '').trim();
+    if (!cleanPhone) {
+      setErrorMsg(lang === 'vi' ? 'Vui lòng nhập số điện thoại Zalo.' : 'Please enter phone number.');
+      return false;
+    }
+    const phoneRegex = /^(0)(3|5|7|8|9)[0-9]{8}$/;
+    if (!phoneRegex.test(cleanPhone)) {
+      setErrorMsg(
+        lang === 'vi'
+          ? 'Số điện thoại không hợp lệ (yêu cầu 10 chữ số, bắt đầu bằng 03, 05, 07, 08, 09).'
+          : 'Invalid phone number (must be 10 digits starting with 03, 05, 07, 08, 09).'
+      );
+      return false;
+    }
+
+    const cleanEmail = shopEmail.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+      setErrorMsg(lang === 'vi' ? 'Vui lòng nhập đúng định dạng email gian hàng (VD: name@example.com).' : 'Please enter a valid shop email.');
+      return false;
+    }
+
+    if (!isEmailVerifiedForOnboarding) {
+      setErrorMsg(
+        lang === 'vi'
+          ? 'Email gian hàng chưa được xác thực OTP. Vui lòng bấm "Gửi mã OTP" và hoàn thành xác thực trước khi sang Bước 2.'
+          : 'Shop email has not been verified with OTP. Please verify email before proceeding to Step 2.'
+      );
+      if (!hasSentOtp) {
+        handleSendOtpInline();
+      } else {
+        setIsVerifyingBeforeSubmit(false);
+        setIsOtpModalOpen(true);
+      }
+      return false;
+    }
+
+    return true;
+  };
+
+  const validateStep2 = (): boolean => {
+    setErrorMsg(null);
+    if (!pickupAddress.trim()) {
+      setErrorMsg(lang === 'vi' ? 'Vui lòng nhập hoặc chọn địa chỉ kho lấy hàng trên bản đồ.' : 'Please enter pickup warehouse address.');
+      return false;
+    }
+    if (!pickupLatitude || !pickupLongitude) {
+      setErrorMsg(
+        lang === 'vi'
+          ? 'Vui lòng ghim vị trí kho trên bản đồ (hoặc bấm "Dùng Vị Trí Hiện Tại Của Tôi") để hoàn tất Bước 2.'
+          : 'Please pin warehouse location on map to complete Step 2.'
+      );
+      return false;
+    }
+    return true;
+  };
 
   // BE Shipping & Pickup Address state
   const [pickupLatitude, setPickupLatitude] = useState<number | null>(currentUser.latitude ?? null);
@@ -521,6 +595,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     }
     if (isInitializedRef.current) return;
     isInitializedRef.current = true;
+    setCurrentStep(1);
 
     // 1. First check if a saved draft exists
     let hasDraft = false;
@@ -536,7 +611,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
           setSelectedProvinceId(d.selectedProvinceId);
           shippingService.getWards(d.selectedProvinceId)
             .then((wList) => setWards(Array.isArray(wList) ? wList : []))
-            .catch(() => {});
+            .catch(() => { });
         }
         if (d.selectedWardId) setSelectedWardId(d.selectedWardId);
         if (d.idCardNumber) { setIdCardNumber(d.idCardNumber); hasDraft = true; }
@@ -587,8 +662,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     // 3. Set showForm: if user has a draft in progress, keep form open. Otherwise open form if not already a registered seller.
     if (hasDraft) {
       setShowForm(true);
-      setSuccessMsg(lang === 'vi' ? 'Đã khôi phục thông tin bản nháp bạn đang điền.' : 'Restored your draft in progress.');
-      setTimeout(() => setSuccessMsg(null), 3000);
+      // Silently restored draft
     } else {
       const isAlreadySellerOrRegistered = Boolean(
         currentUser?.isSellerRegistered ||
@@ -623,7 +697,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         isEmailVerifiedForOnboarding,
       };
       localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-    } catch {}
+    } catch { }
   }, [
     isOpen,
     shopName,
@@ -898,6 +972,25 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
     setSuccessMsg(null);
     setUploadProgressMsg(null);
 
+    // If user presses Enter in Step 1 or Step 2, advance to next step
+    if (currentStep === 1) {
+      if (validateStep1()) setCurrentStep(2);
+      return;
+    }
+    if (currentStep === 2) {
+      if (validateStep2()) setCurrentStep(3);
+      return;
+    }
+
+    if (!validateStep1()) {
+      setCurrentStep(1);
+      return;
+    }
+    if (!validateStep2()) {
+      setCurrentStep(2);
+      return;
+    }
+
     if (isPendingReview) {
       setErrorMsg(
         lang === 'vi'
@@ -942,7 +1035,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
               latitude: pickupLatitude,
               longitude: pickupLongitude,
             });
-          } catch (_) {}
+          } catch (_) { }
         }
 
         try {
@@ -960,7 +1053,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
               wardId: Number(selectedWardId) || 1003646,
             },
           });
-        } catch (_) {}
+        } catch (_) { }
 
         try {
           await userService.updateMyProfile({
@@ -969,7 +1062,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
             latitude: pickupLatitude ?? null,
             longitude: pickupLongitude ?? null,
           });
-        } catch (_) {}
+        } catch (_) { }
 
         if (currentUser?.id) localStorage.setItem(`seller_registered_${currentUser.id}`, 'true');
         if (currentUser?.email) localStorage.setItem(`seller_registered_${currentUser.email}`, 'true');
@@ -1125,7 +1218,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
       let obStatus = null;
       try {
         obStatus = await shippingService.getSellerOnboarding();
-      } catch (_) {}
+      } catch (_) { }
 
       if (!obStatus?.emailVerified) {
         setUploadProgressMsg(
@@ -1189,7 +1282,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
             activeVerifId = checkVerif.id;
             setExistingVerification(checkVerif);
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       if (isResubmit && activeVerifId) {
@@ -1288,7 +1381,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         );
         try {
           localStorage.removeItem(DRAFT_KEY);
-        } catch {}
+        } catch { }
       }
 
       setTimeout(() => {
@@ -1358,7 +1451,7 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm sm:text-base font-black text-[#24263e]">
-                  {lang === 'vi' ? 'Đăng Ký Thành Người Bán' : 'Seller Hub Onboarding'}
+                  {lang === 'vi' ? 'ĐĂNG KÝ THÀNH NGƯỜI BÁN' : 'Seller Hub Onboarding'}
                 </h3>
                 <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${isApprovedSeller
                   ? 'bg-white text-emerald-900 border-emerald-500'
@@ -1398,9 +1491,9 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
         </div>
 
         {/* Scrollable Body */}
-        <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto subtle-scrollbar px-5 sm:px-6 pt-2 sm:pt-2.5 pb-5 sm:pb-6 space-y-3">
           {/* Highlights Banner */}
-          <div className="grid grid-cols-3 gap-2.5 py-1 text-xs">
+          <div className="grid grid-cols-3 gap-2.5 text-xs">
             <div className="flex items-center gap-2 p-2.5 rounded-2xl bg-rose-50/70 border border-rose-100 text-slate-700">
               <ShieldCheck className="w-4 h-4 text-[#24263e] shrink-0" />
               <div>
@@ -1424,16 +1517,15 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
             </div>
           </div>
 
-          {/* Success Notification */}
-          {successMsg && (
+          {/* Notification when viewing registered store profile */}
+          {!showForm && successMsg && (
             <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-3 animate-in fade-in">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <div className="flex-1">{successMsg}</div>
             </div>
           )}
 
-          {/* Error Notification */}
-          {errorMsg && (
+          {!showForm && errorMsg && (
             <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2.5 animate-in fade-in">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
               <span>{errorMsg}</span>
@@ -1444,15 +1536,13 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
           {!showForm && hasRegistered && (
             <div className="p-5 rounded-3xl bg-slate-50 border border-gray-200 space-y-4 animate-in fade-in">
               {/* Active Role Status Notification Banner */}
-              <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                currentUser.role === 'seller'
-                  ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-                  : 'bg-blue-50/70 border-blue-200 text-blue-950'
-              }`}>
+              <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${currentUser.role === 'seller'
+                ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                : 'bg-blue-50/70 border-blue-200 text-blue-950'
+                }`}>
                 <div className="flex items-center gap-2.5">
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
-                    currentUser.role === 'seller' ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white'
-                  }`}>
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${currentUser.role === 'seller' ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white'
+                    }`}>
                     <Store className="w-4 h-4" />
                   </div>
                   <div>
@@ -1460,9 +1550,8 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                         {lang === 'vi' ? 'Vai trò đang chọn:' : 'Current Role:'}
                       </span>
-                      <span className={`text-xs font-black px-2 py-0.5 rounded-md ${
-                        currentUser.role === 'seller' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
-                      }`}>
+                      <span className={`text-xs font-black px-2 py-0.5 rounded-md ${currentUser.role === 'seller' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                        }`}>
                         {currentUser.role === 'seller'
                           ? (lang === 'vi' ? 'Người Bán (Seller)' : 'Seller')
                           : (lang === 'vi' ? 'Người Mua (Buyer)' : 'Buyer')}
@@ -1512,15 +1601,14 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                   <span className="text-xs font-bold text-slate-900">
                     {lang === 'vi' ? 'Hồ Sơ Gian Hàng Của Bạn' : 'Your Seller Store Profile'}
                   </span>
-                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                    isApprovedSeller
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : isRejected
-                        ? 'bg-rose-100 text-rose-800'
-                        : isResubmitRequired
-                          ? 'bg-orange-100 text-orange-800'
-                          : 'bg-amber-100 text-amber-800 border border-amber-200'
-                  }`}>
+                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${isApprovedSeller
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : isRejected
+                      ? 'bg-rose-100 text-rose-800'
+                      : isResubmitRequired
+                        ? 'bg-orange-100 text-orange-800'
+                        : 'bg-amber-100 text-amber-800 border border-amber-200'
+                    }`}>
                     {isApprovedSeller
                       ? (lang === 'vi' ? 'Đã Kích Hoạt' : 'Active')
                       : isRejected
@@ -1683,30 +1771,119 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                   </button>
                 )}
               </div>
-
-              {/* Form Inputs */}
-              <div className="space-y-3">
-                {/* Resubmission Alert if status is RESUBMIT_REQUIRED */}
-                {existingVerification?.status === 'RESUBMIT_REQUIRED' && (
-                  <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-start gap-3 shadow-xs animate-in fade-in">
-                    <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-amber-950">
-                          {lang === 'vi' ? 'HỒ SƠ CẦN BỔ SUNG / CHỤP LẠI ẢNH eKYC' : 'RESUBMISSION REQUIRED'}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-300">
-                          {lang === 'vi' ? `Lần nộp lại: ${existingVerification.resubmissionCount || 0}/3` : `Attempt: ${existingVerification.resubmissionCount || 0}/3`}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-amber-800 leading-relaxed">
-                        {lang === 'vi'
-                          ? `Lý do từ bên thứ 3: "${existingVerification.rejectionReason || 'Ảnh chụp CCCD bị mờ, lóa ánh sáng hoặc không nhận diện rõ'}". Vui lòng tải lên ảnh chụp mới rõ nét và bấm "Nộp Lại Chứng Từ eKYC" ở cuối form.`
-                          : `Provider reason: "${existingVerification.rejectionReason || 'Blurry photos or glare'}". Please upload clear photos and submit again.`}
-                      </p>
-                    </div>
+              {/* 3-Step Wizard Navigation */}
+              <div className="grid grid-cols-3 gap-2 p-1.5 bg-slate-100/80 rounded-2xl border border-slate-200 text-xs">
+                {/* Step 1 Pill */}
+                <button
+                  type="button"
+                  onClick={() => { setErrorMsg(null); setCurrentStep(1); }}
+                  className={`flex items-center gap-2 p-2 rounded-xl text-left transition cursor-pointer ${
+                    currentStep === 1
+                      ? 'bg-white shadow-xs text-[#24263e] border border-slate-200/80 font-black'
+                      : currentStep > 1
+                      ? 'text-emerald-700 hover:bg-white/50 font-bold'
+                      : 'text-slate-400 hover:bg-white/50 font-medium'
+                  }`}
+                >
+                  <div
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black shrink-0 ${
+                      currentStep === 1
+                        ? 'bg-[#c34c36] text-white'
+                        : currentStep > 1
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-200 text-slate-500'
+                    }`}
+                  >
+                    {currentStep > 1 ? <Check className="w-3.5 h-3.5" /> : '1'}
                   </div>
-                )}
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[9px] uppercase tracking-wider text-slate-400 font-bold">
+                      {lang === 'vi' ? 'Bước 1' : 'Step 1'}
+                    </span>
+                    <span className="block text-[11px] truncate">
+                      {lang === 'vi' ? 'Thông tin gian hàng' : 'Store Details'}
+                    </span>
+                  </div>
+                </button>
+
+                {/* Step 2 Pill */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (validateStep1()) {
+                      setErrorMsg(null);
+                      setCurrentStep(2);
+                    }
+                  }}
+                  className={`flex items-center gap-2 p-2 rounded-xl text-left transition cursor-pointer ${
+                    currentStep === 2
+                      ? 'bg-white shadow-xs text-[#24263e] border border-slate-200/80 font-black'
+                      : currentStep > 2
+                      ? 'text-emerald-700 hover:bg-white/50 font-bold'
+                      : 'text-slate-400 hover:bg-white/50 font-medium'
+                  }`}
+                >
+                  <div
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black shrink-0 ${
+                      currentStep === 2
+                        ? 'bg-[#c34c36] text-white'
+                        : currentStep > 2
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-200 text-slate-500'
+                    }`}
+                  >
+                    {currentStep > 2 ? <Check className="w-3.5 h-3.5" /> : '2'}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[9px] uppercase tracking-wider text-slate-400 font-bold">
+                      {lang === 'vi' ? 'Bước 2' : 'Step 2'}
+                    </span>
+                    <span className="block text-[11px] truncate">
+                      {lang === 'vi' ? 'Kho lấy hàng' : 'Pickup Location'}
+                    </span>
+                  </div>
+                </button>
+
+                {/* Step 3 Pill */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (validateStep1() && validateStep2()) {
+                      setErrorMsg(null);
+                      setCurrentStep(3);
+                    }
+                  }}
+                  className={`flex items-center gap-2 p-2 rounded-xl text-left transition cursor-pointer ${
+                    currentStep === 3
+                      ? 'bg-white shadow-xs text-[#24263e] border border-slate-200/80 font-black'
+                      : 'text-slate-400 hover:bg-white/50 font-medium'
+                  }`}
+                >
+                  <div
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black shrink-0 ${
+                      currentStep === 3
+                        ? 'bg-[#c34c36] text-white'
+                        : 'bg-slate-200 text-slate-500'
+                    }`}
+                  >
+                    3
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[9px] uppercase tracking-wider text-slate-400 font-bold">
+                      {lang === 'vi' ? 'Bước 3' : 'Step 3'}
+                    </span>
+                    <span className="block text-[11px] truncate">
+                      {lang === 'vi' ? 'eKYC & Ngân hàng' : 'eKYC & Bank'}
+                    </span>
+                  </div>
+                </button>
+              </div>
+
+              {/* BƯỚC 1: THÔNG TIN GIAN HÀNG & EMAIL OTP */}
+              {currentStep === 1 && (
+                <div className="space-y-3.5 animate-in fade-in duration-200">
+                  {/* Form Inputs */}
+              {/* Resubmission Alert if status is RESUBMIT_REQUIRED */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-[11px] font-bold text-slate-700 block mb-1">
@@ -1724,15 +1901,20 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
 
                   <div>
                     <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      {lang === 'vi' ? 'Số Điện Thoại Zalo' : 'Business Phone & Zalo'} <span className="text-red-500">*</span>
+                      {lang === 'vi' ? 'Số điện thoại' : 'Business Phone & Zalo'} <span className="text-red-500">*</span>
                     </label>
                     <input
-                      type="text"
+                      type="tel"
+                      inputMode="numeric"
+                      maxLength={10}
                       required
                       value={sellerPhone}
-                      onChange={(e) => setSellerPhone(e.target.value)}
-                      placeholder="0912 345 678"
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900"
+                      onChange={(e) => {
+                        const digitsOnly = e.target.value.replace(/\D/g, '').slice(0, 10);
+                        setSellerPhone(digitsOnly);
+                      }}
+                      placeholder="0912345678"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 focus:border-[#c34c36] focus:ring-1 focus:ring-[#c34c36] outline-none text-xs bg-white text-slate-900 font-mono"
                     />
                   </div>
                 </div>
@@ -1777,11 +1959,10 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       type="button"
                       onClick={handleSendOtpInline}
                       disabled={isSendingOtp || otpCountdown > 0 || isEmailVerifiedForOnboarding}
-                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${
-                        isEmailVerifiedForOnboarding
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default'
-                          : 'bg-[#24263e] hover:bg-black text-white disabled:opacity-50'
-                      }`}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${isEmailVerifiedForOnboarding
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default'
+                        : 'bg-[#24263e] hover:bg-black text-white disabled:opacity-50'
+                        }`}
                     >
                       {isSendingOtp ? (
                         <>
@@ -1851,7 +2032,55 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                   )}
                 </div>
 
-                {/* Lalamove Warehouse Pickup Address Section */}
+                  
+              {/* Inline Error & Success Feedback */}
+              {errorMsg && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+              {successMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{successMsg}</span>
+                </div>
+              )}
+
+
+                  {/* Step 1 Action Buttons */}
+                  <div className="flex items-center justify-between pt-3 border-t border-gray-100 gap-2">
+                    {isRegistered ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowForm(false)}
+                        className="px-4 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-100 text-slate-600 text-xs font-bold transition cursor-pointer"
+                      >
+                        {lang === 'vi' ? 'Hủy' : 'Cancel'}
+                      </button>
+                    ) : <div />}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (validateStep1()) {
+                          setErrorMsg(null);
+                          setCurrentStep(2);
+                        }
+                      }}
+                      className="px-5 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-black shadow-sm transition flex items-center gap-2 cursor-pointer ml-auto"
+                    >
+                      <span>{lang === 'vi' ? 'Tiếp tục' : 'Next: Pickup Location'}</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* BƯỚC 2: ĐỊA CHỈ KHO LẤY HÀNG LALAMOVE */}
+              {currentStep === 2 && (
+                <div className="space-y-3.5 animate-in fade-in duration-200">
+                  {/* Lalamove Warehouse Pickup Address Section */}
                 <LalamoveAddressPicker
                   initialName={shopName}
                   initialPhone={sellerPhone}
@@ -1875,7 +2104,78 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                   }
                 />
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  
+              {/* Inline Error & Success Feedback */}
+              {errorMsg && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+              {successMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{successMsg}</span>
+                </div>
+              )}
+
+
+                  {/* Step 2 Action Buttons */}
+                  <div className="flex items-center justify-between pt-3 border-t border-gray-100 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setErrorMsg(null);
+                        setCurrentStep(1);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-100 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      <span>{lang === 'vi' ? 'Quay lại Bước 1' : 'Back to Step 1'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (validateStep2()) {
+                          setErrorMsg(null);
+                          setCurrentStep(3);
+                        }
+                      }}
+                      className="px-5 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-black shadow-sm transition flex items-center gap-2 cursor-pointer"
+                    >
+                      <span>{lang === 'vi' ? 'Tiếp tục: eKYC & Ngân hàng' : 'Next: eKYC & Bank'}</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* BƯỚC 3: ĐỊNH DANH eKYC & TÀI KHOẢN NGÂN HÀNG */}
+              {currentStep === 3 && (
+                <div className="space-y-3.5 animate-in fade-in duration-200">
+                  {existingVerification?.status === 'RESUBMIT_REQUIRED' && (
+                  <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-start gap-3 shadow-xs animate-in fade-in">
+                    <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-amber-950">
+                          {lang === 'vi' ? 'HỒ SƠ CẦN BỔ SUNG / CHỤP LẠI ẢNH eKYC' : 'RESUBMISSION REQUIRED'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-300">
+                          {lang === 'vi' ? `Lần nộp lại: ${existingVerification.resubmissionCount || 0}/3` : `Attempt: ${existingVerification.resubmissionCount || 0}/3`}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 leading-relaxed">
+                        {lang === 'vi'
+                          ? `Lý do từ bên thứ 3: "${existingVerification.rejectionReason || 'Ảnh chụp CCCD bị mờ, lóa ánh sáng hoặc không nhận diện rõ'}". Vui lòng tải lên ảnh chụp mới rõ nét và bấm "Nộp Lại Chứng Từ eKYC" ở cuối form.`
+                          : `Provider reason: "${existingVerification.rejectionReason || 'Blurry photos or glare'}". Please upload clear photos and submit again.`}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-[11px] font-bold text-slate-700 block mb-1">
                       {lang === 'vi' ? 'Số Căn Cước Công Dân (CCCD/CMND)' : 'Citizen Identity Number (CCCD)'} <span className="text-red-500">*</span>
@@ -2176,9 +2476,9 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                       : 'I commit that all listed appliances are authentic and match condition; ready for Lalamove pickup and Hub inspection.'}
                   </span>
                 </label>
-              </div>
 
-              {/* Inline Error & Success Feedback right above Form Action Buttons */}
+                  
+              {/* Inline Error & Success Feedback */}
               {errorMsg && (
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
                   <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
@@ -2192,34 +2492,40 @@ export const SellerRegistrationModal: React.FC<SellerRegistrationModalProps> = (
                 </div>
               )}
 
-              {/* Form Action Buttons */}
-              <div className="flex items-center justify-end pt-3 border-t border-gray-100 gap-2">
-                {isRegistered && (
-                  <button
-                    type="button"
-                    onClick={() => setShowForm(false)}
-                    className="px-4 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-100 text-slate-600 text-xs font-bold transition cursor-pointer"
-                  >
-                    {lang === 'vi' ? 'Hủy' : 'Cancel'}
-                  </button>
-                )}
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2.5 rounded-xl bg-[#24263e] hover:bg-black disabled:opacity-50 text-white text-xs font-black shadow-sm transition flex items-center gap-2 cursor-pointer"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>
-                    {isSubmitting
-                      ? (lang === 'vi' ? 'Đang Gửi Hồ Sơ...' : 'Submitting...')
-                      : existingVerification?.status === 'RESUBMIT_REQUIRED'
-                        ? (lang === 'vi' ? 'Nộp Lại Chứng Từ eKYC' : 'Resubmit eKYC Documents')
-                        : isRegistered
-                          ? (lang === 'vi' ? 'Cập Nhật Hồ Sơ Gian Hàng' : 'Update Store Profile')
-                          : (lang === 'vi' ? 'Xác Nhận Đăng Ký & Gửi Duyệt eKYC' : 'Confirm Registration & Submit eKYC')}
-                  </span>
-                </button>
-              </div>
+
+                  {/* Step 3 Action Buttons */}
+                  <div className="flex items-center justify-between pt-3 border-t border-gray-100 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setErrorMsg(null);
+                        setCurrentStep(2);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-100 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      <span>{lang === 'vi' ? 'Quay lại Bước 2' : 'Back to Step 2'}</span>
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="px-5 py-2.5 rounded-xl bg-[#24263e] hover:bg-black disabled:opacity-50 text-white text-xs font-black shadow-sm transition flex items-center gap-2 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>
+                        {isSubmitting
+                          ? (lang === 'vi' ? 'Đang Gửi Hồ Sơ...' : 'Submitting...')
+                          : existingVerification?.status === 'RESUBMIT_REQUIRED'
+                            ? (lang === 'vi' ? 'Nộp Lại Chứng Từ eKYC' : 'Resubmit eKYC Documents')
+                            : isRegistered
+                              ? (lang === 'vi' ? 'Cập Nhật Hồ Sơ Gian Hàng' : 'Update Store Profile')
+                              : (lang === 'vi' ? 'Xác Nhận Đăng Ký & Gửi Duyệt eKYC' : 'Confirm Registration & Submit eKYC')}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </form>
           )}
         </div>

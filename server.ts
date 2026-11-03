@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import path from 'path';
 import os from 'os';
 import dotenv from 'dotenv';
@@ -360,6 +361,65 @@ app.post('/api/ai/detect-fraud', async (req, res) => {
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Reverse Proxy forwarder for Spring Boot Backend (default port 8080)
+const BACKEND_TARGET = process.env.VITE_API_TARGET || 'http://127.0.0.1:8080';
+const parsedBackendUrl = new URL(BACKEND_TARGET);
+
+app.use(['/api', '/oauth2', '/ws'], (req, res, next) => {
+  // Pass through Express-handled AI and Health endpoints
+  if (req.originalUrl.startsWith('/api/ai') || req.originalUrl.startsWith('/api/health')) {
+    return next();
+  }
+
+  const targetHost = parsedBackendUrl.hostname;
+  const targetPort = Number(parsedBackendUrl.port) || (parsedBackendUrl.protocol === 'https:' ? 443 : 80);
+
+  const forwardHeaders: http.OutgoingHttpHeaders = {
+    ...req.headers,
+    host: `${targetHost}:${targetPort}`,
+    'x-forwarded-for': req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1',
+    'x-forwarded-proto': req.protocol || 'http',
+    // Present localhost origin to Spring Boot so proxied requests pass CORS validation
+    origin: 'http://localhost:3000',
+  };
+
+  const proxyReq = http.request(
+    {
+      hostname: targetHost,
+      port: targetPort,
+      path: req.originalUrl,
+      method: req.method,
+      headers: forwardHeaders,
+    },
+    (proxyRes) => {
+      res.writeHead(proxyRes.statusCode || 500, proxyRes.headers);
+      proxyRes.pipe(res, { end: true });
+    }
+  );
+
+  proxyReq.on('error', (err) => {
+    console.error(`[Reverse Proxy] Không thể kết nối tới Backend Spring Boot (${targetHost}:${targetPort}):`, err.message);
+    if (!res.headersSent) {
+      res.status(502).json({
+        success: false,
+        message: `Không thể kết nối đến Backend Server (${targetHost}:${targetPort}). Vui lòng đảm bảo Backend đang chạy. Lỗi: ${err.message}`,
+      });
+    }
+  });
+
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    proxyReq.end();
+  } else if (req.headers['content-type']?.includes('application/json') && req.body !== undefined) {
+    const payload = Buffer.from(JSON.stringify(req.body), 'utf8');
+    proxyReq.setHeader('Content-Type', 'application/json');
+    proxyReq.setHeader('Content-Length', payload.length);
+    proxyReq.write(payload);
+    proxyReq.end();
+  } else {
+    req.pipe(proxyReq, { end: true });
   }
 });
 

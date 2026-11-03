@@ -14,9 +14,13 @@ import {
   ThumbsUp,
   ChevronRight,
   UserCheck,
-  Flag
+  Flag,
+  Truck,
+  AlertCircle,
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
-import { Listing, Language, ProductReview, UserProfile } from '../../types';
+import { Listing, Language, ProductReview, UserProfile, SellerPostDetailDto } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import { cleanFullAddress } from '../../utils/addressUtils';
 import { getBoughtListingIds } from '../../utils/orderUtils';
@@ -25,6 +29,7 @@ import { reviewService } from '../../data/mockReviews';
 import { reputationService, postService, SellerReputationDto, getStoredUser, getAssessmentStatusMeta } from '../../services';
 import { UserReportModal } from './UserReportModal';
 import { resolveCategoryAndItem, extractSellerOriginalPrice } from '../../utils/catalogCache';
+import { MarkdownContent } from '../common/MarkdownDescription';
 
 interface ListingDetailModalProps {
   listing: Listing | null;
@@ -63,6 +68,19 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
     user?.id && listing.sellerId && String(user.id) === String(listing.sellerId)
   );
 
+  const [sellerDetail, setSellerDetail] = useState<SellerPostDetailDto | null>(null);
+  const [isLoadingSellerDetail, setIsLoadingSellerDetail] = useState(false);
+  const [sellerDetailError, setSellerDetailError] = useState<string | null>(null);
+
+  const effectiveWeight = sellerDetail?.shippingWeight != null ? Number(sellerDetail.shippingWeight) : listing.shippingWeight;
+  const effectiveLength = sellerDetail?.shippingLength != null ? Number(sellerDetail.shippingLength) : listing.shippingLength;
+  const effectiveWidth = sellerDetail?.shippingWidth != null ? Number(sellerDetail.shippingWidth) : listing.shippingWidth;
+  const effectiveHeight = sellerDetail?.shippingHeight != null ? Number(sellerDetail.shippingHeight) : listing.shippingHeight;
+  const effectiveStatus = (sellerDetail?.status || listing.backendStatus || listing.status || 'ACTIVE').toUpperCase();
+  const effectiveRejectionReason = sellerDetail?.rejectionReason ?? listing.rejectionReason;
+  const effectiveCreditCharged = sellerDetail?.listingCreditCharged ?? listing.listingCreditCharged;
+  const effectiveSellerAddress = cleanFullAddress(sellerDetail?.user?.address || listing.sellerAddress || listing.location);
+
   const resolved = React.useMemo(() => {
     return resolveCategoryAndItem({
       postId: listing.id,
@@ -74,7 +92,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
       brand: listing.brand,
       model: listing.model,
     });
-  }, [listing]);
+  }, [listing, sellerDetail]);
 
   const displayBrand = (listing.brand && listing.brand !== 'SecondLife' && listing.brand !== 'Hãng' ? listing.brand : resolved.brand) || 'Chính hãng';
   const displayCategory = listing.itemName || resolved.itemName || listing.category || resolved.displayCategory || 'Đồ gia dụng';
@@ -91,6 +109,10 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
 
   // Lấy chính xác danh sách ảnh thực tế của bài đăng (không nhân bản / không lặp lại ảnh)
   const galleryImages: string[] = React.useMemo(() => {
+    if (sellerDetail?.imageUrls && Array.isArray(sellerDetail.imageUrls) && sellerDetail.imageUrls.length > 0) {
+      const filtered = sellerDetail.imageUrls.filter(Boolean);
+      if (filtered.length > 0) return Array.from(new Set(filtered));
+    }
     if (Array.isArray(listing.photoGallery) && listing.photoGallery.length > 0) {
       const filtered = listing.photoGallery.filter(Boolean);
       const unique = Array.from(new Set(filtered));
@@ -124,7 +146,6 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const sellerTrust = reviewService.getSellerTrustProfile(listing.sellerId, listing.sellerName);
   const [realReputation, setRealReputation] = useState<SellerReputationDto | null>(null);
   const [aiEstimate, setAiEstimate] = useState<any>(null);
-
   useEffect(() => {
     if (listing.sellerId) {
       reputationService.getSellerReputation(listing.sellerId).then((rep) => {
@@ -135,42 +156,74 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
 
   useEffect(() => {
     if (listing.id) {
-      // Gọi API lấy dữ liệu chi tiết bài đăng mới nhất từ server (GET /api/v1/posts/{postId})
-      postService.getListingDetail(listing.id).then((detail) => {
-        if (!isOwnListing && detail?.aiSuggestedPrice) {
-          setAiEstimate({
-            suggestedPriceMin: Math.round(Number(detail.aiSuggestedPrice) * 0.9),
-            suggestedPriceMax: Math.round(Number(detail.aiSuggestedPrice) * 1.1),
-            confidenceScore: 0.95,
-            reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
-          });
-        }
-      }).catch(() => {});
-
-      // Chỉ gọi API định giá nội bộ riêng tư (Owner-only) nếu người đang đăng nhập chính là người bán
       if (isOwnListing) {
+        // GỌI API SELLER: GET /api/v1/posts/my-posts/{postId}
+        setIsLoadingSellerDetail(true);
+        setSellerDetailError(null);
+        postService.getMyPostDetail(listing.id)
+          .then((detail) => {
+            if (detail) {
+              setSellerDetail(detail);
+              if (detail.aiSuggestedPrice) {
+                setAiEstimate({
+                  suggestedPriceMin: Math.round(Number(detail.aiSuggestedPrice) * 0.9),
+                  suggestedPriceMax: Math.round(Number(detail.aiSuggestedPrice) * 1.1),
+                  confidenceScore: 0.95,
+                  reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
+                });
+              }
+            }
+          })
+          .catch((err: any) => {
+            console.warn('[ListingDetailModal] Lỗi lấy chi tiết bài đăng qua GET /api/v1/posts/my-posts/{postId}:', err);
+            if (err?.status === 404) {
+              setSellerDetailError(lang === 'vi' ? 'Bài đăng không tồn tại trên hệ thống.' : 'Listing not found.');
+            } else if (err?.status === 403) {
+              setSellerDetailError(lang === 'vi' ? 'Bạn không có quyền xem chi tiết bài đăng này.' : 'You do not have permission to view this listing.');
+            } else if (err?.status === 400) {
+              setSellerDetailError(lang === 'vi' ? 'Mã bài đăng không hợp lệ.' : 'Invalid listing ID.');
+            }
+          })
+          .finally(() => {
+            setIsLoadingSellerDetail(false);
+          });
+
         postService.getLatestPriceEstimate(listing.id).then((est) => {
           if (est) setAiEstimate(est);
         }).catch(() => {});
-      } else if (listing.aiPriceEstimation) {
-        setAiEstimate({
-          suggestedPriceMin: listing.aiPriceEstimation.minVnd,
-          suggestedPriceMax: listing.aiPriceEstimation.maxVnd,
-          confidenceScore: 0.95,
-          reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
-        });
-      } else if (listing.aiSuggestedPrice && listing.aiSuggestedPrice > 0) {
-        setAiEstimate({
-          suggestedPriceMin: Math.round(Number(listing.aiSuggestedPrice) * 0.9),
-          suggestedPriceMax: Math.round(Number(listing.aiSuggestedPrice) * 1.1),
-          confidenceScore: 0.95,
-          reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
-        });
       } else {
-        setAiEstimate(null);
+        // Gọi API công khai GET /api/v1/posts/{postId}
+        postService.getListingDetail(listing.id).then((detail) => {
+          if (detail?.aiSuggestedPrice) {
+            setAiEstimate({
+              suggestedPriceMin: Math.round(Number(detail.aiSuggestedPrice) * 0.9),
+              suggestedPriceMax: Math.round(Number(detail.aiSuggestedPrice) * 1.1),
+              confidenceScore: 0.95,
+              reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
+            });
+          }
+        }).catch(() => {});
+
+        if (listing.aiPriceEstimation) {
+          setAiEstimate({
+            suggestedPriceMin: listing.aiPriceEstimation.minVnd,
+            suggestedPriceMax: listing.aiPriceEstimation.maxVnd,
+            confidenceScore: 0.95,
+            reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
+          });
+        } else if (listing.aiSuggestedPrice && listing.aiSuggestedPrice > 0) {
+          setAiEstimate({
+            suggestedPriceMin: Math.round(Number(listing.aiSuggestedPrice) * 0.9),
+            suggestedPriceMax: Math.round(Number(listing.aiSuggestedPrice) * 1.1),
+            confidenceScore: 0.95,
+            reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
+          });
+        } else {
+          setAiEstimate(null);
+        }
       }
     }
-  }, [listing.id, isOwnListing, listing.aiSuggestedPrice, listing.aiPriceEstimation]);
+  }, [listing.id, isOwnListing, listing.aiSuggestedPrice, listing.aiPriceEstimation, lang]);
 
   const displayReviews = reviewsTab === 'product' ? productReviews : sellerReviews;
   const avgProductRating = productReviews.length > 0
@@ -393,7 +446,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                             <span className="text-[11px] font-black">
                               {realReputation?.score !== undefined && realReputation?.score !== null
                                 ? realReputation.score
-                                : sellerTrust.trustScore}
+                                : '--'}
                             </span>
                             <span className="text-[9px] text-white/70">/100</span>
                           </div>
@@ -407,8 +460,8 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                     {/* View Seller Reviews Trigger */}
                     <div className="pt-1.5 border-t border-amber-200/50 flex items-center justify-between text-[10px]">
                       <span className="text-slate-600">
-                        {lang === 'vi' ? 'Đạt chuẩn: ' : 'Pass rate: '}
-                        <strong className="text-emerald-700">{sellerTrust.hubPassRate}%</strong>
+                        {lang === 'vi' ? 'Đơn hoàn thành: ' : 'Completed: '}
+                        <strong className="text-emerald-700">{realReputation?.evaluatedOrders ?? 0} đơn</strong>
                       </span>
 
                       <button
@@ -425,15 +478,80 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
 
                 {/* Action Buttons */}
                 {isOwnListing ? (
-                  <div className="space-y-1.5 pt-1">
-                    <div className="w-full py-2.5 px-3 bg-blue-50 text-blue-800 rounded-xl font-bold text-xs text-center border border-blue-200 flex items-center justify-center gap-1.5">
-                      <Info className="w-4 h-4 text-blue-600 shrink-0" />
-                      <span>
-                        {lang === 'vi'
-                          ? 'Đây là sản phẩm do chính bạn đăng bán'
-                          : 'This is your own listing'}
-                      </span>
+                  <div className="space-y-2 pt-1">
+                    <div className="w-full py-2.5 px-3 bg-blue-50/90 text-blue-900 rounded-xl font-bold text-xs border border-blue-200/90 space-y-1.5">
+                      <div className="flex items-center justify-between flex-wrap gap-1.5">
+                        <span className="flex items-center gap-1.5 font-black text-blue-800 text-xs">
+                          <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                          <span>
+                            {lang === 'vi'
+                              ? 'Đây là sản phẩm do chính bạn đăng bán'
+                              : 'This is your own listing'}
+                          </span>
+                        </span>
+                        {/* Status badge */}
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-md shadow-2xs ${
+                          effectiveStatus === 'ACTIVE'
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : effectiveStatus === 'RESERVED' || effectiveStatus === 'PAYMENT_PENDING'
+                            ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                            : effectiveStatus === 'SOLD'
+                            ? 'bg-indigo-100 text-indigo-800 border border-indigo-300'
+                            : effectiveStatus === 'REJECTED'
+                            ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                            : effectiveStatus === 'DRAFT'
+                            ? 'bg-slate-100 text-slate-700 border border-slate-300'
+                            : 'bg-purple-100 text-purple-800 border border-purple-300'
+                        }`}>
+                          {effectiveStatus === 'ACTIVE'
+                            ? (lang === 'vi' ? '● Đang Niêm Yết' : '● Active')
+                            : effectiveStatus === 'RESERVED' || effectiveStatus === 'PAYMENT_PENDING'
+                            ? (lang === 'vi' ? '● Đã Đặt Mua / Ký Quỹ' : '● Reserved')
+                            : effectiveStatus === 'SOLD'
+                            ? (lang === 'vi' ? '● Đã Bán' : '● Sold')
+                            : effectiveStatus === 'REJECTED'
+                            ? (lang === 'vi' ? '● Bị Từ Chối' : '● Rejected')
+                            : effectiveStatus === 'DRAFT'
+                            ? (lang === 'vi' ? '● Bản Nháp' : '● Draft')
+                            : (lang === 'vi' ? '● Chờ Duyệt Hub' : '● Pending')}
+                        </span>
+                      </div>
+
+                      {effectiveCreditCharged && (
+                        <div className="text-[10.5px] text-emerald-700 font-semibold flex items-center gap-1 pt-0.5">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                          <span>{lang === 'vi' ? '✓ Đã trừ 1 lượt đăng bài (Listing credit)' : '✓ Listing credit charged'}</span>
+                        </div>
+                      )}
+
+                      {isLoadingSellerDetail && (
+                        <div className="flex items-center gap-1.5 text-[10px] text-blue-700 font-medium pt-0.5">
+                          <Loader2 className="w-3 h-3 animate-spin text-blue-600" />
+                          <span>{lang === 'vi' ? 'Đang đồng bộ chi tiết mới nhất từ server...' : 'Syncing latest details from server...'}</span>
+                        </div>
+                      )}
                     </div>
+
+                    {/* Rejection reason alert */}
+                    {effectiveRejectionReason && (
+                      <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-rose-900">
+                          <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                          <span>{lang === 'vi' ? 'Lý do kiểm duyệt từ chối:' : 'Rejection reason:'}</span>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-rose-700 pl-5">
+                          {effectiveRejectionReason}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Error message */}
+                    {sellerDetailError && (
+                      <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>{sellerDetailError}</span>
+                      </div>
+                    )}
                   </div>
                 ) : isAdmin ? (
                   <div className="space-y-1.5 pt-1">
@@ -517,6 +635,71 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
             </div>
           )}
 
+          {/* Thông Số Kiện Hàng Vận Chuyển (Shipping & Package Specifications) */}
+          <div className="rounded-xl bg-[#faf8f5] p-3 border border-gray-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <div className="w-6 h-6 rounded-md bg-[#24263e] text-white flex items-center justify-center shadow-xs font-bold text-xs shrink-0">
+                  <Truck className="w-3.5 h-3.5" />
+                </div>
+                <h3 className="text-xs font-black text-[#24263e]">
+                  {lang === 'vi' ? 'Thông Số Kiện Hàng Vận Chuyển' : 'Shipping Package Specifications'}
+                </h3>
+              </div>
+              <span className="text-[10px] text-slate-500 font-medium">
+                {lang === 'vi' ? 'Đo lường đóng gói' : 'Packaged dimensions'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <div className="bg-white rounded-lg p-2.5 border border-gray-200 shadow-2xs space-y-0.5">
+                <span className="text-[10.5px] text-slate-500 block font-medium">
+                  {lang === 'vi' ? 'Trọng lượng kiện hàng:' : 'Package Weight:'}
+                </span>
+                <div className="font-bold text-[#24263e] text-xs sm:text-sm font-mono">
+                  {effectiveWeight != null && effectiveWeight > 0 ? (
+                    <span>
+                      {(effectiveWeight / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} kg{' '}
+                      <span className="text-slate-400 font-normal text-xs font-sans">({effectiveWeight.toLocaleString('vi-VN')} g)</span>
+                    </span>
+                  ) : (
+                    <span className="text-slate-400 font-medium text-xs italic font-sans">
+                      {lang === 'vi' ? 'Chưa cập nhật' : 'Not updated'}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg p-2.5 border border-gray-200 shadow-2xs space-y-0.5">
+                <span className="text-[10.5px] text-slate-500 block font-medium">
+                  {lang === 'vi' ? 'Kích thước kiện (Dài × Rộng × Cao):' : 'Dimensions (L × W × H):'}
+                </span>
+                <div className="font-bold text-[#24263e] text-xs sm:text-sm font-mono">
+                  {effectiveLength != null && effectiveWidth != null && effectiveHeight != null &&
+                   effectiveLength > 0 && effectiveWidth > 0 && effectiveHeight > 0 ? (
+                    <span>
+                      {effectiveLength} × {effectiveWidth} × {effectiveHeight} cm
+                    </span>
+                  ) : (
+                    <span className="text-slate-400 font-medium text-xs italic font-sans">
+                      {lang === 'vi' ? 'Chưa cập nhật' : 'Not updated'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {effectiveSellerAddress && isOwnListing && (
+              <div className="text-[11px] text-slate-600 bg-white p-2 rounded-lg border border-gray-200 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-[#c34c36] shrink-0" />
+                <span className="text-slate-500">{lang === 'vi' ? 'Địa chỉ hồ sơ người bán:' : 'Seller profile address:'}</span>
+                <span className="font-semibold text-slate-800 truncate" title={effectiveSellerAddress}>
+                  {effectiveSellerAddress}
+                </span>
+              </div>
+            )}
+          </div>
+
           {/* Description */}
           <div className="space-y-1.5">
             <h3 className="font-black text-[#24263e] uppercase tracking-wider text-[10px]">
@@ -527,9 +710,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                 <CheckCircle2 className="w-3 h-3 text-[#24263e]" />
                 <span>{listing.declaredConditionText}</span>
               </div>
-              <p className="whitespace-pre-line text-xs text-[#24263e]">
-                {cleanDisplayDescription(listing.description)}
-              </p>
+              <MarkdownContent content={cleanDisplayDescription(listing.description)} />
             </div>
           </div>
 

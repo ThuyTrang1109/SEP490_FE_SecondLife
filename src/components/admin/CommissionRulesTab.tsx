@@ -562,7 +562,7 @@ export const CommissionRulesTab: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSaveRule} className="space-y-3.5 text-xs">
+            <form onSubmit={handleSaveRule} noValidate className="space-y-3.5 text-xs">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">
                   Tên Chính Sách <span className="text-rose-500">*</span>
@@ -625,7 +625,7 @@ export const CommissionRulesTab: React.FC = () => {
                   <input
                     type="number"
                     min="0"
-                    step="1000"
+                    step="any"
                     required
                     value={formMinCommission}
                     onChange={(e) => setFormMinCommission(e.target.value)}
@@ -642,7 +642,7 @@ export const CommissionRulesTab: React.FC = () => {
                   <input
                     type="number"
                     min="0"
-                    step="1000"
+                    step="any"
                     value={formMaxCommission}
                     onChange={(e) => setFormMaxCommission(e.target.value)}
                     placeholder="Để trống nếu không giới hạn"

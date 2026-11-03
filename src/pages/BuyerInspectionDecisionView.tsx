@@ -11,6 +11,7 @@ import {
   Calendar,
   MapPin,
   User,
+  Store,
   Phone,
   QrCode,
   FileCheck,
@@ -33,6 +34,7 @@ interface BuyerInspectionDecisionViewProps {
   orderId?: string;
   order?: EscrowOrder | null;
   currentUser?: UserProfile | null;
+  userRole?: string;
   lang?: Language;
   onBack: () => void;
   onSuccess?: () => void;
@@ -44,6 +46,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   orderId,
   order,
   currentUser,
+  userRole,
   lang = 'vi',
   onBack,
   onSuccess,
@@ -90,16 +93,55 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     return () => { isMounted = false; };
   }, [effectiveOrderId]);
 
+  // Status & Role Resolution
+  const backendStatus = String(inspectionDto?.status || (order as any)?.backendStatus || order?.status || '').toUpperCase();
+  const escrowStatus = String(order?.escrowStatus || '').toUpperCase();
+
+  const isPassed = inspectionDto?.status === 'PASSED' || escrowStatus === 'INSPECTION_PASSED' || backendStatus === 'PASSED';
+  const isFailed = inspectionDto?.status === 'FAILED' || escrowStatus === 'INSPECTION_FAILED' || backendStatus === 'FAILED';
+  const isInspecting = escrowStatus === 'INSPECTION_IN_PROGRESS' || backendStatus === 'INSPECTING';
+  const isPending = !isPassed && !isFailed && !isInspecting;
+
+  const currentUserId = String(currentUser?.id || '').trim().toLowerCase();
+  const currentUserName = String(currentUser?.name || (currentUser as any)?.fullName || '').trim().toLowerCase();
+  const currentUserEmail = String(currentUser?.email || '').trim().toLowerCase();
+
+  const orderSellerId = String(order?.sellerId || order?.listing?.sellerId || (order?.listing as any)?.userId || (order?.listing as any)?.user?.id || inspectionDto?.sellerId || '').trim().toLowerCase();
+  const orderSellerName = String(order?.sellerName || order?.listing?.sellerName || (order?.listing as any)?.seller?.name || (order?.listing as any)?.user?.fullName || inspectionDto?.sellerName || '').trim().toLowerCase();
+  const orderSellerEmail = String((order as any)?.sellerEmail || (order?.listing as any)?.sellerEmail || (order?.listing as any)?.user?.email || inspectionDto?.sellerEmail || '').trim().toLowerCase();
+
+  const isRoleSeller = (userRole && userRole.toLowerCase() === 'seller') ||
+    String(currentUser?.role || '').toLowerCase() === 'seller' ||
+    (Array.isArray((currentUser as any)?.roles) && (currentUser as any).roles.some((r: string) => String(r).toUpperCase().includes('SELLER')));
+
+  const isUserSeller = Boolean(
+    isRoleSeller ||
+    (currentUserId && orderSellerId && currentUserId === orderSellerId) ||
+    (currentUserEmail && orderSellerEmail && currentUserEmail === orderSellerEmail) ||
+    (currentUserName && orderSellerName && (
+      currentUserName === orderSellerName ||
+      orderSellerName.includes(currentUserName) ||
+      currentUserName.includes(orderSellerName)
+    ))
+  );
+
   // Merge data between backend DTO and frontend order prop
   const postTitle = inspectionDto?.postTitle || order?.listing?.title || 'Thiết bị công nghệ / gia dụng';
   const postPrice = inspectionDto?.finalItemPrice || inspectionDto?.postPrice || order?.listing?.priceVnd || order?.itemPriceVnd || 0;
   const postImage = inspectionDto?.postImageUrl || inspectionDto?.postImageUrls?.[0] || order?.listing?.photos?.front || 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=800';
-  const centerName = 'Trung Tâm Giám Định SecondLife Hub Lab';
-  const inspectorName = inspectionDto?.inspectorName || order?.inspectionReport?.inspectorName || 'Kỹ Thuật Viên Trưởng SecondLife (Level 4)';
-  const tamperSealId = inspectionDto?.tamperSealId || order?.inspectionReport?.tamperSealId || `SL-SEAL-${(effectiveOrderId || '').slice(0, 6).toUpperCase()}`;
-  const conditionGrade = inspectionDto?.conditionGrade || order?.listing?.conditionGrade || 'Like New';
-  const conditionScore = inspectionDto?.conditionScore || 96;
-  const isPassed = inspectionDto?.status === 'PASSED' || order?.escrowStatus === 'INSPECTION_PASSED' || (order as any)?.backendStatus === 'PASSED';
+  const centerName = (inspectionDto as any)?.centerName || order?.inspectionCenterName || 'Trung Tâm Giám Định SecondLife Hub Lab';
+  const inspectorName = isPassed || isFailed || isInspecting
+    ? (inspectionDto?.inspectorName || order?.inspectionReport?.inspectorName || 'Kỹ Thuật Viên Trưởng SecondLife')
+    : 'Chưa phân công KTV';
+  const tamperSealId = isPassed
+    ? (inspectionDto?.tamperSealId || order?.inspectionReport?.tamperSealId || `SL-SEAL-${(effectiveOrderId || '').slice(0, 6).toUpperCase()}`)
+    : 'Chưa dán tem (Chờ nghiệm thu)';
+  const conditionGrade = isPassed
+    ? (inspectionDto?.conditionGrade || order?.listing?.conditionGrade || 'Like New')
+    : (isFailed ? 'Không Đạt' : 'Chờ thẩm định');
+  const conditionScore = isPassed
+    ? (inspectionDto?.conditionScore || order?.inspectionReport?.conditionScore || null)
+    : null;
   const inspectionFeePaid = inspectionDto?.buyerFeeShare || order?.inspectionFeeVnd || 120000;
   const shippingFeePaid = inspectionDto?.shippingFee || order?.shippingFeeVnd || 30000;
   const finalPriceToPay = postPrice;
@@ -113,6 +155,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   });
 
   useEffect(() => {
+    if (!isPassed) return;
     const calculateTimeRemaining = () => {
       if (!inspectionDto?.finalPaymentDeadline) {
         return { hours: 6, minutes: 0, seconds: 0, isExpired: false };
@@ -134,13 +177,14 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
       setTimeLeft(calculateTimeRemaining());
     }, 1000);
     return () => clearInterval(timer);
-  }, [inspectionDto?.finalPaymentDeadline]);
+  }, [inspectionDto?.finalPaymentDeadline, isPassed]);
 
-  // Parse checklist results
+  // Parse checklist results - TUYỆT ĐỐI KHÔNG dùng mock data khi chưa kiểm định
   const checklistItems = useMemo(() => {
-    if (inspectionDto?.checklistResultJson) {
+    const jsonStr = inspectionDto?.checklistResultJson || (order?.inspectionReport as any)?.checklistResultJson || (order?.inspectionReport as any)?.checklistResults;
+    if (jsonStr) {
       try {
-        const parsed = JSON.parse(inspectionDto.checklistResultJson);
+        const parsed = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
         if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed.map((item: any, idx: number) => ({
             id: String(item.itemId || idx),
@@ -152,17 +196,9 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
       } catch {}
     }
 
-    // Default high-grade checklist
-    return [
-      { id: 'screen', title: 'Màn hình cảm ứng & Hiển thị OLED/LCD', status: 'PASSED', note: 'Không điểm chết, độ sáng đồng đều, cảm ứng mượt 100%' },
-      { id: 'board', title: 'Bo mạch chủ & Chipset vi xử lý', status: 'PASSED', note: 'Mainboard nguyên bản, chưa qua khò hàn hoặc câu dây' },
-      { id: 'battery', title: 'Hiệu năng Pin & Chu kỳ sạc', status: 'PASSED', note: 'Dung lượng thực tế 91%, không phồng rộp, sạc nhanh ổn định' },
-      { id: 'cameras', title: 'Hệ thống Camera & Cảm biến quang học', status: 'PASSED', note: 'Thấu kính trong suốt, chống rung OIS và lấy nét chuẩn xác' },
-      { id: 'housing', title: 'Khung vỏ, Khớp gập & Bản lề cơ khí', status: 'PASSED', note: 'Trầy xước viền siêu nhỏ dưới 2%, không cấn móp thân máy' },
-      { id: 'security', title: 'Bảo mật sinh trắc học (FaceID / Vân tay)', status: 'PASSED', note: 'Nhận diện nhạy bén trong 0.2 giây, an toàn tuyệt đối' },
-      { id: 'connectivity', title: 'Kết nối mạng Wifi, Bluetooth, Loa & Mic', status: 'PASSED', note: 'Loa thoại trong trẻo, mic lọc tiếng ồn tốt, bắt sóng khỏe' }
-    ];
-  }, [inspectionDto]);
+    // Nếu chưa kiểm định thực tế thì danh sách rỗng, để giao diện hiển thị trạng thái đang chờ
+    return [];
+  }, [inspectionDto, order?.inspectionReport]);
 
   // Handle Confirm Final Purchase
   const handleConfirmPurchase = async () => {
@@ -307,7 +343,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-slate-100/50 to-white pb-16 font-sans animate-fadeIn">
       {/* Top Header Bar */}
       <div className="bg-white/90 backdrop-blur-md sticky top-0 z-30 border-b border-slate-200/80 px-4 sm:px-6 py-3.5 shadow-xs">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+        <div className="w-full px-3 sm:px-5 lg:px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <button
               onClick={onBack}
@@ -317,33 +353,57 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Đơn kiểm định</span>
                 <span className="text-xs font-mono font-bold text-slate-700">#{effectiveOrderId.slice(0, 12).toUpperCase()}</span>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                  <span>KẾT QUẢ: ĐẠT CHUẨN (PASSED)</span>
-                </span>
+                {isPassed && (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    <span>KẾT QUẢ: ĐẠT CHUẨN (PASSED)</span>
+                  </span>
+                )}
+                {isFailed && (
+                  <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-extrabold flex items-center gap-1">
+                    <XCircle className="w-3 h-3 text-rose-600" />
+                    <span>KẾT QUẢ: KHÔNG ĐẠT (FAILED)</span>
+                  </span>
+                )}
+                {isInspecting && (
+                  <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-extrabold flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-blue-600 animate-spin" />
+                    <span>ĐANG THẨM ĐỊNH TẠI HUB/TẠI NHÀ</span>
+                  </span>
+                )}
+                {isPending && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-extrabold flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-amber-600" />
+                    <span>CHƯA KIỂM ĐỊNH • CHỜ TIẾP NHẬN</span>
+                  </span>
+                )}
               </div>
               <h1 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
-                Biên Bản Thẩm Định Kỹ Thuật & Quyết Định Mua Hàng
+                {isUserSeller
+                  ? 'Kênh Người Bán • Chi Tiết Trạng Thái Kiểm Định'
+                  : 'Biên Bản Thẩm Định Kỹ Thuật & Quyết Định Mua Hàng'}
               </h1>
             </div>
           </div>
 
-          {/* 6-hour countdown pill */}
-          <div className="hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold shadow-xs">
-            <Clock className="w-4 h-4 text-amber-600 animate-pulse shrink-0" />
-            <span>Hạn chốt quyết định:</span>
-            <span className="font-mono font-extrabold text-[#c34c36]">
-              {String(timeLeft.hours).padStart(2, '0')}:{String(timeLeft.minutes).padStart(2, '0')}:{String(timeLeft.seconds).padStart(2, '0')}
-            </span>
-          </div>
+          {/* 6-hour countdown pill (chỉ hiện khi đã ĐẠT và là người mua) */}
+          {isPassed && !isUserSeller && (
+            <div className="hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold shadow-xs">
+              <Clock className="w-4 h-4 text-amber-600 animate-pulse shrink-0" />
+              <span>Hạn chốt quyết định:</span>
+              <span className="font-mono font-extrabold text-[#c34c36]">
+                {String(timeLeft.hours).padStart(2, '0')}:{String(timeLeft.minutes).padStart(2, '0')}:{String(timeLeft.seconds).padStart(2, '0')}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Main Container */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
+      <div className="w-full px-3 sm:px-5 lg:px-6 pt-6 space-y-6">
 
         {/* Alert notification if any */}
         {alertNotice && (
@@ -364,41 +424,85 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
           </div>
         )}
 
-        {/* Decision Banner Announcement */}
-        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-emerald-600 via-teal-600 to-[#24263e] text-white shadow-xl relative overflow-hidden">
-          <div className="absolute right-0 top-0 bottom-0 w-96 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent_70%)] pointer-events-none" />
-          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="space-y-2 max-w-2xl">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-bold border border-white/30">
-                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                <span>Quy trình bảo lãnh giao dịch 2 giai đoạn SecondLife Escrow</span>
+        {/* Decision Banner Announcement - CHỈ HIỆN KHI ĐÃ ĐẠT VÀ LÀ NGƯỜI MUA */}
+        {isPassed && !isUserSeller ? (
+          <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-emerald-600 via-teal-600 to-[#24263e] text-white shadow-xl relative overflow-hidden">
+            <div className="absolute right-0 top-0 bottom-0 w-96 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent_70%)] pointer-events-none" />
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="space-y-2 max-w-2xl">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-bold border border-white/30">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Quy trình bảo lãnh giao dịch 2 giai đoạn SecondLife Escrow</span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                  Sản phẩm đã vượt qua bài kiểm định kỹ thuật!
+                </h2>
+                <p className="text-xs sm:text-sm text-emerald-50 leading-relaxed">
+                  Bạn đã thanh toán trước phí kiểm định & tiền ship. Bây giờ hãy xem kỹ biên bản thẩm định từ Kỹ thuật viên. Bạn có toàn quyền <strong>Xác nhận mua tiếp</strong> (để thanh toán tiền sản phẩm) hoặc <strong>Từ chối mua</strong> (sản phẩm sẽ được hoàn trả cho người bán).
+                </p>
               </div>
-              <h2 className="text-xl sm:text-2xl font-black tracking-tight">
-                Sản phẩm đã vượt qua bài kiểm định kỹ thuật 7 tiêu chí!
-              </h2>
-              <p className="text-xs sm:text-sm text-emerald-50 leading-relaxed">
-                Bạn đã thanh toán trước phí kiểm định & tiền ship. Bây giờ hãy xem kỹ biên bản thẩm định từ Kỹ thuật viên. Bạn có toàn quyền <strong>Xác nhận mua tiếp</strong> (để thanh toán tiền sản phẩm) hoặc <strong>Từ chối mua</strong> (sản phẩm sẽ được hoàn trả cho người bán).
-              </p>
-            </div>
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-              <button
-                onClick={() => setShowRejectModal(true)}
-                className="px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs sm:text-sm border border-white/25 transition cursor-pointer flex items-center justify-center gap-2 shadow-sm"
-              >
-                <XCircle className="w-4 h-4 text-red-300" />
-                <span>Từ Chối Mua Tiếp</span>
-              </button>
-              <button
-                onClick={() => setShowConfirmModal(true)}
-                className="px-6 py-3 rounded-2xl bg-white hover:bg-emerald-50 text-emerald-950 font-black text-xs sm:text-sm shadow-lg transition cursor-pointer flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98]"
-              >
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Xác Nhận Mua Hàng ({formatVND(finalPriceToPay)})</span>
-              </button>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+                <button
+                  onClick={() => setShowRejectModal(true)}
+                  className="px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs sm:text-sm border border-white/25 transition cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+                >
+                  <XCircle className="w-4 h-4 text-red-300" />
+                  <span>Từ Chối Mua Tiếp</span>
+                </button>
+                <button
+                  onClick={() => setShowConfirmModal(true)}
+                  className="px-6 py-3 rounded-2xl bg-white hover:bg-emerald-50 text-emerald-950 font-black text-xs sm:text-sm shadow-lg transition cursor-pointer flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>Xác Nhận Mua Hàng ({formatVND(finalPriceToPay)})</span>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        ) : isUserSeller ? (
+          /* Banner thông báo dành riêng cho Người bán */
+          <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-slate-800 via-indigo-900 to-[#24263e] text-white shadow-xl relative overflow-hidden">
+            <div className="relative z-10 space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-bold border border-white/30">
+                <Store className="w-3.5 h-3.5 text-indigo-300" />
+                <span>Kênh Người Bán • Theo Dõi Đơn Kiểm Định</span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                {isPassed
+                  ? 'Sản phẩm đã được KTV kiểm định ĐẠT CHUẨN!'
+                  : isFailed
+                  ? 'Sản phẩm kiểm định không đạt tiêu chuẩn kỹ thuật'
+                  : 'Sản phẩm đang trong tiến trình kiểm định'}
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-200 leading-relaxed max-w-3xl">
+                {isPassed
+                  ? 'Khách mua đang có tối đa 6 giờ để xem biên bản kỹ thuật và thanh toán tiền hàng (Giai đoạn 2). Sau khi khách thanh toán xong, hệ thống sẽ mở nút để bạn bàn giao sản phẩm cho tài xế.'
+                  : isFailed
+                  ? 'Đơn hàng kiểm định không đạt. Sản phẩm sẽ được thu xếp hoàn trả về địa chỉ của bạn.'
+                  : 'Kỹ thuật viên đang tiếp nhận và kiểm định máy. Vui lòng theo dõi cập nhật biên bản trên hệ thống.'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          /* Banner thông báo dành cho Người mua khi CHƯA CÓ KẾT QUẢ ĐẠT */
+          <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-amber-600 via-orange-600 to-[#24263e] text-white shadow-xl relative overflow-hidden">
+            <div className="relative z-10 space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-bold border border-white/30">
+                <Clock className="w-3.5 h-3.5 text-amber-200" />
+                <span>{isInspecting ? 'Đang Kiểm Định Kỹ Thuật' : 'Chờ Tiếp Nhận Thẩm Định'}</span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                {isInspecting
+                  ? 'Kỹ thuật viên đang kiểm định thiết bị thực tế'
+                  : 'Đang chờ Người bán xác nhận & KTV tiếp nhận máy'}
+              </h2>
+              <p className="text-xs sm:text-sm text-amber-50 leading-relaxed max-w-3xl">
+                Bạn đã hoàn tất nộp cọc Giai đoạn 1 (phí kiểm định & vận chuyển). Tiền sản phẩm ({formatVND(finalPriceToPay)}) vẫn được giữ an toàn. Bạn chỉ cần quyết định mua tiếp sau khi Kỹ thuật viên kiểm tra xong và xuất biên bản ĐẠT CHUẨN.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Grid Layout: 2 Columns */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -491,25 +595,39 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               {/* Tab 1: Checklist items */}
               {activeReportTab === 'checklist' && (
                 <div className="space-y-2.5">
-                  {checklistItems.map((chk, idx) => (
-                    <div
-                      key={chk.id || idx}
-                      className="p-3.5 rounded-2xl border border-slate-100 hover:border-emerald-200 bg-slate-50/50 hover:bg-emerald-50/20 transition flex items-start justify-between gap-3"
-                    >
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                          <span className="text-xs font-bold text-slate-900">{chk.title}</span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 pl-6 leading-relaxed">
-                          {chk.note}
-                        </p>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-extrabold uppercase shrink-0">
-                        {chk.status}
-                      </span>
+                  {checklistItems.length === 0 ? (
+                    <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 space-y-2">
+                      <FileCheck className="w-10 h-10 text-slate-400 mx-auto" />
+                      <p className="text-sm font-bold text-slate-800">Chưa có dữ liệu kiểm định linh kiện thực tế</p>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                        {isPending
+                          ? 'Đơn hàng đang chờ người bán xác nhận và điều phối Kỹ thuật viên tiếp nhận máy. Sau khi KTV thực hiện kiểm tra thực tế, chi tiết từng hạng mục sẽ hiển thị tại đây.'
+                          : isInspecting
+                          ? 'Kỹ thuật viên đang trong quá trình đo đạc và kiểm tra thiết bị tại Hub/tại nhà.'
+                          : 'Biên bản kiểm tra kỹ thuật chưa được cập nhật.'}
+                      </p>
                     </div>
-                  ))}
+                  ) : (
+                    checklistItems.map((chk, idx) => (
+                      <div
+                        key={chk.id || idx}
+                        className="p-3.5 rounded-2xl border border-slate-100 hover:border-emerald-200 bg-slate-50/50 hover:bg-emerald-50/20 transition flex items-start justify-between gap-3"
+                      >
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span className="text-xs font-bold text-slate-900">{chk.title}</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 pl-6 leading-relaxed">
+                            {chk.note}
+                          </p>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-extrabold uppercase shrink-0">
+                          {chk.status}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
 
@@ -521,22 +639,22 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       Kết luận tổng thể của Kỹ thuật viên
                     </span>
                     <blockquote className="italic text-slate-700 text-xs sm:text-sm leading-relaxed border-l-2 border-emerald-600 pl-3">
-                      "{inspectionDto?.note || order?.inspectionReport?.summaryNotes || 'Thiết bị hoạt động hoàn hảo mọi tính năng. Màn hình nguyên bản, cảm ứng mượt mà. Khung vỏ có vết xước siêu nhỏ khó nhìn thấy. Đã dán tem niêm phong bảo đảm và niêm phong trong hộp đóng gói chuyên dụng.'}"
+                      "{inspectionDto?.note || order?.inspectionReport?.summaryNotes || (isPassed ? 'Thiết bị đạt toàn bộ tiêu chuẩn kỹ thuật sau khi kiểm định.' : isFailed ? 'Thiết bị không đạt yêu cầu kiểm định.' : 'Chưa có nhận xét kiểm định từ kỹ thuật viên.')}"
                     </blockquote>
                   </div>
 
                   <div className="grid grid-cols-3 gap-3 text-center">
                     <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
                       <span className="text-[10px] text-slate-400 block font-semibold">Độ nguyên bản</span>
-                      <strong className="text-sm font-black text-slate-900">100% Main Zin</strong>
+                      <strong className="text-sm font-black text-slate-900">{isPassed ? 'Đạt chuẩn' : 'Chờ kiểm định'}</strong>
                     </div>
                     <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
                       <span className="text-[10px] text-slate-400 block font-semibold">Tình trạng pin</span>
-                      <strong className="text-sm font-black text-emerald-600">91% Tốt</strong>
+                      <strong className="text-sm font-black text-emerald-600">{isPassed ? 'Đạt chuẩn' : 'Chờ kiểm định'}</strong>
                     </div>
                     <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
                       <span className="text-[10px] text-slate-400 block font-semibold">Điểm đánh giá</span>
-                      <strong className="text-sm font-black text-[#c34c36]">{conditionScore}/100</strong>
+                      <strong className="text-sm font-black text-[#c34c36]">{conditionScore ? `${conditionScore}/100` : 'Chưa có'}</strong>
                     </div>
                   </div>
                 </div>
@@ -618,10 +736,18 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-amber-950 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Giai đoạn 2 (Thanh toán để chốt mua):</span>
+                    <span>Giai đoạn 2 (Tiền sản phẩm):</span>
                   </span>
-                  <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-extrabold">
-                    CHỜ BẠN DUYỆT
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                    isPassed && !isUserSeller
+                      ? 'bg-amber-100 text-amber-900 animate-pulse'
+                      : isUserSeller
+                      ? 'bg-indigo-100 text-indigo-900'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    {isPassed
+                      ? (isUserSeller ? 'CHỜ NGƯỜI MUA CHỐT' : 'CHỜ BẠN DUYỆT')
+                      : (isUserSeller ? 'CHỜ KTV KIỂM ĐỊNH' : 'CHƯA MỞ THANH TOÁN')}
                   </span>
                 </div>
                 <div className="space-y-1 text-xs text-slate-700 pl-5">
@@ -634,69 +760,120 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     <span className="font-semibold text-emerald-700">Miễn phí (Tài xế Hub giao)</span>
                   </div>
                   <div className="flex justify-between pt-2 border-t border-amber-200/80 font-black text-sm text-[#24263e]">
-                    <span>Tổng tiền cần thanh toán ngay:</span>
+                    <span>Tổng tiền thanh toán giai đoạn 2:</span>
                     <span className="text-base font-black text-[#c34c36]">{formatVND(finalPriceToPay)}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Wallet Balance Status */}
-              <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/80 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-slate-200 flex items-center justify-center font-bold text-slate-700">
-                    <Wallet className="w-4 h-4" />
+              {/* Wallet Balance Status (chỉ hiện cho người mua khi đã Đạt và cần thanh toán) */}
+              {!isUserSeller && isPassed && (
+                <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/80 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-slate-200 flex items-center justify-center font-bold text-slate-700">
+                      <Wallet className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 block font-semibold">Số dư Ví SecondLife</span>
+                      <span className="font-mono font-bold text-slate-900">{formatVND(currentWalletBal)}</span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-[10px] text-slate-500 block font-semibold">Số dư Ví SecondLife</span>
-                    <span className="font-mono font-bold text-slate-900">{formatVND(currentWalletBal)}</span>
-                  </div>
-                </div>
-                {isWalletSufficient ? (
-                  <span className="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[11px] font-bold">
-                    Đủ số dư
-                  </span>
-                ) : (
-                  <div className="flex items-center gap-1.5">
-                    <span className="px-2 py-1 rounded-lg bg-amber-100 text-amber-800 text-[11px] font-bold">
-                      Thiếu {formatVND(finalPriceToPay - currentWalletBal)}
+                  {isWalletSufficient ? (
+                    <span className="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[11px] font-bold">
+                      Đủ số dư
                     </span>
-                    {onOpenTopUp && (
-                      <button
-                        type="button"
-                        onClick={onOpenTopUp}
-                        className="px-2.5 py-1 rounded-lg bg-[#c34c36] hover:bg-[#a83c28] text-white text-[11px] font-bold cursor-pointer transition shadow-2xs"
-                      >
-                        Nạp ngay
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-1 rounded-lg bg-amber-100 text-amber-800 text-[11px] font-bold">
+                        Thiếu {formatVND(finalPriceToPay - currentWalletBal)}
+                      </span>
+                      {onOpenTopUp && (
+                        <button
+                          type="button"
+                          onClick={onOpenTopUp}
+                          className="px-2.5 py-1 rounded-lg bg-[#c34c36] hover:bg-[#a83c28] text-white text-[11px] font-bold cursor-pointer transition shadow-2xs"
+                        >
+                          Nạp ngay
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
-              {/* Action Buttons */}
+              {/* Action Buttons: Phân quyền rành mạch giữa Người bán và Người mua */}
               <div className="space-y-3 pt-2">
-                <button
-                  onClick={() => setShowConfirmModal(true)}
-                  disabled={isSubmitting}
-                  className="w-full py-4 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-sm shadow-lg shadow-emerald-600/20 transition cursor-pointer flex flex-col items-center justify-center gap-0.5 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-5 h-5 text-white" />
-                    <span>XÁC NHẬN MUA TIẾP & TRẢ TIỀN SẢN PHẨM</span>
+                {isUserSeller ? (
+                  /* 1. GÓC NHÌN NGƯỜI BÁN: Tuyệt đối không có nút mua hay thanh toán */
+                  <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-950 space-y-3">
+                    <div className="flex items-center gap-2 font-bold text-indigo-900 text-sm">
+                      <Store className="w-4 h-4 text-indigo-600" />
+                      <span>Góc Nhìn Người Bán</span>
+                    </div>
+                    <p className="text-xs text-indigo-800 leading-relaxed">
+                      {isPassed
+                        ? 'Sản phẩm của bạn đã được KTV kiểm định ĐẠT CHUẨN. Khách mua đang có tối đa 6 giờ để thanh toán tiền sản phẩm (GĐ 2). Khi khách hoàn tất, hệ thống sẽ mở nút Giao Hàng để bạn chuyển cho tài xế.'
+                        : isFailed
+                        ? 'Sản phẩm kiểm định không đạt tiêu chuẩn kỹ thuật. Đơn hàng đã dừng và tiền cọc giai đoạn 1 đã được hoàn theo quy định.'
+                        : 'Sản phẩm đang trong quá trình tiếp nhận & kiểm định thực tế. Bạn không thể tự mua lại sản phẩm của chính mình.'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={onBack}
+                      className="w-full py-3 rounded-xl bg-[#24263e] hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      <span>Quay Lại Quản Lý Đơn Bán Hàng</span>
+                    </button>
                   </div>
-                  <span className="text-[11px] font-medium text-emerald-100">
-                    Trừ {formatVND(finalPriceToPay)} từ ví Escrow • Khởi tạo giao hàng
-                  </span>
-                </button>
+                ) : !isPassed ? (
+                  /* 2. GÓC NHÌN NGƯỜI MUA KHI CHƯA ĐẠT: Không cho bấm thanh toán sớm */
+                  <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 space-y-3">
+                    <div className="flex items-center gap-2 font-bold text-amber-900 text-sm">
+                      <Clock className="w-4 h-4 text-amber-600" />
+                      <span>Chưa Có Quyết Định Mua (Chờ KTV Hoàn Tất Thẩm Định)</span>
+                    </div>
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      {isFailed
+                        ? 'Sản phẩm không đạt chuẩn kiểm định. Đơn hàng đã kết thúc và tiền cọc giai đoạn 1 đã được hoàn về ví Escrow của bạn.'
+                        : 'Sản phẩm chưa có biên bản thẩm định đạt từ Kỹ thuật viên. Nút thanh toán tiền mua hàng (Giai đoạn 2) sẽ tự động mở khi KTV kiểm tra xong và xuất biên bản ĐẠT CHUẨN.'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={onBack}
+                      className="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      <span>Quay Lại Danh Sách Đơn Hàng</span>
+                    </button>
+                  </div>
+                ) : (
+                  /* 3. GÓC NHÌN NGƯỜI MUA KHI ĐÃ ĐẠT: Mở nút chốt mua tiếp hoặc từ chối */
+                  <>
+                    <button
+                      onClick={() => setShowConfirmModal(true)}
+                      disabled={isSubmitting || timeLeft.isExpired}
+                      className="w-full py-4 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-sm shadow-lg shadow-emerald-600/20 transition cursor-pointer flex flex-col items-center justify-center gap-0.5 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-5 h-5 text-white" />
+                        <span>XÁC NHẬN MUA TIẾP & TRẢ TIỀN SẢN PHẨM</span>
+                      </div>
+                      <span className="text-[11px] font-medium text-emerald-100">
+                        Trừ {formatVND(finalPriceToPay)} từ ví Escrow • Khởi tạo giao hàng
+                      </span>
+                    </button>
 
-                <button
-                  onClick={() => setShowRejectModal(true)}
-                  disabled={isSubmitting}
-                  className="w-full py-3 px-4 rounded-2xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 hover:text-red-600 hover:border-red-300 font-bold text-xs sm:text-sm transition cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <XCircle className="w-4 h-4 text-slate-400 group-hover:text-red-500" />
-                  <span>Từ Chối Mua Tiếp / Hủy Đơn (Báo Cho Người Bán)</span>
-                </button>
+                    <button
+                      onClick={() => setShowRejectModal(true)}
+                      disabled={isSubmitting}
+                      className="w-full py-3 px-4 rounded-2xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 hover:text-red-600 hover:border-red-300 font-bold text-xs sm:text-sm transition cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <XCircle className="w-4 h-4 text-slate-400 group-hover:text-red-500" />
+                      <span>Từ Chối Mua Tiếp / Hủy Đơn (Báo Cho Người Bán)</span>
+                    </button>
+                  </>
+                )}
               </div>
 
               {/* Policy note */}

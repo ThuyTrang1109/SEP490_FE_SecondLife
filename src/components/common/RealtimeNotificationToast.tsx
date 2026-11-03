@@ -141,8 +141,8 @@ export const RealtimeNotificationToast: React.FC<RealtimeNotificationToastProps>
   };
 
   return (
-    <div className="fixed bottom-5 right-5 z-[999999] max-w-sm w-full pointer-events-none p-3 sm:p-0">
-      <div className="p-4 rounded-3xl bg-[#24263e] border border-white/25 shadow-2xl text-white space-y-2.5 pointer-events-auto animate-slideUp ring-2 ring-white/10">
+    <div className="fixed top-24 sm:top-28 right-4 sm:right-6 lg:right-8 z-[999999] max-w-sm w-full pointer-events-none p-3 sm:p-0">
+      <div className="p-4 rounded-3xl bg-[#24263e] border border-white/25 shadow-2xl text-white space-y-2.5 pointer-events-auto animate-in fade-in slide-in-from-top-3 ring-2 ring-white/10">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-2xl bg-white/10 border border-white/15 shrink-0">

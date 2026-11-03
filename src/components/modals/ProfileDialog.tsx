@@ -37,6 +37,8 @@ import {
   PlusCircle,
   Eye,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { UserProfile, UserRole, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
@@ -60,11 +62,19 @@ import {
   userReportService,
   UserReportResponseDto,
 } from '../../services';
+import {
+  reputationService,
+  SellerReputationDto,
+  ReputationHistoryDto,
+  getAssessmentStatusMeta,
+  getReputationWarningMeta,
+  getReputationEventMeta,
+} from '../../services/reputationService';
 import { LiveFaceScannerModal, VnptEkycResultData } from './LiveFaceScannerModal';
 import { saveSellerAddress, extractWardAndCity, getSavedSellerAddress, cleanFullAddress, formatCombinedAddress } from '../../utils/addressUtils';
 import { LalamoveAddressPicker } from '../common/LalamoveAddressPicker';
 
-export type ProfileTab = 'info' | 'wallet' | 'kyc' | 'reports' | 'security' | 'settings';
+export type ProfileTab = 'info' | 'reputation' | 'wallet' | 'kyc' | 'reports' | 'security' | 'settings';
 
 const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 const isStrongPassword = (pass: string): boolean => {
@@ -236,6 +246,61 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       fetchWalletAndEscrow();
     }
   }, [isOpen, fetchWalletAndEscrow]);
+
+  // Reputation State (GET /api/v1/seller/reputation/me & /history)
+  const [reputationData, setReputationData] = useState<SellerReputationDto | null>(null);
+  const [isLoadingReputation, setIsLoadingReputation] = useState(false);
+  const [reputationHistory, setReputationHistory] = useState<ReputationHistoryDto[]>([]);
+  const [isLoadingReputationHistory, setIsLoadingReputationHistory] = useState(false);
+  const [reputationHistoryPage, setReputationHistoryPage] = useState(0);
+  const [reputationHistoryTotalPages, setReputationHistoryTotalPages] = useState(1);
+  const [reputationHistoryTotalElements, setReputationHistoryTotalElements] = useState(0);
+
+  const fetchReputation = useCallback(async () => {
+    setIsLoadingReputation(true);
+    try {
+      const rep = await reputationService.getMyReputation();
+      if (rep) {
+        setReputationData(rep);
+      } else if (currentUser?.id) {
+        const fallback = await reputationService.getSellerReputation(currentUser.id);
+        if (fallback) setReputationData(fallback);
+      }
+    } catch (err) {
+      console.warn('Lỗi tải thông tin uy tín:', err);
+    } finally {
+      setIsLoadingReputation(false);
+    }
+  }, [currentUser]);
+
+  const fetchReputationHistory = useCallback(async (page = 0) => {
+    setIsLoadingReputationHistory(true);
+    try {
+      const res = await reputationService.getMyReputationHistory(page, 10);
+      setReputationHistory(res.items || []);
+      setReputationHistoryPage(res.page || 0);
+      setReputationHistoryTotalPages(res.totalPages || 1);
+      setReputationHistoryTotalElements(res.totalElements || 0);
+    } catch (err) {
+      console.warn('Lỗi tải lịch sử uy tín:', err);
+    } finally {
+      setIsLoadingReputationHistory(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchReputation();
+    }
+  }, [isOpen, fetchReputation]);
+
+  useEffect(() => {
+    if (activeTab === 'reputation') {
+      fetchReputation();
+      fetchReputationHistory(0);
+    }
+  }, [activeTab, fetchReputation, fetchReputationHistory]);
+
 
   // Reports State (GET /api/v1/reports/me & GET /api/v1/reports/{id})
   const [myReports, setMyReports] = useState<UserReportResponseDto[]>([]);
@@ -1893,11 +1958,22 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <ShieldCheck className="w-4 h-4 text-emerald-600" />
                     <span>{lang === 'vi' ? 'eKYC: Đã Xác Thực CCCD' : 'eKYC: ID Verified'}</span>
                   </button>
-                  <div className="inline-flex items-center gap-1.5 bg-amber-50/90 text-slate-800 px-3.5 py-1.5 rounded-xl border border-amber-200/80 text-xs shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('reputation')}
+                    title={lang === 'vi' ? 'Xem chi tiết Điểm Uy Tín' : 'View Trust Score Details'}
+                    className="inline-flex items-center gap-1.5 bg-amber-50/90 hover:bg-amber-100 text-slate-800 px-3.5 py-1.5 rounded-xl border border-amber-200/80 text-xs shadow-2xs transition active:scale-95 cursor-pointer"
+                  >
                     <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
                     <span>{lang === 'vi' ? 'Điểm Uy Tín: ' : 'Trust Score: '}</span>
-                    <strong className="font-black text-amber-700">99/100</strong>
-                  </div>
+                    <strong className="font-black text-amber-700">
+                      {reputationData?.score !== undefined && reputationData?.score !== null
+                        ? `${reputationData.score}/100`
+                        : reputationData?.assessmentStatus === 'NO_TRANSACTIONS'
+                        ? (lang === 'vi' ? 'Mới' : 'New')
+                        : '--/100'}
+                    </strong>
+                  </button>
                 </div>
               )}
             </div>
@@ -1916,6 +1992,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 >
                   <User className={`w-4 h-4 shrink-0 ${activeTab === 'info' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
                   <span>{lang === 'vi' ? 'Cá Nhân' : 'Profile'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('reputation')}
+                  className={`flex-1 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+                    activeTab === 'reputation'
+                      ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                  }`}
+                >
+                  <Star className={`w-4 h-4 shrink-0 ${activeTab === 'reputation' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                  <span>{lang === 'vi' ? 'Điểm Uy Tín' : 'Reputation'}</span>
                 </button>
 
                 <button
@@ -2274,6 +2363,345 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               )}
             </form>
           )}
+
+          {/* TAB: ĐIỂM UY TÍN NGƯỜI DÙNG (SELLER REPUTATION & TRUST METRICS) */}
+          {activeTab === 'reputation' && (
+            <div className="space-y-6 animate-in fade-in duration-150">
+              {/* Header Box / Hero Banner */}
+              <div className="bg-gradient-to-br from-[#24263e] via-[#1a1c30] to-[#24263e] p-6 rounded-3xl text-white shadow-xl relative overflow-hidden">
+                <div className="absolute -right-8 -bottom-8 w-44 h-44 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-400 to-amber-600 text-white flex items-center justify-center text-3xl shadow-lg shadow-amber-500/30 shrink-0">
+                      ⭐
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2.5">
+                        <h3 className="text-lg sm:text-xl font-black text-white tracking-tight">
+                          {lang === 'vi' ? 'Hồ Sơ Điểm Uy Tín Người Dùng' : 'User Reputation Profile'}
+                        </h3>
+                        <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-white/15 text-amber-300 font-mono font-extrabold border border-white/10">
+                          {reputationData?.formulaVersion || 'V3 Standard'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 mt-1 max-w-xl leading-relaxed">
+                        {lang === 'vi'
+                          ? 'Chỉ số được hệ thống tự động thẩm định dựa trên tỷ lệ giao dịch thành công (GOOD/BAD), tốc độ xác nhận đơn 24h và uy tín khi xử lý đơn hàng.'
+                          : 'Calculated automatically based on completed transactions, 24h confirmation speed, and fulfillment compliance.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Big Score Callout */}
+                  <div className="flex items-center gap-4 bg-white/10 backdrop-blur-md px-5 py-3.5 rounded-2xl border border-white/15 shrink-0 self-start md:self-auto">
+                    <div className="text-right">
+                      <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">
+                        {lang === 'vi' ? 'Điểm Tổng Thể' : 'Overall Score'}
+                      </span>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-3xl font-black text-amber-300 font-mono tracking-tight">
+                          {reputationData?.score !== null && reputationData?.score !== undefined
+                            ? reputationData.score
+                            : '--'}
+                        </span>
+                        <span className="text-xs text-white/60 font-bold">/ 100</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        fetchReputation();
+                        fetchReputationHistory(0);
+                      }}
+                      disabled={isLoadingReputation}
+                      className="p-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white transition active:scale-95 cursor-pointer disabled:opacity-50"
+                      title={lang === 'vi' ? 'Làm mới dữ liệu uy tín' : 'Refresh reputation'}
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isLoadingReputation ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sub-status & Assessment Badge */}
+                <div className="mt-5 pt-4 border-t border-white/15 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-slate-300 font-medium">Trạng thái thẩm định:</span>
+                    <span className={`px-2.5 py-1 rounded-xl text-xs font-bold border ${getAssessmentStatusMeta(reputationData?.assessmentStatus).badgeClass}`}>
+                      {getAssessmentStatusMeta(reputationData?.assessmentStatus).label}
+                    </span>
+                    <span className="text-slate-400 text-[11px] hidden sm:inline">
+                      • {getAssessmentStatusMeta(reputationData?.assessmentStatus).desc}
+                    </span>
+                  </div>
+
+                  {reputationData?.updatedAt && (
+                    <span className="text-slate-400 text-[11px] font-mono">
+                      Cập nhật: {new Date(reputationData.updatedAt).toLocaleTimeString('vi-VN')} {new Date(reputationData.updatedAt).toLocaleDateString('vi-VN')}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Warning Banner if any */}
+              {reputationData?.sellingRestricted && (
+                <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h5 className="font-extrabold text-xs">Tài khoản đang bị hạn chế đăng bán sản phẩm mới</h5>
+                    <p className="text-[11px] text-rose-700 mt-0.5">
+                      Do vi phạm chính sách hoặc điểm phạt tích lũy vượt ngưỡng an toàn. Vui lòng liên hệ Quản trị viên để được hỗ trợ.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {reputationData?.warningCode && !reputationData?.sellingRestricted && (
+                <div className={`p-4 rounded-2xl border flex items-start gap-3 ${
+                  getReputationWarningMeta(reputationData.warningCode)?.severity === 'danger'
+                    ? 'bg-rose-50 border-rose-200 text-rose-800'
+                    : 'bg-amber-50 border-amber-200 text-amber-800'
+                }`}>
+                  <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+                  <div>
+                    <h5 className="font-extrabold text-xs">
+                      {getReputationWarningMeta(reputationData.warningCode)?.title}
+                    </h5>
+                    <p className="text-[11px] mt-0.5 opacity-90">
+                      {getReputationWarningMeta(reputationData.warningCode)?.desc}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* 6 Key Metrics Grid */}
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
+                {/* Metric 1: Điểm giao dịch */}
+                <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block">
+                    Điểm Giao Dịch
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xl sm:text-2xl font-black text-slate-800 font-mono">
+                      {reputationData?.transactionScore !== null && reputationData?.transactionScore !== undefined
+                        ? reputationData.transactionScore
+                        : '--'}
+                    </span>
+                    <span className="text-xs text-slate-400 font-bold">/100</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 block leading-tight">
+                    Tính từ tỷ lệ hoàn thành (100 × G / N)
+                  </span>
+                </div>
+
+                {/* Metric 2: Điểm phạt xác nhận đơn */}
+                <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block">
+                    Điểm Phạt Tích Lũy
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className={`text-xl sm:text-2xl font-black font-mono ${
+                      (reputationData?.confirmationPenaltyPoints ?? 0) > 0 ? 'text-rose-600' : 'text-slate-800'
+                    }`}>
+                      - {reputationData?.confirmationPenaltyPoints ?? 0}
+                    </span>
+                    <span className="text-xs text-slate-400 font-bold">điểm</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 block leading-tight">
+                    Phạt do chậm xác nhận đơn quá 24h/48h
+                  </span>
+                </div>
+
+                {/* Metric 3: Tổng số đơn đánh giá */}
+                <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block">
+                    Đơn Hàng Đánh Giá
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xl sm:text-2xl font-black text-slate-800 font-mono">
+                      {reputationData?.evaluatedOrders ?? 0}
+                    </span>
+                    <span className="text-xs text-slate-400 font-bold">đơn (N)</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 block leading-tight">
+                    Mốc tối thiểu BE: {reputationData?.minimumEvaluatedOrders ?? 5} đơn
+                  </span>
+                </div>
+
+                {/* Metric 4: Giao dịch thành công (GOOD) */}
+                <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
+                  <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wide block">
+                    Thành Công (GOOD)
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xl sm:text-2xl font-black text-emerald-700 font-mono">
+                      {reputationData?.goodTransactions ?? 0}
+                    </span>
+                    <span className="text-xs text-slate-400 font-bold">đơn</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 block leading-tight">
+                    Đơn hoàn tất và giải ngân ký quỹ
+                  </span>
+                </div>
+
+                {/* Metric 5: Giao dịch có lỗi (BAD) */}
+                <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
+                  <span className="text-[11px] font-bold text-rose-600 uppercase tracking-wide block">
+                    Lỗi Người Bán (BAD)
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xl sm:text-2xl font-black text-rose-600 font-mono">
+                      {reputationData?.badTransactions ?? 0}
+                    </span>
+                    <span className="text-xs text-slate-400 font-bold">đơn</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 block leading-tight">
+                    Hủy: {reputationData?.sellerCancellationOrders ?? 0} • Trả: {reputationData?.sellerReturnFaultOrders ?? 0}
+                  </span>
+                </div>
+
+                {/* Metric 6: Tỷ lệ bàn giao trễ */}
+                <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block">
+                    Tỷ Lệ Bàn Giao Trễ
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xl sm:text-2xl font-black text-slate-800 font-mono">
+                      {reputationData?.lateHandoverRate !== null && reputationData?.lateHandoverRate !== undefined
+                        ? `${reputationData.lateHandoverRate}%`
+                        : '0%'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 block leading-tight">
+                    {reputationData?.lateHandoverOrders ?? 0}/{reputationData?.handoverEvaluatedOrders ?? 0} đơn có hẹn
+                  </span>
+                </div>
+              </div>
+
+              {/* Reputation History Table */}
+              <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                  <div>
+                    <h4 className="font-extrabold text-sm text-[#24263e] flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-[#c34c36]" />
+                      <span>{lang === 'vi' ? 'Lịch Sử Biến Động Điểm Uy Tín' : 'Reputation History'}</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Ghi nhận chi tiết từng sự kiện cộng/trừ điểm và thay đổi mẫu giao dịch
+                    </p>
+                  </div>
+                  <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+                    Tổng: {reputationHistoryTotalElements} bản ghi
+                  </span>
+                </div>
+
+                {isLoadingReputationHistory ? (
+                  <div className="py-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
+                    <Loader2 className="w-6 h-6 animate-spin text-[#c34c36]" />
+                    <span className="text-xs font-medium">Đang tải lịch sử uy tín từ máy chủ...</span>
+                  </div>
+                ) : reputationHistory.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 space-y-2">
+                    <Star className="w-10 h-10 text-slate-300 mx-auto" />
+                    <p className="text-xs font-semibold text-slate-600">Chưa ghi nhận sự kiện biến động điểm nào</p>
+                    <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                      Điểm uy tín sẽ tự động ghi nhận khi bạn có đơn hàng hoàn thành thành công hoặc phát sinh sự cố giao dịch.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50/80 border-b border-slate-100 text-[11px] text-slate-500 font-extrabold uppercase tracking-wider">
+                        <tr>
+                          <th className="py-3 px-4">Thời Gian</th>
+                          <th className="py-3 px-4">Sự Kiện</th>
+                          <th className="py-3 px-4">Mã Đơn</th>
+                          <th className="py-3 px-4 text-center">Điểm Trước / Sau</th>
+                          <th className="py-3 px-4 text-center">Phạt Tăng</th>
+                          <th className="py-3 px-4">Lý Do</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                        {reputationHistory.map((item) => {
+                          const eventMeta = getReputationEventMeta(item.eventType);
+                          const penaltyIncrease = (item.penaltyAfter ?? 0) - (item.penaltyBefore ?? 0);
+                          return (
+                            <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-3 px-4 text-slate-500 whitespace-nowrap font-mono text-[11px]">
+                                {new Date(item.createdAt).toLocaleString('vi-VN')}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                                  eventMeta.type === 'positive'
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    : eventMeta.type === 'negative'
+                                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                    : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                }`}>
+                                  {eventMeta.label}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 font-mono text-[11px] text-slate-600">
+                                {item.orderId ? `#${String(item.orderId).slice(0, 8)}...` : '--'}
+                              </td>
+                              <td className="py-3 px-4 text-center whitespace-nowrap font-mono font-bold">
+                                {item.scoreBefore !== null && item.scoreBefore !== undefined ? item.scoreBefore : '--'}
+                                <span className="text-slate-400 mx-1.5">→</span>
+                                <span className={
+                                  (item.scoreAfter ?? 0) < (item.scoreBefore ?? 0) ? 'text-rose-600' : 'text-emerald-600'
+                                }>
+                                  {item.scoreAfter !== null && item.scoreAfter !== undefined ? item.scoreAfter : '--'}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-center font-mono font-bold">
+                                {penaltyIncrease > 0 ? (
+                                  <span className="text-rose-600">+{penaltyIncrease}đ</span>
+                                ) : (
+                                  <span className="text-slate-400">0</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 text-slate-600 max-w-xs truncate text-[11px]">
+                                {item.reason || eventMeta.desc}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Pagination Controls */}
+                {reputationHistoryTotalPages > 1 && (
+                  <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <span className="text-slate-500 font-medium">
+                      Trang {reputationHistoryPage + 1} / {reputationHistoryTotalPages}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => fetchReputationHistory(reputationHistoryPage - 1)}
+                        disabled={reputationHistoryPage <= 0 || isLoadingReputationHistory}
+                        className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 disabled:opacity-40 text-slate-700 font-bold transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <span>Trang trước</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fetchReputationHistory(reputationHistoryPage + 1)}
+                        disabled={reputationHistoryPage >= reputationHistoryTotalPages - 1 || isLoadingReputationHistory}
+                        className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 disabled:opacity-40 text-slate-700 font-bold transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>Trang sau</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
 
           {/* TAB 2: VÍ ESCROW & TÀI KHOẢN NGÂN HÀNG */}
           {activeTab === 'wallet' && (
@@ -3895,23 +4323,25 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             >
               {lang === 'vi' ? 'Đóng' : 'Close'}
             </button>
-            <button
-              onClick={handleSave}
-              disabled={isSaving}
-              className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              {isSaving ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>{lang === 'vi' ? 'Đang lưu...' : 'Saving...'}</span>
-                </>
-              ) : (
-                <>
-                  <Save className="w-3.5 h-3.5" />
-                  <span>{lang === 'vi' ? 'Lưu Hồ Sơ' : 'Save Profile'}</span>
-                </>
-              )}
-            </button>
+            {activeTab !== 'reputation' && (
+              <button
+                onClick={handleSave}
+                disabled={isSaving}
+                className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>{lang === 'vi' ? 'Đang lưu...' : 'Saving...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5" />
+                    <span>{lang === 'vi' ? 'Lưu Hồ Sơ' : 'Save Profile'}</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
 

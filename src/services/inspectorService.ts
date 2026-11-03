@@ -174,6 +174,20 @@ export interface InspectionFeeProposalResponse {
   reviewedAt?: string;
 }
 
+export type InspectionAppealStatus = 'NONE' | 'PENDING_REVIEW' | 'UPHELD' | 'OVERTURNED';
+
+export interface InspectionAppealRequest {
+  reason: string;
+  evidenceUrls?: string[];
+  contestedItemIds?: string[];
+  note?: string;
+}
+
+export interface ReviewInspectionAppealRequest {
+  decision: 'UPHELD' | 'OVERTURNED';
+  resolutionNote: string;
+}
+
 export interface ProposeTravelTiersRequest {
   categoryId?: string;
   baseInspectionFee: number;
@@ -243,6 +257,16 @@ export interface InspectionOrderDto {
 
   initialDepositPaid?: number;
   finalPaymentRequired?: boolean;
+
+  appealDeadline?: string;
+  appealStatus?: InspectionAppealStatus | string;
+  appealReason?: string;
+  appealEvidenceJson?: string;
+  appealResolvedAt?: string;
+  appealResolvedById?: string;
+  appealResolvedByName?: string;
+  reputationPenaltyApplied?: boolean;
+  reputationPenaltyPoints?: number;
 
   address?: string;
   sellerAddress?: string;
@@ -552,6 +576,41 @@ export const inspectorService = {
   /**
    * Quét mã QR tra cứu và xác thực thông tin tem niêm phong
    */
+  /**
+   * Người bán nộp khiếu nại kết quả kiểm định FAILED trong 24h
+   */
+  async submitAppeal(orderId: string, data: InspectionAppealRequest): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspection/orders/${orderId}/appeal`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Người bán tự nguyện chấp nhận kết quả FAILED (hệ thống trừ điểm uy tín ngay)
+   */
+  async acceptFailedResult(orderId: string): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspection/orders/${orderId}/accept-failed`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Quản lý Trung tâm / Admin xét duyệt khiếu nại kiểm định (UPHELD / OVERTURNED)
+   */
+  async reviewAppeal(orderId: string, data: ReviewInspectionAppealRequest): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspector-center/orders/${orderId}/review-appeal`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
   async getSealVerification(tamperSealId: string): Promise<InspectionSealVerificationResponse> {
     const res = await request<InspectionSealVerificationResponse>(`/inspection/seal/${encodeURIComponent(tamperSealId)}`, {
       method: 'GET',

@@ -190,11 +190,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       sessionStorage.setItem(ADMIN_TAB_STORAGE_KEY, activeTab);
     } catch (e) { }
     const currentUrl = new URL(window.location.href);
-    if (activeTab && activeTab !== 'overview') {
-      currentUrl.searchParams.set('subtab', activeTab);
-    } else {
-      currentUrl.searchParams.delete('subtab');
-    }
+    currentUrl.searchParams.delete('subtab');
+    currentUrl.searchParams.delete('tab');
+    currentUrl.searchParams.delete('tap');
     if (currentUrl.toString() !== window.location.href) {
       window.history.replaceState(null, '', currentUrl.toString());
     }
@@ -1970,7 +1968,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* TAB: CATALOG & AI */}
           {/* ======================================================== */}
           {activeTab === 'catalog-ai' && (
-            <div className="max-w-7xl mx-auto animate-fadeIn">
+            <div className="w-full animate-fadeIn">
               <CatalogAiTab lang={lang} />
             </div>
           )}

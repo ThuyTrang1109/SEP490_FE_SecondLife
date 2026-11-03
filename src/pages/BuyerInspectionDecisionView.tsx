@@ -343,7 +343,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-slate-100/50 to-white pb-16 font-sans animate-fadeIn">
       {/* Top Header Bar */}
       <div className="bg-white/90 backdrop-blur-md sticky top-0 z-30 border-b border-slate-200/80 px-4 sm:px-6 py-3.5 shadow-xs">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+        <div className="w-full px-3 sm:px-5 lg:px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <button
               onClick={onBack}
@@ -403,7 +403,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
       </div>
 
       {/* Main Container */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
+      <div className="w-full px-3 sm:px-5 lg:px-6 pt-6 space-y-6">
 
         {/* Alert notification if any */}
         {alertNotice && (

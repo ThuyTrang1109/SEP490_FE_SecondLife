@@ -1968,7 +1968,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* TAB: CATALOG & AI */}
           {/* ======================================================== */}
           {activeTab === 'catalog-ai' && (
-            <div className="max-w-7xl mx-auto animate-fadeIn">
+            <div className="w-full animate-fadeIn">
               <CatalogAiTab lang={lang} />
             </div>
           )}

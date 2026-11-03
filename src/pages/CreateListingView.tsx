@@ -2611,7 +2611,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-20 px-4 sm:px-6">
+    <div className="w-full space-y-6 pb-20 px-3 sm:px-5 lg:px-6">
       {/* Top Banner: Credit Status Bar & Navigation */}
       <div className="bg-[#24263e] text-white rounded-3xl p-5 shadow-lg border border-slate-700 flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-4">

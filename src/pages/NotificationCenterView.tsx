@@ -319,7 +319,7 @@ export const NotificationCenterView: React.FC<NotificationCenterViewProps> = ({
 
   return (
     <div className="min-h-screen bg-[#faf8f5] py-8 px-4 sm:px-6 lg:px-8 text-slate-900 animate-fadeIn">
-      <div className="max-w-5xl mx-auto space-y-6">
+      <div className="w-full space-y-6">
         {/* Breadcrumb & Title */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-gray-200">
           <div>

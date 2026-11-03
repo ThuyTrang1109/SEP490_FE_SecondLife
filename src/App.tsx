@@ -650,6 +650,7 @@ export default function App() {
   const [chatPartnerName, setChatPartnerName] = useState<string | undefined>(undefined);
   const [chatPartnerAvatar, setChatPartnerAvatar] = useState<string | undefined>(undefined);
   const [chatRoom, setChatRoom] = useState<ChatRoomDto | undefined>(undefined);
+  const [unreadChatsCount, setUnreadChatsCount] = useState<number>(0);
   const [sellerReviewsModalData, setSellerReviewsModalData] = useState<{ sellerId: string; sellerName: string } | null>(null);
   const [reportingOrderForDispute, setReportingOrderForDispute] = useState<EscrowOrder | null>(null);
 
@@ -2879,7 +2880,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col font-sans bg-[#faf8f5] text-[#24263e] selection:bg-[#c34c36] selection:text-white">
+    <div className={`min-h-screen flex flex-col font-sans bg-[#faf8f5] text-[#24263e] selection:bg-[#c34c36] selection:text-white ${
+      activeTab === 'chat' ? 'h-screen max-h-screen overflow-hidden' : ''
+    }`}>
       {/* Navigation */}
       {activeTab !== 'admin-dashboard' &&
         activeTab !== 'inspection-center' &&
@@ -2898,6 +2901,7 @@ export default function App() {
             handleTabChange(tab);
           }}
           activeOrdersCount={orders.filter((o) => o.escrowStatus !== 'COMPLETED_RELEASED').length}
+          unreadChatsCount={unreadChatsCount}
           currentUser={currentUser}
           onOpenAuth={(mode) => {
             setAuthModalMode(mode);
@@ -2961,13 +2965,15 @@ export default function App() {
       {/* Main Content Area */}
       <main
         className={
-          activeTab === 'admin-dashboard' ||
-          activeTab === 'inspection-center' ||
-          activeTab === 'inspection-hub' ||
-          activeTab === 'staff-workspace' ||
-          activeTab === 'buyer-inspection-decision'
+          activeTab === 'chat'
+            ? 'flex-1 min-h-0 w-full p-2 sm:p-2.5 m-0 overflow-hidden flex flex-col'
+            : activeTab === 'admin-dashboard' ||
+              activeTab === 'inspection-center' ||
+              activeTab === 'inspection-hub' ||
+              activeTab === 'staff-workspace' ||
+              activeTab === 'buyer-inspection-decision'
             ? 'flex-1 w-full p-0 m-0'
-            : 'flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6'
+            : 'flex-1 w-full px-3 sm:px-5 lg:px-6 pt-3 sm:pt-4 pb-8 m-0'
         }
       >
         <Suspense fallback={<ViewLoadingFallback />}>
@@ -3115,7 +3121,10 @@ export default function App() {
             onRefreshOrders={() => loadUserOrders(true)}
             lang={lang}
             userRole={currentRole}
-            onOpenChat={(listing) => setChatListing(listing)}
+            onOpenChat={(listing) => {
+              setChatListing(listing);
+              handleTabChange('chat');
+            }}
             onOpenInspectionDecision={(ord) => {
               setInspectionDecisionOrder(ord);
               setInspectionDecisionOrderId(ord.id);
@@ -3137,7 +3146,10 @@ export default function App() {
               loadUserOrders(true);
               handleTabChange('orders');
             }}
-            onOpenChat={(listing) => setChatListing(listing)}
+            onOpenChat={(listing) => {
+              setChatListing(listing);
+              handleTabChange('chat');
+            }}
             onOpenTopUp={() => setIsTopUpModalOpen(true)}
           />
         )}
@@ -3211,16 +3223,25 @@ export default function App() {
             currentRole={currentRole}
             currentUser={currentUser}
             lang={lang}
-            onOpenChat={(listing, roomId, partnerName, partnerAvatar, room) => {
+            initialListing={chatListing}
+            initialRoomId={chatPredefinedRoomId}
+            initialPartnerName={chatPartnerName}
+            initialPartnerAvatar={chatPartnerAvatar}
+            initialRoom={chatRoom}
+            onBuyClick={(item, agreedPrice, negotiationId) => {
               if (!currentUser) {
-                requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để sử dụng tính năng Chat & Đàm phán.' : 'Please log in to chat.');
+                setPendingCheckoutItem(item);
+                requireAuth(undefined, lang === 'vi'
+                  ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
+                  : 'Please log in to purchase with Escrow protection.');
                 return;
               }
-              setChatListing(listing);
-              setChatPredefinedRoomId(roomId);
-              setChatPartnerName(partnerName);
-              setChatPartnerAvatar(partnerAvatar);
-              setChatRoom(room);
+              setCheckoutAgreedPrice(agreedPrice);
+              setCheckoutNegotiationId(negotiationId);
+              setCheckoutListing(item);
+            }}
+            onOpenSellerReviews={(sellerId, sellerName) => {
+              setSellerReviewsModalData({ sellerId, sellerName });
             }}
           />
         )}
@@ -3294,11 +3315,13 @@ export default function App() {
                 showToast(lang === 'vi' ? 'Bạn không thể tự chat hoặc thương lượng với chính mình.' : 'You cannot chat with yourself.');
                 return;
               }
+              setSelectedListing(null);
               setChatListing(item);
               setChatPredefinedRoomId(undefined);
               setChatPartnerName(item.sellerName);
               setChatPartnerAvatar(item.sellerAvatar);
               setChatRoom(undefined);
+              handleTabChange('chat');
             }}
             onOpenSellerReviews={(sellerId, sellerName) => {
               setSellerReviewsModalData({ sellerId, sellerName });
@@ -3354,46 +3377,7 @@ export default function App() {
           />
         )}
 
-        {/* Chat & Negotiation Modal */}
-        {chatListing && (
-          <ChatModal
-            listing={chatListing}
-            predefinedRoomId={chatPredefinedRoomId}
-            partnerName={chatPartnerName}
-            partnerAvatar={chatPartnerAvatar}
-            initialRoom={chatRoom}
-            currentUser={currentUser}
-            currentRole={currentRole}
-            onClose={() => {
-              setChatListing(null);
-              setChatPredefinedRoomId(undefined);
-              setChatPartnerName(undefined);
-              setChatPartnerAvatar(undefined);
-              setChatRoom(undefined);
-            }}
-            onBuyClick={(item, agreedPrice, negotiationId) => {
-              if (!currentUser) {
-                setPendingCheckoutItem(item);
-                requireAuth(undefined, lang === 'vi'
-                  ? 'Vui lòng đăng nhập để tiến hành mua hàng bảo đảm Escrow và kiểm định Hub.'
-                  : 'Please log in to purchase with Escrow protection.');
-                return;
-              }
-              setChatListing(null);
-              setChatPredefinedRoomId(undefined);
-              setChatPartnerName(undefined);
-              setChatPartnerAvatar(undefined);
-              setChatRoom(undefined);
-              setCheckoutAgreedPrice(agreedPrice);
-              setCheckoutNegotiationId(negotiationId);
-              setCheckoutListing(item);
-            }}
-            onOpenSellerReviews={(sellerId, sellerName) => {
-              setSellerReviewsModalData({ sellerId, sellerName });
-            }}
-            lang={lang}
-          />
-        )}
+{/* ChatModal popup has been replaced by the dedicated full-page Messenger chat view */}
 
         {/* Seller Reviews & Trust Modal Popup */}
         {sellerReviewsModalData && (
@@ -3622,7 +3606,7 @@ export default function App() {
       />
 
       {/* E-Commerce Footer */}
-      {activeTab !== 'admin-dashboard' && activeTab !== 'inspection-hub' && activeTab !== 'inspection-center' && activeTab !== 'staff-workspace' && (
+      {activeTab !== 'admin-dashboard' && activeTab !== 'inspection-hub' && activeTab !== 'inspection-center' && activeTab !== 'staff-workspace' && activeTab !== 'chat' && (
         <Footer
           lang={lang}
           currentRole={currentRole}

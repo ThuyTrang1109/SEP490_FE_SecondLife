@@ -5,8 +5,10 @@ import { request, getAccessToken } from './apiClient';
 export interface ChatRoomDto {
   id: string;
   postId: string;
-  postTitle?: string;
-  postImageUrl?: string;
+  postTitle?: string | null;
+  postImageUrl?: string | null;
+  postPrice?: number | null;
+  postStatus?: string | null;
   buyerId: string;
   buyerName?: string;
   buyerAvatar?: string;
@@ -36,7 +38,7 @@ export interface SystemOfferPayload {
   type: 'OFFER';
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
   price: number;
-  negotiationId: string;
+  negotiationId?: string;
   senderRole?: 'buyer' | 'seller';
 }
 

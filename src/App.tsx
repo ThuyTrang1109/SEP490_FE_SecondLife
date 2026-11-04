@@ -1,3 +1,4 @@
+import { isValidUUID, isSellerOfferId } from './utils/negotiationHelper';
 import React, { useState, lazy, Suspense, useRef, useCallback, useEffect } from 'react';
 import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit, ItemCategory, ConditionGrade, EscrowStatus, InspectionReport } from './types';
 import { formatVND } from './utils/translations';
@@ -1888,10 +1889,28 @@ export default function App() {
             shippingQuoteId: bOrd.shippingQuoteId,
             shippingDeliveredAt: bOrd.shippingDeliveredAt,
             deliveryAddress: bOrd.deliveryAddress,
-            sellerConfirmedAt: bOrd.sellerConfirmedAt || null,
+            sellerConfirmedAt: (() => {
+              const inspStatusUpper = String(bOrd.status || (bOrd as any).backendStatus || '').toUpperCase();
+              const isInspConfirmedBySeller = isInspectionOrder && (
+                bOrd.sellerConsentZin === true ||
+                (Boolean(inspStatusUpper) && !['WAITING_SELLER_APPROVAL', 'PENDING'].includes(inspStatusUpper))
+              );
+              return isInspConfirmedBySeller
+                ? (bOrd.sellerPaidAt || bOrd.updatedAt || bOrd.createdAt || new Date().toISOString())
+                : (bOrd.sellerConfirmedAt || null);
+            })(),
             confirmationDeadline: bOrd.confirmationDeadline || null,
             confirmationCancelAt: bOrd.confirmationCancelAt || null,
-            confirmationStatus: bOrd.confirmationStatus || (bOrd.sellerConfirmedAt ? 'CONFIRMED' : 'PENDING'),
+            confirmationStatus: (() => {
+              const inspStatusUpper = String(bOrd.status || (bOrd as any).backendStatus || '').toUpperCase();
+              const isInspConfirmedBySeller = isInspectionOrder && (
+                bOrd.sellerConsentZin === true ||
+                (Boolean(inspStatusUpper) && !['WAITING_SELLER_APPROVAL', 'PENDING'].includes(inspStatusUpper))
+              );
+              return isInspConfirmedBySeller
+                ? 'CONFIRMED'
+                : (bOrd.confirmationStatus || (bOrd.sellerConfirmedAt ? 'CONFIRMED' : 'PENDING'));
+            })(),
             sellerReadyAt: (bOrd as any).sellerReadyAt || null,
             carrierPickedUpAt: (bOrd as any).carrierPickedUpAt || null,
             handoverDeadline: (bOrd as any).handoverDeadline || null,
@@ -3236,8 +3255,9 @@ export default function App() {
                   : 'Please log in to purchase with Escrow protection.');
                 return;
               }
-              setCheckoutAgreedPrice(agreedPrice);
-              setCheckoutNegotiationId(negotiationId);
+              const isRealNego = negotiationId && isValidUUID(negotiationId) && !isSellerOfferId(negotiationId);
+              setCheckoutAgreedPrice(isRealNego ? agreedPrice : undefined);
+              setCheckoutNegotiationId(isRealNego ? negotiationId : undefined);
               setCheckoutListing(item);
             }}
             onOpenSellerReviews={(sellerId, sellerName) => {

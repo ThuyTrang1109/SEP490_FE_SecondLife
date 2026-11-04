@@ -1511,19 +1511,12 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     }
 
     if (
-      assignModalOrder.status === 'WAITING_FEE_PAYMENT' ||
       assignModalOrder.status === 'PASSED' ||
       assignModalOrder.status === 'FAILED' ||
       assignModalOrder.status === 'CANCELLED' ||
       assignModalOrder.status === 'COMPLETED'
     ) {
-      if (assignModalOrder.status === 'WAITING_FEE_PAYMENT') {
-        setAssignError(
-          'Đơn kiểm định này đang ở trạng thái "Chờ Người Mua Đóng Phí KĐ". Người mua cần vào mục Đơn hàng (/orders) bấm nút "Nộp Phí Kiểm Định" để nộp tiền cọc trước khi trung tâm có thể giao task.'
-        );
-      } else {
-        setAssignError(`Đơn kiểm định đang ở trạng thái "${assignModalOrder.status}", không thể phân công KTV.`);
-      }
+      setAssignError(`Đơn kiểm định đang ở trạng thái "${assignModalOrder.status}", không thể phân công KTV.`);
       return;
     }
 
@@ -2437,7 +2430,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                           )
                           .slice(0, 5)
                           .map((order, idx) => {
-                            const isReady = order.status !== 'WAITING_FEE_PAYMENT' && order.status !== 'WAITING_SELLER_APPROVAL';
+                            const isReady = order.status !== 'WAITING_SELLER_APPROVAL';
                             return (
                               <tr key={order.id} className="hover:bg-slate-50/60 transition">
                                 <td className="py-3 px-4 font-mono text-slate-400 text-[11px]">{idx + 1}</td>
@@ -4203,14 +4196,14 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               </div>
             </div>
 
-            {/* Warning if order is not ready for dispatch */}
+            {/* Info note if order is waiting fee payment */}
             {assignModalOrder.status === 'WAITING_FEE_PAYMENT' && (
-              <div className="p-3 bg-amber-50 rounded-xl border border-amber-300 text-xs text-amber-950 flex items-start gap-2.5">
-                <CreditCard className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="p-3 bg-blue-50 rounded-xl border border-blue-200 text-xs text-blue-950 flex items-start gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                 <div className="space-y-0.5">
-                  <div className="font-bold">Đơn hàng chưa hoàn tất nộp phí kiểm định</div>
-                  <p className="text-[11px] text-amber-800 leading-relaxed">
-                    Người mua cần thanh toán tiền cọc phí kiểm định & tiền ship trước khi trung tâm có thể giao task cho KTV. Khi người mua nộp phí thành công, đơn sẽ tự động chuyển sang trạng thái <strong>"Sẵn Sàng Giao KTV"</strong>.
+                  <div className="font-bold">Người bán đã đồng ý kiểm định</div>
+                  <p className="text-[11px] text-blue-800 leading-relaxed">
+                    Đơn hàng đã được xác nhận kiểm định và sẵn sàng bàn giao. Bạn có thể phân công Kỹ thuật viên tiếp nhận và khảo sát ngay.
                   </p>
                 </div>
               </div>
@@ -4322,10 +4315,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             {/* Footer Buttons */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-gray-100">
               <div className="text-[11px] text-gray-500 font-medium">
-                {assignModalOrder.status === 'WAITING_FEE_PAYMENT' ? (
-                  <span className="text-amber-700 font-semibold flex items-center gap-1">
+                {assignModalOrder.status === 'WAITING_SELLER_APPROVAL' ? (
+                  <span className="text-purple-700 font-semibold flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5" />
-                    Chờ người mua nộp phí kiểm định
+                    Chờ người bán duyệt
                   </span>
                 ) : !selectedInspectorId ? (
                   <span className="text-rose-600 font-semibold">
@@ -4354,21 +4347,13 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 <button
                   type="button"
                   onClick={handleConfirmAssign}
-                  disabled={isAssigning}
+                  disabled={isAssigning || !selectedInspectorId}
                   className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 cursor-pointer shadow-md ${
-                    isAssigning
+                    isAssigning || !selectedInspectorId
                       ? 'bg-gray-400 text-white cursor-not-allowed'
-                      : assignModalOrder.status !== 'CONFIRMED_PENDING_DISPATCH' && assignModalOrder.status !== 'PENDING'
-                      ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                      : !selectedInspectorId
-                      ? 'bg-gray-400 hover:bg-gray-500 text-white'
                       : 'bg-[#c34c36] hover:bg-[#a63f2d] text-white'
                   }`}
-                  title={
-                    assignModalOrder.status !== 'CONFIRMED_PENDING_DISPATCH' && assignModalOrder.status !== 'PENDING'
-                      ? 'Bấm để xem hướng dẫn hoàn tất nộp phí'
-                      : 'Xác nhận phân công KTV'
-                  }
+                  title="Xác nhận phân công KTV"
                 >
                   {isAssigning && <Loader2 className="w-4 h-4 animate-spin" />}
                   <span>Xác Nhận Giao Task Cho KTV</span>

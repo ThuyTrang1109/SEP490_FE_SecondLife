@@ -257,6 +257,10 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [reputationHistoryTotalElements, setReputationHistoryTotalElements] = useState(0);
 
   const fetchReputation = useCallback(async () => {
+    if (!currentUser || currentUser.role !== 'seller') {
+      setIsLoadingReputation(false);
+      return;
+    }
     setIsLoadingReputation(true);
     try {
       const rep = await reputationService.getMyReputation();

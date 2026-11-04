@@ -227,6 +227,7 @@ export const reputationService = {
       const data = (res as any)?.data || res;
       return data || null;
     } catch (err) {
+      if ((err as any)?.status === 404) return null;
       console.warn('[reputationService] getSellerReputation fallback:', err);
       return null;
     }
@@ -245,6 +246,7 @@ export const reputationService = {
       const data = (res as any)?.data || res;
       return data || null;
     } catch (err) {
+      if ((err as any)?.status === 403 || (err as any)?.status === 404) return null;
       console.warn('[reputationService] getMyReputation error:', err);
       return null;
     }

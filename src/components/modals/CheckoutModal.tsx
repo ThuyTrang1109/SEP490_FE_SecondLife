@@ -1,3 +1,6 @@
+import { isValidUUID, isSellerOfferId, isOfficialAcceptedNegotiation } from '../../utils/negotiationHelper';
+import { negotiationService } from '../../services';
+import { Negotiation } from '../../types';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Listing, EscrowOrder, EscrowStatus, Language, UserWallet, ShippingQuoteResponseDto, ShippingLeg, InspectionCenter, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
@@ -274,10 +277,84 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 }) => {
   const t = translations[lang];
 
-  // Price calculations (supports negotiated agreedPrice)
-  const itemPrice = agreedPrice && agreedPrice > 0 ? agreedPrice : listing.priceVnd;
-  const hasAgreedDiscount = agreedPrice && agreedPrice < listing.priceVnd;
-  const discountAmount = hasAgreedDiscount ? listing.priceVnd - agreedPrice : 0;
+  // Negotiation validation state
+  const [verifyingNegotiation, setVerifyingNegotiation] = useState<boolean>(Boolean(negotiationId));
+  const [negotiationValidation, setNegotiationValidation] = useState<{
+    valid: boolean;
+    error?: string;
+    verifiedNegotiation?: Negotiation | null;
+  }>({
+    valid: !negotiationId,
+  });
+
+  useEffect(() => {
+    if (!negotiationId) {
+      setNegotiationValidation({ valid: true, verifiedNegotiation: null });
+      setVerifyingNegotiation(false);
+      return;
+    }
+
+    let isMounted = true;
+    const verify = async () => {
+      setVerifyingNegotiation(true);
+      // 1. Format check: Must be UUID and not a fake seller-offer
+      if (!isValidUUID(negotiationId) || isSellerOfferId(negotiationId)) {
+        if (!isMounted) return;
+        setNegotiationValidation({
+          valid: false,
+          error: lang === "vi"
+            ? "Mã thương lượng không hợp lệ. Hệ thống chỉ chấp nhận thương lượng chính thức dạng UUID."
+            : "Invalid negotiation ID. Only official UUID negotiations are accepted.",
+        });
+        setVerifyingNegotiation(false);
+        return;
+      }
+
+      // 2. Cross-check with Backend to ensure it belongs to this post, this buyer, is ACCEPTED and not expired
+      try {
+        const verified = await negotiationService.getValidAcceptedNegotiation(listing.id, negotiationId);
+        if (!isMounted) return;
+        if (!verified) {
+          setNegotiationValidation({
+            valid: false,
+            error: lang === "vi"
+              ? "Thương lượng giá này không tồn tại, chưa được người bán chấp nhận hoặc đã hết hạn."
+              : "This negotiation is not accepted, does not exist, or has expired.",
+          });
+        } else {
+          setNegotiationValidation({
+            valid: true,
+            verifiedNegotiation: verified,
+          });
+        }
+      } catch (err) {
+        if (!isMounted) return;
+        console.warn("[CheckoutModal] Failed to verify negotiation with BE:", err);
+        setNegotiationValidation({
+          valid: false,
+          error: lang === "vi"
+            ? "Không thể xác thực thương lượng với máy chủ."
+            : "Could not verify negotiation with server.",
+        });
+      } finally {
+        if (isMounted) setVerifyingNegotiation(false);
+      }
+    };
+
+    verify();
+    return () => {
+      isMounted = false;
+    };
+  }, [negotiationId, listing.id, lang]);
+
+  // Price calculations (supports verified negotiated agreedPrice)
+  const isNegotiatedCheckout = Boolean(negotiationId && negotiationValidation.valid && negotiationValidation.verifiedNegotiation);
+  const itemPrice = isNegotiatedCheckout
+    ? negotiationValidation.verifiedNegotiation!.offeredPrice
+    : listing.priceVnd;
+  const hasAgreedDiscount = isNegotiatedCheckout && itemPrice < listing.priceVnd;
+  const discountAmount = hasAgreedDiscount ? listing.priceVnd - itemPrice : 0;
+  const validNegotiationId = isNegotiatedCheckout ? negotiationValidation.verifiedNegotiation!.id : undefined;
 
   const [hasInspection, setHasInspection] = useState(false);
 
@@ -531,9 +608,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setQuoteLoading(true);
     setQuoteError(null);
     try {
+      if (negotiationId && !negotiationValidation.valid) {
+        if (negotiationValidation.error) {
+          setQuoteError(negotiationValidation.error);
+        }
+        return;
+      }
       const quote = await shippingService.getShippingQuote({
         postId: listing.id,
-        ...(negotiationId ? { negotiationId } : {}),
+        ...(validNegotiationId ? { negotiationId: validNegotiationId } : {}),
         deliveryAddress: {
           name: validName,
           phone: validPhone,
@@ -753,7 +836,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           const validPhone = rawPhone.length >= 9 && rawPhone.length <= 15 ? rawPhone : '0912345678';
           activeQuote = await shippingService.getShippingQuote({
             postId: listing.id,
-            ...(negotiationId ? { negotiationId } : {}),
+            ...(validNegotiationId ? { negotiationId: validNegotiationId } : {}),
             deliveryAddress: {
               name: (buyerName || currentUser?.name || 'Khách Hàng').trim(),
               phone: validPhone,
@@ -868,12 +951,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         if (!quoteIdToUse) {
           throw new Error(lang === 'vi' ? 'Không tìm thấy mã báo giá vận chuyển hợp lệ. Vui lòng thử lại.' : 'Shipping quote ID is missing.');
         }
+        if (negotiationId && !negotiationValidation.valid) {
+          setOrderError(negotiationValidation.error || "Thương lượng không hợp lệ.");
+          setSubmittingOrder(false);
+          return;
+        }
         const backendOrder = await orderService.createOrder({
           postId: listing.id,
           shippingQuoteId: quoteIdToUse,
           requestId: currentRequestId,
           paymentMethod,
-          ...(negotiationId ? { negotiationId } : {}),
+          ...(validNegotiationId ? { negotiationId: validNegotiationId } : {}),
         });
         if (backendOrder?.id) orderId = backendOrder.id;
         finalChargedPrice = backendOrder?.finalPrice || productPrice;
@@ -3130,6 +3218,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
 
           {/* Order Error Alert */}
+          {negotiationId && !negotiationValidation.valid && (
+            <div className="p-3.5 mb-3 bg-rose-50 border border-rose-300 rounded-2xl flex items-start gap-2.5 text-xs text-rose-800 animate-fadeIn">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-bold">{lang === "vi" ? "Thương lượng không thể áp dụng" : "Negotiation cannot be applied"}</p>
+                <p className="mt-0.5">{negotiationValidation.error}</p>
+              </div>
+            </div>
+          )}
           {orderError && (
             <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 font-semibold flex items-center justify-between gap-2.5 animate-fadeIn">
               <div className="flex items-center gap-2.5 min-w-0">

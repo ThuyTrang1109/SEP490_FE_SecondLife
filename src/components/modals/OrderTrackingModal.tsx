@@ -169,10 +169,23 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     setIsCreatingShipment(true);
     setErrorMsg(null);
     try {
-      const shipment = await shippingService.createShipment(order.id, {
-        requestId: crypto.randomUUID(),
-        leg: 'SELLER_TO_BUYER',
-      });
+      const isInspection = Boolean(
+        order.hasInspectionService ||
+        order.inspectionMethod ||
+        (order as any).inspectionStatus
+      );
+      let shipment: ShipmentBackend;
+      if (isInspection) {
+        shipment = await shippingService.createInspectionShipment(order.id, {
+          requestId: crypto.randomUUID(),
+          leg: 'SELLER_TO_CENTER',
+        });
+      } else {
+        shipment = await shippingService.createShipment(order.id, {
+          requestId: crypto.randomUUID(),
+          leg: 'SELLER_TO_BUYER',
+        });
+      }
       showNotification(
         shipment?.orderCode
           ? `Đã khởi tạo vận đơn Lalamove thành công! Mã vận đơn: #${shipment.orderCode}`
@@ -280,7 +293,21 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   const loadShipmentData = useCallback(async (isBackground = false) => {
     if (!isBackground) setIsLoading(true);
     try {
-      let shipList = await shippingService.getOrderShipments(order.id);
+      const isInspection = Boolean(
+        order.hasInspectionService ||
+        order.inspectionMethod ||
+        (order as any).inspectionStatus
+      );
+      let shipList: ShipmentBackend[] = [];
+      if (isInspection) {
+        try {
+          shipList = await shippingService.getInspectionShipments(order.id);
+        } catch (inspShipErr) {
+          console.warn('Could not load inspection shipments:', inspShipErr);
+        }
+      } else {
+        shipList = await shippingService.getOrderShipments(order.id);
+      }
       setShipments(shipList);
 
       if (shipList.length > 0) {

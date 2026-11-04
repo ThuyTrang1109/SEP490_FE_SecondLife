@@ -24,6 +24,7 @@ import {
   Shield,
   ArrowRight,
   User,
+  UserCheck,
   Phone,
   Printer,
   MessageSquare,
@@ -332,6 +333,31 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [detailModalOrder, setDetailModalOrder] = useState<EscrowOrder | null>(null);
+  const autoPaidOrderIdsRef = React.useRef<Set<string>>(new Set());
+
+  // Tự động nộp phí kiểm định vào Escrow cho Người mua nếu đơn ở trạng thái WAITING_FEE_PAYMENT
+  // (Người mua đã chọn thanh toán qua Ví Escrow tại checkout)
+  React.useEffect(() => {
+    if (!userOrders || userOrders.length === 0) return;
+
+    userOrders.forEach((ord) => {
+      const bStatus = String((ord as any)?.backendStatus || (ord as any)?.status || '').toUpperCase();
+      const isBuyer = !isOrderSeller(ord);
+      const hasInsp = Boolean(ord.hasInspectionService || (ord.inspectionFeeVnd && ord.inspectionFeeVnd > 0));
+
+      if (isBuyer && hasInsp && bStatus === 'WAITING_FEE_PAYMENT' && !autoPaidOrderIdsRef.current.has(ord.id)) {
+        autoPaidOrderIdsRef.current.add(ord.id);
+        inspectorService.payInspectionFee(ord.id)
+          .then((res) => {
+            console.log('Auto payInspectionFee success for order:', ord.id, res);
+            onRefreshOrders?.();
+          })
+          .catch((err) => {
+            console.warn('Auto payInspectionFee notice:', err);
+          });
+      }
+    });
+  }, [userOrders]);
   const [activePhotoStage, setActivePhotoStage] = useState<'listing' | 'inspector' | 'handover'>('listing');
   const [orderSettlement, setOrderSettlement] = useState<OrderSettlementDTO | null>(null);
   const [isLoadingSettlement, setIsLoadingSettlement] = useState(false);
@@ -350,20 +376,31 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         setActivePhotoStage('listing');
       }
 
-      setIsLoadingSettlement(true);
-      setSettlementNotSettled(false);
-      orderService.getOrderSettlement(detailModalOrder.id)
-        .then((data) => {
-          setOrderSettlement(data);
-          setSettlementNotSettled(false);
-        })
-        .catch(() => {
-          setOrderSettlement(null);
-          setSettlementNotSettled(true);
-        })
-        .finally(() => {
-          setIsLoadingSettlement(false);
-        });
+      const isInsp = Boolean(
+        detailModalOrder.hasInspectionService ||
+        detailModalOrder.inspectionMethod ||
+        (detailModalOrder as any).inspectionStatus
+      );
+      if (isInsp) {
+        setOrderSettlement(null);
+        setSettlementNotSettled(false);
+        setIsLoadingSettlement(false);
+      } else {
+        setIsLoadingSettlement(true);
+        setSettlementNotSettled(false);
+        orderService.getOrderSettlement(detailModalOrder.id)
+          .then((data) => {
+            setOrderSettlement(data);
+            setSettlementNotSettled(false);
+          })
+          .catch(() => {
+            setOrderSettlement(null);
+            setSettlementNotSettled(true);
+          })
+          .finally(() => {
+            setIsLoadingSettlement(false);
+          });
+      }
     } else {
       setOrderSettlement(null);
       setSettlementNotSettled(false);
@@ -493,6 +530,9 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       escrow === 'INSPECTION_IN_PROGRESS' ||
       escrow === 'INSPECTION_PASSED' ||
       backend === 'PROCESSING' ||
+      backend === 'CONFIRMED_PENDING_DISPATCH' ||
+      backend === 'DISPATCHED' ||
+      backend === 'SHIPPING_TO_CENTER' ||
       backend === 'SHIPPED' ||
       backend === 'DELIVERED' ||
       backend === 'COMPLETED'
@@ -517,7 +557,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     }
 
     // CHỈ coi là chưa thanh toán khi đang chờ thanh toán
-    return escrow === 'AWAITING_PAYMENT' || backend === 'PENDING_PAYMENT' || backend === 'AWAITING_PAYMENT';
+    return escrow === 'AWAITING_PAYMENT' || backend === 'PENDING_PAYMENT' || backend === 'AWAITING_PAYMENT' || backend === 'WAITING_FEE_PAYMENT';
   };
 
   const isOrderReceiptConfirmed = (ord: EscrowOrder | null | undefined): boolean => {
@@ -557,6 +597,25 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       } catch {}
     }
 
+    return false;
+  };
+
+  const isOrderSellerConfirmed = (ord: EscrowOrder | null | undefined): boolean => {
+    if (!ord) return false;
+    if (ord.sellerConfirmedAt || ord.confirmationStatus === 'CONFIRMED') return true;
+    const hasInsp = Boolean(
+      ord.hasInspectionService ||
+      (ord.inspectionFeeVnd && ord.inspectionFeeVnd > 0) ||
+      ord.inspectionCenterId ||
+      ord.inspectionMethod ||
+      (ord as any).inspectionStatus
+    );
+    if (hasInsp) {
+      const rawStatus = String((ord as any).backendStatus || (ord as any).status || '').toUpperCase();
+      if (rawStatus && rawStatus !== 'WAITING_SELLER_APPROVAL' && rawStatus !== 'PENDING') {
+        return true;
+      }
+    }
     return false;
   };
 
@@ -789,11 +848,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         sellerConsentZinLoss: action === 'ACCEPT',
         rejectReason: rejectReason || (action === 'REJECT' ? 'Người bán từ chối kiểm định' : undefined),
       });
-      if (action === 'ACCEPT') {
-        try {
-          await orderService.confirmOrder(orderId);
-        } catch {}
-      } else if (action === 'REJECT') {
+      if (action === 'REJECT') {
         const targetOrd = orders.find((o) => o.id === orderId);
         const targetListingId = String(targetOrd?.listingId || targetOrd?.listing?.id || '');
         if (targetListingId) {
@@ -801,6 +856,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         }
       }
       setInspectionActionNotice(`Đã ${action === 'ACCEPT' ? 'đồng ý' : 'từ chối'} kiểm định thành công!`);
+      if (detailModalOrder?.id === orderId) {
+        setDetailModalOrder((prev) => (prev ? ({
+          ...prev,
+          sellerConfirmedAt: action === 'ACCEPT' ? new Date().toISOString() : null,
+          confirmationStatus: action === 'ACCEPT' ? 'CONFIRMED' : 'REJECTED',
+          backendStatus: (action === 'ACCEPT' ? 'CONFIRMED_PENDING_DISPATCH' : 'CANCELLED') as any,
+          status: (action === 'ACCEPT' ? 'CONFIRMED_PENDING_DISPATCH' : 'CANCELLED') as any,
+        } as EscrowOrder) : null));
+      }
       onRefreshOrders?.();
       setTimeout(() => setInspectionActionNotice(null), 4000);
     } catch (err: any) {
@@ -835,6 +899,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
   const handlePayInspectionFee = async (orderId: string) => {
     try {
+      setOrderActionLoading(orderId);
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
       if (!isUuid) {
         setInspectionActionNotice('Đã thanh toán phần phí kiểm định thành công!');
@@ -842,12 +907,29 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         setTimeout(() => setInspectionActionNotice(null), 4000);
         return;
       }
-      await inspectorService.payInspectionFee(orderId);
-      setInspectionActionNotice('Đã thanh toán phần phí kiểm định thành công!');
+      const res = await inspectorService.payInspectionFee(orderId);
+      setInspectionActionNotice('Đã nộp phí kiểm định vào Escrow thành công! Đơn chuyển sang trạng thái Sẵn Sàng Giao KTV.');
+      if (detailModalOrder?.id === orderId) {
+        setDetailModalOrder((prev) => (prev ? ({
+          ...prev,
+          backendStatus: (res?.status || 'CONFIRMED_PENDING_DISPATCH') as any,
+          status: (res?.status || 'CONFIRMED_PENDING_DISPATCH') as any,
+          buyerPaidAt: new Date().toISOString(),
+        } as EscrowOrder) : null));
+      }
       onRefreshOrders?.();
       setTimeout(() => setInspectionActionNotice(null), 4000);
     } catch (err: any) {
-      dialogService.error(err?.message || 'Không thể thanh toán phí kiểm định', 'Lỗi Thanh Toán');
+      const msg = err?.message || 'Không thể thanh toán phí kiểm định';
+      if (msg.includes('đã thanh toán') || msg.includes('không ở trạng thái chờ')) {
+        setInspectionActionNotice('Đơn kiểm định đã được nộp phí thành công!');
+        onRefreshOrders?.();
+        setTimeout(() => setInspectionActionNotice(null), 4000);
+      } else {
+        dialogService.error(msg, 'Lỗi Thanh Toán');
+      }
+    } finally {
+      setOrderActionLoading(null);
     }
   };
 
@@ -956,25 +1038,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       onConfirm: async () => {
         try {
           setOrderActionLoading(orderId);
-          let respondedInsp = false;
           if (orderHasInspection) {
-            try {
-              await inspectorService.respondRequest(orderId, {
-                action: 'ACCEPT',
-                sellerConsentZinLoss: true,
-              });
-              respondedInsp = true;
-            } catch (inspErr) {
-              console.warn('respondRequest error (fallback to confirmOrder):', inspErr);
-            }
-          }
-          try {
+            await inspectorService.respondRequest(orderId, {
+              action: 'ACCEPT',
+              sellerConsentZinLoss: true,
+            });
+          } else {
             await orderService.confirmOrder(orderId);
-          } catch (ordErr) {
-            console.warn('confirmOrder error:', ordErr);
-            if (!respondedInsp && !orderHasInspection) {
-              throw ordErr;
-            }
           }
 
           // Tự động tạo vận đơn Lalamove ngay khi người bán xác nhận đơn hàng thông thường (chặng SELLER_TO_BUYER)
@@ -1097,7 +1167,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           onRefreshOrders?.();
           setDetailModalOrder((prev) =>
             prev && prev.id === orderId
-              ? { ...prev, sellerConfirmedAt: confirmedAt, confirmationStatus: 'CONFIRMED' }
+              ? ({
+                  ...prev,
+                  sellerConfirmedAt: confirmedAt,
+                  confirmationStatus: 'CONFIRMED',
+                  backendStatus: (orderHasInspection ? 'CONFIRMED_PENDING_DISPATCH' : (prev.backendStatus || 'CONFIRMED')) as any,
+                  status: (orderHasInspection ? 'CONFIRMED_PENDING_DISPATCH' : ((prev as any).status || 'CONFIRMED')) as any,
+                } as EscrowOrder)
               : prev
           );
 
@@ -1135,14 +1211,6 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       onConfirm: async () => {
         try {
           setOrderActionLoading(orderId);
-          const res = await orderService.markReadyForPickup(orderId);
-          const readyAt = res?.sellerReadyAt || new Date().toISOString();
-          setLocalReadyOrderIds((prev) => new Set(prev).add(orderId));
-          if (detailModalOrder && detailModalOrder.id === orderId) {
-            setDetailModalOrder((prev) => (prev ? { ...prev, sellerReadyAt: readyAt } : null));
-          }
-
-          // Tự động đảm bảo vận đơn Lalamove đã được khởi tạo
           const targetOrder = userOrders.find((o) => o.id === orderId) || (detailModalOrder?.id === orderId ? detailModalOrder : null);
           const orderHasInspection = targetOrder ? Boolean(
             targetOrder.hasInspectionService ||
@@ -1151,6 +1219,20 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             targetOrder.inspectionMethod ||
             (targetOrder as any).inspectionStatus
           ) : false;
+
+          let readyAt = new Date().toISOString();
+          if (!orderHasInspection) {
+            try {
+              const res = await orderService.markReadyForPickup(orderId);
+              if (res?.sellerReadyAt) readyAt = res.sellerReadyAt;
+            } catch (readyErr) {
+              console.warn('markReadyForPickup error:', readyErr);
+            }
+          }
+          setLocalReadyOrderIds((prev) => new Set(prev).add(orderId));
+          if (detailModalOrder && detailModalOrder.id === orderId) {
+            setDetailModalOrder((prev) => (prev ? { ...prev, sellerReadyAt: readyAt } : null));
+          }
 
           let readyShipment: ShipmentBackend | null = null;
           try {
@@ -1444,9 +1526,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     }
     const isSellerForThisOrder = isCurrentOrderSeller !== undefined ? isCurrentOrderSeller : isSeller;
     const s = String(status || '').toUpperCase();
-    const bStatus = String((orderItem as any)?.backendStatus || '').toUpperCase();
+    const bStatus = String((orderItem as any)?.backendStatus || (orderItem as any)?.status || '').toUpperCase();
+    const sellerConfirmed = Boolean(orderItem && isOrderSellerConfirmed(orderItem));
 
-    if (bStatus === 'WAITING_SELLER_APPROVAL' || (s === 'AWAITING_INSPECTION' && bStatus === 'WAITING_SELLER_APPROVAL')) {
+    if (!sellerConfirmed && (bStatus === 'WAITING_SELLER_APPROVAL' || (s === 'AWAITING_INSPECTION' && bStatus === 'WAITING_SELLER_APPROVAL'))) {
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-800 border border-amber-500/30">
           <Clock className="w-3.5 h-3.5 text-amber-600" />
@@ -1458,17 +1541,52 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         </span>
       );
     }
-    if (bStatus === 'WAITING_FEE_PAYMENT') {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-orange-500/15 text-orange-800 border border-orange-500/30">
-          <Clock className="w-3.5 h-3.5 text-orange-600" />
-          <span>
-            {lang === 'vi'
-              ? isSellerForThisOrder ? 'Chờ Đóng Phí Kiểm Định (Hạn 6h)' : 'Chờ Bạn Đóng Phí Kiểm Định (Hạn 6h)'
-              : 'Awaiting Inspection Fee Deposit (6h limit)'}
+    if (sellerConfirmed || bStatus === 'CONFIRMED_PENDING_DISPATCH' || bStatus === 'WAITING_FEE_PAYMENT' || bStatus === 'DISPATCHED' || bStatus === 'SHIPPING_TO_CENTER') {
+      if (bStatus === 'WAITING_FEE_PAYMENT') {
+        const isAutoPaying = Boolean(orderItem?.id && autoPaidOrderIdsRef.current.has(orderItem.id));
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-orange-500/15 text-orange-800 border border-orange-500/30">
+            <Clock className={`w-3.5 h-3.5 text-orange-600 ${isAutoPaying ? 'animate-spin' : ''}`} />
+            <span>
+              {lang === 'vi'
+                ? isSellerForThisOrder
+                  ? 'Chờ Đóng Phí Kiểm Định (Hạn 6h)'
+                  : (isAutoPaying ? 'Đang Ký Quỹ Phí Kiểm Định...' : 'Người Bán Đã Đồng Ý • Chờ Nộp Phí KĐ')
+                : isSellerForThisOrder
+                ? 'Awaiting Inspection Fee Deposit (6h limit)'
+                : (isAutoPaying ? 'Depositing Fee to Escrow...' : 'Seller Confirmed • Awaiting Fee')}
+            </span>
           </span>
-        </span>
-      );
+        );
+      }
+      if (bStatus === 'DISPATCHED') {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+            <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+            <span>{lang === 'vi' ? 'Đã Điều Phối KTV / Hub' : 'Inspector / Hub Dispatched'}</span>
+          </span>
+        );
+      }
+      if (bStatus === 'SHIPPING_TO_CENTER') {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-cyan-50 text-cyan-700 border border-cyan-200">
+            <Truck className="w-3.5 h-3.5 text-cyan-600" />
+            <span>{lang === 'vi' ? 'Đang Ship Về Hub Kiểm Định' : 'Shipping to Hub'}</span>
+          </span>
+        );
+      }
+      if (bStatus === 'CONFIRMED_PENDING_DISPATCH' || s === 'AWAITING_INSPECTION' || s === 'HELD_IN_ESCROW') {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+            <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+            <span>
+              {lang === 'vi'
+                ? isSellerForThisOrder ? 'Đã Xác Nhận • Đang Chuẩn Bị Gửi Hub' : 'Người Bán Đã Đồng Ý • Đang Điều Phối Hub'
+                : isSellerForThisOrder ? 'Confirmed • Preparing Hub Dispatch' : 'Seller Confirmed • Dispatching to Hub'}
+            </span>
+          </span>
+        );
+      }
     }
     switch (s) {
       case 'AWAITING_PAYMENT':
@@ -1483,6 +1601,18 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           </span>
         );
       case 'AWAITING_INSPECTION':
+        if (sellerConfirmed) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+              <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+              <span>
+                {lang === 'vi'
+                  ? isSellerForThisOrder ? 'Đã Xác Nhận • Đang Chuẩn Bị Gửi Hub' : 'Người Bán Đã Đồng Ý • Đang Điều Phối Hub'
+                  : isSellerForThisOrder ? 'Confirmed • Preparing Hub Dispatch' : 'Seller Confirmed • Dispatching to Hub'}
+              </span>
+            </span>
+          );
+        }
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-800 border border-amber-500/30">
             <Clock className="w-3.5 h-3.5 text-amber-600" />
@@ -2292,7 +2422,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               <span>{lang === 'vi' ? 'Kiểm Định Qua Hub (Ship 2 Chặng)' : 'Hub Inspection (2-Leg Delivery)'}</span>
                             </span>
                             <span className="text-xs font-bold text-blue-900">
-                              {ord.sellerConfirmedAt || ord.confirmationStatus === 'CONFIRMED'
+                              {isOrderSellerConfirmed(ord)
                                 ? (lang === 'vi' ? 'Đã xác nhận • Đang thực hiện Chặng 1 đến Hub' : 'Leg 1 In Progress to Hub')
                                 : (lang === 'vi' ? 'Chờ người bán xác nhận gửi hàng Chặng 1' : 'Awaiting Seller Confirmation for Leg 1')}
                             </span>
@@ -2306,7 +2436,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             <div className="flex items-center justify-between font-bold">
                               <span className="text-blue-700">📦 {lang === 'vi' ? 'Chặng 1: Gửi Hàng Đến Hub' : 'Leg 1: Send to Hub'}</span>
                               <span className="px-1.5 py-0.2 rounded text-[10px] bg-blue-100 text-blue-800 font-extrabold">
-                                {ord.sellerConfirmedAt ? (lang === 'vi' ? 'Đang chuẩn bị' : 'In Progress') : (lang === 'vi' ? 'Cần xác nhận' : 'Pending')}
+                                {isOrderSellerConfirmed(ord) ? (lang === 'vi' ? 'Đang chuẩn bị' : 'In Progress') : (lang === 'vi' ? 'Cần xác nhận' : 'Pending')}
                               </span>
                             </div>
                             <div className="text-slate-600">
@@ -2409,7 +2539,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                         ) : (
                           <>
                             {/* GIAI ĐOẠN 1: CHỜ XÁC NHẬN ĐƠN / CHỜ ĐỒNG Ý KIỂM ĐỊNH */}
-                            {!ord.sellerConfirmedAt && ord.confirmationStatus !== 'CONFIRMED' && ord.backendStatus !== 'CANCELLED' && ord.escrowStatus !== 'REFUNDED_TO_BUYER' && !isOrderReceiptConfirmed(ord) && ord.backendStatus !== 'COMPLETED' && !ord.shippingDeliveredAt && (
+                            {!isOrderSellerConfirmed(ord) && ord.backendStatus !== 'CANCELLED' && ord.escrowStatus !== 'REFUNDED_TO_BUYER' && !isOrderReceiptConfirmed(ord) && ord.backendStatus !== 'COMPLETED' && !ord.shippingDeliveredAt && (
                             <>
                               {hasInspection ? (
                                 <>
@@ -2503,7 +2633,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           )}
 
                           {/* GIAI ĐOẠN 2: ĐÃ XÁC NHẬN • ĐANG ĐÓNG GÓI */}
-                          {(ord.sellerConfirmedAt || ord.confirmationStatus === 'CONFIRMED') &&
+                          {isOrderSellerConfirmed(ord) &&
                             !isOrderReceiptConfirmed(ord) &&
                             ord.backendStatus !== 'COMPLETED' &&
                             !ord.shippingDeliveredAt &&
@@ -2740,9 +2870,31 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
                           {/* Inspection Status Badge for Buyer */}
                           {hasInspection && ord.escrowStatus === 'AWAITING_INSPECTION' && (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1.5 rounded-xl border border-amber-200 whitespace-nowrap shrink-0">
-                              <Clock className="w-3.5 h-3.5 text-amber-600" />
-                              <span>{lang === 'vi' ? 'Chờ Kiểm Định' : 'Awaiting Inspection'}</span>
+                            <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl border whitespace-nowrap shrink-0 ${
+                              isOrderSellerConfirmed(ord)
+                                ? (String((ord as any)?.backendStatus || '').toUpperCase() === 'WAITING_FEE_PAYMENT'
+                                    ? 'text-orange-800 bg-orange-50 border-orange-200'
+                                    : 'text-blue-800 bg-blue-50 border-blue-200')
+                                : 'text-amber-800 bg-amber-50 border-amber-200'
+                            }`}>
+                              {isOrderSellerConfirmed(ord) ? (
+                                String((ord as any)?.backendStatus || '').toUpperCase() === 'WAITING_FEE_PAYMENT' ? (
+                                  <>
+                                    <Clock className="w-3.5 h-3.5 text-orange-600" />
+                                    <span>{lang === 'vi' ? 'Người Bán Đã Đồng Ý • Chờ Nộp Phí KĐ' : 'Seller Confirmed • Awaiting Fee'}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+                                    <span>{lang === 'vi' ? 'Người Bán Đã Đồng Ý • Đang Điều Phối Hub' : 'Seller Confirmed • Hub Dispatching'}</span>
+                                  </>
+                                )
+                              ) : (
+                                <>
+                                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                  <span>{lang === 'vi' ? 'Chờ Người Bán Xác Nhận' : 'Awaiting Seller Confirmation'}</span>
+                                </>
+                              )}
                             </span>
                           )}
 
@@ -2796,11 +2948,16 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                     e.stopPropagation();
                                     handlePayInspectionFee(ord.id);
                                   }}
-                                  className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap shrink-0"
-                                  title="Nộp phí kiểm định độc lập từ Ví"
+                                  disabled={orderActionLoading === ord.id}
+                                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50"
+                                  title="Nộp phí kiểm định vào Escrow từ Ví SecondLife"
                                 >
                                   <Wallet className="w-3.5 h-3.5" />
-                                  <span>{lang === 'vi' ? 'Nộp Phí Kiểm Định' : 'Pay Inspection Fee'}</span>
+                                  <span>
+                                    {orderActionLoading === ord.id
+                                      ? (lang === 'vi' ? 'Đang nộp...' : 'Processing...')
+                                      : (lang === 'vi' ? 'Nộp Phí Kiểm Định (Trừ Ví)' : 'Pay Inspection Fee')}
+                                  </span>
                                 </button>
                               )}
                             </div>
@@ -2951,7 +3108,12 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   <h2 className="text-lg sm:text-xl font-black text-[#24263e]">
                     {lang === 'vi' ? 'Chi Tiết Đơn Hàng' : 'Order Details'} #{detailModalOrder.id}
                   </h2>
-                  {getStatusBadge(isOrderReceiptConfirmed(detailModalOrder) ? 'COMPLETED_RELEASED' : detailModalOrder.escrowStatus, Boolean(detailModalOrder.hasInspectionService || (detailModalOrder.inspectionFeeVnd && detailModalOrder.inspectionFeeVnd > 0)), isOrderSeller(detailModalOrder))}
+                  {getStatusBadge(
+                    isOrderReceiptConfirmed(detailModalOrder) ? 'COMPLETED_RELEASED' : detailModalOrder.escrowStatus,
+                    Boolean(detailModalOrder.hasInspectionService || (detailModalOrder.inspectionFeeVnd && detailModalOrder.inspectionFeeVnd > 0)),
+                    isOrderSeller(detailModalOrder),
+                    detailModalOrder
+                  )}
                 </div>
                 <p className="text-xs text-slate-500 mt-1">
                   {lang === 'vi' ? 'Người bán:' : 'Seller:'} <strong className="text-slate-800">{detailModalOrder.sellerName}</strong> • {lang === 'vi' ? 'Người mua:' : 'Buyer:'}{' '}
@@ -3153,8 +3315,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             {detailShipments[0]?.orderCode ? (
                               `Lalamove #${detailShipments[0].orderCode}`
                             ) : (
-                              <span className="text-[11px] font-sans font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                Chưa tạo vận đơn Lalamove
+                              <span className={`text-[11px] font-sans font-medium px-2 py-0.5 rounded border ${
+                                isOrderSellerConfirmed(detailModalOrder)
+                                  ? 'text-blue-700 bg-blue-50 border-blue-200'
+                                  : 'text-amber-700 bg-amber-50 border-amber-200'
+                              }`}>
+                                {isOrderSellerConfirmed(detailModalOrder)
+                                  ? (lang === 'vi' ? 'Đang chuẩn bị điều phối vận chuyển' : 'Preparing dispatch')
+                                  : (lang === 'vi' ? 'Chưa tạo vận đơn Lalamove' : 'Pending courier')}
                               </span>
                             )}
                           </span>
@@ -3293,8 +3461,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             {detailShipments[0]?.orderCode ? (
                               `Lalamove #${detailShipments[0].orderCode}`
                             ) : (
-                              <span className="text-[11px] font-sans font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                Chưa tạo vận đơn Lalamove
+                              <span className={`text-[11px] font-sans font-medium px-2 py-0.5 rounded border ${
+                                isOrderSellerConfirmed(detailModalOrder)
+                                  ? 'text-blue-700 bg-blue-50 border-blue-200'
+                                  : 'text-amber-700 bg-amber-50 border-amber-200'
+                              }`}>
+                                {isOrderSellerConfirmed(detailModalOrder)
+                                  ? (lang === 'vi' ? 'Đang chuẩn bị điều phối vận chuyển' : 'Preparing dispatch')
+                                  : (lang === 'vi' ? 'Chưa tạo vận đơn Lalamove' : 'Pending courier')}
                               </span>
                             )}
                           </span>
@@ -3662,8 +3836,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                         ) : (
                           <>
                             {/* GIAI ĐOẠN 1: Chờ xác nhận đơn */}
-                          {!detailModalOrder.sellerConfirmedAt &&
-                            detailModalOrder.confirmationStatus !== 'CONFIRMED' &&
+                          {!isOrderSellerConfirmed(detailModalOrder) &&
                             detailModalOrder.backendStatus !== 'CANCELLED' &&
                             detailModalOrder.escrowStatus !== 'REFUNDED_TO_BUYER' &&
                             !isOrderReceiptConfirmed(detailModalOrder) &&
@@ -3700,7 +3873,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           )}
 
                           {/* GIAI ĐOẠN 2: Đã xác nhận • Đang đóng gói */}
-                          {(detailModalOrder.sellerConfirmedAt || detailModalOrder.confirmationStatus === 'CONFIRMED') &&
+                          {isOrderSellerConfirmed(detailModalOrder) &&
                             !isOrderReceiptConfirmed(detailModalOrder) &&
                             detailModalOrder.backendStatus !== 'COMPLETED' &&
                             !detailModalOrder.shippingDeliveredAt &&
@@ -3838,6 +4011,25 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           )}
                         </>
                         )
+                      )}
+
+                      {/* Người Mua (Buyer) nộp phí kiểm định khi người bán đã đồng ý kiểm định */}
+                      {!isOrderSeller(detailModalOrder) &&
+                        String((detailModalOrder as any)?.backendStatus || '').toUpperCase() === 'WAITING_FEE_PAYMENT' && (
+                        <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">
+                          <button
+                            onClick={() => handlePayInspectionFee(detailModalOrder.id)}
+                            disabled={orderActionLoading === detailModalOrder.id}
+                            className="flex-1 py-3 px-4 bg-gradient-to-r from-orange-600 via-amber-600 to-orange-700 hover:from-orange-700 hover:to-amber-800 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                          >
+                            <Wallet className="w-4 h-4" />
+                            <span>
+                              {orderActionLoading === detailModalOrder.id
+                                ? (lang === 'vi' ? 'Đang nộp phí kiểm định...' : 'Processing...')
+                                : (lang === 'vi' ? 'Nộp Phí Kiểm Định Ngay (Trừ Ví)' : 'Pay Inspection Fee')}
+                            </span>
+                          </button>
+                        </div>
                       )}
 
                       {/* Chỉ Người Mua (Buyer) mới có nút Đã Nhận Hàng & Khiếu Nại Trả Hàng khi đơn đã giao và CHƯA xác nhận */}

@@ -152,7 +152,10 @@ export const postService = {
       });
       return (res as any)?.data || res;
     } catch (err) {
-      console.warn(`Lỗi lấy chi tiết bài đăng ${postId}:`, err);
+      if (err?.status === 404 || err?.message?.includes('Listing is not available for purchase')) {
+        return null;
+      }
+      console.warn(`[postService] Lỗi lấy chi tiết bài đăng ${postId}:`, err);
       return null;
     }
   },

@@ -319,7 +319,7 @@ export interface ChatMessage {
   timestamp: string;
   isOffer?: boolean;
   offerAmountVnd?: number;
-  offerStatus?: 'pending' | 'accepted' | 'declined' | 'countered';
+  offerStatus?: 'pending' | 'accepted' | 'declined' | 'countered' | 'cancelled';
   offerSenderRole?: 'buyer' | 'seller';
   negotiationId?: string;
   safetyWarning?: string;

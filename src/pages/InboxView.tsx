@@ -1,3 +1,5 @@
+import { useBrowserLocation, navigatePath } from '../app/router/browser';
+import { resolveAppRoute, paths } from '../app/router/paths';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Listing, Language, UserRole, UserProfile, Negotiation } from '../types';
 import {
@@ -61,6 +63,12 @@ export const InboxView: React.FC<InboxViewProps> = ({
   onBuyClick,
   onOpenSellerReviews,
 }) => {
+  const routeLocation = useBrowserLocation();
+  const chatRoute = resolveAppRoute(routeLocation, currentUser?.role || currentRole);
+  const requestedPostId = new URLSearchParams(routeLocation.split('?')[1] || '').get('postId');
+  useEffect(() => {
+    setSelectedRoomId(chatRoute.params.conversationId || null);
+  }, [chatRoute.params.conversationId]);
   const [activeTab, setActiveTab] = useState<'chats' | 'negotiations'>('chats');
   const [rooms, setRooms] = useState<ChatRoomDto[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -78,9 +86,8 @@ export const InboxView: React.FC<InboxViewProps> = ({
 
   // Splitter resizable pane state
   const splitContainerRef = useRef<HTMLDivElement>(null);
-  // Track external navigation to prevent re-forcing selected room when rooms or background polling updates
-  const appliedNavKeyRef = useRef<string | null>(null);
-  const userManuallySelectedRef = useRef<boolean>(false);
+  // Keep external listing navigation from reopening a room after returning to the inbox.
+  const openedListingRef = useRef<string | null>(null);
   const [leftWidth, setLeftWidth] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('inbox_splitter_width');
@@ -318,53 +325,31 @@ export const InboxView: React.FC<InboxViewProps> = ({
     };
   }, [loadChatRooms, loadNegotiations]);
 
-  // Handle external navigation with initialListing or initialRoomId
+  // The post query represents an explicit request to open/create a conversation.
+  // Once resolved, only the conversation URL controls selection, including Back/Forward.
   useEffect(() => {
-    const targetNavKey = initialRoomId
-      ? `room_${initialRoomId}`
-      : initialListing?.id
-      ? `post_${initialListing.id}`
-      : null;
-
-    if (!targetNavKey) return;
-
-    // If user has already clicked a room manually and incoming navigation has not changed, do not override
-    if (userManuallySelectedRef.current && appliedNavKeyRef.current === targetNavKey) {
+    if (initialRoomId || !requestedPostId || loading || openedListingRef.current === requestedPostId) return;
+    openedListingRef.current = requestedPostId;
+    const existing = rooms.find((room) => room.postId === requestedPostId);
+    if (existing) {
+      navigatePath(paths.chat(chatRoute.role || currentRole, existing.id), { replace: true });
       return;
     }
-
-    // If this exact navigation target was already applied, do not re-apply when rooms update
-    if (appliedNavKeyRef.current === targetNavKey) {
-      return;
-    }
-
-    if (initialRoomId) {
-      setSelectedRoomId(initialRoomId);
-      appliedNavKeyRef.current = targetNavKey;
-    } else if (initialListing) {
-      const existing = rooms.find((r) => r.postId === initialListing.id);
-      if (existing) {
-        setSelectedRoomId(existing.id);
-        appliedNavKeyRef.current = targetNavKey;
-      } else if (!loading) {
-        chatService.getOrCreateRoom(initialListing.id)
-          .then((newRoom) => {
-            if (newRoom?.id) {
-              setRooms((prev) => [newRoom, ...prev.filter((r) => r.id !== newRoom.id)]);
-              setSelectedRoomId(newRoom.id);
-              appliedNavKeyRef.current = targetNavKey;
-            }
-          })
-          .catch((err) => {
-            console.warn('Failed to get or create room for listing:', err);
-          });
+    const requestedUrl = window.location.href;
+    chatService.getOrCreateRoom(requestedPostId).then((room) => {
+      if (!room?.id) return;
+      setRooms((previous) => [room, ...previous.filter((item) => item.id !== room.id)]);
+      if (window.location.href === requestedUrl) {
+        navigatePath(paths.chat(chatRoute.role || currentRole, room.id), { replace: true });
       }
-    }
-  }, [initialRoomId, initialListing, rooms, loading]);
+    }).catch((error) => {
+      console.warn('Failed to get or create room for listing:', error);
+    });
+  }, [initialRoomId, requestedPostId, rooms, loading]);
 
   const handleSelectRoom = (room: ChatRoomDto) => {
-    userManuallySelectedRef.current = true;
     setSelectedRoomId(room.id);
+    navigatePath(paths.chat(chatRoute.role || currentRole, room.id));
     if (activeUserId) {
       localStorage.setItem(`chat_room_last_read_${room.id}_${activeUserId}`, Date.now().toString());
     }
@@ -735,8 +720,8 @@ export const InboxView: React.FC<InboxViewProps> = ({
                         onClick={() => {
                           const matched = rooms.find((r) => r.postId === neg.postId);
                           if (matched) {
-                            userManuallySelectedRef.current = true;
-                            setSelectedRoomId(matched.id);
+                                                    setSelectedRoomId(matched.id);
+                            navigatePath(paths.chat(chatRoute.role || currentRole, matched.id));
                             setActiveTab('chats');
                           }
                         }}
@@ -815,7 +800,7 @@ export const InboxView: React.FC<InboxViewProps> = ({
               currentUser={currentUser}
               currentRole={currentRole}
               lang={lang}
-              onBack={() => setSelectedRoomId(null)}
+              onBack={() => { setSelectedRoomId(null); navigatePath(paths.chat(chatRoute.role || currentRole)); }}
               onBuyClick={onBuyClick}
               onOpenSellerReviews={onOpenSellerReviews}
               onRoomActivity={loadChatRooms}

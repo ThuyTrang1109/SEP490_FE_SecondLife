@@ -362,6 +362,7 @@ export interface UserProfile {
   name: string;
   email: string;
   role: UserRole;
+  roles?: string[];
   phone?: string;
   address?: string;
   avatar?: string;

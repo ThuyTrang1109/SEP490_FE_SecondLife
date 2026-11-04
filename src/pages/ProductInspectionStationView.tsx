@@ -78,6 +78,7 @@ interface ProductInspectionStationViewProps {
   hideTopBar?: boolean;
   selectedOrderId?: string;
   onSelectOrder?: (orderId: string) => void;
+  initialStep?: InspectionStep;
 }
 
 export type InspectionStep = 'intake' | 'exterior' | 'technical' | 'proofs' | 'verdict';
@@ -124,6 +125,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   hideTopBar = false,
   selectedOrderId: externalSelectedOrderId,
   onSelectOrder,
+  initialStep = 'intake',
 }) => {
   // Current active technician
   const inspectorName = currentUser?.name || 'Kỹ thuật viên kiểm định';
@@ -141,6 +143,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   useEffect(() => {
     if (externalSelectedOrderId) {
       setSelectedOrderId(externalSelectedOrderId);
+      setCurrentStep('intake');
     } else if ((!selectedOrderId || !orders.some((o) => o.id === selectedOrderId)) && orders.length > 0) {
       setSelectedOrderId(orders[0].id);
       onSelectOrder?.(orders[0].id);
@@ -152,8 +155,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     return orders.find((o) => o.id === selectedOrderId) || orders[0];
   }, [orders, selectedOrderId]);
 
-  // Stepper state
-  const [currentStep, setCurrentStep] = useState<InspectionStep>('technical');
+  // Stepper state - Bắt đầu từ Bước 1: Tiếp nhận (intake)
+  const [currentStep, setCurrentStep] = useState<InspectionStep>(initialStep || 'intake');
   const [isFocusMode, setIsFocusMode] = useState(false);
 
   // --- STEP 1: INTAKE & PROFILE CHECK ---
@@ -287,6 +290,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         setUnboxingVideoUrl((activeOrder as any).unboxingVideoUrl || '');
         setSealConfirmed(true);
         setIsDigitalSigned(true);
+        setCurrentStep('verdict');
       } else {
         setActualSerialNo('');
         setAccessoriesNote('');
@@ -299,6 +303,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         setUnboxingVideoUrl((activeOrder as any).unboxingVideoUrl || '');
         setSealConfirmed(false);
         setIsDigitalSigned(false);
+        setCurrentStep('intake');
       }
     }
   }, [activeOrder?.id]);

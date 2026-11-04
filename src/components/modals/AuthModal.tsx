@@ -24,6 +24,7 @@ import { UserRole, Language } from '../../types';
 import { soundFx } from '../../utils/soundEffects';
 import { authService } from '../../services/authService';
 import { setAuthTokens } from '../../services/apiClient';
+import { navigatePath } from '../../app/router/browser';
 import { translateSystemNotification } from '../../utils/systemNotificationTranslator';
 import logoImg from '../../assets/logo.png';
 
@@ -36,6 +37,7 @@ interface AuthModalProps {
     name: string;
     email: string;
     role: UserRole;
+    roles?: string[];
     phone?: string;
     address?: string;
     avatar?: string;
@@ -77,7 +79,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onLoginSuccess,
   lang
 }) => {
-  const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'verify-email'>(initialMode);
+  const [mode, setModeState] = useState<'login' | 'register' | 'forgot' | 'verify-email'>(initialMode);
+  const setMode = (next: 'login' | 'register' | 'forgot' | 'verify-email') => {
+    setModeState(next);
+    if (!isOpen || next === 'verify-email') return;
+    const target = next === 'register' ? '/register' : next === 'forgot' ? '/forgot-password' : '/login';
+    if (['/login', '/register', '/forgot-password'].includes(window.location.pathname)) {
+      navigatePath(target + window.location.search, { replace: true, state: window.history.state });
+    }
+  };
 
   // Form states - Login
   const [emailOrPhone, setEmailOrPhone] = useState('');
@@ -251,7 +261,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Reset states on open or mode change
   useEffect(() => {
     if (isOpen) {
-      setMode(initialMode);
+      setModeState(initialMode);
       setErrorMsg(null);
       setSuccessMsg(null);
       setTouched({});
@@ -310,6 +320,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         name: res.user.fullName || res.user.email,
         email: res.user.email,
         role: mappedRole,
+        roles: res.roles,
         phone: res.user.phone || '',
         avatar: res.user.avatarUrl || undefined,
         address: '',
@@ -424,6 +435,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         name: res.user.fullName || res.user.email,
         email: res.user.email,
         role: mappedRole,
+        roles: res.roles,
         phone: res.user.phone || '',
         avatar: res.user.avatarUrl || undefined,
         address: '',

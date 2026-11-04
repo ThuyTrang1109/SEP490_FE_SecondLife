@@ -1,3 +1,5 @@
+import { usePanelTab, useBrowserLocation, navigatePath } from '../app/router/browser';
+import { resolveAppRoute, panelPaths } from '../app/router/paths';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Building2,
@@ -397,20 +399,8 @@ export const VALID_CENTER_TABS: CenterTab[] = [
 export const CENTER_TAB_STORAGE_KEY = 'secondlife_center_active_tab';
 
 export function getInitialCenterTab(): CenterTab {
-  if (typeof window !== 'undefined') {
-    const params = new URLSearchParams(window.location.search);
-    const subtab = params.get('subtab') as CenterTab;
-    if (subtab && VALID_CENTER_TABS.includes(subtab)) {
-      return subtab;
-    }
-    try {
-      const saved = sessionStorage.getItem(CENTER_TAB_STORAGE_KEY) as CenterTab;
-      if (saved && VALID_CENTER_TABS.includes(saved)) {
-        return saved;
-      }
-    } catch (e) {}
-  }
-  return 'overview';
+  if (typeof window === 'undefined') return 'overview';
+  return (resolveAppRoute(window.location.href, 'inspection_center').section || 'overview') as CenterTab;
 }
 
 export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardViewProps> = ({
@@ -423,30 +413,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   onViewWebsite,
 }) => {
   // --- Active Sub-Tab (Khôi phục từ URL param ?subtab= hoặc sessionStorage khi F5) ---
-  const [activeTab, setActiveTab] = useState<CenterTab>(getInitialCenterTab);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      sessionStorage.setItem(CENTER_TAB_STORAGE_KEY, activeTab);
-    } catch (e) {}
-    const currentUrl = new URL(window.location.href);
-    currentUrl.searchParams.delete('subtab');
-    currentUrl.searchParams.delete('tab');
-    currentUrl.searchParams.delete('tap');
-    if (currentUrl.toString() !== window.location.href) {
-      window.history.replaceState(null, '', currentUrl.toString());
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
-    const handlePopState = () => {
-      const tab = getInitialCenterTab();
-      setActiveTab(tab);
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  const [activeTab, setActiveTab] = usePanelTab<CenterTab>('inspection_center', 'overview');
 
   // --- Sidebar Collapse & Mobile Sidebar State ---
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -1692,7 +1659,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   // Helper: Copy credentials to clipboard
   const handleCopyCredentials = () => {
     if (!createdStaffSuccessData) return;
-    const text = `Tài khoản KTV SecondLife Hub:\n- Họ tên: ${createdStaffSuccessData.fullName}\n- Email: ${createdStaffSuccessData.email}\n- Mật khẩu: ${createdStaffSuccessData.password}\n- Link đăng nhập: ${window.location.origin}`;
+    const text = `Tài khoản KTV SecondLife Hub:\n- Họ tên: ${createdStaffSuccessData.fullName}\n- Email: ${createdStaffSuccessData.email}\n- Mật khẩu: ${createdStaffSuccessData.password}\n- Link đăng nhập: ${window.location.origin}/login`;
     navigator.clipboard.writeText(text);
     setHasCopiedCredentials(true);
     setTimeout(() => setHasCopiedCredentials(false), 3000);

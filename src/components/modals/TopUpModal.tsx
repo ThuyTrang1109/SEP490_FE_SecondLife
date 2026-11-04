@@ -1,3 +1,4 @@
+import { navigatePath } from '../../app/router/browser';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   X,
@@ -1477,7 +1478,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                               type="button"
                               onClick={() => {
                                 onClose();
-                                window.location.href = '/?tab=admin-dashboard&subtab=credit-pricing';
+                                navigatePath('/admin/credit-pricing');
                               }}
                               className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition shadow-xs cursor-pointer inline-flex items-center gap-1.5"
                             >

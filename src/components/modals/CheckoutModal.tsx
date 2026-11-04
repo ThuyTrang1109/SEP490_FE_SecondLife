@@ -1,3 +1,4 @@
+import { paths } from '../../app/router/paths';
 import { isValidUUID, isSellerOfferId, isOfficialAcceptedNegotiation } from '../../utils/negotiationHelper';
 import { negotiationService } from '../../services';
 import { Negotiation } from '../../types';
@@ -1225,7 +1226,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             type: 'INSPECTION_SELLER_REQUEST' as const,
             referenceId: orderId,
             referenceType: 'INSPECTION_ORDER' as const,
-            actionUrl: '/orders?order_tab=awaiting_pickup',
+            actionUrl: paths.orders('seller', orderId) + '?filter=awaiting_pickup',
             isRead: false,
             readAt: null,
             createdAt: new Date().toISOString(),
@@ -1243,7 +1244,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             type: isInspected ? 'INSPECTION' : 'ORDER',
             referenceId: orderId,
             referenceType: isInspected ? 'INSPECTION_ORDER' : 'ORDER',
-            actionUrl: isInspected ? '/orders?order_tab=inspecting' : '/orders',
+            actionUrl: paths.orders('buyer', orderId) + (isInspected ? '?filter=inspecting' : ''),
             isRead: false,
             readAt: null,
             createdAt: new Date().toISOString(),
@@ -1396,7 +1397,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         type: 'ORDER' as const,
         referenceId: paidOrder.id,
         referenceType: 'ORDER',
-        actionUrl: '/orders?tab=awaiting_pickup',
+        actionUrl: paths.orders('seller', paidOrder.id) + '?filter=awaiting_pickup',
         isRead: false,
         readAt: null,
         createdAt: new Date().toISOString(),
@@ -1412,7 +1413,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         type: 'ORDER' as const,
         referenceId: paidOrder.id,
         referenceType: 'ORDER',
-        actionUrl: '/orders',
+        actionUrl: paths.orders('buyer', paidOrder.id),
         isRead: false,
         readAt: null,
         createdAt: new Date().toISOString(),

@@ -1,3 +1,4 @@
+import { paths } from '../app/router/paths';
 import React, { useState, useEffect, useMemo } from 'react';
 import { EscrowOrder, Language, UserProfile } from '../types';
 import { formatVND } from '../utils/translations';
@@ -233,7 +234,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         type: 'ORDER' as const,
         referenceId: effectiveOrderId,
         referenceType: 'INSPECTION_ORDER',
-        actionUrl: '/orders',
+        actionUrl: paths.orders('buyer', effectiveOrderId),
         isRead: false,
         readAt: null,
         createdAt: new Date().toISOString(),
@@ -293,7 +294,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         type: 'INSPECTION' as const,
         referenceId: effectiveOrderId,
         referenceType: 'INSPECTION_ORDER',
-        actionUrl: '/orders',
+        actionUrl: paths.orders('seller', effectiveOrderId),
         isRead: false,
         readAt: null,
         createdAt: new Date().toISOString(),
@@ -310,7 +311,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         type: 'INSPECTION' as const,
         referenceId: effectiveOrderId,
         referenceType: 'INSPECTION_ORDER',
-        actionUrl: '/orders',
+        actionUrl: paths.orders('buyer', effectiveOrderId),
         isRead: false,
         readAt: null,
         createdAt: new Date().toISOString(),

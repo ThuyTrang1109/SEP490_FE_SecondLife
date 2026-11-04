@@ -1,3 +1,5 @@
+import { usePanelTab, useBrowserLocation, navigatePath } from '../app/router/browser';
+import { resolveAppRoute } from '../app/router/paths';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { EscrowOrder, InspectionChecklistItem, Language, UserProfile, InspectionCenter } from '../types';
 import { formatVND } from '../utils/translations';
@@ -169,7 +171,9 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   const isCenterManager = currentUser?.role === 'inspection_center';
 
   // --- INSPECTOR DASHBOARD TABS ---
-  const [inspectorTab, setInspectorTab] = useState<InspectorDashboardTab>('workbench');
+  const [inspectorTab, setInspectorTab] = usePanelTab<InspectorDashboardTab>('inspector', 'workbench');
+  const routeLocation = useBrowserLocation();
+  const requestedInspectionId = resolveAppRoute(routeLocation, 'inspector').params.inspectionId;
   const [managerTab, setManagerTab] = useState<ManagerPortalTab>('center_dispatch');
 
   // --- Sidebar Collapse & Mobile Sidebar State ---
@@ -196,7 +200,14 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   const stationCode = 'STATION-HCM-02';
 
   // --- ORDERS & QUEUE STATES ---
-  const [selectedOrderId, setSelectedOrderId] = useState<string>(orders[0]?.id || '');
+  const [selectedOrderId, setSelectedOrderIdState] = useState<string>(requestedInspectionId || orders[0]?.id || '');
+  const setSelectedOrderId = (id: string) => {
+    setSelectedOrderIdState(id);
+    navigatePath(`/inspector/inspections/${encodeURIComponent(id)}`);
+  };
+  useEffect(() => {
+    if (requestedInspectionId) setSelectedOrderIdState(requestedInspectionId);
+  }, [requestedInspectionId]);
   const [backendOrders, setBackendOrders] = useState<InspectionOrderDto[]>([]);
   const [isLoadingBackendOrders, setIsLoadingBackendOrders] = useState(false);
   const [taskSearchTerm, setTaskSearchTerm] = useState('');
@@ -470,15 +481,15 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
   // Auto-select first order when effectiveOrders loads and nothing is selected
   useEffect(() => {
-    if ((!selectedOrderId || !effectiveOrders.some((o) => o.id === selectedOrderId)) && effectiveOrders.length > 0) {
-      setSelectedOrderId(effectiveOrders[0].id);
+    if (!requestedInspectionId && (!selectedOrderId || !effectiveOrders.some((o) => o.id === selectedOrderId)) && effectiveOrders.length > 0) {
+      setSelectedOrderIdState(effectiveOrders[0].id);
     }
-  }, [effectiveOrders, selectedOrderId]);
+  }, [effectiveOrders, selectedOrderId, requestedInspectionId]);
 
   // --- KPI COMPUTATIONS FOR INSPECTOR ---
   const activeOrder = useMemo(() => {
     return effectiveOrders.find((o) => o.id === selectedOrderId) || effectiveOrders[0];
-  }, [effectiveOrders, selectedOrderId]);
+  }, [effectiveOrders, selectedOrderId, requestedInspectionId]);
 
   const assignedCount = effectiveOrders.length;
   const atHomeCount = effectiveOrders.filter((o) => o.inspectionMethod === 'AT_HOME').length;
@@ -536,7 +547,6 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     });
     if (found) {
       setSelectedOrderId(found.id);
-      setInspectorTab('workbench');
       showNotice(
         lang === 'vi'
           ? `Đã nhận diện thiết bị đơn hàng #${found.id} và mở bàn kiểm định.`
@@ -1094,7 +1104,9 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       {/* ===================================================================== */}
       {/* TAB 1: WORKBENCH (BÀN ĐO KIỂM THỰC TẾ 5 BƯỚC)                         */}
       {/* ===================================================================== */}
-      {inspectorTab === 'workbench' && (
+      {inspectorTab === 'workbench' && requestedInspectionId && !effectiveOrders.some((order) => order.id === requestedInspectionId) ? (
+        <p className="p-10 text-center">{isLoadingBackendOrders ? 'Đang tải đơn kiểm định...' : 'Không tìm thấy đơn kiểm định được phân công cho bạn.'}</p>
+      ) : inspectorTab === 'workbench' && (
         <ProductInspectionStationView
           orders={effectiveOrders}
           currentUser={currentUser}
@@ -1103,6 +1115,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
           hideTopBar={true}
           selectedOrderId={selectedOrderId}
           onSelectOrder={setSelectedOrderId}
+          initialStep="intake"
         />
       )}
 
@@ -1330,7 +1343,6 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                         type="button"
                         onClick={() => {
                           setSelectedOrderId(ord.id);
-                          setInspectorTab('workbench');
                         }}
                         className="flex-1 py-2 px-3 rounded-xl bg-[#24263e] hover:bg-[#1a1c2e] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
                       >

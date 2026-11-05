@@ -3,7 +3,7 @@ import { isValidUUID, isSellerOfferId, isOfficialAcceptedNegotiation } from '../
 import { negotiationService } from '../../services';
 import { Negotiation } from '../../types';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Listing, EscrowOrder, EscrowStatus, Language, UserWallet, ShippingQuoteResponseDto, ShippingLeg, InspectionCenter, UserProfile } from '../../types';
+import { Listing, EscrowOrder, EscrowStatus, Language, UserWallet, ShippingQuoteResponseDto, ShippingRouteErrorDetails, ShippingLeg, InspectionCenter, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import { mockInspectionCenters } from '../../data/mockData';
 import { getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, safeJsonParse } from '../../utils/orderUtils';
@@ -40,7 +40,7 @@ import {
   Package,
 } from 'lucide-react';
 import { orderService, walletService, shippingService, GhnLocation, inspectorService, InspectionQuoteResponse, InspectionTravelTierDto } from '../../services';
-import { translateApiError } from '../../services/apiClient';
+import { translateApiError, ApiError } from '../../services/apiClient';
 import { LalamoveAddressPicker, getCityCoordinates } from '../common/LalamoveAddressPicker';
 import { saveScopedLocalNotification } from '../../utils/notificationStorage';
 import { resolveListingCategory, resolveOrderListing } from '../../utils/catalogCache';
@@ -482,7 +482,28 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [ghnQuote, setGhnQuote] = useState<ShippingQuoteResponseDto | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [quoteErrorCode, setQuoteErrorCode] = useState<string | null>(null);
+  const [quoteErrorStatus, setQuoteErrorStatus] = useState<number | null>(null);
+  const [quoteErrorDetails, setQuoteErrorDetails] = useState<ShippingRouteErrorDetails | null>(null);
   const [showVehicleLimits, setShowVehicleLimits] = useState(false);
+
+  // References for request cancellation and sequence tracking
+  const quoteRequestIdRef = useRef<number>(0);
+  const quoteAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Invalidate quote when post or negotiation changes
+  useEffect(() => {
+    if (quoteAbortControllerRef.current) {
+      quoteAbortControllerRef.current.abort();
+      quoteAbortControllerRef.current = null;
+    }
+    quoteRequestIdRef.current += 1;
+    setGhnQuote(null);
+    setQuoteError(null);
+    setQuoteErrorCode(null);
+    setQuoteErrorStatus(null);
+    setQuoteErrorDetails(null);
+  }, [listing.id, negotiationId]);
 
   // Live Inspection Quote State (POST /api/v1/inspection/quote)
   const [inspectionQuote, setInspectionQuote] = useState<InspectionQuoteResponse | null>(null);
@@ -606,8 +627,21 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     const validPhone = rawPhone.length >= 9 && rawPhone.length <= 15 ? rawPhone : '0912345678';
     const validName = (name || buyerName || currentUser?.name || 'Khách Hàng').trim() || 'Khách Hàng';
 
+    // Abort previous in-flight quote request and increment request sequence ID
+    if (quoteAbortControllerRef.current) {
+      quoteAbortControllerRef.current.abort();
+    }
+    const requestId = ++quoteRequestIdRef.current;
+    const controller = new AbortController();
+    quoteAbortControllerRef.current = controller;
+
+    setGhnQuote(null);
     setQuoteLoading(true);
     setQuoteError(null);
+    setQuoteErrorCode(null);
+    setQuoteErrorStatus(null);
+    setQuoteErrorDetails(null);
+
     try {
       if (negotiationId && !negotiationValidation.valid) {
         if (negotiationValidation.error) {
@@ -624,48 +658,77 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           latitude: currentLat,
           longitude: currentLng,
         },
-      });
+      }, { signal: controller.signal });
+
+      if (requestId !== quoteRequestIdRef.current) {
+        return;
+      }
+
       setGhnQuote(quote);
       setQuoteError(null);
+      setQuoteErrorCode(null);
+      setQuoteErrorStatus(null);
+      setQuoteErrorDetails(null);
     } catch (err: any) {
+      if (err?.name === 'AbortError' || requestId !== quoteRequestIdRef.current) {
+        return;
+      }
       console.warn('Failed to calculate Lalamove quote:', err);
       setGhnQuote(null);
-      let errMsg = err?.response?.data?.message || err?.message || 'Không thể tính phí vận chuyển Lalamove.';
-      if (typeof errMsg === 'string') {
-        if (errMsg.includes('ERR_RATE_LIMIT_EXCEEDED') || errMsg.includes('429')) {
-          errMsg = 'Hệ thống Lalamove đang bận xử lý nhiều báo giá. Vui lòng chờ 2-3 giây rồi thử lại.';
-        } else if (errMsg.includes('Seller pickup address is not configured')) {
+
+      const status = typeof err?.status === 'number' ? err.status : undefined;
+      const code = err?.code || (err as any)?.response?.data?.code;
+      const details = err?.details || (err as any)?.response?.data?.details;
+      let rawMsg = (err as any)?.response?.data?.message || err?.message || 'Không thể tính phí vận chuyển Lalamove.';
+
+      setQuoteErrorStatus(status ?? null);
+      setQuoteErrorCode(code ?? null);
+      setQuoteErrorDetails(details ?? null);
+
+      let errMsg = rawMsg;
+
+      // Handle specific HTTP status codes and backend business error codes
+      if (status === 422 && code === 'NO_SUITABLE_VEHICLE_FOR_ROUTE') {
+        // Use BE message directly. Do NOT claim Lalamove only delivers intra-city.
+        errMsg = rawMsg;
+      } else if (status === 429 || rawMsg.includes('ERR_RATE_LIMIT_EXCEEDED')) {
+        // Technical error: Rate limit
+        errMsg = 'Hệ thống Lalamove đang bận xử lý nhiều báo giá. Vui lòng chờ 2-3 giây rồi bấm thử lại.';
+      } else if (status === 504) {
+        // Technical error: Timeout
+        errMsg = 'Hệ thống Lalamove phản hồi quá thời gian quy định (Timeout). Vui lòng thử lại sau giây lát.';
+      } else if (status === 502 || status === 503) {
+        // Technical error: Gateway / Service unavailable
+        errMsg = 'Dịch vụ Lalamove hiện đang gián đoạn kết nối hoặc đang bảo trì. Vui lòng thử lại sau.';
+      } else if (typeof rawMsg === 'string') {
+        if (rawMsg.includes('Seller pickup address is not configured')) {
           errMsg = 'Người bán chưa cấu hình địa chỉ kho lấy hàng Lalamove. Không thể tạo đơn hàng.';
-        } else if (errMsg.includes('Seller must save the packed weight and dimensions') || errMsg.includes('Shipping weight is required')) {
+        } else if (rawMsg.includes('Seller must save the packed weight and dimensions') || rawMsg.includes('Shipping weight is required')) {
           errMsg = 'Người bán chưa cấu hình kích thước và trọng lượng kiện hàng. Không thể tính phí vận chuyển Lalamove. Vui lòng liên hệ người bán cập nhật bài đăng.';
         } else if (
-          errMsg.includes('Shipping supports packages up to 50 kg and 200 cm') ||
-          errMsg.toLowerCase().includes('up to 50 kg and 200 cm')
+          rawMsg.includes('Shipping supports packages up to 50 kg and 200 cm') ||
+          rawMsg.toLowerCase().includes('up to 50 kg and 200 cm')
         ) {
           errMsg = 'Dịch vụ vận chuyển chỉ hỗ trợ kiện hàng tối đa 50 kg và kích thước mỗi chiều không quá 200 cm (2 mét).';
-        } else if (errMsg.includes('You cannot buy your own post')) {
+        } else if (rawMsg.includes('You cannot buy your own post')) {
           errMsg = 'Bạn đang đăng nhập bằng tài khoản người bán. Không thể tạo báo giá mua bài đăng của chính mình.';
-        } else if (errMsg.includes('Post is not available')) {
+        } else if (rawMsg.includes('Post is not available')) {
           errMsg = 'Bài đăng hiện không ở trạng thái sẵn sàng để giao dịch.';
-        } else if (
-          errMsg.includes('ERR_OUT_OF_SERVICE_AREA') ||
-          errMsg.includes('OUT_OF_SERVICE_AREA') ||
-          errMsg.includes('ngoài khu vực phục vụ')
-        ) {
-          errMsg = `Vị trí giao hàng nằm ngoài phạm vi phục vụ Lalamove so với kho người bán (${sellerCityInfo.name}). Do Lalamove là dịch vụ giao hàng nhanh nội thành, vui lòng chọn địa chỉ nhận hàng tại cùng khu vực ${sellerCityInfo.name}.`;
-        } else if (errMsg.includes('Chưa cấu hình Geoapify') || errMsg.includes('Geoapify')) {
-          errMsg = 'Dịch vụ bản đồ Backend chưa bật Geoapify key. Đã chuyển sang chế độ định vị dự phòng OpenStreetMap.';
-        } else if (errMsg.includes('Không có loại xe Lalamove đủ tải trọng') || errMsg.includes('Giới hạn từng loại xe')) {
-          // Giữ nguyên raw string để parse danh sách chi tiết các loại xe cho giao diện accordion
+        } else if (rawMsg.includes('Không có loại xe Lalamove đủ tải trọng') || rawMsg.includes('Giới hạn từng loại xe')) {
+          // Keep raw string for accordion vehicle limits parsing
+          errMsg = rawMsg;
         } else {
-          errMsg = translateApiError(errMsg);
+          errMsg = translateApiError(rawMsg);
         }
       }
+
       setQuoteError(errMsg);
     } finally {
-      setQuoteLoading(false);
+      if (requestId === quoteRequestIdRef.current) {
+        setQuoteLoading(false);
+      }
     }
-  }, [deliveryLatitude, deliveryLongitude, buyerPhone, buyerName, streetAddress, currentUser, listing.id, negotiationId]);
+  }, [deliveryLatitude, deliveryLongitude, buyerPhone, buyerName, streetAddress, currentUser, listing.id, negotiationId, validNegotiationId, negotiationValidation]);
 
   const calculateGhnQuote = calculateLalamoveQuote;
 
@@ -829,10 +892,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
 
     let activeQuote = ghnQuote;
-    if (!activeQuote || !activeQuote.quoteId) {
-      if (deliveryLatitude && deliveryLongitude) {
+    const isQuoteExpired = activeQuote?.expiresAt ? new Date(activeQuote.expiresAt).getTime() <= Date.now() : false;
+
+    if (!activeQuote || !activeQuote.quoteId || isQuoteExpired) {
+      if (deliveryLatitude && deliveryLongitude && isLocationConfirmed) {
         setSubmittingOrder(true);
         try {
+          if (quoteAbortControllerRef.current) {
+            quoteAbortControllerRef.current.abort();
+          }
+          const requestId = ++quoteRequestIdRef.current;
+          const controller = new AbortController();
+          quoteAbortControllerRef.current = controller;
+
           const rawPhone = (buyerPhone || currentUser?.phone || '').replace(/\D/g, '');
           const validPhone = rawPhone.length >= 9 && rawPhone.length <= 15 ? rawPhone : '0912345678';
           activeQuote = await shippingService.getShippingQuote({
@@ -844,18 +916,40 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               latitude: deliveryLatitude,
               longitude: deliveryLongitude,
             },
-          });
+          }, { signal: controller.signal });
+
+          if (requestId !== quoteRequestIdRef.current) {
+            setSubmittingOrder(false);
+            return;
+          }
+
           setGhnQuote(activeQuote);
+          setQuoteError(null);
+          setQuoteErrorCode(null);
+          setQuoteErrorStatus(null);
+          setQuoteErrorDetails(null);
         } catch (err: any) {
-          setOrderError(translateApiError(err?.message) || 'Không thể lấy báo giá Lalamove. Vui lòng kiểm tra lại địa chỉ hoặc thử lại.');
+          setGhnQuote(null);
+          const status = typeof err?.status === 'number' ? err.status : undefined;
+          const code = err?.code;
+          let msg = err?.message || 'Không thể lấy báo giá Lalamove. Vui lòng kiểm tra lại địa chỉ hoặc thử lại.';
+          if (status === 422 && code === 'NO_SUITABLE_VEHICLE_FOR_ROUTE') {
+            msg = err?.message;
+          } else if (status === 429) {
+            msg = 'Hệ thống Lalamove đang bận xử lý nhiều báo giá. Vui lòng chờ 2-3 giây rồi bấm thử lại.';
+          } else if (status === 502 || status === 503 || status === 504) {
+            msg = 'Dịch vụ Lalamove hiện đang gián đoạn kết nối hoặc phản hồi chậm. Vui lòng thử lại sau.';
+          }
+          setQuoteError(msg);
+          setOrderError(msg);
           setSubmittingOrder(false);
           return;
         }
       } else {
         setOrderError(
           lang === 'vi'
-            ? 'Đang chờ báo giá vận chuyển từ Lalamove. Vui lòng kiểm tra lại địa chỉ hoặc bấm thử lại.'
-            : 'Awaiting Lalamove shipping quote. Please check your address or retry.'
+            ? 'Chưa có báo giá vận chuyển hợp lệ. Vui lòng xác nhận vị trí giao hàng để lấy báo giá trước khi đặt hàng.'
+            : 'No valid shipping quote. Please confirm your delivery address to get a quote before placing your order.'
         );
         return;
       }
@@ -2590,9 +2684,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 calculateLalamoveQuote(data.latitude, data.longitude, data.address, data.name, data.phone);
               }}
               onAddressUnconfirmed={() => {
+                if (quoteAbortControllerRef.current) {
+                  quoteAbortControllerRef.current.abort();
+                  quoteAbortControllerRef.current = null;
+                }
+                quoteRequestIdRef.current += 1;
                 setIsLocationConfirmed(false);
                 setGhnQuote(null);
                 setQuoteError(null);
+                setQuoteErrorCode(null);
+                setQuoteErrorStatus(null);
+                setQuoteErrorDetails(null);
               }}
               lang={lang}
               title={lang === 'vi' ? 'Địa Chỉ Giao Nhận Hàng Lalamove' : 'Lalamove Delivery Address'}
@@ -2665,7 +2767,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
             {quoteError && (() => {
               const isVehicleLimit = quoteError.includes('Không có loại xe Lalamove đủ tải trọng') || quoteError.includes('Giới hạn từng loại xe');
-              const isOutOfArea = quoteError.includes('phạm vi phục vụ') || quoteError.includes('ERR_OUT_OF_SERVICE_AREA');
+              const isNoSuitableVehicle = quoteErrorCode === 'NO_SUITABLE_VEHICLE_FOR_ROUTE' || quoteErrorStatus === 422;
 
               if (isVehicleLimit) {
                 const vehicleLimits = parseLalamoveVehicleLimits(quoteError);
@@ -2708,15 +2810,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       </span>
                     </div>
 
-                    {/* Accordion xem chi tiết giới hạn phương tiện (thu gọn mặc định) */}
+                    {/* Danh sách giới hạn chi tiết từng loại xe */}
                     {vehicleLimits.length > 0 && (
-                      <div className="pt-1 border-t border-amber-200/60 dark:border-amber-800/40">
+                      <div className="pt-2 border-t border-amber-200/60 dark:border-amber-800/40">
                         <button
                           type="button"
                           onClick={() => setShowVehicleLimits(!showVehicleLimits)}
-                          className="text-[11px] font-semibold text-amber-800 hover:text-amber-950 dark:text-amber-300 dark:hover:text-amber-100 flex items-center gap-1.5 cursor-pointer transition py-1"
+                          className="flex items-center justify-between w-full text-left text-xs font-bold text-amber-900 dark:text-amber-200 hover:text-amber-700 cursor-pointer py-1"
                         >
-                          <span>{showVehicleLimits ? 'Thu gọn chi tiết các loại xe' : `Xem chi tiết giới hạn ${vehicleLimits.length} loại xe tại điểm lấy hàng`}</span>
+                          <span className="flex items-center gap-1.5">
+                            <span>📋</span>
+                            <span>Xem quy chuẩn kích thước các loại xe ({vehicleLimits.length} loại xe)</span>
+                          </span>
                           {showVehicleLimits ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                         </button>
 
@@ -2743,38 +2848,45 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 );
               }
 
-              // Các trường hợp lỗi quote khác
+              if (isNoSuitableVehicle) {
+                return (
+                  <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 animate-fadeIn">
+                    <div className="flex items-start gap-2.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="font-bold text-amber-950 leading-relaxed">{quoteError}</p>
+                        <p className="text-[11px] text-amber-800">
+                          👉 Vui lòng kiểm tra và điều chỉnh vị trí hoặc địa chỉ giao nhận trên bản đồ rồi bấm thử lại.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          calculateLalamoveQuote(deliveryLatitude, deliveryLongitude, streetAddress, buyerName, buyerPhone);
+                        }}
+                        disabled={quoteLoading}
+                        className="px-3 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded-xl font-bold text-xs cursor-pointer transition flex items-center gap-1"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${quoteLoading ? 'animate-spin' : ''}`} />
+                        <span>{quoteLoading ? 'Đang tính...' : 'Thử lại'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              // Các trường hợp lỗi kỹ thuật (429, 502, 503, 504) hoặc lỗi khác
               return (
                 <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 animate-fadeIn">
                   <div className="flex items-start gap-2.5">
                     <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                     <div className="space-y-1">
                       <p className="font-semibold leading-relaxed">{quoteError}</p>
-                      {isOutOfArea && (
-                        <p className="text-[11px] text-amber-700">
-                          👉 Bấm nút bên cạnh để chuyển vị trí giao hàng sang khu vực <strong>{sellerCityInfo.name}</strong>.
-                        </p>
-                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                    {isOutOfArea && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDeliveryLatitude(sellerCityInfo.lat);
-                          setDeliveryLongitude(sellerCityInfo.lng);
-                          setStreetAddress(`Khu vực trung tâm ${sellerCityInfo.name}`);
-                          setSelectedProvinceName(sellerCityInfo.name);
-                          setIsLocationConfirmed(false);
-                          setGhnQuote(null);
-                          setQuoteError(null);
-                        }}
-                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs transition"
-                      >
-                        Đổi sang {sellerCityInfo.name}
-                      </button>
-                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -2802,6 +2914,35 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     Chặng: {ghnQuote.leg || 'SELLER_TO_BUYER'}
                   </span>
                 </div>
+
+                {/* Khung vàng giải thích phương tiện thay thế khi BE sử dụng fallback */}
+                {ghnQuote.vehicleSelection?.fallbackUsed === true && (
+                  <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl space-y-2 text-amber-950 shadow-2xs animate-fadeIn">
+                    <div className="flex items-center gap-2 font-bold text-amber-900">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span className="text-xs font-extrabold">Lý do chọn phương tiện thay thế</span>
+                    </div>
+                    {ghnQuote.vehicleSelection.message && (
+                      <p className="text-[11px] text-amber-900 leading-relaxed font-medium">
+                        {ghnQuote.vehicleSelection.message}
+                      </p>
+                    )}
+                    {(ghnQuote.vehicleSelection.pickupCity || ghnQuote.vehicleSelection.deliveryCity || typeof ghnQuote.vehicleSelection.distanceKm === 'number') && (
+                      <div className="flex items-center gap-2 flex-wrap pt-1.5 border-t border-amber-200/70 text-[10px] text-amber-800">
+                        {(ghnQuote.vehicleSelection.pickupCity || ghnQuote.vehicleSelection.deliveryCity) && (
+                          <span className="bg-amber-100/80 px-2 py-0.5 rounded-md font-semibold border border-amber-200">
+                            Tuyến: {[ghnQuote.vehicleSelection.pickupCity, ghnQuote.vehicleSelection.deliveryCity].filter(Boolean).join(' ➔ ')}
+                          </span>
+                        )}
+                        {typeof ghnQuote.vehicleSelection.distanceKm === 'number' && (
+                          <span className="bg-amber-100/80 px-2 py-0.5 rounded-md font-semibold border border-amber-200">
+                            Khoảng cách: <strong>{ghnQuote.vehicleSelection.distanceKm.toLocaleString('vi-VN')} km</strong>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Thẻ phân loại phương tiện theo kích thước & khối lượng kiện hàng sản phẩm */}
                 {(() => {
@@ -3105,8 +3246,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     +{formatVND(shippingFee)}
                   </span>
                 ) : (
-                  <span className="text-slate-400 font-medium">
-                    ---
+                  <span className="text-amber-700 font-semibold text-[11px]">
+                    Chưa có báo giá vận chuyển
                   </span>
                 )}
               </div>
@@ -3248,7 +3389,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           {/* Submit */}
           <button
             type="submit"
-            disabled={submittingOrder || !isLocationConfirmed || !ghnQuote}
+            disabled={submittingOrder || !isLocationConfirmed || !ghnQuote || Boolean(quoteError)}
             className="w-full py-3.5 px-4 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white rounded-2xl font-black text-xs sm:text-sm shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submittingOrder ? (
@@ -3260,10 +3401,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     : (lang === 'vi' ? 'Đang tạo đơn & lấy mã VietQR...' : 'Creating order & generating VietQR...')}
                 </span>
               </>
-            ) : (!isLocationConfirmed || !ghnQuote) ? (
+            ) : (!isLocationConfirmed || !ghnQuote || Boolean(quoteError)) ? (
               <>
                 <Truck className="w-4 h-4 text-white" />
-                <span>{lang === 'vi' ? 'Vui lòng xác nhận vị trí trên bản đồ để tính phí Lalamove' : 'Please confirm location on map to calculate Lalamove fee'}</span>
+                <span>
+                  {quoteError
+                    ? 'Chưa có báo giá vận chuyển - Vui lòng kiểm tra lại'
+                    : (!isLocationConfirmed
+                        ? (lang === 'vi' ? 'Vui lòng xác nhận vị trí trên bản đồ để tính phí Lalamove' : 'Please confirm location on map to calculate Lalamove fee')
+                        : 'Đang tải báo giá vận chuyển...')}
+                </span>
               </>
             ) : paymentMethod === 'WALLET' ? (
               <>

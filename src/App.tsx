@@ -25,7 +25,7 @@ import './utils/dialogService';
 import { clearNotificationsOnLogout, saveScopedLocalNotification } from './utils/notificationStorage';
 import { NotificationItem } from './types/notification';
 import { notificationWsClient } from './services/notificationWsClient';
-import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
+import { ShieldCheck, Sparkles, CheckCircle2, Store, AlertTriangle } from 'lucide-react';
 import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, getRefreshToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, isTokenExpiringSoon, recordUserActivity, resetActivityTimer, isUserIdle, refreshAccessToken, checkAndRenewSessionOnReturn, ChatRoomDto } from './services';
 
 // Code-split heavy views via lazyWithRetry to prevent dynamic import fetch errors
@@ -146,24 +146,32 @@ export default function App() {
     if (token) {
       userService.getMyProfile().then(async (profile) => {
         if (profile) {
-          // Lấy thông tin địa chỉ kho bưu tá / onboarding từ BE
+          // Xác định vai trò người dùng để tránh gọi sai API chuyên biệt
+          const roleUpperList = (profile.roles || []).map((r: string) => (r || '').toUpperCase());
+          const isInternal = roleUpperList.some((r: string) =>
+            ['INSPECTOR', 'ROLE_INSPECTOR', 'HUB_INSPECTOR', 'STAFF', 'ROLE_STAFF', 'ADMIN', 'ROLE_ADMIN', 'INSPECTION_CENTER', 'ROLE_INSPECTION_CENTER'].includes(r)
+          );
+          const isSeller = !isInternal && roleUpperList.some((r: string) => r === 'SELLER' || r === 'ROLE_SELLER');
+          const isBuyer = !isInternal && !isSeller;
+
+          // Lấy thông tin địa chỉ kho bưu tá / onboarding từ BE (Chỉ gọi cho Buyer hoặc Seller, tuyệt đối không gọi cho role nội bộ như Inspector/Admin/Staff)
           let pickupAddr: any = null;
-          try {
-            const isSeller = profile.roles?.some((r: string) => r === 'SELLER' || r === 'ROLE_SELLER');
-            // Nếu là SELLER thì mới gọi getPickupAddress(), nếu là BUYER thì chỉ gọi getSellerOnboarding()
-            const tasks: Promise<any>[] = [shippingService.getSellerOnboarding()];
-            if (isSeller) {
-              tasks.push(shippingService.getPickupAddress());
-            }
-            const results = await Promise.allSettled(tasks);
-            const obRes = results[0];
-            const paRes = isSeller ? results[1] : null;
-            if (obRes && obRes.status === 'fulfilled' && obRes.value?.pickupAddress) {
-              pickupAddr = obRes.value.pickupAddress;
-            } else if (paRes && paRes.status === 'fulfilled' && paRes.value) {
-              pickupAddr = paRes.value;
-            }
-          } catch (_) {}
+          if (!isInternal && (isSeller || isBuyer)) {
+            try {
+              const tasks: Promise<any>[] = [shippingService.getSellerOnboarding()];
+              if (isSeller) {
+                tasks.push(shippingService.getPickupAddress());
+              }
+              const results = await Promise.allSettled(tasks);
+              const obRes = results[0];
+              const paRes = isSeller ? results[1] : null;
+              if (obRes && obRes.status === 'fulfilled' && obRes.value?.pickupAddress) {
+                pickupAddr = obRes.value.pickupAddress;
+              } else if (paRes && paRes.status === 'fulfilled' && paRes.value) {
+                pickupAddr = paRes.value;
+              }
+            } catch (_) {}
+          }
 
           const fullPickup = pickupAddr
             ? [pickupAddr.address, pickupAddr.wardName, pickupAddr.provinceName].filter(Boolean).join(', ')
@@ -185,7 +193,7 @@ export default function App() {
           const resolvedWard = stored?.wardName || profile.ward || pickupAddr?.wardName || savedAddr?.wardName || '';
           const resolvedProv = stored?.provinceName || profile.province || pickupAddr?.provinceName || savedAddr?.provinceName || '';
 
-          if (resolvedPickup || resolvedAddress) {
+          if (isSeller && (resolvedPickup || resolvedAddress)) {
             saveSellerAddress(resolvedPickup || resolvedAddress, resolvedWard, resolvedProv);
           }
 
@@ -224,11 +232,13 @@ export default function App() {
           setCurrentUser(syncedUser);
           setCurrentRole(syncedUser.role);
           setStoredUser(syncedUser);
-          saveSellerAddress(
-            syncedUser.pickupAddress || syncedUser.address || '',
-            syncedUser.wardName || syncedUser.ward || '',
-            syncedUser.provinceName || syncedUser.province || ''
-          );
+          if (isSeller) {
+            saveSellerAddress(
+              syncedUser.pickupAddress || syncedUser.address || '',
+              syncedUser.wardName || syncedUser.ward || '',
+              syncedUser.provinceName || syncedUser.province || ''
+            );
+          }
 
         } else {
           clearAuthTokens();
@@ -302,7 +312,7 @@ export default function App() {
 
   const closeRouteModal = (fallback: string) => {
     const previous = safeReturnPath(window.history.state?.returnPath || null);
-    if (previous && previous !== browserLocation) window.history.back();
+    if (previous && previous !== browserLocation) navigatePath(previous, { replace: true });
     else navigatePath(fallback, { replace: true });
   };
   const openAuth = (mode: 'login' | 'register' | 'forgot' = 'login', returnTo?: string) => {
@@ -1240,13 +1250,16 @@ export default function App() {
     try {
       const isCenter = currentUser?.role === 'inspection_center' || currentRole === 'inspection_center';
       const isInspector = currentUser?.role === 'inspector' || currentRole === 'inspector';
+      const isAdmin = currentUser?.role === 'admin' || currentRole === 'admin';
+      const isInternalRole = isCenter || isInspector || isAdmin;
+
       const [buyerRes, sellerRes, inspBuyerRes, inspSellerRes, chatRooms, inspCenterRes, inspMyRes] = await Promise.all([
-        orderService.getBuyerOrders(0, 50).catch(() => ({ content: [] })),
-        orderService.getSellerOrders(0, 50).catch(() => ({ content: [] })),
-        inspectorService.getMyBuyerOrders(0, 50).catch(() => ({ items: [] } as any)),
-        inspectorService.getMySellerOrders(0, 50).catch(() => ({ items: [] } as any)),
+        !isInternalRole ? orderService.getBuyerOrders(0, 50).catch(() => ({ content: [] })) : Promise.resolve({ content: [] }),
+        !isInternalRole ? orderService.getSellerOrders(0, 50).catch(() => ({ content: [] })) : Promise.resolve({ content: [] }),
+        !isInternalRole ? inspectorService.getMyBuyerOrders(0, 50).catch(() => ({ items: [] } as any)) : Promise.resolve({ items: [] } as any),
+        !isInternalRole ? inspectorService.getMySellerOrders(0, 50).catch(() => ({ items: [] } as any)) : Promise.resolve({ items: [] } as any),
         chatService.getChatRooms().catch(() => [] as any[]),
-        (isCenter || isInspector) ? inspectorService.getAllOrders(undefined, 0, 100).catch(() => ({ items: [] } as any)) : Promise.resolve({ items: [] } as any),
+        isCenter ? inspectorService.getAllOrders(undefined, 0, 100).catch(() => ({ items: [] } as any)) : Promise.resolve({ items: [] } as any),
         isInspector ? inspectorService.getMyOrders().catch(() => [] as any[]) : Promise.resolve([] as any[])
       ]);
 
@@ -2687,7 +2700,7 @@ export default function App() {
     if (!productId || routeAccess !== 'allowed' || isRestoringSession) return;
     const isEdit = activeTab === 'create-listing';
     if (isEdit && editingDraft?.id === productId) return;
-    if (!isEdit && selectedListing?.id === productId) return;
+    if (!isEdit && (selectedListing?.id === productId || checkoutListing?.id === productId)) return;
     const load = isEdit ? postService.getDraft(productId)
       : route.role === 'seller' ? postService.getMyPostDetail(productId)
       : route.role === 'admin' ? adminPostService.getAdminPosts().then((response) => {
@@ -2707,8 +2720,7 @@ export default function App() {
   if (activeTab === 'unauthorized' || activeTab === 'not-found') {
     return <RouteStatusPage status={activeTab} home={currentUser ? getRoleLandingPath(currentRole) : '/'} />;
   }
-  if (route.params.productId && (route.modal === 'product' || activeTab === 'create-listing') &&
-      (route.modal === 'product' ? selectedListing?.id !== route.params.productId : editingDraft?.id !== route.params.productId)) {
+  if (route.params.productId && activeTab === 'create-listing' && editingDraft?.id !== route.params.productId) {
     return routeProductError ? <div className="p-12 text-center"><p>{routeProductError}</p><button onClick={() => navigatePath(paths.products)}>Về danh sách sản phẩm</button></div> : <ViewLoadingFallback />;
   }
 
@@ -3102,8 +3114,43 @@ export default function App() {
 
       {/* Modals & Popups */}
       <Suspense fallback={null}>
+        {/* Product Modal Loading / Error Overlay for direct URL access */}
+        {route.modal === 'product' && !selectedListing && !checkoutListing && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl flex flex-col items-center text-center">
+              {routeProductError ? (
+                <>
+                  <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center mb-3">
+                    <AlertTriangle className="w-6 h-6" />
+                  </div>
+                  <p className="text-xs font-bold text-slate-800 mb-4">{routeProductError}</p>
+                  <button
+                    onClick={() => closeRouteModal(paths.products)}
+                    className="px-4 py-2 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800 transition cursor-pointer"
+                  >
+                    Về danh sách sản phẩm
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="w-10 h-10 rounded-full border-4 border-amber-200 border-t-[#c34c36] animate-spin mb-3" />
+                  <p className="text-xs font-bold text-slate-600 tracking-wide uppercase animate-pulse">
+                    Đang tải thông tin sản phẩm...
+                  </p>
+                  <button
+                    onClick={() => closeRouteModal(paths.products)}
+                    className="mt-4 px-3 py-1.5 rounded-xl border border-slate-200 text-[11px] text-slate-500 hover:bg-slate-100 font-semibold cursor-pointer"
+                  >
+                    Đóng
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Listing Detail Modal */}
-        {selectedListing && (
+        {selectedListing && !checkoutListing && (
           <ListingDetailModal
             listing={selectedListing}
             currentUser={currentUser}
@@ -3121,7 +3168,7 @@ export default function App() {
                 showToast(lang === 'vi' ? 'Bạn không thể tự mua sản phẩm của chính mình.' : 'You cannot buy your own product.');
                 return;
               }
-              setSelectedListing(null);
+              // Retain selectedListing so route stays active and user returns seamlessly if checkout is closed
               setCheckoutAgreedPrice(undefined);
               setCheckoutNegotiationId(undefined);
               setCheckoutListing(item);
@@ -3174,6 +3221,7 @@ export default function App() {
               setCheckoutListing(null);
               setCheckoutAgreedPrice(undefined);
               setCheckoutNegotiationId(undefined);
+              if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
               loadListingsFromBackend(true);
             }}
             onCancelUnpaid={(msg) => {
@@ -3190,6 +3238,7 @@ export default function App() {
               setCheckoutListing(null);
               setCheckoutAgreedPrice(undefined);
               setCheckoutNegotiationId(undefined);
+              if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
               loadListingsFromBackend(true);
               showToast(msg || (lang === 'vi' ? 'Đơn hàng chưa được thanh toán! Đã quay lại trang mua hàng.' : 'Order not paid. Returned to shopping page.'));
             }}
@@ -3274,7 +3323,7 @@ export default function App() {
             setPendingTab(null);
             navigatePath(destination, { replace: true });
             if (pendingCheckoutItem && ['buyer', 'seller'].includes(user.role)) {
-              setSelectedListing(null);
+              setSelectedListing(pendingCheckoutItem);
               setCheckoutListing(pendingCheckoutItem);
               setPendingCheckoutItem(null);
             }

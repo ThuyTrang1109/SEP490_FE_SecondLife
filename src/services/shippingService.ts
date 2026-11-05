@@ -1,4 +1,4 @@
-import { request } from './apiClient';
+import { request, RequestOptions } from './apiClient';
 import {
   ShippingQuoteRequestDto,
   ShippingQuoteResponseDto,
@@ -679,11 +679,12 @@ export const shippingService = {
    * Lấy báo giá vận chuyển Lalamove (Tiền hàng, phí giao, tổng tiền, thời gian giao)
    * POST /api/v1/shipping/quotes
    */
-  async getShippingQuote(body: ShippingQuoteRequestDto): Promise<ShippingQuoteResponseDto> {
+  async getShippingQuote(body: ShippingQuoteRequestDto, options?: RequestOptions): Promise<ShippingQuoteResponseDto> {
     const res = await request<ShippingQuoteResponseDto>('/shipping/quotes', {
       method: 'POST',
       body: JSON.stringify(body),
       requiresAuth: true,
+      ...options,
     });
     const quote = (res as any)?.data ?? res;
     return quote as ShippingQuoteResponseDto;

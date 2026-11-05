@@ -1,4 +1,4 @@
-import { request, PageResponse } from './apiClient';
+import { request, PageResponse, getStoredUser } from './apiClient';
 import { InspectionCenter } from '../types';
 import { mockInspectionCenters } from '../data/mockData';
 
@@ -10,7 +10,7 @@ export interface InspectionTravelTierDto {
   tierNumber: number;
   name: string;
   fromKm?: number;
-  toKm?: number;
+  toKm?: number | null;
   pricePerKm: number;
   distanceChargedInTier?: number;
   feeInTier?: number;
@@ -156,6 +156,8 @@ export interface CreateChecklistTemplateRequest {
   items: CreateChecklistItemRequest[];
 }
 
+export type InspectionFeeProposalStatus = 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+
 export interface InspectionFeeProposalResponse {
   id: string;
   categoryId?: string;
@@ -168,10 +170,34 @@ export interface InspectionFeeProposalResponse {
   proposedByEmail?: string;
   reviewedById?: string;
   reviewedByName?: string;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | string;
+  status: InspectionFeeProposalStatus | string;
   rejectReason?: string;
   createdAt?: string;
   reviewedAt?: string;
+}
+
+export interface PaginatedProposalResponse {
+  items: InspectionFeeProposalResponse[];
+  totalElements: number;
+  totalPages: number;
+  page: number;
+  size: number;
+  isLast?: boolean;
+}
+
+export function canManageInspectionFee(user: any): boolean {
+  if (!user) return false;
+  const role = (user.role || '').toUpperCase();
+  if (role === 'ADMIN' || role === 'INSPECTION_CENTER') {
+    const authorities: string[] = Array.isArray(user.authorities)
+      ? user.authorities.map((a: any) => (typeof a === 'string' ? a : a.authority || ''))
+      : Array.isArray(user.permissions)
+      ? user.permissions
+      : [];
+    if (authorities.length === 0) return true;
+    return authorities.includes('INSPECTION_FEE_MANAGE') || authorities.includes('ROLE_ADMIN');
+  }
+  return false;
 }
 
 export type InspectionAppealStatus = 'NONE' | 'PENDING_REVIEW' | 'UPHELD' | 'OVERTURNED';
@@ -191,13 +217,7 @@ export interface ReviewInspectionAppealRequest {
 export interface ProposeTravelTiersRequest {
   categoryId?: string;
   baseInspectionFee: number;
-  tiers: {
-    tierNumber: number;
-    name: string;
-    fromKm: number;
-    toKm: number;
-    pricePerKm: number;
-  }[];
+  tiers: InspectionTravelTierDto[];
 }
 
 export interface InspectionOrderDto {
@@ -746,6 +766,20 @@ export const inspectorService = {
    * Manager xem danh sách tất cả các đơn kiểm định (fallback an toàn đa endpoint & giải nén đa tầng)
    */
   async getAllOrders(status?: string, page: number = 0, size: number = 100): Promise<PageResponse<InspectionOrderDto>> {
+    // Role inspector là Kỹ thuật viên, chỉ xem các đơn được phân công cho mình qua /inspector/orders
+    const storedUser = getStoredUser();
+    if (storedUser?.role === 'inspector') {
+      const myOrders = await this.getMyOrders().catch(() => []);
+      return {
+        items: myOrders,
+        page: 0,
+        size: myOrders.length,
+        totalElements: myOrders.length,
+        totalPages: 1,
+        isLast: true,
+      };
+    }
+
     const params = new URLSearchParams();
     if (status && status !== 'ALL') params.append('status', status);
     params.append('page', page.toString());
@@ -766,13 +800,15 @@ export const inspectorService = {
           requiresAuth: true,
         });
       } catch (e2) {
-        // 3. Fallback lấy từ /inspector/orders
-        try {
-          rawRes = await request<InspectionOrderDto[]>('/inspector/orders', {
-            method: 'GET',
-            requiresAuth: true,
-          });
-        } catch {}
+        // 3. Fallback lấy từ /inspector/orders (chỉ áp dụng cho KTV inspector, không gọi khi là inspection_center/admin)
+        if (storedUser?.role === 'inspector') {
+          try {
+            rawRes = await request<InspectionOrderDto[]>('/inspector/orders', {
+              method: 'GET',
+              requiresAuth: true,
+            });
+          } catch {}
+        }
       }
     }
 
@@ -807,28 +843,18 @@ export const inspectorService = {
   },
 
   /**
-   * Manager phân công Inspector cho đơn kiểm định (hỗ trợ fallback endpoint)
+   * Manager phân công Inspector cho đơn kiểm định
+   * POST /api/v1/inspector-center/orders/{orderId}/assign?inspectorId={inspectorId}
    */
   async assignInspector(orderId: string, inspectorId: string): Promise<InspectionOrderDto> {
-    try {
-      const res = await request<InspectionOrderDto>(
-        `/inspector-center/orders/${orderId}/assign?inspectorId=${encodeURIComponent(inspectorId)}`,
-        {
-          method: 'POST',
-          requiresAuth: true,
-        }
-      );
-      return (res as any)?.data || res;
-    } catch (err) {
-      const resFallback = await request<InspectionOrderDto>(
-        `/inspector/orders/${orderId}/assign?inspectorId=${encodeURIComponent(inspectorId)}`,
-        {
-          method: 'POST',
-          requiresAuth: true,
-        }
-      );
-      return (resFallback as any)?.data || resFallback;
-    }
+    const res = await request<InspectionOrderDto>(
+      `/inspector-center/orders/${orderId}/assign?inspectorId=${encodeURIComponent(inspectorId)}`,
+      {
+        method: 'POST',
+        requiresAuth: true,
+      }
+    );
+    return (res as any)?.data || res;
   },
 
   /**
@@ -969,15 +995,38 @@ export const inspectorService = {
   },
 
   /**
-   * Manager xem lịch sử các đề xuất biểu phí của trung tâm
+   * Manager xem lịch sử các đề xuất biểu phí của trung tâm (có lọc status & phân trang)
    */
-  async getTierProposals(): Promise<InspectionFeeProposalResponse[]> {
-    const res = await request<InspectionFeeProposalResponse[]>('/inspector-center/travel-tiers/proposals', {
+  async getTierProposals(status?: string, page: number = 0, size: number = 10): Promise<PaginatedProposalResponse> {
+    const params = new URLSearchParams();
+    if (status && status !== 'ALL') {
+      const normalizedStatus = status === 'PENDING' ? 'PENDING_APPROVAL' : status;
+      params.append('status', normalizedStatus);
+    }
+    params.append('page', page.toString());
+    params.append('size', size.toString());
+    params.append('sort', 'createdAt,desc');
+
+    const res = await request<any>(`/inspector-center/travel-tiers/proposals?${params.toString()}`, {
       method: 'GET',
       requiresAuth: true,
     });
-    const data = (res as any)?.data || res;
-    return Array.isArray(data) ? data : [];
+    const raw = (res as any)?.data || res;
+    const list = Array.isArray(raw?.content)
+      ? raw.content
+      : Array.isArray(raw?.items)
+      ? raw.items
+      : Array.isArray(raw)
+      ? raw
+      : [];
+    return {
+      items: list,
+      totalElements: typeof raw?.totalElements === 'number' ? raw.totalElements : list.length,
+      totalPages: typeof raw?.totalPages === 'number' ? raw.totalPages : 1,
+      page: typeof raw?.number === 'number' ? raw.number : (typeof raw?.page === 'number' ? raw.page : page),
+      size: typeof raw?.size === 'number' ? raw.size : size,
+      isLast: typeof raw?.last === 'boolean' ? raw.last : true,
+    };
   },
 
   // --------------------------------------------------------------------------
@@ -985,15 +1034,38 @@ export const inspectorService = {
   // --------------------------------------------------------------------------
 
   /**
-   * Admin xem danh sách các đề xuất biểu phí
+   * Admin xem danh sách các đề xuất biểu phí (có lọc status & phân trang)
    */
-  async getAdminFeeProposals(): Promise<InspectionFeeProposalResponse[]> {
-    const res = await request<InspectionFeeProposalResponse[]>('/admin/inspection/fee-proposals', {
+  async getAdminFeeProposals(status?: string, page: number = 0, size: number = 10): Promise<PaginatedProposalResponse> {
+    const params = new URLSearchParams();
+    if (status && status !== 'ALL') {
+      const normalizedStatus = status === 'PENDING' ? 'PENDING_APPROVAL' : status;
+      params.append('status', normalizedStatus);
+    }
+    params.append('page', page.toString());
+    params.append('size', size.toString());
+    params.append('sort', 'createdAt,desc');
+
+    const res = await request<any>(`/admin/inspection/fee-proposals?${params.toString()}`, {
       method: 'GET',
       requiresAuth: true,
     });
-    const data = (res as any)?.data || res;
-    return Array.isArray(data) ? data : [];
+    const raw = (res as any)?.data || res;
+    const list = Array.isArray(raw?.items)
+      ? raw.items
+      : Array.isArray(raw?.content)
+      ? raw.content
+      : Array.isArray(raw)
+      ? raw
+      : [];
+    return {
+      items: list,
+      totalElements: typeof raw?.totalElements === 'number' ? raw.totalElements : list.length,
+      totalPages: typeof raw?.totalPages === 'number' ? raw.totalPages : 1,
+      page: typeof raw?.page === 'number' ? raw.page : (typeof raw?.number === 'number' ? raw.number : page),
+      size: typeof raw?.size === 'number' ? raw.size : size,
+      isLast: typeof raw?.isLast === 'boolean' ? raw.isLast : (typeof raw?.last === 'boolean' ? raw.last : true),
+    };
   },
 
   /**

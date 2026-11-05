@@ -650,6 +650,28 @@ export interface ShippingQuoteRequestDto {
   serviceType?: string;
 }
 
+export interface ShippingVehicleSelection {
+  preferredServiceType: string;
+  selectedServiceType: string;
+  fallbackUsed: boolean;
+  reasonCode?: 'PREFERRED_VEHICLE_OUT_OF_SERVICE_AREA'
+    | 'PREFERRED_VEHICLE_UNAVAILABLE'
+    | (string & {});
+  providerErrorCode?: string;
+  pickupCity?: string;
+  deliveryCity?: string;
+  distanceKm?: number;
+  message?: string;
+}
+
+export interface ShippingRouteErrorDetails {
+  preferredServiceType?: string;
+  attemptedServiceTypes?: string[];
+  pickupCity?: string;
+  deliveryCity?: string;
+  providerErrorCode?: string;
+}
+
 export interface ShippingQuoteResponseDto {
   quoteId: string;
   leg: string;
@@ -668,6 +690,7 @@ export interface ShippingQuoteResponseDto {
   shippingLength?: number;
   shippingWidth?: number;
   shippingHeight?: number;
+  vehicleSelection?: ShippingVehicleSelection | null;
 }
 
 export interface CreateShipmentRequestDto {

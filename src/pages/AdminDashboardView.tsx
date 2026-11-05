@@ -3538,7 +3538,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* ======================================================== */}
           {activeTab === 'inspection-governance' && (
             <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-amber-500 p-5">
-              <InspectionGovernanceTab lang={lang} />
+              <InspectionGovernanceTab lang={lang} currentUser={currentUser} />
             </div>
           )}
         </div>

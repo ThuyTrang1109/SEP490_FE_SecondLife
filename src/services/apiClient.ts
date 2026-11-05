@@ -329,13 +329,24 @@ export class ApiError extends Error {
   status: number;
   errors?: any[];
   path?: string;
+  code?: string;
+  details?: any;
 
-  constructor(message: string, status: number, errors?: any[], path?: string) {
+  constructor(
+    message: string,
+    status: number,
+    errors?: any[],
+    path?: string,
+    code?: string,
+    details?: any
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.errors = errors;
     this.path = path;
+    this.code = code;
+    this.details = details;
     Object.setPrototypeOf(this, ApiError.prototype);
   }
 }
@@ -437,6 +448,11 @@ export function translateApiError(msg: string | null | undefined): string {
   if (!msg) return 'Đã xảy ra lỗi không xác định. Vui lòng thử lại sau.';
   const s = String(msg).trim();
   if (!s) return 'Đã xảy ra lỗi không xác định. Vui lòng thử lại sau.';
+
+  // NẾU THÔNG BÁO TỪ BACKEND ĐÃ LÀ TIẾNG VIỆT (chứa ký tự có dấu), GIỮ NGUYÊN 100%, KHÔNG TỰ BIÊN DỊCH / GHI ĐÈ LỖI
+  if (/[àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]/i.test(s)) {
+    return s;
+  }
 
   // 1. Xác thực tài khoản & Phân quyền (Auth & Security)
   if (/bad credentials/i.test(s)) return 'Tên đăng nhập hoặc mật khẩu không chính xác.';
@@ -665,24 +681,40 @@ export async function request<T>(
         notifySessionExpired('API_401_UNAUTHORIZED');
       }
 
-      const rawError =
+      // Trích xuất thông điệp chi tiết từ Backend (ưu tiên message > errors > error)
+      const beMessage =
+        resData?.message ||
         (Array.isArray(resData?.errors) && resData.errors.length > 0
           ? resData.errors.map((e: any) => e.defaultMessage || e.message || String(e)).join(', ')
           : null) ||
-        resData?.message ||
-        resData?.error ||
-        (response.status === 403 ? 'Bạn không có quyền thực hiện hành động này.' : `Lỗi máy chủ (${response.status}): ${response.statusText || 'Yêu cầu không thành công'}`);
+        resData?.error;
+
+      // Ưu tiên thông điệp trực tiếp từ Backend; chỉ dùng thông báo HTTP mặc định khi BE không trả message
+      let finalErrorMessage = '';
+      if (beMessage && String(beMessage).trim()) {
+        finalErrorMessage = translateApiError(String(beMessage).trim());
+      } else {
+        finalErrorMessage =
+          response.status === 403
+            ? 'Bạn không có quyền thực hiện hành động này.'
+            : `Lỗi máy chủ (${response.status}): ${response.statusText || 'Yêu cầu không thành công'}`;
+      }
 
       throw new ApiError(
-        translateApiError(rawError),
+        finalErrorMessage,
         response.status,
         Array.isArray(resData?.errors) ? resData.errors : undefined,
-        resData?.path
+        resData?.path,
+        resData?.code,
+        resData?.details
       );
     }
 
     return resData as ApiResponse<T>;
   } catch (error: any) {
+    if (error.name === 'AbortError') {
+      throw error;
+    }
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
       throw new Error('Không thể kết nối đến Backend Server. Vui lòng kiểm tra lại backend (port 8080).');
     }

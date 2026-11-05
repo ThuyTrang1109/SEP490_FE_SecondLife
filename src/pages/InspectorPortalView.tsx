@@ -230,15 +230,10 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   const loadInspectorOrders = async () => {
     setIsLoadingBackendOrders(true);
     try {
-      const [myOrdersRes, allOrdersRes] = await Promise.all([
-        inspectorService.getMyOrders().catch(() => []),
-        inspectorService.getAllOrders(undefined, 0, 100).catch(() => ({ items: [] } as any)),
-      ]);
+      const myOrdersRes = await inspectorService.getMyOrders().catch(() => []);
       const myItems = Array.isArray(myOrdersRes) ? myOrdersRes : ((myOrdersRes as any)?.items || []);
-      const allItems = (allOrdersRes as any)?.items || (allOrdersRes as any)?.content || (Array.isArray(allOrdersRes) ? allOrdersRes : []);
 
       const orderMap = new Map<string, InspectionOrderDto>();
-      allItems.forEach((o: any) => { if (o?.id) orderMap.set(o.id, o); });
       myItems.forEach((o: any) => { if (o?.id) orderMap.set(o.id, o); });
 
       try {

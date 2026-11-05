@@ -14,6 +14,7 @@ import {
   Filter,
   ArrowRight,
   ChevronRight,
+  ChevronLeft,
   ChevronDown,
   Calendar,
   MapPin,
@@ -75,7 +76,9 @@ import {
   InspectionStaffDto,
   InspectionChecklistResponse,
   InspectionTravelTierDto,
-  InspectionFeeProposalResponse
+  InspectionFeeProposalResponse,
+  InspectionFeeProposalStatus,
+  canManageInspectionFee
 } from '../services';
 
 interface InspectionCenterDashboardViewProps {
@@ -562,6 +565,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     setIsLoadingOrders(true);
     try {
       let backendItems: InspectionOrderDto[] = [];
+      let fetchFailed = false;
       try {
         const res = await inspectorService.getAllOrders(
           orderStatusFilter === 'ALL' ? undefined : orderStatusFilter,
@@ -573,11 +577,12 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           backendItems = extracted;
         }
       } catch (e) {
+        fetchFailed = true;
         console.warn('getAllOrders from backend error (falling back to storage/cache):', e);
       }
 
-      // Nếu gọi backend không lọc status trả về rỗng, quét thêm các status trọng tâm của đơn kiểm định
-      if (backendItems.length === 0) {
+      // Nếu gọi backend thành công (không lỗi kỹ thuật 500) mà trả về rỗng, quét thêm các status trọng tâm của đơn kiểm định
+      if (!fetchFailed && backendItems.length === 0 && orderStatusFilter === 'ALL') {
         const statusesToProbe = ['CONFIRMED_PENDING_DISPATCH', 'WAITING_FEE_PAYMENT', 'WAITING_SELLER_APPROVAL', 'DISPATCHED', 'INSPECTING'];
         try {
           const probeResults = await Promise.all(
@@ -595,25 +600,6 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           }
         } catch {}
       }
-
-      // Quét thêm từ my-seller-orders, my-buyer-orders và getMyOrders để không bỏ sót bất kỳ task nào
-      try {
-        const [sellerPage, buyerPage, myInspOrders] = await Promise.all([
-          inspectorService.getMySellerOrders(0, 100).catch(() => ({ items: [] } as any)),
-          inspectorService.getMyBuyerOrders(0, 100).catch(() => ({ items: [] } as any)),
-          inspectorService.getMyOrders().catch(() => [] as any[]),
-        ]);
-        const extraItems = [
-          ...(sellerPage?.items || (sellerPage as any)?.content || []),
-          ...(buyerPage?.items || (buyerPage as any)?.content || []),
-          ...(Array.isArray(myInspOrders) ? myInspOrders : []),
-        ];
-        extraItems.forEach((extra) => {
-          if (extra?.id && !backendItems.some((b) => b.id === extra.id)) {
-            backendItems.push(extra);
-          }
-        });
-      } catch {}
 
       // Read orders from localStorage (center_inspection_orders + recent_placed_orders)
       let localOrders: InspectionOrderDto[] = [];
@@ -706,14 +692,16 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         if (ord?.id) {
           let assignedInspectorId = ord.inspectorId;
           let assignedInspectorName = ord.inspectorName;
-          try {
-            const rawAssign = localStorage.getItem(`order_assigned_inspector_${ord.id}`);
+          if (!assignedInspectorId) {
+            try {
+              const rawAssign = localStorage.getItem(`order_assigned_inspector_${ord.id}`);
             if (rawAssign) {
               const assignData = JSON.parse(rawAssign);
               assignedInspectorId = assignData.inspectorId || assignedInspectorId;
               assignedInspectorName = assignData.inspectorName || assignedInspectorName;
             }
           } catch {}
+          }
 
           const hasValidAssign = Boolean(assignedInspectorId && assignedInspectorName && assignedInspectorName !== 'Chưa phân công');
 
@@ -751,7 +739,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       const data = await inspectorService.getStaff();
       let list = Array.isArray(data) ? [...data] : [];
 
-      // 1. Merge locally registered staff (e.g. from center_registered_staff)
+      // Merge locally registered staff (nếu có đăng ký mới)
       try {
         const raw = localStorage.getItem('center_registered_staff');
         if (raw) {
@@ -774,47 +762,19 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         }
       } catch {}
 
-      // 2. Kỹ thuật viên hạt giống BE (inspector@secondlife.com) & KTV số 1: Nguyên - Luôn hiện diện
-      const seededKtv1: InspectionStaffDto = {
-        id: 'a50d1568-1111-4222-9333-7272a95473db',
-        email: 'inspector@secondlife.com',
-        fullName: 'Kiểm Định Viên 1 (KTV Trưởng)',
-        phone: '0901234567',
-        accountStatus: 'ACTIVE',
-        assignedOrdersCount: 0,
-        role: 'INSPECTOR',
-      };
-      const defaultKtv2: InspectionStaffDto = {
-        id: 'ins-a50d1568',
-        email: 'nguyen.ktv@secondlife.vn',
-        fullName: 'Nguyễn Văn Inspector (KTV số 1)',
-        phone: '0908889999',
-        accountStatus: 'ACTIVE',
-        assignedOrdersCount: 0,
-        role: 'INSPECTOR',
-      };
-
-      if (!list.some((s) => s.email?.toLowerCase() === seededKtv1.email.toLowerCase())) {
-        list.unshift(seededKtv1);
+      // Nếu Backend chưa có nhân sự nào (hệ thống mới / môi trường demo), dự phòng KTV mặc định
+      if (list.length === 0) {
+        const seededKtv1: InspectionStaffDto = {
+          id: 'a50d1568-1111-4222-9333-7272a95473db',
+          email: 'inspector@secondlife.com',
+          fullName: 'Kiểm Định Viên 1 (KTV Trưởng)',
+          phone: '0901234567',
+          accountStatus: 'ACTIVE',
+          assignedOrdersCount: 0,
+          role: 'INSPECTOR',
+        };
+        list.push(seededKtv1);
       }
-      if (!list.some((s) => s.email?.toLowerCase() === defaultKtv2.email.toLowerCase() || s.id === defaultKtv2.id)) {
-        list.push(defaultKtv2);
-      }
-
-      // Trích xuất thêm KTV từ danh sách orders nếu có inspectorId/inspectorName
-      orders.forEach((ord) => {
-        if (ord.inspectorId && !list.some((s) => s.id === ord.inspectorId)) {
-          list.push({
-            id: ord.inspectorId,
-            email: ord.inspectorName ? `${ord.inspectorName.toLowerCase().replace(/\s+/g, '.')}@secondlife.vn` : 'ktv@secondlife.vn',
-            fullName: ord.inspectorName || 'Kỹ thuật viên',
-            phone: '0901234567',
-            accountStatus: 'ACTIVE',
-            assignedOrdersCount: 0,
-            role: 'INSPECTOR',
-          });
-        }
-      });
 
       // 3. Tính số task thực tế cho từng KTV
       list = list.map((st) => {
@@ -1044,14 +1004,21 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   // Pricing & Travel Tiers State
   const [travelTiers, setTravelTiers] = useState<InspectionTravelTierDto[]>([]);
   const [tierProposals, setTierProposals] = useState<InspectionFeeProposalResponse[]>([]);
+  const [pricingProposalFilter, setPricingProposalFilter] = useState<'ALL' | InspectionFeeProposalStatus>('ALL');
+  const [pricingProposalPage, setPricingProposalPage] = useState<number>(0);
+  const [pricingProposalTotalPages, setPricingProposalTotalPages] = useState<number>(1);
+  const [pricingProposalTotalElements, setPricingProposalTotalElements] = useState<number>(0);
   const [isLoadingPricing, setIsLoadingPricing] = useState(false);
+  const [selectedProposalDetail, setSelectedProposalDetail] = useState<InspectionFeeProposalResponse | null>(null);
+
+  // Propose Fee Modal State (2-step wizard)
   const [isProposeModalOpen, setIsProposeModalOpen] = useState(false);
+  const [proposeStep, setProposeStep] = useState<'edit' | 'preview'>('edit');
+  const [proposeCategoryId, setProposeCategoryId] = useState<string>('');
   const [proposeBaseFee, setProposeBaseFee] = useState<number>(250000);
-  const [proposeTiers, setProposeTiers] = useState<{ tierNumber: number; name: string; fromKm: number; toKm: number; pricePerKm: number }[]>([
-    { tierNumber: 1, name: 'Nội thành gần (0 - 5 km)', fromKm: 0, toKm: 5, pricePerKm: 10000 },
-    { tierNumber: 2, name: 'Trung bình (5 - 15 km)', fromKm: 5, toKm: 15, pricePerKm: 15000 },
-    { tierNumber: 3, name: 'Xa / Ngoại thành (> 15 km)', fromKm: 15, toKm: 35, pricePerKm: 20000 },
-  ]);
+  const [proposeTiers, setProposeTiers] = useState<InspectionTravelTierDto[]>([]);
+  const [proposeValidationError, setProposeValidationError] = useState<string | null>(null);
+  const [isSubmittingProposal, setIsSubmittingProposal] = useState(false);
 
   const loadChecklists = async () => {
     setIsLoadingChecklists(true);
@@ -1306,23 +1273,137 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     });
   }, [checklists, checklistCategoryFilter, checklistSearch]);
 
-  const loadPricing = async () => {
+  const loadPricing = async (targetPage: number = 0, statusFilter: string = pricingProposalFilter) => {
     setIsLoadingPricing(true);
     try {
-      const [tiers, props] = await Promise.allSettled([
+      const [tiersRes, propsRes] = await Promise.allSettled([
         inspectorService.getTravelTiers(),
-        inspectorService.getTierProposals(),
+        inspectorService.getTierProposals(statusFilter, targetPage, 10),
       ]);
-      if (tiers.status === 'fulfilled') {
-        setTravelTiers(Array.isArray(tiers.value) ? (tiers.value as any) : []);
+      if (tiersRes.status === 'fulfilled') {
+        const tiers = Array.isArray(tiersRes.value) ? tiersRes.value : [];
+        setTravelTiers(tiers);
       }
-      if (props.status === 'fulfilled') {
-        setTierProposals(Array.isArray(props.value) ? (props.value as any) : []);
+      if (propsRes.status === 'fulfilled') {
+        const props = propsRes.value;
+        setTierProposals(props.items || []);
+        setPricingProposalTotalPages(props.totalPages || 1);
+        setPricingProposalTotalElements(props.totalElements || 0);
+        setPricingProposalPage(props.page || 0);
       }
     } catch (err) {
-      console.warn('Lỗi tải bảng cước:', err);
+      console.warn('Lỗi tải bảng cước & đề xuất:', err);
     } finally {
       setIsLoadingPricing(false);
+    }
+  };
+
+  const handlePricingFilterChange = (newStatus: 'ALL' | InspectionFeeProposalStatus) => {
+    setPricingProposalFilter(newStatus);
+    setPricingProposalPage(0);
+    loadPricing(0, newStatus);
+  };
+
+  const handleOpenProposeModal = () => {
+    setProposeStep('edit');
+    setProposeCategoryId('');
+    setProposeBaseFee(250000);
+    setProposeValidationError(null);
+    if (travelTiers && travelTiers.length > 0) {
+      setProposeTiers(JSON.parse(JSON.stringify(travelTiers)));
+    } else {
+      setProposeTiers([
+        { tierNumber: 1, name: 'Bậc 1: Cự ly gần (0 - 5 km)', fromKm: 0, toKm: 5, pricePerKm: 10000, status: 'ACTIVE' },
+        { tierNumber: 2, name: 'Bậc 2: Cự ly trung bình (5 - 15 km)', fromKm: 5, toKm: 15, pricePerKm: 15000, status: 'ACTIVE' },
+        { tierNumber: 3, name: 'Bậc 3: Ngoại thành gần (15 - 25 km)', fromKm: 15, toKm: 25, pricePerKm: 20000, status: 'ACTIVE' },
+        { tierNumber: 4, name: 'Bậc 4: Ngoại thành xa (25 - 40 km)', fromKm: 25, toKm: 40, pricePerKm: 25000, status: 'ACTIVE' },
+        { tierNumber: 5, name: 'Bậc 5: Tỉnh lân cận (40 - 60 km)', fromKm: 40, toKm: 60, pricePerKm: 30000, status: 'ACTIVE' },
+        { tierNumber: 6, name: 'Bậc 6: Cự ly đặc biệt (> 60 km)', fromKm: 60, toKm: null, pricePerKm: 35000, status: 'ACTIVE' },
+      ]);
+    }
+    if (!categories || categories.length === 0) {
+      loadCategoriesAndItems();
+    }
+    setIsProposeModalOpen(true);
+  };
+
+  const handleProposeTierChange = (index: number, field: keyof InspectionTravelTierDto, value: any) => {
+    setProposeTiers((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+    setProposeValidationError(null);
+  };
+
+  const validateProposeForm = (): string | null => {
+    if (proposeBaseFee === undefined || proposeBaseFee === null || isNaN(proposeBaseFee) || proposeBaseFee <= 0) {
+      return 'Phí kiểm định cơ sở phải là số dương lớn hơn 0';
+    }
+    if (!proposeTiers || proposeTiers.length === 0) {
+      return 'Biểu phí cần có ít nhất một bậc cước di chuyển';
+    }
+    for (let i = 0; i < proposeTiers.length; i++) {
+      const t = proposeTiers[i];
+      if (!t.name || !t.name.trim()) {
+        return `Bậc #${t.tierNumber || i + 1}: Tên bậc không được để trống`;
+      }
+      const fromKm = Number(t.fromKm);
+      if (isNaN(fromKm) || fromKm < 0) {
+        return `Bậc #${t.tierNumber || i + 1}: Khoảng cách từ (fromKm) phải là số không âm`;
+      }
+      if (t.toKm !== null && t.toKm !== undefined && String(t.toKm).trim() !== '') {
+        const toKm = Number(t.toKm);
+        if (isNaN(toKm) || toKm <= fromKm) {
+          return `Bậc #${t.tierNumber || i + 1}: Khoảng cách đến (${toKm} km) phải lớn hơn khoảng cách từ (${fromKm} km)`;
+        }
+      }
+      const price = Number(t.pricePerKm);
+      if (isNaN(price) || price < 0) {
+        return `Bậc #${t.tierNumber || i + 1}: Đơn giá / km phải là số không âm`;
+      }
+    }
+    return null;
+  };
+
+  const handleProceedToPreview = () => {
+    const error = validateProposeForm();
+    if (error) {
+      setProposeValidationError(error);
+      return;
+    }
+    setProposeValidationError(null);
+    setProposeStep('preview');
+  };
+
+  const handleSubmitProposal = async () => {
+    const error = validateProposeForm();
+    if (error) {
+      setProposeValidationError(error);
+      setProposeStep('edit');
+      return;
+    }
+    setIsSubmittingProposal(true);
+    try {
+      await inspectorService.proposeTravelTiers({
+        categoryId: proposeCategoryId ? proposeCategoryId : undefined,
+        baseInspectionFee: Number(proposeBaseFee),
+        tiers: proposeTiers.map((t) => ({
+          tierNumber: t.tierNumber,
+          name: t.name,
+          fromKm: Number(t.fromKm),
+          toKm: t.toKm != null && String(t.toKm).trim() !== '' ? Number(t.toKm) : null,
+          pricePerKm: Number(t.pricePerKm),
+          status: t.status || 'ACTIVE',
+        })),
+      });
+      showNotice('Đã gửi đề xuất biểu phí lên Admin sàn thành công! Đề xuất đang chờ xét duyệt.');
+      setIsProposeModalOpen(false);
+      loadPricing(0, pricingProposalFilter);
+    } catch (err: any) {
+      dialogService.error(err?.message || 'Gửi đề xuất giá thất bại');
+    } finally {
+      setIsSubmittingProposal(false);
     }
   };
 
@@ -1481,19 +1562,20 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       assignModalOrder.status === 'PASSED' ||
       assignModalOrder.status === 'FAILED' ||
       assignModalOrder.status === 'CANCELLED' ||
-      assignModalOrder.status === 'COMPLETED'
+      assignModalOrder.status === 'COMPLETED' ||
+      assignModalOrder.status === 'WAITING_SELLER_APPROVAL'
     ) {
-      setAssignError(`Đơn kiểm định đang ở trạng thái "${assignModalOrder.status}", không thể phân công KTV.`);
+      setAssignError(
+        assignModalOrder.status === 'WAITING_SELLER_APPROVAL'
+          ? 'Đơn kiểm định đang chờ người bán xác nhận, chưa thể phân công KTV.'
+          : `Đơn kiểm định đang ở trạng thái "${assignModalOrder.status}", không thể phân công KTV.`
+      );
       return;
     }
 
     setIsAssigning(true);
     try {
-      try {
-        await inspectorService.assignInspector(assignModalOrder.id, selectedInspectorId);
-      } catch (backendErr) {
-        console.warn('assignInspector backend notice (synced via state & storage):', backendErr);
-      }
+      await inspectorService.assignInspector(assignModalOrder.id, selectedInspectorId);
 
       const inspectorObj = staffList.find((s) => s.id === selectedInspectorId);
       const inspectorName = inspectorObj?.fullName || 'Kỹ thuật viên';
@@ -1584,6 +1666,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       await loadStaff();
     } catch (err: any) {
       console.error('Lỗi khi phân công KTV:', err);
+      // Xóa mapping local lưu tạm để tránh hiển thị sai lệch khi BE từ chối
+      try {
+        localStorage.removeItem(`order_assigned_inspector_${assignModalOrder.id}`);
+      } catch {}
       const msg = err?.message || 'Giao task kiểm định thất bại. Vui lòng thử lại.';
       setAssignError(msg);
     } finally {
@@ -1608,15 +1694,11 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
     setIsCreatingStaff(true);
     try {
-      try {
-        await inspectorService.createStaff({
-          email: newStaffEmail.trim(),
-          password: newStaffPassword,
-          fullName: newStaffName.trim(),
-        });
-      } catch (backendErr) {
-        console.warn('Backend createStaff notice (persisting locally):', backendErr);
-      }
+      await inspectorService.createStaff({
+        email: newStaffEmail.trim(),
+        password: newStaffPassword,
+        fullName: newStaffName.trim(),
+      });
 
       setCreatedStaffSuccessData({
         fullName: newStaffName.trim(),
@@ -2400,7 +2482,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                             const isReady = order.status !== 'WAITING_SELLER_APPROVAL';
                             return (
                               <tr key={order.id} className="hover:bg-slate-50/60 transition">
-                                <td className="py-3 px-4 font-mono text-slate-400 text-[11px]">{idx + 1}</td>
+                                <td className="py-3 px-3 font-mono text-slate-400 text-[11px] text-center">{idx + 1}</td>
                                 <td className="py-3 px-4">
                                   <div className="font-bold text-slate-900 truncate max-w-xs">{order.postTitle}</div>
                                   <div className="text-[10px] font-mono text-slate-400">ID: #{(order.id || '').slice(0, 8)}</div>
@@ -2544,12 +2626,12 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="bg-slate-50/80 border-b border-slate-100 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
-                      <th className="py-2.5 px-4 w-12">#</th>
-                      <th className="py-2.5 px-4">Sản Phẩm & Mã Đơn</th>
-                      <th className="py-2.5 px-4">Hình Thức & Phí</th>
-                      <th className="py-2.5 px-4">Kỹ Thuật Viên Phụ Trách</th>
-                      <th className="py-2.5 px-4">Trạng Thái</th>
-                      <th className="py-2.5 px-4 text-right">Thao Tác Giao Task</th>
+                      <th className="py-2.5 px-3 w-12 text-center">#</th>
+                      <th className="py-2.5 px-4 min-w-[240px]">Sản Phẩm & Mã Đơn</th>
+                      <th className="py-2.5 px-4 w-[150px] min-w-[150px]">Hình Thức & Phí</th>
+                      <th className="py-2.5 px-4 w-[190px] min-w-[190px]">Kỹ Thuật Viên Phụ Trách</th>
+                      <th className="py-2.5 px-4 w-[140px] min-w-[140px] text-center">Trạng Thái</th>
+                      <th className="py-2.5 px-4 w-[252px] min-w-[252px] text-center">Thao Tác Giao Task</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -2618,47 +2700,93 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                               </span>
                             )}
                           </td>
-                          <td className="py-3 px-4">{renderStatusBadge(ord.status)}</td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenShipmentModal(ord)}
-                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:text-orange-600 hover:bg-orange-50 transition cursor-pointer flex items-center gap-1 text-[11px] font-bold shadow-2xs"
-                                title="Lộ trình vận đơn & kích hoạt giao vận Hub"
-                              >
-                                <Truck className="w-3.5 h-3.5 text-orange-600" />
-                                <span>Vận Đơn Hub</span>
-                              </button>
-                              {ord.status !== 'PASSED' && ord.status !== 'FAILED' && ord.status !== 'CANCELLED' && ord.status !== 'COMPLETED' && ord.status !== 'WAITING_FEE_PAYMENT' ? (
+                          <td className="py-3 px-4 text-center">
+                            <div className="flex justify-center">
+                              {renderStatusBadge(ord.status)}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              {/* Nút 1: Vận Đơn Hub / Tại Nhà */}
+                              {ord.orderType === 'AT_HOME' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenShipmentModal(ord)}
+                                  className="w-[110px] h-8 rounded-lg border border-blue-200 text-blue-700 bg-blue-50/70 hover:bg-blue-100 transition cursor-pointer flex items-center justify-center gap-1.5 text-xs font-bold shadow-2xs shrink-0"
+                                  title="Kiểm định tại nhà khách - KTV di chuyển trực tiếp"
+                                >
+                                  <MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                  <span>Tại Nhà</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenShipmentModal(ord)}
+                                  disabled={ord.status === 'CANCELLED'}
+                                  className={`w-[110px] h-8 rounded-lg border text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs shrink-0 ${
+                                    ord.status === 'CANCELLED'
+                                      ? 'border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed opacity-60'
+                                      : 'border-slate-200 text-slate-700 hover:text-orange-600 hover:bg-orange-50 bg-white cursor-pointer'
+                                  }`}
+                                  title={ord.status === 'CANCELLED' ? 'Đơn hàng đã bị hủy' : 'Lộ trình vận đơn & kích hoạt giao vận Hub'}
+                                >
+                                  <Truck className={`w-3.5 h-3.5 shrink-0 ${ord.status === 'CANCELLED' ? 'text-slate-400' : 'text-orange-600'}`} />
+                                  <span>Vận Đơn Hub</span>
+                                </button>
+                              )}
+
+                              {/* Nút 2: Phân công / Trạng thái / Chi tiết */}
+                              {ord.status === 'WAITING_SELLER_APPROVAL' ? (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenAssign(ord)}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs ${
-                                    !ord.inspectorId
-                                      ? 'bg-[#c34c36] hover:bg-[#a63f2d] text-white'
-                                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                                  }`}
+                                  className="w-[110px] h-8 rounded-lg bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
+                                  title="Đơn đang chờ người bán xác nhận kiểm định"
                                 >
-                                  <UserPlus className="w-3.5 h-3.5" />
-                                  <span>{!ord.inspectorId ? 'Giao Task Ngay' : 'Đổi KTV'}</span>
+                                  <Clock className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                                  <span>Chờ Duyệt</span>
                                 </button>
                               ) : ord.status === 'WAITING_FEE_PAYMENT' ? (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenAssign(ord)}
-                                  className="px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                                  className="w-[110px] h-8 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
                                   title="Chờ người mua hoàn tất thanh toán cọc phí kiểm định"
                                 >
-                                  <CreditCard className="w-3.5 h-3.5 text-amber-600" />
-                                  <span>Chờ Đóng Phí KĐ</span>
+                                  <CreditCard className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                  <span>Chờ Đóng Phí</span>
+                                </button>
+                              ) : ord.status !== 'PASSED' && ord.status !== 'FAILED' && ord.status !== 'CANCELLED' && ord.status !== 'COMPLETED' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAssign(ord)}
+                                  className={`w-[110px] h-8 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs shrink-0 ${
+                                    !ord.inspectorId
+                                      ? 'bg-[#c34c36] hover:bg-[#a63f2d] text-white'
+                                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                                  }`}
+                                  title={!ord.inspectorId ? 'Phân công kỹ thuật viên phụ trách' : 'Thay đổi kỹ thuật viên phụ trách'}
+                                >
+                                  {!ord.inspectorId ? (
+                                    <>
+                                      <UserPlus className="w-3.5 h-3.5 shrink-0" />
+                                      <span>Giao Task</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <UserCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                      <span>Đổi KTV</span>
+                                    </>
+                                  )}
                                 </button>
                               ) : (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenAssign(ord)}
-                                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold hover:bg-slate-200 transition cursor-pointer"
+                                  className="w-[110px] h-8 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
+                                  title="Xem chi tiết đơn kiểm định"
                                 >
+                                  <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                                   <span>Chi Tiết</span>
                                 </button>
                               )}
@@ -3213,117 +3341,109 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           )}
 
           {/* =================================================================== */}
-          {/* TAB 6: TRAVEL TIERS & BẢNG GIÁ DI CHUYỂN                            */}
+          {/* TAB 6: BIỂU PHÍ KIỂM ĐỊNH & BẬC CƯỚC DI CHUYỂN                      */}
           {/* =================================================================== */}
           {activeTab === 'pricing' && (
-            <div className="space-y-5 animate-fadeIn">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="space-y-6 animate-fadeIn">
+              {/* Header Box */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
                 <div>
                   <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
                     <Sliders className="w-5 h-5 text-[#c34c36]" />
-                    <span>Bảng Cước Phí Di Chuyển & Đề Xuất Giá</span>
+                    <span>Biểu Phí Kiểm Định & Bậc Cước Di Chuyển KTV</span>
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Cấu hình phụ phí di chuyển theo km cho kỹ thuật viên kiểm định tại nhà (AT_HOME) và gửi đề xuất duyệt lên Admin
+                    Biểu phí bậc thang phụ phí di chuyển theo khoảng cách km (gói kiểm định tận nhà AT_HOME) và danh sách đề xuất gửi Admin sàn
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsProposeModalOpen(true)}
-                  className="px-4 py-2 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>+ Đề Xuất Bậc Giá Mới</span>
-                </button>
-              </div>
-
-              {/* Active Travel Tiers Overview Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Bậc 1: Cự Ly Gần</span>
-                  <div className="text-xl font-black text-slate-900">0 - 5 km</div>
-                  <div className="text-xs font-bold text-emerald-600">10.000₫ / km</div>
-                  <p className="text-[10px] text-slate-400">Áp dụng cho các địa chỉ kiểm định nội thành liền kề trạm</p>
-                </div>
-
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Bậc 2: Cự Ly Trung Bình</span>
-                  <div className="text-xl font-black text-slate-900">5 - 15 km</div>
-                  <div className="text-xs font-bold text-blue-600">15.000₫ / km</div>
-                  <p className="text-[10px] text-slate-400">Áp dụng cho các quận nội thành mở rộng</p>
-                </div>
-
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Bậc 3: Cự Ly Xa</span>
-                  <div className="text-xl font-black text-slate-900">&gt; 15 km</div>
-                  <div className="text-xs font-bold text-amber-600">20.000₫ / km</div>
-                  <p className="text-[10px] text-slate-400">Áp dụng cho ngoại thành hoặc giáp ranh tỉnh lân cận</p>
-                </div>
-              </div>
-
-              {/* Proposals History Table */}
-              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-                <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                  <h4 className="font-bold text-xs text-slate-800">Lịch Sử Các Đề Xuất Giá Đã Gửi Admin</h4>
+                {canManageInspectionFee(currentUser) && (
                   <button
-                    onClick={loadPricing}
-                    disabled={isLoadingPricing}
-                    className="text-xs text-slate-400 hover:text-slate-700 cursor-pointer"
+                    type="button"
+                    onClick={handleOpenProposeModal}
+                    className="px-4 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs shrink-0"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPricing ? 'animate-spin' : ''}`} />
+                    <Plus className="w-4 h-4" />
+                    <span>Đề Xuất Điều Chỉnh Biểu Phí</span>
                   </button>
+                )}
+              </div>
+
+              {/* Scope & Policy Alert Box */}
+              <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200 text-xs text-slate-700 flex items-start gap-3">
+                <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold text-slate-900">
+                    Phạm vi áp dụng biểu phí:
+                  </p>
+                  <p className="text-slate-600">
+                    • <strong>Bậc cước di chuyển:</strong> Áp dụng chung cho dịch vụ Kỹ thuật viên kiểm định tại nhà (Gói AT_HOME) tính theo khoảng cách km.
+                  </p>
+                  <p className="text-slate-600">
+                    • <strong>Phí kiểm định cơ sở:</strong> Được cấu hình theo từng danh mục sản phẩm và có hiệu lực sau khi Admin sàn phê duyệt.
+                  </p>
+                  <p className="text-slate-600">
+                    • <strong>Giao hàng về Trung tâm:</strong> Cước vận chuyển sản phẩm đến Trạm Lab Hub bằng đối tác Lalamove là khoản phí giao vận riêng biệt do đối tác vận chuyển định giá, không được cấu hình tại biểu phí này.
+                  </p>
+                </div>
+              </div>
+
+              {/* Dynamic Active Travel Tiers Table */}
+              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Navigation className="w-4 h-4 text-slate-500" />
+                    <h4 className="font-bold text-xs text-slate-900 uppercase tracking-wider">
+                      Bảng Bậc Thang Cước Di Chuyển Hiện Hành ({travelTiers.length} bậc)
+                    </h4>
+                  </div>
+                  <span className="text-[11px] text-slate-400 font-medium">Áp dụng chung toàn hệ thống</span>
                 </div>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
-                      <tr className="bg-slate-50 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
-                        <th className="py-2.5 px-4 w-12">#</th>
-                        <th className="py-2.5 px-4">Mã Đề Xuất</th>
-                        <th className="py-2.5 px-4">Phí Kiểm Định Gốc</th>
-                        <th className="py-2.5 px-4">Người Đề Xuất</th>
-                        <th className="py-2.5 px-4 text-center">Trạng Thái</th>
-                        <th className="py-2.5 px-4">Thời Gian</th>
+                      <tr className="bg-slate-50 text-slate-600 font-bold text-[11px] uppercase tracking-wider border-b border-slate-100">
+                        <th className="py-3 px-4 w-16">Bậc</th>
+                        <th className="py-3 px-4">Tên Bậc</th>
+                        <th className="py-3 px-4">Khoảng Cách Áp Dụng</th>
+                        <th className="py-3 px-4">Đơn Giá / km</th>
+                        <th className="py-3 px-4 text-center">Trạng Thái</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {isLoadingPricing ? (
+                      {isLoadingPricing && travelTiers.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="py-8 text-center text-slate-400">
+                          <td colSpan={5} className="py-8 text-center text-slate-400">
                             <Loader2 className="w-5 h-5 animate-spin mx-auto text-[#24263e] mb-1" />
-                            <span>Đang tải lịch sử đề xuất...</span>
+                            <span>Đang tải bảng bậc thang cước di chuyển...</span>
                           </td>
                         </tr>
-                      ) : tierProposals.length === 0 ? (
+                      ) : travelTiers.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="py-8 text-center text-slate-400">
-                            Chưa có đề xuất giá nào. Nhấn "+ Đề Xuất Bậc Giá Mới" để gửi biểu phí.
+                          <td colSpan={5} className="py-8 text-center text-slate-400">
+                            Chưa có dữ liệu bậc thang cước di chuyển từ hệ thống.
                           </td>
                         </tr>
                       ) : (
-                        tierProposals.map((prop, idx) => (
-                          <tr key={prop.id} className="hover:bg-slate-50/60 transition">
-                            <td className="py-3 px-4 font-mono text-slate-400 text-[11px]">{idx + 1}</td>
-                            <td className="py-3 px-4 font-mono font-bold text-slate-800">#{prop.id.slice(0, 8)}</td>
-                            <td className="py-3 px-4 font-bold text-[#c34c36]">
-                              {formatVND(prop.baseInspectionFee || 0)}
+                        travelTiers.map((tier, idx) => (
+                          <tr key={tier.tierNumber || idx} className="hover:bg-slate-50/60 transition">
+                            <td className="py-3 px-4 font-black text-slate-900">
+                              #{tier.tierNumber || idx + 1}
                             </td>
-                            <td className="py-3 px-4 text-slate-600">
-                              {prop.proposedByName || prop.proposedByEmail || 'Trưởng trung tâm'}
+                            <td className="py-3 px-4 font-bold text-slate-800">
+                              {tier.name || `Bậc ${tier.tierNumber || idx + 1}`}
+                            </td>
+                            <td className="py-3 px-4 text-slate-700 font-mono">
+                              {tier.fromKm ?? 0} km - {tier.toKm != null ? `${tier.toKm} km` : 'Không giới hạn (∞)'}
+                            </td>
+                            <td className="py-3 px-4 font-black text-[#c34c36] font-mono">
+                              {formatVND(tier.pricePerKm || 0)} / km
                             </td>
                             <td className="py-3 px-4 text-center">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                                prop.status === 'APPROVED'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : prop.status === 'REJECTED'
-                                  ? 'bg-rose-100 text-rose-800'
-                                  : 'bg-amber-100 text-amber-800'
-                              }`}>
-                                {prop.status === 'APPROVED' ? 'Đã Phê Duyệt' : prop.status === 'REJECTED' ? 'Bị Từ Chối' : 'Chờ Admin Duyệt'}
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>{tier.status || 'Đang áp dụng'}</span>
                               </span>
-                            </td>
-                            <td className="py-3 px-4 text-slate-400 text-[11px]">
-                              {prop.createdAt ? new Date(prop.createdAt).toLocaleString('vi-VN') : '—'}
                             </td>
                           </tr>
                         ))
@@ -3331,6 +3451,176 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     </tbody>
                   </table>
                 </div>
+              </div>
+
+              {/* Proposals History Section */}
+              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs space-y-3 p-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div>
+                    <h4 className="font-bold text-xs text-slate-900 uppercase tracking-wider">
+                      Lịch Sử Các Đề Xuất Biểu Phí Đã Gửi Admin ({pricingProposalTotalElements} đề xuất)
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Theo dõi tiến độ xét duyệt biểu phí cơ sở và bậc thang cước từ Quản trị viên sàn
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => loadPricing(pricingProposalPage, pricingProposalFilter)}
+                    disabled={isLoadingPricing}
+                    className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50 text-slate-600 transition flex items-center gap-1.5 text-xs font-bold cursor-pointer self-start sm:self-auto"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPricing ? 'animate-spin' : ''}`} />
+                    <span>Làm mới</span>
+                  </button>
+                </div>
+
+                {/* Filter Tabs */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold text-slate-500 mr-1">Lọc trạng thái:</span>
+                  {[
+                    { key: 'ALL', label: 'Tất cả' },
+                    { key: 'PENDING_APPROVAL', label: 'Chờ duyệt' },
+                    { key: 'APPROVED', label: 'Đã duyệt' },
+                    { key: 'REJECTED', label: 'Đã từ chối' }
+                  ].map((st) => (
+                    <button
+                      key={st.key}
+                      onClick={() => handlePricingFilterChange(st.key as any)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        pricingProposalFilter === st.key
+                          ? 'bg-slate-900 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Proposals Table */}
+                <div className="overflow-x-auto border border-slate-100 rounded-xl">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-600 font-bold text-[11px] uppercase tracking-wider border-b border-slate-100">
+                        <th className="py-2.5 px-3 w-10">#</th>
+                        <th className="py-2.5 px-3">Mã Đề Xuất</th>
+                        <th className="py-2.5 px-3">Danh Mục Áp Dụng</th>
+                        <th className="py-2.5 px-3">Phí Cơ Sở Đề Xuất</th>
+                        <th className="py-2.5 px-3">Người Đề Xuất</th>
+                        <th className="py-2.5 px-3 text-center">Trạng Thái</th>
+                        <th className="py-2.5 px-3">Phản Hồi Admin</th>
+                        <th className="py-2.5 px-3">Thời Gian Gửi</th>
+                        <th className="py-2.5 px-3 text-right">Chi Tiết</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {isLoadingPricing ? (
+                        <tr>
+                          <td colSpan={9} className="py-8 text-center text-slate-400">
+                            <Loader2 className="w-5 h-5 animate-spin mx-auto text-[#24263e] mb-1" />
+                            <span>Đang tải lịch sử đề xuất...</span>
+                          </td>
+                        </tr>
+                      ) : tierProposals.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="py-8 text-center text-slate-400">
+                            Chưa có đề xuất biểu phí nào phù hợp với bộ lọc hiện tại.
+                          </td>
+                        </tr>
+                      ) : (
+                        tierProposals.map((prop, idx) => (
+                          <tr key={prop.id} className="hover:bg-slate-50/60 transition">
+                            <td className="py-3 px-3 font-mono text-slate-400 text-[11px]">
+                              {pricingProposalPage * 10 + idx + 1}
+                            </td>
+                            <td className="py-3 px-3 font-mono font-bold text-slate-800">
+                              #{prop.id.slice(0, 8)}
+                            </td>
+                            <td className="py-3 px-3 font-bold text-slate-700">
+                              {prop.categoryName || 'Tất cả danh mục'}
+                            </td>
+                            <td className="py-3 px-3 font-black text-[#c34c36] font-mono">
+                              {formatVND(prop.baseInspectionFee || 0)}
+                            </td>
+                            <td className="py-3 px-3 text-slate-600">
+                              {prop.proposedByName || prop.proposedByEmail || 'TTKD'}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                  prop.status === 'APPROVED'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : prop.status === 'REJECTED'
+                                    ? 'bg-rose-100 text-rose-800'
+                                    : 'bg-amber-100 text-amber-800 animate-pulse'
+                                }`}
+                              >
+                                {prop.status === 'APPROVED'
+                                  ? 'Đã Phê Duyệt'
+                                  : prop.status === 'REJECTED'
+                                  ? 'Bị Từ Chối'
+                                  : 'Chờ Admin Duyệt'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-slate-500">
+                              {prop.reviewedByName && (
+                                <span className="font-semibold text-slate-700 block">
+                                  {prop.reviewedByName}
+                                </span>
+                              )}
+                              {prop.rejectReason ? (
+                                <span className="text-[11px] text-rose-600 font-medium">
+                                  Lý do: {prop.rejectReason}
+                                </span>
+                              ) : (
+                                !prop.reviewedByName && <span className="text-slate-400">—</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-slate-400 text-[11px]">
+                              {prop.createdAt ? new Date(prop.createdAt).toLocaleString('vi-VN') : '—'}
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <button
+                                onClick={() => setSelectedProposalDetail(prop)}
+                                className="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <Eye className="w-3 h-3 text-slate-500" />
+                                <span>Bậc phí</span>
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                {pricingProposalTotalPages > 1 && (
+                  <div className="flex items-center justify-between pt-2">
+                    <span className="text-xs text-slate-500">
+                      Trang <strong>{pricingProposalPage + 1}</strong> / {pricingProposalTotalPages}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => loadPricing(pricingProposalPage - 1, pricingProposalFilter)}
+                        disabled={pricingProposalPage <= 0 || isLoadingPricing}
+                        className="px-3 py-1 rounded-xl border border-gray-200 hover:bg-gray-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <span>Trước</span>
+                      </button>
+                      <button
+                        onClick={() => loadPricing(pricingProposalPage + 1, pricingProposalFilter)}
+                        disabled={pricingProposalPage >= pricingProposalTotalPages - 1 || isLoadingPricing}
+                        className="px-3 py-1 rounded-xl border border-gray-200 hover:bg-gray-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>Sau</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -4006,88 +4296,417 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         </div>
       )}
 
-      {/* Modal Đề Xuất Bậc Giá Mới */}
+      {/* ========================================================================= */}
+      {/* MODAL: ĐỀ XUẤT ĐIỀU CHỈNH BIỂU PHÍ (2-STEP WIZARD)                       */}
+      {/* ========================================================================= */}
       {isProposeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-gray-100 text-xs">
-            <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <Sliders className="w-5 h-5 text-[#c34c36]" />
-                <h3 className="font-black text-sm text-slate-900">Đề Xuất Biểu Phí Di Chuyển Mới</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-gray-100 text-xs max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-2xl bg-amber-50 text-amber-600">
+                  <Sliders className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-slate-900">
+                    Đề Xuất Điều Chỉnh Biểu Phí Kiểm Định
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    {proposeStep === 'edit'
+                      ? 'Bước 1/2: Nhập biểu phí cơ sở và cấu hình các bậc cước di chuyển'
+                      : 'Bước 2/2: Xem lại đề xuất trước khi gửi Admin sàn xét duyệt'}
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsProposeModalOpen(false)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Phí kiểm định cơ sở (VND) *</label>
-                <input
-                  type="number"
-                  min={50000}
-                  step="any"
-                  value={proposeBaseFee}
-                  onChange={(e) => setProposeBaseFee(Number(e.target.value))}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-900 text-sm"
-                />
+            {/* Validation Error Banner */}
+            {proposeValidationError && (
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{proposeValidationError}</span>
               </div>
+            )}
 
-              <div className="space-y-2">
-                <label className="block font-bold text-slate-700">Các bậc tính phí theo khoảng cách:</label>
-                {proposeTiers.map((tier, idx) => (
-                  <div key={idx} className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 space-y-1">
-                    <div className="font-bold text-slate-800">{tier.name}</div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-slate-500">Đơn giá:</span>
-                      <input
-                        type="number"
-                        min={1000}
-                        step="any"
-                        value={tier.pricePerKm}
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
-                          setProposeTiers((prev) => prev.map((t, i) => i === idx ? { ...t, pricePerKm: val } : t));
-                        }}
-                        className="w-28 p-1 bg-white border border-slate-200 rounded-lg font-bold text-xs"
-                      />
-                      <span className="text-[11px] text-slate-500">₫ / km</span>
+            {/* STEP 1: EDIT FORM */}
+            {proposeStep === 'edit' && (
+              <div className="space-y-4">
+                {/* Category & Base Fee */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">
+                      Danh mục sản phẩm áp dụng:
+                    </label>
+                    <select
+                      value={proposeCategoryId}
+                      onChange={(e) => setProposeCategoryId(e.target.value)}
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
+                    >
+                      <option value="">-- Áp dụng tất cả danh mục --</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">
+                      Chọn danh mục cụ thể hoặc để trống để đề xuất chung
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">
+                      Phí kiểm định cơ sở (VND) <span className="text-rose-500">*</span>:
+                    </label>
+                    <input
+                      type="number"
+                      min={1000}
+                      step="any"
+                      value={proposeBaseFee}
+                      onChange={(e) => setProposeBaseFee(Number(e.target.value))}
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-black text-[#c34c36] text-xs focus:ring-2 focus:ring-amber-500 outline-hidden font-mono"
+                    />
+                    <span className="text-[10px] text-slate-500 mt-0.5 block font-bold">
+                      Hiển thị: {formatVND(proposeBaseFee || 0)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tiers List */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-800 uppercase tracking-wider text-[11px]">
+                      Cấu hình các bậc thang cước di chuyển ({proposeTiers.length} bậc):
+                    </label>
+                    <span className="text-[10px] text-slate-400">
+                      Bậc cuối để trống cự ly đến để biểu thị không giới hạn (∞)
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                    {proposeTiers.map((tier, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3 rounded-2xl border border-slate-200 bg-slate-50 space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-black text-slate-800 text-xs">
+                            Bậc #{tier.tierNumber || idx + 1}
+                          </span>
+                          <input
+                            type="text"
+                            value={tier.name || ''}
+                            placeholder="Tên bậc..."
+                            onChange={(e) => handleProposeTierChange(idx, 'name', e.target.value)}
+                            className="w-56 p-1.5 bg-white border border-slate-200 rounded-lg font-bold text-xs"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <span className="text-[10px] text-slate-500 block mb-0.5">Từ (km):</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={tier.fromKm ?? 0}
+                              onChange={(e) =>
+                                handleProposeTierChange(idx, 'fromKm', Number(e.target.value))
+                              }
+                              className="w-full p-1.5 bg-white border border-slate-200 rounded-lg font-bold text-xs font-mono"
+                            />
+                          </div>
+
+                          <div>
+                            <span className="text-[10px] text-slate-500 block mb-0.5">Đến (km):</span>
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder="Không giới hạn"
+                              value={tier.toKm ?? ''}
+                              onChange={(e) =>
+                                handleProposeTierChange(
+                                  idx,
+                                  'toKm',
+                                  e.target.value.trim() !== '' ? Number(e.target.value) : null
+                                )
+                              }
+                              className="w-full p-1.5 bg-white border border-slate-200 rounded-lg font-bold text-xs font-mono"
+                            />
+                          </div>
+
+                          <div>
+                            <span className="text-[10px] text-slate-500 block mb-0.5">Đơn giá / km (VND):</span>
+                            <input
+                              type="number"
+                              min={0}
+                              step="any"
+                              value={tier.pricePerKm ?? 0}
+                              onChange={(e) =>
+                                handleProposeTierChange(idx, 'pricePerKm', Number(e.target.value))
+                              }
+                              className="w-full p-1.5 bg-white border border-slate-200 rounded-lg font-black text-[#c34c36] text-xs font-mono"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsProposeModalOpen(false)}
+                    className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 font-bold cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleProceedToPreview}
+                    className="px-5 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl font-bold shadow-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>Tiếp Tục Xem Lại & Xác Nhận</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 2: PREVIEW & CONFIRM */}
+            {proposeStep === 'preview' && (
+              <div className="space-y-4">
+                {/* Mandatory Warning Banner */}
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1">
+                  <div className="flex items-center gap-2 font-bold text-amber-800">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>LƯU Ý VỀ HIỆU LỰC ĐỀ XUẤT</span>
+                  </div>
+                  <p>
+                    Đề xuất biểu phí chỉ chính thức có hiệu lực sau khi Quản trị viên (Admin) sàn SecondLife phê duyệt.
+                    Trung tâm không thể tự kích hoạt hoặc áp dụng biểu phí trước khi được xét duyệt.
+                  </p>
+                </div>
+
+                {/* Summary Table */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="grid grid-cols-2 gap-3 pb-3 border-b border-slate-200">
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                        Danh mục áp dụng:
+                      </span>
+                      <span className="font-bold text-slate-800 text-xs">
+                        {categories.find((c) => c.id === proposeCategoryId)?.name ||
+                          'Tất cả danh mục sản phẩm'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                        Phí kiểm định cơ sở đề xuất:
+                      </span>
+                      <span className="font-black text-[#c34c36] text-sm font-mono">
+                        {formatVND(proposeBaseFee)}
+                      </span>
                     </div>
                   </div>
-                ))}
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">
+                      Chi tiết {proposeTiers.length} bậc cước di chuyển đề xuất:
+                    </span>
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-100 text-[10px] uppercase">
+                            <th className="py-2 px-3">Bậc</th>
+                            <th className="py-2 px-3">Tên bậc</th>
+                            <th className="py-2 px-3">Khoảng cách</th>
+                            <th className="py-2 px-3 text-right">Đơn giá / km</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {proposeTiers.map((t, i) => (
+                            <tr key={i}>
+                              <td className="py-2 px-3 font-bold text-slate-900">
+                                #{t.tierNumber || i + 1}
+                              </td>
+                              <td className="py-2 px-3 font-medium text-slate-800">{t.name}</td>
+                              <td className="py-2 px-3 text-slate-600 font-mono">
+                                {t.fromKm ?? 0} km -{' '}
+                                {t.toKm != null ? `${t.toKm} km` : 'Không giới hạn (∞)'}
+                              </td>
+                              <td className="py-2 px-3 text-right font-black text-[#c34c36] font-mono">
+                                {formatVND(t.pricePerKm || 0)} / km
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setProposeStep('edit')}
+                    disabled={isSubmittingProposal}
+                    className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 font-bold cursor-pointer"
+                  >
+                    Quay Lại Sửa
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSubmitProposal}
+                    disabled={isSubmittingProposal}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {isSubmittingProposal && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>Xác Nhận Gửi Đề Xuất Lên Admin</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: CHI TIẾT ĐỀ XUẤT BIỂU PHÍ (PROPOSAL DETAIL MODAL)                 */}
+      {/* ========================================================================= */}
+      {selectedProposalDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-gray-100 text-xs max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-amber-50 text-amber-600">
+                  <Sliders className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-slate-900">
+                    Chi Tiết Đề Xuất #{selectedProposalDetail.id.slice(0, 8)}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Gửi bởi {selectedProposalDetail.proposedByName || selectedProposalDetail.proposedByEmail} •{' '}
+                    {selectedProposalDetail.createdAt
+                      ? new Date(selectedProposalDetail.createdAt).toLocaleString('vi-VN')
+                      : ''}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedProposalDetail(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Proposal Key Info */}
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-100">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">
+                  Danh mục áp dụng:
+                </span>
+                <span className="font-bold text-slate-800 text-xs">
+                  {selectedProposalDetail.categoryName || 'Tất cả danh mục sản phẩm'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">
+                  Phí kiểm định cơ sở:
+                </span>
+                <span className="font-black text-[#c34c36] text-xs font-mono">
+                  {formatVND(selectedProposalDetail.baseInspectionFee || 0)}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">
+                  Trạng thái:
+                </span>
+                <span
+                  className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase mt-0.5 ${
+                    selectedProposalDetail.status === 'APPROVED'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : selectedProposalDetail.status === 'REJECTED'
+                      ? 'bg-rose-100 text-rose-800'
+                      : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {selectedProposalDetail.status === 'APPROVED'
+                    ? 'Đã Phê Duyệt'
+                    : selectedProposalDetail.status === 'REJECTED'
+                    ? 'Bị Từ Chối'
+                    : 'Chờ Admin Duyệt'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">
+                  Người xét duyệt:
+                </span>
+                <span className="font-bold text-slate-700 text-xs">
+                  {selectedProposalDetail.reviewedByName || 'Chờ xử lý'}
+                </span>
               </div>
             </div>
 
-            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+            {selectedProposalDetail.rejectReason && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+                <strong>Lý do từ chối:</strong> {selectedProposalDetail.rejectReason}
+              </div>
+            )}
+
+            {/* Tiers Breakdown */}
+            <div className="space-y-1.5">
+              <span className="font-bold text-slate-800 text-[11px] uppercase tracking-wider block">
+                Bảng bậc thang cước trong đề xuất:
+              </span>
+              <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-100 text-[10px] uppercase">
+                      <th className="py-2 px-3">Bậc</th>
+                      <th className="py-2 px-3">Tên bậc</th>
+                      <th className="py-2 px-3">Cự ly</th>
+                      <th className="py-2 px-3 text-right">Đơn giá / km</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(selectedProposalDetail.tiers || []).map((t, idx) => (
+                      <tr key={idx}>
+                        <td className="py-2 px-3 font-bold text-slate-900">
+                          #{t.tierNumber || idx + 1}
+                        </td>
+                        <td className="py-2 px-3 font-medium text-slate-800">{t.name}</td>
+                        <td className="py-2 px-3 text-slate-600 font-mono">
+                          {t.fromKm ?? 0} - {t.toKm != null ? `${t.toKm} km` : 'Không giới hạn (∞)'}
+                        </td>
+                        <td className="py-2 px-3 text-right font-black text-[#c34c36] font-mono">
+                          {formatVND(t.pricePerKm || 0)} / km
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setIsProposeModalOpen(false)}
-                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 font-bold"
+                onClick={() => setSelectedProposalDetail(null)}
+                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 font-bold cursor-pointer"
               >
-                Hủy
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await inspectorService.proposeTravelTiers({
-                      baseInspectionFee: proposeBaseFee,
-                      tiers: proposeTiers,
-                    });
-                    showNotice('Đã gửi đề xuất bảng giá lên Admin thành công!');
-                    setIsProposeModalOpen(false);
-                    loadPricing();
-                  } catch (err: any) {
-                    dialogService.error(err?.message || 'Gửi đề xuất giá thất bại');
-                  }
-                }}
-                className="px-5 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl font-black shadow-xs cursor-pointer"
-              >
-                Gửi Đề Xuất Duyệt
+                Đóng
               </button>
             </div>
           </div>

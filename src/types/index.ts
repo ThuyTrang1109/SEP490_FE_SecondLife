@@ -204,6 +204,8 @@ export interface EscrowOrder {
   hasInspectionService: boolean;
   inspectionCenterId?: string;
   inspectionCenterName?: string;
+  inspectionCenterAddress?: string;
+  inspectionCenterPhone?: string;
   inspectionMethod?: 'AT_CENTER' | 'AT_HOME';
   inspectorId?: string;
   inspectorName?: string;
@@ -695,7 +697,7 @@ export interface ShippingQuoteResponseDto {
 
 export interface CreateShipmentRequestDto {
   requestId: string;
-  leg: 'SELLER_TO_BUYER' | 'SELLER_TO_CENTER' | 'CENTER_TO_BUYER' | 'BUYER_TO_SELLER';
+  leg: 'SELLER_TO_BUYER' | 'SELLER_TO_CENTER' | 'CENTER_TO_BUYER' | 'CENTER_TO_SELLER' | 'BUYER_TO_SELLER';
   fromAddress?: any;
   toAddress?: any;
   reason?: string;

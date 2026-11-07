@@ -44,8 +44,9 @@ const customerRoutes = (role: 'buyer' | 'seller'): AppRoute[] => [
   { path: `/${role}/chat`, role, tab: 'chat' },
   { path: `/${role}/chat/:conversationId`, role, tab: 'chat' },
   { path: `/${role}/disputes`, role, tab: 'disputes' },
-  { path: `/${role}/inspections`, role, tab: 'orders' },
-  { path: `/${role}/inspections/:inspectionId/decision`, role, tab: 'buyer-inspection-decision' },
+  { path: `/${role}/inspections`, role, allowedRoles: ['buyer', 'seller'], tab: 'orders' },
+  { path: `/${role}/inspections/:inspectionId`, role, allowedRoles: ['buyer', 'seller'], tab: 'buyer-inspection-decision' },
+  { path: `/${role}/inspections/:inspectionId/decision`, role, allowedRoles: ['buyer', 'seller'], tab: 'buyer-inspection-decision' },
 ];
 
 export const routeGroups: Record<string, AppRoute[]> = {
@@ -167,11 +168,12 @@ export function resolveAppRoute(input: string, role: UserRole = 'buyer'): RouteM
   target ||= aliases[url.pathname.replace(/\/$/, '')];
   const oldOrder = url.pathname.match(/^\/orders?\/([^/]+)$/);
   if (oldOrder) target = paths.orders(role, decodePart(oldOrder[1]));
-  const oldInspection = url.pathname.match(/^\/(?:buyer\/inspections|inspections|inspection\/orders|inspector\/orders)\/([^/]+)$/);
+  const oldInspection = url.pathname.match(/^\/(?:buyer\/inspections|seller\/inspections|inspections|inspection\/orders|inspector\/orders)\/([^/]+)$/);
   if (oldInspection) {
     const id = decodePart(oldInspection[1]);
+    const targetRole = url.pathname.startsWith('/seller') ? 'seller' : (url.pathname.startsWith('/buyer') ? 'buyer' : (role === 'seller' ? 'seller' : 'buyer'));
     target = role === 'inspector' ? `/inspector/inspections/${encodeURIComponent(id)}`
-      : role === 'inspection_center' ? '/inspection-center/orders' : paths.decision(role, id);
+      : role === 'inspection_center' ? '/inspection-center/orders' : paths.decision(targetRole, id);
   }
   const oldEdit = url.pathname.match(/^\/seller\/posts\/([^/]+)\/edit$/);
   if (oldEdit) target = paths.editProduct(decodePart(oldEdit[1]));

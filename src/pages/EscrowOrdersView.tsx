@@ -60,7 +60,7 @@ import { UserReportModal } from '../components/modals/UserReportModal';
 import { InspectionProductQRModal } from '../components/modals/InspectionProductQRModal';
 import { VietQrEscrowModal } from '../components/modals/VietQrEscrowModal';
 import { dialogService } from '../utils/dialogService';
-import { getSortableOrderTimestamp, markListingAsAvailable } from '../utils/orderUtils';
+import { getSortableOrderTimestamp, markListingAsAvailable, resolveInspectionCenter } from '../utils/orderUtils';
 import { resolveListingCategory, resolveOrderListing } from '../utils/catalogCache';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 
@@ -163,6 +163,21 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     return (orders || []).map((ord) => {
       if (!ord) return ord;
       let finalOrd = ord;
+
+      // Đọc trạng thái đóng gói bền vững (sellerReadyAt / seller_ready / seller_shipped_to_hub / order_packed)
+      if (typeof window !== 'undefined' && ord.id) {
+        try {
+          const storedReadyAt = localStorage.getItem(`seller_ready_${ord.id}`);
+          const isShippedToHub = localStorage.getItem(`seller_shipped_to_hub_${ord.id}`) === 'true';
+          const isPacked = localStorage.getItem(`order_packed_${ord.id}`) === 'true';
+          if (!finalOrd.sellerReadyAt && (storedReadyAt || isShippedToHub || isPacked)) {
+            finalOrd = {
+              ...finalOrd,
+              sellerReadyAt: storedReadyAt || new Date().toISOString(),
+            };
+          }
+        } catch { }
+      }
 
       // Kiểm tra trạng thái hủy từ localStorage nếu backend chưa đồng bộ
       if (typeof window !== 'undefined' && ord.id) {
@@ -433,7 +448,26 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     _setInspectionActionNotice(msg ? translateSystemNotification(msg) : null);
   };
   const [reportingOrder, setReportingOrder] = useState<EscrowOrder | null>(null);
-  const [localReadyOrderIds, setLocalReadyOrderIds] = useState<Set<string>>(new Set());
+  const [localReadyOrderIds, setLocalReadyOrderIds] = useState<Set<string>>(() => {
+    const set = new Set<string>();
+    if (typeof window !== 'undefined') {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key) {
+            if (key.startsWith('seller_ready_')) {
+              set.add(key.replace('seller_ready_', ''));
+            } else if (key.startsWith('seller_shipped_to_hub_')) {
+              set.add(key.replace('seller_shipped_to_hub_', ''));
+            } else if (key.startsWith('order_packed_')) {
+              set.add(key.replace('order_packed_', ''));
+            }
+          }
+        }
+      } catch {}
+    }
+    return set;
+  });
   const [confirmingReceiptIds, setConfirmingReceiptIds] = useState<Set<string>>(new Set());
 
   // VietQR Escrow Deposit Modal States
@@ -608,6 +642,20 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     return false;
   };
 
+  const isOrderPacked = (ord: EscrowOrder | null | undefined): boolean => {
+    if (!ord?.id) return false;
+    if (ord.sellerReadyAt) return true;
+    if (localReadyOrderIds.has(ord.id)) return true;
+    if (typeof window !== 'undefined') {
+      try {
+        if (localStorage.getItem(`seller_ready_${ord.id}`)) return true;
+        if (localStorage.getItem(`seller_shipped_to_hub_${ord.id}`)) return true;
+        if (localStorage.getItem(`order_packed_${ord.id}`)) return true;
+      } catch {}
+    }
+    return false;
+  };
+
   const isShipmentCreatedForOrder = (ord: EscrowOrder | null | undefined): boolean => {
     if (!ord?.id) return false;
     if (ord.carrierPickedUpAt || (ord.backendStatus as any) === 'SHIPPED' || (ord.backendStatus as any) === 'DELIVERED') return true;
@@ -616,8 +664,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       return true;
     }
     try {
-      if (typeof window !== 'undefined' && localStorage.getItem(`order_shipment_created_${ord.id}`) === 'true') {
-        return true;
+      if (typeof window !== 'undefined') {
+        if (localStorage.getItem(`order_shipment_created_${ord.id}`) === 'true') return true;
+        if (localStorage.getItem(`order_shipments_${ord.id}`)) return true;
+        if (localStorage.getItem(`sl_order_shipments_${ord.id}`)) return true;
+        if (localStorage.getItem(`sl_insp_shipments_${ord.id}`)) return true;
       }
     } catch { }
     return false;
@@ -1234,6 +1285,26 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             }
           }
           setLocalReadyOrderIds((prev) => new Set(prev).add(orderId));
+          try {
+            localStorage.setItem(`seller_ready_${orderId}`, readyAt);
+            localStorage.setItem(`order_packed_${orderId}`, 'true');
+            if (orderHasInspection && targetOrder?.inspectionMethod !== 'AT_HOME') {
+              localStorage.setItem(`seller_shipped_to_hub_${orderId}`, 'true');
+              window.dispatchEvent(new CustomEvent('secondlife_seller_shipped_to_hub', { detail: { orderId } }));
+            }
+            window.dispatchEvent(new StorageEvent('storage', { key: `seller_ready_${orderId}`, newValue: readyAt }));
+
+            const rawRecent = localStorage.getItem('recent_placed_orders');
+            if (rawRecent) {
+              const list = JSON.parse(rawRecent);
+              if (Array.isArray(list)) {
+                const updated = list.map((o: any) =>
+                  o.id === orderId ? { ...o, sellerReadyAt: readyAt } : o
+                );
+                localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
+              }
+            }
+          } catch {}
           if (detailModalOrder && detailModalOrder.id === orderId) {
             setDetailModalOrder((prev) => (prev ? { ...prev, sellerReadyAt: readyAt } : null));
           }
@@ -2446,19 +2517,53 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           </div>
 
                           {/* Chặng 2 */}
-                          <div className="p-2.5 rounded-lg bg-slate-50/90 border border-slate-200 text-slate-700 space-y-1">
-                            <div className="flex items-center justify-between font-bold">
-                              <span className="text-slate-700">🚚 {lang === 'vi' ? 'Chặng 2: Hub Giao Người Mua' : 'Leg 2: Hub to Buyer'}</span>
-                              <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-200 text-slate-600 font-extrabold">
-                                {lang === 'vi' ? 'Kích hoạt sau khi ĐẠT' : 'After Passed'}
-                              </span>
-                            </div>
-                            <div className="text-slate-500">
-                              {lang === 'vi'
-                                ? 'Sau khi KTV Hub kiểm định ĐẠT chuẩn 48 bước và dán tem niêm phong, Hub sẽ tự động chuyển phát tiếp đến tận tay người mua.'
-                                : 'Once item passes 48-step Hub inspection and seal is applied, Hub dispatches package directly to buyer.'}
-                            </div>
-                          </div>
+                          {(() => {
+                            const localInsp = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${ord.id}`) : null;
+                            const isInspFailed = ord.escrowStatus === 'INSPECTION_FAILED' || (ord as any).backendStatus === 'FAILED' || (ord as any).status === 'FAILED' || ord.inspectionReport?.status === 'FAILED' || localInsp === 'FAILED';
+                            const isInspPassed = ord.escrowStatus === 'INSPECTION_PASSED' || (ord as any).backendStatus === 'PASSED' || (ord as any).status === 'PASSED' || ord.inspectionReport?.status === 'PASSED' || localInsp === 'PASSED';
+
+                            return (
+                              <div className={`p-2.5 rounded-lg border space-y-1 ${
+                                isInspFailed
+                                  ? 'bg-rose-50/90 border-rose-200 text-rose-950'
+                                  : isInspPassed
+                                  ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
+                                  : 'bg-slate-50/90 border-slate-200 text-slate-700'
+                              }`}>
+                                <div className="flex items-center justify-between font-bold">
+                                  <span className={isInspFailed ? 'text-rose-700' : isInspPassed ? 'text-emerald-700' : 'text-slate-700'}>
+                                    🚚 {isInspFailed ? (lang === 'vi' ? 'Chặng 2: Hoàn Trả Người Bán' : 'Leg 2: Return to Seller') : (lang === 'vi' ? 'Chặng 2: Hub Giao Người Mua' : 'Leg 2: Hub to Buyer')}
+                                  </span>
+                                  <span className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${
+                                    isInspFailed
+                                      ? 'bg-rose-100 text-rose-800'
+                                      : isInspPassed
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-slate-200 text-slate-600'
+                                  }`}>
+                                    {isInspFailed
+                                      ? (lang === 'vi' ? 'Không đạt • Hoàn trả' : 'Failed • Return')
+                                      : isInspPassed
+                                      ? (lang === 'vi' ? 'Đã đạt • Đang giao' : 'Passed • In Transit')
+                                      : (lang === 'vi' ? 'Kích hoạt sau khi ĐẠT' : 'After Passed')}
+                                  </span>
+                                </div>
+                                <div className={isInspFailed ? 'text-rose-800 text-[11px]' : isInspPassed ? 'text-emerald-800 text-[11px]' : 'text-slate-500 text-[11px]'}>
+                                  {isInspFailed
+                                    ? (lang === 'vi'
+                                      ? 'Kiểm định không đạt. Hub tạo vận đơn hoàn trả hàng về cho người bán và hoàn tiền 100% cho người mua.'
+                                      : 'Item failed inspection. Hub creates return shipment back to seller and refunds 100% to buyer.')
+                                    : isInspPassed
+                                    ? (lang === 'vi'
+                                      ? 'KTV Hub kiểm định ĐẠT chuẩn và dán tem niêm phong. Hub tiến hành chuyển phát trực tiếp đến người mua.'
+                                      : 'Passed inspection with seal applied. Hub dispatches directly to buyer.')
+                                    : (lang === 'vi'
+                                      ? 'Sau khi KTV Hub kiểm định ĐẠT chuẩn 48 bước và dán tem niêm phong, Hub sẽ tự động chuyển phát tiếp đến tận tay người mua.'
+                                      : 'Once item passes 48-step Hub inspection and seal is applied, Hub dispatches package directly to buyer.')}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                     )}
@@ -2636,8 +2741,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               !isOrderReceiptConfirmed(ord) &&
                               ord.backendStatus !== 'COMPLETED' &&
                               !ord.shippingDeliveredAt &&
-                              !ord.sellerReadyAt &&
-                              !localReadyOrderIds.has(ord.id) &&
+                              !isOrderPacked(ord) &&
                               ord.backendStatus !== 'SHIPPED' &&
                               ord.backendStatus !== 'DELIVERED' &&
                               ord.escrowStatus !== 'SHIPPED_TO_BUYER' &&
@@ -2718,7 +2822,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               )}
 
                             {/* GIAI ĐOẠN 3: ĐÃ ĐÓNG GÓI • CHỜ SHIPPER ĐẾN LẤY */}
-                            {(ord.sellerReadyAt || localReadyOrderIds.has(ord.id)) &&
+                            {isOrderPacked(ord) &&
                               !isOrderReceiptConfirmed(ord) &&
                               ord.backendStatus !== 'COMPLETED' &&
                               !ord.shippingDeliveredAt &&
@@ -3537,7 +3641,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             </div>
                             <div className="flex items-start gap-1.5">
                               <span className="text-slate-400 font-bold shrink-0">Đến:</span>
-                              <span className="font-semibold text-slate-800 break-words">{detailModalOrder.shippingLegs[0]?.destination || 'Trạm Kiểm Định SecondLife Hub Lab'}</span>
+                              <span className="font-semibold text-slate-800 break-words">{detailModalOrder.shippingLegs[0]?.destination || resolveInspectionCenter(detailModalOrder).address}</span>
                             </div>
                           </div>
                         </div>
@@ -3550,44 +3654,88 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                         </div>
                       </div>
 
-                      {/* Chặng 2: Trung tâm Hub gửi Người mua */}
-                      <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 flex flex-col justify-between h-full shadow-2xs space-y-3">
-                        <div className="space-y-2.5">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-bold text-white bg-indigo-700 px-2.5 py-0.5 rounded-md shadow-2xs flex items-center gap-1">
-                              <Truck className="w-3 h-3" />
-                              <span>{t.leg2}</span>
-                            </span>
-                            <span className="text-xs font-mono font-bold text-[#24263e]">
-                              {detailShipments[1]?.orderCode ? (
-                                <span className="text-indigo-700">Lalamove #{detailShipments[1].orderCode}</span>
-                              ) : (
-                                <span className="text-[11px] font-sans font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                  Chờ hoàn tất chặng 1 & kiểm định
+                      {/* Chặng 2: Trung tâm Hub gửi Người mua HOẶC Hoàn trả người bán */}
+                      {(() => {
+                        const modalLocalInsp = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${detailModalOrder.id}`) : null;
+                        const isModalInspFailed = detailModalOrder.escrowStatus === 'INSPECTION_FAILED' || (detailModalOrder as any).backendStatus === 'FAILED' || (detailModalOrder as any).status === 'FAILED' || detailModalOrder.inspectionReport?.status === 'FAILED' || modalLocalInsp === 'FAILED';
+                        const isModalInspPassed = detailModalOrder.escrowStatus === 'INSPECTION_PASSED' || (detailModalOrder as any).backendStatus === 'PASSED' || (detailModalOrder as any).status === 'PASSED' || detailModalOrder.inspectionReport?.status === 'PASSED' || modalLocalInsp === 'PASSED';
+
+                        return (
+                          <div className={`rounded-2xl p-4 border flex flex-col justify-between h-full shadow-2xs space-y-3 ${
+                            isModalInspFailed
+                              ? 'bg-rose-50/80 border-rose-200'
+                              : isModalInspPassed
+                              ? 'bg-emerald-50/80 border-emerald-200'
+                              : 'bg-slate-50/80 border-slate-200'
+                          }`}>
+                            <div className="space-y-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={`text-[11px] font-bold text-white px-2.5 py-0.5 rounded-md shadow-2xs flex items-center gap-1 ${
+                                  isModalInspFailed ? 'bg-rose-700' : isModalInspPassed ? 'bg-emerald-700' : 'bg-indigo-700'
+                                }`}>
+                                  <Truck className="w-3 h-3" />
+                                  <span>
+                                    {isModalInspFailed
+                                      ? 'Chặng 2: Hoàn Trả Người Bán'
+                                      : isModalInspPassed
+                                      ? 'Chặng 2: Hub Giao Người Mua (Đạt Chuẩn)'
+                                      : t.leg2}
+                                  </span>
                                 </span>
-                              )}
-                            </span>
-                          </div>
+                                <span className="text-xs font-mono font-bold text-[#24263e]">
+                                  {detailShipments[1]?.orderCode ? (
+                                    <span className={isModalInspFailed ? 'text-rose-700' : 'text-indigo-700'}>
+                                      Lalamove #{detailShipments[1].orderCode}
+                                    </span>
+                                  ) : (
+                                    <span className={`text-[11px] font-sans font-medium px-2 py-0.5 rounded border ${
+                                      isModalInspFailed
+                                        ? 'text-rose-700 bg-rose-100 border-rose-200'
+                                        : isModalInspPassed
+                                        ? 'text-emerald-700 bg-emerald-100 border-emerald-200'
+                                        : 'text-slate-500 bg-slate-100 border-slate-200'
+                                    }`}>
+                                      {isModalInspFailed
+                                        ? 'Kích hoạt hoàn trả'
+                                        : isModalInspPassed
+                                        ? 'Đang điều phối giao'
+                                        : 'Chờ hoàn tất chặng 1 & kiểm định'}
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
 
-                          <div className="text-xs text-slate-600 space-y-1.5 pt-1">
-                            <div className="flex items-start gap-1.5">
-                              <span className="text-slate-400 font-bold shrink-0">Từ:</span>
-                              <span className="font-semibold text-slate-800 break-words">{detailModalOrder.shippingLegs[1]?.origin || 'Trạm Kiểm Định SecondLife Hub Lab'}</span>
+                              <div className="text-xs text-slate-600 space-y-1.5 pt-1">
+                                <div className="flex items-start gap-1.5">
+                                  <span className="text-slate-400 font-bold shrink-0">Từ:</span>
+                                  <span className="font-semibold text-slate-800 break-words">{detailModalOrder.shippingLegs[1]?.origin || resolveInspectionCenter(detailModalOrder).address}</span>
+                                </div>
+                                <div className="flex items-start gap-1.5">
+                                  <span className="text-slate-400 font-bold shrink-0">
+                                    {isModalInspFailed ? 'Hoàn trả về:' : 'Giao đến:'}
+                                  </span>
+                                  <span className="font-semibold text-slate-800 break-words">
+                                    {isModalInspFailed
+                                      ? (detailModalOrder.shippingLegs[0]?.origin || detailModalOrder.listing?.location || 'Kho người bán')
+                                      : (detailModalOrder.shippingLegs[1]?.destination || detailModalOrder.buyerAddress || 'Địa chỉ người mua')}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex items-start gap-1.5">
-                              <span className="text-slate-400 font-bold shrink-0">Giao đến:</span>
-                              <span className="font-semibold text-slate-800 break-words">{detailModalOrder.shippingLegs[1]?.destination || detailModalOrder.buyerAddress || 'Địa chỉ người mua'}</span>
+
+                            <div className="mt-auto pt-2.5 border-t border-slate-200/80 text-[11px] text-slate-500 flex items-start gap-1">
+                              <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                              <span className="break-words leading-relaxed">
+                                {isModalInspFailed
+                                  ? 'Kiểm định KHÔNG ĐẠT chuẩn. Hub tạo vận đơn hoàn trả hàng về cho người bán. Tiền cọc/ký quỹ được hoàn trả 100% cho người mua.'
+                                  : isModalInspPassed
+                                  ? 'Đã kiểm định ĐẠT chuẩn 48 bước và dán tem niêm phong. Hub chuyển phát an toàn đến tận tay người mua.'
+                                  : (detailModalOrder.shippingLegs[1]?.timeline[detailModalOrder.shippingLegs[1].timeline.length - 1]?.description || 'Chờ hoàn tất kiểm định tại Hub và niêm phong giao đến người mua.')}
+                              </span>
                             </div>
                           </div>
-                        </div>
-
-                        <div className="mt-auto pt-2.5 border-t border-slate-200/80 text-[11px] text-slate-500 flex items-start gap-1">
-                          <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                          <span className="break-words leading-relaxed">
-                            {detailModalOrder.shippingLegs[1]?.timeline[detailModalOrder.shippingLegs[1].timeline.length - 1]?.description || 'Chờ hoàn tất kiểm định tại Hub và niêm phong giao đến người mua.'}
-                          </span>
-                        </div>
-                      </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
@@ -3972,8 +4120,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               !isOrderReceiptConfirmed(detailModalOrder) &&
                               detailModalOrder.backendStatus !== 'COMPLETED' &&
                               !detailModalOrder.shippingDeliveredAt &&
-                              !detailModalOrder.sellerReadyAt &&
-                              !localReadyOrderIds.has(detailModalOrder.id) &&
+                              !isOrderPacked(detailModalOrder) &&
                               detailModalOrder.backendStatus !== 'SHIPPED' &&
                               detailModalOrder.backendStatus !== 'DELIVERED' &&
                               (detailModalOrder.escrowStatus as string) !== 'SHIPPED_TO_BUYER' &&
@@ -4028,7 +4175,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               )}
 
                             {/* GIAI ĐOẠN 3: Đã đóng gói • Chờ Shipper đến lấy */}
-                            {(detailModalOrder.sellerReadyAt || localReadyOrderIds.has(detailModalOrder.id)) &&
+                            {isOrderPacked(detailModalOrder) &&
                               !isOrderReceiptConfirmed(detailModalOrder) &&
                               detailModalOrder.backendStatus !== 'COMPLETED' &&
                               !detailModalOrder.shippingDeliveredAt &&
@@ -4224,7 +4371,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             setDetailShipments((prev) => [shipment, ...prev.filter((s) => s.shipmentId !== shipment.shipmentId)]);
             try {
               if (createShipmentOrder?.id) {
+                const nowIso = new Date().toISOString();
                 localStorage.setItem(`order_shipment_created_${createShipmentOrder.id}`, 'true');
+                localStorage.setItem(`seller_ready_${createShipmentOrder.id}`, nowIso);
+                localStorage.setItem(`order_packed_${createShipmentOrder.id}`, 'true');
+                setLocalReadyOrderIds((prev) => new Set(prev).add(createShipmentOrder.id));
               }
             } catch { }
           }}

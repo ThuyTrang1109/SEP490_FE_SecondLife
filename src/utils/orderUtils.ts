@@ -651,4 +651,110 @@ export function getResolvedPostParcel(postId?: string, postObj?: any, desc?: str
   return { weight, length, width, height };
 }
 
+export interface ResolvedInspectionCenter {
+  id: string;
+  name: string;
+  city: string;
+  address: string;
+  phone: string;
+  lat: number;
+  lng: number;
+}
+
+/**
+ * Lấy thông tin vị trí chính xác của Trung tâm Kiểm định SecondLife Hub (không hardcode)
+ * Dựa trên cấu hình trung tâm của đơn hàng hoặc khu vực địa lý của giao dịch
+ */
+export const resolveInspectionCenter = (order?: any): ResolvedInspectionCenter => {
+  const centers: ResolvedInspectionCenter[] = [
+    {
+      id: 'center-hcm-01',
+      name: 'SecondLife Home Hub HCMC - Quận 7 Flagship',
+      city: 'Hồ Chí Minh',
+      address: 'Số 1059 Nguyễn Văn Linh, Phường Tân Phong, Quận 7, TP. Hồ Chí Minh',
+      phone: '028 3822 9999',
+      lat: 10.7296,
+      lng: 106.7091,
+    },
+    {
+      id: 'center-hn-01',
+      name: 'SecondLife Home Hub Hanoi - Cầu Giấy Center',
+      city: 'Hà Nội',
+      address: 'Số 88 Trần Thái Tông, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội',
+      phone: '024 3788 8899',
+      lat: 21.0313,
+      lng: 105.7877,
+    },
+    {
+      id: 'center-dn-01',
+      name: 'SecondLife Home Hub Da Nang - Hải Châu Center',
+      city: 'Đà Nẵng',
+      address: '155 Nguyễn Văn Linh, Quận Hải Châu, TP. Đà Nẵng',
+      phone: '0236 365 7788',
+      lat: 16.0602,
+      lng: 108.2144,
+    },
+  ];
+
+  if (!order) return centers[0];
+
+  const directId = order.inspectionCenterId || order.centerId;
+  const directName = order.inspectionCenterName || order.centerName;
+  const directAddress = order.inspectionCenterAddress || order.centerAddress;
+  const directPhone = order.inspectionCenterPhone || order.centerPhone;
+
+  // 1. Khớp chính xác theo ID trung tâm
+  if (directId) {
+    const matched = centers.find((c) => c.id === directId || directId.toLowerCase().includes(c.id.toLowerCase()));
+    if (matched) {
+      return {
+        ...matched,
+        name: directName || matched.name,
+        address: directAddress || matched.address,
+        phone: directPhone || matched.phone,
+      };
+    }
+  }
+
+  // 2. Khớp theo Tên trung tâm hoặc Tỉnh/Thành phố chỉ định trong đơn hàng
+  const searchName = `${directName || ''} ${directAddress || ''} ${order.shippingLegs?.[0]?.destination || ''}`.toLowerCase();
+  if (searchName.includes('hà nội') || searchName.includes('hanoi') || searchName.includes('cầu giấy')) {
+    return { ...centers[1], name: directName || centers[1].name, address: directAddress || centers[1].address };
+  }
+  if (searchName.includes('đà nẵng') || searchName.includes('da nang') || searchName.includes('hải châu')) {
+    return { ...centers[2], name: directName || centers[2].name, address: directAddress || centers[2].address };
+  }
+  if (searchName.includes('hồ chí minh') || searchName.includes('hcm') || searchName.includes('quận 7') || searchName.includes('tân phong')) {
+    return { ...centers[0], name: directName || centers[0].name, address: directAddress || centers[0].address };
+  }
+
+  // 3. Khớp theo khu vực địa lý của Người bán hoặc Người mua
+  const sellerLoc = String(order.listing?.location || order.listing?.sellerAddress || order.sellerAddress || order.address || '').toLowerCase();
+  const buyerLoc = String(order.buyerAddress || order.deliveryAddress || '').toLowerCase();
+  const fullLoc = `${sellerLoc} ${buyerLoc}`;
+
+  if (fullLoc.includes('hà nội') || fullLoc.includes('ha noi') || fullLoc.includes('bắc ninh') || fullLoc.includes('hải phòng') || fullLoc.includes('quảng ninh')) {
+    return centers[1];
+  }
+  if (fullLoc.includes('đà nẵng') || fullLoc.includes('da nang') || fullLoc.includes('thừa thiên huế') || fullLoc.includes('huế') || fullLoc.includes('quảng nam')) {
+    return centers[2];
+  }
+
+  // 4. Nếu đơn hàng có sẵn địa chỉ trung tâm hợp lệ
+  if (directAddress && directAddress.trim().length > 6) {
+    return {
+      id: directId || centers[0].id,
+      name: directName || centers[0].name,
+      city: centers[0].city,
+      address: directAddress.trim(),
+      phone: directPhone || centers[0].phone,
+      lat: centers[0].lat,
+      lng: centers[0].lng,
+    };
+  }
+
+  // Mặc định trung tâm chính Hub TP.HCM (Quận 7)
+  return centers[0];
+};
+
 

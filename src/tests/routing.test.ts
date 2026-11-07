@@ -65,6 +65,9 @@ test('dynamic routes preserve the exact product, order, conversation, inspection
     ['/seller/chat/room-1', 'conversationId', 'room-1'],
     ['/inspector/inspections/inspection-1', 'inspectionId', 'inspection-1'],
     ['/buyer/inspections/inspection-1/decision', 'inspectionId', 'inspection-1'],
+    ['/seller/inspections/inspection-1/decision', 'inspectionId', 'inspection-1'],
+    ['/seller/inspections/23570df2-d237-4696-abda-7a0fa515ce36', 'inspectionId', '23570df2-d237-4696-abda-7a0fa515ce36'],
+    ['/buyer/inspections/23570df2-d237-4696-abda-7a0fa515ce36', 'inspectionId', '23570df2-d237-4696-abda-7a0fa515ce36'],
     ['/admin/users/user-1', 'userId', 'user-1'],
   ]) assert.equal(resolveAppRoute(url).params[key], expected, url);
   assert.equal(resolveAppRoute(paths.product('space id')).params.productId, 'space id');

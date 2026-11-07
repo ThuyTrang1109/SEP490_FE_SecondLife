@@ -126,13 +126,13 @@ body {
 }
 
 .subtle-scrollbar {
-  scrollbar-width: thin;
+  scrollbar-width: none;
   scrollbar-color: rgba(204, 187, 158, 0.4) transparent;
 }
 
 /* Category Horizontal Scrollbar */
 .category-scrollbar::-webkit-scrollbar {
-  height: 5px;
+  display: none;
 }
 .category-scrollbar::-webkit-scrollbar-track {
   background: #f1ede7;
@@ -147,8 +147,8 @@ body {
   background: #c34c36;
 }
 .category-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #d1c5b4 #f1ede7;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 /* Custom Keyframes for Notifications & Modals */

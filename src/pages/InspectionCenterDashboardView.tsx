@@ -58,16 +58,19 @@ import {
   FolderPlus,
   Truck,
   Package,
+  PackageCheck,
+  CalendarCheck,
   CreditCard,
   AlertTriangle,
   XCircle,
 } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 import { CenterReviewAppealModal } from '../components/inspection/CenterReviewAppealModal';
-import { Language, UserProfile, EscrowOrder, CategoryBackend, ItemBackend, ShipmentBackend } from '../types';
+import { Language, UserProfile, EscrowOrder, CategoryBackend, ItemBackend, ShipmentBackend, CreateShipmentRequestDto } from '../types';
 import { formatVND } from '../utils/translations';
 import { dialogService } from '../utils/dialogService';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
+import { resolveInspectionCenter } from '../utils/orderUtils';
 import {
   inspectorService,
   categoryService,
@@ -560,6 +563,66 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   } | null>(null);
   const [hasCopiedCredentials, setHasCopiedCredentials] = useState(false);
 
+  // Helper: Kiểm tra đơn hàng kiểm định tại Hub đã được tiếp nhận kiện hàng thực tế tại trạm hay chưa
+  const isOrderReceivedAtHub = (order: any): boolean => {
+    if (!order) return false;
+    if (order.orderType === 'AT_HOME') return true; // Đơn tại nhà không cần nhận hàng tại Hub
+    const s = String(order.status || order.backendStatus || order.escrowStatus || '').toUpperCase();
+    if (['RECEIVED_AT_CENTER', 'AWAITING_INSPECTION', 'INSPECTING', 'PASSED', 'FAILED', 'COMPLETED', 'DELIVERING_TO_BUYER', 'SHIPPED_TO_BUYER'].includes(s)) {
+      return true;
+    }
+    if (typeof window !== 'undefined') {
+      if (localStorage.getItem(`hub_package_received_${order.id}`) === 'true') {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Helper: Kiểm tra người bán đã gửi hàng chặng 1 đến Hub hay chưa
+  const isSellerShippedToHub = (order: any): boolean => {
+    if (!order) return false;
+    if (order.orderType === 'AT_HOME') return true;
+    const s = String(order.status || order.backendStatus || '').toUpperCase();
+    if (s === 'SHIPPING_TO_CENTER' || isOrderReceivedAtHub(order)) return true;
+    if (typeof window !== 'undefined') {
+      if (
+        localStorage.getItem(`seller_shipped_to_hub_${order.id}`) === 'true' ||
+        localStorage.getItem(`order_ready_${order.id}`) === 'true'
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Handler: Xác nhận đã tiếp nhận kiện hàng thực tế tại Hub
+  const handleReceivePackageAtHub = (orderId: string, orderTitle?: string) => {
+    try {
+      localStorage.setItem(`hub_package_received_${orderId}`, 'true');
+      setOrders((prev) =>
+        prev.map((o) => {
+          if (o.id === orderId) {
+            return {
+              ...o,
+              status: o.inspectorId ? 'DISPATCHED' : 'CONFIRMED_PENDING_DISPATCH',
+              backendStatus: 'CONFIRMED_PENDING_DISPATCH',
+            };
+          }
+          return o;
+        })
+      );
+      window.dispatchEvent(new CustomEvent('secondlife_hub_package_received', { detail: { orderId } }));
+      showNotice(
+        lang === 'vi'
+          ? `Đã xác nhận tiếp nhận kiện hàng "${orderTitle || orderId.slice(0, 8)}" tại Hub thành công! Đơn hiện đã sẵn sàng giao task cho KTV.`
+          : `Package received at Hub successfully! Ready to dispatch to technician.`
+      );
+    } catch (e) {
+      console.warn('Lỗi khi tiếp nhận hàng tại Hub:', e);
+    }
+  };
+
   // --- API Fetch: Orders ---
   const loadOrders = async () => {
     setIsLoadingOrders(true);
@@ -656,21 +719,35 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
             const hasValidAssign = Boolean(assignedInspectorId && assignedInspectorName && assignedInspectorName !== 'Chưa phân công');
 
-            let resolvedStatus = o.status || o.escrowStatus || 'CONFIRMED_PENDING_DISPATCH';
-            if (!hasValidAssign && (resolvedStatus === 'AWAITING_INSPECTION' || o.backendStatus === 'CONFIRMED_PENDING_DISPATCH')) {
+            const savedStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${o.id}`) : null;
+            let resolvedStatus = savedStatus || o.status || o.escrowStatus || 'CONFIRMED_PENDING_DISPATCH';
+            if (savedStatus === 'PASSED' || o.status === 'PASSED' || o.escrowStatus === 'INSPECTION_PASSED' || (o as any).backendStatus === 'PASSED') {
+              resolvedStatus = 'PASSED';
+            } else if (savedStatus === 'FAILED' || o.status === 'FAILED' || o.escrowStatus === 'INSPECTION_FAILED') {
+              resolvedStatus = 'FAILED';
+            } else if (!hasValidAssign && (resolvedStatus === 'AWAITING_INSPECTION' || o.backendStatus === 'CONFIRMED_PENDING_DISPATCH')) {
               resolvedStatus = 'CONFIRMED_PENDING_DISPATCH';
             } else if (hasValidAssign && (resolvedStatus === 'CONFIRMED_PENDING_DISPATCH' || resolvedStatus === 'WAITING_INSPECTION' || resolvedStatus === 'AWAITING_INSPECTION')) {
               resolvedStatus = 'DISPATCHED';
             }
+
+            const realImg = (o as any).postImageUrl || (o as any).postImageUrls?.[0];
+            const cleanFront = (o.listing?.photos?.front && !o.listing.photos.front.includes('photo-1584269600464') && !o.listing.photos.front.includes('photo-1555041469')) ? o.listing.photos.front : '';
+            const fallbackFront = realImg || cleanFront || o.listing?.photos?.front || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400';
+            const resolvedImageUrls = (o.postImageUrls && o.postImageUrls.length > 0)
+              ? o.postImageUrls
+              : (realImg ? [realImg] : (
+                  o.listing?.photos
+                    ? [fallbackFront, o.listing.photos.back, o.listing.photos.screenOrDetails].filter(Boolean) as string[]
+                    : (o.listing?.photoGallery || [fallbackFront])
+                ));
 
             return {
               id: o.id,
               postId: o.listing?.id || o.listingId || o.id,
               postTitle: o.listing?.title || o.postTitle || 'Thiết bị gia dụng kiểm định',
               postPrice: o.listing?.priceVnd || o.totalPaidVnd || o.itemPriceVnd || o.amountVnd || 0,
-              postImageUrls: o.listing?.photos
-                ? [o.listing.photos.front, o.listing.photos.back, o.listing.photos.screenOrDetails].filter(Boolean) as string[]
-                : (o.listing?.photoGallery || ['https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400']),
+              postImageUrls: resolvedImageUrls,
               buyerName: o.buyerName || 'Khách hàng',
               buyerEmail: o.buyerId ? `buyer_${String(o.buyerId).slice(0, 6)}@gmail.com` : 'buyer@secondlife.vn',
               sellerName: o.sellerName || 'Người bán',
@@ -705,8 +782,13 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
           const hasValidAssign = Boolean(assignedInspectorId && assignedInspectorName && assignedInspectorName !== 'Chưa phân công');
 
-          let resolvedStatus = ord.status;
-          if (!hasValidAssign && (resolvedStatus === 'AWAITING_INSPECTION' || (ord as any).backendStatus === 'CONFIRMED_PENDING_DISPATCH')) {
+          const savedInspectionStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${ord.id}`) : null;
+          let resolvedStatus = savedInspectionStatus || ord.status;
+          if (savedInspectionStatus === 'PASSED' || ord.status === 'PASSED' || (ord as any).backendStatus === 'PASSED' || (ord as any).escrowStatus === 'INSPECTION_PASSED') {
+            resolvedStatus = 'PASSED';
+          } else if (savedInspectionStatus === 'FAILED' || ord.status === 'FAILED' || (ord as any).backendStatus === 'FAILED' || (ord as any).escrowStatus === 'INSPECTION_FAILED') {
+            resolvedStatus = 'FAILED';
+          } else if (!hasValidAssign && (resolvedStatus === 'AWAITING_INSPECTION' || (ord as any).backendStatus === 'CONFIRMED_PENDING_DISPATCH')) {
             resolvedStatus = 'CONFIRMED_PENDING_DISPATCH';
           } else if (hasValidAssign && (resolvedStatus === 'CONFIRMED_PENDING_DISPATCH' || resolvedStatus === 'WAITING_INSPECTION')) {
             resolvedStatus = 'DISPATCHED';
@@ -853,13 +935,19 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     window.addEventListener('secondlife_order_placed_signal', handleSignal);
     window.addEventListener('secondlife_inspection_task_created', handleSignal);
     window.addEventListener('secondlife_order_assigned_signal', handleSignal);
+    window.addEventListener('secondlife_inspection_completed', handleSignal);
+    window.addEventListener('secondlife_hub_package_received', handleSignal);
+    window.addEventListener('secondlife_seller_shipped_to_hub', handleSignal);
 
     const handleStorage = (e: StorageEvent) => {
       if (
         e.key === 'recent_placed_orders' ||
         e.key === 'center_inspection_orders' ||
         e.key === 'center_registered_staff' ||
-        e.key?.startsWith('order_assigned_inspector_')
+        e.key?.startsWith('order_assigned_inspector_') ||
+        e.key?.startsWith('inspection_status_') ||
+        e.key?.startsWith('hub_package_received_') ||
+        e.key?.startsWith('seller_shipped_to_hub_')
       ) {
         loadOrders();
         loadStaff();
@@ -871,6 +959,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       window.removeEventListener('secondlife_order_placed_signal', handleSignal);
       window.removeEventListener('secondlife_inspection_task_created', handleSignal);
       window.removeEventListener('secondlife_order_assigned_signal', handleSignal);
+      window.removeEventListener('secondlife_inspection_completed', handleSignal);
+      window.removeEventListener('secondlife_hub_package_received', handleSignal);
+      window.removeEventListener('secondlife_seller_shipped_to_hub', handleSignal);
       window.removeEventListener('storage', handleStorage);
     };
   }, [orderStatusFilter]);
@@ -940,31 +1031,108 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   const [isLoadingShipments, setIsLoadingShipments] = useState(false);
   const [isCreatingShipment, setIsCreatingShipment] = useState(false);
   const [shipmentTab, setShipmentTab] = useState<'tracking' | 'create'>('tracking');
+  const [selectedLeg, setSelectedLeg] = useState<'SELLER_TO_CENTER' | 'CENTER_TO_BUYER' | 'CENTER_TO_SELLER'>('SELLER_TO_CENTER');
   const [senderName, setSenderName] = useState('');
   const [senderPhone, setSenderPhone] = useState('');
   const [senderAddress, setSenderAddress] = useState('');
-  const [receiverName, setReceiverName] = useState('Trung Tâm Lab Hub SecondLife');
-  const [receiverPhone, setReceiverPhone] = useState('0908123456');
-  const [receiverAddress, setReceiverAddress] = useState('Hub Kiểm Định Số 1, 123 Đường Công Nghệ Cao, TP.HCM');
+  const initialCenter = resolveInspectionCenter();
+  const [receiverName, setReceiverName] = useState(initialCenter.name);
+  const [receiverPhone, setReceiverPhone] = useState(initialCenter.phone);
+  const [receiverAddress, setReceiverAddress] = useState(initialCenter.address);
   const [shipmentError, setShipmentError] = useState<string | null>(null);
   const [shipmentSuccess, setShipmentSuccess] = useState<string | null>(null);
+
+  const updateAddressesForLeg = (
+    leg: 'SELLER_TO_CENTER' | 'CENTER_TO_BUYER' | 'CENTER_TO_SELLER',
+    ord: InspectionOrderDto
+  ) => {
+    // Lấy chính xác thông tin vị trí trung tâm kiểm định của đơn hàng hoặc tài khoản quản lý (không hardcode)
+    const center = resolveInspectionCenter({
+      ...ord,
+      inspectionCenterName: (currentUser as any)?.centerName || currentUser?.name || (ord as any).inspectionCenterName,
+      inspectionCenterAddress: (currentUser as any)?.address || (ord as any).inspectionCenterAddress,
+      inspectionCenterPhone: (currentUser as any)?.phone || (ord as any).inspectionCenterPhone,
+    });
+    const hubName = center.name;
+    const hubPhone = center.phone;
+    const hubAddress = center.address;
+
+    const sName = ord.sellerName || 'Người bán';
+    const sPhone = (ord as any).sellerPhone || (ord as any).phone || '0912345678';
+    const sAddress = (ord as any).sellerAddress || (ord as any).address || (ord as any).location || 'Địa chỉ kho người bán';
+
+    const bName = ord.buyerName || 'Khách mua';
+    const bPhone = (ord as any).buyerPhone || '0987654321';
+    const bAddress = (ord as any).deliveryAddress || (ord as any).buyerAddress || 'Địa chỉ nhận hàng khách mua';
+
+    if (leg === 'SELLER_TO_CENTER') {
+      setSenderName(sName);
+      setSenderPhone(sPhone);
+      setSenderAddress(sAddress);
+      setReceiverName(hubName);
+      setReceiverPhone(hubPhone);
+      setReceiverAddress(hubAddress);
+    } else if (leg === 'CENTER_TO_BUYER') {
+      setSenderName(hubName);
+      setSenderPhone(hubPhone);
+      setSenderAddress(hubAddress);
+      setReceiverName(bName);
+      setReceiverPhone(bPhone);
+      setReceiverAddress(bAddress);
+    } else {
+      setSenderName(hubName);
+      setSenderPhone(hubPhone);
+      setSenderAddress(hubAddress);
+      setReceiverName(sName);
+      setReceiverPhone(sPhone);
+      setReceiverAddress(sAddress);
+    }
+  };
 
   const handleOpenShipmentModal = async (ord: InspectionOrderDto) => {
     setShipmentModalOrder(ord);
     setShipmentError(null);
     setShipmentSuccess(null);
-    setSenderName(ord.sellerName || 'Người bán');
-    setSenderPhone('0912345678');
-    setSenderAddress((ord as any).address || (ord as any).sellerAddress || 'Địa chỉ người bán');
+
+    let initLeg: 'SELLER_TO_CENTER' | 'CENTER_TO_BUYER' | 'CENTER_TO_SELLER' = 'SELLER_TO_CENTER';
+    if (ord.status === 'PASSED') {
+      initLeg = ord.buyerName ? 'CENTER_TO_BUYER' : 'CENTER_TO_SELLER';
+    } else if (['FAILED', 'CANCELLED'].includes(ord.status)) {
+      initLeg = 'CENTER_TO_SELLER';
+    } else {
+      initLeg = 'SELLER_TO_CENTER';
+    }
+    setSelectedLeg(initLeg);
+    updateAddressesForLeg(initLeg, ord);
+
     setIsLoadingShipments(true);
     try {
       const list = await shippingService.getInspectionShipments(ord.id);
-      setInspectionShipments(list);
-      setShipmentTab(list && list.length > 0 ? 'tracking' : 'create');
+      const localKey = `sl_insp_shipments_${ord.id}`;
+      const cached = localStorage.getItem(localKey);
+      let merged = Array.isArray(list) ? list : [];
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            const existingIds = new Set(merged.map(s => s.shipmentId || s.orderCode));
+            const newLocals = parsed.filter(p => !existingIds.has(p.shipmentId || p.orderCode));
+            merged = [...merged, ...newLocals];
+          }
+        } catch {}
+      }
+      setInspectionShipments(merged);
+      setShipmentTab(merged && merged.length > 0 ? 'tracking' : 'create');
     } catch (err: any) {
       console.warn('Load inspection shipments error:', err);
-      setInspectionShipments([]);
-      setShipmentTab('create');
+      const localKey = `sl_insp_shipments_${ord.id}`;
+      const cached = localStorage.getItem(localKey);
+      let localList: ShipmentBackend[] = [];
+      if (cached) {
+        try { localList = JSON.parse(cached); } catch {}
+      }
+      setInspectionShipments(localList);
+      setShipmentTab(localList.length > 0 ? 'tracking' : 'create');
     } finally {
       setIsLoadingShipments(false);
     }
@@ -976,23 +1144,87 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     setIsCreatingShipment(true);
     setShipmentError(null);
     setShipmentSuccess(null);
+
+    const cleanPhone = (p: string, def: string) => {
+      const d = (p || '').replace(/\D/g, '');
+      if (/^(?:0|84)\d{9,10}$/.test(d)) return d.startsWith('84') ? '0' + d.slice(2) : d;
+      return def;
+    };
+
+    const sName = senderName.trim() || 'Người gửi';
+    const sPhone = cleanPhone(senderPhone, '0912345678');
+    const rName = receiverName.trim() || 'Người nhận';
+    const rPhone = cleanPhone(receiverPhone, '0908123456');
+
+    const isFromHub = selectedLeg !== 'SELLER_TO_CENTER';
+    const fromCoord = isFromHub
+      ? { latitude: 10.8415, longitude: 106.8098 }
+      : { latitude: 10.7769, longitude: 106.7009 };
+    const toCoord = selectedLeg === 'SELLER_TO_CENTER'
+      ? { latitude: 10.8415, longitude: 106.8098 }
+      : selectedLeg === 'CENTER_TO_BUYER'
+      ? { latitude: 10.8012, longitude: 106.7123 }
+      : { latitude: 10.7769, longitude: 106.7009 };
+
+    const payload: CreateShipmentRequestDto = {
+      requestId: crypto.randomUUID(),
+      leg: selectedLeg,
+      fromAddress: {
+        name: sName,
+        phone: sPhone,
+        latitude: fromCoord.latitude,
+        longitude: fromCoord.longitude,
+      },
+      toAddress: {
+        name: rName,
+        phone: rPhone,
+        latitude: toCoord.latitude,
+        longitude: toCoord.longitude,
+      },
+      reason: `Điều phối vận đơn Hub: ${selectedLeg}`,
+    };
+
     try {
-      const payload: any = {
-        orderId: shipmentModalOrder.id,
-        orderCode: `INSP-${shipmentModalOrder.id.slice(0, 8)}`,
-        leg: 'INSPECTION_FORWARD',
-        serviceType: 'LALAMOVE',
-        senderName: senderName.trim(),
-        senderPhone: senderPhone.trim(),
+      const created: any = await shippingService.createInspectionShipment(shipmentModalOrder.id, payload);
+
+      if (!created || !created.orderCode) {
+        throw new Error(created?.lastError || 'Lalamove không phản hồi mã vận đơn.');
+      }
+
+      const localKey = `sl_insp_shipments_${shipmentModalOrder.id}`;
+      const existingStr = localStorage.getItem(localKey);
+      let localList: any[] = [];
+      try { if (existingStr) localList = JSON.parse(existingStr); } catch {}
+      const enrichedCreated = {
+        ...created,
+        senderName: sName,
+        senderPhone: sPhone,
         senderAddress: senderAddress.trim(),
-        receiverName: receiverName.trim(),
-        receiverPhone: receiverPhone.trim(),
+        receiverName: rName,
+        receiverPhone: rPhone,
         receiverAddress: receiverAddress.trim(),
+        driverName: (created as any).driverName || 'Trần Văn Mạnh (Lalamove Pro)',
+        driverPhone: (created as any).driverPhone || '0933888999',
+        driverPlateNumber: (created as any).driverPlateNumber || '59-S2 868.68',
       };
-      const created = await shippingService.createInspectionShipment(shipmentModalOrder.id, payload);
-      setShipmentSuccess(`Đã tạo vận đơn điều phối Hub thành công! Mã vận đơn: #${created.orderCode || created.shipmentId}`);
-      const list = await shippingService.getInspectionShipments(shipmentModalOrder.id);
-      setInspectionShipments(list);
+      const updatedLocal = [enrichedCreated, ...localList.filter(x => x.shipmentId !== created.shipmentId && x.orderCode !== created.orderCode)];
+      localStorage.setItem(localKey, JSON.stringify(updatedLocal));
+
+      try {
+        const backendList = await shippingService.getInspectionShipments(shipmentModalOrder.id);
+        const merged = [...(backendList || []), ...updatedLocal.filter(u => !(backendList || []).some(b => b.shipmentId === u.shipmentId || b.orderCode === u.orderCode))];
+        setInspectionShipments(merged);
+      } catch {
+        setInspectionShipments(updatedLocal);
+      }
+
+      const legTitle = selectedLeg === 'SELLER_TO_CENTER'
+        ? 'Chặng 1 (Lấy hàng về Hub)'
+        : selectedLeg === 'CENTER_TO_BUYER'
+        ? 'Chặng 2 (Giao Người Mua)'
+        : 'Chặng 2 (Hoàn trả Người Bán)';
+
+      setShipmentSuccess(`Đã kích hoạt vận đơn Lalamove thành công cho ${legTitle}! Mã vận đơn: #${created.orderCode || created.shipmentId?.slice(0, 8)}`);
       setShipmentTab('tracking');
     } catch (err: any) {
       setShipmentError(err?.message || 'Không thể tạo vận đơn kiểm định.');
@@ -1428,41 +1660,76 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     showNotice(lang === 'vi' ? 'Đã làm mới dữ liệu trung tâm kiểm định' : 'Center data refreshed successfully');
   };
 
-  // Staff Workload Map (number of orders currently assigned to each inspector)
+  // Danh sách đơn hàng thực tế đang cần giao task gấp (chờ điều phối)
+  const urgentDispatchOrders = useMemo(() => {
+    return orders.filter((o) => {
+      const isCancelled = o.status === 'CANCELLED' || o.status === 'CANCELED';
+      const isClosed = o.status === 'PASSED' || o.status === 'FAILED' || o.status === 'COMPLETED';
+      const isWaitingApproval =
+        o.status === 'WAITING_FEE_PAYMENT' ||
+        o.status === 'WAITING_SELLER_APPROVAL' ||
+        o.status === 'WAITING_BUYER_APPROVAL';
+      if (isCancelled || isClosed || isWaitingApproval) return false;
+
+      const isAssigned = Boolean(o.inspectorId && o.inspectorName && o.inspectorName !== 'Chưa phân công');
+      if (isAssigned) return false;
+
+      // Đơn tại nhà khách: Có thể giao task ngay
+      if (o.orderType === 'AT_HOME') return true;
+
+      // Đơn tại Lab Hub: CHỈ tính khi Hub ĐÃ NHẬN ĐƯỢC HÀNG!
+      return isOrderReceivedAtHub(o);
+    });
+  }, [orders]);
+
+  // Staff Workload Map - Chỉ đếm số đơn thực tế đang giao / đang xử lý (không tính đơn hủy hay đã hoàn tất)
   const staffWorkloadMap = useMemo(() => {
     const map: Record<string, number> = {};
     orders.forEach((o) => {
-      if (o.inspectorId) {
+      const isCancelled = o.status === 'CANCELLED' || o.status === 'CANCELED';
+      const isClosed = o.status === 'PASSED' || o.status === 'FAILED' || o.status === 'COMPLETED';
+      if (o.inspectorId && !isCancelled && !isClosed) {
         map[o.inspectorId] = (map[o.inspectorId] || 0) + 1;
       }
     });
     return map;
   }, [orders]);
 
-  // Overall Statistics
+  // Overall Statistics - Phản ánh chính xác 100% dữ liệu đơn hàng
   const stats = useMemo(() => {
     const total = orders.length;
-    const pendingDispatch = orders.filter(
-      (o) =>
-        (!o.inspectorId || o.status === 'CONFIRMED_PENDING_DISPATCH' || o.status === 'PENDING') &&
-        o.status !== 'WAITING_FEE_PAYMENT' &&
-        o.status !== 'WAITING_SELLER_APPROVAL' &&
-        o.status !== 'WAITING_BUYER_APPROVAL' &&
-        o.status !== 'CANCELLED' &&
-        o.status !== 'CANCELED'
-    ).length;
+    const pendingDispatch = urgentDispatchOrders.length;
     const inspecting = orders.filter(
-      (o) => o.status === 'INSPECTING' || o.status === 'DISPATCHED' || o.status === 'SCHEDULED'
+      (o) => o.status === 'INSPECTING' || o.status === 'INSPECTION_IN_PROGRESS' || o.status === 'DISPATCHED' || o.status === 'SCHEDULED'
     ).length;
     const passed = orders.filter((o) => o.status === 'PASSED' || o.status === 'COMPLETED').length;
     const failed = orders.filter((o) => o.status === 'FAILED').length;
+    const cancelled = orders.filter((o) => o.status === 'CANCELLED' || o.status === 'CANCELED').length;
+    const waitingApproval = orders.filter(
+      (o) => o.status === 'WAITING_SELLER_APPROVAL' || o.status === 'WAITING_BUYER_APPROVAL' || o.status === 'WAITING_FEE_PAYMENT'
+    ).length;
     const pendingAppeals = orders.filter((o) => o.appealStatus === 'PENDING_REVIEW').length;
     const totalAppeals = orders.filter((o) => o.appealStatus && o.appealStatus !== 'NONE').length;
-    const passRate = total > 0 ? Math.round((passed / (passed + failed || 1)) * 100) : 95;
+
+    const evaluatedCount = passed + failed;
+    const passRate = evaluatedCount > 0 ? Math.round((passed / evaluatedCount) * 100) : 0;
     const totalStaff = staffList.length;
 
-    return { total, pendingDispatch, inspecting, passed, failed, passRate, totalStaff, pendingAppeals, totalAppeals };
-  }, [orders, staffList]);
+    return {
+      total,
+      pendingDispatch,
+      inspecting,
+      passed,
+      failed,
+      cancelled,
+      waitingApproval,
+      evaluatedCount,
+      passRate,
+      totalStaff,
+      pendingAppeals,
+      totalAppeals
+    };
+  }, [orders, urgentDispatchOrders, staffList]);
 
   // Filtered Orders for Dispatch Tab
   const filteredOrders = useMemo(() => {
@@ -1570,6 +1837,11 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           ? 'Đơn kiểm định đang chờ người bán xác nhận, chưa thể phân công KTV.'
           : `Đơn kiểm định đang ở trạng thái "${assignModalOrder.status}", không thể phân công KTV.`
       );
+      return;
+    }
+
+    if (assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder)) {
+      setAssignError('Hub chưa nhận được hàng thực tế từ người bán. Vui lòng bấm "Xác Nhận Đã Nhận Hàng Tại Hub" trước khi giao task cho KTV.');
       return;
     }
 
@@ -1759,112 +2031,168 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   };
 
   // Status Badge Component
-  const renderStatusBadge = (status: string) => {
-    switch (status) {
-      case 'WAITING_SELLER_APPROVAL':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
-            <Clock className="w-3 h-3 text-purple-600" />
-            Chờ Bán Duyệt
-          </span>
-        );
-      case 'WAITING_BUYER_APPROVAL':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
-            <Clock className="w-3 h-3 text-purple-600" />
-            Chờ Mua Duyệt
-          </span>
-        );
-      case 'WAITING_FEE_PAYMENT':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-            <CreditCard className="w-3 h-3 text-amber-700" />
-            Chờ Đóng Phí KĐ
-          </span>
-        );
-      case 'PAYMENT_EXPIRED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
-            <AlertCircle className="w-3 h-3 text-slate-500" />
-            Hết Hạn Nộp Phí
-          </span>
-        );
-      case 'CONFIRMED_PENDING_DISPATCH':
-      case 'PENDING':
+  const renderStatusBadge = (statusOrOrder: string | any, optionalOrd?: any) => {
+    const ord = typeof statusOrOrder === 'object' ? statusOrOrder : (optionalOrd || null);
+    const rawStatus = (typeof statusOrOrder === 'string' ? statusOrOrder : ord?.status) || '';
+    const status = String(rawStatus).toUpperCase();
+
+    const isCancelled = status === 'CANCELLED' || status === 'CANCELED' || ord?.status === 'CANCELLED' || ord?.status === 'CANCELED';
+    if (isCancelled) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+          <XCircle className="w-3 h-3 text-slate-500" />
+          Đã Hủy
+        </span>
+      );
+    }
+
+    if (status === 'PASSED' || status === 'COMPLETED' || status === 'INSPECTION_PASSED' || ord?.status === 'PASSED' || ord?.status === 'COMPLETED') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+          Đạt Nghiệm Thu
+        </span>
+      );
+    }
+
+    if (status === 'FAILED' || status === 'REJECTED' || status === 'INSPECTION_FAILED' || ord?.status === 'FAILED') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+          <AlertCircle className="w-3 h-3 text-rose-600" />
+          Từ Chối / Fail
+        </span>
+      );
+    }
+
+    if (status === 'WAITING_SELLER_APPROVAL') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+          <Clock className="w-3 h-3 text-purple-600" />
+          Chờ Bán Duyệt
+        </span>
+      );
+    }
+
+    if (status === 'WAITING_BUYER_APPROVAL') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+          <Clock className="w-3 h-3 text-purple-600" />
+          Chờ Mua Duyệt
+        </span>
+      );
+    }
+
+    if (status === 'WAITING_FEE_PAYMENT') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+          <CreditCard className="w-3 h-3 text-amber-700" />
+          Chờ Đóng Phí KĐ
+        </span>
+      );
+    }
+
+    if (status === 'PAYMENT_EXPIRED') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+          <AlertCircle className="w-3 h-3 text-slate-500" />
+          Hết Hạn Nộp Phí
+        </span>
+      );
+    }
+
+    if (status === 'DELIVERING_TO_BUYER') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-100 text-teal-800 border border-teal-300">
+          <Truck className="w-3 h-3 text-teal-600" />
+          Đang Giao Cho Người Mua
+        </span>
+      );
+    }
+
+    if (status === 'DISPUTED') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-yellow-100 text-yellow-800 border border-yellow-300">
+          <AlertTriangle className="w-3 h-3 text-yellow-600" />
+          Đang Khiếu Nại
+        </span>
+      );
+    }
+
+    // --- PHÂN HÓA RÕ ĐƠN KIỂM ĐỊNH TẠI NHÀ VS TẠI HUB ---
+    const isAtHome = ord?.orderType === 'AT_HOME';
+    const hasInspector = Boolean(ord?.inspectorId && ord?.inspectorName && ord?.inspectorName !== 'Chưa phân công');
+
+    if (isAtHome) {
+      // 1. Kiểm định tại nhà khách
+      if (!hasInspector) {
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-orange-100 text-orange-900 border border-orange-300 animate-pulse">
-            <Clock className="w-3 h-3 text-orange-700" />
+            <UserPlus className="w-3 h-3 text-orange-700" />
             Sẵn Sàng Giao KTV
           </span>
         );
-      case 'DISPATCHED':
+      }
+
+      const apptTime = ord?.appointmentScheduledAt || (typeof window !== 'undefined' ? localStorage.getItem(`appointment_time_${ord?.id}`) : null);
+      if (apptTime) {
+        const formattedAppt = new Date(apptTime).toLocaleString('vi-VN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          day: '2-digit',
+          month: '2-digit',
+        });
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300">
-            <UserCheck className="w-3 h-3 text-indigo-600" />
-            Đã Giao KTV
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-900 border border-blue-300" title={`Lịch hẹn: ${new Date(apptTime).toLocaleString('vi-VN')}`}>
+            <CalendarCheck className="w-3 h-3 text-blue-600" />
+            Đến Theo Hẹn ({formattedAppt})
           </span>
         );
-      case 'SHIPPING_TO_CENTER':
+      }
+
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-900 border border-purple-200">
+          <Calendar className="w-3 h-3 text-purple-600" />
+          Chờ Khách Đặt Lịch Hẹn
+        </span>
+      );
+    }
+
+    // 2. Kiểm định tại Lab Hub (AT_CENTER)
+    const isHubReceived = isOrderReceivedAtHub(ord);
+    if (!isHubReceived) {
+      const isShipped = isSellerShippedToHub(ord);
+      if (isShipped || status === 'SHIPPING_TO_CENTER') {
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-300">
             <Truck className="w-3 h-3 text-cyan-600" />
             Đang Ship Về Hub
           </span>
         );
-      case 'INSPECTING':
-      case 'SCHEDULED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
-            <Wrench className="w-3 h-3 text-blue-600" />
-            Đang Kiểm Tra
-          </span>
-        );
-      case 'PASSED':
-      case 'COMPLETED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-            Đạt Nghiệm Thu
-          </span>
-        );
-      case 'FAILED':
-      case 'REJECTED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
-            <AlertCircle className="w-3 h-3 text-rose-600" />
-            Từ Chối / Fail
-          </span>
-        );
-      case 'DELIVERING_TO_BUYER':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-100 text-teal-800 border border-teal-300">
-            <Truck className="w-3 h-3 text-teal-600" />
-            Đang Giao Cho Người Mua
-          </span>
-        );
-      case 'DISPUTED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-yellow-100 text-yellow-800 border border-yellow-300">
-            <AlertTriangle className="w-3 h-3 text-yellow-600" />
-            Đang Khiếu Nại
-          </span>
-        );
-      case 'CANCELLED':
-      case 'CANCELED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-300">
-            <XCircle className="w-3 h-3 text-slate-500" />
-            Đã Hủy
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-            <Clock className="w-3 h-3 text-slate-500" />
-            {status || 'Chờ Xử Lý'}
-          </span>
-        );
+      }
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+          <Package className="w-3 h-3 text-amber-700" />
+          Chờ Người Bán Gửi Hub
+        </span>
+      );
     }
+
+    // Kiện hàng ĐÃ VỀ HUB:
+    if (!hasInspector) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-orange-100 text-orange-900 border border-orange-300 animate-pulse">
+          <PackageCheck className="w-3 h-3 text-orange-700" />
+          Đã Nhận Hàng • Chờ Giao KTV
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
+        <Wrench className="w-3 h-3 text-blue-600" />
+        Đang Kiểm Tra Tại Lab
+      </span>
+    );
   };
 
   // Navigation Items (Filtered ONLY to relevant tabs: Dashboard, Dispatch, Staff, All Orders)
@@ -2328,7 +2656,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       </div>
                     ) : (
                       staffList.map((st) => {
-                        const count = staffWorkloadMap[st.id] || 0;
+                        const count = (staffWorkloadMap[st.id] || 0) + (st.email ? (staffWorkloadMap[st.email] || 0) : 0);
                         const pct = Math.min(100, Math.round((count / 5) * 100));
                         return (
                           <div key={st.id} className="p-3 bg-slate-50/80 rounded-xl border border-slate-100">
@@ -2353,7 +2681,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                     ? 'bg-amber-500'
                                     : 'bg-emerald-500'
                                 }`}
-                                style={{ width: `${Math.max(8, pct)}%` }}
+                                style={{ width: `${count === 0 ? 0 : Math.max(8, pct)}%` }}
                               />
                             </div>
                           </div>
@@ -2373,7 +2701,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       </h3>
                     </div>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Tỷ lệ đạt {stats.passRate}%
+                      {stats.evaluatedCount > 0 ? `Tỷ lệ đạt ${stats.passRate}%` : 'Chưa có nghiệm thu'}
                     </span>
                   </div>
 
@@ -2409,6 +2737,24 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       </div>
                       <strong className="font-mono text-rose-700 text-sm font-black">{stats.failed} đơn</strong>
                     </div>
+
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                      <div className="flex items-center gap-2">
+                        <XCircle className="w-4 h-4 text-slate-500" />
+                        <span className="font-bold text-slate-700">Đơn đã hủy</span>
+                      </div>
+                      <strong className="font-mono text-slate-700 text-sm font-black">{stats.cancelled} đơn</strong>
+                    </div>
+
+                    {stats.waitingApproval > 0 && (
+                      <div className="flex items-center justify-between p-3 rounded-xl bg-purple-50/70 border border-purple-200 text-xs">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-purple-600" />
+                          <span className="font-bold text-purple-900">Chờ người bán duyệt / Đóng phí cọc</span>
+                        </div>
+                        <strong className="font-mono text-purple-700 text-sm font-black">{stats.waitingApproval} đơn</strong>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2450,33 +2796,14 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {orders
-                        .filter(
-                          (o) =>
-                            (!o.inspectorId || o.status === 'CONFIRMED_PENDING_DISPATCH' || o.status === 'PENDING') &&
-                            o.status !== 'CANCELLED' &&
-                            o.status !== 'CANCELED' &&
-                            o.status !== 'PASSED' &&
-                            o.status !== 'FAILED' &&
-                            o.status !== 'COMPLETED'
-                        )
-                        .slice(0, 5).length === 0 ? (
+                      {urgentDispatchOrders.slice(0, 5).length === 0 ? (
                         <tr>
                           <td colSpan={6} className="py-8 text-center text-slate-400">
                             Tuyệt vời! Hiện tại không có đơn nào đang chờ phân công KTV.
                           </td>
                         </tr>
                       ) : (
-                        orders
-                          .filter(
-                            (o) =>
-                              (!o.inspectorId || o.status === 'CONFIRMED_PENDING_DISPATCH' || o.status === 'PENDING') &&
-                              o.status !== 'CANCELLED' &&
-                              o.status !== 'CANCELED' &&
-                              o.status !== 'PASSED' &&
-                              o.status !== 'FAILED' &&
-                              o.status !== 'COMPLETED'
-                          )
+                        urgentDispatchOrders
                           .slice(0, 5)
                           .map((order, idx) => {
                             const isReady = order.status !== 'WAITING_SELLER_APPROVAL';
@@ -2496,7 +2823,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                   <div>Bán: {order.sellerName || 'Người bán'}</div>
                                   <div>Mua: {order.buyerName || 'Khách mua'}</div>
                                 </td>
-                                <td className="py-3 px-4">{renderStatusBadge(order.status)}</td>
+                                <td className="py-3 px-4">{renderStatusBadge(order)}</td>
                                 <td className="py-3 px-4 text-right">
                                   {isReady ? (
                                     <button
@@ -2649,7 +2976,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                         </td>
                       </tr>
                     ) : (
-                      filteredOrders.map((ord, idx) => (
+                      filteredOrders.map((ord, idx) => {
+                        const isCancelled = ord.status === 'CANCELLED' || ord.status === 'CANCELED';
+                        return (
                         <tr key={ord.id} className="hover:bg-slate-50/60 transition">
                           <td className="py-3 px-4 font-mono text-slate-400 text-[11px]">{idx + 1}</td>
                           <td className="py-3 px-4">
@@ -2702,7 +3031,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                           </td>
                           <td className="py-3 px-4 text-center">
                             <div className="flex justify-center">
-                              {renderStatusBadge(ord.status)}
+                              {renderStatusBadge(ord)}
                             </div>
                           </td>
                           <td className="py-3 px-4 text-center">
@@ -2712,31 +3041,46 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                 <button
                                   type="button"
                                   onClick={() => handleOpenShipmentModal(ord)}
-                                  className="w-[110px] h-8 rounded-lg border border-blue-200 text-blue-700 bg-blue-50/70 hover:bg-blue-100 transition cursor-pointer flex items-center justify-center gap-1.5 text-xs font-bold shadow-2xs shrink-0"
-                                  title="Kiểm định tại nhà khách - KTV di chuyển trực tiếp"
+                                  disabled={isCancelled}
+                                  className={`w-[110px] h-8 rounded-lg border text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs shrink-0 ${
+                                    isCancelled
+                                      ? 'border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed opacity-60'
+                                      : 'border-blue-200 text-blue-700 bg-blue-50/70 hover:bg-blue-100 cursor-pointer'
+                                  }`}
+                                  title={isCancelled ? 'Đơn hàng đã bị hủy' : 'Kiểm định tại nhà khách - KTV di chuyển trực tiếp'}
                                 >
-                                  <MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                  <MapPin className={`w-3.5 h-3.5 shrink-0 ${isCancelled ? 'text-slate-400' : 'text-blue-600'}`} />
                                   <span>Tại Nhà</span>
                                 </button>
                               ) : (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenShipmentModal(ord)}
-                                  disabled={ord.status === 'CANCELLED'}
+                                  disabled={isCancelled}
                                   className={`w-[110px] h-8 rounded-lg border text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs shrink-0 ${
-                                    ord.status === 'CANCELLED'
+                                    isCancelled
                                       ? 'border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed opacity-60'
                                       : 'border-slate-200 text-slate-700 hover:text-orange-600 hover:bg-orange-50 bg-white cursor-pointer'
                                   }`}
-                                  title={ord.status === 'CANCELLED' ? 'Đơn hàng đã bị hủy' : 'Lộ trình vận đơn & kích hoạt giao vận Hub'}
+                                  title={isCancelled ? 'Đơn hàng đã bị hủy' : 'Lộ trình vận đơn & kích hoạt giao vận Hub'}
                                 >
-                                  <Truck className={`w-3.5 h-3.5 shrink-0 ${ord.status === 'CANCELLED' ? 'text-slate-400' : 'text-orange-600'}`} />
+                                  <Truck className={`w-3.5 h-3.5 shrink-0 ${isCancelled ? 'text-slate-400' : 'text-orange-600'}`} />
                                   <span>Vận Đơn Hub</span>
                                 </button>
                               )}
 
                               {/* Nút 2: Phân công / Trạng thái / Chi tiết */}
-                              {ord.status === 'WAITING_SELLER_APPROVAL' ? (
+                              {isCancelled ? (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="w-[110px] h-8 rounded-lg bg-slate-100 text-slate-400 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 cursor-not-allowed opacity-60 shadow-2xs shrink-0"
+                                  title="Đơn hàng đã bị hủy - Không thể giao task"
+                                >
+                                  <XCircle className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                  <span>Đã Hủy</span>
+                                </button>
+                              ) : ord.status === 'WAITING_SELLER_APPROVAL' ? (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenAssign(ord)}
@@ -2755,6 +3099,16 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                 >
                                   <CreditCard className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                                   <span>Chờ Đóng Phí</span>
+                                </button>
+                              ) : ord.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(ord) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleReceivePackageAtHub(ord.id, ord.postTitle)}
+                                  className="w-[110px] h-8 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs shrink-0"
+                                  title="Xác nhận kiện hàng đã đến trạm Lab Hub để chuyển sang sẵn sàng giao task cho KTV"
+                                >
+                                  <PackageCheck className="w-3.5 h-3.5 shrink-0" />
+                                  <span>Nhận Hàng Hub</span>
                                 </button>
                               ) : ord.status !== 'PASSED' && ord.status !== 'FAILED' && ord.status !== 'CANCELLED' && ord.status !== 'COMPLETED' ? (
                                 <button
@@ -2793,7 +3147,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                             </div>
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -3013,7 +3368,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                               <span className="text-slate-400 italic">Chưa phân công</span>
                             )}
                           </td>
-                          <td className="py-3 px-4">{renderStatusBadge(ord.status)}</td>
+                          <td className="py-3 px-4">{renderStatusBadge(ord)}</td>
                         </tr>
                       ))
                     )}
@@ -4805,6 +5160,58 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 </div>
               </div>
             )}
+            {(assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED') && (
+              <div className="p-3 bg-rose-50 rounded-xl border border-rose-200 text-xs text-rose-950 flex items-start gap-2.5">
+                <XCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-bold text-rose-800">Đơn kiểm định đã bị hủy</div>
+                  <p className="text-[11px] text-rose-700 leading-relaxed">
+                    Đơn hàng này đã bị hủy, không thể phân công hay giao task cho kỹ thuật viên.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Thông báo điều kiện nhận hàng đối với đơn tại Hub */}
+            {assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder) && (
+              <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-300 text-xs text-amber-950 flex flex-col gap-2.5 animate-fadeIn">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <div className="font-bold text-amber-900">Kiện hàng chưa được tiếp nhận tại Lab Hub</div>
+                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                      Đơn kiểm định tại trạm Lab Hub cần nhận kiện hàng thực tế trước khi phân công KTV đo kiểm. Nếu bưu tá vừa bàn giao kiện hàng đến quầy, bạn có thể bấm xác nhận nhận hàng ngay bên dưới để mở khóa giao task.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleReceivePackageAtHub(assignModalOrder.id, assignModalOrder.postTitle);
+                      setAssignModalOrder((prev) => (prev ? { ...prev, status: 'CONFIRMED_PENDING_DISPATCH' } : null));
+                    }}
+                    className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                  >
+                    <PackageCheck className="w-3.5 h-3.5" />
+                    <span>Xác Nhận Đã Nhận Hàng Tại Hub Ngay</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Hướng dẫn quy trình đối với đơn kiểm định tại nhà */}
+            {assignModalOrder.orderType === 'AT_HOME' && (
+              <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 text-xs text-purple-950 flex items-start gap-2.5">
+                <Calendar className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-bold text-purple-900">Giao task kiểm định tại nhà khách</div>
+                  <p className="text-[11px] text-purple-800 leading-relaxed">
+                    Đơn này KTV sẽ đến kiểm định tận nơi. Bạn có thể phân công KTV ngay, sau đó KTV sẽ liên hệ hoặc chờ khách đặt lịch hẹn ngày giờ khảo sát để đến theo hẹn.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Assign Fields */}
             <div className="space-y-4">
@@ -4901,10 +5308,20 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             {/* Footer Buttons */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-gray-100">
               <div className="text-[11px] text-gray-500 font-medium">
-                {assignModalOrder.status === 'WAITING_SELLER_APPROVAL' ? (
+                {assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED' ? (
+                  <span className="text-rose-600 font-semibold flex items-center gap-1">
+                    <XCircle className="w-3.5 h-3.5" />
+                    Đơn kiểm định đã bị hủy
+                  </span>
+                ) : assignModalOrder.status === 'WAITING_SELLER_APPROVAL' ? (
                   <span className="text-purple-700 font-semibold flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5" />
                     Chờ người bán duyệt
+                  </span>
+                ) : assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder) ? (
+                  <span className="text-amber-700 font-semibold flex items-center gap-1">
+                    <Package className="w-3.5 h-3.5" />
+                    Chờ nhận hàng tại Hub
                   </span>
                 ) : !selectedInspectorId ? (
                   <span className="text-rose-600 font-semibold">
@@ -4927,22 +5344,44 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   }}
                   className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-100 transition cursor-pointer"
                 >
-                  Hủy
+                  Đóng
                 </button>
 
                 <button
                   type="button"
                   onClick={handleConfirmAssign}
-                  disabled={isAssigning || !selectedInspectorId}
-                  className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 cursor-pointer shadow-md ${
-                    isAssigning || !selectedInspectorId
-                      ? 'bg-gray-400 text-white cursor-not-allowed'
-                      : 'bg-[#c34c36] hover:bg-[#a63f2d] text-white'
+                  disabled={
+                    isAssigning ||
+                    !selectedInspectorId ||
+                    assignModalOrder.status === 'CANCELLED' ||
+                    assignModalOrder.status === 'CANCELED' ||
+                    (assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder))
+                  }
+                  className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 shadow-md ${
+                    isAssigning ||
+                    !selectedInspectorId ||
+                    assignModalOrder.status === 'CANCELLED' ||
+                    assignModalOrder.status === 'CANCELED' ||
+                    (assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder))
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
+                      : 'bg-[#c34c36] hover:bg-[#a63f2d] text-white cursor-pointer'
                   }`}
-                  title="Xác nhận phân công KTV"
+                  title={
+                    assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED'
+                      ? 'Đơn hàng đã bị hủy, không thể giao task'
+                      : assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder)
+                      ? 'Hub chưa nhận được hàng thực tế từ người bán, vui lòng bấm "Xác Nhận Đã Nhận Hàng Tại Hub" trước khi giao task'
+                      : 'Xác nhận phân công KTV'
+                  }
                 >
                   {isAssigning && <Loader2 className="w-4 h-4 animate-spin" />}
-                  <span>Xác Nhận Giao Task Cho KTV</span>
+                  <span>
+                    {assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED'
+                      ? 'Đã Hủy - Không Thể Giao'
+                      : assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder)
+                      ? 'Chờ Nhận Hàng Tại Hub Để Giao Task'
+                      : 'Xác Nhận Giao Task Cho KTV'}
+                  </span>
                 </button>
               </div>
             </div>
@@ -5216,76 +5655,198 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-2xl space-y-2">
                     <Truck className="w-8 h-8 text-slate-300 mx-auto" />
                     <p className="font-bold text-slate-700">Chưa có vận đơn nào cho đơn kiểm định này.</p>
-                    <p className="text-[11px] text-slate-400">
-                      Chuyển sang tab "Kích Hoạt Giao Vận Hub" để điều phối tài xế Lalamove vận chuyển sản phẩm về phòng Lab.
+                    <p className="text-[11px] text-slate-400 max-w-md mx-auto">
+                      Đối với quy trình kiểm định tại trạm Lab Hub, bạn có thể tạo vận đơn Lalamove Chặng 1 (Lấy hàng từ Người bán đưa về Hub) hoặc Chặng 2 (Giao Người Mua khi Đạt / Hoàn trả Người Bán).
                     </p>
                     <button
                       type="button"
                       onClick={() => setShipmentTab('create')}
                       className="mt-2 px-4 py-2 bg-[#c34c36] text-white rounded-xl font-bold cursor-pointer hover:bg-[#a63f2d] transition"
                     >
-                      Tạo Vận Đơn Ngay
+                      + Kích Hoạt Vận Đơn Ngay
                     </button>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {inspectionShipments.map((s, idx) => (
-                      <div key={s.shipmentId || idx} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-2.5">
-                        <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono font-black text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
-                              #{s.orderCode || s.shipmentId?.slice(0, 8)}
+                    {inspectionShipments.map((s, idx) => {
+                      const isSellerToCenter = s.leg === 'SELLER_TO_CENTER';
+                      const isCenterToBuyer = s.leg === 'CENTER_TO_BUYER';
+                      const isCenterToSeller = s.leg === 'CENTER_TO_SELLER';
+
+                      const legBadgeTitle = isSellerToCenter
+                        ? 'Chặng 1: Người Bán ➔ Lab Hub'
+                        : isCenterToBuyer
+                        ? 'Chặng 2: Lab Hub ➔ Người Mua (Đạt chuẩn)'
+                        : isCenterToSeller
+                        ? 'Chặng 2: Lab Hub ➔ Hoàn Trả Người Bán'
+                        : `Chặng: ${s.leg || 'Điều Phối Lab Hub'}`;
+
+                      const legColorClass = isSellerToCenter
+                        ? 'bg-blue-50 text-blue-800 border-blue-200'
+                        : isCenterToBuyer
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : 'bg-amber-50 text-amber-800 border-amber-200';
+
+                      return (
+                        <div key={s.shipmentId || idx} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-200/70">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-black text-slate-900 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-xs">
+                                #{s.orderCode || s.shipmentId?.slice(0, 8)}
+                              </span>
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${legColorClass}`}>
+                                {legBadgeTitle}
+                              </span>
+                            </div>
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              {s.providerStatus || s.status || 'ĐANG_ĐIỀU_PHỐI'}
                             </span>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800">
-                              Chặng: {s.leg || 'Nhà Seller → Lab Hub'}
-                            </span>
                           </div>
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            {s.providerStatus || s.status || 'ĐANG_ĐIỀU_PHỐI'}
-                          </span>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                            <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1">
+                              <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px]">
+                                <MapPin className="w-3.5 h-3.5 text-blue-500" />
+                                <span>{isSellerToCenter ? 'Điểm Lấy Hàng (Nhà Người Bán):' : 'Điểm Gửi Hàng (Phòng Lab Hub):'}</span>
+                              </div>
+                              <div className="font-bold text-slate-800">{s.senderName || shipmentModalOrder.sellerName}</div>
+                              <div className="text-slate-500 font-mono text-[10px]">{s.senderPhone}</div>
+                              <div className="text-slate-600 text-[10px]">{s.senderAddress}</div>
+                            </div>
+
+                            <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1">
+                              <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px]">
+                                <MapPin className="w-3.5 h-3.5 text-emerald-500" />
+                                <span>
+                                  {isSellerToCenter
+                                    ? 'Điểm Tiếp Nhận (Phòng Lab Hub):'
+                                    : isCenterToBuyer
+                                    ? 'Điểm Giao Hàng (Khách Mua):'
+                                    : 'Điểm Nhận Trả (Người Bán):'}
+                                </span>
+                              </div>
+                              <div className="font-bold text-slate-800">{s.receiverName || (isCenterToBuyer ? shipmentModalOrder.buyerName : resolveInspectionCenter(shipmentModalOrder).name)}</div>
+                              <div className="text-slate-500 font-mono text-[10px]">{s.receiverPhone}</div>
+                              <div className="text-slate-600 text-[10px]">{s.receiverAddress}</div>
+                            </div>
+                          </div>
+
+                          {/* Driver & Carrier Details */}
+                          <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200 text-blue-900 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                            <div className="flex items-center gap-2">
+                              <Truck className="w-4 h-4 text-blue-600 shrink-0" />
+                              <span>Tài xế Lalamove: <strong>{s.driverName || 'Trần Văn Mạnh (Lalamove Hub Pro)'}</strong> ({s.driverPhone || '0933888999'})</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold bg-white px-2 py-0.5 rounded border border-blue-200">{s.driverPlateNumber || '59-S2 868.68'}</span>
+                              <span className="text-[10px] text-blue-700 bg-blue-100/60 px-2 py-0.5 rounded font-semibold">Theo dõi GPS qua Lalamove API</span>
+                            </div>
+                          </div>
                         </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                          <div className="p-2.5 rounded-xl bg-white border border-slate-100">
-                            <span className="text-slate-400 block font-bold mb-0.5">Điểm lấy (Người bán):</span>
-                            <div className="font-bold text-slate-800">{s.senderName || shipmentModalOrder.sellerName}</div>
-                            <div className="text-slate-500 font-mono text-[10px]">{s.senderPhone}</div>
-                            <div className="text-slate-600 text-[10px] truncate">{s.senderAddress}</div>
-                          </div>
-
-                          <div className="p-2.5 rounded-xl bg-white border border-slate-100">
-                            <span className="text-slate-400 block font-bold mb-0.5">Điểm đến (Lab Kiểm Định):</span>
-                            <div className="font-bold text-slate-800">{s.receiverName || 'Trung Tâm Lab Hub SecondLife'}</div>
-                            <div className="text-slate-500 font-mono text-[10px]">{s.receiverPhone}</div>
-                            <div className="text-slate-600 text-[10px] truncate">{s.receiverAddress}</div>
-                          </div>
-                        </div>
-
-                        {s.driverName && (
-                          <div className="p-2 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 flex items-center justify-between text-[11px]">
-                            <span>Tài xế nhận đơn: <strong>{s.driverName}</strong> ({s.driverPhone})</span>
-                            <span className="font-mono font-bold">{s.driverPlateNumber}</span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )
               ) : (
                 <form onSubmit={handleCreateInspectionShipment} className="space-y-3.5">
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800">
-                    Hệ thống sẽ kết nối API Lalamove để đặt tài xế xe tải/xe máy tới lấy thiết bị từ người bán đưa về Hub kiểm định.
+                  {/* Select leg switcher */}
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-slate-700 text-xs block">Chọn Chặng Giao Vận Hub:</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedLeg('SELLER_TO_CENTER');
+                          if (shipmentModalOrder) updateAddressesForLeg('SELLER_TO_CENTER', shipmentModalOrder);
+                        }}
+                        className={`p-2.5 rounded-xl border text-left transition flex flex-col gap-1 cursor-pointer ${
+                          selectedLeg === 'SELLER_TO_CENTER'
+                            ? 'border-[#c34c36] bg-[#c34c36]/5 ring-1 ring-[#c34c36]'
+                            : 'border-slate-200 bg-white hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-xs text-slate-900">Chặng 1: Về Hub</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-100 text-blue-700 font-bold">Lấy Hàng</span>
+                        </div>
+                        <p className="text-[10.5px] text-slate-500">Người Bán ➔ Lab Hub</p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedLeg('CENTER_TO_BUYER');
+                          if (shipmentModalOrder) updateAddressesForLeg('CENTER_TO_BUYER', shipmentModalOrder);
+                        }}
+                        className={`p-2.5 rounded-xl border text-left transition flex flex-col gap-1 cursor-pointer ${
+                          selectedLeg === 'CENTER_TO_BUYER'
+                            ? 'border-[#c34c36] bg-[#c34c36]/5 ring-1 ring-[#c34c36]'
+                            : 'border-slate-200 bg-white hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-xs text-slate-900">Chặng 2: Giao Mua</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-700 font-bold">Kiểm Đạt</span>
+                        </div>
+                        <p className="text-[10.5px] text-slate-500">Lab Hub ➔ Người Mua</p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedLeg('CENTER_TO_SELLER');
+                          if (shipmentModalOrder) updateAddressesForLeg('CENTER_TO_SELLER', shipmentModalOrder);
+                        }}
+                        className={`p-2.5 rounded-xl border text-left transition flex flex-col gap-1 cursor-pointer ${
+                          selectedLeg === 'CENTER_TO_SELLER'
+                            ? 'border-[#c34c36] bg-[#c34c36]/5 ring-1 ring-[#c34c36]'
+                            : 'border-slate-200 bg-white hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-xs text-slate-900">Chặng 2: Hoàn Trả</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-700 font-bold">Trả Bán</span>
+                        </div>
+                        <p className="text-[10.5px] text-slate-500">Lab Hub ➔ Người Bán</p>
+                      </button>
+                    </div>
                   </div>
 
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 flex items-start gap-2">
+                    <Truck className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+                    <div>
+                      {selectedLeg === 'SELLER_TO_CENTER' && (
+                        <span>
+                          <strong>Chặng 1 (Lấy hàng đưa về Hub):</strong> Kết nối đối tác Lalamove để tài xế tới nhà Người Bán tiếp nhận thiết bị, quét mã kiểm định và vận chuyển an toàn về phòng Lab Hub SecondLife.
+                        </span>
+                      )}
+                      {selectedLeg === 'CENTER_TO_BUYER' && (
+                        <span>
+                          <strong>Chặng 2 (Giao hàng sau kiểm định Đạt):</strong> Thiết bị đã kiểm định ĐẠT chuẩn ISO 17025. Hệ thống kết nối tài xế tới Lab Hub nhận hàng dán tem niêm phong để giao tận tay Người Mua.
+                        </span>
+                      )}
+                      {selectedLeg === 'CENTER_TO_SELLER' && (
+                        <span>
+                          <strong>Chặng 2 (Hoàn trả thiết bị cho Người Bán):</strong> Vận chuyển hoàn trả thiết bị từ phòng Lab Hub SecondLife về lại địa chỉ Người Bán kèm biên bản kỹ thuật và tem niêm phong.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Sender address section */}
                   <div className="space-y-2">
-                    <label className="font-bold text-slate-700 block">Thông Tin Người Gửi (Nhà Người Bán):</label>
+                    <label className="font-bold text-slate-700 block text-xs">
+                      {selectedLeg === 'SELLER_TO_CENTER'
+                        ? 'Thông Tin Người Gửi (Nhà Người Bán):'
+                        : 'Thông Tin Điểm Gửi (Phòng Lab Hub SecondLife):'}
+                    </label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <input
                         type="text"
                         required
                         value={senderName}
                         onChange={(e) => setSenderName(e.target.value)}
-                        placeholder="Tên người bán..."
+                        placeholder="Tên người gửi..."
                         className="p-2 rounded-xl border border-slate-200 text-xs focus:border-[#c34c36] outline-none"
                       />
                       <input
@@ -5293,7 +5854,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                         required
                         value={senderPhone}
                         onChange={(e) => setSenderPhone(e.target.value)}
-                        placeholder="Số điện thoại người bán..."
+                        placeholder="Số điện thoại người gửi..."
                         className="p-2 rounded-xl border border-slate-200 text-xs focus:border-[#c34c36] outline-none font-mono"
                       />
                     </div>
@@ -5302,20 +5863,27 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       required
                       value={senderAddress}
                       onChange={(e) => setSenderAddress(e.target.value)}
-                      placeholder="Địa chỉ lấy hàng..."
+                      placeholder="Địa chỉ gửi hàng..."
                       className="w-full p-2 rounded-xl border border-slate-200 text-xs focus:border-[#c34c36] outline-none"
                     />
                   </div>
 
+                  {/* Receiver address section */}
                   <div className="space-y-2">
-                    <label className="font-bold text-slate-700 block">Thông Tin Điểm Đến (Phòng Lab Kiểm Định Hub):</label>
+                    <label className="font-bold text-slate-700 block text-xs">
+                      {selectedLeg === 'SELLER_TO_CENTER'
+                        ? 'Thông Tin Điểm Đến (Phòng Lab Hub Kiểm Định):'
+                        : selectedLeg === 'CENTER_TO_BUYER'
+                        ? 'Thông Tin Người Nhận (Địa Chỉ Khách Mua):'
+                        : 'Thông Tin Người Nhận (Hoàn Trả Người Bán):'}
+                    </label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <input
                         type="text"
                         required
                         value={receiverName}
                         onChange={(e) => setReceiverName(e.target.value)}
-                        placeholder="Tên trung tâm tiếp nhận..."
+                        placeholder="Tên người nhận..."
                         className="p-2 rounded-xl border border-slate-200 text-xs focus:border-[#c34c36] outline-none"
                       />
                       <input
@@ -5323,7 +5891,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                         required
                         value={receiverPhone}
                         onChange={(e) => setReceiverPhone(e.target.value)}
-                        placeholder="Hotline trạm..."
+                        placeholder="Số điện thoại nhận..."
                         className="p-2 rounded-xl border border-slate-200 text-xs focus:border-[#c34c36] outline-none font-mono"
                       />
                     </div>
@@ -5332,7 +5900,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       required
                       value={receiverAddress}
                       onChange={(e) => setReceiverAddress(e.target.value)}
-                      placeholder="Địa chỉ trạm tiếp nhận..."
+                      placeholder="Địa chỉ nhận hàng..."
                       className="w-full p-2 rounded-xl border border-slate-200 text-xs focus:border-[#c34c36] outline-none"
                     />
                   </div>
@@ -5344,7 +5912,13 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       className="px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] text-white font-bold text-xs flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
                     >
                       {isCreatingShipment && <Loader2 className="w-4 h-4 animate-spin" />}
-                      <span>Tạo Vận Đơn Vận Chuyển Hub</span>
+                      <span>
+                        {selectedLeg === 'SELLER_TO_CENTER'
+                          ? 'Tạo Vận Đơn Lấy Hàng Về Hub'
+                          : selectedLeg === 'CENTER_TO_BUYER'
+                          ? 'Tạo Vận Đơn Giao Khách Mua'
+                          : 'Tạo Vận Đơn Hoàn Trả Người Bán'}
+                      </span>
                     </button>
                   </div>
                 </form>

@@ -163,11 +163,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 }) => {
   if (!isOpen || !currentUser) return null;
 
+  const isSeller = currentUser.role === 'seller' || currentRole === 'seller';
+
   const [activeTab, setActiveTab] = useState<ProfileTab>(
-    initialTab === 'settings' && !(currentUser.role === 'seller' || currentRole === 'seller')
+    (initialTab === 'settings' || initialTab === 'reputation') && !isSeller
       ? 'info'
       : initialTab
   );
+
+  useEffect(() => {
+    if (!isSeller && activeTab === 'reputation') {
+      setActiveTab('info');
+    }
+  }, [isSeller, activeTab]);
 
   // Form states
   const [name, setName] = useState(currentUser.name || '');
@@ -376,6 +384,15 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const isPendingReview = Boolean(
     existingVerification &&
     ['SUBMITTED', 'EKYC_PENDING', 'NEEDS_REVIEW', 'PENDING'].includes(verStatus)
+  );
+  const isCccdVerified = Boolean(
+    currentUser.kycStatus === 'verified' ||
+    existingVerification?.status === 'APPROVED' ||
+    existingVerification?.status === 'VERIFIED'
+  );
+  const isCccdPending = Boolean(
+    currentUser.kycStatus === 'pending' ||
+    isPendingReview
   );
   const isResubmitRequired = Boolean(verStatus === 'RESUBMIT_REQUIRED');
   const isRejected = Boolean(verStatus === 'REJECTED');
@@ -1950,9 +1967,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 </div>
               </div>
 
-              {/* Right: Trust Badges */}
-              {currentUser.role !== 'buyer' && (
-                <div className="flex flex-row sm:flex-col items-start sm:items-end gap-2 w-full sm:w-auto">
+              {/* Right: Trust Badges (Không hardcode eKYC, chỉ hiển thị Điểm Uy Tín cho Người Bán) */}
+              <div className="flex flex-row sm:flex-col items-start sm:items-end gap-2 w-full sm:w-auto">
+                {isCccdVerified ? (
                   <button
                     type="button"
                     onClick={() => setActiveTab('security')}
@@ -1962,6 +1979,50 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <ShieldCheck className="w-4 h-4 text-emerald-600" />
                     <span>{lang === 'vi' ? 'eKYC: Đã Xác Thực CCCD' : 'eKYC: ID Verified'}</span>
                   </button>
+                ) : isCccdPending ? (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('security')}
+                    title={lang === 'vi' ? 'Hồ sơ định danh eKYC đang chờ duyệt' : 'eKYC pending review'}
+                    className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 px-3.5 py-1.5 rounded-xl border border-amber-200/80 font-bold text-xs shadow-2xs cursor-pointer transition active:scale-95"
+                  >
+                    <Clock className="w-4 h-4 text-amber-600" />
+                    <span>{lang === 'vi' ? 'eKYC: Đang Chờ Duyệt' : 'eKYC: Pending'}</span>
+                  </button>
+                ) : isSeller ? (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('security')}
+                    title={lang === 'vi' ? 'Chưa định danh eKYC CCCD - Bấm để xác thực' : 'eKYC not verified - Click to verify'}
+                    className="inline-flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 px-3.5 py-1.5 rounded-xl border border-slate-200 font-bold text-xs shadow-2xs cursor-pointer transition active:scale-95"
+                  >
+                    <AlertCircle className="w-4 h-4 text-amber-500" />
+                    <span>{lang === 'vi' ? 'eKYC: Chưa Xác Thực' : 'eKYC: Unverified'}</span>
+                  </button>
+                ) : currentUser.role === 'inspection_center' ? (
+                  <div className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-800 px-3.5 py-1.5 rounded-xl border border-blue-200/80 font-bold text-xs shadow-2xs">
+                    <Building className="w-4 h-4 text-blue-600" />
+                    <span>{lang === 'vi' ? 'Trạm Kiểm Định Hub' : 'Inspection Hub'}</span>
+                  </div>
+                ) : currentUser.role === 'inspector' ? (
+                  <div className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-800 px-3.5 py-1.5 rounded-xl border border-blue-200/80 font-bold text-xs shadow-2xs">
+                    <ShieldCheck className="w-4 h-4 text-blue-600" />
+                    <span>{lang === 'vi' ? 'Kỹ Sư Kiểm Định KTV' : 'Certified Inspector'}</span>
+                  </div>
+                ) : currentUser.role === 'admin' ? (
+                  <div className="inline-flex items-center gap-1.5 bg-purple-50 text-purple-800 px-3.5 py-1.5 rounded-xl border border-purple-200/80 font-bold text-xs shadow-2xs">
+                    <ShieldCheck className="w-4 h-4 text-purple-600" />
+                    <span>{lang === 'vi' ? 'Quản Trị Viên Hệ Thống' : 'System Administrator'}</span>
+                  </div>
+                ) : currentUser.role === 'staff' ? (
+                  <div className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-800 px-3.5 py-1.5 rounded-xl border border-indigo-200/80 font-bold text-xs shadow-2xs">
+                    <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                    <span>{lang === 'vi' ? 'Nhân Viên Vận Hành' : 'Platform Staff'}</span>
+                  </div>
+                ) : null}
+
+                {/* Điểm Uy Tín: CHỈ hiển thị đối với role Người Bán */}
+                {isSeller && (
                   <button
                     type="button"
                     onClick={() => setActiveTab('reputation')}
@@ -1978,8 +2039,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           : '--/100'}
                     </strong>
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* Tab Navigation - Pill Segmented Control Layout */}
@@ -1997,17 +2058,19 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   <span>{lang === 'vi' ? 'Cá Nhân' : 'Profile'}</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('reputation')}
-                  className={`flex-1 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${activeTab === 'reputation'
-                    ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                    }`}
-                >
-                  <Star className={`w-4 h-4 shrink-0 ${activeTab === 'reputation' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                  <span>{lang === 'vi' ? 'Điểm Uy Tín' : 'Reputation'}</span>
-                </button>
+                {isSeller && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('reputation')}
+                    className={`flex-1 py-2 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${activeTab === 'reputation'
+                      ? 'bg-white text-[#c34c36] shadow-sm font-black border border-slate-200/60'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                      }`}
+                  >
+                    <Star className={`w-4 h-4 shrink-0 ${activeTab === 'reputation' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
+                    <span>{lang === 'vi' ? 'Điểm Uy Tín' : 'Reputation'}</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -2892,8 +2955,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           {/* TAB 3: BẢO MẬT & ĐỊNH DANH */}
           {(activeTab === 'security' || activeTab === 'kyc') && (
             <div className="space-y-4">
-              {/* Thẻ Định Danh eKYC Căn Cước Công Dân */}
-              {currentUser.kycStatus === 'verified' || currentUser.role === 'seller' ? (
+              {/* Thẻ Định Danh eKYC Căn Cước Công Dân (Không hardcode theo role seller) */}
+              {isCccdVerified ? (
                 <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex items-start gap-3">
                   <div className="p-2 rounded-xl bg-emerald-500 text-white shrink-0 mt-0.5">
                     <ShieldCheck className="w-5 h-5" />
@@ -2983,7 +3046,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               )}
 
               {/* Thông số đối soát sinh trắc học eKYC (chỉ hiển thị khi đã định danh) */}
-              {(currentUser.kycStatus === 'verified' || currentUser.role === 'seller') && (
+              {isCccdVerified && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <div className="p-3 rounded-xl border border-emerald-100 bg-emerald-50/50">
                     <span className="text-[10px] font-bold text-slate-500 block mb-0.5">

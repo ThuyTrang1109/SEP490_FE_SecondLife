@@ -185,7 +185,7 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
             role="tablist"
             aria-label="Category tabs"
             onKeyDown={handleCategoryKeyDown}
-            className="flex-1 flex items-center gap-2 overflow-x-auto pb-2 pt-0.5 category-scrollbar text-xs focus:outline-none focus:ring-1 focus:ring-[#c34c36]/30 rounded-xl"
+            className="flex-1 flex items-center gap-2 overflow-x-auto py-1 no-scrollbar text-xs focus:outline-none focus:ring-1 focus:ring-[#c34c36]/30 rounded-xl"
           >
             {CATEGORIES.map((cat) => {
               const isSelected = selectedCategory === cat.id;

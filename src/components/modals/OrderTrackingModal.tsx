@@ -174,24 +174,74 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
         order.inspectionMethod ||
         (order as any).inspectionStatus
       );
+      const hubCenter = resolveInspectionCenter(order);
+      const cleanPhone = (p?: string, def = '0912345678') => {
+        const d = (p || '').replace(/\D/g, '');
+        if (/^(?:0|84)\d{9,10}$/.test(d)) return d.startsWith('84') ? '0' + d.slice(2) : d;
+        return def;
+      };
+
+      const payloadLeg = isInspection ? 'SELLER_TO_CENTER' : 'SELLER_TO_BUYER';
+      const sName = (order.listing?.seller?.name || order.sellerName || 'Người bán').slice(0, 50);
+      const sPhone = cleanPhone(order.listing?.seller?.phone || (order as any).sellerPhone, '0912345678');
+      const rName = isInspection ? hubCenter.name.slice(0, 50) : (order.buyerName || 'Người mua').slice(0, 50);
+      const rPhone = cleanPhone(isInspection ? hubCenter.phone : order.buyerPhone, isInspection ? '0908123456' : '0987654321');
+
+      const shipmentPayload: CreateShipmentRequestDto = {
+        requestId: crypto.randomUUID(),
+        leg: payloadLeg as any,
+        fromAddress: {
+          name: sName,
+          phone: sPhone,
+          latitude: 10.7769,
+          longitude: 106.7009,
+        },
+        toAddress: {
+          name: rName,
+          phone: rPhone,
+          latitude: isInspection ? (hubCenter.lat || 10.8415) : 10.8012,
+          longitude: isInspection ? (hubCenter.lng || 106.8098) : 106.7123,
+        },
+        reason: isInspection
+          ? `Bàn giao kiện hàng đến ${hubCenter.name} thẩm định`
+          : 'Giao hàng cho người mua qua Lalamove',
+      };
+
       let shipment: ShipmentBackend;
       if (isInspection) {
-        shipment = await shippingService.createInspectionShipment(order.id, {
-          requestId: crypto.randomUUID(),
-          leg: 'SELLER_TO_CENTER',
-        });
+        try {
+          shipment = await shippingService.createInspectionShipment(order.id, shipmentPayload);
+        } catch (inspErr) {
+          shipment = await shippingService.createShipment(order.id, shipmentPayload);
+        }
       } else {
-        shipment = await shippingService.createShipment(order.id, {
-          requestId: crypto.randomUUID(),
-          leg: 'SELLER_TO_BUYER',
-        });
+        shipment = await shippingService.createShipment(order.id, shipmentPayload);
       }
+
+      if (!shipment || !shipment.orderCode) {
+        throw new Error(shipment?.lastError || 'Lalamove không phản hồi mã vận đơn.');
+      }
+
+      // Persist to localStorage
+      try {
+        const nowIso = new Date().toISOString();
+        localStorage.setItem(`order_shipment_created_${order.id}`, 'true');
+        localStorage.setItem(`seller_ready_${order.id}`, nowIso);
+        localStorage.setItem(`order_packed_${order.id}`, 'true');
+        if (isInspection) localStorage.setItem(`seller_shipped_to_hub_${order.id}`, 'true');
+        const shipmentsKey = `sl_order_shipments_${order.id}`;
+        localStorage.setItem(shipmentsKey, JSON.stringify([shipment]));
+        localStorage.setItem(`order_shipments_${order.id}`, JSON.stringify([shipment]));
+      } catch {}
+
+      setShipments([shipment]);
+      setActiveShipmentId(shipment.shipmentId);
+
       showNotification(
         shipment?.orderCode
           ? `Đã khởi tạo vận đơn Lalamove thành công! Mã vận đơn: #${shipment.orderCode}`
           : 'Đã khởi tạo vận đơn Lalamove thành công!'
       );
-      await loadShipmentData();
       onOrderUpdated?.();
     } catch (err: any) {
       console.error('Failed to create Lalamove shipment:', err);
@@ -306,8 +356,28 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
           console.warn('Could not load inspection shipments:', inspShipErr);
         }
       } else {
-        shipList = await shippingService.getOrderShipments(order.id);
+        try {
+          shipList = await shippingService.getOrderShipments(order.id);
+        } catch (orderShipErr) {
+          console.warn('Could not load order shipments:', orderShipErr);
+        }
       }
+
+      // Nạp từ localStorage nếu backend chưa đồng bộ hoặc chưa có bản ghi
+      if (!shipList || shipList.length === 0) {
+        try {
+          const raw = localStorage.getItem(`sl_order_shipments_${order.id}`) ||
+            localStorage.getItem(`order_shipments_${order.id}`) ||
+            localStorage.getItem(`sl_insp_shipments_${order.id}`);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              shipList = parsed;
+            }
+          }
+        } catch {}
+      }
+
       setShipments(shipList);
 
       if (shipList.length > 0) {
@@ -1210,7 +1280,17 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                     <span className="text-[10px] text-slate-400 font-bold uppercase block mb-0.5">Chặng giao nhận</span>
                     <div className="font-bold text-slate-800 flex items-center gap-1.5">
                       <Truck className="w-3.5 h-3.5 text-blue-600" />
-                      <span>{activeShipment.leg === 'SELLER_TO_BUYER' ? 'Giao thẳng (Seller → Buyer)' : activeShipment.leg}</span>
+                      <span>
+                        {activeShipment.leg === 'SELLER_TO_CENTER'
+                          ? 'Chặng 1: Người Bán ➔ Lab Hub'
+                          : activeShipment.leg === 'CENTER_TO_BUYER'
+                          ? 'Chặng 2: Lab Hub ➔ Người Mua (Đạt Chuẩn)'
+                          : activeShipment.leg === 'CENTER_TO_SELLER'
+                          ? 'Chặng 2: Hoàn Trả ➔ Người Bán (Không Đạt)'
+                          : activeShipment.leg === 'SELLER_TO_BUYER'
+                          ? 'Giao thẳng (Người Bán ➔ Người Mua)'
+                          : activeShipment.leg}
+                      </span>
                     </div>
                   </div>
                 </div>

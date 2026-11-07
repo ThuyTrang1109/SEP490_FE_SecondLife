@@ -1391,10 +1391,13 @@ export default function App() {
           const directMatched = currentListings.find(l => l.id === bOrd.postId || (bOrd.postTitle && l.title === bOrd.postTitle));
           const baseListing = directMatched || cachedListing;
 
+          const backendPostImg = (bOrd as any).postImageUrl || (bOrd as any).postImageUrls?.[0];
           const resolvedPostTitle = bOrd.postTitle || baseListing?.title || postTitleMap.get(bOrd.postId) || 'Thiết bị gia dụng SecondLife';
-          const resolvedImage = baseListing?.photos?.front
+          const resolvedImage = backendPostImg
             || postImageMap.get(bOrd.postId)
-            || baseListing?.photoGallery?.[0]
+            || (baseListing?.photos?.front && !baseListing.photos.front.includes('photo-1555041469') && !baseListing.photos.front.includes('photo-1584269600464') ? baseListing.photos.front : '')
+            || (baseListing?.photoGallery?.[0] && !baseListing.photoGallery[0].includes('photo-1555041469') && !baseListing.photoGallery[0].includes('photo-1584269600464') ? baseListing.photoGallery[0] : '')
+            || baseListing?.photos?.front
             || 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=800';
 
           const rawMatchedListing = baseListing ? {
@@ -1403,12 +1406,14 @@ export default function App() {
             photos: {
               ...baseListing.photos,
               front: resolvedImage,
-              back: baseListing.photos?.back || resolvedImage,
-              screenOrDetails: baseListing.photos?.screenOrDetails || resolvedImage,
+              back: (bOrd as any).postImageUrls?.[1] || baseListing.photos?.back || resolvedImage,
+              screenOrDetails: (bOrd as any).postImageUrls?.[2] || baseListing.photos?.screenOrDetails || resolvedImage,
               accessoriesOrBox: baseListing.photos?.accessoriesOrBox || resolvedImage,
               serialOrReceipt: baseListing.photos?.serialOrReceipt || resolvedImage,
             },
-            photoGallery: (baseListing.photoGallery && baseListing.photoGallery.length > 0) ? baseListing.photoGallery : [resolvedImage],
+            photoGallery: ((bOrd as any).postImageUrls && (bOrd as any).postImageUrls.length > 0)
+              ? (bOrd as any).postImageUrls
+              : ((baseListing.photoGallery && baseListing.photoGallery.length > 0) ? baseListing.photoGallery : [resolvedImage]),
           } : {
             id: bOrd.postId,
             title: resolvedPostTitle,
@@ -1506,19 +1511,22 @@ export default function App() {
           } else if (isCancelledOrRefund) {
             mappedEscrowStatus = 'REFUNDED_TO_BUYER';
           } else if (isInspectionOrder) {
-            const s = String(bOrd.status || bOrd.backendStatus || '');
-            if (s === 'INSPECTING') {
+            const localSavedStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${bOrd.id}`) : null;
+            const s = String(localSavedStatus || bOrd.status || bOrd.backendStatus || '');
+            if (s === 'PASSED') {
+              mappedEscrowStatus = 'INSPECTION_PASSED';
+            } else if (s === 'FAILED' || s === 'REJECTED') {
+              mappedEscrowStatus = 'INSPECTION_FAILED';
+            } else if (s === 'INSPECTING') {
               // Chỉ sau khi gửi cho trung tâm hoặc KTV đến nhà quét mã kiểm định mới sang INSPECTION_IN_PROGRESS
               mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
-            } else if (s === 'PASSED') {
-              mappedEscrowStatus = 'INSPECTION_PASSED';
             } else if (s === 'DELIVERING_TO_BUYER') {
               mappedEscrowStatus = 'SHIPPED_TO_BUYER';
             } else if (s === 'COMPLETED') {
               mappedEscrowStatus = 'COMPLETED_RELEASED';
             } else if (s === 'DISPUTED') {
               mappedEscrowStatus = 'DISPUTED';
-            } else if (s === 'CANCELLED' || s === 'FAILED' || s === 'PAYMENT_EXPIRED') {
+            } else if (s === 'CANCELLED' || s === 'PAYMENT_EXPIRED') {
               mappedEscrowStatus = 'REFUNDED_TO_BUYER';
             } else {
               // WAITING_SELLER_APPROVAL, WAITING_BUYER_APPROVAL, CONFIRMED_PENDING_DISPATCH, DISPATCHED, SCHEDULED, SHIPPING_TO_CENTER
@@ -1655,7 +1663,8 @@ export default function App() {
             platformFeeVnd: 0,
             totalPaidVnd: totalPaid,
             escrowStatus: isCompletedOrReleased ? 'COMPLETED_RELEASED' : (isCancelledOrRefund ? 'REFUNDED_TO_BUYER' : mappedEscrowStatus),
-            backendStatus: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : (bOrd.backendStatus || bOrd.status || (isInspectionOrder ? 'WAITING_SELLER_APPROVAL' : 'PROCESSING'))),
+            backendStatus: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : ((mappedEscrowStatus === 'INSPECTION_PASSED' ? 'PASSED' : mappedEscrowStatus === 'INSPECTION_FAILED' ? 'FAILED' : bOrd.backendStatus || bOrd.status || (isInspectionOrder ? 'WAITING_SELLER_APPROVAL' : 'PROCESSING')) as any)),
+            status: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : (mappedEscrowStatus === 'INSPECTION_PASSED' ? 'PASSED' : mappedEscrowStatus === 'INSPECTION_FAILED' ? 'FAILED' : (bOrd.status || bOrd.backendStatus || 'INSPECTING'))),
             inspectorId: resolvedInspectorId || undefined,
             inspectorName: resolvedInspectorName || undefined,
             inspectorEmail: resolvedInspectorEmail || undefined,
@@ -2552,6 +2561,15 @@ export default function App() {
       }
     } catch (e) {
       console.warn('Failed to persist inspection result to center_inspection_orders:', e);
+    }
+
+    try {
+      localStorage.setItem(`inspection_status_${orderId}`, nextBackendStatus);
+      window.dispatchEvent(new CustomEvent('secondlife_inspection_completed', {
+        detail: { orderId, status: nextBackendStatus }
+      }));
+    } catch (e) {
+      console.warn('Failed to save inspection_status to localStorage:', e);
     }
 
     // 4. Phát thông báo tình trạng đến Người mua (Buyer) và Người bán (Seller)

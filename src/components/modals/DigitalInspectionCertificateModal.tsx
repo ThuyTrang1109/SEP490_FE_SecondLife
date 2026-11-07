@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { ScannableQRCode } from '../common/ScannableQRCode';
 import { resolveListingCategory, resolveOrderListing } from '../../utils/catalogCache';
+import { resolveInspectionCenter } from '../../utils/orderUtils';
 
 interface DigitalInspectionCertificateModalProps {
   order: EscrowOrder;
@@ -34,7 +35,9 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
   const certId = `CERT-SL-${order.id.slice(0, 8).toUpperCase()}`;
   const inspectionDate = order.inspectionReport?.completedAt || order.updatedAt || order.createdAt;
   const grade = order.listing.conditionGrade || 'Like New';
-  const hubName = order.inspectionCenterName || 'Trung Tâm Kiểm Định SecondLife Hub';
+  const resolvedHub = resolveInspectionCenter(order);
+  const hubName = order.inspectionCenterName || resolvedHub.name;
+  const hubAddress = order.inspectionCenterAddress || resolvedHub.address;
   const inspectorName = order.inspectionReport?.inspectorName || 'Kỹ Thuật Viên Trưởng SecondLife (Level 4 Master Tech)';
 
   const checklistItems = [
@@ -278,7 +281,7 @@ export const DigitalInspectionCertificateModal: React.FC<DigitalInspectionCertif
                 <span>{hubName}</span>
               </div>
               <p className="text-[11px] text-slate-500">
-                Địa chỉ: Trung tâm kỹ thuật SecondLife Logistics & Inspection
+                Địa chỉ: {hubAddress}
               </p>
             </div>
 

@@ -1110,13 +1110,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   trackingNumber: '',
                   status: 'PENDING',
                   origin: listing.sellerAddress || listing.location || 'Địa chỉ kho người bán',
-                  destination: selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab',
+                  destination: selectedCenter?.address ? `${selectedCenter.name} (${selectedCenter.address})` : (selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab'),
                   estimatedDelivery: 'Trong ngày',
                   timeline: [
                     {
                       timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
                       description: `Khởi tạo đơn hàng kiểm định Hub (${selectedCenter?.name || 'Hub'}). Chờ bưu tá Lalamove điều phối lấy hàng chuyển về Hub.`,
-                      location: selectedCenter?.name || 'Hệ thống SecondLife Escrow'
+                      location: selectedCenter?.address || selectedCenter?.name || 'Hệ thống SecondLife Escrow'
                     }
                   ]
                 },
@@ -1126,14 +1126,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   carrier: 'Lalamove',
                   trackingNumber: '',
                   status: 'PENDING',
-                  origin: selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab',
+                  origin: selectedCenter?.address ? `${selectedCenter.name} (${selectedCenter.address})` : (selectedCenter?.name || 'Trạm Kiểm Định SecondLife Hub Lab'),
                   destination: fullAddress,
                   estimatedDelivery: 'Giao nhanh trong ngày sau khi đạt chuẩn kiểm định',
                   timeline: [
                     {
                       timestamp: '--:--',
                       description: 'Chờ hoàn tất quy trình kiểm định và dán tem niêm phong NFC tại Hub Lab.',
-                      location: selectedCenter?.name || 'Trung tâm kiểm định SecondLife'
+                      location: selectedCenter?.address || selectedCenter?.name || 'Trung tâm kiểm định SecondLife'
                     }
                   ]
                 }
@@ -1221,6 +1221,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         hasInspectionService: isInspected,
         inspectionCenterId: isInspected ? selectedCenter?.id : undefined,
         inspectionCenterName: isInspected ? selectedCenter?.name : undefined,
+        inspectionCenterAddress: isInspected ? selectedCenter?.address : undefined,
+        inspectionCenterPhone: isInspected ? selectedCenter?.phone : undefined,
         inspectionMethod: isInspected ? inspectionMethod : undefined,
         inspectionFeeSplit: isInspected ? feeSplit : undefined,
         buyerInspectionFeeVnd: isInspected ? buyerInspectionFee : 0,

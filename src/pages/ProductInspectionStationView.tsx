@@ -44,9 +44,10 @@ import {
   Zap,
   Thermometer,
   ShieldAlert,
-  ArrowRight
+  ArrowRight,
+  PackageCheck
 } from 'lucide-react';
-import { inspectorService, InspectionOrderDto } from '../services';
+import { inspectorService, InspectionOrderDto, InspectionChecklistResponse } from '../services';
 import { BarcodeScannerModal, playScanBeep } from '../components/modals/BarcodeScannerModal';
 import { PrintTamperSealModal } from '../components/modals/PrintTamperSealModal';
 import { InspectionSealVerificationModal } from '../components/modals/InspectionSealVerificationModal';
@@ -78,6 +79,7 @@ interface ProductInspectionStationViewProps {
   hideTopBar?: boolean;
   selectedOrderId?: string;
   onSelectOrder?: (orderId: string) => void;
+  initialStep?: InspectionStep;
 }
 
 export type InspectionStep = 'intake' | 'exterior' | 'technical' | 'proofs' | 'verdict';
@@ -115,6 +117,21 @@ export async function generateValidSealCode(): Promise<string> {
   return `SL-SEAL-${dateStr}-${randomCode}-${checksum}`;
 }
 
+export const isOrderReceivedAtHub = (order: any): boolean => {
+  if (!order) return false;
+  if (order.inspectionMethod === 'AT_HOME' || order.orderType === 'AT_HOME') return true;
+  const s = String(order.status || order.backendStatus || order.escrowStatus || '').toUpperCase();
+  if (['RECEIVED_AT_CENTER', 'AWAITING_INSPECTION', 'INSPECTING', 'PASSED', 'FAILED', 'COMPLETED', 'DELIVERING_TO_BUYER', 'SHIPPED_TO_BUYER'].includes(s)) {
+    return true;
+  }
+  if (typeof window !== 'undefined') {
+    if (localStorage.getItem(`hub_package_received_${order.id}`) === 'true') {
+      return true;
+    }
+  }
+  return false;
+};
+
 export const ProductInspectionStationView: React.FC<ProductInspectionStationViewProps> = ({
   orders,
   currentUser,
@@ -124,6 +141,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   hideTopBar = false,
   selectedOrderId: externalSelectedOrderId,
   onSelectOrder,
+  initialStep = 'intake',
 }) => {
   // Current active technician
   const inspectorName = currentUser?.name || 'Kỹ thuật viên kiểm định';
@@ -141,6 +159,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   useEffect(() => {
     if (externalSelectedOrderId) {
       setSelectedOrderId(externalSelectedOrderId);
+      setCurrentStep('intake');
     } else if ((!selectedOrderId || !orders.some((o) => o.id === selectedOrderId)) && orders.length > 0) {
       setSelectedOrderId(orders[0].id);
       onSelectOrder?.(orders[0].id);
@@ -152,8 +171,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     return orders.find((o) => o.id === selectedOrderId) || orders[0];
   }, [orders, selectedOrderId]);
 
-  // Stepper state
-  const [currentStep, setCurrentStep] = useState<InspectionStep>('technical');
+  // Stepper state - Bắt đầu từ Bước 1: Tiếp nhận (intake)
+  const [currentStep, setCurrentStep] = useState<InspectionStep>(initialStep || 'intake');
   const [isFocusMode, setIsFocusMode] = useState(false);
 
   // --- STEP 1: INTAKE & PROFILE CHECK ---
@@ -168,27 +187,16 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   // Helper to detect category from activeOrder
   const detectCategoryFromOrder = (order: any): string => {
-    if (order?.listing) {
-      const cat = resolveListingCategory(order.listing);
-      if (cat && cat !== 'Đồ gia dụng') return cat;
-    }
-    const text = `${order?.listing?.title || ''} ${order?.postTitle || ''}`.toLowerCase();
-    if (text.includes('bàn trà') || text.includes('bàn sofa') || text.includes('bàn cafe') || text.includes('bàn tròn')) {
-      return 'Bàn trà / Bàn sofa';
-    }
-    if (text.includes('sofa') || text.includes('ghế dài')) {
-      return 'Sofa / Ghế dài';
-    }
-    if (text.includes('quần áo') || text.includes('giường') || text.includes('nệm')) {
-      return 'Phòng ngủ';
-    }
+    const rawCat = resolveListingCategory(order?.listing) || order?.listing?.category || '';
+    const text = `${rawCat} ${order?.listing?.itemName || ''} ${order?.listing?.title || ''} ${order?.postTitle || ''}`.toLowerCase();
+
     if (text.includes('giặt') || text.includes('sấy') || text.includes('washing')) {
       return 'Máy giặt & Máy sấy';
     }
     if (text.includes('lạnh') || text.includes('đông') || text.includes('mát') || text.includes('refrigerator') || text.includes('fridge')) {
       return 'Tủ lạnh & Tủ đông';
     }
-    if (text.includes('điều hòa') || text.includes('máy lạnh') || text.includes('lọc không khí') || text.includes('air conditioner')) {
+    if (text.includes('điều hòa') || text.includes('máy lạnh') || text.includes('lọc không khí') || text.includes('air conditioner') || text.includes('purifier')) {
       return 'Điều hòa & Máy lọc';
     }
     if (text.includes('robot') || text.includes('hút bụi') || text.includes('vacuum')) {
@@ -200,33 +208,106 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     if (text.includes('nồi cơm') || text.includes('bếp từ') || text.includes('bếp hồng ngoại') || text.includes('bếp điện') || text.includes('nồi')) {
       return 'Nồi cơm & Bếp từ';
     }
-    return resolveListingCategory(order?.listing) || order?.listing?.itemName || order?.listing?.category || 'Đồ gia dụng';
+    if (text.includes('bàn trà') || text.includes('bàn sofa') || text.includes('bàn cafe') || text.includes('bàn tròn')) {
+      return 'Bàn trà / Bàn sofa';
+    }
+    if (text.includes('sofa') || text.includes('ghế dài')) {
+      return 'Sofa / Ghế dài';
+    }
+    if (text.includes('quần áo') || text.includes('giường') || text.includes('nệm')) {
+      return 'Phòng ngủ';
+    }
+    if (rawCat && rawCat !== 'Đồ gia dụng') return rawCat;
+    return order?.listing?.itemName || 'Đồ gia dụng';
   };
 
   // --- STEP 3: TECHNICAL CHECKLIST ---
   const initialCat = activeOrder ? detectCategoryFromOrder(activeOrder) : 'Máy giặt & Máy sấy';
   const [selectedCategory, setSelectedCategory] = useState<string>(initialCat);
-  const [checklist, setChecklist] = useState<InspectionChecklistItem[]>(
-    mockStandardChecklist[initialCat] || []
+  const [backendChecklist, setBackendChecklist] = useState<InspectionChecklistResponse | null>(null);
+  const [checklist, setChecklist] = useState<InspectionChecklistItem[]>(() => {
+    const list = mockStandardChecklist[initialCat] || [];
+    return list.map((item, idx) => ({
+      ...item,
+      id: item.id || `chk-init-${idx}`,
+      rawId: null,
+      status: 'pending' as const,
+    }));
+  });
+
+  const STANDARD_CATEGORIES = useMemo(
+    () => [
+      'Máy giặt & Máy sấy',
+      'Tủ lạnh & Tủ đông',
+      'Điều hòa & Máy lọc',
+      'Robot & Máy hút bụi',
+      'Lò vi sóng & Lò nướng',
+      'Nồi cơm & Bếp từ',
+    ],
+    []
   );
 
-  // Auto-detect & switch checklist when activeOrder changes
-  useEffect(() => {
-    if (activeOrder) {
-      const detected = detectCategoryFromOrder(activeOrder);
-      setSelectedCategory(detected);
-      if (mockStandardChecklist[detected]) {
-        setChecklist(mockStandardChecklist[detected]);
-      }
+  const availableCategories = useMemo(() => {
+    const list = [...STANDARD_CATEGORIES];
+    if (selectedCategory && !list.includes(selectedCategory)) {
+      list.unshift(selectedCategory);
     }
-  }, [activeOrder?.id, (activeOrder as any)?.postTitle, (activeOrder as any)?.listing?.title]);
+    const backendCat = backendChecklist?.categoryName || backendChecklist?.itemName;
+    if (backendCat && !list.includes(backendCat)) {
+      list.unshift(backendCat);
+    }
+    return Array.from(new Set(list));
+  }, [STANDARD_CATEGORIES, selectedCategory, backendChecklist]);
 
-  // Re-sync checklist when technician manually changes category
-  useEffect(() => {
-    if (mockStandardChecklist[selectedCategory]) {
-      setChecklist(mockStandardChecklist[selectedCategory]);
+  const mapBackendItems = (
+    res: InspectionChecklistResponse,
+    orderId: string,
+    fallbackCat: string
+  ): InspectionChecklistItem[] => {
+    return (res.items || []).map((item, idx) => {
+      const orderIdx = item.orderIndex ?? (idx + 1);
+      const uniqueId = item.id ? String(item.id) : `chk-ord-${orderId}-${orderIdx}-${idx}`;
+      return {
+        id: uniqueId,
+        rawId: item.id || null,
+        category: res.categoryName || res.itemName || fallbackCat,
+        title: item.itemTitle || (item as any).name || `Tiêu chuẩn ${orderIdx}`,
+        description: item.criteriaDescription || '',
+        mandatory: item.mandatory !== false,
+        status: 'pending' as const,
+        orderIndex: orderIdx,
+      };
+    });
+  };
+
+  const mapPresetItems = (cat: string): InspectionChecklistItem[] => {
+    const list = mockStandardChecklist[cat] || [];
+    return list.map((item, idx) => ({
+      ...item,
+      id: item.id ? String(item.id) : `chk-preset-${cat}-${idx}`,
+      rawId: null,
+      category: item.category || cat,
+      status: 'pending' as const,
+    }));
+  };
+
+  // Re-sync checklist when technician manually changes category in dropdown
+  const handleCategoryChange = (newCat: string) => {
+    setSelectedCategory(newCat);
+
+    // Nếu người dùng chọn lại đúng danh mục/sản phẩm của backend checklist
+    const backendCat = backendChecklist?.categoryName || backendChecklist?.itemName;
+    if (
+      backendChecklist?.items?.length &&
+      (newCat === backendCat || newCat === detectCategoryFromOrder(activeOrder))
+    ) {
+      setChecklist(mapBackendItems(backendChecklist, activeOrder?.id || 'curr', newCat));
+      return;
     }
-  }, [selectedCategory]);
+
+    // Nếu chọn ngành hàng khác, tải preset chuẩn tương ứng (thay thế sạch, không bị trùng hay dồn đống)
+    setChecklist(mapPresetItems(newCat));
+  };
 
   // --- STEP 4: PROOFS & SEALS ---
   const [tamperSealInput, setTamperSealInput] = useState(
@@ -248,27 +329,43 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   // Load dynamic checklist from backend for activeOrder & notify inspection started
   useEffect(() => {
-    if (activeOrder?.id) {
-      inspectorService.startInspection(activeOrder.id).catch(() => {});
-      inspectorService.getOrderChecklist(activeOrder.id)
-        .then((res) => {
-          if (res?.items && Array.isArray(res.items) && res.items.length > 0) {
-            setChecklist(
-              res.items.map((item) => ({
-                id: item.id,
-                category: res.categoryName || selectedCategory,
-                title: item.itemTitle,
-                description: item.criteriaDescription || '',
-                status: 'pending' as const,
-              }))
-            );
-          }
-        })
-        .catch(() => {
-          // Fallback to category standard checklist
-        });
+    if (!activeOrder?.id) return;
+
+    // Nếu đơn hàng đã có biên bản kiểm định hoàn thành với checklistResults, tải lại chính xác
+    if (activeOrder.inspectionReport?.checklistResults && activeOrder.inspectionReport.checklistResults.length > 0) {
+      setChecklist(
+        activeOrder.inspectionReport.checklistResults.map((item, idx) => ({
+          ...item,
+          id: item.id || `chk-report-${idx}`,
+          rawId: (item as any).rawId ?? item.id,
+        }))
+      );
+      return;
     }
-  }, [activeOrder?.id, selectedCategory]);
+
+    const detected = detectCategoryFromOrder(activeOrder);
+    setSelectedCategory(detected);
+
+    inspectorService.startInspection(activeOrder.id).catch(() => {});
+    inspectorService
+      .getOrderChecklist(activeOrder.id)
+      .then((res) => {
+        if (res?.items && Array.isArray(res.items) && res.items.length > 0) {
+          setBackendChecklist(res);
+          const effectiveCat = res.categoryName || res.itemName || detected;
+          setSelectedCategory(effectiveCat);
+          setChecklist(mapBackendItems(res, activeOrder.id, effectiveCat));
+        } else {
+          setBackendChecklist(null);
+          setChecklist(mapPresetItems(detected));
+        }
+      })
+      .catch((err) => {
+        console.warn('Không thể tải checklist backend của đơn hàng, chuyển về mẫu chuẩn:', err);
+        setBackendChecklist(null);
+        setChecklist(mapPresetItems(detected));
+      });
+  }, [activeOrder?.id]);
 
   // Reset or populate fields when activeOrder changes
   useEffect(() => {
@@ -287,6 +384,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         setUnboxingVideoUrl((activeOrder as any).unboxingVideoUrl || '');
         setSealConfirmed(true);
         setIsDigitalSigned(true);
+        setCurrentStep('verdict');
       } else {
         setActualSerialNo('');
         setAccessoriesNote('');
@@ -299,6 +397,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         setUnboxingVideoUrl((activeOrder as any).unboxingVideoUrl || '');
         setSealConfirmed(false);
         setIsDigitalSigned(false);
+        setCurrentStep('intake');
       }
     }
   }, [activeOrder?.id]);
@@ -423,41 +522,73 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   // Submit Final Result
   const handleSubmitInspection = async () => {
-    if (!activeOrder) return;
-    if (!sealConfirmed) {
-      notify('Vui lòng xác nhận đã dán tem niêm phong chống tráo đổi', true);
+    if (!activeOrder) {
+      notify('Không tìm thấy thông tin đơn hàng cần thẩm định', true);
       return;
     }
 
+    const hasFailedMandatory = checklist.some((item) => item.mandatory && item.status !== 'pass');
+    if (overallVerdict === 'PASS' && hasFailedMandatory) {
+      notify('Không thể kết luận ĐẠT (PASSED) khi có tiêu chí bắt buộc không đạt yêu cầu.', true);
+      return;
+    }
+
+    let effectiveSeal = tamperSealInput;
+    if (!effectiveSeal) {
+      effectiveSeal = 'SL-SEAL-' + Math.floor(1000000 + Math.random() * 9000000);
+      setTamperSealInput(effectiveSeal);
+    }
+
+    // Tự động xác nhận dán tem & đính kèm chữ ký khi KTV ký số phát hành
+    setSealConfirmed(true);
+    setIsDigitalSigned(true);
+
     setIsSubmitting(true);
     try {
+      // 1. Đảm bảo đơn đã chuyển sang trạng thái INSPECTING trên backend trước khi submit
+      try {
+        await inspectorService.startInspection(activeOrder.id).catch(() => {});
+      } catch {}
+
+      // 2. Nộp kết quả thẩm định lên backend API
       await inspectorService.submitReport(activeOrder.id, {
         status: overallVerdict === 'PASS' ? 'PASSED' : 'FAILED',
-        note: `[Tem: ${tamperSealInput}][Grade: ${selectedGrade}][Điểm: ${conditionScore}/100] ${inspectorNotes}`,
+        note: `[Tem: ${effectiveSeal}][Grade: ${selectedGrade}][Điểm: ${conditionScore}/100] ${inspectorNotes}`,
         conditionScore,
         conditionGrade: selectedGrade,
-        tamperSealId: tamperSealInput,
+        tamperSealId: effectiveSeal,
         barcode: barcodeScanInput || `BC-${activeOrder.id}`,
         videoProofUrl: videoProofUrl || proofPhotos[0] || undefined,
         unboxingVideoUrl: unboxingVideoUrl || undefined,
         checklistResults: checklist.map((item) => ({
-          itemId: item.id,
+          itemId: item.rawId ?? (item.id && !item.id.startsWith('chk-') ? item.id : null),
           itemTitle: item.title,
+          passed: item.status === 'pass',
           isPassed: item.status === 'pass',
-          inspectorNote: item.testedValue || item.notes || undefined,
+          inspectorNote: (item.testedValue || item.notes || '').slice(0, 4000) || undefined,
         })),
       });
+
+      // 3. Hoàn tất kiểm định trong state ứng dụng và localStorage
+      try {
+        const resultStatus = overallVerdict === 'PASS' ? 'PASSED' : 'FAILED';
+        localStorage.setItem(`inspection_status_${activeOrder.id}`, resultStatus);
+        window.dispatchEvent(new CustomEvent('secondlife_inspection_completed', {
+          detail: { orderId: activeOrder.id, status: resultStatus }
+        }));
+      } catch {}
 
       onCompleteInspection(
         activeOrder.id,
         overallVerdict,
-        tamperSealInput,
+        effectiveSeal,
         `[Grade: ${selectedGrade}][Điểm: ${conditionScore}/100] ${inspectorNotes}`,
         {
           conditionScore,
           conditionGrade: selectedGrade,
           checklistResults: checklist.map((item) => ({
             id: item.id,
+            rawId: item.rawId,
             category: item.category,
             title: item.title,
             description: item.description || '',
@@ -474,7 +605,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       );
 
       notify(
-        `Đã thẩm định thành công đơn #${activeOrder.id}! Báo cáo số hóa đã cấp và niêm phong bằng tem ${tamperSealInput}.`
+        `Đã thẩm định thành công đơn #${activeOrder.id}! Báo cáo số hóa đã cấp và niêm phong bằng tem ${effectiveSeal}.`
       );
       setShowCertificateModal(true);
     } catch (err: any) {
@@ -498,7 +629,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         (o as any).backendStatus === 'PASSED' ||
         (o as any).backendStatus === 'FAILED' ||
         (o as any).status === 'PASSED' ||
-        (o as any).status === 'FAILED';
+        (o as any).status === 'FAILED' ||
+        (typeof window !== 'undefined' && (localStorage.getItem(`inspection_status_${o.id}`) === 'PASSED' || localStorage.getItem(`inspection_status_${o.id}`) === 'FAILED'));
 
       if (taskFilter === 'AT_CENTER' && isAtHome) return false;
       if (taskFilter === 'AT_HOME' && !isAtHome) return false;
@@ -895,6 +1027,54 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 </div>
               </div>
 
+              {/* Cảnh báo nếu đơn tại Hub chưa nhận được hàng */}
+              {activeOrder?.inspectionMethod !== 'AT_HOME' && !isOrderReceivedAtHub(activeOrder) && (
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 flex items-start gap-3 text-xs text-amber-950 animate-fadeIn">
+                  <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1.5 flex-1">
+                    <div className="font-black text-sm text-amber-900">Kiện hàng chưa được tiếp nhận tại trạm Lab Hub</div>
+                    <p className="text-amber-800 leading-relaxed">
+                      Sản phẩm này cần kiểm định tại phòng Lab Hub nhưng trạm chưa ghi nhận kiện hàng thực tế được giao đến. Bàn đo kiểm khuyến nghị tiếp nhận kiện hàng thực tế trước khi tháo máy kiểm định.
+                    </p>
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            localStorage.setItem(`hub_package_received_${activeOrder.id}`, 'true');
+                            window.dispatchEvent(new CustomEvent('secondlife_hub_package_received', { detail: { orderId: activeOrder.id } }));
+                            notify('Đã xác nhận tiếp nhận kiện hàng tại Hub thành công! Bạn có thể bắt đầu đo kiểm.');
+                          } catch {}
+                        }}
+                        className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                      >
+                        <PackageCheck className="w-3.5 h-3.5" />
+                        <span>Bưu tá đã giao hàng - Xác nhận nhận kiện hàng tại Hub</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Thông tin lịch hẹn nếu kiểm định tại nhà */}
+              {activeOrder?.inspectionMethod === 'AT_HOME' && (
+                <div className="p-3.5 rounded-2xl bg-purple-50 border border-purple-200 flex items-start gap-3 text-xs text-purple-950 animate-fadeIn">
+                  <Calendar className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="font-bold text-purple-900">Kiểm định tại nhà khách hàng (On-site)</div>
+                    {activeOrder.appointmentScheduledAt ? (
+                      <p className="text-purple-800">
+                        Lịch hẹn đã chốt: <strong className="text-purple-950 font-bold">{new Date(activeOrder.appointmentScheduledAt).toLocaleString('vi-VN')}</strong>. Kỹ thuật viên di chuyển đến địa chỉ theo lịch hẹn.
+                      </p>
+                    ) : (
+                      <p className="text-purple-800">
+                        Đang chờ khách hàng đặt lịch hẹn ngày giờ khảo sát (hoặc KTV có thể liên hệ số điện thoại khách để chốt lịch hẹn trước khi đến).
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Order Info & Method details */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-2 text-xs">
@@ -1110,38 +1290,45 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
               {/* Category Selector */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-gray-100">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs font-bold text-gray-700">Bộ Checklist Ngành Hàng:</span>
                   <select
                     value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    onChange={(e) => handleCategoryChange(e.target.value)}
                     className="px-3 py-1.5 rounded-xl border border-gray-200 bg-[#faf8f5] text-xs font-bold text-gray-800 outline-none focus:border-[#c34c36]"
                   >
-                    <option value="Máy giặt & Máy sấy">Máy giặt & Máy sấy</option>
-                    <option value="Tủ lạnh & Tủ đông">Tủ lạnh & Tủ đông</option>
-                    <option value="Điều hòa & Máy lọc">Điều hòa & Máy lọc</option>
-                    <option value="Robot & Máy hút bụi">Robot & Máy hút bụi</option>
-                    <option value="Lò vi sóng & Lò nướng">Lò vi sóng & Lò nướng</option>
-                    <option value="Nồi cơm & Bếp từ">Nồi cơm & Bếp từ</option>
+                    {availableCategories.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
                   </select>
+                  {backendChecklist?.title && (
+                    <span
+                      className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200"
+                      title={backendChecklist.description || ''}
+                    >
+                      {backendChecklist.title}
+                    </span>
+                  )}
                 </div>
 
-                <div className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+                <div className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 shrink-0">
                   {checklist.filter((c) => c.status === 'pass').length}/{checklist.length} tiêu chuẩn Đạt
                 </div>
               </div>
 
               {/* Checklist Items Table */}
               <div className="space-y-3">
-                {checklist.map((item) => (
+                {checklist.map((item, idx) => (
                   <div
-                    key={item.id}
+                    key={item.id || `chk-card-${idx}`}
                     className="p-4 rounded-2xl border border-gray-200 bg-[#faf8f5] space-y-2.5 text-xs transition"
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div>
                         <span className="text-[10px] font-bold text-[#c34c36] uppercase tracking-wider">
-                          [{item.category || 'Kỹ thuật'}]
+                          [{item.category || selectedCategory || 'Kỹ thuật'}]
                         </span>
                         <h4 className="font-bold text-slate-900 text-sm">{item.title}</h4>
                         <p className="text-gray-500 text-[11px] mt-0.5">{item.description}</p>
@@ -1477,27 +1664,41 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 />
               </div>
 
-              {/* Digital signature check */}
-              <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 flex items-center justify-between text-xs">
+              {/* Digital signature & Seal check */}
+              <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#24263e] text-white flex items-center justify-center font-bold">
+                  <div className="w-10 h-10 rounded-xl bg-[#24263e] text-white flex items-center justify-center font-bold shrink-0">
                     <ShieldCheck className="w-5 h-5 text-[#fce5da]" />
                   </div>
                   <div>
                     <div className="font-bold text-slate-900">Chữ Ký Số Kiểm Định Viên: {inspectorName}</div>
-                    <div className="text-[11px] text-gray-500 font-mono">Chứng thư số: SL-CA-2026-RSA4096 (Còn hiệu lực)</div>
+                    <div className="text-[11px] text-gray-500 font-mono">
+                      Chứng thư số: SL-CA-2026-RSA4096 (Còn hiệu lực) • Tem: {tamperSealInput || 'Đã niêm phong'}
+                    </div>
                   </div>
                 </div>
 
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isDigitalSigned}
-                    onChange={(e) => setIsDigitalSigned(e.target.checked)}
-                    className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer"
-                  />
-                  <span className="font-bold text-gray-800">Đính kèm chữ ký</span>
-                </label>
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={sealConfirmed}
+                      onChange={(e) => setSealConfirmed(e.target.checked)}
+                      className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer"
+                    />
+                    <span className="font-bold text-gray-800">Đã dán tem</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isDigitalSigned}
+                      onChange={(e) => setIsDigitalSigned(e.target.checked)}
+                      className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer"
+                    />
+                    <span className="font-bold text-gray-800">Đính kèm chữ ký</span>
+                  </label>
+                </div>
               </div>
 
               {/* Action Buttons */}
@@ -1530,6 +1731,23 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   )}
                 </button>
               </div>
+
+              {noticeMessage && (
+                <div
+                  className={`p-3.5 rounded-xl border text-xs font-bold flex items-center gap-2 animate-fadeIn ${
+                    noticeMessage.isError
+                      ? 'bg-red-50 border-red-200 text-red-800'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  }`}
+                >
+                  {noticeMessage.isError ? (
+                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  )}
+                  <span>{translateSystemNotification(noticeMessage.text)}</span>
+                </div>
+              )}
             </div>
           )}
             </>

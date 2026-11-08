@@ -21,9 +21,12 @@ import {
   Coins,
   History,
   Trash2,
-  FileText
+  FileText,
+  Sliders,
+  RotateCcw
 } from 'lucide-react';
-import { Listing, Language, UserProfile } from '../types';
+import { Listing, Language, UserProfile, ItemBackend } from '../types';
+import { itemService } from '../services/itemService';
 import { formatVND } from '../utils/translations';
 import { getBoughtListingIds, getSortablePostTimestamp } from '../utils/orderUtils';
 import { sellerService, SellerVerificationResponseDto } from '../services/sellerService';
@@ -41,7 +44,6 @@ import { resolveCategoryAndItem } from '../utils/catalogCache';
 import { returnShippingFeeService, SellerReturnShippingDebtResponse } from '../services';
 import { SellerReturnShippingFeesSection } from '../components/seller/SellerReturnShippingFeesSection';
 import { SellerDisputeResponseModal } from '../components/seller/SellerDisputeResponseModal';
-import { RotateCcw } from 'lucide-react';
 
 interface SellerDashboardViewProps {
   listings: Listing[];
@@ -257,6 +259,62 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   // Real Backend Posts State
   const [myServerPosts, setMyServerPosts] = useState<Listing[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
+
+  // Reclassify Item Modal State (chọn lại loại thiết bị khi danh mục tách item)
+  const [reclassifyingPost, setReclassifyingPost] = useState<Listing | null>(null);
+  const [reclassifyItems, setReclassifyItems] = useState<ItemBackend[]>([]);
+  const [selectedReclassifyItemId, setSelectedReclassifyItemId] = useState<string>('');
+  const [isLoadingReclassifyItems, setIsLoadingReclassifyItems] = useState(false);
+  const [isSubmittingReclassify, setIsSubmittingReclassify] = useState(false);
+  const [reclassifyError, setReclassifyError] = useState<string | null>(null);
+
+  const handleOpenReclassifyModal = async (item: Listing) => {
+    setReclassifyingPost(item);
+    setSelectedReclassifyItemId(item.itemId || '');
+    setReclassifyError(null);
+    setIsLoadingReclassifyItems(true);
+    try {
+      const itms = await itemService.getItemsByCategory(item.categoryId || '');
+      const selectable = (Array.isArray(itms) ? itms : []).filter((i: any) => i.selectable !== false);
+      setReclassifyItems(selectable);
+      if (selectable.length > 0 && !selectable.some((i: any) => i.id === item.itemId)) {
+        setSelectedReclassifyItemId(selectable[0].id);
+      }
+    } catch (err: any) {
+      setReclassifyError(err?.message || 'Không thể tải danh sách thiết bị');
+    } finally {
+      setIsLoadingReclassifyItems(false);
+    }
+  };
+
+  const handleSubmitReclassify = async () => {
+    if (!reclassifyingPost || !selectedReclassifyItemId) return;
+    setIsSubmittingReclassify(true);
+    setReclassifyError(null);
+    try {
+      await postService.reclassifyItem(reclassifyingPost.id, selectedReclassifyItemId);
+      const chosenItem = reclassifyItems.find((i) => i.id === selectedReclassifyItemId);
+      setMyServerPosts((prev) =>
+        prev.map((p) => {
+          if (p.id === reclassifyingPost.id) {
+            return {
+              ...p,
+              itemId: selectedReclassifyItemId,
+              itemName: chosenItem?.name || p.itemName,
+            };
+          }
+          return p;
+        })
+      );
+      showToastNotice('success', lang === 'vi' ? 'Đã chọn lại loại thiết bị cho bài đăng thành công!' : 'Item reclassified successfully!');
+      setReclassifyingPost(null);
+    } catch (err: any) {
+      console.error('Lỗi khi chọn lại loại thiết bị:', err);
+      setReclassifyError(err?.message || (lang === 'vi' ? 'Không thể cập nhật loại thiết bị. Bài đăng có thể đang trong giao dịch.' : 'Failed to update item'));
+    } finally {
+      setIsSubmittingReclassify(false);
+    }
+  };
 
   // Return Shipping Fees & Dispute Modal State
   const [sellerActiveTab, setSellerActiveTab] = useState<'listings' | 'return_fees'>('listings');
@@ -1305,6 +1363,15 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 >
                   <Edit3 className="w-3.5 h-3.5 text-[#24263e]" />
                 </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenReclassifyModal(item)}
+                  className="py-1.5 px-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition"
+                  title={lang === 'vi' ? 'Chọn lại loại thiết bị cụ thể' : 'Reclassify item'}
+                >
+                  <Sliders className="w-3.5 h-3.5 text-slate-600" />
+                  <span className="hidden sm:inline">{lang === 'vi' ? 'Đổi Loại' : 'Reclassify'}</span>
+                </button>
                 {(item.backendStatus === 'DRAFT' || item.status === 'draft') && (
                   <button
                     onClick={(e) => {
@@ -1356,6 +1423,96 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           setTimeout(() => setPayoutSuccessMsg(null), 5000);
         }}
       />
+
+      {/* Modal Chọn lại loại thiết bị (Reclassify Item Modal) */}
+      {reclassifyingPost && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-gray-100">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-gradient-to-br from-[#c34c36] to-[#e0563e] text-white">
+                  <Sliders className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-[#24263e]">Chọn Lại Loại Thiết Bị</h3>
+                  <p className="text-[11px] text-slate-500">Cập nhật phân loại cho bài viết theo danh mục mới</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReclassifyingPost(null)}
+                className="p-1 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
+                <div className="text-slate-500">Bài đăng: <strong className="text-slate-800">{reclassifyingPost.title}</strong></div>
+                <div className="text-slate-500">Loại hiện tại: <span className="font-semibold text-rose-700">{reclassifyingPost.itemName || 'Chưa xác định'}</span></div>
+              </div>
+
+              {reclassifyError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{reclassifyError}</span>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700">
+                  Chọn Loại Thiết Bị Mới *
+                </label>
+                {isLoadingReclassifyItems ? (
+                  <div className="flex items-center justify-center py-4 text-xs text-slate-500 gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#c34c36]" />
+                    <span>Đang tải danh sách thiết bị...</span>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedReclassifyItemId}
+                    onChange={(e) => setSelectedReclassifyItemId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#c34c36]"
+                  >
+                    {reclassifyItems.length > 0 ? (
+                      reclassifyItems.map((itm) => (
+                        <option key={itm.id} value={itm.id}>
+                          {itm.name}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">Không có loại thiết bị khả dụng</option>
+                    )}
+                  </select>
+                )}
+                <p className="text-[11px] text-slate-500 italic">
+                  Chỉ áp dụng được khi bài chưa trong giao dịch hoặc kiểm định đang xử lý.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setReclassifyingPost(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitReclassify}
+                disabled={isSubmittingReclassify || !selectedReclassifyItemId}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-[#c34c36] hover:bg-[#a63f2d] text-white disabled:opacity-50 cursor-pointer flex items-center gap-1.5 shadow-sm"
+              >
+                {isSubmittingReclassify && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Cập Nhật Loại Thiết Bị</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ======================================================== */}
       {/* MODAL: RESUBMIT eKYC VERIFICATION                         */}

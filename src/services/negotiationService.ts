@@ -1,5 +1,6 @@
 import { request } from './apiClient';
 import { Negotiation, NegotiationRequestDTO } from '../types';
+import { isValidUUID, isSellerOfferId, isOfficialAcceptedNegotiation } from '../utils/negotiationHelper';
 
 export interface PageResult<T> {
   content: T[];
@@ -94,6 +95,30 @@ export const negotiationService = {
     return ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
       : response) as Negotiation;
+  },
+
+  /**
+   * Xác thực và tìm thương lượng ACCEPTED hợp lệ cho người mua và bài đăng từ Backend
+   */
+  async getValidAcceptedNegotiation(postId: string, negotiationId?: string): Promise<Negotiation | null> {
+    try {
+      const page = await this.getBuyerNegotiations(0, 50);
+      const list = page.content || [];
+      if (negotiationId) {
+        if (!isValidUUID(negotiationId) || isSellerOfferId(negotiationId)) return null;
+        return (
+          list.find(
+            (n) =>
+              n.id.toLowerCase() === negotiationId.toLowerCase() &&
+              n.postId === postId &&
+              isOfficialAcceptedNegotiation(n, postId)
+          ) || null
+        );
+      }
+      return list.find((n) => n.postId === postId && isOfficialAcceptedNegotiation(n, postId)) || null;
+    } catch {
+      return null;
+    }
   },
 
   /**

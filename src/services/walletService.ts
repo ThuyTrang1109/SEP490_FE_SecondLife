@@ -1,4 +1,4 @@
-import { request } from './apiClient';
+import { request, requestGet } from './apiClient';
 import {
   UserWallet,
   DepositResponseDTO,
@@ -20,8 +20,7 @@ export const walletService = {
    * GET /api/v1/wallets/me
    */
   async getMyWallet(): Promise<UserWallet> {
-    const response = await request<UserWallet>('/v1/wallets/me', {
-      method: 'GET',
+    const response = await requestGet<UserWallet>('/v1/wallets/me', {
       requiresAuth: true,
     });
     return ((response as any)?.data !== undefined && (response as any)?.data !== null

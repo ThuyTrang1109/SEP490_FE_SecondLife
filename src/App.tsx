@@ -1,3 +1,7 @@
+import { isValidUUID, isSellerOfferId } from './utils/negotiationHelper';
+import { getRoleLandingPath, getRouteAccess, getUserRoles, pathForTab, paths, resolveAppRoute, safeReturnPath } from './app/router/paths';
+import { navigatePath, useBrowserLocation } from './app/router/browser';
+import { RouteStatusPage } from './app/router/RouteStatusPage';
 import React, { useState, lazy, Suspense, useRef, useCallback, useEffect } from 'react';
 import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit, ItemCategory, ConditionGrade, EscrowStatus, InspectionReport } from './types';
 import { formatVND } from './utils/translations';
@@ -21,7 +25,7 @@ import './utils/dialogService';
 import { clearNotificationsOnLogout, saveScopedLocalNotification } from './utils/notificationStorage';
 import { NotificationItem } from './types/notification';
 import { notificationWsClient } from './services/notificationWsClient';
-import { ShieldCheck, Sparkles, CheckCircle2, Store } from 'lucide-react';
+import { ShieldCheck, Sparkles, CheckCircle2, Store, AlertTriangle } from 'lucide-react';
 import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, getRefreshToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, isTokenExpiringSoon, recordUserActivity, resetActivityTimer, isUserIdle, refreshAccessToken, checkAndRenewSessionOnReturn, ChatRoomDto } from './services';
 
 // Code-split heavy views via lazyWithRetry to prevent dynamic import fetch errors
@@ -81,117 +85,14 @@ export const VALID_MAIN_TABS = [
 export const TAB_STORAGE_KEY = 'secondlife_active_tab';
 
 export function getInitialActiveTab(): string {
-  const token = getAccessToken();
-  const stored = getStoredUser();
-  const userRole = (token && stored?.role) ? String(stored.role).toLowerCase() : null;
-
-  let candidateTab: string | null = null;
-  if (typeof window !== 'undefined') {
-    // 1. Kiểm tra URL query param ?tab=
-    const params = new URLSearchParams(window.location.search);
-    const rawTab = params.get('tab') || params.get('tap');
-    const tabParam = rawTab ? rawTab.replace(/_/g, '-') : null;
-    if (tabParam && (VALID_MAIN_TABS as readonly string[]).includes(tabParam)) {
-      candidateTab = tabParam;
-    } else {
-      // Kiểm tra hash #tab nếu có
-      const rawHash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
-      const hash = rawHash ? rawHash.replace(/_/g, '-') : '';
-      if (hash && (VALID_MAIN_TABS as readonly string[]).includes(hash)) {
-        candidateTab = hash;
-      }
-    }
-
-    // 2. Nếu URL chưa có thì lấy từ sessionStorage đã lưu trước khi F5
-    if (!candidateTab) {
-      try {
-        const savedTab = sessionStorage.getItem(TAB_STORAGE_KEY);
-        if (savedTab && (VALID_MAIN_TABS as readonly string[]).includes(savedTab)) {
-          candidateTab = savedTab;
-        }
-      } catch (e) {}
-    }
-  }
-
-  // 3. Phân quyền và bảo vệ route
-  if (candidateTab) {
-    if (userRole === 'admin') {
-      return candidateTab === 'admin-dashboard' ? candidateTab : 'admin-dashboard';
-    }
-    if (userRole === 'inspection_center') {
-      return ['inspection-center', 'inspection-hub', 'notifications'].includes(candidateTab)
-        ? candidateTab
-        : 'inspection-center';
-    }
-    if (userRole === 'inspector') {
-      return ['inspection-hub', 'notifications'].includes(candidateTab)
-        ? candidateTab
-        : 'inspection-hub';
-    }
-    const protectedTabs = [
-      'seller-dashboard',
-      'orders',
-      'buyer-inspection-decision',
-      'inspection-center',
-      'inspection-hub',
-      'staff-workspace',
-      'admin-dashboard',
-      'chat',
-      'notifications',
-      'disputes'
-    ];
-    if (!token && protectedTabs.includes(candidateTab)) {
-      return 'marketplace';
-    }
-    return candidateTab;
-  }
-
-  if (userRole === 'admin') return 'admin-dashboard';
-  if (userRole === 'inspection_center') return 'inspection-center';
-  if (userRole === 'inspector') return 'inspection-hub';
-  if (userRole === 'staff') return 'staff-workspace';
-
-  return 'home';
+  const role = getStoredUser()?.role || 'buyer';
+  return resolveAppRoute(typeof window === 'undefined' ? '/' : window.location.href, role).tab;
 }
 
 export default function App() {
-  // Global State - Khôi phục tab từ URL / sessionStorage khi F5 refresh
   const [lang, setLang] = useState<Language>('vi');
-  const [activeTab, setActiveTab] = useState<string>(getInitialActiveTab);
-
-  React.useEffect(() => {
-    document.body.classList.remove('dark');
-  }, []);
-
-  // Tự động đồng bộ activeTab vào sessionStorage và URL query parameter ?tab=
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      sessionStorage.setItem(TAB_STORAGE_KEY, activeTab);
-    } catch (e) {}
-
-    const url = new URL(window.location.href);
-    url.searchParams.delete('tab');
-    url.searchParams.delete('tap');
-    url.searchParams.delete('subtab');
-    url.searchParams.delete('order_tab');
-    if (activeTab !== 'buyer-inspection-decision') {
-      url.searchParams.delete('orderId');
-    }
-    if (url.toString() !== window.location.href) {
-      window.history.replaceState(null, '', url.toString());
-    }
-  }, [activeTab]);
-
-  // Hỗ trợ nút Back/Forward của trình duyệt
-  React.useEffect(() => {
-    const handlePopState = () => {
-      const tab = getInitialActiveTab();
-      setActiveTab(tab);
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  const browserLocation = useBrowserLocation();
+  React.useEffect(() => { document.body.classList.remove('dark'); }, []);
 
   // User Auth State - Isolated per browser/device via localStorage
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
@@ -218,6 +119,27 @@ export default function App() {
     return token && stored && stored.role ? stored.role : 'buyer';
   });
 
+  const [isRestoringSession, setIsRestoringSession] = useState(() => Boolean(getAccessToken()));
+  const currentUserId = currentUser?.id;
+  const currentUserIdRef = useRef(currentUserId);
+  currentUserIdRef.current = currentUserId;
+  const isCenterAccount = currentUser?.role === 'inspection_center' || currentRole === 'inspection_center';
+  const effectiveUser = currentUser || (getAccessToken() ? getStoredUser() : null);
+  const effectiveRole = effectiveUser?.role || currentRole;
+  const route = resolveAppRoute(browserLocation, effectiveRole);
+  const routeAccess = getRouteAccess(route, effectiveUser, isRestoringSession);
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
+  const ordersScope = `${currentUser?.id || ''}:${currentRole}`;
+  const ordersScopeRef = useRef(ordersScope);
+  ordersScopeRef.current = ordersScope;
+  const activeTab = route.tab;
+  const navigationRole = route.role && getUserRoles(effectiveUser).includes(route.role) ? route.role : effectiveRole;
+  const setActiveTab = (value: React.SetStateAction<string>) => {
+    const tab = typeof value === 'function' ? value(activeTab) : value;
+    navigatePath(pathForTab(tab, navigationRole));
+  };
+
   // Pending action after login (redirect or resume action)
   const [pendingTab, setPendingTab] = useState<string | null>(null);
   const [pendingCheckoutItem, setPendingCheckoutItem] = useState<Listing | null>(null);
@@ -228,32 +150,43 @@ export default function App() {
 
   // Restore & verify session for THIS browser from Backend /me on startup/refresh
   React.useEffect(() => {
+    let cancelled = false;
     const token = getAccessToken();
     const stored = getStoredUser();
     const hadInitialSession = hadSessionRef.current || Boolean(token || stored || getRefreshToken());
 
     if (token) {
       userService.getMyProfile().then(async (profile) => {
+        if (cancelled) return;
         if (profile) {
-          // Lấy thông tin địa chỉ kho bưu tá / onboarding từ BE
-          let pickupAddr: any = null;
-          try {
-            const isSeller = profile.roles?.some((r: string) => r === 'SELLER' || r === 'ROLE_SELLER');
-            // Nếu là SELLER thì mới gọi getPickupAddress(), nếu là BUYER thì chỉ gọi getSellerOnboarding()
-            const tasks: Promise<any>[] = [shippingService.getSellerOnboarding()];
-            if (isSeller) {
-              tasks.push(shippingService.getPickupAddress());
-            }
-            const results = await Promise.allSettled(tasks);
-            const obRes = results[0];
-            const paRes = isSeller ? results[1] : null;
-            if (obRes && obRes.status === 'fulfilled' && obRes.value?.pickupAddress) {
-              pickupAddr = obRes.value.pickupAddress;
-            } else if (paRes && paRes.status === 'fulfilled' && paRes.value) {
-              pickupAddr = paRes.value;
-            }
-          } catch (_) {}
+          // Xác định vai trò người dùng để tránh gọi sai API chuyên biệt
+          const roleUpperList = (profile.roles || []).map((r: string) => (r || '').toUpperCase());
+          const isInternal = roleUpperList.some((r: string) =>
+            ['INSPECTOR', 'ROLE_INSPECTOR', 'HUB_INSPECTOR', 'STAFF', 'ROLE_STAFF', 'ADMIN', 'ROLE_ADMIN', 'INSPECTION_CENTER', 'ROLE_INSPECTION_CENTER'].includes(r)
+          );
+          const isSeller = !isInternal && roleUpperList.some((r: string) => r === 'SELLER' || r === 'ROLE_SELLER');
+          const isBuyer = !isInternal && !isSeller;
 
+          // Lấy thông tin địa chỉ kho bưu tá / onboarding từ BE (Chỉ gọi cho Buyer hoặc Seller, tuyệt đối không gọi cho role nội bộ như Inspector/Admin/Staff)
+          let pickupAddr: any = null;
+          if (!isInternal && (isSeller || isBuyer)) {
+            try {
+              const tasks: Promise<any>[] = [shippingService.getSellerOnboarding()];
+              if (isSeller) {
+                tasks.push(shippingService.getPickupAddress());
+              }
+              const results = await Promise.allSettled(tasks);
+              const obRes = results[0];
+              const paRes = isSeller ? results[1] : null;
+              if (obRes && obRes.status === 'fulfilled' && obRes.value?.pickupAddress) {
+                pickupAddr = obRes.value.pickupAddress;
+              } else if (paRes && paRes.status === 'fulfilled' && paRes.value) {
+                pickupAddr = paRes.value;
+              }
+            } catch (_) {}
+          }
+
+          if (cancelled) return;
           const fullPickup = pickupAddr
             ? [pickupAddr.address, pickupAddr.wardName, pickupAddr.provinceName].filter(Boolean).join(', ')
             : '';
@@ -274,7 +207,7 @@ export default function App() {
           const resolvedWard = stored?.wardName || profile.ward || pickupAddr?.wardName || savedAddr?.wardName || '';
           const resolvedProv = stored?.provinceName || profile.province || pickupAddr?.provinceName || savedAddr?.provinceName || '';
 
-          if (resolvedPickup || resolvedAddress) {
+          if (isSeller && (resolvedPickup || resolvedAddress)) {
             saveSellerAddress(resolvedPickup || resolvedAddress, resolvedWard, resolvedProv);
           }
 
@@ -282,15 +215,15 @@ export default function App() {
             id: profile.id,
             name: profile.fullName || profile.email,
             email: profile.email,
-            role: (profile.roles?.includes('ADMIN') || profile.roles?.includes('ROLE_ADMIN'))
+            role: (roleUpperList.includes('ADMIN') || roleUpperList.includes('ROLE_ADMIN'))
               ? 'admin'
-              : (profile.roles?.includes('INSPECTION_CENTER') || profile.roles?.includes('ROLE_INSPECTION_CENTER'))
+              : (roleUpperList.includes('INSPECTION_CENTER') || roleUpperList.includes('ROLE_INSPECTION_CENTER'))
                 ? 'inspection_center'
-                : (profile.roles?.includes('INSPECTOR') || profile.roles?.includes('ROLE_INSPECTOR') || profile.roles?.includes('HUB_INSPECTOR'))
+                : (roleUpperList.includes('INSPECTOR') || roleUpperList.includes('ROLE_INSPECTOR') || roleUpperList.includes('HUB_INSPECTOR'))
                   ? 'inspector'
-                  : (profile.roles?.includes('STAFF') || profile.roles?.includes('ROLE_STAFF'))
+                  : (roleUpperList.includes('STAFF') || roleUpperList.includes('ROLE_STAFF'))
                     ? 'staff'
-                    : (profile.roles?.includes('SELLER') || profile.roles?.includes('ROLE_SELLER'))
+                    : (roleUpperList.includes('SELLER') || roleUpperList.includes('ROLE_SELLER'))
                       ? 'seller'
                       : 'buyer',
             phone: profile.phone || '',
@@ -308,22 +241,19 @@ export default function App() {
             accountStatus: profile.accountStatus,
             kycStatus: (profile.roles?.includes('SELLER') || profile.roles?.includes('ROLE_SELLER')) ? 'verified' : 'unverified',
             emailVerified: Boolean(profile.emailVerified),
+            roles: profile.roles,
           };
           setCurrentUser(syncedUser);
           setCurrentRole(syncedUser.role);
           setStoredUser(syncedUser);
-          saveSellerAddress(
-            syncedUser.pickupAddress || syncedUser.address || '',
-            syncedUser.wardName || syncedUser.ward || '',
-            syncedUser.provinceName || syncedUser.province || ''
-          );
-          if (syncedUser.role === 'admin') {
-            setActiveTab((prev) => (prev === 'admin-dashboard' ? prev : 'admin-dashboard'));
-          } else if (syncedUser.role === 'inspection_center') {
-            setActiveTab((prev) => (['inspection-center', 'inspection-hub', 'notifications'].includes(prev) ? prev : 'inspection-center'));
-          } else if (syncedUser.role === 'inspector') {
-            setActiveTab((prev) => (['inspection-hub', 'notifications'].includes(prev) ? prev : 'inspection-hub'));
+          if (isSeller) {
+            saveSellerAddress(
+              syncedUser.pickupAddress || syncedUser.address || '',
+              syncedUser.wardName || syncedUser.ward || '',
+              syncedUser.provinceName || syncedUser.province || ''
+            );
           }
+
         } else {
           clearAuthTokens();
           setCurrentUser(null);
@@ -339,6 +269,7 @@ export default function App() {
           }
         }
       }).catch(() => {
+        if (cancelled) return;
         clearAuthTokens();
         setCurrentUser(null);
         setCurrentRole('buyer');
@@ -351,8 +282,11 @@ export default function App() {
               : 'Session expired. Please log in again.'
           );
         }
+      }).finally(() => {
+        if (!cancelled) setIsRestoringSession(false);
       });
     } else {
+      setIsRestoringSession(false);
       if (hadInitialSession) {
         clearAuthTokens();
         setCurrentUser(null);
@@ -370,6 +304,7 @@ export default function App() {
         setCurrentRole('buyer');
       }
     }
+    return () => { cancelled = true; };
   }, []);
 
     // The unauthorized_session listener was moved below state declarations to utilize toast and modal.
@@ -393,19 +328,56 @@ export default function App() {
     chatCredits: 20,
   });
 
+  const closeRouteModal = (fallback: string) => {
+    const previous = safeReturnPath(window.history.state?.returnPath || null);
+    if (previous && previous !== browserLocation) {
+      const targetRoute = resolveAppRoute(previous, currentUser?.role || currentRole);
+      if (getRouteAccess(targetRoute, currentUser) === 'allowed') {
+        navigatePath(previous, { replace: true });
+        return;
+      }
+    }
+    navigatePath(fallback, { replace: true });
+  };
+  const openAuth = (mode: 'login' | 'register' | 'forgot' = 'login', returnTo?: string) => {
+    setAuthModalMode(mode);
+    setIsAuthModalOpen(true);
+    const authPath = mode === 'register' ? '/register' : mode === 'forgot' ? '/forgot-password' : '/login';
+    navigatePath(authPath + (returnTo ? `?redirect=${encodeURIComponent(returnTo)}` : ''), {
+      state: { returnPath: browserLocation },
+    });
+  };
+  const openProfile = () => {
+    navigatePath(paths.profile(navigationRole), { state: { returnPath: browserLocation } });
+  };
+  const openChat = (listing: Listing) => {
+    setChatListing(listing);
+    navigatePath(paths.chat(navigationRole) + `?postId=${encodeURIComponent(listing.id)}`);
+  };
+  const openProduct = (listing: Listing, own = false) => {
+    setSelectedListing(listing);
+    const adminPath = activeTab === 'admin-dashboard' && getUserRoles(currentUser).includes('admin');
+    const target = own ? `/seller/products/${encodeURIComponent(listing.id)}`
+      : adminPath ? `/admin/products/${encodeURIComponent(listing.id)}` : paths.product(listing.id);
+    navigatePath(target, {
+      state: { returnPath: browserLocation },
+    });
+  };
+
   // Policy Modal State
   const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
   const [policyInitialTab, setPolicyInitialTab] = useState<PolicyTabKey>('about');
 
   // Load wallet balance from Backend
   const loadUserWallet = React.useCallback(async () => {
-    if (currentUser && getAccessToken()) {
+    if (currentUserId && getAccessToken()) {
       try {
         const w = await walletService.getMyWallet();
+        if (currentUserIdRef.current !== currentUserId) return;
         if (w && typeof w.balance === 'number') {
           setWalletBalance(w.balance);
           setCurrentUser((prev) => {
-            if (!prev || (prev.walletBalanceVnd === w.balance && prev.walletBalance === w.balance)) return prev;
+            if (!prev || prev.id !== currentUserId || (prev.walletBalanceVnd === w.balance && prev.walletBalance === w.balance)) return prev;
             return { ...prev, walletBalance: w.balance, walletBalanceVnd: w.balance };
           });
         }
@@ -413,17 +385,17 @@ export default function App() {
         console.warn('Could not load wallet from server:', err);
       }
     }
-  }, [currentUser]);
+  }, [currentUserId]);
 
   // Fetch credit balance and wallet on load if user is logged in
   React.useEffect(() => {
-    if (currentUser && getAccessToken()) {
+    if (!isRestoringSession && currentUserId && getAccessToken()) {
       loadUserWallet();
 
       // Chỉ tài khoản Người bán (Seller) mới có và sử dụng credit
       const isSeller =
         currentRole === 'seller' ||
-        currentUser.role === 'seller';
+        currentUser?.role === 'seller';
 
       if (isSeller) {
         Promise.all([
@@ -446,7 +418,7 @@ export default function App() {
           .catch(() => { });
       }
     }
-  }, [currentUser, currentRole, loadUserWallet]);
+  }, [currentUserId, currentUser?.role, currentRole, isRestoringSession, loadUserWallet]);
 
 
   const handleConfirmLogout = () => {
@@ -497,7 +469,7 @@ export default function App() {
         const cleanUrl = new URL(window.location.href);
         cleanUrl.search = '';
         cleanUrl.hash = '';
-        window.history.replaceState(null, '', cleanUrl.toString());
+        window.history.replaceState(null, '', paths.products);
       } catch (e) {}
       window.location.reload();
     });
@@ -626,7 +598,9 @@ export default function App() {
   const lastListingsFetchRef = useRef<number>(0);
   const isFetchingListingsRef = useRef<boolean>(false);
   const lastOrdersFetchRef = useRef<number>(0);
-  const isFetchingOrdersRef = useRef<boolean>(false);
+  const pendingOrdersRef = useRef<{ scope: string; refresh: boolean } | null>(null);
+  const lastOrdersScopeRef = useRef('');
+  const refreshOrdersRef = useRef<(force?: boolean) => Promise<void>>(undefined);
 
   // Sync orders whenever logged-in user changes (prevents account order bleed)
   const prevUserIdRef = useRef<string | null>(currentUser?.id || null);
@@ -762,8 +736,7 @@ export default function App() {
 
   const requireAuth = (onSuccessAction?: () => void, customMsg?: string): boolean => {
     if (!currentUser) {
-      setAuthModalMode('login');
-      setIsAuthModalOpen(true);
+      openAuth('login', browserLocation);
       showToast(
         customMsg || (lang === 'vi'
           ? 'Vui lòng đăng nhập để tiếp tục thực hiện hành động này.'
@@ -776,48 +749,10 @@ export default function App() {
   };
 
   const handleTabChange = (tab: string) => {
-    if (currentUser?.role === 'admin' && tab !== 'admin-dashboard') {
-      showToast(lang === 'vi' ? 'Tài khoản Quản trị viên chỉ truy cập trang Quản Trị Hệ Thống.' : 'Admin account only accesses Admin Portal.');
-      return;
-    }
-
-    if (currentUser?.role === 'inspection_center' && tab !== 'inspection-center' && tab !== 'inspection-hub' && tab !== 'notifications') {
-      showToast(lang === 'vi' ? 'Tài khoản Trưởng trung tâm kiểm định chỉ truy cập Bàn Điều Phối & Quản Trị.' : 'Inspection center account only accesses Center Management Portal.');
-      return;
-    }
-
-    if (currentUser?.role === 'inspector' && tab !== 'inspection-hub' && tab !== 'notifications') {
-      showToast(lang === 'vi' ? 'Tài khoản Kiểm định chỉ truy cập Trung Tâm Kiểm Định.' : 'Inspection account only accesses Inspection Hub.');
-      return;
-    }
-
     if (protectedTabs.includes(tab) && !currentUser) {
       setPendingTab(tab);
-      let promptMsg = lang === 'vi'
-        ? 'Vui lòng đăng nhập để truy cập khu vực này.'
-        : 'Please log in to access this section.';
-      if (tab === 'create-listing') {
-        promptMsg = lang === 'vi'
-          ? 'Vui lòng đăng nhập để thử nghiệm định giá AI và đăng bán sản phẩm.'
-          : 'Please log in to use AI valuation and post a listing.';
-      } else if (tab === 'chat') {
-        promptMsg = lang === 'vi'
-          ? 'Vui lòng đăng nhập để sử dụng tính năng Chat & Đàm phán AI.'
-          : 'Please log in to use AI Negotiation Chat.';
-      } else if (tab === 'orders') {
-        promptMsg = lang === 'vi'
-          ? 'Vui lòng đăng nhập để xem danh sách đơn hàng ký quỹ.'
-          : 'Please log in to view escrow orders.';
-      } else if (tab === 'seller-dashboard') {
-        promptMsg = lang === 'vi'
-          ? 'Vui lòng đăng nhập với tài khoản Người Bán để vào Kênh người bán.'
-          : 'Please log in with a seller account to access Seller Hub.';
-      } else if (tab === 'notifications') {
-        promptMsg = lang === 'vi'
-          ? 'Vui lòng đăng nhập để xem thông báo hệ thống và tiến độ đơn hàng.'
-          : 'Please log in to view system notifications.';
-      }
-      requireAuth(undefined, promptMsg);
+      const returnTo = ['orders', 'chat', 'notifications', 'disputes'].includes(tab) ? `/${tab}` : pathForTab(tab, 'buyer');
+      navigatePath(`/login?redirect=${encodeURIComponent(returnTo)}`);
       return;
     }
 
@@ -848,169 +783,33 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Deep Link Routing for Notifications (Section 5 of FE Integration Plan)
-  const handleNotificationNavigate = React.useCallback((actionUrl: string | null, _notification?: any) => {
-    if (!actionUrl) {
-      handleTabChange('notifications');
-      return;
-    }
+  const handleNotificationNavigate = React.useCallback((actionUrl: string | null) => {
+    if (!actionUrl) { navigatePath(pathForTab('notifications', currentRole)); return; }
+    const target = new URL(actionUrl, window.location.origin);
+    if (target.origin !== window.location.origin) return;
+    if (target.pathname.includes('/wallet')) { setIsTopUpModalOpen(true); return; }
+    const match = resolveAppRoute(`${target.pathname}${target.search}${target.hash}`, currentRole);
+    navigatePath(match.url);
+  }, [currentRole]);
 
-    const url = actionUrl.toLowerCase();
 
-    // 0. Inspection Center portal routing: /inspector-center, /inspection-center
-    if (url.includes('/inspector-center') || url.includes('/inspection-center') || (currentRole === 'inspection_center' && url.includes('/orders'))) {
-      handleTabChange('inspection-center');
-      return;
-    }
-
-    // 1. Order routing: /buyer/orders, /seller/orders, /orders
-    if (url.includes('/orders') || url.includes('/order')) {
-      try {
-        const queryIdx = actionUrl.indexOf('?');
-        if (queryIdx !== -1) {
-          const qs = actionUrl.substring(queryIdx);
-          const params = new URLSearchParams(qs);
-          const targetTab = params.get('order_tab') || params.get('tab');
-          if (targetTab) {
-            sessionStorage.setItem('secondlife_orders_filter_tab', targetTab);
-            const newUrl = new URL(window.location.href);
-            newUrl.searchParams.delete('order_tab');
-            newUrl.searchParams.delete('tab');
-            newUrl.searchParams.delete('tap');
-            if (newUrl.toString() !== window.location.href) {
-              window.history.replaceState(null, '', newUrl.toString());
-            }
-            window.dispatchEvent(new Event('secondlife_tab_changed'));
-          }
-        }
-      } catch {}
-      handleTabChange('orders');
-      return;
-    }
-
-    // 2. Inspection routing: /buyer-inspection-decision, /inspections, /inspector, /buyer/inspections
-    if (url.includes('buyer-inspection-decision') || url.includes('/inspections') || url.includes('/inspection')) {
-      if (currentRole === 'inspection_center') {
-        handleTabChange('inspection-center');
-      } else if (currentRole === 'inspector' || currentUser?.role === 'inspector') {
-        handleTabChange('inspection-hub');
-      } else {
-        let extractedOrderId: string | null = null;
-        try {
-          const queryIdx = actionUrl.indexOf('?');
-          if (queryIdx !== -1) {
-            const params = new URLSearchParams(actionUrl.substring(queryIdx));
-            extractedOrderId = params.get('orderId') || params.get('id');
-          }
-        } catch {}
-
-        if (!extractedOrderId) {
-          const parts = url.split('/');
-          const id = parts[parts.length - 1]?.split('?')[0];
-          if (id && !['inspections', 'inspection', 'buyer-inspection-decision'].includes(id)) {
-            extractedOrderId = id;
-          }
-        }
-
-        if (extractedOrderId) {
-          setInspectionDecisionOrderId(extractedOrderId);
-          const found = orders.find((o) => o.id === extractedOrderId);
-          setInspectionDecisionOrder(found || null);
-          handleTabChange('buyer-inspection-decision');
-        } else {
-          handleTabChange('orders');
-        }
-      }
-      return;
-    }
-
-    // 3. Negotiation / Chat routing: /negotiations, /chat
-    if (url.includes('/negotiations') || url.includes('/chat')) {
-      handleTabChange('chat');
-      return;
-    }
-
-    // 4. Wallet routing: /wallet
-    if (url.includes('/wallet')) {
-      setIsTopUpModalOpen(true);
-      return;
-    }
-
-    // 5. Listing / Post routing: /posts, /seller/posts
-    if (url.includes('/posts') || url.includes('/listing')) {
-      if (url.includes('/edit')) {
-        handleTabChange('seller-dashboard');
-      } else {
-        handleTabChange('marketplace');
-      }
-      return;
-    }
-
-    // 6. Notifications center
-    if (url.includes('/notifications')) {
-      handleTabChange('notifications');
-      return;
-    }
-
-    // 7. Seller onboarding / eKYC
-    if (url.includes('/seller')) {
-      handleTabChange('seller-dashboard');
-      return;
-    }
-
-    // 8. Disputes & Claims
-    if (url.includes('/disputes') || url.includes('/reports')) {
-      handleTabChange('disputes');
-      return;
-    }
-
-    // Default fallback
-    handleTabChange('notifications');
-  }, [currentRole, currentUser]);
-
-  // Guard activeTab if logged out or if internal roles (admin / inspector / inspection_center)
-  React.useEffect(() => {
-    if (!currentUser && protectedTabs.includes(activeTab)) {
-      setActiveTab('marketplace');
-    } else if (currentUser?.role === 'admin' && activeTab !== 'admin-dashboard') {
-      setActiveTab('admin-dashboard');
-    } else if (currentUser?.role === 'inspection_center' && activeTab !== 'inspection-center') {
-      setActiveTab('inspection-center');
-    } else if (currentUser?.role === 'inspector' && activeTab !== 'inspection-hub') {
-      setActiveTab('inspection-hub');
-    }
-  }, [currentUser, activeTab]);
 
   // Handlers
-  const handleRoleChange = (newRole: UserRole) => {
+  const handleRoleChange = async (newRole: UserRole) => {
+    if (!currentUser) { openAuth('login'); return; }
+    let verifiedUser = currentUser;
+    if (!getUserRoles(verifiedUser).includes(newRole)) {
+      try {
+        const profile = await userService.getMyProfile();
+        verifiedUser = { ...verifiedUser, roles: profile.roles };
+      } catch { navigatePath(paths.unauthorized); return; }
+    }
+    if (!getUserRoles(verifiedUser).includes(newRole)) { navigatePath(paths.unauthorized); return; }
+    const updated = { ...verifiedUser, role: newRole, roles: verifiedUser.roles || [verifiedUser.role] };
     setCurrentRole(newRole);
-    const existingUser = getStoredUser();
-    if (existingUser) {
-      setCurrentUser({ ...existingUser, role: newRole });
-    }
-    const roleLabels: Record<UserRole, string> = {
-      buyer: 'Người Mua (Buyer)',
-      seller: 'Người Bán (Seller)',
-      staff: 'Nhân Viên (Staff)',
-      inspector: 'Kỹ Sư Hub (Inspector)',
-      inspection_center: 'Trưởng Trung Tâm Kiểm Định (Manager)',
-      admin: 'Quản Trị Viên (Admin)'
-    };
-    showToast(`Đã chuyển góc nhìn sang ${roleLabels[newRole]}.`);
-
-    if (newRole === 'inspection_center') {
-      handleTabChange('inspection-center');
-    } else if (newRole === 'inspector') {
-      handleTabChange('inspection-hub');
-    } else if (newRole === 'staff') {
-      handleTabChange('home');
-    } else if (newRole === 'admin') {
-      handleTabChange('admin-dashboard');
-    } else if (newRole === 'seller') {
-      handleTabChange('seller-dashboard');
-    } else {
-      handleTabChange('marketplace');
-    }
+    setCurrentUser(updated);
+    setStoredUser(updated);
+    navigatePath(getRoleLandingPath(newRole));
   };
 
   const handleListingCreated = (newListing: Listing) => {
@@ -1464,29 +1263,42 @@ export default function App() {
 
   // Synchronize orders directly with Backend
   const loadUserOrders = React.useCallback(async (force = false) => {
+    const currentUser = currentUserRef.current;
     if (!currentUser || !getAccessToken()) {
       setOrders([]);
       return;
     }
+    // The center page owns its orders. Avoid loading the same data (and chats) in App.
+    if (isRestoringSession || isCenterAccount) return;
+    const scope = `${currentUser.id}:${currentRole}`;
+    if (pendingOrdersRef.current?.scope === scope) {
+      if (force) pendingOrdersRef.current.refresh = true;
+      return;
+    }
+    if (lastOrdersScopeRef.current !== scope) lastOrdersFetchRef.current = 0;
     const now = Date.now();
-    if (!force && isFetchingOrdersRef.current) return;
     if (!force && now - lastOrdersFetchRef.current < 3000) {
       return;
     }
     lastOrdersFetchRef.current = now;
-    isFetchingOrdersRef.current = true;
+    lastOrdersScopeRef.current = scope;
+    const pending = { scope, refresh: false };
+    pendingOrdersRef.current = pending;
     try {
-      const isCenter = currentUser?.role === 'inspection_center' || currentRole === 'inspection_center';
       const isInspector = currentUser?.role === 'inspector' || currentRole === 'inspector';
-      const [buyerRes, sellerRes, inspBuyerRes, inspSellerRes, chatRooms, inspCenterRes, inspMyRes] = await Promise.all([
-        orderService.getBuyerOrders(0, 50).catch(() => ({ content: [] })),
-        orderService.getSellerOrders(0, 50).catch(() => ({ content: [] })),
-        inspectorService.getMyBuyerOrders(0, 50).catch(() => ({ items: [] } as any)),
-        inspectorService.getMySellerOrders(0, 50).catch(() => ({ items: [] } as any)),
-        chatService.getChatRooms().catch(() => [] as any[]),
-        (isCenter || isInspector) ? inspectorService.getAllOrders(undefined, 0, 100).catch(() => ({ items: [] } as any)) : Promise.resolve({ items: [] } as any),
+      const isAdmin = currentUser?.role === 'admin' || currentRole === 'admin';
+      const isStaff = currentUser?.role === 'staff' || currentRole === 'staff';
+      const isInternalRole = isInspector || isAdmin || isStaff;
+
+      const [buyerRes, sellerRes, inspBuyerRes, inspSellerRes, chatRooms, inspMyRes] = await Promise.all([
+        !isInternalRole ? orderService.getBuyerOrders(0, 50).catch(() => ({ content: [] })) : Promise.resolve({ content: [] }),
+        !isInternalRole ? orderService.getSellerOrders(0, 50).catch(() => ({ content: [] })) : Promise.resolve({ content: [] }),
+        !isInternalRole ? inspectorService.getMyBuyerOrders(0, 50).catch(() => ({ items: [] } as any)) : Promise.resolve({ items: [] } as any),
+        !isInternalRole ? inspectorService.getMySellerOrders(0, 50).catch(() => ({ items: [] } as any)) : Promise.resolve({ items: [] } as any),
+        !isInternalRole ? chatService.getChatRooms().catch(() => [] as any[]) : Promise.resolve([] as any[]),
         isInspector ? inspectorService.getMyOrders().catch(() => [] as any[]) : Promise.resolve([] as any[])
       ]);
+      if (ordersScopeRef.current !== scope) return;
 
       const buyerNameMap = new Map<string, string>();
       const buyerPhoneMap = new Map<string, string>();
@@ -1523,7 +1335,6 @@ export default function App() {
       const rawSellerItems = (sellerRes as any)?.content || (sellerRes as any)?.items || (Array.isArray(sellerRes) ? sellerRes : []);
       const rawInspBuyerItems = (inspBuyerRes as any)?.data?.items || (inspBuyerRes as any)?.items || (inspBuyerRes as any)?.content || (Array.isArray(inspBuyerRes) ? inspBuyerRes : []);
       const rawInspSellerItems = (inspSellerRes as any)?.data?.items || (inspSellerRes as any)?.items || (inspSellerRes as any)?.content || (Array.isArray(inspSellerRes) ? inspSellerRes : []);
-      const rawInspCenterItems = (inspCenterRes as any)?.data?.items || (inspCenterRes as any)?.items || (inspCenterRes as any)?.content || (Array.isArray(inspCenterRes) ? inspCenterRes : []);
       const rawInspMyItems = (inspMyRes as any)?.data?.items || (inspMyRes as any)?.items || (inspMyRes as any)?.content || (Array.isArray(inspMyRes) ? inspMyRes : []);
 
       // Collect cancelled post IDs from buyer and seller orders
@@ -1549,7 +1360,6 @@ export default function App() {
       rawSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: false }); });
       rawInspBuyerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
       rawInspSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
-      rawInspCenterItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
       rawInspMyItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
 
       // Nạp thêm các đơn kiểm định cục bộ từ my_seller_inspection_orders và recent_placed_orders
@@ -1616,10 +1426,13 @@ export default function App() {
           const directMatched = currentListings.find(l => l.id === bOrd.postId || (bOrd.postTitle && l.title === bOrd.postTitle));
           const baseListing = directMatched || cachedListing;
 
+          const backendPostImg = (bOrd as any).postImageUrl || (bOrd as any).postImageUrls?.[0];
           const resolvedPostTitle = bOrd.postTitle || baseListing?.title || postTitleMap.get(bOrd.postId) || 'Thiết bị gia dụng SecondLife';
-          const resolvedImage = baseListing?.photos?.front
+          const resolvedImage = backendPostImg
             || postImageMap.get(bOrd.postId)
-            || baseListing?.photoGallery?.[0]
+            || (baseListing?.photos?.front && !baseListing.photos.front.includes('photo-1555041469') && !baseListing.photos.front.includes('photo-1584269600464') ? baseListing.photos.front : '')
+            || (baseListing?.photoGallery?.[0] && !baseListing.photoGallery[0].includes('photo-1555041469') && !baseListing.photoGallery[0].includes('photo-1584269600464') ? baseListing.photoGallery[0] : '')
+            || baseListing?.photos?.front
             || 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=800';
 
           const rawMatchedListing = baseListing ? {
@@ -1628,12 +1441,14 @@ export default function App() {
             photos: {
               ...baseListing.photos,
               front: resolvedImage,
-              back: baseListing.photos?.back || resolvedImage,
-              screenOrDetails: baseListing.photos?.screenOrDetails || resolvedImage,
+              back: (bOrd as any).postImageUrls?.[1] || baseListing.photos?.back || resolvedImage,
+              screenOrDetails: (bOrd as any).postImageUrls?.[2] || baseListing.photos?.screenOrDetails || resolvedImage,
               accessoriesOrBox: baseListing.photos?.accessoriesOrBox || resolvedImage,
               serialOrReceipt: baseListing.photos?.serialOrReceipt || resolvedImage,
             },
-            photoGallery: (baseListing.photoGallery && baseListing.photoGallery.length > 0) ? baseListing.photoGallery : [resolvedImage],
+            photoGallery: ((bOrd as any).postImageUrls && (bOrd as any).postImageUrls.length > 0)
+              ? (bOrd as any).postImageUrls
+              : ((baseListing.photoGallery && baseListing.photoGallery.length > 0) ? baseListing.photoGallery : [resolvedImage]),
           } : {
             id: bOrd.postId,
             title: resolvedPostTitle,
@@ -1731,19 +1546,22 @@ export default function App() {
           } else if (isCancelledOrRefund) {
             mappedEscrowStatus = 'REFUNDED_TO_BUYER';
           } else if (isInspectionOrder) {
-            const s = String(bOrd.status || bOrd.backendStatus || '');
-            if (s === 'INSPECTING') {
+            const localSavedStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${bOrd.id}`) : null;
+            const s = String(localSavedStatus || bOrd.status || bOrd.backendStatus || '');
+            if (s === 'PASSED') {
+              mappedEscrowStatus = 'INSPECTION_PASSED';
+            } else if (s === 'FAILED' || s === 'REJECTED') {
+              mappedEscrowStatus = 'INSPECTION_FAILED';
+            } else if (s === 'INSPECTING') {
               // Chỉ sau khi gửi cho trung tâm hoặc KTV đến nhà quét mã kiểm định mới sang INSPECTION_IN_PROGRESS
               mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
-            } else if (s === 'PASSED') {
-              mappedEscrowStatus = 'INSPECTION_PASSED';
             } else if (s === 'DELIVERING_TO_BUYER') {
               mappedEscrowStatus = 'SHIPPED_TO_BUYER';
             } else if (s === 'COMPLETED') {
               mappedEscrowStatus = 'COMPLETED_RELEASED';
             } else if (s === 'DISPUTED') {
               mappedEscrowStatus = 'DISPUTED';
-            } else if (s === 'CANCELLED' || s === 'FAILED' || s === 'PAYMENT_EXPIRED') {
+            } else if (s === 'CANCELLED' || s === 'PAYMENT_EXPIRED') {
               mappedEscrowStatus = 'REFUNDED_TO_BUYER';
             } else {
               // WAITING_SELLER_APPROVAL, WAITING_BUYER_APPROVAL, CONFIRMED_PENDING_DISPATCH, DISPATCHED, SCHEDULED, SHIPPING_TO_CENTER
@@ -1880,7 +1698,8 @@ export default function App() {
             platformFeeVnd: 0,
             totalPaidVnd: totalPaid,
             escrowStatus: isCompletedOrReleased ? 'COMPLETED_RELEASED' : (isCancelledOrRefund ? 'REFUNDED_TO_BUYER' : mappedEscrowStatus),
-            backendStatus: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : (bOrd.backendStatus || bOrd.status || (isInspectionOrder ? 'WAITING_SELLER_APPROVAL' : 'PROCESSING'))),
+            backendStatus: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : ((mappedEscrowStatus === 'INSPECTION_PASSED' ? 'PASSED' : mappedEscrowStatus === 'INSPECTION_FAILED' ? 'FAILED' : bOrd.backendStatus || bOrd.status || (isInspectionOrder ? 'WAITING_SELLER_APPROVAL' : 'PROCESSING')) as any)),
+            status: isCompletedOrReleased ? 'COMPLETED' : (isCancelledOrRefund ? 'CANCELLED' : (mappedEscrowStatus === 'INSPECTION_PASSED' ? 'PASSED' : mappedEscrowStatus === 'INSPECTION_FAILED' ? 'FAILED' : (bOrd.status || bOrd.backendStatus || 'INSPECTING'))),
             inspectorId: resolvedInspectorId || undefined,
             inspectorName: resolvedInspectorName || undefined,
             inspectorEmail: resolvedInspectorEmail || undefined,
@@ -1888,10 +1707,28 @@ export default function App() {
             shippingQuoteId: bOrd.shippingQuoteId,
             shippingDeliveredAt: bOrd.shippingDeliveredAt,
             deliveryAddress: bOrd.deliveryAddress,
-            sellerConfirmedAt: bOrd.sellerConfirmedAt || null,
+            sellerConfirmedAt: (() => {
+              const inspStatusUpper = String(bOrd.status || (bOrd as any).backendStatus || '').toUpperCase();
+              const isInspConfirmedBySeller = isInspectionOrder && (
+                bOrd.sellerConsentZin === true ||
+                (Boolean(inspStatusUpper) && !['WAITING_SELLER_APPROVAL', 'PENDING'].includes(inspStatusUpper))
+              );
+              return isInspConfirmedBySeller
+                ? (bOrd.sellerPaidAt || bOrd.updatedAt || bOrd.createdAt || new Date().toISOString())
+                : (bOrd.sellerConfirmedAt || null);
+            })(),
             confirmationDeadline: bOrd.confirmationDeadline || null,
             confirmationCancelAt: bOrd.confirmationCancelAt || null,
-            confirmationStatus: bOrd.confirmationStatus || (bOrd.sellerConfirmedAt ? 'CONFIRMED' : 'PENDING'),
+            confirmationStatus: (() => {
+              const inspStatusUpper = String(bOrd.status || (bOrd as any).backendStatus || '').toUpperCase();
+              const isInspConfirmedBySeller = isInspectionOrder && (
+                bOrd.sellerConsentZin === true ||
+                (Boolean(inspStatusUpper) && !['WAITING_SELLER_APPROVAL', 'PENDING'].includes(inspStatusUpper))
+              );
+              return isInspConfirmedBySeller
+                ? 'CONFIRMED'
+                : (bOrd.confirmationStatus || (bOrd.sellerConfirmedAt ? 'CONFIRMED' : 'PENDING'));
+            })(),
             sellerReadyAt: (bOrd as any).sellerReadyAt || null,
             carrierPickedUpAt: (bOrd as any).carrierPickedUpAt || null,
             handoverDeadline: (bOrd as any).handoverDeadline || null,
@@ -2132,8 +1969,6 @@ export default function App() {
             (currentRole === 'seller' && !isBuyer)
           );
           const isInspectionRole = Boolean(
-            currentUser?.role === 'inspection_center' ||
-            currentRole === 'inspection_center' ||
             currentUser?.role === 'inspector' ||
             currentRole === 'inspector' ||
             currentUser?.role === 'admin'
@@ -2223,6 +2058,7 @@ export default function App() {
       }
       lastOrdersFetchRef.current = Date.now();
     } catch (err) {
+      if (ordersScopeRef.current !== scope) return;
       console.warn('Could not load orders from backend:', err);
       const localRecentOrders = getLocalStoredOrders(currentUser);
       try {
@@ -2231,37 +2067,42 @@ export default function App() {
       reconcileBoughtListingIds(localRecentOrders);
       setOrders(localRecentOrders);
     } finally {
-      isFetchingOrdersRef.current = false;
+      if (pendingOrdersRef.current === pending) {
+        pendingOrdersRef.current = null;
+        if (pending.refresh && ordersScopeRef.current === scope) void refreshOrdersRef.current?.(true);
+      }
     }
-  }, [currentUser, currentRole, getLocalStoredOrders, mapBackendPostToListing]);
+  }, [currentUser?.id, currentUser?.role, currentRole, isCenterAccount, isRestoringSession, getLocalStoredOrders, mapBackendPostToListing]);
+  refreshOrdersRef.current = loadUserOrders;
 
   // Refresh listings on mount or when switching to listing-centric tabs
   React.useEffect(() => {
-    initCatalogCache();
+    if (routeAccess !== 'allowed' || isRestoringSession) return;
     const listingTabs = ['home', 'marketplace', 'seller-dashboard', 'create-listing', 'admin-dashboard'];
     if (listingTabs.includes(activeTab)) {
+      initCatalogCache();
       loadListingsFromBackend();
     }
-  }, [loadListingsFromBackend, activeTab]);
+  }, [loadListingsFromBackend, activeTab, routeAccess, isRestoringSession]);
 
   // Orders are only refreshed when user accesses order-sensitive tabs or on auth change
   React.useEffect(() => {
-    const orderTabs = ['orders', 'seller-dashboard', 'disputes', 'buyer-inspection-decision', 'inspection-hub', 'inspection-center', 'admin-dashboard'];
-    if (currentUser && orderTabs.includes(activeTab)) {
-      loadUserOrders(true);
+    const orderTabs = ['orders', 'seller-dashboard', 'disputes', 'buyer-inspection-decision', 'inspection-hub', 'admin-dashboard'];
+    if (routeAccess === 'allowed' && !isRestoringSession && currentUser && orderTabs.includes(activeTab)) {
+      loadUserOrders();
     }
-  }, [loadUserOrders, activeTab, currentUser]);
+  }, [loadUserOrders, activeTab, currentUser?.id, routeAccess, isRestoringSession]);
 
   // Realtime background polling for new orders when on orders or seller dashboard
   React.useEffect(() => {
-    if (!currentUser || !['orders', 'seller-dashboard'].includes(activeTab)) return;
+    if (routeAccess !== 'allowed' || isRestoringSession || !currentUser || !['orders', 'seller-dashboard'].includes(activeTab)) return;
     const interval = setInterval(() => {
       // Nếu người dùng đã nhàn rỗi quá 30 phút, tạm ngưng polling ngầm để đồng bộ phiên hết hạn với Người Mua
       if (isUserIdle(30 * 60 * 1000)) return;
-      loadUserOrders(true);
+      loadUserOrders();
     }, 6000);
     return () => clearInterval(interval);
-  }, [activeTab, currentUser, loadUserOrders]);
+  }, [activeTab, currentUser, loadUserOrders, routeAccess, isRestoringSession]);
 
   // Listen for instant order placement events across windows/tabs (debounced to avoid loop)
   React.useEffect(() => {
@@ -2366,7 +2207,7 @@ export default function App() {
     setCheckoutAgreedPrice(undefined);
     setCheckoutNegotiationId(undefined);
     setSelectedListing(null);
-    setActiveTab('orders');
+    navigatePath(paths.orders(currentRole) + (newOrder.hasInspectionService ? '?filter=inspecting' : '?filter=all'));
     if (newOrder.hasInspectionService) {
       try {
         sessionStorage.setItem('secondlife_orders_filter_tab', 'inspecting');
@@ -2760,6 +2601,15 @@ export default function App() {
       console.warn('Failed to persist inspection result to center_inspection_orders:', e);
     }
 
+    try {
+      localStorage.setItem(`inspection_status_${orderId}`, nextBackendStatus);
+      window.dispatchEvent(new CustomEvent('secondlife_inspection_completed', {
+        detail: { orderId, status: nextBackendStatus }
+      }));
+    } catch (e) {
+      console.warn('Failed to save inspection_status to localStorage:', e);
+    }
+
     // 4. Phát thông báo tình trạng đến Người mua (Buyer) và Người bán (Seller)
     const productTitle = targetOrder?.listing?.title || 'Sản phẩm kiểm định';
     const shortOrderId = orderId.length > 8 ? orderId.slice(0, 8).toUpperCase() : orderId;
@@ -2775,7 +2625,7 @@ export default function App() {
         type: 'INSPECTION',
         referenceId: orderId,
         referenceType: 'INSPECTION_ORDER',
-        actionUrl: `/buyer-inspection-decision?orderId=${orderId}`,
+        actionUrl: paths.decision('buyer', orderId),
         isRead: false,
         readAt: null,
         createdAt: new Date().toISOString(),
@@ -2791,7 +2641,7 @@ export default function App() {
         type: 'INSPECTION',
         referenceId: orderId,
         referenceType: 'INSPECTION_ORDER',
-        actionUrl: `/orders?order_tab=disputed&orderId=${orderId}`,
+        actionUrl: paths.orders('buyer', orderId) + '?filter=disputed',
         isRead: false,
         readAt: null,
         createdAt: new Date().toISOString(),
@@ -2810,7 +2660,7 @@ export default function App() {
         type: 'INSPECTION',
         referenceId: orderId,
         referenceType: 'INSPECTION_ORDER',
-        actionUrl: `/orders?order_tab=inspecting&orderId=${orderId}`,
+        actionUrl: paths.orders('seller', orderId) + '?filter=inspecting',
         isRead: false,
         readAt: null,
         createdAt: new Date().toISOString(),
@@ -2826,7 +2676,7 @@ export default function App() {
         type: 'INSPECTION',
         referenceId: orderId,
         referenceType: 'INSPECTION_ORDER',
-        actionUrl: `/orders?order_tab=disputed&orderId=${orderId}`,
+        actionUrl: paths.orders('seller', orderId) + '?filter=disputed',
         isRead: false,
         readAt: null,
         createdAt: new Date().toISOString(),
@@ -2879,6 +2729,58 @@ export default function App() {
     );
   };
 
+  React.useEffect(() => {
+    if (isRestoringSession) return;
+    if (routeAccess === 'login') {
+      navigatePath(`/login?redirect=${encodeURIComponent(browserLocation)}`, { replace: true });
+      return;
+    }
+    if (routeAccess === 'unauthorized') { navigatePath(paths.unauthorized, { replace: true }); return; }
+    if (route.url !== browserLocation) { navigatePath(route.url, { replace: true }); return; }
+    const authMode = route.modal === 'login' || route.modal === 'register' || route.modal === 'forgot' ? route.modal : null;
+    setIsAuthModalOpen(Boolean(authMode));
+    if (authMode) setAuthModalMode(authMode);
+    setIsProfileDialogOpen(route.modal === 'profile');
+    if (route.modal !== 'product') setSelectedListing(null);
+    if (route.params.inspectionId && activeTab === 'buyer-inspection-decision') {
+      setInspectionDecisionOrderId(route.params.inspectionId);
+      setInspectionDecisionOrder(orders.find((order) => order.id === route.params.inspectionId) || null);
+    }
+  }, [browserLocation, routeAccess, isRestoringSession]);
+
+  const [routeProductError, setRouteProductError] = useState<string | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    const productId = route.params.productId;
+    setRouteProductError(null);
+    if (!productId || routeAccess !== 'allowed' || isRestoringSession) return;
+    const isEdit = activeTab === 'create-listing';
+    if (isEdit && editingDraft?.id === productId) return;
+    if (!isEdit && (selectedListing?.id === productId || checkoutListing?.id === productId)) return;
+    const load = isEdit ? postService.getDraft(productId)
+      : route.role === 'seller' ? postService.getMyPostDetail(productId)
+      : route.role === 'admin' ? adminPostService.getAdminPosts().then((response) => {
+        const posts = response?.content || response?.items || (Array.isArray(response) ? response : []);
+        return posts.find((post: any) => String(post.id || post.postId) === productId);
+      }) : postService.getListingDetail(productId);
+    load.then((data) => {
+      if (cancelled) return;
+      if (!data) { setRouteProductError('Không tìm thấy sản phẩm hoặc sản phẩm không còn công khai.'); return; }
+      const listing = mapBackendPostToListing(data);
+      if (isEdit) setEditingDraft(listing); else setSelectedListing(listing);
+    }).catch((error) => { if (!cancelled) setRouteProductError(error.message || 'Không thể tải sản phẩm.'); });
+    return () => { cancelled = true; };
+  }, [browserLocation, routeAccess, isRestoringSession, mapBackendPostToListing]);
+
+  if (routeAccess !== 'allowed') return <ViewLoadingFallback />;
+  if (activeTab === 'unauthorized' || activeTab === 'not-found') {
+    const landingHome = effectiveUser ? getRoleLandingPath(effectiveRole) : '/';
+    return <RouteStatusPage status={activeTab} home={landingHome} />;
+  }
+  if (route.params.productId && activeTab === 'create-listing' && editingDraft?.id !== route.params.productId) {
+    return routeProductError ? <div className="p-12 text-center"><p>{routeProductError}</p><button onClick={() => navigatePath(paths.products)}>Về danh sách sản phẩm</button></div> : <ViewLoadingFallback />;
+  }
+
   return (
     <div className={`min-h-screen flex flex-col font-sans bg-[#faf8f5] text-[#24263e] selection:bg-[#c34c36] selection:text-white ${
       activeTab === 'chat' ? 'h-screen max-h-screen overflow-hidden' : ''
@@ -2903,10 +2805,7 @@ export default function App() {
           activeOrdersCount={orders.filter((o) => o.escrowStatus !== 'COMPLETED_RELEASED').length}
           unreadChatsCount={unreadChatsCount}
           currentUser={currentUser}
-          onOpenAuth={(mode) => {
-            setAuthModalMode(mode);
-            setIsAuthModalOpen(true);
-          }}
+          onOpenAuth={openAuth}
           onLogout={() => {
             setIsLogoutModalOpen(true);
           }}
@@ -2914,7 +2813,7 @@ export default function App() {
             if (!currentUser) {
               requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để xem hồ sơ cá nhân.' : 'Please log in to view your profile.');
             } else {
-              setIsProfileDialogOpen(true);
+              openProfile();
             }
           }}
           onOpenTopUp={() => {
@@ -2998,10 +2897,7 @@ export default function App() {
                 setActiveTab('create-listing');
               }
             }}
-            onOpenAuth={(mode) => {
-              setAuthModalMode(mode);
-              setIsAuthModalOpen(true);
-            }}
+            onOpenAuth={openAuth}
           />
         )}
 
@@ -3014,7 +2910,7 @@ export default function App() {
               if (l.backendStatus === 'RESERVED' || l.backendStatus === 'SOLD') return false;
               return l.status === 'active' || l.backendStatus === 'ACTIVE';
             })}
-            onSelectListing={(listing) => setSelectedListing(listing)}
+            onSelectListing={(listing) => openProduct(listing)}
             lang={lang}
             onPostClick={() => {
               setEditingDraft(null);
@@ -3026,11 +2922,11 @@ export default function App() {
         {activeTab === 'seller-dashboard' && (
           <SellerDashboardView
             listings={listings}
-            onSelectListing={(listing) => setSelectedListing(listing)}
+            onSelectListing={(listing) => openProduct(listing, true)}
             onCreateListing={(draft?: any) => {
               setEditingDraft(draft && draft.id ? draft : null);
               setCreateListingReturnTab('seller-dashboard');
-              handleTabChange('create-listing');
+              navigatePath(draft?.id ? paths.editProduct(draft.id) : pathForTab('create-listing', currentRole));
             }}
             onDeleteListing={(listingId) => {
               setListings((prev) => prev.filter((l) => l.id !== listingId));
@@ -3100,7 +2996,7 @@ export default function App() {
                 setListings((prev) => prev.filter((l) => l.id !== draftId));
               }}
               currentUser={currentUser}
-              initialDraft={editingDraft || undefined}
+              initialDraft={route.params.productId ? editingDraft || undefined : undefined}
               onOpenTopUp={(tab) => {
                 setTopUpInitialTab(tab || 'packages');
                 setIsTopUpModalOpen(true);
@@ -3120,15 +3016,12 @@ export default function App() {
             onCancelOrder={handleCancelOrder}
             onRefreshOrders={() => loadUserOrders(true)}
             lang={lang}
-            userRole={currentRole}
-            onOpenChat={(listing) => {
-              setChatListing(listing);
-              handleTabChange('chat');
-            }}
+            userRole={route.role === 'buyer' ? 'buyer' : currentRole}
+            onOpenChat={openChat}
             onOpenInspectionDecision={(ord) => {
               setInspectionDecisionOrder(ord);
               setInspectionDecisionOrderId(ord.id);
-              handleTabChange('buyer-inspection-decision');
+              navigatePath(paths.decision(navigationRole, ord.id));
             }}
             onNavigateToDisputes={() => handleTabChange('disputes')}
           />
@@ -3136,31 +3029,29 @@ export default function App() {
 
         {activeTab === 'buyer-inspection-decision' && (
           <BuyerInspectionDecisionView
-            orderId={inspectionDecisionOrderId || inspectionDecisionOrder?.id}
+            orderId={route.params.inspectionId || inspectionDecisionOrderId || inspectionDecisionOrder?.id}
             order={inspectionDecisionOrder}
             currentUser={currentUser}
-            userRole={currentRole}
+            userRole={route.role === 'buyer' ? 'buyer' : currentRole}
             lang={lang}
             onBack={() => handleTabChange('orders')}
             onSuccess={() => {
               loadUserOrders(true);
               handleTabChange('orders');
             }}
-            onOpenChat={(listing) => {
-              setChatListing(listing);
-              handleTabChange('chat');
-            }}
+            onOpenChat={openChat}
             onOpenTopUp={() => setIsTopUpModalOpen(true)}
           />
         )}
 
         {activeTab === 'inspection-center' && (
           <InspectionCenterDashboardView
+            key={currentUserId}
             initialOrders={orders}
             currentUser={currentUser}
             lang={lang}
             onNavigate={setActiveTab}
-            onOpenProfile={() => setIsProfileDialogOpen(true)}
+            onOpenProfile={openProfile}
             onLogout={() => setIsLogoutModalOpen(true)}
             onViewWebsite={() => setActiveTab('home')}
           />
@@ -3169,11 +3060,12 @@ export default function App() {
         {activeTab === 'inspection-hub' && (
           (currentUser?.role === 'inspection_center' || currentRole === 'inspection_center') ? (
             <InspectionCenterDashboardView
+              key={currentUserId}
               initialOrders={orders}
               currentUser={currentUser}
               lang={lang}
               onNavigate={setActiveTab}
-              onOpenProfile={() => setIsProfileDialogOpen(true)}
+              onOpenProfile={openProfile}
               onLogout={() => setIsLogoutModalOpen(true)}
               onViewWebsite={() => setActiveTab('home')}
             />
@@ -3184,7 +3076,7 @@ export default function App() {
               onCompleteInspection={handleCompleteInspection}
               lang={lang}
               onNavigate={setActiveTab}
-              onOpenProfile={() => setIsProfileDialogOpen(true)}
+              onOpenProfile={openProfile}
               onLogout={() => setIsLogoutModalOpen(true)}
               onViewWebsite={() => setActiveTab('home')}
             />
@@ -3197,7 +3089,7 @@ export default function App() {
             orders={orders}
             lang={lang}
             currentUser={currentUser}
-            onOpenProfile={() => setIsProfileDialogOpen(true)}
+            onOpenProfile={openProfile}
             onLogout={() => setIsLogoutModalOpen(true)}
             onViewWebsite={() => setActiveTab('home')}
           />
@@ -3211,9 +3103,9 @@ export default function App() {
             onResolveDispute={handleResolveDispute}
             lang={lang}
             currentUser={currentUser}
-            onOpenProfile={() => setIsProfileDialogOpen(true)}
+            onOpenProfile={openProfile}
             onLogout={() => setIsLogoutModalOpen(true)}
-            onOpenListingDetail={(listing) => setSelectedListing(listing)}
+            onOpenListingDetail={(listing) => openProduct(listing)}
           />
         )}
 
@@ -3224,7 +3116,7 @@ export default function App() {
             currentUser={currentUser}
             lang={lang}
             initialListing={chatListing}
-            initialRoomId={chatPredefinedRoomId}
+            initialRoomId={route.params.conversationId}
             initialPartnerName={chatPartnerName}
             initialPartnerAvatar={chatPartnerAvatar}
             initialRoom={chatRoom}
@@ -3236,8 +3128,9 @@ export default function App() {
                   : 'Please log in to purchase with Escrow protection.');
                 return;
               }
-              setCheckoutAgreedPrice(agreedPrice);
-              setCheckoutNegotiationId(negotiationId);
+              const isRealNego = negotiationId && isValidUUID(negotiationId) && !isSellerOfferId(negotiationId);
+              setCheckoutAgreedPrice(isRealNego ? agreedPrice : undefined);
+              setCheckoutNegotiationId(isRealNego ? negotiationId : undefined);
               setCheckoutListing(item);
             }}
             onOpenSellerReviews={(sellerId, sellerName) => {
@@ -3269,7 +3162,7 @@ export default function App() {
             }}
             onNavigateToPost={(postId) => {
               const item = listings.find((l) => l.id === postId);
-              if (item) setSelectedListing(item);
+              if (item) openProduct(item);
               else handleTabChange('marketplace');
             }}
             onBack={() => handleTabChange('orders')}
@@ -3280,12 +3173,47 @@ export default function App() {
 
       {/* Modals & Popups */}
       <Suspense fallback={null}>
+        {/* Product Modal Loading / Error Overlay for direct URL access */}
+        {route.modal === 'product' && !selectedListing && !checkoutListing && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl flex flex-col items-center text-center">
+              {routeProductError ? (
+                <>
+                  <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center mb-3">
+                    <AlertTriangle className="w-6 h-6" />
+                  </div>
+                  <p className="text-xs font-bold text-slate-800 mb-4">{routeProductError}</p>
+                  <button
+                    onClick={() => closeRouteModal(paths.products)}
+                    className="px-4 py-2 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800 transition cursor-pointer"
+                  >
+                    Về danh sách sản phẩm
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="w-10 h-10 rounded-full border-4 border-amber-200 border-t-[#c34c36] animate-spin mb-3" />
+                  <p className="text-xs font-bold text-slate-600 tracking-wide uppercase animate-pulse">
+                    Đang tải thông tin sản phẩm...
+                  </p>
+                  <button
+                    onClick={() => closeRouteModal(paths.products)}
+                    className="mt-4 px-3 py-1.5 rounded-xl border border-slate-200 text-[11px] text-slate-500 hover:bg-slate-100 font-semibold cursor-pointer"
+                  >
+                    Đóng
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Listing Detail Modal */}
-        {selectedListing && (
+        {selectedListing && !checkoutListing && (
           <ListingDetailModal
             listing={selectedListing}
             currentUser={currentUser}
-            onClose={() => setSelectedListing(null)}
+            onClose={() => { setSelectedListing(null); closeRouteModal(route.role === 'seller' ? '/seller/products' : route.role === 'admin' ? '/admin/products' : paths.products); }}
             isAdmin={currentRole === 'admin'}
             onBuyClick={(item) => {
               if (!currentUser) {
@@ -3299,7 +3227,7 @@ export default function App() {
                 showToast(lang === 'vi' ? 'Bạn không thể tự mua sản phẩm của chính mình.' : 'You cannot buy your own product.');
                 return;
               }
-              setSelectedListing(null);
+              // Retain selectedListing so route stays active and user returns seamlessly if checkout is closed
               setCheckoutAgreedPrice(undefined);
               setCheckoutNegotiationId(undefined);
               setCheckoutListing(item);
@@ -3321,7 +3249,7 @@ export default function App() {
               setChatPartnerName(item.sellerName);
               setChatPartnerAvatar(item.sellerAvatar);
               setChatRoom(undefined);
-              handleTabChange('chat');
+              openChat(item);
             }}
             onOpenSellerReviews={(sellerId, sellerName) => {
               setSellerReviewsModalData({ sellerId, sellerName });
@@ -3352,6 +3280,7 @@ export default function App() {
               setCheckoutListing(null);
               setCheckoutAgreedPrice(undefined);
               setCheckoutNegotiationId(undefined);
+              if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
               loadListingsFromBackend(true);
             }}
             onCancelUnpaid={(msg) => {
@@ -3368,6 +3297,7 @@ export default function App() {
               setCheckoutListing(null);
               setCheckoutAgreedPrice(undefined);
               setCheckoutNegotiationId(undefined);
+              if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
               loadListingsFromBackend(true);
               showToast(msg || (lang === 'vi' ? 'Đơn hàng chưa được thanh toán! Đã quay lại trang mua hàng.' : 'Order not paid. Returned to shopping page.'));
             }}
@@ -3411,7 +3341,11 @@ export default function App() {
         <AuthModal
           isOpen={isAuthModalOpen}
           initialMode={authModalMode}
-          onClose={() => setIsAuthModalOpen(false)}
+          onClose={() => {
+            setIsAuthModalOpen(false);
+            const live = resolveAppRoute(window.location.href, getStoredUser()?.role || currentRole);
+            if (['login', 'register', 'forgot'].includes(live.modal || '')) closeRouteModal('/');
+          }}
           onLoginSuccess={(user) => {
             setIsSessionExpiredOpen(false);
             resetActivityTimer();
@@ -3423,6 +3357,7 @@ export default function App() {
               phone: user.phone || '',
               address: user.address || '',
               role: user.role,
+              roles: user.roles,
               avatar: user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
               kycStatus: user.role === 'seller' ? 'verified' : 'unverified',
               emailVerified: Boolean(user.emailVerified),
@@ -3441,20 +3376,34 @@ export default function App() {
                 ? `Chào mừng ${user.name}${['buyer', 'seller'].includes(user.role) ? '' : ` (${user.role === 'inspector' ? 'Kỹ Sư Hub' : user.role === 'staff' ? 'Nhân Viên Vận Hành' : 'Quản Trị'})`} đã đăng nhập!`
                 : `Welcome ${user.name}! Logged in successfully${['buyer', 'seller'].includes(user.role) ? '' : ` as ${user.role.toUpperCase()}`}.`
             );
+            setIsAuthModalOpen(false);
+            const rawReturnTo = safeReturnPath(new URL(window.location.href).searchParams.get('redirect'));
+            let destination: string;
+
             if (user.role === 'admin') {
-              setActiveTab('admin-dashboard');
-            } else if (user.role === 'inspector' || user.role === 'inspection_center') {
-              setActiveTab('inspection-hub');
-            } else if (user.role === 'staff') {
-              setActiveTab('home');
-            } else if (pendingCheckoutItem) {
-              setSelectedListing(null);
+              if (rawReturnTo && rawReturnTo.startsWith('/admin') && getRouteAccess(resolveAppRoute(rawReturnTo, user.role), profileUser) === 'allowed') {
+                destination = rawReturnTo;
+              } else {
+                destination = getRoleLandingPath('admin');
+              }
+            } else if (rawReturnTo) {
+              const testRoute = resolveAppRoute(rawReturnTo, user.role);
+              const access = getRouteAccess(testRoute, profileUser);
+              if (access === 'allowed') {
+                destination = rawReturnTo;
+              } else {
+                destination = pendingTab ? pathForTab(pendingTab, user.role) : getRoleLandingPath(user.role);
+              }
+            } else {
+              destination = pendingTab ? pathForTab(pendingTab, user.role) : getRoleLandingPath(user.role);
+            }
+
+            setPendingTab(null);
+            navigatePath(destination, { replace: true });
+            if (pendingCheckoutItem && ['buyer', 'seller'].includes(user.role)) {
+              setSelectedListing(pendingCheckoutItem);
               setCheckoutListing(pendingCheckoutItem);
               setPendingCheckoutItem(null);
-            } else if (pendingTab) {
-              const targetTab = pendingTab;
-              setPendingTab(null);
-              handleTabChange(targetTab);
             }
           }}
           lang={lang}
@@ -3466,8 +3415,7 @@ export default function App() {
           lang={lang}
           onLoginAgain={() => {
             setIsSessionExpiredOpen(false);
-            setAuthModalMode('login');
-            setIsAuthModalOpen(true);
+            openAuth('login');
           }}
         />
 
@@ -3475,7 +3423,7 @@ export default function App() {
         {isProfileDialogOpen && (
           <ProfileDialog
             isOpen={isProfileDialogOpen}
-            onClose={() => setIsProfileDialogOpen(false)}
+            onClose={() => { setIsProfileDialogOpen(false); closeRouteModal(getRoleLandingPath(currentRole)); }}
             currentUser={currentUser}
             currentRole={currentRole}
             lang={lang}
@@ -3490,8 +3438,7 @@ export default function App() {
             onRoleChange={handleRoleChange}
             onChangePassword={() => {
               setIsProfileDialogOpen(false);
-              setAuthModalMode('forgot');
-              setIsAuthModalOpen(true);
+              openAuth('forgot');
             }}
             onLogout={() => {
               setIsLogoutModalOpen(true);
@@ -3616,7 +3563,7 @@ export default function App() {
             if (!currentUser) {
               requireAuth(undefined, lang === 'vi' ? 'Vui lòng đăng nhập để xem thông tin hồ sơ.' : 'Please log in to view profile.');
             } else {
-              setIsProfileDialogOpen(true);
+              openProfile();
             }
           }}
           onOpenPolicy={(policyKey) => {

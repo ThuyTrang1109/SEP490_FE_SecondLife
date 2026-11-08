@@ -1,3 +1,5 @@
+import { usePanelTab, useBrowserLocation, navigatePath } from '../app/router/browser';
+import { resolveAppRoute, panelPaths } from '../app/router/paths';
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   EscrowOrder,
@@ -150,23 +152,8 @@ export const VALID_ADMIN_TABS: AdminTab[] = [
 export const ADMIN_TAB_STORAGE_KEY = 'secondlife_admin_active_tab';
 
 export function getInitialAdminTab(): AdminTab {
-  if (typeof window !== 'undefined') {
-    const params = new URLSearchParams(window.location.search);
-    const rawSubtab = params.get('subtab');
-    if (rawSubtab) {
-      const normalized = rawSubtab.replace(/_/g, '-') as AdminTab;
-      if (VALID_ADMIN_TABS.includes(normalized)) {
-        return normalized;
-      }
-    }
-    try {
-      const saved = sessionStorage.getItem(ADMIN_TAB_STORAGE_KEY) as AdminTab;
-      if (saved && VALID_ADMIN_TABS.includes(saved)) {
-        return saved;
-      }
-    } catch (e) { }
-  }
-  return 'overview';
+  if (typeof window === 'undefined') return 'overview';
+  return (resolveAppRoute(window.location.href, 'admin').section || 'overview') as AdminTab;
 }
 
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
@@ -182,30 +169,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const t = translations[lang];
 
   // Active sub-tab in Admin Dashboard (khôi phục từ URL param ?subtab= hoặc sessionStorage khi F5)
-  const [activeTab, setActiveTab] = useState<AdminTab>(getInitialAdminTab);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      sessionStorage.setItem(ADMIN_TAB_STORAGE_KEY, activeTab);
-    } catch (e) { }
-    const currentUrl = new URL(window.location.href);
-    currentUrl.searchParams.delete('subtab');
-    currentUrl.searchParams.delete('tab');
-    currentUrl.searchParams.delete('tap');
-    if (currentUrl.toString() !== window.location.href) {
-      window.history.replaceState(null, '', currentUrl.toString());
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
-    const handlePopState = () => {
-      const tab = getInitialAdminTab();
-      setActiveTab(tab);
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  const [activeTab, setActiveTab] = usePanelTab<AdminTab>('admin', 'overview');
 
   // Sidebar toggle state (expanded / collapsed)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -378,7 +342,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   }, []);
 
   // Admin User Detail Modal states (Requirement 9)
-  const [selectedUserDetailId, setSelectedUserDetailId] = useState<string | null>(null);
+  const adminLocation = useBrowserLocation();
+  const routeUserId = resolveAppRoute(adminLocation, 'admin').params.userId;
+  const [selectedUserDetailId, setSelectedUserDetailIdState] = useState<string | null>(null);
+  const setSelectedUserDetailId = (id: string | null) => {
+    setSelectedUserDetailIdState(id);
+    navigatePath(id ? `/admin/users/${encodeURIComponent(id)}` : '/admin/users');
+  };
   const [userDetailModalData, setUserDetailModalData] = useState<UserAdminResponseDto | null>(null);
   const [isLoadingUserDetail, setIsLoadingUserDetail] = useState(false);
   const [userDetailError, setUserDetailError] = useState<string | null>(null);
@@ -397,6 +367,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       setIsLoadingUserDetail(false);
     }
   };
+
+  useEffect(() => {
+    if (routeUserId && selectedUserDetailId !== routeUserId) handleViewUserDetail(routeUserId);
+    if (!routeUserId) setSelectedUserDetailIdState(null);
+  }, [routeUserId]);
 
   // =========================================================================
   // GỠ BỎ HẠN CHẾ BÁN HÀNG (POST /admin/sellers/{id}/reputation/lift-restriction)
@@ -494,7 +469,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       const elapsed = Math.round(performance.now() - start);
       if (res && (res.status === 'UP' || res.status === 'OK' || (res as any).success !== false)) {
         setHealthInfo({ status: 'UP', latency: elapsed });
-        triggerNotice(`Backend Spring Boot hoạt động tốt (${elapsed}ms). Trạng thái: UP.`);
       } else {
         setHealthInfo({ status: 'UP', latency: elapsed });
       }
@@ -3457,6 +3431,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 isOpen={isPackageModalOpen}
                 onClose={() => setIsPackageModalOpen(false)}
                 editingPackage={editingPackage}
+                creditPrices={creditPrices}
                 onSave={handleSavePackage}
               />
 
@@ -3563,7 +3538,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* ======================================================== */}
           {activeTab === 'inspection-governance' && (
             <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-amber-500 p-5">
-              <InspectionGovernanceTab lang={lang} />
+              <InspectionGovernanceTab lang={lang} currentUser={currentUser} />
             </div>
           )}
         </div>

@@ -1,3 +1,5 @@
+import { useBrowserLocation, navigatePath } from '../app/router/browser';
+import { resolveAppRoute, paths } from '../app/router/paths';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Listing, Language, UserRole, UserProfile, Negotiation } from '../types';
 import {
@@ -27,6 +29,7 @@ import {
 } from '../services';
 import { formatVND } from '../utils/translations';
 import { DedicatedChatRoom } from '../components/chat/DedicatedChatRoom';
+import { buildChatProductListing, getChatPostStatusBadge } from '../utils/chatProduct';
 
 interface InboxViewProps {
   listings: Listing[];
@@ -60,6 +63,12 @@ export const InboxView: React.FC<InboxViewProps> = ({
   onBuyClick,
   onOpenSellerReviews,
 }) => {
+  const routeLocation = useBrowserLocation();
+  const chatRoute = resolveAppRoute(routeLocation, currentUser?.role || currentRole);
+  const requestedPostId = new URLSearchParams(routeLocation.split('?')[1] || '').get('postId');
+  useEffect(() => {
+    setSelectedRoomId(chatRoute.params.conversationId || null);
+  }, [chatRoute.params.conversationId]);
   const [activeTab, setActiveTab] = useState<'chats' | 'negotiations'>('chats');
   const [rooms, setRooms] = useState<ChatRoomDto[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -77,6 +86,8 @@ export const InboxView: React.FC<InboxViewProps> = ({
 
   // Splitter resizable pane state
   const splitContainerRef = useRef<HTMLDivElement>(null);
+  // Keep external listing navigation from reopening a room after returning to the inbox.
+  const openedListingRef = useRef<string | null>(null);
   const [leftWidth, setLeftWidth] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('inbox_splitter_width');
@@ -84,7 +95,7 @@ export const InboxView: React.FC<InboxViewProps> = ({
         const parsed = parseInt(saved, 10);
         if (!isNaN(parsed) && parsed >= 260 && parsed <= 600) return parsed;
       }
-    } catch {}
+    } catch { }
     return 360;
   });
   const [isDraggingSplitter, setIsDraggingSplitter] = useState<boolean>(false);
@@ -118,7 +129,7 @@ export const InboxView: React.FC<InboxViewProps> = ({
       setIsDraggingSplitter(false);
       try {
         localStorage.setItem('inbox_splitter_width', leftWidth.toString());
-      } catch {}
+      } catch { }
     };
 
     document.body.style.userSelect = 'none';
@@ -138,7 +149,7 @@ export const InboxView: React.FC<InboxViewProps> = ({
     setLeftWidth(360);
     try {
       localStorage.setItem('inbox_splitter_width', '360');
-    } catch {}
+    } catch { }
   };
 
   const activeUserId = currentUser?.id ? String(currentUser.id) : '';
@@ -314,31 +325,31 @@ export const InboxView: React.FC<InboxViewProps> = ({
     };
   }, [loadChatRooms, loadNegotiations]);
 
-  // Handle external navigation with initialListing or initialRoomId
+  // The post query represents an explicit request to open/create a conversation.
+  // Once resolved, only the conversation URL controls selection, including Back/Forward.
   useEffect(() => {
-    if (initialRoomId) {
-      setSelectedRoomId(initialRoomId);
-    } else if (initialListing) {
-      const existing = rooms.find((r) => r.postId === initialListing.id);
-      if (existing) {
-        setSelectedRoomId(existing.id);
-      } else {
-        chatService.getOrCreateRoom(initialListing.id)
-          .then((newRoom) => {
-            if (newRoom?.id) {
-              setRooms((prev) => [newRoom, ...prev.filter((r) => r.id !== newRoom.id)]);
-              setSelectedRoomId(newRoom.id);
-            }
-          })
-          .catch((err) => {
-            console.warn('Failed to get or create room for listing:', err);
-          });
-      }
+    if (initialRoomId || !requestedPostId || loading || openedListingRef.current === requestedPostId) return;
+    openedListingRef.current = requestedPostId;
+    const existing = rooms.find((room) => room.postId === requestedPostId);
+    if (existing) {
+      navigatePath(paths.chat(chatRoute.role || currentRole, existing.id), { replace: true });
+      return;
     }
-  }, [initialRoomId, initialListing, rooms]);
+    const requestedUrl = window.location.href;
+    chatService.getOrCreateRoom(requestedPostId).then((room) => {
+      if (!room?.id) return;
+      setRooms((previous) => [room, ...previous.filter((item) => item.id !== room.id)]);
+      if (window.location.href === requestedUrl) {
+        navigatePath(paths.chat(chatRoute.role || currentRole, room.id), { replace: true });
+      }
+    }).catch((error) => {
+      console.warn('Failed to get or create room for listing:', error);
+    });
+  }, [initialRoomId, requestedPostId, rooms, loading]);
 
   const handleSelectRoom = (room: ChatRoomDto) => {
     setSelectedRoomId(room.id);
+    navigatePath(paths.chat(chatRoute.role || currentRole, room.id));
     if (activeUserId) {
       localStorage.setItem(`chat_room_last_read_${room.id}_${activeUserId}`, Date.now().toString());
     }
@@ -347,44 +358,22 @@ export const InboxView: React.FC<InboxViewProps> = ({
 
   const selectedRoom = useMemo(() => {
     if (!selectedRoomId) return null;
-    return rooms.find((r) => r.id === selectedRoomId) || initialRoom || null;
+    const found = rooms.find((r) => r.id === selectedRoomId);
+    if (found) return found;
+    if (initialRoom && initialRoom.id === selectedRoomId) return initialRoom;
+    return null;
   }, [selectedRoomId, rooms, initialRoom]);
 
   const selectedListing = useMemo((): Listing | null => {
     if (!selectedRoom) return initialListing || null;
-    const found = listings?.find((l) => l.id === selectedRoom.postId);
-    if (found) {
-      return {
-        ...found,
-        sellerId: selectedRoom.sellerId || found.sellerId,
-        sellerName: selectedRoom.sellerName || found.sellerName || 'Người Bán',
-        sellerAvatar: selectedRoom.sellerAvatar || found.sellerAvatar,
-      };
-    }
-    return ({
-      id: selectedRoom.postId,
-      title: selectedRoom.postTitle || initialListing?.title || 'Sản phẩm trao đổi',
-      brand: 'Chính hãng',
-      priceVnd: initialListing?.priceVnd || (selectedRoom as any).postPrice || 0,
-      description: 'Sản phẩm đang được trao đổi trong tin nhắn',
-      category: 'Thiết bị gia dụng',
-      sellerId: selectedRoom.sellerId,
-      status: 'active',
-      photos: {
-        front:
-          selectedRoom.postImageUrl ||
-          initialListing?.photos?.front ||
-          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-        back:
-          selectedRoom.postImageUrl ||
-          initialListing?.photos?.back ||
-          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-        screenOrDetails: '',
-        accessoriesOrBox: '',
-        serialOrReceipt: '',
-      },
-      createdAt: selectedRoom.updatedAt || new Date().toISOString(),
-    } as unknown as Listing);
+
+    const matchedInitial = initialListing && initialListing.id === selectedRoom.postId && (initialListing.priceVnd || 0) > 0
+      ? initialListing
+      : undefined;
+    const matchedFromListings = listings?.find((l) => l.id === selectedRoom.postId && (l.priceVnd || 0) > 0);
+    const existing = matchedFromListings || matchedInitial;
+
+    return buildChatProductListing(selectedRoom, existing) as unknown as Listing;
   }, [selectedRoom, listings, initialListing]);
 
   // Format preview message
@@ -496,13 +485,12 @@ export const InboxView: React.FC<InboxViewProps> = ({
         ref={splitContainerRef}
         className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex-1 h-full min-h-0 flex flex-col md:flex-row relative"
       >
-        
+
         {/* LEFT COLUMN: CONVERSATION LIST (Hidden on mobile if a room is active) */}
         <div
           style={{ width: isDesktop ? `${leftWidth}px` : '100%' }}
-          className={`w-full md:shrink-0 flex flex-col h-full min-h-0 bg-[#faf8f5] ${
-            selectedRoom ? 'hidden md:flex' : 'flex'
-          }`}
+          className={`w-full md:shrink-0 flex flex-col h-full min-h-0 bg-[#faf8f5] ${selectedRoom ? 'hidden md:flex' : 'flex'
+            }`}
         >
           {/* Header of Conversation List */}
           <div className="p-3.5 sm:p-4 border-b border-slate-200 bg-white shrink-0">
@@ -517,18 +505,16 @@ export const InboxView: React.FC<InboxViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setActiveTab('chats')}
-                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                    activeTab === 'chats' ? 'bg-white text-[#24263e] shadow-2xs' : 'text-slate-500 hover:text-black'
-                  }`}
+                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${activeTab === 'chats' ? 'bg-white text-[#24263e] shadow-2xs' : 'text-slate-500 hover:text-black'
+                    }`}
                 >
                   {lang === 'vi' ? 'Chat' : 'Chats'}
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveTab('negotiations')}
-                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                    activeTab === 'negotiations' ? 'bg-white text-[#24263e] shadow-2xs' : 'text-slate-500 hover:text-black'
-                  }`}
+                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${activeTab === 'negotiations' ? 'bg-white text-[#24263e] shadow-2xs' : 'text-slate-500 hover:text-black'
+                    }`}
                 >
                   {lang === 'vi' ? 'Mặc cả' : 'Offers'}
                 </button>
@@ -563,11 +549,10 @@ export const InboxView: React.FC<InboxViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setFilterMode('all')}
-                    className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
-                      filterMode === 'all'
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${filterMode === 'all'
                         ? 'bg-[#24263e] text-white shadow-2xs'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
+                      }`}
                   >
                     {lang === 'vi' ? 'Tất cả' : 'All'}
                   </button>
@@ -575,17 +560,15 @@ export const InboxView: React.FC<InboxViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setFilterMode('unread')}
-                    className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                      filterMode === 'unread'
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${filterMode === 'unread'
                         ? 'bg-blue-600 text-white shadow-2xs'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
+                      }`}
                   >
                     <span>{lang === 'vi' ? 'Chưa đọc' : 'Unread'}</span>
                     {unreadCount > 0 && (
-                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                        filterMode === 'unread' ? 'bg-white text-blue-600' : 'bg-blue-600 text-white'
-                      }`}>
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${filterMode === 'unread' ? 'bg-white text-blue-600' : 'bg-blue-600 text-white'
+                        }`}>
                         {unreadCount}
                       </span>
                     )}
@@ -627,13 +610,12 @@ export const InboxView: React.FC<InboxViewProps> = ({
                     <div
                       key={room.id}
                       onClick={() => handleSelectRoom(room)}
-                      className={`p-3.5 transition cursor-pointer flex items-center gap-3 relative ${
-                        isSelected
+                      className={`p-3.5 transition cursor-pointer flex items-center gap-3 relative ${isSelected
                           ? 'bg-white md:border-l-4 md:border-l-[#c34c36] shadow-2xs'
                           : unread
-                          ? 'bg-blue-50/40 hover:bg-blue-50/60'
-                          : 'hover:bg-slate-100/60'
-                      }`}
+                            ? 'bg-blue-50/40 hover:bg-blue-50/60'
+                            : 'hover:bg-slate-100/60'
+                        }`}
                     >
                       {/* Avatar with Online Dot */}
                       <div className="relative shrink-0">
@@ -658,16 +640,23 @@ export const InboxView: React.FC<InboxViewProps> = ({
                           )}
                         </div>
 
-                        {/* Partner role & listing title */}
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${
-                            isRoomSeller
+                        {/* Partner role & listing title & status */}
+                        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                          <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${isRoomSeller
                               ? 'bg-blue-50 text-blue-800 border-blue-200'
                               : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                          }`}>
+                            }`}>
                             {roleLabel}
                           </span>
-                          <span className="text-[11px] text-slate-500 truncate" title={room.postTitle}>
+                          {room.postStatus && (() => {
+                            const badge = getChatPostStatusBadge(room.postStatus, lang);
+                            return badge ? (
+                              <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${badge.className}`}>
+                                {badge.label}
+                              </span>
+                            ) : null;
+                          })()}
+                          <span className="text-[11px] text-slate-500 truncate" title={room.postTitle || undefined}>
                             • {room.postTitle || 'Sản phẩm'}
                           </span>
                         </div>
@@ -694,18 +683,16 @@ export const InboxView: React.FC<InboxViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setNegotiationTab('seller')}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition ${
-                    negotiationTab === 'seller' ? 'bg-[#24263e] text-white shadow-xs' : 'bg-white border text-slate-600'
-                  }`}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition ${negotiationTab === 'seller' ? 'bg-[#24263e] text-white shadow-xs' : 'bg-white border text-slate-600'
+                    }`}
                 >
                   Khách mặc cả ({sellerNegotiations.length})
                 </button>
                 <button
                   type="button"
                   onClick={() => setNegotiationTab('buyer')}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition ${
-                    negotiationTab === 'buyer' ? 'bg-[#24263e] text-white shadow-xs' : 'bg-white border text-slate-600'
-                  }`}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition ${negotiationTab === 'buyer' ? 'bg-[#24263e] text-white shadow-xs' : 'bg-white border text-slate-600'
+                    }`}
                 >
                   Tôi mặc cả ({buyerNegotiations.length})
                 </button>
@@ -733,7 +720,8 @@ export const InboxView: React.FC<InboxViewProps> = ({
                         onClick={() => {
                           const matched = rooms.find((r) => r.postId === neg.postId);
                           if (matched) {
-                            setSelectedRoomId(matched.id);
+                                                    setSelectedRoomId(matched.id);
+                            navigatePath(paths.chat(chatRoute.role || currentRole, matched.id));
                             setActiveTab('chats');
                           }
                         }}
@@ -788,9 +776,8 @@ export const InboxView: React.FC<InboxViewProps> = ({
         <div
           onMouseDown={handleSplitterMouseDown}
           onDoubleClick={handleResetSplitterWidth}
-          className={`hidden md:flex w-2 shrink-0 cursor-col-resize select-none relative z-10 items-center justify-center transition-colors group ${
-            isDraggingSplitter ? 'bg-[#c34c36]' : 'bg-slate-200 hover:bg-[#c34c36]/70'
-          }`}
+          className={`hidden md:flex w-2 shrink-0 cursor-col-resize select-none relative z-10 items-center justify-center transition-colors group ${isDraggingSplitter ? 'bg-[#c34c36]' : 'bg-slate-200 hover:bg-[#c34c36]/70'
+            }`}
           title={lang === 'vi' ? 'Kéo để đổi độ rộng (Nhấp đúp để đặt lại)' : 'Drag to resize (Double-click to reset)'}
         >
           {/* Subtle grab handle indicator */}
@@ -803,17 +790,17 @@ export const InboxView: React.FC<InboxViewProps> = ({
         </div>
 
         {/* RIGHT COLUMN: DEDICATED CHAT ROOM & ORDER BANNER */}
-        <div className={`flex-1 flex flex-col h-full min-h-0 min-w-0 bg-white overflow-hidden ${
-          !selectedRoom ? 'hidden md:flex' : 'flex'
-        }`}>
+        <div className={`flex-1 flex flex-col h-full min-h-0 min-w-0 bg-white overflow-hidden ${!selectedRoom ? 'hidden md:flex' : 'flex'
+          }`}>
           {selectedRoom && selectedListing ? (
             <DedicatedChatRoom
+              key={selectedRoom.id}
               room={selectedRoom}
               listing={selectedListing}
               currentUser={currentUser}
               currentRole={currentRole}
               lang={lang}
-              onBack={() => setSelectedRoomId(null)}
+              onBack={() => { setSelectedRoomId(null); navigatePath(paths.chat(chatRoute.role || currentRole)); }}
               onBuyClick={onBuyClick}
               onOpenSellerReviews={onOpenSellerReviews}
               onRoomActivity={loadChatRooms}

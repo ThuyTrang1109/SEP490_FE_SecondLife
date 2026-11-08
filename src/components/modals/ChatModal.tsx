@@ -1,3 +1,4 @@
+import { isValidUUID, isSellerOfferId, isNegotiationExpired, isOfficialAcceptedNegotiation } from '../../utils/negotiationHelper';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ChatMessage, Listing, Language, UserRole, UserCredit, UserProfile } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
@@ -569,17 +570,15 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
   // Kiểm tra xem người mua đã từng gửi bất kỳ yêu cầu trả giá nào trong cuộc trò chuyện này chưa
   const hasBuyerRequestedNegotiation = useMemo(() => {
-    // 1. Kiểm tra từ negotiationMap (các deal backend hoặc tin nhắn đã parse)
     for (const [id] of negotiationMap) {
-      if (!id.startsWith('seller-offer-')) return true;
+      if (isValidUUID(id) && !isSellerOfferId(id)) return true;
     }
-    // 2. Quét qua lịch sử tin nhắn
     return messages.some((m) => {
       const parsed = parseSystemMessage(m.text);
       if (parsed.offer) {
-        return parsed.offer.senderRole !== 'seller' && !parsed.offer.negotiationId?.startsWith('seller-offer-');
+        return parsed.offer.senderRole !== 'seller' && isValidUUID(parsed.offer.negotiationId) && !isSellerOfferId(parsed.offer.negotiationId);
       }
-      return Boolean(m.isOffer && !m.negotiationId?.startsWith('seller-offer-'));
+      return Boolean(m.isOffer && isValidUUID(m.negotiationId) && !isSellerOfferId(m.negotiationId));
     });
   }, [messages, negotiationMap]);
 
@@ -798,19 +797,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
     try {
       if (isSeller) {
-        // Seller proposal flow
-        const offerId = `seller-offer-${Date.now()}`;
+        // Seller proposal flow: non-binding price suggestion, NO fake negotiation ID
         const offerPayload: SystemOfferPayload = {
           type: 'OFFER',
           status: 'PENDING',
           price: offerInput,
-          negotiationId: offerId,
           senderRole: 'seller',
         };
         const systemText = `SYSTEM: ${JSON.stringify(offerPayload)}`;
 
+        const tempId = `sug-${Date.now()}`;
         const localOfferMsg: ChatMessage = {
-          id: offerId,
+          id: tempId,
           senderId: currentUser?.id || chatRole,
           senderName: listing.sellerName || 'Người bán',
           senderRole: 'system',
@@ -820,13 +818,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           offerAmountVnd: offerInput,
           offerStatus: 'pending',
           offerSenderRole: 'seller',
-          negotiationId: offerId,
         };
 
-        setMessages((prev) => {
-          if (prev.some((m) => m.negotiationId === offerId || m.id === offerId)) return prev;
-          return [...prev, localOfferMsg];
-        });
+        setMessages((prev) => [...prev, localOfferMsg]);
         setShowOfferForm(false);
         setOfferError(null);
         setTimeout(scrollToBottom, 50);
@@ -925,18 +919,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     if (isRespondingOfferRef.current) return;
     isRespondingOfferRef.current = true;
     try {
-      const isSellerOffer = senderRole === 'seller' || negotiationId.startsWith('seller-offer-');
+      const isSellerOffer = senderRole === 'seller' || isSellerOfferId(negotiationId) || !isValidUUID(negotiationId);
+      if (isSellerOffer) {
+        console.warn('[ChatModal] Blocked respond on seller price suggestion:', negotiationId);
+        return;
+      }
       const actionUpper = action === 'accepted' ? 'ACCEPTED' : 'REJECTED';
       let systemTextToSend = '';
 
-      if (!isSellerOffer) {
-        if (action === 'accepted') {
-          // PUT /api/v1/negotiations/{id}/accept
-          await negotiationService.acceptNegotiation(negotiationId);
-        } else {
-          // PUT /api/v1/negotiations/{id}/reject
-          await negotiationService.rejectNegotiation(negotiationId);
-        }
+      if (action === 'accepted') {
+        await negotiationService.acceptNegotiation(negotiationId);
+      } else {
+        await negotiationService.rejectNegotiation(negotiationId);
       }
 
       // Update offer status in local state
@@ -1159,8 +1153,17 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   };
 
   const handleBuyNow = (priceToUse?: number, specificNegotiationId?: string) => {
-    const finalPrice = priceToUse || latestAcceptedOffer || listing.priceVnd;
-    const finalNegoId = specificNegotiationId || latestAcceptedNegotiationId;
+    let finalPrice = listing.priceVnd;
+    let finalNegoId: string | undefined = undefined;
+
+    if (specificNegotiationId && isValidUUID(specificNegotiationId) && !isSellerOfferId(specificNegotiationId)) {
+      finalNegoId = specificNegotiationId;
+      finalPrice = priceToUse || listing.priceVnd;
+    } else if (latestAcceptedNegotiationId && isValidUUID(latestAcceptedNegotiationId) && !isSellerOfferId(latestAcceptedNegotiationId)) {
+      finalNegoId = latestAcceptedNegotiationId;
+      finalPrice = latestAcceptedOffer || listing.priceVnd;
+    }
+
     if (onBuyClick) {
       onBuyClick(listing, finalPrice, finalNegoId);
     }

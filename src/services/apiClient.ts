@@ -1,3 +1,7 @@
+import { createInFlightRequests } from '../utils/inFlightRequests';
+
+const pendingGetRequests = createInFlightRequests();
+
 export interface ApiResponse<T> {
   success: boolean;
   message: string;
@@ -256,6 +260,7 @@ export const setStoredUser = (user: any) => {
 };
 
 export const clearAuthTokens = () => {
+  pendingGetRequests.clear();
   try {
     sessionStorage.removeItem(ACCESS_TOKEN_KEY);
     sessionStorage.removeItem(REFRESH_TOKEN_KEY);
@@ -329,13 +334,24 @@ export class ApiError extends Error {
   status: number;
   errors?: any[];
   path?: string;
+  code?: string;
+  details?: any;
 
-  constructor(message: string, status: number, errors?: any[], path?: string) {
+  constructor(
+    message: string,
+    status: number,
+    errors?: any[],
+    path?: string,
+    code?: string,
+    details?: any
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.errors = errors;
     this.path = path;
+    this.code = code;
+    this.details = details;
     Object.setPrototypeOf(this, ApiError.prototype);
   }
 }
@@ -437,6 +453,11 @@ export function translateApiError(msg: string | null | undefined): string {
   if (!msg) return 'Đã xảy ra lỗi không xác định. Vui lòng thử lại sau.';
   const s = String(msg).trim();
   if (!s) return 'Đã xảy ra lỗi không xác định. Vui lòng thử lại sau.';
+
+  // NẾU THÔNG BÁO TỪ BACKEND ĐÃ LÀ TIẾNG VIỆT (chứa ký tự có dấu), GIỮ NGUYÊN 100%, KHÔNG TỰ BIÊN DỊCH / GHI ĐÈ LỖI
+  if (/[àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]/i.test(s)) {
+    return s;
+  }
 
   // 1. Xác thực tài khoản & Phân quyền (Auth & Security)
   if (/bad credentials/i.test(s)) return 'Tên đăng nhập hoặc mật khẩu không chính xác.';
@@ -563,11 +584,27 @@ export function translateApiError(msg: string | null | undefined): string {
   return s;
 }
 
+/** Opt-in sharing for identical reads from effects/components in the same session. */
+export function requestGet<T>(endpoint: string, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<ApiResponse<T>> {
+  const read = () => request<T>(endpoint, { ...options, method: 'GET' });
+  // A caller that owns cancellation must not cancel another component's request.
+  if (options.signal) return read();
+  const { headers, ...settings } = options;
+  const key = JSON.stringify([
+    resolveApiUrl(endpoint), getAccessToken(), getRefreshToken(),
+    Array.from(new Headers(headers).entries()).sort(), settings,
+  ]);
+  return pendingGetRequests.run(key, read);
+}
+
 export async function request<T>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<ApiResponse<T>> {
   const { requiresAuth = true, _retry = false, isBackground = false, headers: customHeaders, ...restOptions } = options;
+  const method = (restOptions.method ?? 'GET').toUpperCase();
+  const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+  if (isMutation) pendingGetRequests.clear();
 
   // Chỉ ghi nhận hoạt động người dùng khi request KHÔNG PHẢI là background polling ngầm
   // và chỉ khi người dùng chưa bị nhàn rỗi quá hạn (tránh background polling tự gia hạn activity giả tạo)
@@ -665,24 +702,41 @@ export async function request<T>(
         notifySessionExpired('API_401_UNAUTHORIZED');
       }
 
-      const rawError =
+      // Trích xuất thông điệp chi tiết từ Backend (ưu tiên message > errors > error)
+      const beMessage =
+        resData?.message ||
         (Array.isArray(resData?.errors) && resData.errors.length > 0
           ? resData.errors.map((e: any) => e.defaultMessage || e.message || String(e)).join(', ')
           : null) ||
-        resData?.message ||
-        resData?.error ||
-        (response.status === 403 ? 'Bạn không có quyền thực hiện hành động này.' : `Lỗi máy chủ (${response.status}): ${response.statusText || 'Yêu cầu không thành công'}`);
+        resData?.error;
+
+      // Ưu tiên thông điệp trực tiếp từ Backend; chỉ dùng thông báo HTTP mặc định khi BE không trả message
+      let finalErrorMessage = '';
+      if (beMessage && String(beMessage).trim()) {
+        finalErrorMessage = translateApiError(String(beMessage).trim());
+      } else {
+        finalErrorMessage =
+          response.status === 403
+            ? 'Bạn không có quyền thực hiện hành động này.'
+            : `Lỗi máy chủ (${response.status}): ${response.statusText || 'Yêu cầu không thành công'}`;
+      }
 
       throw new ApiError(
-        translateApiError(rawError),
+        finalErrorMessage,
         response.status,
         Array.isArray(resData?.errors) ? resData.errors : undefined,
-        resData?.path
+        resData?.path,
+        resData?.code,
+        resData?.details
       );
     }
 
+    if (isMutation) pendingGetRequests.clear();
     return resData as ApiResponse<T>;
   } catch (error: any) {
+    if (error.name === 'AbortError') {
+      throw error;
+    }
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
       throw new Error('Không thể kết nối đến Backend Server. Vui lòng kiểm tra lại backend (port 8080).');
     }

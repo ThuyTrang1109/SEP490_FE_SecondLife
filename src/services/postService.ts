@@ -152,7 +152,10 @@ export const postService = {
       });
       return (res as any)?.data || res;
     } catch (err) {
-      console.warn(`Lỗi lấy chi tiết bài đăng ${postId}:`, err);
+      if (err?.status === 404 || err?.message?.includes('Listing is not available for purchase')) {
+        return null;
+      }
+      console.warn(`[postService] Lỗi lấy chi tiết bài đăng ${postId}:`, err);
       return null;
     }
   },
@@ -199,6 +202,21 @@ export const postService = {
       console.warn(`[postService] Lỗi lấy chi tiết bài đăng cá nhân ${postId}:`, err);
       throw err;
     }
+  },
+
+  /**
+   * Chọn lại loại cụ thể (Item) cho bài cũ đã bị tách hoặc ngừng chọn
+   * PATCH /api/v1/posts/my-posts/{postId}/item
+   * Body: { itemId: string }
+   */
+  async reclassifyItem(postId: string, itemId: string): Promise<any> {
+    const cleanId = String(postId || '').trim();
+    const response = await request<any>(`/v1/posts/my-posts/${encodeURIComponent(cleanId)}/item`, {
+      method: 'PATCH',
+      body: JSON.stringify({ itemId }),
+      requiresAuth: true,
+    });
+    return (response as any)?.data || response;
   },
 
   /**

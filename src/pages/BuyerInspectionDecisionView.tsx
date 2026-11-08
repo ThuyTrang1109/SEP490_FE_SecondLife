@@ -1,3 +1,4 @@
+import { paths } from '../app/router/paths';
 import React, { useState, useEffect, useMemo } from 'react';
 import { EscrowOrder, Language, UserProfile } from '../types';
 import { formatVND } from '../utils/translations';
@@ -17,6 +18,8 @@ import {
   FileCheck,
   Award,
   Video,
+  VideoOff,
+  Image as ImageIcon,
   Layers,
   Sparkles,
   ChevronRight,
@@ -41,6 +44,15 @@ interface BuyerInspectionDecisionViewProps {
   onOpenChat?: (listing: any) => void;
   onOpenTopUp?: () => void;
 }
+
+const getEmbedUrl = (url: string): string | null => {
+  if (!url) return null;
+  const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/))([\w-]{11})/);
+  if (ytMatch) {
+    return `https://www.youtube.com/embed/${ytMatch[1]}`;
+  }
+  return null;
+};
 
 export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewProps> = ({
   orderId,
@@ -179,6 +191,36 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     return () => clearInterval(timer);
   }, [inspectionDto?.finalPaymentDeadline, isPassed]);
 
+  // Media proof data - Lấy dữ liệu thực tế từ KTV, không hardcode mock video
+  const videoProofUrl = (
+    inspectionDto?.videoProofUrl ||
+    (order as any)?.videoProofUrl ||
+    (order?.inspectionReport as any)?.videoProofUrl ||
+    ''
+  ).trim();
+
+  const unboxingVideoUrl = (
+    inspectionDto?.unboxingVideoUrl ||
+    (order as any)?.unboxingVideoUrl ||
+    (order?.inspectionReport as any)?.unboxingVideoUrl ||
+    ''
+  ).trim();
+
+  const inspectorPhotos: string[] = useMemo(() => {
+    const raw =
+      order?.inspectionReport?.inspectorPhotos ||
+      order?.multiStagePhotos?.inspectorPhotos ||
+      (inspectionDto as any)?.inspectorPhotos ||
+      (inspectionDto as any)?.proofPhotos ||
+      [];
+    if (Array.isArray(raw)) {
+      return raw.filter((p): p is string => typeof p === 'string' && p.trim().length > 0);
+    }
+    return [];
+  }, [order, inspectionDto]);
+
+  const hasAnyVideo = Boolean(videoProofUrl || unboxingVideoUrl);
+
   // Parse checklist results - TUYỆT ĐỐI KHÔNG dùng mock data khi chưa kiểm định
   const checklistItems = useMemo(() => {
     const jsonStr = inspectionDto?.checklistResultJson || (order?.inspectionReport as any)?.checklistResultJson || (order?.inspectionReport as any)?.checklistResults;
@@ -233,7 +275,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         type: 'ORDER' as const,
         referenceId: effectiveOrderId,
         referenceType: 'INSPECTION_ORDER',
-        actionUrl: '/orders',
+        actionUrl: paths.orders('buyer', effectiveOrderId),
         isRead: false,
         readAt: null,
         createdAt: new Date().toISOString(),
@@ -293,7 +335,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         type: 'INSPECTION' as const,
         referenceId: effectiveOrderId,
         referenceType: 'INSPECTION_ORDER',
-        actionUrl: '/orders',
+        actionUrl: paths.orders('seller', effectiveOrderId),
         isRead: false,
         readAt: null,
         createdAt: new Date().toISOString(),
@@ -310,7 +352,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         type: 'INSPECTION' as const,
         referenceId: effectiveOrderId,
         referenceType: 'INSPECTION_ORDER',
-        actionUrl: '/orders',
+        actionUrl: paths.orders('buyer', effectiveOrderId),
         isRead: false,
         readAt: null,
         createdAt: new Date().toISOString(),
@@ -663,28 +705,138 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               {/* Tab 3: Media & Video proof */}
               {activeReportTab === 'media' && (
                 <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                        <Video className="w-4 h-4 text-[#c34c36]" />
-                        <span>Video quá trình tháo máy & kiểm định kỹ thuật</span>
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-mono">1080p Full HD</span>
+                  {hasAnyVideo ? (
+                    <>
+                      {videoProofUrl && (
+                        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                              <Video className="w-4 h-4 text-[#c34c36]" />
+                              <span>Video quá trình tháo máy & kiểm định kỹ thuật</span>
+                            </span>
+                            <a
+                              href={videoProofUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[11px] font-semibold text-[#c34c36] hover:underline flex items-center gap-1"
+                            >
+                              <span>Mở video</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+                          <div className="aspect-video rounded-2xl bg-black overflow-hidden shadow-inner flex items-center justify-center">
+                            {getEmbedUrl(videoProofUrl) ? (
+                              <iframe
+                                src={getEmbedUrl(videoProofUrl)!}
+                                className="w-full h-full border-0"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                                title="Video kiểm định kỹ thuật"
+                              />
+                            ) : (
+                              <video
+                                controls
+                                playsInline
+                                preload="metadata"
+                                src={videoProofUrl}
+                                poster={postImage}
+                                className="w-full h-full object-contain"
+                              >
+                                Trình duyệt của bạn không hỗ trợ phát video trực tiếp.
+                              </video>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {unboxingVideoUrl && (
+                        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                              <Video className="w-4 h-4 text-emerald-600" />
+                              <span>Video mở thùng & đồng kiểm bóc seal</span>
+                            </span>
+                            <a
+                              href={unboxingVideoUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[11px] font-semibold text-[#c34c36] hover:underline flex items-center gap-1"
+                            >
+                              <span>Mở video</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+                          <div className="aspect-video rounded-2xl bg-black overflow-hidden shadow-inner flex items-center justify-center">
+                            {getEmbedUrl(unboxingVideoUrl) ? (
+                              <iframe
+                                src={getEmbedUrl(unboxingVideoUrl)!}
+                                className="w-full h-full border-0"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                                title="Video mở thùng đồng kiểm"
+                              />
+                            ) : (
+                              <video
+                                controls
+                                playsInline
+                                preload="metadata"
+                                src={unboxingVideoUrl}
+                                poster={postImage}
+                                className="w-full h-full object-contain"
+                              >
+                                Trình duyệt của bạn không hỗ trợ phát video trực tiếp.
+                              </video>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 space-y-2">
+                      <VideoOff className="w-10 h-10 text-slate-400 mx-auto" />
+                      <p className="text-sm font-bold text-slate-800">Không có video kiểm định</p>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                        {isPending
+                          ? 'Đơn hàng đang chờ xử lý. Kỹ thuật viên chưa tiếp nhận thiết bị để quay video kiểm định.'
+                          : isInspecting
+                          ? 'Kỹ thuật viên đang kiểm định thiết bị. Video quá trình tháo máy sẽ hiển thị tại đây sau khi hoàn tất.'
+                          : 'Kỹ thuật viên không tải lên video ghi hình tháo máy cho đơn hàng này.'}
+                      </p>
                     </div>
-                    <div className="aspect-video rounded-2xl bg-slate-900 flex flex-col items-center justify-center text-white p-6 relative overflow-hidden group">
-                      <img
-                        src={postImage}
-                        alt="Video Thumbnail"
-                        className="absolute inset-0 w-full h-full object-cover opacity-40 blur-xs"
-                      />
-                      <div className="relative z-10 w-12 h-12 rounded-full bg-white/30 backdrop-blur-md flex items-center justify-center text-white group-hover:scale-110 transition cursor-pointer shadow-lg border border-white/40">
-                        <div className="w-0 h-0 border-t-8 border-t-transparent border-b-8 border-b-transparent border-l-12 border-l-white ml-1" />
+                  )}
+
+                  {/* Ảnh chụp hiện trạng thực tế từ KTV */}
+                  {inspectorPhotos.length > 0 && (
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          <ImageIcon className="w-4 h-4 text-emerald-600" />
+                          <span>Ảnh chụp hiện trạng thực tế do KTV cung cấp ({inspectorPhotos.length})</span>
+                        </span>
                       </div>
-                      <span className="relative z-10 mt-3 text-xs font-semibold text-slate-200">
-                        Bấm để xem video mở seal và kiểm tra bo mạch (Lưu trữ an toàn 14 ngày)
-                      </span>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {inspectorPhotos.map((photoUrl, idx) => (
+                          <a
+                            key={idx}
+                            href={photoUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group relative aspect-square rounded-xl overflow-hidden bg-slate-200 block border border-slate-200/80 hover:shadow-md transition"
+                          >
+                            <img
+                              src={photoUrl}
+                              alt={`Ảnh kiểm định ${idx + 1}`}
+                              className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                            />
+                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-medium gap-1">
+                              <ExternalLink className="w-4 h-4" />
+                              <span>Xem ảnh gốc</span>
+                            </div>
+                          </a>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
 

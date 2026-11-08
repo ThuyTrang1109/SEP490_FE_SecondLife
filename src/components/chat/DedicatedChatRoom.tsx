@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ChatMessage, Listing, Language, UserRole, UserProfile } from '../../types';
+import { ChatMessage, Listing, Language, UserRole, UserProfile, Negotiation } from '../../types';
 import { formatVND } from '../../utils/translations';
 import {
   Send,
@@ -29,6 +29,7 @@ import {
   SellerReputationDto,
 } from '../../services';
 import { SystemInspectionProposalPayload } from '../../types';
+import { formatVndInput, cleanVndInput } from '../../utils/numberToWords';
 
 export interface DedicatedChatRoomProps {
   room: ChatRoomDto;
@@ -72,12 +73,12 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
   const isSeller = isExplicitBuyer
     ? false
     : isExplicitSeller
-    ? true
-    : isListingSeller
-    ? true
-    : isListingBuyer
-    ? false
-    : currentRole === 'seller';
+      ? true
+      : isListingSeller
+        ? true
+        : isListingBuyer
+          ? false
+          : currentRole === 'seller';
 
   const isBuyer = !isSeller;
 
@@ -126,7 +127,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
         .then((rep) => {
           if (isMounted) setSellerReputation(rep);
         })
-        .catch(() => {});
+        .catch(() => { });
     }
     return () => {
       isMounted = false;
@@ -138,8 +139,14 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [inputMessage, setInputMessage] = useState('');
   const [offerInput, setOfferInput] = useState<number>(
-    Math.round((listing.priceVnd * 0.92) / 100000) * 100000
+    listing?.priceVnd ? Math.round((listing.priceVnd * 0.92) / 100000) * 100000 : 0
   );
+
+  useEffect(() => {
+    if (listing?.priceVnd && listing.priceVnd > 0) {
+      setOfferInput(Math.round((listing.priceVnd * 0.92) / 100000) * 100000);
+    }
+  }, [listing?.id, listing?.priceVnd]);
   const [showOfferForm, setShowOfferForm] = useState(false);
   const [offerError, setOfferError] = useState<string | null>(null);
   const [negotiationLoading, setNegotiationLoading] = useState(false);
@@ -180,7 +187,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
     const parsedSys = parseSystemMessage(dto.messageContent);
     let isOffer = false;
     let offerAmount: number | undefined;
-    let offerStatus: 'pending' | 'accepted' | 'declined' | undefined;
+    let offerStatus: 'pending' | 'accepted' | 'declined' | 'cancelled' | undefined;
     let offerSenderRole: 'buyer' | 'seller' | undefined;
     let negotiationId: string | undefined;
 
@@ -190,8 +197,10 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       offerStatus = parsedSys.offer.status === 'ACCEPTED'
         ? 'accepted'
         : parsedSys.offer.status === 'REJECTED'
-        ? 'declined'
-        : 'pending';
+          ? 'declined'
+          : parsedSys.offer.status === 'CANCELLED'
+            ? 'cancelled'
+            : 'pending';
       negotiationId = parsedSys.offer.negotiationId;
       offerSenderRole = parsedSys.offer.senderRole || (parsedSys.offer.negotiationId?.startsWith('seller-offer-') ? 'seller' : 'buyer');
     }
@@ -204,7 +213,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
           timestampStr = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
         }
       }
-    } catch {}
+    } catch { }
     if (!timestampStr) {
       timestampStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
     }
@@ -236,13 +245,28 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       .then((history) => {
         if (!isMounted) return;
         if (Array.isArray(history)) {
-          // Deduplicate by message ID in case backend returns duplicate records
+          // Deduplicate by message ID and consolidate negotiation offers by negotiationId
           const seenIds = new Set<string>();
+          const negotiationIndexMap = new Map<string, number>();
           const mapped: ChatMessage[] = [];
+
           for (const dto of history) {
             if (dto.id && seenIds.has(dto.id)) continue;
             if (dto.id) seenIds.add(dto.id);
-            mapped.push(mapDtoToChatMessage(dto));
+
+            const chatMsg = mapDtoToChatMessage(dto);
+            const negoId = chatMsg.negotiationId;
+
+            if (negoId) {
+              if (negotiationIndexMap.has(negoId)) {
+                // Update the existing card in place with latest status & details from newer message
+                const idx = negotiationIndexMap.get(negoId)!;
+                mapped[idx] = chatMsg;
+                continue;
+              }
+              negotiationIndexMap.set(negoId, mapped.length);
+            }
+            mapped.push(chatMsg);
           }
           setMessages(mapped);
         }
@@ -270,14 +294,13 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       // 2. If it's an offer: match and update existing offer card by negotiationId
       if (incoming.negotiationId) {
         const existingOfferIndex = prev.findIndex(
-          (m) =>
-            m.negotiationId === incoming.negotiationId ||
-            (m.isOffer && m.offerAmountVnd === incoming.offerAmountVnd && m.offerStatus === incoming.offerStatus)
+          (m) => m.negotiationId === incoming.negotiationId
         );
         if (existingOfferIndex !== -1) {
           const next = [...prev];
           next[existingOfferIndex] = incoming;
-          return next;
+          // Filter out any other duplicate cards for this same negotiationId
+          return next.filter((m, idx) => idx === existingOfferIndex || m.negotiationId !== incoming.negotiationId);
         }
       }
 
@@ -338,16 +361,6 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
     };
   }, [room.id, mapDtoToChatMessage, markRoomAsRead, syncIncomingMessage, scrollToBottom]);
 
-  // Scroll to bottom of message container (strictly inside container, never touches window scroll)
-  useEffect(() => {
-    if (!loadingMessages && messages.length > 0) {
-      const timer = setTimeout(() => {
-        scrollToBottom('instant');
-      }, 50);
-      return () => clearTimeout(timer);
-    }
-  }, [room.id, loadingMessages, scrollToBottom]);
-
   // Analyze negotiation offers from messages
   const negotiationMap = useMemo(() => {
     const map = new Map<string, { id: string; status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED'; price: number }>();
@@ -362,13 +375,55 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       } else if (m.isOffer && m.negotiationId) {
         map.set(m.negotiationId, {
           id: m.negotiationId,
-          status: m.offerStatus === 'accepted' ? 'ACCEPTED' : m.offerStatus === 'declined' ? 'REJECTED' : 'PENDING',
+          status: m.offerStatus === 'accepted' ? 'ACCEPTED' : m.offerStatus === 'declined' ? 'REJECTED' : m.offerStatus === 'cancelled' ? 'CANCELLED' : 'PENDING',
           price: m.offerAmountVnd || listing.priceVnd,
         });
       }
     });
     return map;
   }, [messages, listing.priceVnd]);
+
+  // Consolidate offer cards so each negotiationId appears exactly once in the chat timeline with its latest status
+  const displayMessages = useMemo(() => {
+    const latestNegoMsgMap = new Map<string, ChatMessage>();
+    for (const m of messages) {
+      const parsed = parseSystemMessage(m.text);
+      const negoId = parsed.offer?.negotiationId || m.negotiationId;
+      if (negoId) {
+        latestNegoMsgMap.set(negoId, m);
+      }
+    }
+
+    const seenNegotiationIds = new Set<string>();
+    const result: ChatMessage[] = [];
+
+    for (const m of messages) {
+      const parsed = parseSystemMessage(m.text);
+      const negoId = parsed.offer?.negotiationId || m.negotiationId;
+
+      if (negoId) {
+        if (seenNegotiationIds.has(negoId)) {
+          continue;
+        }
+        seenNegotiationIds.add(negoId);
+        result.push(latestNegoMsgMap.get(negoId) || m);
+      } else {
+        result.push(m);
+      }
+    }
+
+    return result;
+  }, [messages]);
+
+  // Scroll to bottom of message container (strictly inside container, never touches window scroll)
+  useEffect(() => {
+    if (!loadingMessages && displayMessages.length > 0) {
+      const timer = setTimeout(() => {
+        scrollToBottom('instant');
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [room.id, loadingMessages, scrollToBottom, displayMessages.length]);
 
   const activePendingNegotiation = useMemo(() => {
     return Array.from(negotiationMap.values()).find((n) => n.status === 'PENDING');
@@ -400,17 +455,24 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
     for (const [id] of negotiationMap) {
       if (!id.startsWith('seller-offer-')) return true;
     }
-    return messages.some((m) => {
+    return displayMessages.some((m) => {
       const parsed = parseSystemMessage(m.text);
       if (parsed.offer) {
         return parsed.offer.senderRole !== 'seller' && !parsed.offer.negotiationId?.startsWith('seller-offer-');
       }
       return Boolean(m.isOffer && !m.negotiationId?.startsWith('seller-offer-'));
     });
-  }, [messages, negotiationMap]);
+  }, [displayMessages, negotiationMap]);
+
+  const isListingClosed = Boolean(
+    (listing as any).isNotAvailable ||
+    (listing as any).notFound ||
+    listing.status === 'sold' ||
+    listing.status === 'reserved'
+  );
 
   // Button display condition (strict logic: seller only sees button after buyer requested!)
-  const canShowOfferButton = !hasPendingOffer && (
+  const canShowOfferButton = !isListingClosed && !hasPendingOffer && (
     isSeller ? hasBuyerRequestedNegotiation : !isMaxRejectionsReached
   );
 
@@ -461,12 +523,12 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
   const handleSendOffer = async () => {
     if (!offerInput || offerInput <= 0 || isSendingOfferRef.current) return;
 
-    if (offerInput >= listing.priceVnd) {
+    if (listing.priceVnd > 0 && offerInput >= listing.priceVnd) {
       setOfferError(
         lang === 'vi'
           ? (isSeller
-              ? 'Mức giá đề xuất bán phải thấp hơn giá niêm yết ban đầu.'
-              : `Mức giá đề xuất phải thấp hơn giá gốc (${formatVND(listing.priceVnd)})`)
+            ? 'Mức giá đề xuất bán phải thấp hơn giá niêm yết ban đầu.'
+            : `Mức giá đề xuất phải thấp hơn giá gốc (${formatVND(listing.priceVnd)})`)
           : `Offer price must be lower than original price (${formatVND(listing.priceVnd)})`
       );
       return;
@@ -515,8 +577,24 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       } else {
         const res = await negotiationService.createNegotiation(listing.id, offerInput);
         setShowOfferForm(false);
-        const systemText = `SYSTEM: {"type":"OFFER","status":"PENDING","price":${offerInput},"negotiationId":"${res.id}","senderRole":"buyer"}`;
-        await chatService.sendMessage(room.id, systemText);
+        // Note: Backend NegotiationService already creates and broadcasts the SYSTEM offer message!
+        // We optimistically create the card locally for immediate feedback without sending a duplicate message to the backend.
+        if (res?.id) {
+          const optimisticOfferMsg: ChatMessage = {
+            id: `nego-${res.id}`,
+            senderId: effectiveUserId || '',
+            senderName: currentUser?.name || 'Tôi',
+            senderRole: 'buyer',
+            text: `SYSTEM: {"type":"OFFER","status":"PENDING","price":${offerInput},"negotiationId":"${res.id}","senderRole":"buyer"}`,
+            timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+            isOffer: true,
+            offerAmountVnd: offerInput,
+            offerStatus: 'pending',
+            offerSenderRole: 'buyer',
+            negotiationId: res.id,
+          };
+          syncIncomingMessage(optimisticOfferMsg);
+        }
       }
       markRoomAsRead();
       setTimeout(() => scrollToBottom('smooth'), 50);
@@ -548,12 +626,30 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
         } else {
           await negotiationService.rejectNegotiation(negotiationId);
         }
+        // Backend already creates and broadcasts the SYSTEM message!
+      } else {
+        const offerPrice = price || listing.priceVnd;
+        const statusStr = action === 'accepted' ? 'ACCEPTED' : 'REJECTED';
+        const systemText = `SYSTEM: {"type":"OFFER","status":"${statusStr}","price":${offerPrice},"negotiationId":"${negotiationId}"}`;
+        await chatService.sendMessage(room.id, systemText);
       }
 
+      // Optimistically update the existing offer card in local state
       const offerPrice = price || listing.priceVnd;
       const statusStr = action === 'accepted' ? 'ACCEPTED' : 'REJECTED';
-      const systemText = `SYSTEM: {"type":"OFFER","status":"${statusStr}","price":${offerPrice},"negotiationId":"${negotiationId}"}`;
-      await chatService.sendMessage(room.id, systemText);
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.negotiationId === negotiationId) {
+            return {
+              ...m,
+              offerStatus: action,
+              text: `SYSTEM: {"type":"OFFER","status":"${statusStr}","price":${offerPrice},"negotiationId":"${negotiationId}"}`,
+            };
+          }
+          return m;
+        })
+      );
+
       markRoomAsRead();
     } catch (err) {
       console.warn('Offer response error:', err);
@@ -575,11 +671,28 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       const isSellerOffer = senderRole === 'seller' || negotiationId.startsWith('seller-offer-');
       if (!isSellerOffer) {
         await negotiationService.cancelNegotiation(negotiationId);
+        // Backend already creates and broadcasts the SYSTEM CANCELLED message!
+      } else {
+        const offerPrice = price || listing.priceVnd;
+        const systemText = `SYSTEM: {"type":"OFFER","status":"CANCELLED","price":${offerPrice},"negotiationId":"${negotiationId}"}`;
+        await chatService.sendMessage(room.id, systemText);
       }
 
+      // Optimistically update the existing offer card in local state to CANCELLED
       const offerPrice = price || listing.priceVnd;
-      const systemText = `SYSTEM: {"type":"OFFER","status":"CANCELLED","price":${offerPrice},"negotiationId":"${negotiationId}"}`;
-      await chatService.sendMessage(room.id, systemText);
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.negotiationId === negotiationId) {
+            return {
+              ...m,
+              offerStatus: 'cancelled',
+              text: `SYSTEM: {"type":"OFFER","status":"CANCELLED","price":${offerPrice},"negotiationId":"${negotiationId}"}`,
+            };
+          }
+          return m;
+        })
+      );
+
       markRoomAsRead();
     } catch (err) {
       console.warn('Offer cancel error:', err);
@@ -624,52 +737,50 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
   // Unread divider detection
   const firstUnreadMsgId = useMemo(() => {
     if (!lastReadTimestamp) return null;
-    const unread = messages.find((m) => {
+    const unread = displayMessages.find((m) => {
       const isFromPartner = m.senderId && m.senderId.toLowerCase() !== effectiveUserId?.toLowerCase();
       // If message index is greater than messages before lastReadTimestamp
       return isFromPartner;
     });
     return unread?.id || null;
-  }, [messages, lastReadTimestamp, effectiveUserId]);
+  }, [displayMessages, lastReadTimestamp, effectiveUserId]);
 
   // Last sent message by ME
   const myLastMsgIndex = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
+    for (let i = displayMessages.length - 1; i >= 0; i--) {
+      const m = displayMessages[i];
       const isMe = m.senderId && m.senderId.toLowerCase() === effectiveUserId?.toLowerCase();
       if (isMe) return i;
     }
     return -1;
-  }, [messages, effectiveUserId]);
+  }, [displayMessages, effectiveUserId]);
 
   // Check if partner has sent messages AFTER my last message (means partner saw it!)
   const isLastMsgSeen = useMemo(() => {
     if (myLastMsgIndex === -1) return false;
-    for (let i = myLastMsgIndex + 1; i < messages.length; i++) {
-      const m = messages[i];
+    for (let i = myLastMsgIndex + 1; i < displayMessages.length; i++) {
+      const m = displayMessages[i];
       const isFromPartner = m.senderId && m.senderId.toLowerCase() !== effectiveUserId?.toLowerCase();
       if (isFromPartner) return true;
     }
     return false;
-  }, [myLastMsgIndex, messages, effectiveUserId]);
+  }, [myLastMsgIndex, displayMessages, effectiveUserId]);
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 w-full bg-[#FFFFFF] overflow-hidden">
       {/* 1. CONVERSATION HEADER */}
-      <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between shrink-0 ${
-        isSeller 
-          ? 'bg-gradient-to-r from-[#24263e] to-slate-800 text-white border-slate-700' 
-          : 'bg-gradient-to-r from-[#fce5da] to-white border-slate-200 text-[#24263e]'
-      }`}>
+      <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between shrink-0 ${isSeller
+        ? 'bg-gradient-to-r from-[#24263e] to-slate-800 text-white border-slate-700'
+        : 'bg-gradient-to-r from-[#fce5da] to-white border-slate-200 text-[#24263e]'
+        }`}>
         <div className="flex items-center gap-2.5 sm:gap-3 overflow-hidden">
           {/* Mobile Back Button to conversation list */}
           {onBack && (
             <button
               type="button"
               onClick={onBack}
-              className={`p-1.5 -ml-1 rounded-xl transition cursor-pointer md:hidden ${
-                isSeller ? 'text-slate-300 hover:text-white hover:bg-white/10' : 'text-slate-600 hover:text-black hover:bg-black/5'
-              }`}
+              className={`p-1.5 -ml-1 rounded-xl transition cursor-pointer md:hidden ${isSeller ? 'text-slate-300 hover:text-white hover:bg-white/10' : 'text-slate-600 hover:text-black hover:bg-black/5'
+                }`}
               title="Quay lại danh sách"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -680,9 +791,8 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
             <img
               src={resolvedPartnerAvatar}
               alt={resolvedPartnerName}
-              className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl object-cover shrink-0 ${
-                isSeller ? 'border-2 border-white/20' : 'border border-[#24263e]/20'
-              }`}
+              className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl object-cover shrink-0 ${isSeller ? 'border-2 border-white/20' : 'border border-[#24263e]/20'
+                }`}
             />
             {/* Green Online Dot */}
             <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full ring-2 ring-white" title="Đang trực tuyến" />
@@ -766,17 +876,33 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                   <span className="text-xs font-black text-emerald-700">
                     {formatVND(latestAcceptedOffer)}
                   </span>
-                  <span className="text-[11px] line-through text-slate-400 font-medium">
-                    {formatVND(listing.priceVnd)}
-                  </span>
+                  {listing.priceVnd > 0 && (
+                    <span className="text-[11px] line-through text-slate-400 font-medium">
+                      {formatVND(listing.priceVnd)}
+                    </span>
+                  )}
                   <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-1 py-0.5 rounded">
                     {lang === 'vi' ? 'Đã chốt giá' : 'Deal Agreed'}
                   </span>
                 </>
               ) : (
-                <span className="text-xs font-black text-[#c34c36]">
-                  {formatVND(listing.priceVnd)}
-                </span>
+                <div className="flex items-center gap-2">
+                  {listing.priceVnd > 0 ? (
+                    <span className="text-xs font-black text-[#c34c36]">
+                      {formatVND(listing.priceVnd)}
+                    </span>
+                  ) : null}
+                  {isListingClosed ? (
+                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                      {lang === 'vi' ? 'Đã đóng giao dịch / Ngừng bán' : 'Listing closed'}
+                    </span>
+                  ) : !listing.priceVnd || listing.priceVnd <= 0 ? (
+                    <span className="text-slate-400 font-medium italic text-xs flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin inline" />
+                      <span>{lang === 'vi' ? 'Đang cập nhật giá...' : 'Loading price...'}</span>
+                    </span>
+                  ) : null}
+                </div>
               )}
             </div>
           </div>
@@ -785,22 +911,30 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
         {/* Right Action for Order Banner */}
         <div className="shrink-0">
           {isBuyer ? (
-            <button
-              type="button"
-              onClick={() => handleBuyNow(latestAcceptedOffer || listing.priceVnd, latestAcceptedNegotiationId)}
-              className={`px-3 py-1.5 sm:px-4 sm:py-2 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition ${
-                latestAcceptedOffer
-                  ? 'bg-gradient-to-r from-emerald-600 to-teal-700 hover:opacity-95'
-                  : 'bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95'
-              }`}
-            >
-              <ShoppingBag className="w-3.5 h-3.5" />
-              <span className="whitespace-nowrap">
-                {latestAcceptedOffer
-                  ? (lang === 'vi' ? `Mua giá chốt (${formatVND(latestAcceptedOffer)})` : `Buy Deal (${formatVND(latestAcceptedOffer)})`)
-                  : (lang === 'vi' ? 'Mua Ngay' : 'Buy Now')}
+            isListingClosed && !latestAcceptedOffer ? (
+              <span className="px-3 py-1.5 sm:px-4 sm:py-2 bg-slate-100 text-slate-400 font-bold text-xs rounded-xl border border-slate-200 cursor-not-allowed">
+                {lang === 'vi' ? 'Ngừng mở bán' : 'Unavailable'}
               </span>
-            </button>
+            ) : (
+              <button
+                type="button"
+                disabled={!latestAcceptedOffer && (!listing.priceVnd || listing.priceVnd <= 0)}
+                onClick={() => handleBuyNow(latestAcceptedOffer || listing.priceVnd, latestAcceptedNegotiationId)}
+                className={`px-3 py-1.5 sm:px-4 sm:py-2 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition ${!latestAcceptedOffer && (!listing.priceVnd || listing.priceVnd <= 0)
+                  ? 'bg-slate-300 cursor-not-allowed opacity-60'
+                  : latestAcceptedOffer
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-700 hover:opacity-95 cursor-pointer'
+                    : 'bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 cursor-pointer'
+                  }`}
+              >
+                <ShoppingBag className="w-3.5 h-3.5" />
+                <span className="whitespace-nowrap">
+                  {latestAcceptedOffer
+                    ? (lang === 'vi' ? `Mua giá chốt (${formatVND(latestAcceptedOffer)})` : `Buy Deal (${formatVND(latestAcceptedOffer)})`)
+                    : (lang === 'vi' ? 'Mua Ngay' : 'Buy Now')}
+                </span>
+              </button>
+            )
           ) : (
             <div className="text-right">
               {latestAcceptedOffer ? (
@@ -828,7 +962,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
               {lang === 'vi' ? 'Đang đồng bộ tin nhắn...' : 'Loading messages...'}
             </p>
           </div>
-        ) : messages.length === 0 ? (
+        ) : displayMessages.length === 0 ? (
           <div className="py-16 text-center flex flex-col items-center justify-center space-y-2 text-slate-400">
             <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center text-slate-300">
               <MessageSquare className="w-6 h-6" />
@@ -843,7 +977,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
             </p>
           </div>
         ) : (
-          messages.map((msg, index) => {
+          displayMessages.map((msg, index) => {
             const isMe = Boolean(effectiveUserId && msg.senderId && effectiveUserId.toLowerCase() === msg.senderId.toLowerCase());
             const parsedSys = parseSystemMessage(msg.text);
             const isUnreadDivider = msg.id === firstUnreadMsgId;
@@ -877,13 +1011,12 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
 
                     return (
                       <div className="flex justify-center my-3 animate-fadeIn">
-                        <div className={`max-w-md w-full rounded-2xl border p-3.5 shadow-xs text-center transition-all ${
-                          isAccepted
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                            : isRejected || isCancelled
+                        <div className={`max-w-md w-full rounded-2xl border p-3.5 shadow-xs text-center transition-all ${isAccepted
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                          : isRejected || isCancelled
                             ? 'bg-rose-50 border-rose-200 text-rose-900'
                             : 'bg-gradient-to-b from-amber-50 to-orange-50/50 border-amber-300 text-amber-950'
-                        }`}>
+                          }`}>
                           <div className="flex items-center justify-center gap-1.5 mb-1.5">
                             {isAccepted ? (
                               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -896,12 +1029,12 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                               {isAccepted
                                 ? '🎉 Thỏa Thuận Chốt Giá Thành Công'
                                 : isRejected
-                                ? '❌ Đề Xuất Giá Đã Bị Từ Chối'
-                                : isCancelled
-                                ? 'Đề Xuất Giá Đã Được Hủy'
-                                : isSellerOffer
-                                ? '🏷️ Người Bán Đề Xuất Giá Mới'
-                                : '🤝 Đề Xuất Thương Lượng Giá Mới'}
+                                  ? '❌ Đề Xuất Giá Đã Bị Từ Chối'
+                                  : isCancelled
+                                    ? 'Đề Xuất Giá Đã Được Hủy'
+                                    : isSellerOffer
+                                      ? '🏷️ Người Bán Đề Xuất Giá Mới'
+                                      : '🤝 Đề Xuất Thương Lượng Giá Mới'}
                             </span>
                           </div>
 
@@ -909,28 +1042,32 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                             <span className="text-base font-black text-[#c34c36]">
                               {formatVND(offer.price)}
                             </span>
-                            <span className="text-xs line-through text-slate-400 font-medium">
-                              {formatVND(listing.priceVnd)}
-                            </span>
-                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
-                              Tiết kiệm {formatVND(listing.priceVnd - offer.price)}
-                            </span>
+                            {listing.priceVnd > 0 && (
+                              <span className="text-xs line-through text-slate-400 font-medium">
+                                {formatVND(listing.priceVnd)}
+                              </span>
+                            )}
+                            {listing.priceVnd > 0 && listing.priceVnd > offer.price && (
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                                Tiết kiệm {formatVND(listing.priceVnd - offer.price)}
+                              </span>
+                            )}
                           </div>
 
                           <p className="text-[11px] text-slate-600 mb-2">
                             {isAccepted
                               ? (isBuyer
-                                  ? 'Người bán đã đồng ý mức giá này. Bạn có thể tiến hành đặt mua qua Escrow ngay bây giờ!'
-                                  : 'Mức giá đã chốt thành công. Đang chờ người mua tiến hành thanh toán qua Escrow.')
+                                ? 'Người bán đã đồng ý mức giá này. Bạn có thể tiến hành đặt mua qua Escrow ngay bây giờ!'
+                                : 'Mức giá đã chốt thành công. Đang chờ người mua tiến hành thanh toán qua Escrow.')
                               : isRejected
-                              ? (isProposerMe ? 'Mức giá đề xuất chưa được chấp nhận.' : 'Bạn đã từ chối mức giá đề xuất này.')
-                              : isCancelled
-                              ? 'Yêu cầu trả giá đã được hủy.'
-                              : isPending
-                              ? (isRecipientMe
-                                  ? (isSellerOffer ? 'Người bán đề xuất giá ưu đãi cho bạn. Bạn có muốn đồng ý mua?' : 'Người mua gửi đề xuất giá cho sản phẩm của bạn. Vui lòng phản hồi:')
-                                  : 'Đề xuất giá đã gửi tới đối phương, đang chờ phản hồi...')
-                              : ''}
+                                ? (isProposerMe ? 'Mức giá đề xuất chưa được chấp nhận.' : 'Bạn đã từ chối mức giá đề xuất này.')
+                                : isCancelled
+                                  ? 'Yêu cầu trả giá đã được hủy.'
+                                  : isPending
+                                    ? (isRecipientMe
+                                      ? (isSellerOffer ? 'Người bán đề xuất giá ưu đãi cho bạn. Bạn có muốn đồng ý mua?' : 'Người mua gửi đề xuất giá cho sản phẩm của bạn. Vui lòng phản hồi:')
+                                      : 'Đề xuất giá đã gửi tới đối phương, đang chờ phản hồi...')
+                                    : ''}
                           </p>
 
                           {/* Recipient Action buttons */}
@@ -999,11 +1136,10 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                       )}
                       <div>
                         <div
-                          className={`p-3 rounded-2xl text-xs font-medium shadow-2xs leading-relaxed break-words ${
-                            isMe
-                              ? 'bg-gradient-to-r from-[#24263e] to-slate-800 text-white rounded-br-xs'
-                              : 'bg-white border border-slate-200 text-[#24263e] rounded-bl-xs'
-                          }`}
+                          className={`p-3 rounded-2xl text-xs font-medium shadow-2xs leading-relaxed break-words ${isMe
+                            ? 'bg-gradient-to-r from-[#24263e] to-slate-800 text-white rounded-br-xs'
+                            : 'bg-white border border-slate-200 text-[#24263e] rounded-bl-xs'
+                            }`}
                         >
                           {msg.text}
                         </div>
@@ -1039,9 +1175,8 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
 
       {/* 4. QUICK OFFER DRAWER / POPUP */}
       {showOfferForm && canShowOfferButton && (
-        <div className={`p-3.5 border-t flex flex-col gap-2.5 animate-fadeIn shrink-0 ${
-          isSeller ? 'bg-blue-50/40 border-blue-100' : 'bg-orange-50/40 border-orange-100'
-        }`}>
+        <div className={`p-3.5 border-t flex flex-col gap-2.5 animate-fadeIn shrink-0 ${isSeller ? 'bg-blue-50/40 border-blue-100' : 'bg-orange-50/40 border-orange-100'
+          }`}>
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold text-slate-700">
               {isSeller
@@ -1049,35 +1184,47 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                 : 'Nhập mức giá bạn muốn đề xuất mua (VNĐ):'}
             </label>
             <span className="text-xs font-bold text-slate-500">
-              Giá niêm yết: {formatVND(listing.priceVnd)}
+              {lang === 'vi' ? 'Giá niêm yết:' : 'Listed price:'}{' '}
+              {listing.priceVnd > 0 ? (
+                formatVND(listing.priceVnd)
+              ) : (
+                <span className="italic text-slate-400">{lang === 'vi' ? 'Đang tải...' : 'Loading...'}</span>
+              )}
             </span>
           </div>
 
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <input
-                type="number"
-                step="50000"
-                min="1000"
-                max={listing.priceVnd - 1000}
-                value={offerInput || ''}
+                type="text"
+                inputMode="numeric"
+                value={offerInput > 0 ? formatVndInput(offerInput) : ''}
                 onChange={(e) => {
-                  setOfferInput(Number(e.target.value));
+                  const cleaned = cleanVndInput(e.target.value);
+                  setOfferInput(cleaned ? Number(cleaned) : 0);
                   setOfferError(null);
                 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSendOffer();
+                  }
+                }}
                 placeholder="VD: 1.500.000"
-                className="w-full px-3 py-2 border rounded-xl text-xs font-bold text-[#24263e] bg-white focus:outline-none focus:border-blue-600"
+                className={`w-full px-3.5 py-2 pr-9 border rounded-xl text-xs font-bold text-[#24263e] bg-white focus:outline-none ${isSeller ? 'focus:border-blue-600' : 'focus:border-[#c34c36]'
+                  }`}
               />
-              <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">đ</span>
+              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500 pointer-events-none select-none">
+                đ
+              </span>
             </div>
 
             <button
               type="button"
               onClick={handleSendOffer}
               disabled={negotiationLoading}
-              className={`px-4 py-2 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 ${
-                isSeller ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#c34c36] hover:bg-[#a83d2a]'
-              }`}
+              className={`px-4 py-2 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 ${isSeller ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#c34c36] hover:bg-[#a83d2a]'
+                }`}
             >
               {negotiationLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               <span>{isSeller ? 'Gửi Đề Xuất Bán' : 'Gửi Yêu Cầu Trả Giá'}</span>
@@ -1102,34 +1249,32 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       )}
 
       {/* 5. BOTTOM TOOLBAR (INPUT & ACTIONS) */}
-      <div className={`p-3 border-t flex items-center gap-2 shrink-0 ${
-        isSeller ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'
-      }`}>
+      <div className={`p-3 border-t flex items-center gap-2 shrink-0 ${isSeller ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'
+        }`}>
         {/* Price negotiation button */}
         {canShowOfferButton && (
           <button
             type="button"
             onClick={() => {
-              if (!isSeller && maxRejectedPrice > 0 && offerInput <= maxRejectedPrice) {
+              if (!isSeller && maxRejectedPrice > 0 && offerInput <= maxRejectedPrice && listing.priceVnd > 50000) {
                 setOfferInput(Math.min(listing.priceVnd - 50000, maxRejectedPrice + 50000));
               }
               setShowOfferForm(!showOfferForm);
               setShowInspectionForm(false);
               setOfferError(null);
             }}
-            className={`px-3 py-2 text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1 ${
-              isSeller
-                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95'
-                : 'bg-gradient-to-r from-[#c34c36] to-[#e36a54] hover:opacity-95'
-            }`}
+            className={`px-3 py-2 text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1 ${isSeller
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95'
+              : 'bg-gradient-to-r from-[#c34c36] to-[#e36a54] hover:opacity-95'
+              }`}
           >
             <span>💰</span>
             <span>
               {isSeller
                 ? 'Đề xuất giá'
                 : maxRejectedPrice > 0
-                ? 'Trả giá lại'
-                : 'Trả giá'}
+                  ? 'Trả giá lại'
+                  : 'Trả giá'}
             </span>
           </button>
         )}
@@ -1160,11 +1305,10 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
               ? 'Tư vấn cho người mua...'
               : 'Nhắn tin thương lượng (an toàn 100% qua Escrow)...'
           }
-          className={`flex-1 px-3.5 py-2 border rounded-xl text-xs text-[#24263e] focus:outline-none ${
-            isSeller
-              ? 'bg-white border-slate-200 focus:border-blue-500'
-              : 'bg-[#faf8f5] border-gray-200 focus:border-[#c34c36]'
-          }`}
+          className={`flex-1 px-3.5 py-2 border rounded-xl text-xs text-[#24263e] focus:outline-none ${isSeller
+            ? 'bg-white border-slate-200 focus:border-blue-500'
+            : 'bg-[#faf8f5] border-gray-200 focus:border-[#c34c36]'
+            }`}
         />
 
         {/* Send Button */}
@@ -1172,9 +1316,8 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
           type="button"
           onClick={() => handleSendMessage()}
           disabled={isSending}
-          className={`p-2.5 text-white rounded-xl cursor-pointer transition shadow-xs flex items-center justify-center ${
-            isSeller ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#24263e] hover:bg-black'
-          }`}
+          className={`p-2.5 text-white rounded-xl cursor-pointer transition shadow-xs flex items-center justify-center ${isSeller ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#24263e] hover:bg-black'
+            }`}
         >
           {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
         </button>

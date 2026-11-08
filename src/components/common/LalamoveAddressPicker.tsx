@@ -561,28 +561,8 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
         </div>
       </div>
 
-      {/* Current Location & Address Search Toolbar */}
+      {/* Address Search Toolbar */}
       <div className="space-y-2.5">
-        {/* Prominent GPS button */}
-        <button
-          type="button"
-          onClick={handleGetCurrentLocation}
-          disabled={isLocatingDevice}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500 hover:from-orange-700 hover:to-amber-600 text-white rounded-xl font-bold text-xs shadow-sm hover:shadow transition-all active:scale-[0.99] disabled:opacity-60 cursor-pointer"
-        >
-          {isLocatingDevice ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>{lang === 'vi' ? 'Đang dò tọa độ GPS thiết bị...' : 'Locating your device GPS...'}</span>
-            </>
-          ) : (
-            <>
-              <Navigation className="w-4 h-4 fill-white" />
-              <span>{lang === 'vi' ? '📍 Dùng Vị Trí Hiện Tại Của Tôi' : '📍 Use My Current Location'}</span>
-            </>
-          )}
-        </button>
-
         {/* Search input to pinpoint location on map with coordinate validation */}
         <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-2xs space-y-1.5">
           <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">

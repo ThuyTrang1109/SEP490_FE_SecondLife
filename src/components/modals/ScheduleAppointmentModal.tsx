@@ -1,3 +1,4 @@
+import { paths } from '../../app/router/paths';
 import React, { useState } from 'react';
 import { Calendar, Clock, MapPin, X, Check, RefreshCw, AlertCircle, ShieldCheck } from 'lucide-react';
 import { Language } from '../../types';
@@ -111,7 +112,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
       type: 'INSPECTION' as const,
       referenceId: orderId,
       referenceType: 'INSPECTION_ORDER',
-      actionUrl: '/orders?order_tab=inspecting',
+      actionUrl: paths.orders('buyer', orderId) + '?filter=inspecting',
       isRead: false,
       readAt: null,
       createdAt: new Date().toISOString(),
@@ -127,7 +128,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
       type: 'INSPECTION_TASK' as const,
       referenceId: orderId,
       referenceType: 'INSPECTION_ORDER',
-      actionUrl: '/inspection-center',
+      actionUrl: '/inspection-center/dispatch',
       isRead: false,
       readAt: null,
       createdAt: new Date().toISOString(),

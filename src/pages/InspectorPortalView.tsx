@@ -1,3 +1,5 @@
+import { usePanelTab, useBrowserLocation, navigatePath } from '../app/router/browser';
+import { resolveAppRoute } from '../app/router/paths';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { EscrowOrder, InspectionChecklistItem, Language, UserProfile, InspectionCenter } from '../types';
 import { formatVND } from '../utils/translations';
@@ -54,6 +56,7 @@ import {
   Menu,
   User,
   Home,
+  Truck,
   LogOut
 } from 'lucide-react';
 import {
@@ -169,7 +172,9 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   const isCenterManager = currentUser?.role === 'inspection_center';
 
   // --- INSPECTOR DASHBOARD TABS ---
-  const [inspectorTab, setInspectorTab] = useState<InspectorDashboardTab>('workbench');
+  const [inspectorTab, setInspectorTab] = usePanelTab<InspectorDashboardTab>('inspector', 'workbench');
+  const routeLocation = useBrowserLocation();
+  const requestedInspectionId = resolveAppRoute(routeLocation, 'inspector').params.inspectionId;
   const [managerTab, setManagerTab] = useState<ManagerPortalTab>('center_dispatch');
 
   // --- Sidebar Collapse & Mobile Sidebar State ---
@@ -196,7 +201,14 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   const stationCode = 'STATION-HCM-02';
 
   // --- ORDERS & QUEUE STATES ---
-  const [selectedOrderId, setSelectedOrderId] = useState<string>(orders[0]?.id || '');
+  const [selectedOrderId, setSelectedOrderIdState] = useState<string>(requestedInspectionId || orders[0]?.id || '');
+  const setSelectedOrderId = (id: string) => {
+    setSelectedOrderIdState(id);
+    navigatePath(`/inspector/inspections/${encodeURIComponent(id)}`);
+  };
+  useEffect(() => {
+    if (requestedInspectionId) setSelectedOrderIdState(requestedInspectionId);
+  }, [requestedInspectionId]);
   const [backendOrders, setBackendOrders] = useState<InspectionOrderDto[]>([]);
   const [isLoadingBackendOrders, setIsLoadingBackendOrders] = useState(false);
   const [taskSearchTerm, setTaskSearchTerm] = useState('');
@@ -219,15 +231,10 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   const loadInspectorOrders = async () => {
     setIsLoadingBackendOrders(true);
     try {
-      const [myOrdersRes, allOrdersRes] = await Promise.all([
-        inspectorService.getMyOrders().catch(() => []),
-        inspectorService.getAllOrders(undefined, 0, 100).catch(() => ({ items: [] } as any)),
-      ]);
+      const myOrdersRes = await inspectorService.getMyOrders().catch(() => []);
       const myItems = Array.isArray(myOrdersRes) ? myOrdersRes : ((myOrdersRes as any)?.items || []);
-      const allItems = (allOrdersRes as any)?.items || (allOrdersRes as any)?.content || (Array.isArray(allOrdersRes) ? allOrdersRes : []);
 
       const orderMap = new Map<string, InspectionOrderDto>();
-      allItems.forEach((o: any) => { if (o?.id) orderMap.set(o.id, o); });
       myItems.forEach((o: any) => { if (o?.id) orderMap.set(o.id, o); });
 
       try {
@@ -280,11 +287,17 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     window.addEventListener('secondlife_order_assigned_signal', handleSignal);
     window.addEventListener('secondlife_order_placed_signal', handleSignal);
     window.addEventListener('secondlife_inspection_task_created', handleSignal);
+    window.addEventListener('secondlife_inspection_completed', handleSignal);
+    window.addEventListener('secondlife_hub_package_received', handleSignal);
+    window.addEventListener('secondlife_seller_shipped_to_hub', handleSignal);
     window.addEventListener('storage', handleStorage);
     return () => {
       window.removeEventListener('secondlife_order_assigned_signal', handleSignal);
       window.removeEventListener('secondlife_order_placed_signal', handleSignal);
       window.removeEventListener('secondlife_inspection_task_created', handleSignal);
+      window.removeEventListener('secondlife_inspection_completed', handleSignal);
+      window.removeEventListener('secondlife_hub_package_received', handleSignal);
+      window.removeEventListener('secondlife_seller_shipped_to_hub', handleSignal);
       window.removeEventListener('storage', handleStorage);
     };
   }, []);
@@ -329,6 +342,21 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       }).catch(() => {});
     }
   }, [isCenterManager]);
+
+  const isOrderReceivedAtHub = (order: any): boolean => {
+    if (!order) return false;
+    if (order.inspectionMethod === 'AT_HOME' || order.orderType === 'AT_HOME') return true;
+    const s = String(order.status || order.backendStatus || order.escrowStatus || '').toUpperCase();
+    if (['RECEIVED_AT_CENTER', 'AWAITING_INSPECTION', 'INSPECTING', 'PASSED', 'FAILED', 'COMPLETED', 'DELIVERING_TO_BUYER', 'SHIPPED_TO_BUYER'].includes(s)) {
+      return true;
+    }
+    if (typeof window !== 'undefined') {
+      if (localStorage.getItem(`hub_package_received_${order.id}`) === 'true') {
+        return true;
+      }
+    }
+    return false;
+  };
 
   // Convert backendOrders into EscrowOrder format if available, and unify with prop orders strictly assigned to this technician
   const effectiveOrders: EscrowOrder[] = useMemo(() => {
@@ -385,19 +413,57 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         return;
       }
 
+      const localStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${bo.id}`) : null;
+      const finalStatus = (localStatus === 'PASSED' || bo.status === 'PASSED')
+        ? 'PASSED'
+        : (localStatus === 'FAILED' || bo.status === 'FAILED')
+        ? 'FAILED'
+        : (bo.status || 'INSPECTING');
+      const resolvedEscrowStatus = (finalStatus === 'PASSED')
+        ? 'INSPECTION_PASSED'
+        : (finalStatus === 'FAILED')
+        ? 'INSPECTION_FAILED'
+        : (bo.status ? (bo.status as any) : 'INSPECTING');
+
+      const realPostImg = bo.postImageUrl || bo.postImageUrls?.[0];
+
       // If already in candidateMap, enrich it
       const existing = candidateMap.get(bo.id);
       if (existing) {
+        const existingPhotos = existing.listing?.photos;
+        const cleanFront = (existingPhotos?.front && !existingPhotos.front.includes('photo-1584269600464') && !existingPhotos.front.includes('photo-1555041469')) ? existingPhotos.front : '';
+        const finalFront = realPostImg || cleanFront || existingPhotos?.front || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400';
+        const newPhotos = {
+          ...existingPhotos,
+          front: finalFront,
+          back: bo.postImageUrls?.[1] || existingPhotos?.back || '',
+          screenOrDetails: bo.postImageUrls?.[2] || existingPhotos?.screenOrDetails || '',
+          accessoriesOrBox: existingPhotos?.accessoriesOrBox || '',
+          serialOrReceipt: existingPhotos?.serialOrReceipt || '',
+        };
+        const newGallery = (bo.postImageUrls && bo.postImageUrls.length > 0)
+          ? bo.postImageUrls
+          : (realPostImg ? [realPostImg] : (existing.listing?.photoGallery || [finalFront]));
+
         candidateMap.set(bo.id, {
           ...existing,
+          status: finalStatus as any,
+          backendStatus: finalStatus as EscrowOrder['backendStatus'],
+          escrowStatus: resolvedEscrowStatus,
           inspectorId: assignedId,
           inspectorName: assignedName,
           inspectionMethod: bo.orderType === 'AT_HOME' ? 'AT_HOME' : (existing.inspectionMethod || 'AT_CENTER'),
           buyerName: bo.buyerName || existing.buyerName,
           sellerName: bo.sellerName || existing.sellerName,
+          listing: existing.listing ? {
+            ...existing.listing,
+            photos: newPhotos,
+            photoGallery: newGallery,
+          } : existing.listing,
         });
       } else {
         // Build new EscrowOrder from bo
+        const fallbackFront = realPostImg || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400';
         const mappedEscrow: EscrowOrder = {
           id: bo.id,
           listing: {
@@ -422,13 +488,13 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
             isInspectionGuaranteed: true,
             requiresInspection: true,
             photos: {
-              front: bo.postImageUrl || bo.postImageUrls?.[0] || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400',
+              front: fallbackFront,
               back: bo.postImageUrls?.[1] || bo.postImageUrl || '',
               screenOrDetails: bo.postImageUrls?.[2] || '',
               accessoriesOrBox: '',
               serialOrReceipt: '',
             },
-            photoGallery: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : []),
+            photoGallery: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : [fallbackFront]),
           },
           listingId: bo.postId || bo.id,
           buyerId: bo.buyerId || 'buyer-1',
@@ -445,14 +511,16 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
           platformFeeVnd: 0,
           totalPaidVnd: (bo.postPrice || 1000000) + (bo.inspectionFee || 150000) + (bo.shippingFee || 30000),
           totalAmountVnd: (bo.postPrice || 1000000) + (bo.inspectionFee || 150000) + (bo.shippingFee || 30000),
-          escrowStatus: (bo.status as any) || 'INSPECTING',
+          escrowStatus: resolvedEscrowStatus,
+          status: finalStatus as any,
+          backendStatus: finalStatus,
           hasInspectionService: true,
           requiresInspection: true,
           inspectionMethod: bo.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER',
           inspectionFeeSplit: bo.feePayer === 'SELLER_PAYS' ? 'SELLER_100' : bo.feePayer === 'BUYER_PAYS' ? 'BUYER_100' : 'SPLIT_50_50',
           shippingLegs: [],
           multiStagePhotos: {
-            listingPhotos: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : []),
+            listingPhotos: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : [fallbackFront]),
           },
           createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
           deliveryAddress: 'TP. Hồ Chí Minh',
@@ -470,15 +538,15 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
   // Auto-select first order when effectiveOrders loads and nothing is selected
   useEffect(() => {
-    if ((!selectedOrderId || !effectiveOrders.some((o) => o.id === selectedOrderId)) && effectiveOrders.length > 0) {
-      setSelectedOrderId(effectiveOrders[0].id);
+    if (!requestedInspectionId && (!selectedOrderId || !effectiveOrders.some((o) => o.id === selectedOrderId)) && effectiveOrders.length > 0) {
+      setSelectedOrderIdState(effectiveOrders[0].id);
     }
-  }, [effectiveOrders, selectedOrderId]);
+  }, [effectiveOrders, selectedOrderId, requestedInspectionId]);
 
   // --- KPI COMPUTATIONS FOR INSPECTOR ---
   const activeOrder = useMemo(() => {
     return effectiveOrders.find((o) => o.id === selectedOrderId) || effectiveOrders[0];
-  }, [effectiveOrders, selectedOrderId]);
+  }, [effectiveOrders, selectedOrderId, requestedInspectionId]);
 
   const assignedCount = effectiveOrders.length;
   const atHomeCount = effectiveOrders.filter((o) => o.inspectionMethod === 'AT_HOME').length;
@@ -488,7 +556,11 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         Boolean(o.inspectionReport) ||
         (o.escrowStatus as string) === 'COMPLETED' ||
         o.escrowStatus === 'COMPLETED_RELEASED' ||
-        o.escrowStatus === 'DELIVERED_INSPECTION_WINDOW'
+        o.escrowStatus === 'INSPECTION_PASSED' ||
+        o.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
+        (o as any).status === 'PASSED' ||
+        (o as any).backendStatus === 'PASSED' ||
+        (typeof window !== 'undefined' && localStorage.getItem(`inspection_status_${o.id}`) === 'PASSED')
     );
   }, [effectiveOrders]);
   const completedCount = completedOrders.length;
@@ -503,7 +575,11 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         Boolean(o.inspectionReport) ||
         (o.escrowStatus as string) === 'COMPLETED' ||
         o.escrowStatus === 'COMPLETED_RELEASED' ||
-        o.escrowStatus === 'DELIVERED_INSPECTION_WINDOW';
+        o.escrowStatus === 'INSPECTION_PASSED' ||
+        o.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
+        (o as any).status === 'PASSED' ||
+        (o as any).backendStatus === 'PASSED' ||
+        (typeof window !== 'undefined' && localStorage.getItem(`inspection_status_${o.id}`) === 'PASSED');
 
       if (taskFilter === 'AT_CENTER' && isAtHome) return false;
       if (taskFilter === 'AT_HOME' && !isAtHome) return false;
@@ -536,7 +612,6 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     });
     if (found) {
       setSelectedOrderId(found.id);
-      setInspectorTab('workbench');
       showNotice(
         lang === 'vi'
           ? `Đã nhận diện thiết bị đơn hàng #${found.id} và mở bàn kiểm định.`
@@ -1094,7 +1169,9 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       {/* ===================================================================== */}
       {/* TAB 1: WORKBENCH (BÀN ĐO KIỂM THỰC TẾ 5 BƯỚC)                         */}
       {/* ===================================================================== */}
-      {inspectorTab === 'workbench' && (
+      {inspectorTab === 'workbench' && requestedInspectionId && !effectiveOrders.some((order) => order.id === requestedInspectionId) ? (
+        <p className="p-10 text-center">{isLoadingBackendOrders ? 'Đang tải đơn kiểm định...' : 'Không tìm thấy đơn kiểm định được phân công cho bạn.'}</p>
+      ) : inspectorTab === 'workbench' && (
         <ProductInspectionStationView
           orders={effectiveOrders}
           currentUser={currentUser}
@@ -1103,6 +1180,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
           hideTopBar={true}
           selectedOrderId={selectedOrderId}
           onSelectOrder={setSelectedOrderId}
+          initialStep="intake"
         />
       )}
 
@@ -1224,8 +1302,17 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                 const isCompleted =
                   Boolean(ord.inspectionReport) ||
                   (ord.escrowStatus as string) === 'COMPLETED' ||
-                  ord.escrowStatus === 'COMPLETED_RELEASED';
+                  ord.escrowStatus === 'COMPLETED_RELEASED' ||
+                  ord.escrowStatus === 'INSPECTION_PASSED' ||
+                  ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
+                  (ord as any).status === 'PASSED' ||
+                  (ord as any).backendStatus === 'PASSED' ||
+                  (typeof window !== 'undefined' && localStorage.getItem(`inspection_status_${ord.id}`) === 'PASSED');
                 const photoUrl =
+                  (ord as any).postImageUrl ||
+                  (ord as any).postImageUrls?.[0] ||
+                  (ord.listing?.photos?.front && !ord.listing.photos.front.includes('photo-1584269600464') && !ord.listing.photos.front.includes('photo-1555041469') ? ord.listing.photos.front : '') ||
+                  (ord.listing?.photoGallery?.[0] && !ord.listing.photoGallery[0].includes('photo-1584269600464') && !ord.listing.photoGallery[0].includes('photo-1555041469') ? ord.listing.photoGallery[0] : '') ||
                   ord.listing?.photos?.front ||
                   ord.listing?.photos?.screenOrDetails ||
                   'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400';
@@ -1264,15 +1351,54 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                 )}
                               </button>
                             </span>
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                isCompleted
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
-                              }`}
-                            >
-                              {isCompleted ? 'Đã Nghiệm Thu' : 'Chờ Đo Kiểm'}
-                            </span>
+                            {(() => {
+                              const isHubReceived = isOrderReceivedAtHub(ord);
+                              const apptTime = ord.appointmentScheduledAt || (typeof window !== 'undefined' ? localStorage.getItem(`appointment_time_${ord.id}`) : null);
+
+                              if (isCompleted) {
+                                return (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    Đã Nghiệm Thu
+                                  </span>
+                                );
+                              }
+
+                              if (!isAtHome && !isHubReceived) {
+                                return (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200">
+                                    Chờ Hàng Đến Hub
+                                  </span>
+                                );
+                              }
+
+                              if (isAtHome && apptTime) {
+                                const formattedAppt = new Date(apptTime).toLocaleString('vi-VN', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                });
+                                return (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                                    Đến Theo Hẹn ({formattedAppt})
+                                  </span>
+                                );
+                              }
+
+                              if (isAtHome && !apptTime) {
+                                return (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                                    Chờ Khách Đặt Hẹn
+                                  </span>
+                                );
+                              }
+
+                              return (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                                  Chờ Đo Kiểm
+                                </span>
+                              );
+                            })()}
                           </div>
 
                           <h3 className="text-xs sm:text-sm font-bold text-[#24263e] line-clamp-2 mt-1" title={ord.listing?.title}>
@@ -1305,15 +1431,36 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                         </div>
 
                         {isAtHome ? (
-                          <p className="text-slate-500 line-clamp-1 flex items-center gap-1">
-                            <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                            {ord.buyerAddress || '128 Nguyễn Đình Chiểu, Q.3, TP.HCM'}
-                          </p>
+                          <div className="space-y-0.5">
+                            <p className="text-slate-500 line-clamp-1 flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                              {ord.buyerAddress || '128 Nguyễn Đình Chiểu, Q.3, TP.HCM'}
+                            </p>
+                            {ord.appointmentScheduledAt ? (
+                              <p className="text-blue-600 font-bold flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-blue-500 shrink-0" />
+                                Hẹn: {new Date(ord.appointmentScheduledAt).toLocaleString('vi-VN')}
+                              </p>
+                            ) : (
+                              <p className="text-purple-600 font-medium flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-purple-400 shrink-0" />
+                                Chờ khách chốt lịch hẹn khảo sát
+                              </p>
+                            )}
+                          </div>
                         ) : (
-                          <p className="text-slate-500 line-clamp-1 flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-slate-400 shrink-0" />
-                            Tiếp nhận bàn test #{stationCode}
-                          </p>
+                          <div className="space-y-0.5">
+                            <p className="text-slate-500 line-clamp-1 flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                              Tiếp nhận bàn test #{stationCode}
+                            </p>
+                            {!isOrderReceivedAtHub(ord) && (
+                              <p className="text-cyan-700 font-medium flex items-center gap-1">
+                                <Truck className="w-3 h-3 text-cyan-600 shrink-0" />
+                                Chờ shipper giao kiện hàng đến Hub
+                              </p>
+                            )}
+                          </div>
                         )}
                       </div>
 
@@ -1326,17 +1473,28 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
                     {/* Bottom Action Footer */}
                     <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedOrderId(ord.id);
-                          setInspectorTab('workbench');
-                        }}
-                        className="flex-1 py-2 px-3 rounded-xl bg-[#24263e] hover:bg-[#1a1c2e] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
-                      >
-                        <Wrench className="w-3.5 h-3.5 text-[#fce5da]" />
-                        <span>Vào Bàn Đo Kiểm</span>
-                      </button>
+                      {!isAtHome && !isOrderReceivedAtHub(ord) && !isCompleted ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="flex-1 py-2 px-3 rounded-xl bg-slate-100 text-slate-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-not-allowed border border-slate-200"
+                          title="Kiện hàng chưa về đến Hub. Bàn đo kiểm sẽ mở sau khi hàng check-in tại quầy."
+                        >
+                          <Clock className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Chờ Hàng Về Hub</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedOrderId(ord.id);
+                          }}
+                          className="flex-1 py-2 px-3 rounded-xl bg-[#24263e] hover:bg-[#1a1c2e] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+                        >
+                          <Wrench className="w-3.5 h-3.5 text-[#fce5da]" />
+                          <span>{isAtHome ? 'Vào Bàn Đo Kiểm (Tại Nhà)' : 'Vào Bàn Đo Kiểm'}</span>
+                        </button>
+                      )}
 
                       {isCompleted && (
                         <button

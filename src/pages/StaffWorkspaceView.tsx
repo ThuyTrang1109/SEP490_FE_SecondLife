@@ -1,3 +1,5 @@
+import { usePanelTab, useBrowserLocation, navigatePath } from '../app/router/browser';
+import { resolveAppRoute, panelPaths } from '../app/router/paths';
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   LayoutDashboard,
@@ -87,20 +89,8 @@ export const VALID_STAFF_TABS: StaffTab[] = [
 export const STAFF_TAB_STORAGE_KEY = 'secondlife_staff_active_tab';
 
 export function getInitialStaffTab(): StaffTab {
-  if (typeof window !== 'undefined') {
-    const params = new URLSearchParams(window.location.search);
-    const subtab = params.get('subtab') as StaffTab;
-    if (subtab && VALID_STAFF_TABS.includes(subtab)) {
-      return subtab;
-    }
-    try {
-      const saved = sessionStorage.getItem(STAFF_TAB_STORAGE_KEY) as StaffTab;
-      if (saved && VALID_STAFF_TABS.includes(saved)) {
-        return saved;
-      }
-    } catch (e) {}
-  }
-  return 'overview';
+  if (typeof window === 'undefined') return 'overview';
+  return (resolveAppRoute(window.location.href, 'staff').section || 'overview') as StaffTab;
 }
 
 export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
@@ -112,30 +102,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
   onOpenProfile,
   onLogout,
 }) => {
-  const [activeTab, setActiveTab] = useState<StaffTab>(getInitialStaffTab);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      sessionStorage.setItem(STAFF_TAB_STORAGE_KEY, activeTab);
-    } catch (e) {}
-    const currentUrl = new URL(window.location.href);
-    currentUrl.searchParams.delete('subtab');
-    currentUrl.searchParams.delete('tab');
-    currentUrl.searchParams.delete('tap');
-    if (currentUrl.toString() !== window.location.href) {
-      window.history.replaceState(null, '', currentUrl.toString());
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
-    const handlePopState = () => {
-      const tab = getInitialStaffTab();
-      setActiveTab(tab);
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  const [activeTab, setActiveTab] = usePanelTab<StaffTab>('staff', 'overview');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);

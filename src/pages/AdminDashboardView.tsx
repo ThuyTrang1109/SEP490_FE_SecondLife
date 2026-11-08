@@ -469,7 +469,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       const elapsed = Math.round(performance.now() - start);
       if (res && (res.status === 'UP' || res.status === 'OK' || (res as any).success !== false)) {
         setHealthInfo({ status: 'UP', latency: elapsed });
-        triggerNotice(`Backend Spring Boot hoạt động tốt (${elapsed}ms). Trạng thái: UP.`);
       } else {
         setHealthInfo({ status: 'UP', latency: elapsed });
       }
@@ -3432,6 +3431,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 isOpen={isPackageModalOpen}
                 onClose={() => setIsPackageModalOpen(false)}
                 editingPackage={editingPackage}
+                creditPrices={creditPrices}
                 onSave={handleSavePackage}
               />
 

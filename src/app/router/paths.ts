@@ -25,7 +25,7 @@ export const panelPaths: Partial<Record<UserRole, Record<string, string>>> = {
   inspection_center: {
     overview: '/inspection-center/dashboard', dispatch: '/inspection-center/dispatch', staff: '/inspection-center/staff',
     orders: '/inspection-center/orders', checklists: '/inspection-center/checklists', pricing: '/inspection-center/pricing',
-    appeals: '/inspection-center/appeals',
+    appeals: '/inspection-center/appeals', profile: '/inspection-center/center-profile',
   },
   inspector: {
     workbench: '/inspector/dashboard', tasks: '/inspector/inspections',
@@ -161,6 +161,17 @@ export function resolveAppRoute(input: string, role: UserRole = 'buyer'): RouteM
     '/staff-workspace': '/staff/dashboard', '/inspection-hub': pathForTab('inspection-hub', role),
     '/inspector': '/inspector/dashboard', '/inspections': pathForTab('inspection-hub', role),
     '/inspector-center': '/inspection-center/dashboard', '/inspection-center': '/inspection-center/dashboard',
+    '/inspector-center/dashboard': '/inspection-center/dashboard',
+    '/inspector-center/dispatch': '/inspection-center/dispatch',
+    '/inspector-center/staff': '/inspection-center/staff',
+    '/inspector-center/orders': '/inspection-center/orders',
+    '/inspector-center/checklists': '/inspection-center/checklists',
+    '/inspector-center/pricing': '/inspection-center/pricing',
+    '/inspector-center/appeals': '/inspection-center/appeals',
+    '/inspector-center/profile': '/inspection-center/center-profile',
+    '/inspector-center/center-profile': '/inspection-center/center-profile',
+    '/inspection-center/center-info': '/inspection-center/center-profile',
+    '/inspector-center/center-info': '/inspection-center/center-profile',
     '/buyer': '/buyer/dashboard', '/seller': '/seller/dashboard', '/staff': '/staff/dashboard', '/admin': '/admin/dashboard',
     '/buyer-inspection-decision': params.get('orderId') || params.get('id')
       ? paths.decision(role, params.get('orderId') || params.get('id')!) : pathForTab('orders', role),
@@ -235,6 +246,6 @@ export function getRouteAccess(route: RouteMatch, user: { role: UserRole; roles?
 export function safeReturnPath(input: string | null): string | null {
   if (!input || !input.startsWith('/') || input.startsWith('//') || input.includes('\\')) return null;
   const url = new URL(input, 'http://secondlife.local');
-  return url.origin === 'http://secondlife.local' && !['/login', '/register', '/forgot-password'].includes(url.pathname.replace(/\/+$/, ''))
+  return url.origin === 'http://secondlife.local' && !['/login', '/register', '/forgot-password', '/unauthorized', '/404'].includes(url.pathname.replace(/\/+$/, '') || '/')
     ? `${url.pathname}${url.search}${url.hash}` : null;
 }

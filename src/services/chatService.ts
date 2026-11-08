@@ -1,6 +1,6 @@
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
-import { request, getAccessToken } from './apiClient';
+import { request, requestGet, getAccessToken } from './apiClient';
 
 export interface ChatRoomDto {
   id: string;
@@ -246,8 +246,7 @@ export const chatService = {
    * GET /api/v1/chats
    */
   async getChatRooms(): Promise<ChatRoomDto[]> {
-    const response = await request<ChatRoomDto[]>('/v1/chats', {
-      method: 'GET',
+    const response = await requestGet<ChatRoomDto[]>('/v1/chats', {
       requiresAuth: true,
     });
     const data = (response as any)?.data !== undefined && (response as any)?.data !== null

@@ -66,11 +66,15 @@ import {
 } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 import { CenterReviewAppealModal } from '../components/inspection/CenterReviewAppealModal';
-import { Language, UserProfile, EscrowOrder, CategoryBackend, ItemBackend, ShipmentBackend, CreateShipmentRequestDto } from '../types';
+import { InspectionCenterProfileTab } from '../components/inspection/InspectionCenterProfileTab';
+import { Language, UserProfile, EscrowOrder, CategoryBackend, ItemBackend, ShipmentBackend, CreateShipmentRequestDto, InspectionComplexityLevel, InspectionChecklistStatus, InspectionCenterProfile, UpdateInspectionCenterProfileRequest } from '../types';
 import { formatVND } from '../utils/translations';
 import { dialogService } from '../utils/dialogService';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { resolveInspectionCenter } from '../utils/orderUtils';
+import { itemService } from '../services/itemService';
+import { getCenterTabDataNeeds } from '../utils/inspectionCenterData';
+import { loadCenterPricing } from '../services/inspectionCenterPricing';
 import {
   inspectorService,
   categoryService,
@@ -78,6 +82,7 @@ import {
   InspectionOrderDto,
   InspectionStaffDto,
   InspectionChecklistResponse,
+  CreateChecklistTemplateRequest,
   InspectionTravelTierDto,
   InspectionFeeProposalResponse,
   InspectionFeeProposalStatus,
@@ -94,7 +99,7 @@ interface InspectionCenterDashboardViewProps {
   onViewWebsite?: () => void;
 }
 
-export type CenterTab = 'overview' | 'dispatch' | 'staff' | 'orders' | 'checklists' | 'pricing' | 'appeals';
+export type CenterTab = 'overview' | 'dispatch' | 'staff' | 'orders' | 'checklists' | 'pricing' | 'appeals' | 'profile';
 
 export interface AppliancePreset {
   key: string;
@@ -399,7 +404,9 @@ export const VALID_CENTER_TABS: CenterTab[] = [
   'staff',
   'orders',
   'checklists',
-  'pricing'
+  'pricing',
+  'appeals',
+  'profile'
 ];
 
 export const CENTER_TAB_STORAGE_KEY = 'secondlife_center_active_tab';
@@ -420,6 +427,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 }) => {
   // --- Active Sub-Tab (Khôi phục từ URL param ?subtab= hoặc sessionStorage khi F5) ---
   const [activeTab, setActiveTab] = usePanelTab<CenterTab>('inspection_center', 'overview');
+  const { orders: needsOrders, staff: needsStaff } = getCenterTabDataNeeds(activeTab);
+  const ordersRequestRef = useRef(0);
 
   // --- Sidebar Collapse & Mobile Sidebar State ---
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -486,7 +495,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             assignedInspectorId = assignData.inspectorId || assignedInspectorId;
             assignedInspectorName = assignData.inspectorName || assignedInspectorName;
           }
-        } catch {}
+        } catch { }
 
         const hasValidAssign = Boolean(assignedInspectorId && assignedInspectorName && assignedInspectorName !== 'Chưa phân công');
 
@@ -504,10 +513,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           postPrice: o.listing?.priceVnd || o.totalAmountVnd || o.amountVnd || 0,
           postImageUrls: o.listing?.photos
             ? [
-                o.listing.photos.front,
-                o.listing.photos.back,
-                o.listing.photos.screenOrDetails,
-              ].filter(Boolean) as string[]
+              o.listing.photos.front,
+              o.listing.photos.back,
+              o.listing.photos.screenOrDetails,
+            ].filter(Boolean) as string[]
             : ['https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400'],
           buyerName: o.buyerName || 'Khách hàng',
           buyerEmail: o.buyerId ? `buyer_${String(o.buyerId).slice(0, 6)}@gmail.com` : 'buyer@secondlife.vn',
@@ -625,10 +634,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
   // --- API Fetch: Orders ---
   const loadOrders = async () => {
+    const requestId = ++ordersRequestRef.current;
     setIsLoadingOrders(true);
     try {
       let backendItems: InspectionOrderDto[] = [];
-      let fetchFailed = false;
       try {
         const res = await inspectorService.getAllOrders(
           orderStatusFilter === 'ALL' ? undefined : orderStatusFilter,
@@ -640,29 +649,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           backendItems = extracted;
         }
       } catch (e) {
-        fetchFailed = true;
         console.warn('getAllOrders from backend error (falling back to storage/cache):', e);
       }
 
-      // Nếu gọi backend thành công (không lỗi kỹ thuật 500) mà trả về rỗng, quét thêm các status trọng tâm của đơn kiểm định
-      if (!fetchFailed && backendItems.length === 0 && orderStatusFilter === 'ALL') {
-        const statusesToProbe = ['CONFIRMED_PENDING_DISPATCH', 'WAITING_FEE_PAYMENT', 'WAITING_SELLER_APPROVAL', 'DISPATCHED', 'INSPECTING'];
-        try {
-          const probeResults = await Promise.all(
-            statusesToProbe.map((st) => inspectorService.getAllOrders(st, 0, 100).catch(() => ({ items: [] } as any)))
-          );
-          const probedMap = new Map<string, InspectionOrderDto>();
-          probeResults.forEach((pr) => {
-            const list = pr?.items || (pr as any)?.content || (Array.isArray(pr) ? pr : []);
-            list.forEach((item: any) => {
-              if (item?.id) probedMap.set(item.id, item);
-            });
-          });
-          if (probedMap.size > 0) {
-            backendItems = Array.from(probedMap.values());
-          }
-        } catch {}
-      }
+      if (requestId !== ordersRequestRef.current) return;
 
       // Read orders from localStorage (center_inspection_orders + recent_placed_orders)
       let localOrders: InspectionOrderDto[] = [];
@@ -715,7 +705,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 assignedInspectorId = assignData.inspectorId || assignedInspectorId;
                 assignedInspectorName = assignData.inspectorName || assignedInspectorName;
               }
-            } catch {}
+            } catch { }
 
             const hasValidAssign = Boolean(assignedInspectorId && assignedInspectorName && assignedInspectorName !== 'Chưa phân công');
 
@@ -761,7 +751,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               createdAt: o.createdAt || new Date().toISOString(),
             };
           });
-      } catch {}
+      } catch { }
 
       // Combine backendItems + localOrders + fallbackOrders
       const combinedMap = new Map<string, InspectionOrderDto>();
@@ -772,12 +762,12 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           if (!assignedInspectorId) {
             try {
               const rawAssign = localStorage.getItem(`order_assigned_inspector_${ord.id}`);
-            if (rawAssign) {
-              const assignData = JSON.parse(rawAssign);
-              assignedInspectorId = assignData.inspectorId || assignedInspectorId;
-              assignedInspectorName = assignData.inspectorName || assignedInspectorName;
-            }
-          } catch {}
+              if (rawAssign) {
+                const assignData = JSON.parse(rawAssign);
+                assignedInspectorId = assignData.inspectorId || assignedInspectorId;
+                assignedInspectorName = assignData.inspectorName || assignedInspectorName;
+              }
+            } catch { }
           }
 
           const hasValidAssign = Boolean(assignedInspectorId && assignedInspectorName && assignedInspectorName !== 'Chưa phân công');
@@ -807,10 +797,11 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       finalOrders.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
       setOrders(finalOrders);
     } catch (err: any) {
+      if (requestId !== ordersRequestRef.current) return;
       console.warn('Lỗi tải danh sách đơn kiểm định từ backend, sử dụng dữ liệu trạm:', err);
-      if (fallbackOrders.length > 0) setOrders(fallbackOrders);
+      if (requestId === ordersRequestRef.current && fallbackOrders.length > 0) setOrders(fallbackOrders);
     } finally {
-      setIsLoadingOrders(false);
+      if (requestId === ordersRequestRef.current) setIsLoadingOrders(false);
     }
   };
 
@@ -842,7 +833,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             });
           }
         }
-      } catch {}
+      } catch { }
 
       // Nếu Backend chưa có nhân sự nào (hệ thống mới / môi trường demo), dự phòng KTV mặc định
       if (list.length === 0) {
@@ -881,14 +872,14 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     const assignData = JSON.parse(rawAssign);
                     assignedId = assignData.inspectorId || assignedId;
                   }
-                } catch {}
+                } catch { }
                 if (assignedId === st.id || (st.email && assignedId === st.email)) {
                   taskCount++;
                 }
               });
             }
           }
-        } catch {}
+        } catch { }
         return {
           ...st,
           assignedOrdersCount: Math.max(st.assignedOrdersCount || 0, taskCount),
@@ -924,12 +915,15 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
   // Initial load and Realtime event listeners
   useEffect(() => {
-    loadOrders();
-    loadStaff();
+    if (needsStaff) loadStaff();
+  }, [needsStaff]);
+
+  useEffect(() => {
+    if (needsOrders) loadOrders();
 
     const handleSignal = () => {
-      loadOrders();
-      loadStaff();
+      if (needsOrders) loadOrders();
+      if (needsStaff) loadStaff();
     };
 
     window.addEventListener('secondlife_order_placed_signal', handleSignal);
@@ -949,8 +943,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         e.key?.startsWith('hub_package_received_') ||
         e.key?.startsWith('seller_shipped_to_hub_')
       ) {
-        loadOrders();
-        loadStaff();
+        handleSignal();
       }
     };
     window.addEventListener('storage', handleStorage);
@@ -964,7 +957,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       window.removeEventListener('secondlife_seller_shipped_to_hub', handleSignal);
       window.removeEventListener('storage', handleStorage);
     };
-  }, [orderStatusFilter]);
+  }, [needsOrders, needsStaff, orderStatusFilter]);
 
   // Checklists & Catalog State
   const [checklists, setChecklists] = useState<InspectionChecklistResponse[]>([]);
@@ -982,6 +975,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   const [editingChecklistId, setEditingChecklistId] = useState<string | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
   const [selectedProductId, setSelectedProductId] = useState<string>('');
+  const [selectedItemId, setSelectedItemId] = useState<string>('');
+  const [selectedComplexityLevel, setSelectedComplexityLevel] = useState<InspectionComplexityLevel>('L1');
   const [checklistTitle, setChecklistTitle] = useState('');
   const [checklistDesc, setChecklistDesc] = useState('');
   const [checklistItems, setChecklistItems] = useState<{
@@ -991,22 +986,63 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     mandatory: boolean;
   }[]>([
     {
-      itemTitle: 'Kiểm tra nguồn, phích cắm & khởi động',
-      criteriaDescription: 'Kiểm tra bo nguồn, điện áp cấp định mức và phản hồi bật/tắt thiết bị',
+      itemTitle: 'Kiểm tra an toàn điện & tiếp địa',
+      criteriaDescription: 'Dây dẫn nguyên vẹn, không hở điện, chống rò rỉ và có tiếp địa đạt chuẩn.',
       mandatory: true,
     },
     {
-      itemTitle: 'Kiểm tra ngoại quan, tem nhãn & ốc niêm phong',
-      criteriaDescription: 'Soi dấu hiệu cạy mở trái phép, trầy xước vỏ và chân đế cao su',
+      itemTitle: 'Kiểm tra vận hành chức năng chính',
+      criteriaDescription: 'Chạy thử tải thực tế các chế độ điều khiển và tính ổn định linh kiện công suất.',
+      mandatory: true,
+    },
+    {
+      itemTitle: 'Kiểm tra ngoại quan & ốc niêm phong',
+      criteriaDescription: 'Soi dấu hiệu cạy mở trái phép, trầy xước vỏ và các chi tiết cơ khí.',
       mandatory: false,
-    },
-    {
-      itemTitle: 'Thử tải vận hành liên tục 30 phút',
-      criteriaDescription: 'Kiểm tra nhiệt độ làm việc, độ ồn dB và tính ổn định linh kiện công suất',
-      mandatory: true,
     },
   ]);
   const [isSavingChecklist, setIsSavingChecklist] = useState(false);
+
+  // 4-Level Fees (L1-L4) State
+  const [currentLevelFees, setCurrentLevelFees] = useState<InspectionFeeProposalResponse[]>([]);
+  const [levelFeeProposals, setLevelFeeProposals] = useState<InspectionFeeProposalResponse[]>([]);
+
+  // Helper: Kiểm tra cấp độ L1-L4 đã có đề xuất đang chờ Admin duyệt hay chưa (chặn gửi trùng lặp)
+  const getPendingProposalForLevel = (level: InspectionComplexityLevel) => {
+    const all = [...levelFeeProposals, ...tierProposals];
+    return all.find(
+      (p) =>
+        p &&
+        String(p.complexityLevel || '').toUpperCase() === String(level).toUpperCase() &&
+        (String(p.status || '').toUpperCase() === 'PENDING_APPROVAL' ||
+          String(p.status || '').toUpperCase() === 'PENDING')
+    );
+  };
+
+  // Helper: Lấy biểu phí đã được Admin phê duyệt cho cấp độ tương ứng
+  const getApprovedFeeForLevel = (level?: InspectionComplexityLevel | string) => {
+    if (!level) return null;
+    const lvl = String(level).toUpperCase();
+    return (
+      currentLevelFees.find(
+        (f) =>
+          String(f.complexityLevel || '').toUpperCase() === lvl &&
+          (String(f.status || '').toUpperCase() === 'APPROVED' || !f.status) &&
+          f.baseInspectionFee != null &&
+          f.baseInspectionFee > 0
+      ) || null
+    );
+  };
+
+  // Helper: Kiểm tra cấp độ L1-L4 đã có biểu phí được Admin duyệt chính thức hay chưa (Phương án 1)
+  const isLevelFeeApproved = (level?: InspectionComplexityLevel | string): boolean => {
+    return Boolean(getApprovedFeeForLevel(level));
+  };
+  const [isProposeLevelFeeModalOpen, setIsProposeLevelFeeModalOpen] = useState(false);
+  const [proposingLevel, setProposingLevel] = useState<InspectionComplexityLevel>('L1');
+  const [proposingLevelFeeAmount, setProposingLevelFeeAmount] = useState<number | ''>(50000);
+  const [proposingLevelFeeError, setProposingLevelFeeError] = useState<string | null>(null);
+  const [isSubmittingLevelFee, setIsSubmittingLevelFee] = useState(false);
 
   // Detail View Modal State
   const [viewingChecklist, setViewingChecklist] = useState<InspectionChecklistResponse | null>(null);
@@ -1023,6 +1059,35 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     } finally {
       setIsLoadingChecklistDetail(false);
     }
+  };
+
+  // --- Center Profile State (GET /api/v1/inspector-center/profile) ---
+  const [centerProfile, setCenterProfile] = useState<InspectionCenterProfile | null>(null);
+  const [isLoadingCenterProfile, setIsLoadingCenterProfile] = useState(false);
+  const [centerProfileError, setCenterProfileError] = useState<string | null>(null);
+
+  const loadCenterProfile = async () => {
+    setIsLoadingCenterProfile(true);
+    setCenterProfileError(null);
+    try {
+      const res = await inspectorService.getCenterProfile();
+      setCenterProfile(res);
+      return res;
+    } catch (err: any) {
+      console.warn('Load center profile error:', err);
+      setCenterProfileError(err?.message || 'Không thể tải thông tin hồ sơ trung tâm.');
+    } finally {
+      setIsLoadingCenterProfile(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'profile' || activeTab === 'overview') loadCenterProfile();
+  }, [activeTab]);
+
+  const handleProfileUpdated = (updated: InspectionCenterProfile) => {
+    setCenterProfile(updated);
+    showNotice('Đã cập nhật hồ sơ và địa chỉ tiếp nhận của trung tâm thành công!');
   };
 
   // Inspection Shipment Modal State (GET/POST /api/v1/inspection-orders/{inspectionId}/shipments)
@@ -1044,7 +1109,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
   const updateAddressesForLeg = (
     leg: 'SELLER_TO_CENTER' | 'CENTER_TO_BUYER' | 'CENTER_TO_SELLER',
-    ord: InspectionOrderDto
+    ord: InspectionOrderDto,
+    profile = centerProfile
   ) => {
     // Lấy chính xác thông tin vị trí trung tâm kiểm định của đơn hàng hoặc tài khoản quản lý (không hardcode)
     const center = resolveInspectionCenter({
@@ -1053,9 +1119,12 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       inspectionCenterAddress: (currentUser as any)?.address || (ord as any).inspectionCenterAddress,
       inspectionCenterPhone: (currentUser as any)?.phone || (ord as any).inspectionCenterPhone,
     });
-    const hubName = center.name;
-    const hubPhone = center.phone;
-    const hubAddress = center.address;
+    const assignedProfile = profile && (!ord.inspectionCenterId || ord.inspectionCenterId === profile.id)
+      ? profile
+      : null;
+    const hubName = assignedProfile?.name || center.name;
+    const hubPhone = assignedProfile?.phone || center.phone;
+    const hubAddress = assignedProfile?.address || center.address;
 
     const sName = ord.sellerName || 'Người bán';
     const sPhone = (ord as any).sellerPhone || (ord as any).phone || '0912345678';
@@ -1107,7 +1176,11 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
     setIsLoadingShipments(true);
     try {
-      const list = await shippingService.getInspectionShipments(ord.id);
+      const [list, profile] = await Promise.all([
+        shippingService.getInspectionShipments(ord.id),
+        centerProfile ? Promise.resolve(centerProfile) : loadCenterProfile(),
+      ]);
+      if (profile) updateAddressesForLeg(initLeg, ord, profile);
       const localKey = `sl_insp_shipments_${ord.id}`;
       const cached = localStorage.getItem(localKey);
       let merged = Array.isArray(list) ? list : [];
@@ -1157,11 +1230,17 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     const rPhone = cleanPhone(receiverPhone, '0908123456');
 
     const isFromHub = selectedLeg !== 'SELLER_TO_CENTER';
+    const assignedProfile = centerProfile &&
+      (!shipmentModalOrder.inspectionCenterId || shipmentModalOrder.inspectionCenterId === centerProfile.id)
+      ? centerProfile : null;
+    const hubCoords = assignedProfile?.latitude != null && assignedProfile?.longitude != null
+      ? { latitude: assignedProfile.latitude, longitude: assignedProfile.longitude }
+      : { latitude: 10.8415, longitude: 106.8098 };
     const fromCoord = isFromHub
-      ? { latitude: 10.8415, longitude: 106.8098 }
+      ? hubCoords
       : { latitude: 10.7769, longitude: 106.7009 };
     const toCoord = selectedLeg === 'SELLER_TO_CENTER'
-      ? { latitude: 10.8415, longitude: 106.8098 }
+      ? hubCoords
       : selectedLeg === 'CENTER_TO_BUYER'
       ? { latitude: 10.8012, longitude: 106.7123 }
       : { latitude: 10.7769, longitude: 106.7009 };
@@ -1241,6 +1320,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   const [pricingProposalTotalPages, setPricingProposalTotalPages] = useState<number>(1);
   const [pricingProposalTotalElements, setPricingProposalTotalElements] = useState<number>(0);
   const [isLoadingPricing, setIsLoadingPricing] = useState(false);
+  const pricingRequestRef = useRef(0);
   const [selectedProposalDetail, setSelectedProposalDetail] = useState<InspectionFeeProposalResponse | null>(null);
 
   // Propose Fee Modal State (2-step wizard)
@@ -1288,29 +1368,37 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     setEditingChecklistId(null);
     setSelectedCategoryId('');
     setSelectedProductId('');
+    setSelectedItemId('');
+    setSelectedComplexityLevel('L1');
     setChecklistTitle('');
     setChecklistDesc('');
     setChecklistItems([
       {
-        itemTitle: 'Kiểm tra nguồn, phích cắm & khởi động',
-        criteriaDescription: 'Kiểm tra bo nguồn, điện áp cấp định mức và phản hồi bật/tắt thiết bị',
+        itemTitle: 'Kiểm tra an toàn điện & tiếp địa',
+        criteriaDescription: 'Dây dẫn nguyên vẹn, không hở điện, chống rò rỉ và có tiếp địa đạt chuẩn.',
         mandatory: true,
       },
       {
-        itemTitle: 'Kiểm tra ngoại quan, tem nhãn & ốc niêm phong',
-        criteriaDescription: 'Soi dấu hiệu cạy mở trái phép, trầy xước vỏ và chân đế cao su',
+        itemTitle: 'Kiểm tra vận hành chức năng chính',
+        criteriaDescription: 'Chạy thử tải thực tế các chế độ điều khiển và tính ổn định linh kiện công suất.',
+        mandatory: true,
+      },
+      {
+        itemTitle: 'Kiểm tra ngoại quan & ốc niêm phong',
+        criteriaDescription: 'Soi dấu hiệu cạy mở trái phép, trầy xước vỏ và các chi tiết cơ khí.',
         mandatory: false,
-      },
-      {
-        itemTitle: 'Thử tải vận hành liên tục 30 phút',
-        criteriaDescription: 'Kiểm tra nhiệt độ làm việc, độ ồn dB và tính ổn định linh kiện công suất',
-        mandatory: true,
       },
     ]);
   };
 
   const handleOpenCreateModal = (presetKey?: string) => {
     resetChecklistForm();
+    const firstApproved = (['L1', 'L2', 'L3', 'L4'] as InspectionComplexityLevel[]).find((lvl) =>
+      isLevelFeeApproved(lvl)
+    );
+    if (firstApproved) {
+      setSelectedComplexityLevel(firstApproved);
+    }
     if (presetKey) {
       const preset = APPLIANCE_PRESETS.find(p => p.key === presetKey);
       if (preset) {
@@ -1320,10 +1408,104 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     setIsChecklistModalOpen(true);
   };
 
+  // Nhóm các Item đã có checklist được Admin duyệt (approvalStatus === 'APPROVED' và active === true) theo complexityLevel (L1–L4)
+  const approvedItemsByLevel = useMemo(() => {
+    const map: Record<InspectionComplexityLevel, { itemId: string; itemName: string; checklistTitle?: string }[]> = {
+      L1: [],
+      L2: [],
+      L3: [],
+      L4: [],
+    };
+
+    const seenItemIds = new Set<string>();
+
+    checklists
+      .filter((chk) => {
+        const isApproved = String(chk.approvalStatus || '').toUpperCase() === 'APPROVED';
+        const isActive = chk.active === true || (chk as any).isActive === true || (chk.active !== false && isApproved);
+        return isApproved && isActive && chk.complexityLevel;
+      })
+      .forEach((chk) => {
+        const lvl = chk.complexityLevel as InspectionComplexityLevel;
+        if (map[lvl]) {
+          const matchedItem = catalogItems.find((it) => it.id === chk.itemId);
+          const name = chk.itemName || matchedItem?.name || chk.title;
+          const itemId = chk.itemId || matchedItem?.id || chk.id;
+          if (itemId && !seenItemIds.has(itemId)) {
+            seenItemIds.add(itemId);
+            map[lvl].push({
+              itemId,
+              itemName: name,
+              checklistTitle: chk.title,
+            });
+          }
+        }
+      });
+
+    return map;
+  }, [checklists, catalogItems]);
+
+  // Danh sách Item (loại sản phẩm) chưa được phân cấp L1–L4 (chưa có checklist nào được APPROVED & active)
+  const unclassifiedItems = useMemo(() => {
+    const approvedItemIds = new Set(
+      checklists
+        .filter((chk) => {
+          const isApproved = String(chk.approvalStatus || '').toUpperCase() === 'APPROVED';
+          const isActive = chk.active === true || (chk as any).isActive === true || (chk.active !== false && isApproved);
+          return isApproved && isActive && chk.itemId;
+        })
+        .map((chk) => chk.itemId)
+    );
+
+    return catalogItems
+      .filter((itm) => itm.selectable !== false)
+      .map((itm) => {
+        const cat = categories.find((c) => c.id === itm.categoryId);
+        const pendingChecklist = checklists.find(
+          (c) => c.itemId === itm.id && String(c.approvalStatus || '').toUpperCase() === 'PENDING_APPROVAL'
+        );
+        return {
+          ...itm,
+          categoryName: cat?.name || 'Gia dụng',
+          isApproved: approvedItemIds.has(itm.id),
+          pendingChecklist,
+        };
+      })
+      .filter((itm) => !itm.isApproved);
+  }, [catalogItems, checklists, categories]);
+
+  // Mở modal tạo / cấu hình checklist cho Item cụ thể hoặc theo Level
+  const handleOpenCreateChecklistForItem = (item?: ItemBackend, level?: InspectionComplexityLevel) => {
+    if (categories.length === 0 || catalogItems.length === 0) {
+      loadCategoriesAndItems();
+    }
+    resetChecklistForm();
+
+    // Xác định cấp độ ưu tiên: cấp truyền vào nếu đã duyệt giá, hoặc cấp hợp lệ đầu tiên đã có giá duyệt
+    let targetLevel = level;
+    if (!targetLevel || !isLevelFeeApproved(targetLevel)) {
+      const firstApproved = (['L1', 'L2', 'L3', 'L4'] as InspectionComplexityLevel[]).find((lvl) =>
+        isLevelFeeApproved(lvl)
+      );
+      targetLevel = firstApproved || level || 'L1';
+    }
+
+    if (item) {
+      setSelectedCategoryId(item.categoryId || '');
+      setSelectedItemId(item.id || '');
+      setChecklistTitle(`Bộ tiêu chuẩn kiểm định ${item.name}`);
+      setChecklistDesc(`Quy chuẩn kiểm tra kỹ thuật an toàn và chức năng cho thiết bị ${item.name}. Đề xuất áp dụng cấp độ ${targetLevel}.`);
+    }
+    setSelectedComplexityLevel(targetLevel);
+    setIsChecklistModalOpen(true);
+  };
+
   const handleOpenEditModal = (chk: InspectionChecklistResponse) => {
     setEditingChecklistId(chk.id);
     setSelectedCategoryId(chk.categoryId || '');
     setSelectedProductId('');
+    setSelectedItemId(chk.itemId || '');
+    setSelectedComplexityLevel(chk.complexityLevel || 'L1');
     setChecklistTitle(chk.title || '');
     setChecklistDesc(chk.description || '');
     if (chk.items && chk.items.length > 0) {
@@ -1351,6 +1533,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     setEditingChecklistId(null);
     setSelectedCategoryId(chk.categoryId || '');
     setSelectedProductId('');
+    setSelectedItemId(chk.itemId || '');
+    setSelectedComplexityLevel(chk.complexityLevel || 'L1');
     setChecklistTitle(`[Bản sao] ${chk.title}`);
     setChecklistDesc(chk.description || '');
     if (chk.items && chk.items.length > 0) {
@@ -1390,38 +1574,92 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   };
 
   const handleSaveChecklist = async () => {
+    if (!selectedItemId) {
+      await dialogService.warning(lang === 'vi' ? 'Vui lòng chọn loại thiết bị cụ thể (Item) cần lập bộ tiêu chuẩn' : 'Please select specific item');
+      return;
+    }
+
+    // Kiểm tra và chặn đề xuất nếu cấp độ chưa có mức phí kiểm định được Admin duyệt (Phương án 1)
+    if (!isLevelFeeApproved(selectedComplexityLevel)) {
+      const pendingProp = getPendingProposalForLevel(selectedComplexityLevel);
+      await dialogService.warning(
+        lang === 'vi'
+          ? `Cấp độ ${selectedComplexityLevel} hiện chưa có mức phí kiểm định được Admin phê duyệt ${pendingProp ? '(hiện đang có đề xuất giá chờ Admin xét duyệt)' : '(chưa có đề xuất giá)'
+          }. Theo quy định hệ thống, trung tâm chỉ được lập và gửi đề xuất bộ tiêu chuẩn cho các cấp độ đã có biểu phí được Admin duyệt chính thức.`
+          : `Complexity level ${selectedComplexityLevel} does not have an approved fee yet. Please wait for fee approval before submitting checklists.`
+      );
+      return;
+    }
+
+    // Chặn gửi trùng lặp nếu thiết bị này đã có đề xuất tiêu chuẩn đang chờ Admin duyệt
+    const existingPendingChk = checklists.find(
+      c => c.itemId === selectedItemId && (c.approvalStatus === 'PENDING_APPROVAL' || (c as any).status === 'PENDING_APPROVAL') && c.id !== editingChecklistId
+    );
+    if (existingPendingChk) {
+      await dialogService.warning(
+        lang === 'vi'
+          ? `Thiết bị này hiện đã có bộ tiêu chuẩn "${existingPendingChk.title}" (v${existingPendingChk.revision || 1}) đang ở trạng thái CHỜ DUYỆT. Vui lòng chờ Admin xử trị hoặc rút đề xuất cũ trước khi tạo đề xuất mới.`
+          : 'A proposal for this item is already pending approval.'
+      );
+      return;
+    }
     if (!checklistTitle.trim()) {
       await dialogService.warning(lang === 'vi' ? 'Vui lòng nhập tên bộ tiêu chuẩn kiểm định' : 'Please enter checklist title');
       return;
     }
+    if (checklistTitle.trim().length > 200) {
+      await dialogService.warning(lang === 'vi' ? 'Tên bộ tiêu chuẩn không được vượt quá 200 ký tự' : 'Title cannot exceed 200 chars');
+      return;
+    }
+    if (checklistDesc.trim().length > 10000) {
+      await dialogService.warning(lang === 'vi' ? 'Mô tả căn cứ kỹ thuật không được vượt quá 10.000 ký tự' : 'Description cannot exceed 10000 chars');
+      return;
+    }
     const validItems = checklistItems.filter(i => i.itemTitle.trim());
     if (validItems.length === 0) {
-      await dialogService.warning(lang === 'vi' ? 'Vui lòng thêm ít nhất một hạng mục kiểm định' : 'Please add at least one criteria item');
+      await dialogService.warning(lang === 'vi' ? 'Vui lòng thêm ít nhất một hạng mục kiểm định (1-100 tiêu chí)' : 'Please add at least one criteria item');
+      return;
+    }
+    if (validItems.length > 100) {
+      await dialogService.warning(lang === 'vi' ? 'Số lượng tiêu chí kiểm định không được vượt quá 100 tiêu chí' : 'Max 100 criteria');
+      return;
+    }
+    const hasMandatory = validItems.some(i => i.mandatory);
+    if (!hasMandatory) {
+      await dialogService.warning(lang === 'vi' ? 'Phải có ít nhất một tiêu chí bắt buộc (Mandatory) trong bộ tiêu chuẩn' : 'At least one mandatory criterion is required');
+      return;
+    }
+    const titles = validItems.map(i => i.itemTitle.trim().toLowerCase());
+    const uniqueTitles = new Set(titles);
+    if (uniqueTitles.size < titles.length) {
+      await dialogService.warning(lang === 'vi' ? 'Tên các tiêu chí kiểm định không được trùng lặp' : 'Criteria titles must be unique');
       return;
     }
 
     setIsSavingChecklist(true);
     try {
       const selectedCat = categories.find(c => c.id === selectedCategoryId);
-      const payload: any = {
+      const payload: CreateChecklistTemplateRequest = {
+        itemId: selectedItemId,
+        complexityLevel: selectedComplexityLevel,
         title: checklistTitle.trim(),
-        description: checklistDesc.trim(),
+        description: checklistDesc.trim() || undefined,
         categoryId: selectedCategoryId || undefined,
         categoryName: selectedCat ? selectedCat.name : undefined,
         items: validItems.map((it, idx) => ({
-          itemTitle: it.itemTitle.trim(),
-          criteriaDescription: (it.criteriaDescription || '').trim(),
+          itemTitle: it.itemTitle.trim().slice(0, 255),
+          criteriaDescription: (it.criteriaDescription || '').trim().slice(0, 4000) || undefined,
           mandatory: Boolean(it.mandatory),
           orderIndex: idx + 1,
         })),
       };
 
       if (editingChecklistId) {
-        await inspectorService.updateChecklist(editingChecklistId, payload);
-        showNotice(lang === 'vi' ? `Đã cập nhật bộ tiêu chuẩn "${checklistTitle}" thành công!` : `Checklist updated!`);
+        const updated = await inspectorService.updateChecklist(editingChecklistId, payload);
+        showNotice(lang === 'vi' ? `Đã tạo phiên bản đề xuất mới cho bộ tiêu chuẩn "${checklistTitle}" (v${updated.revision || 2})!` : `New revision submitted!`);
       } else {
         await inspectorService.createChecklist(payload);
-        showNotice(lang === 'vi' ? `Đã tạo mới bộ tiêu chuẩn "${checklistTitle}" thành công!` : `Checklist created!`);
+        showNotice(lang === 'vi' ? `Đã gửi đề xuất bộ tiêu chuẩn "${checklistTitle}" thành công! Đang chờ Admin duyệt.` : `Checklist proposal created!`);
       }
 
       setIsChecklistModalOpen(false);
@@ -1436,22 +1674,27 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   };
 
   const handleDeleteChecklist = async (chk: InspectionChecklistResponse) => {
+    if (chk.approvalStatus === 'APPROVED' || chk.approvalStatus === 'LEGACY') {
+      await dialogService.warning(lang === 'vi' ? 'Không thể rút hoặc xóa bộ tiêu chuẩn đã được duyệt (APPROVED) hoặc thuộc phiên bản cũ (LEGACY).' : 'Cannot withdraw approved or legacy checklist');
+      return;
+    }
+
     const confirmed = await dialogService.confirm(
-      lang === 'vi' ? `Bạn có chắc muốn xóa / vô hiệu hóa bộ tiêu chuẩn "${chk.title}"?` : `Delete checklist "${chk.title}"?`,
-      { title: lang === 'vi' ? 'Xác Nhận Xóa' : 'Confirm Delete', type: 'warning' }
+      lang === 'vi' ? `Bạn có chắc muốn rút đề xuất bộ tiêu chuẩn "${chk.title}"?` : `Withdraw proposal "${chk.title}"?`,
+      { title: lang === 'vi' ? 'Xác Nhận Rút Đề Xuất' : 'Confirm Withdrawal', type: 'warning' }
     );
     if (!confirmed) return;
 
     try {
       await inspectorService.deleteChecklist(chk.id);
-      showNotice(lang === 'vi' ? `Đã xóa bộ tiêu chuẩn "${chk.title}" thành công!` : `Checklist deleted!`);
+      showNotice(lang === 'vi' ? `Đã rút đề xuất bộ tiêu chuẩn "${chk.title}" thành công!` : `Checklist proposal withdrawn!`);
       if (viewingChecklist?.id === chk.id) {
         setViewingChecklist(null);
       }
       await loadChecklists();
     } catch (err: any) {
-      console.error('Lỗi xóa checklist:', err);
-      dialogService.error(err?.message || (lang === 'vi' ? 'Không thể xóa bộ tiêu chuẩn' : 'Failed to delete checklist'));
+      console.error('Lỗi rút đề xuất checklist:', err);
+      dialogService.error(err?.message || (lang === 'vi' ? 'Không thể rút đề xuất bộ tiêu chuẩn' : 'Failed to withdraw checklist'));
     }
   };
 
@@ -1505,35 +1748,93 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     });
   }, [checklists, checklistCategoryFilter, checklistSearch]);
 
-  const loadPricing = async (targetPage: number = 0, statusFilter: string = pricingProposalFilter) => {
+  const loadPricing = async (targetPage: number = 0, statusFilter: string = pricingProposalFilter, includeSummary = true) => {
+    const requestId = ++pricingRequestRef.current;
     setIsLoadingPricing(true);
     try {
-      const [tiersRes, propsRes] = await Promise.allSettled([
-        inspectorService.getTravelTiers(),
-        inspectorService.getTierProposals(statusFilter, targetPage, 10),
-      ]);
-      if (tiersRes.status === 'fulfilled') {
+      const { tiers: tiersRes, history: propsRes, fees: currentFeesRes, pending: levelPropsRes } =
+        await loadCenterPricing(targetPage, statusFilter, includeSummary);
+      if (requestId !== pricingRequestRef.current) return;
+      if (tiersRes.status === 'fulfilled' && tiersRes.value !== null) {
         const tiers = Array.isArray(tiersRes.value) ? tiersRes.value : [];
         setTravelTiers(tiers);
       }
       if (propsRes.status === 'fulfilled') {
-        const props = propsRes.value;
-        setTierProposals(props.items || []);
+        const props = propsRes.value as any;
+        const list = Array.isArray(props?.items)
+          ? props.items
+          : Array.isArray(props?.content)
+            ? props.content
+            : Array.isArray(props)
+              ? props
+              : [];
+        setTierProposals(list);
         setPricingProposalTotalPages(props.totalPages || 1);
-        setPricingProposalTotalElements(props.totalElements || 0);
+        setPricingProposalTotalElements(props.totalElements ?? list.length);
         setPricingProposalPage(props.page || 0);
       }
+      if (currentFeesRes.status === 'fulfilled' && currentFeesRes.value !== null) {
+        const cFees = currentFeesRes.value;
+        setCurrentLevelFees(Array.isArray(cFees) ? cFees : []);
+      }
+      if (levelPropsRes?.status === 'fulfilled') {
+        setLevelFeeProposals(levelPropsRes.value);
+      }
     } catch (err) {
-      console.warn('Lỗi tải bảng cước & đề xuất:', err);
+      console.warn('Lỗi tải lịch sử đề xuất:', err);
     } finally {
-      setIsLoadingPricing(false);
+      if (requestId === pricingRequestRef.current) setIsLoadingPricing(false);
+    }
+  };
+
+  const handleProposeLevelFeeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProposingLevelFeeError(null);
+    if (!proposingLevelFeeAmount || Number(proposingLevelFeeAmount) <= 0) {
+      setProposingLevelFeeError('Vui lòng nhập mức phí kiểm định hợp lệ (lớn hơn 0đ)');
+      return;
+    }
+
+    // Chặn gửi yêu cầu trùng lặp nếu cấp độ này đã có đề xuất đang chờ duyệt
+    const existingPending = getPendingProposalForLevel(proposingLevel);
+    if (existingPending) {
+      setProposingLevelFeeError(`Cấp độ ${proposingLevel} hiện đã có một đề xuất (${formatVND(existingPending.baseInspectionFee || 0)}) đang chờ Admin duyệt. Mỗi cấp độ chỉ được tồn tại 1 yêu cầu chờ duyệt duy nhất.`);
+      return;
+    }
+
+    setIsSubmittingLevelFee(true);
+    try {
+      const res = await inspectorService.proposeLevelFee({
+        complexityLevel: proposingLevel,
+        baseInspectionFee: Number(proposingLevelFeeAmount),
+      });
+
+      // Optimistically update levelFeeProposals so the card immediately reflects "Đang chờ Admin duyệt"
+      const newProp: InspectionFeeProposalResponse = {
+        id: res?.id || `prop-${Date.now()}`,
+        complexityLevel: proposingLevel,
+        baseInspectionFee: Number(proposingLevelFeeAmount),
+        status: 'PENDING_APPROVAL',
+        createdAt: res?.createdAt || new Date().toISOString(),
+        ...(res || {}),
+      };
+      setLevelFeeProposals((prev) => [newProp, ...prev.filter((p) => p.id !== newProp.id)]);
+
+      showNotice(`Đã gửi đề xuất biểu phí cho cấp độ ${proposingLevel} (${formatVND(Number(proposingLevelFeeAmount))}) thành công!`);
+      setIsProposeLevelFeeModalOpen(false);
+      await loadPricing();
+    } catch (err: any) {
+      console.error('Lỗi đề xuất biểu phí cấp độ:', err);
+      setProposingLevelFeeError(err?.message || 'Không thể gửi đề xuất biểu phí');
+    } finally {
+      setIsSubmittingLevelFee(false);
     }
   };
 
   const handlePricingFilterChange = (newStatus: 'ALL' | InspectionFeeProposalStatus) => {
     setPricingProposalFilter(newStatus);
     setPricingProposalPage(0);
-    loadPricing(0, newStatus);
+    loadPricing(0, newStatus, false);
   };
 
   const handleOpenProposeModal = () => {
@@ -1631,7 +1932,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       });
       showNotice('Đã gửi đề xuất biểu phí lên Admin sàn thành công! Đề xuất đang chờ xét duyệt.');
       setIsProposeModalOpen(false);
-      loadPricing(0, pricingProposalFilter);
+      loadPricing(0, pricingProposalFilter, false);
     } catch (err: any) {
       dialogService.error(err?.message || 'Gửi đề xuất giá thất bại');
     } finally {
@@ -1643,20 +1944,28 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     if (activeTab === 'checklists') {
       loadChecklists();
       loadCategoriesAndItems();
+      loadPricing(0, pricingProposalFilter, true);
     } else if (activeTab === 'pricing') {
       loadPricing();
+      loadChecklists();
+      loadCategoriesAndItems();
     }
   }, [activeTab]);
 
   // Refresh all data
   const handleRefreshAll = () => {
-    loadOrders();
-    loadStaff();
+    if (activeTab === 'profile' || activeTab === 'overview') loadCenterProfile();
+    if (needsOrders) loadOrders();
+    if (needsStaff) loadStaff();
     if (activeTab === 'checklists') {
       loadChecklists();
       loadCategoriesAndItems();
     }
-    if (activeTab === 'pricing') loadPricing();
+    if (activeTab === 'pricing') {
+      loadPricing();
+      loadChecklists();
+      loadCategoriesAndItems();
+    }
     showNotice(lang === 'vi' ? 'Đã làm mới dữ liệu trung tâm kiểm định' : 'Center data refreshed successfully');
   };
 
@@ -1886,7 +2195,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           });
           localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
         }
-      } catch {}
+      } catch { }
 
       // Update center_inspection_orders (ensure the order is persisted and marked DISPATCHED)
       try {
@@ -1914,7 +2223,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           });
         }
         localStorage.setItem('center_inspection_orders', JSON.stringify(listCenter));
-      } catch {}
+      } catch { }
 
       // Notify other tabs and inspector workstation
       window.dispatchEvent(
@@ -1934,14 +2243,12 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       setSelectedInspectorId('');
       setAssignNote('');
       setAssignError(null);
-      await loadOrders();
-      await loadStaff();
     } catch (err: any) {
       console.error('Lỗi khi phân công KTV:', err);
       // Xóa mapping local lưu tạm để tránh hiển thị sai lệch khi BE từ chối
       try {
         localStorage.removeItem(`order_assigned_inspector_${assignModalOrder.id}`);
-      } catch {}
+      } catch { }
       const msg = err?.message || 'Giao task kiểm định thất bại. Vui lòng thử lại.';
       setAssignError(msg);
     } finally {
@@ -1992,7 +2299,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           role: 'INSPECTOR',
         });
         localStorage.setItem('center_registered_staff', JSON.stringify(list));
-      } catch {}
+      } catch { }
 
       showNotice(`Đã cấp tài khoản kỹ thuật viên cho ${newStaffName.trim()} thành công!`);
 
@@ -2239,6 +2546,13 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       badge: null,
       badgeColor: '',
     },
+    {
+      id: 'profile' as CenterTab,
+      label: 'THÔNG TIN TRUNG TÂM',
+      icon: Building2,
+      badge: centerProfile && !centerProfile.shippingAddressConfigured ? 'Cần cấu hình' : null,
+      badgeColor: 'bg-amber-500 text-white',
+    },
   ];
 
   return (
@@ -2334,6 +2648,16 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   <button
                     onClick={() => {
                       setShowUserDropdown(false);
+                      setActiveTab('profile');
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-100 rounded-xl flex items-center gap-2 text-[#24263e] font-bold cursor-pointer transition"
+                  >
+                    <Building2 className="w-3.5 h-3.5 text-[#c34c36]" />
+                    <span>Thông Tin Trung Tâm</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowUserDropdown(false);
                       onLogout?.();
                     }}
                     className="w-full text-left px-3 py-2 hover:bg-rose-50 rounded-xl text-rose-600 flex items-center gap-2 cursor-pointer font-bold transition"
@@ -2354,9 +2678,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       <div className="flex-1 flex relative w-full">
         {/* LEFT SIDEBAR (EXACT ADMIN STYLE: bg-[#fce5da] text-[#24263e]) */}
         <aside
-          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] ${
-            isSidebarCollapsed ? 'w-16' : 'w-60 sm:w-64'
-          } ${isMobileSidebarOpen ? 'fixed inset-y-13 left-0 shadow-2xl block' : 'hidden md:flex'}`}
+          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] ${isSidebarCollapsed ? 'w-16' : 'w-64 sm:w-70'
+            } ${isMobileSidebarOpen ? 'fixed inset-y-13 left-0 shadow-2xl block' : 'hidden md:flex'}`}
         >
           {/* User Block with Live Online indicator */}
           <div
@@ -2406,18 +2729,16 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     setActiveTab(item.id);
                     setIsMobileSidebarOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs transition cursor-pointer group ${
-                    isActive
-                      ? 'bg-white text-[#24263e] shadow-sm font-black'
-                      : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/40 font-bold'
-                  }`}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs transition cursor-pointer group ${isActive
+                    ? 'bg-white text-[#24263e] shadow-sm font-black'
+                    : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/40 font-bold'
+                    }`}
                   title={item.label}
                 >
                   <div className="flex items-center gap-3 truncate">
                     <Icon
-                      className={`w-4 h-4 shrink-0 transition ${
-                        isActive ? 'text-[#24263e]' : 'text-[#24263e]/75 group-hover:text-[#24263e]'
-                      }`}
+                      className={`w-4 h-4 shrink-0 transition ${isActive ? 'text-[#24263e]' : 'text-[#24263e]/75 group-hover:text-[#24263e]'
+                        }`}
                     />
                     {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
                   </div>
@@ -2430,9 +2751,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                         </span>
                       )}
                       <ChevronRight
-                        className={`w-3.5 h-3.5 transition-transform ${
-                          isActive ? 'text-[#24263e] translate-x-0.5' : 'text-[#24263e]/50 group-hover:text-[#24263e]'
-                        }`}
+                        className={`w-3.5 h-3.5 transition-transform ${isActive ? 'text-[#24263e] translate-x-0.5' : 'text-[#24263e]/50 group-hover:text-[#24263e]'
+                          }`}
                       />
                     </div>
                   )}
@@ -2531,6 +2851,28 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           {/* ========================================================================= */}
           {activeTab === 'overview' && (
             <div className="space-y-5 animate-fadeIn">
+              {/* Center Profile Unconfigured Alert */}
+              {centerProfile && !centerProfile.shippingAddressConfigured && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-black text-sm text-amber-900">Trung tâm chưa hoàn tất cấu hình địa chỉ tiếp nhận & tọa độ GPS</h4>
+                      <p className="text-xs text-amber-800 mt-0.5">
+                        Quý trung tâm cần cập nhật đầy đủ số nhà, phường/xã, tỉnh/thành và xác nhận điểm ghim trên bản đồ để hệ thống có thể điều phối vận tải Lalamove và tính cước di chuyển.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('profile')}
+                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shrink-0 transition cursor-pointer shadow-xs"
+                  >
+                    Cấu hình ngay
+                  </button>
+                </div>
+              )}
+
               {/* ROW 1: 4 KPI STAT BOXES (MATCHING ADMIN DASHBOARD EXACT STYLE) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Box 1: TỔNG ĐƠN KIỂM ĐỊNH */}
@@ -2674,10 +3016,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                             </div>
                             <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
                               <div
-                                className={`h-full transition-all duration-500 rounded-full ${
-                                  count >= 4
-                                    ? 'bg-rose-500'
-                                    : count >= 2
+                                className={`h-full transition-all duration-500 rounded-full ${count >= 4
+                                  ? 'bg-rose-500'
+                                  : count >= 2
                                     ? 'bg-amber-500'
                                     : 'bg-emerald-500'
                                 }`}
@@ -2882,11 +3223,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   <button
                     type="button"
                     onClick={() => setOnlyUnassigned(!onlyUnassigned)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                      onlyUnassigned
-                        ? 'bg-amber-500 text-white shadow-xs'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${onlyUnassigned
+                      ? 'bg-amber-500 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
                   >
                     <Clock className="w-3.5 h-3.5" />
                     <span>Chỉ đơn chưa gán KTV ({stats.pendingDispatch})</span>
@@ -3114,11 +3454,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                 <button
                                   type="button"
                                   onClick={() => handleOpenAssign(ord)}
-                                  className={`w-[110px] h-8 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs shrink-0 ${
-                                    !ord.inspectorId
-                                      ? 'bg-[#c34c36] hover:bg-[#a63f2d] text-white'
-                                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                                  }`}
+                                  className={`w-[110px] h-8 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs shrink-0 ${!ord.inspectorId
+                                    ? 'bg-[#c34c36] hover:bg-[#a63f2d] text-white'
+                                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                                    }`}
                                   title={!ord.inspectorId ? 'Phân công kỹ thuật viên phụ trách' : 'Thay đổi kỹ thuật viên phụ trách'}
                                 >
                                   {!ord.inspectorId ? (
@@ -3273,9 +3612,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                             </td>
                             <td className="py-3 px-4">
                               <span
-                                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold ${
-                                  count > 0 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'
-                                }`}
+                                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold ${count > 0 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'
+                                  }`}
                               >
                                 {count} đơn
                               </span>
@@ -3565,9 +3903,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       <tr className="bg-slate-50 border-b border-slate-100 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
                         <th className="py-3 px-4 w-12 text-center">#</th>
                         <th className="py-3 px-4">Bộ Tiêu Chuẩn & Căn Cứ Đo Kiểm</th>
-                        <th className="py-3 px-4">Danh Mục Sản Phẩm</th>
+                        <th className="py-3 px-4">Loại Thiết Bị (Item) & Cấp Độ</th>
                         <th className="py-3 px-4 text-center">Hạng Mục Tiêu Trí</th>
-                        <th className="py-3 px-4 text-center">Trạng Thái</th>
+                        <th className="py-3 px-4 text-center">Trạng Thái Phê Duyệt</th>
                         <th className="py-3 px-4 text-right">Thao Tác</th>
                       </tr>
                     </thead>
@@ -3622,10 +3960,26 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                 )}
                               </td>
                               <td className="py-3.5 px-4">
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 font-bold text-[11px] border border-slate-200">
-                                  <Boxes className="w-3.5 h-3.5 text-[#c34c36]" />
-                                  <span>{chk.categoryName || chk.categoryCode || 'Tất cả danh mục'}</span>
-                                </span>
+                                <div className="space-y-1">
+                                  <div className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                                    <Boxes className="w-3.5 h-3.5 text-[#c34c36]" />
+                                    <span>{chk.itemName || chk.categoryName || 'Tất cả danh mục'}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    {chk.complexityLevel && (
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${chk.complexityLevel === 'L1' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                          chk.complexityLevel === 'L2' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                            chk.complexityLevel === 'L3' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
+                                              'bg-rose-50 text-rose-700 border border-rose-200'
+                                        }`}>
+                                        Cấp {chk.complexityLevel}
+                                      </span>
+                                    )}
+                                    <span className="text-[10px] text-slate-400 font-mono">
+                                      v{chk.revision || 1}
+                                    </span>
+                                  </div>
+                                </div>
                               </td>
                               <td className="py-3.5 px-4 text-center">
                                 <div className="inline-flex flex-col items-center">
@@ -3638,15 +3992,34 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                 </div>
                               </td>
                               <td className="py-3.5 px-4 text-center">
-                                <span
-                                  className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                    chk.active !== false
-                                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                      : 'bg-slate-100 text-slate-500'
-                                  }`}
-                                >
-                                  {chk.active !== false ? 'Đang Áp Dụng' : 'Tạm Dừng'}
-                                </span>
+                                {chk.approvalStatus === 'APPROVED' ? (
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                    ĐÃ DUYỆT
+                                  </span>
+                                ) : chk.approvalStatus === 'PENDING_APPROVAL' ? (
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
+                                    CHỜ DUYỆT
+                                  </span>
+                                ) : chk.approvalStatus === 'REJECTED' ? (
+                                  <div className="inline-flex flex-col items-center">
+                                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-200">
+                                      TỪ CHỐI
+                                    </span>
+                                    {chk.rejectReason && (
+                                      <span className="text-[10px] text-rose-600 line-clamp-1 max-w-[120px]" title={chk.rejectReason}>
+                                        {chk.rejectReason}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : chk.approvalStatus === 'WITHDRAWN' ? (
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200">
+                                    ĐÃ RÚT
+                                  </span>
+                                ) : (
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
+                                    {chk.approvalStatus || (chk.active !== false ? 'Đang Áp Dụng' : 'Tạm Dừng')}
+                                  </span>
+                                )}
                               </td>
                               <td className="py-3.5 px-4 text-right">
                                 <div className="flex items-center justify-end gap-1">
@@ -3674,14 +4047,23 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                   >
                                     <Copy className="w-4 h-4" />
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteChecklist(chk)}
-                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                                    title="Xóa bộ tiêu chuẩn"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
+                                  {chk.approvalStatus !== 'APPROVED' && chk.approvalStatus !== 'LEGACY' ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteChecklist(chk)}
+                                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                      title="Rút đề xuất bộ tiêu chuẩn"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  ) : (
+                                    <span
+                                      className="p-1.5 text-slate-300 cursor-not-allowed"
+                                      title="Không thể rút tiêu chuẩn đã được duyệt"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </span>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -3712,14 +4094,41 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   </p>
                 </div>
                 {canManageInspectionFee(currentUser) && (
-                  <button
-                    type="button"
-                    onClick={handleOpenProposeModal}
-                    className="px-4 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs shrink-0"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Đề Xuất Điều Chỉnh Biểu Phí</span>
-                  </button>
+                  <div className="flex items-center gap-2 flex-wrap shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const availableLevel = (['L1', 'L2', 'L3', 'L4'] as InspectionComplexityLevel[]).find(
+                          lvl => !getPendingProposalForLevel(lvl)
+                        );
+                        if (!availableLevel) {
+                          dialogService.warning(
+                            lang === 'vi'
+                              ? 'Tất cả 4 cấp độ (L1–L4) đều đã có đề xuất biểu phí đang chờ Admin phê duyệt. Không thể gửi thêm để tránh trùng lặp.'
+                              : 'All 4 levels already have pending proposals awaiting approval.'
+                          );
+                          return;
+                        }
+                        setProposingLevel(availableLevel);
+                        const approved = currentLevelFees.find(f => f.complexityLevel === availableLevel);
+                        setProposingLevelFeeAmount(approved?.baseInspectionFee || 100000);
+                        setProposingLevelFeeError(null);
+                        setIsProposeLevelFeeModalOpen(true);
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>+ Đề Xuất Giá 4 Cấp Độ (L1–L4)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenProposeModal}
+                      className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Navigation className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Đề Xuất Bậc Cước Km</span>
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -3728,18 +4137,317 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <p className="font-bold text-slate-900">
-                    Phạm vi áp dụng biểu phí:
+                    Quy định biểu phí theo mô hình Item & Cấp độ L1–L4:
                   </p>
                   <p className="text-slate-600">
-                    • <strong>Bậc cước di chuyển:</strong> Áp dụng chung cho dịch vụ Kỹ thuật viên kiểm định tại nhà (Gói AT_HOME) tính theo khoảng cách km.
+                    • <strong>Biểu phí 4 cấp độ (L1–L4):</strong> Mỗi trung tâm kiểm định đề xuất bảng giá riêng cho 4 cấp độ (L1, L2, L3, L4). Sau khi Quản trị viên sàn phê duyệt, bảng giá sẽ có hiệu lực chính thức cho trạm.
                   </p>
                   <p className="text-slate-600">
-                    • <strong>Phí kiểm định cơ sở:</strong> Được cấu hình theo từng danh mục sản phẩm và có hiệu lực sau khi Admin sàn phê duyệt.
+                    • <strong>Xác định giá đơn hàng:</strong> Khi người mua đặt lịch kiểm định cho sản phẩm, hệ thống căn cứ theo loại thiết bị cụ thể (Item) đã được Admin duyệt cấp độ nào (L1–L4) để áp mức phí kiểm định tương ứng của trung tâm được chọn.
                   </p>
                   <p className="text-slate-600">
-                    • <strong>Giao hàng về Trung tâm:</strong> Cước vận chuyển sản phẩm đến Trạm Lab Hub bằng đối tác Lalamove là khoản phí giao vận riêng biệt do đối tác vận chuyển định giá, không được cấu hình tại biểu phí này.
+                    • <strong>Bậc cước di chuyển:</strong> Áp dụng chung cho dịch vụ KTV kiểm định tại nhà theo số km thực tế.
+                  </p>
+                  <p className="text-slate-600">
+                    • <strong>Giao hàng về Trung tâm:</strong> Cước vận chuyển sản phẩm đến Hub bằng Lalamove là khoản giao vận riêng biệt, không tính trong biểu phí kiểm định.
                   </p>
                 </div>
+              </div>
+
+              {/* 4-Level Fees Studio Cards (L1 - L4) */}
+              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-[#24263e] text-white flex items-center justify-center font-black">
+                      <CreditCard className="w-4 h-4 text-amber-400" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs sm:text-sm text-slate-900 uppercase tracking-wider">
+                        Bảng Biểu Phí 4 Cấp Độ Kiểm Định (L1 – L4) Đang Áp Dụng
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Giá kiểm định cơ sở của trạm theo độ phức tạp kỹ thuật từng dòng thiết bị gia dụng (sau khi Admin duyệt)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCreateModal()}
+                      className="px-3.5 py-1.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                      title="Gửi đề xuất bộ tiêu chuẩn kiểm định và cấp độ L1-L4 cho loại sản phẩm"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Cấu hình Item và cấp độ</span>
+                    </button>
+
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {[
+                    {
+                      level: 'L1' as InspectionComplexityLevel,
+                      name: 'Cấp L1 - Cơ Bản',
+                      badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+                      borderColor: 'hover:border-emerald-300',
+                    },
+                    {
+                      level: 'L2' as InspectionComplexityLevel,
+                      name: 'Cấp L2 - Nâng Cao',
+                      badgeColor: 'bg-blue-50 text-blue-800 border-blue-200',
+                      borderColor: 'hover:border-blue-300',
+                    },
+                    {
+                      level: 'L3' as InspectionComplexityLevel,
+                      name: 'Cấp L3 - Chuyên Sâu',
+                      badgeColor: 'bg-purple-50 text-purple-800 border-purple-200',
+                      borderColor: 'hover:border-purple-300',
+                    },
+                    {
+                      level: 'L4' as InspectionComplexityLevel,
+                      name: 'Cấp L4 - Phức Tạp',
+                      badgeColor: 'bg-rose-50 text-rose-800 border-rose-200',
+                      borderColor: 'hover:border-rose-300',
+                    },
+                  ].map((tier) => {
+                    const approvedFee = currentLevelFees.find(
+                      (f) => String(f.complexityLevel || '').toUpperCase() === String(tier.level).toUpperCase() && (f.status === 'APPROVED' || !f.status)
+                    );
+                    const pendingProp = getPendingProposalForLevel(tier.level);
+                    const levelItems = approvedItemsByLevel[tier.level] || [];
+
+                    return (
+                      <div
+                        key={tier.level}
+                        className={`rounded-2xl p-4 border flex flex-col justify-between transition ${pendingProp
+                            ? 'bg-amber-50/30 border-amber-300 ring-2 ring-amber-100 shadow-xs'
+                            : `bg-slate-50/60 border-slate-200 ${tier.borderColor} hover:shadow-xs`
+                          }`}
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${tier.badgeColor}`}>
+                              {tier.name}
+                            </span>
+                            <span className="text-[10px] font-mono font-bold text-slate-400">
+                              {tier.level}
+                            </span>
+                          </div>
+
+                          {/* Dynamic Item list from approved active checklists */}
+                          <div className="min-h-[46px]">
+                            {levelItems.length > 0 ? (
+                              <div className="flex flex-wrap gap-1 max-h-[76px] overflow-y-auto subtle-scrollbar py-0.5">
+                                {levelItems.map((itm) => (
+                                  <span
+                                    key={itm.itemId}
+                                    className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-white border border-slate-200/90 text-slate-700 shadow-2xs"
+                                    title={itm.checklistTitle || itm.itemName}
+                                  >
+                                    {itm.itemName}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="space-y-1">
+                                <p className="text-[11px] text-slate-400 italic">
+                                  Chưa có loại sản phẩm được phân cấp
+                                </p>
+                                {isLevelFeeApproved(tier.level) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenCreateChecklistForItem(undefined, tier.level)}
+                                    className="text-[10px] font-bold text-[#c34c36] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                    <span>Cấu hình Item cho cấp {tier.level}</span>
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200/70 inline-flex items-center gap-1">
+                                    <Clock className="w-3 h-3 text-amber-600" />
+                                    <span>Chờ duyệt giá cấp {tier.level} trước khi gán Item</span>
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="pt-3.5 mt-3 border-t border-slate-200/70 flex flex-col justify-between flex-1 gap-2.5">
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">
+                              Phí kiểm định cơ sở
+                            </span>
+                            <div className="h-7 flex items-center mt-0.5">
+                              {approvedFee && approvedFee.baseInspectionFee ? (
+                                <div className="flex items-baseline gap-1.5">
+                                  <span className="text-lg font-black text-[#24263e]">
+                                    {formatVND(approvedFee.baseInspectionFee)}
+                                  </span>
+                                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                    Hiệu lực
+                                  </span>
+                                </div>
+                              ) : pendingProp ? (
+                                <span className="text-xs font-bold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-lg border border-amber-200 inline-block">
+                                  Chờ duyệt lần đầu
+                                </span>
+                              ) : (
+                                <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200 inline-block">
+                                  Chưa có giá được duyệt
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Đề xuất đang chờ duyệt (nếu có) - Có chiều cao đồng đều h-[42px] giữa các thẻ */}
+                          <div className="h-[42px] flex items-center">
+                            {pendingProp ? (
+                              <div className="w-full p-2 rounded-xl bg-amber-50/90 border border-amber-200 flex items-center justify-between text-xs shadow-2xs">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse shrink-0" />
+                                  <div className="min-w-0">
+                                    <span className="text-[9px] font-black uppercase text-amber-700 tracking-wider block">
+                                      Đang chờ duyệt
+                                    </span>
+                                    <span className="text-xs font-black text-amber-900 font-mono block leading-tight">
+                                      {formatVND(pendingProp.baseInspectionFee || 0)}
+                                    </span>
+                                  </div>
+                                </div>
+                                <span className="text-[10px] text-amber-700 font-mono font-bold shrink-0">
+                                  #{pendingProp.id ? pendingProp.id.slice(0, 8) : ''}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="w-full h-full rounded-xl bg-slate-50/50 border border-dashed border-slate-200/80 flex items-center justify-center text-[10px] text-slate-400">
+                                <span className="inline-flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                                  <span>{approvedFee ? 'Đang áp dụng giá chuẩn' : 'Chưa có đề xuất mới'}</span>
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Nút hành động: Nếu đang chờ duyệt thì vô hiệu hóa nút để tránh gửi trùng lặp */}
+                          <div>
+                            {pendingProp ? (
+                              <button
+                                type="button"
+                                disabled
+                                className="w-full py-2 px-3 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 cursor-not-allowed opacity-90 shadow-2xs"
+                                title="Cấp độ này đã có đề xuất đang chờ Admin duyệt. Không thể gửi thêm để tránh trùng lặp."
+                              >
+                                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Đã gửi đề xuất (Chờ duyệt)</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setProposingLevel(tier.level);
+                                  setProposingLevelFeeAmount(approvedFee?.baseInspectionFee || 100000);
+                                  setProposingLevelFeeError(null);
+                                  setIsProposeLevelFeeModalOpen(true);
+                                }}
+                                className="w-full py-2 px-3 rounded-xl bg-white border border-slate-200 hover:border-[#c34c36] hover:bg-rose-50/50 text-[#c34c36] text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                                <span>Đề xuất giá cấp {tier.level}</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Danh Sách Loại Sản Phẩm (Item) Chưa Được Phân Cấp */}
+              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center font-bold">
+                      <AlertTriangle className="w-4 h-4 text-amber-600" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-xs sm:text-sm text-slate-900 uppercase tracking-wider">
+                          Loại Sản Phẩm (Item) Chưa Được Phân Cấp
+                        </h4>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${unclassifiedItems.length > 0 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                          {unclassifiedItems.length} thiết bị
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        Danh sách các loại sản phẩm chưa có bộ tiêu chuẩn được Admin phê duyệt cấp độ L1–L4. Trung tâm cần gửi đề xuất checklist để kích hoạt định giá cho dòng sản phẩm này.
+                      </p>
+                    </div>
+                  </div>
+                  {unclassifiedItems.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCreateModal()}
+                      className="px-3.5 py-1.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer self-start sm:self-auto shrink-0 shadow-xs"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Cấu hình Item và cấp độ</span>
+                    </button>
+                  )}
+                </div>
+
+                {isLoadingChecklists || isLoadingCategories ? (
+                  <div className="py-8 text-center text-slate-400 flex flex-col items-center justify-center">
+                    <Loader2 className="w-5 h-5 animate-spin mb-1 text-[#24263e]" />
+                    <span className="text-xs">Đang kiểm tra danh mục thiết bị chưa phân cấp...</span>
+                  </div>
+                ) : unclassifiedItems.length === 0 ? (
+                  <div className="py-6 text-center text-emerald-700 bg-emerald-50/50 rounded-xl border border-emerald-200 flex flex-col items-center justify-center">
+                    <CheckSquare className="w-6 h-6 text-emerald-600 mb-1.5" />
+                    <p className="font-bold text-xs">Tất cả các loại sản phẩm (Item) đều đã được phân cấp L1–L4 hợp lệ!</p>
+                    <p className="text-[11px] text-emerald-600 mt-0.5">Mọi thiết bị đều đã sẵn sàng áp dụng mức phí kiểm định khi người mua đặt dịch vụ.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {unclassifiedItems.map((itm) => (
+                      <div
+                        key={itm.id}
+                        className="p-3 rounded-xl border border-slate-200 hover:border-amber-300 bg-slate-50/50 hover:bg-amber-50/20 transition flex items-center justify-between gap-2.5 group"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-xs text-slate-900 truncate" title={itm.name}>
+                            {itm.name}
+                          </p>
+                          <p className="text-[11px] text-slate-500 truncate mt-0.5" title={itm.categoryName}>
+                            {itm.categoryName}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {itm.pendingChecklist ? (
+                            <span className="w-24 text-center px-1.5 py-1 rounded-lg text-[10px] font-bold text-amber-800 bg-amber-100/90 border border-amber-200 shrink-0 whitespace-nowrap">
+                              Chờ duyệt ({itm.pendingChecklist.complexityLevel})
+                            </span>
+                          ) : (
+                            <span className="w-24 text-center px-1.5 py-1 rounded-lg text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 shrink-0 whitespace-nowrap">
+                              Chưa cấu hình
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenCreateChecklistForItem(itm)}
+                            className="px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-[#c34c36] hover:bg-white text-slate-700 hover:text-[#c34c36] font-bold text-[11px] transition cursor-pointer shrink-0 shadow-2xs whitespace-nowrap"
+                            title={`Cấu hình bộ tiêu chuẩn cho ${itm.name}`}
+                          >
+                            Cấu hình
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Dynamic Active Travel Tiers Table */}
@@ -3813,7 +4521,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                   <div>
                     <h4 className="font-bold text-xs text-slate-900 uppercase tracking-wider">
-                      Lịch Sử Các Đề Xuất Biểu Phí Đã Gửi Admin ({pricingProposalTotalElements} đề xuất)
+                      Lịch Sử Đề Xuất Biểu Phí 4 Cấp Độ (L1–L4) & Bậc Cước ({pricingProposalTotalElements} đề xuất)
                     </h4>
                     <p className="text-[11px] text-slate-400 mt-0.5">
                       Theo dõi tiến độ xét duyệt biểu phí cơ sở và bậc thang cước từ Quản trị viên sàn
@@ -3841,11 +4549,11 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     <button
                       key={st.key}
                       onClick={() => handlePricingFilterChange(st.key as any)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                        pricingProposalFilter === st.key
-                          ? 'bg-slate-900 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
+                      disabled={isLoadingPricing}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${pricingProposalFilter === st.key
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
                     >
                       {st.label}
                     </button>
@@ -3876,75 +4584,103 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                             <span>Đang tải lịch sử đề xuất...</span>
                           </td>
                         </tr>
-                      ) : tierProposals.length === 0 ? (
-                        <tr>
-                          <td colSpan={9} className="py-8 text-center text-slate-400">
-                            Chưa có đề xuất biểu phí nào phù hợp với bộ lọc hiện tại.
-                          </td>
-                        </tr>
                       ) : (
-                        tierProposals.map((prop, idx) => (
-                          <tr key={prop.id} className="hover:bg-slate-50/60 transition">
-                            <td className="py-3 px-3 font-mono text-slate-400 text-[11px]">
-                              {pricingProposalPage * 10 + idx + 1}
-                            </td>
-                            <td className="py-3 px-3 font-mono font-bold text-slate-800">
-                              #{prop.id.slice(0, 8)}
-                            </td>
-                            <td className="py-3 px-3 font-bold text-slate-700">
-                              {prop.categoryName || 'Tất cả danh mục'}
-                            </td>
-                            <td className="py-3 px-3 font-black text-[#c34c36] font-mono">
-                              {formatVND(prop.baseInspectionFee || 0)}
-                            </td>
-                            <td className="py-3 px-3 text-slate-600">
-                              {prop.proposedByName || prop.proposedByEmail || 'TTKD'}
-                            </td>
-                            <td className="py-3 px-3 text-center">
-                              <span
-                                className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                                  prop.status === 'APPROVED'
+                        (() => {
+                          const seenIds = new Set<string>();
+                          const combined = tierProposals.filter((p) => {
+                            if (!p || !p.id) return false;
+                            if (seenIds.has(p.id)) return false;
+                            seenIds.add(p.id);
+                            if (pricingProposalFilter !== 'ALL') {
+                              const targetStatus = (pricingProposalFilter as string) === 'PENDING' ? 'PENDING_APPROVAL' : pricingProposalFilter;
+                              if (p.status !== targetStatus) return false;
+                            }
+                            return true;
+                          });
+                          if (combined.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan={9} className="py-8 text-center text-slate-400">
+                                  Chưa có đề xuất biểu phí nào phù hợp với bộ lọc hiện tại.
+                                </td>
+                              </tr>
+                            );
+                          }
+                          return combined.map((prop, idx) => (
+                            <tr key={prop.id || `prop-${idx}`} className="hover:bg-slate-50/60 transition">
+                              <td className="py-3 px-3 font-mono text-slate-400 text-[11px]">
+                                {pricingProposalPage * 10 + idx + 1}
+                              </td>
+                              <td className="py-3 px-3 font-mono font-bold text-slate-800">
+                                #{prop.id ? prop.id.slice(0, 8) : '---'}
+                              </td>
+                              <td className="py-3 px-3 font-bold text-slate-700">
+                                {prop.complexityLevel ? (
+                                  <span className="inline-flex items-center gap-1.5 flex-wrap">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${prop.complexityLevel === 'L1' ? 'bg-emerald-100 text-emerald-800' :
+                                        prop.complexityLevel === 'L2' ? 'bg-blue-100 text-blue-800' :
+                                          prop.complexityLevel === 'L3' ? 'bg-purple-100 text-purple-800' :
+                                            'bg-rose-100 text-rose-800'
+                                      }`}>
+                                      Cấp {prop.complexityLevel}
+                                    </span>
+                                    {prop.categoryName && <span className="text-slate-500 text-[11px]">({prop.categoryName})</span>}
+                                  </span>
+                                ) : (
+                                  prop.categoryName || 'Tất cả danh mục'
+                                )}
+                              </td>
+                              <td className="py-3 px-3 font-black text-[#c34c36] font-mono">
+                                {formatVND(prop.baseInspectionFee || 0)}
+                              </td>
+                              <td className="py-3 px-3 text-slate-600">
+                                {prop.proposedByName || prop.proposedByEmail || 'TTKD'}
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                <span
+                                  className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase ${prop.status === 'APPROVED'
                                     ? 'bg-emerald-100 text-emerald-800'
                                     : prop.status === 'REJECTED'
-                                    ? 'bg-rose-100 text-rose-800'
-                                    : 'bg-amber-100 text-amber-800 animate-pulse'
-                                }`}
-                              >
-                                {prop.status === 'APPROVED'
-                                  ? 'Đã Phê Duyệt'
-                                  : prop.status === 'REJECTED'
-                                  ? 'Bị Từ Chối'
-                                  : 'Chờ Admin Duyệt'}
-                              </span>
-                            </td>
-                            <td className="py-3 px-3 text-slate-500">
-                              {prop.reviewedByName && (
-                                <span className="font-semibold text-slate-700 block">
-                                  {prop.reviewedByName}
+                                      ? 'bg-rose-100 text-rose-800'
+                                      : 'bg-amber-100 text-amber-800 animate-pulse'
+                                    }`}
+                                >
+                                  {prop.status === 'APPROVED'
+                                    ? 'Đã Phê Duyệt'
+                                    : prop.status === 'REJECTED'
+                                      ? 'Bị Từ Chối'
+                                      : 'Chờ Admin Duyệt'}
                                 </span>
-                              )}
-                              {prop.rejectReason ? (
-                                <span className="text-[11px] text-rose-600 font-medium">
-                                  Lý do: {prop.rejectReason}
-                                </span>
-                              ) : (
-                                !prop.reviewedByName && <span className="text-slate-400">—</span>
-                              )}
-                            </td>
-                            <td className="py-3 px-3 text-slate-400 text-[11px]">
-                              {prop.createdAt ? new Date(prop.createdAt).toLocaleString('vi-VN') : '—'}
-                            </td>
-                            <td className="py-3 px-3 text-right">
-                              <button
-                                onClick={() => setSelectedProposalDetail(prop)}
-                                className="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
-                              >
-                                <Eye className="w-3 h-3 text-slate-500" />
-                                <span>Bậc phí</span>
-                              </button>
-                            </td>
-                          </tr>
-                        ))
+                              </td>
+                              <td className="py-3 px-3 text-slate-500">
+                                {prop.reviewedByName && (
+                                  <span className="font-semibold text-slate-700 block">
+                                    {prop.reviewedByName}
+                                  </span>
+                                )}
+                                {prop.rejectReason ? (
+                                  <span className="text-[11px] text-rose-600 font-medium">
+                                    Lý do: {prop.rejectReason}
+                                  </span>
+                                ) : (
+                                  !prop.reviewedByName && <span className="text-slate-400">—</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-slate-400 text-[11px]">
+                                {prop.createdAt ? new Date(prop.createdAt).toLocaleString('vi-VN') : '—'}
+                              </td>
+                              <td className="py-3 px-3 text-right">
+                                <button
+                                  onClick={() => setSelectedProposalDetail(prop)}
+                                  className="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Eye className="w-3 h-3 text-slate-500" />
+                                  <span>Bậc phí</span>
+                                </button>
+                              </td>
+                            </tr>
+                          ));
+                        })()
                       )}
                     </tbody>
                   </table>
@@ -3958,7 +4694,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     </span>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => loadPricing(pricingProposalPage - 1, pricingProposalFilter)}
+                        onClick={() => loadPricing(pricingProposalPage - 1, pricingProposalFilter, false)}
                         disabled={pricingProposalPage <= 0 || isLoadingPricing}
                         className="px-3 py-1 rounded-xl border border-gray-200 hover:bg-gray-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer"
                       >
@@ -3966,7 +4702,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                         <span>Trước</span>
                       </button>
                       <button
-                        onClick={() => loadPricing(pricingProposalPage + 1, pricingProposalFilter)}
+                        onClick={() => loadPricing(pricingProposalPage + 1, pricingProposalFilter, false)}
                         disabled={pricingProposalPage >= pricingProposalTotalPages - 1 || isLoadingPricing}
                         className="px-3 py-1 rounded-xl border border-gray-200 hover:bg-gray-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer"
                       >
@@ -4035,19 +4771,18 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       key={st}
                       type="button"
                       onClick={() => setAppealFilter(st)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-                        appealFilter === st
-                          ? 'bg-[#24263e] text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${appealFilter === st
+                        ? 'bg-[#24263e] text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
                     >
                       {st === 'ALL'
                         ? 'Tất Cả'
                         : st === 'PENDING_REVIEW'
-                        ? 'Chờ Duyệt'
-                        : st === 'UPHELD'
-                        ? 'Đã Bác Bỏ'
-                        : 'Đã Chấp Thuận'}
+                          ? 'Chờ Duyệt'
+                          : st === 'UPHELD'
+                            ? 'Đã Bác Bỏ'
+                            : 'Đã Chấp Thuận'}
                     </button>
                   ))}
                 </div>
@@ -4168,6 +4903,22 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               </div>
             </div>
           )}
+
+          {/* =================================================================== */}
+          {/* TAB 8: THÔNG TIN TRUNG TÂM (CENTER PROFILE & SHIPPING ADDRESS)      */}
+          {/* =================================================================== */}
+          {activeTab === 'profile' && (
+            <div className="space-y-5 animate-fadeIn">
+              <InspectionCenterProfileTab
+                profile={centerProfile}
+                isLoading={isLoadingCenterProfile}
+                error={centerProfileError}
+                onRefresh={loadCenterProfile}
+                onProfileUpdated={handleProfileUpdated}
+                lang={lang}
+              />
+            </div>
+          )}
         </main>
       </div>
 
@@ -4230,22 +4981,22 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
             {/* Scrollable Form Body */}
             <div className="space-y-3.5 flex-1 overflow-y-auto pr-1">
-              {/* Category & Product Selection */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Item, Category & Complexity Level Selection */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
-                    Danh mục thiết bị gia dụng áp dụng <span className="text-rose-500">*</span>
+                    Danh mục thiết bị <span className="text-rose-500">*</span>
                   </label>
                   <select
                     value={selectedCategoryId}
                     onChange={(e) => {
                       const catId = e.target.value;
                       setSelectedCategoryId(catId);
-                      setSelectedProductId('');
+                      setSelectedItemId('');
                     }}
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:outline-none focus:border-[#c34c36]"
                   >
-                    <option value="">-- Áp dụng chung cho tất cả danh mục --</option>
+                    <option value="">-- Chọn danh mục --</option>
                     {categories.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -4256,31 +5007,97 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
-                    Dòng sản phẩm mẫu (Catalog Reference)
+                    Loại thiết bị cụ thể (Item) <span className="text-rose-500">*</span>
                   </label>
                   <select
-                    value={selectedProductId}
+                    required
+                    value={selectedItemId}
                     onChange={(e) => {
                       const val = e.target.value;
-                      setSelectedProductId(val);
+                      setSelectedItemId(val);
                       if (val) {
                         const itm = catalogItems.find(i => i.id === val);
-                        if (itm && !checklistTitle) {
-                          setChecklistTitle(`Tiêu chuẩn kiểm định ${itm.name}`);
+                        if (itm) {
+                          if (itm.categoryId && !selectedCategoryId) setSelectedCategoryId(itm.categoryId);
+                          if (!checklistTitle) {
+                            setChecklistTitle(`Tiêu chuẩn kiểm định ${itm.name}`);
+                          }
                         }
                       }
                     }}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-700 text-xs focus:outline-none focus:border-[#c34c36]"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:outline-none focus:border-[#c34c36]"
                   >
-                    <option value="">-- Tùy chọn dòng sản phẩm cụ thể --</option>
+                    <option value="">-- Chọn loại thiết bị --</option>
                     {catalogItems
-                      .filter(i => !selectedCategoryId || i.categoryId === selectedCategoryId)
-                      .map((itm) => (
-                        <option key={itm.id} value={itm.id}>
-                          {itm.name}
-                        </option>
-                      ))}
+                      .filter(i => (!selectedCategoryId || i.categoryId === selectedCategoryId) && i.selectable !== false)
+                      .map((itm) => {
+                        const hasPending = checklists.some(c => c.itemId === itm.id && c.approvalStatus === 'PENDING_APPROVAL' && c.id !== editingChecklistId);
+                        return (
+                          <option key={itm.id} value={itm.id}>
+                            {itm.name}{hasPending ? ' (Đang chờ Admin duyệt)' : ''}
+                          </option>
+                        );
+                      })}
                   </select>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-bold text-slate-700">
+                      Cấp độ kiểm định đề xuất <span className="text-rose-500">*</span>
+                    </label>
+                    {isLevelFeeApproved(selectedComplexityLevel) ? (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        Giá đã duyệt: {formatVND(getApprovedFeeForLevel(selectedComplexityLevel)?.baseInspectionFee || 0)}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200">
+                        Chưa duyệt giá
+                      </span>
+                    )}
+                  </div>
+                  <select
+                    value={selectedComplexityLevel}
+                    onChange={(e) => setSelectedComplexityLevel(e.target.value as InspectionComplexityLevel)}
+                    className={`w-full p-2.5 bg-slate-50 border rounded-xl font-bold text-xs focus:outline-none ${isLevelFeeApproved(selectedComplexityLevel)
+                        ? 'border-slate-200 text-slate-800 focus:border-[#c34c36]'
+                        : 'border-amber-300 text-amber-900 bg-amber-50/30 focus:border-amber-500'
+                      }`}
+                  >
+                    {[
+                      { level: 'L1' as InspectionComplexityLevel, label: 'L1 - Cơ bản (Quạt, ấm, bàn ủi...)' },
+                      { level: 'L2' as InspectionComplexityLevel, label: 'L2 - Nâng cao (Nồi cơm, lò vi sóng, hút bụi...)' },
+                      { level: 'L3' as InspectionComplexityLevel, label: 'L3 - Chuyên sâu (Máy giặt, máy sấy, máy rửa chén...)' },
+                      { level: 'L4' as InspectionComplexityLevel, label: 'L4 - Phức tạp (Tủ lạnh Side-by-Side, điều hòa...)' },
+                    ].map((opt) => {
+                      const approved = isLevelFeeApproved(opt.level);
+                      const pending = Boolean(getPendingProposalForLevel(opt.level));
+                      return (
+                        <option
+                          key={opt.level}
+                          value={opt.level}
+                          disabled={!approved}
+                          className={!approved ? 'text-slate-400 bg-slate-100' : 'text-slate-900'}
+                        >
+                          {opt.label} {approved ? '✓ (Giá đã duyệt)' : pending ? '⚠ (Đang chờ Admin duyệt giá)' : '✕ (Chưa có giá duyệt)'}
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  {!isLevelFeeApproved(selectedComplexityLevel) && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2 shadow-2xs">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <p className="font-bold text-[11px]">
+                          Cấp độ {selectedComplexityLevel} chưa có mức phí kiểm định được phê duyệt!
+                        </p>
+                        <p className="text-[10px] text-amber-700 leading-relaxed">
+                          Theo quy định, trung tâm cần có biểu phí cấp {selectedComplexityLevel} được Admin duyệt trước khi đề xuất bộ tiêu chuẩn kiểm định. Vui lòng chọn cấp độ khác đã được duyệt giá hoặc gửi đề xuất giá cấp {selectedComplexityLevel} trước.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -4347,11 +5164,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   {checklistItems.map((item, idx) => (
                     <div
                       key={idx}
-                      className={`p-3 rounded-xl border transition space-y-2 ${
-                        item.mandatory
-                          ? 'border-rose-200/80 bg-rose-50/20'
-                          : 'border-slate-200 bg-slate-50/50'
-                      }`}
+                      className={`p-3 rounded-xl border transition space-y-2 ${item.mandatory
+                        ? 'border-rose-200/80 bg-rose-50/20'
+                        : 'border-slate-200 bg-slate-50/50'
+                        }`}
                     >
                       {/* Top row: Index + Title input + Mandatory toggle + Move + Delete */}
                       <div className="flex items-center gap-2">
@@ -4374,11 +5190,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
                         {/* Mandatory Switch */}
                         <label
-                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold cursor-pointer shrink-0 transition select-none ${
-                            item.mandatory
-                              ? 'bg-rose-100 text-rose-800 border-rose-300'
-                              : 'bg-slate-100 text-slate-600 border-slate-200'
-                          }`}
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold cursor-pointer shrink-0 transition select-none ${item.mandatory
+                            ? 'bg-rose-100 text-rose-800 border-rose-300'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                            }`}
                           title="Nếu đánh dấu Bắt buộc, sản phẩm sẽ KHÔNG ĐẠT kiểm định nếu KTV đánh rớt mục này"
                         >
                           <input
@@ -4496,9 +5311,22 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 </button>
                 <button
                   type="button"
-                  disabled={isSavingChecklist || !checklistTitle.trim() || checklistItems.length === 0}
+                  disabled={
+                    isSavingChecklist ||
+                    !checklistTitle.trim() ||
+                    checklistItems.length === 0 ||
+                    !isLevelFeeApproved(selectedComplexityLevel)
+                  }
                   onClick={handleSaveChecklist}
-                  className="px-5 py-2 bg-[#24263e] hover:bg-black text-white rounded-xl font-black shadow-sm disabled:opacity-50 transition cursor-pointer flex items-center gap-1.5"
+                  className={`px-5 py-2 rounded-xl font-black shadow-sm transition flex items-center gap-1.5 ${!isLevelFeeApproved(selectedComplexityLevel)
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                      : 'bg-[#24263e] hover:bg-black text-white cursor-pointer disabled:opacity-50'
+                    }`}
+                  title={
+                    !isLevelFeeApproved(selectedComplexityLevel)
+                      ? `Cấp ${selectedComplexityLevel} chưa có biểu phí được Admin duyệt. Không thể gửi đề xuất.`
+                      : undefined
+                  }
                 >
                   {isSavingChecklist ? (
                     <>
@@ -4581,11 +5409,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   {(viewingChecklist.items || []).map((item, idx) => (
                     <div
                       key={item.id || idx}
-                      className={`p-3 rounded-xl border space-y-1 ${
-                        item.mandatory !== false
-                          ? 'border-rose-200/70 bg-rose-50/20'
-                          : 'border-slate-200 bg-slate-50/40'
-                      }`}
+                      className={`p-3 rounded-xl border space-y-1 ${item.mandatory !== false
+                        ? 'border-rose-200/70 bg-rose-50/20'
+                        : 'border-slate-200 bg-slate-50/40'
+                        }`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
@@ -4593,11 +5420,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                           <span>{item.itemTitle || (item as any).name}</span>
                         </div>
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-black uppercase shrink-0 ${
-                            item.mandatory !== false
-                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
+                          className={`px-2 py-0.5 rounded text-[10px] font-black uppercase shrink-0 ${item.mandatory !== false
+                            ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                            : 'bg-slate-100 text-slate-600'
+                            }`}
                         >
                           {item.mandatory !== false ? 'Bắt Buộc' : 'Tùy Chọn'}
                         </span>
@@ -4989,19 +5815,18 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   Trạng thái:
                 </span>
                 <span
-                  className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase mt-0.5 ${
-                    selectedProposalDetail.status === 'APPROVED'
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : selectedProposalDetail.status === 'REJECTED'
+                  className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase mt-0.5 ${selectedProposalDetail.status === 'APPROVED'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : selectedProposalDetail.status === 'REJECTED'
                       ? 'bg-rose-100 text-rose-800'
                       : 'bg-amber-100 text-amber-800'
-                  }`}
+                    }`}
                 >
                   {selectedProposalDetail.status === 'APPROVED'
                     ? 'Đã Phê Duyệt'
                     : selectedProposalDetail.status === 'REJECTED'
-                    ? 'Bị Từ Chối'
-                    : 'Chờ Admin Duyệt'}
+                      ? 'Bị Từ Chối'
+                      : 'Chờ Admin Duyệt'}
                 </span>
               </div>
               <div>
@@ -5620,11 +6445,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               <button
                 type="button"
                 onClick={() => setShipmentTab('tracking')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                  shipmentTab === 'tracking'
-                    ? 'bg-[#24263e] text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${shipmentTab === 'tracking'
+                  ? 'bg-[#24263e] text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
               >
                 <Package className="w-3.5 h-3.5" />
                 <span>Lộ Trình Vận Đơn ({inspectionShipments.length})</span>
@@ -5632,11 +6456,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               <button
                 type="button"
                 onClick={() => setShipmentTab('create')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                  shipmentTab === 'create'
-                    ? 'bg-[#c34c36] text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${shipmentTab === 'create'
+                  ? 'bg-[#c34c36] text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Kích Hoạt Giao Vận Hub</span>
@@ -5749,6 +6572,25 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 )
               ) : (
                 <form onSubmit={handleCreateInspectionShipment} className="space-y-3.5">
+                  {centerProfile && (!shipmentModalOrder.inspectionCenterId || shipmentModalOrder.inspectionCenterId === centerProfile.id) && (
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1.5 text-[11px]">
+                    <div className="font-bold text-slate-800">
+                      Điểm đến tiếp nhận: {centerProfile?.name || 'Trung Tâm Tiếp Nhận'}
+                    </div>
+                    <div className="text-slate-500 font-mono text-[10px]">
+                      Hotline: {centerProfile?.phone || 'Chưa thiết lập hotline'}
+                    </div>
+                    <div className="text-slate-600 text-[10px]">
+                      Địa chỉ: {centerProfile?.address || 'Chưa cấu hình địa chỉ tiếp nhận'}
+                    </div>
+                    {centerProfile && !centerProfile.shippingAddressConfigured && (
+                      <div className="p-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px] flex items-center gap-1.5 mt-1">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>Trung tâm chưa cấu hình địa chỉ tiếp nhận & GPS. Vui lòng mở mục "Thông tin trung tâm" để cập nhật.</span>
+                      </div>
+                    )}
+                  </div>
+                  )}
                   {/* Select leg switcher */}
                   <div className="space-y-1.5">
                     <label className="font-bold text-slate-700 text-xs block">Chọn Chặng Giao Vận Hub:</label>
@@ -5908,7 +6750,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   <div className="pt-2 flex justify-end">
                     <button
                       type="submit"
-                      disabled={isCreatingShipment}
+                      disabled={isCreatingShipment || Boolean(selectedLeg === 'SELLER_TO_CENTER' && centerProfile && (!shipmentModalOrder.inspectionCenterId || shipmentModalOrder.inspectionCenterId === centerProfile.id) && !centerProfile.shippingAddressConfigured)}
                       className="px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] text-white font-bold text-xs flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
                     >
                       {isCreatingShipment && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -5934,6 +6776,156 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 Đóng
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ĐỀ XUẤT BIỂU PHÍ 4 CẤP ĐỘ (L1 - L4) */}
+      {isProposeLevelFeeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fadeIn backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-gray-100 text-xs">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-600 font-bold">
+                  <Sliders className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-slate-900">
+                    Đề Xuất Biểu Phí Cấp Độ Kiểm Định (L1 – L4)
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Biểu phí áp dụng cho các thiết bị thuộc cấp độ tương ứng sau khi Admin duyệt
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsProposeLevelFeeModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleProposeLevelFeeSubmit} className="space-y-4">
+              {proposingLevelFeeError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-bold text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{proposingLevelFeeError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Chọn cấp độ kiểm định áp dụng <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { level: 'L1' as InspectionComplexityLevel, name: 'Cấp L1 - Cơ Bản', desc: 'Quạt, ấm, bàn ủi...' },
+                    { level: 'L2' as InspectionComplexityLevel, name: 'Cấp L2 - Nâng Cao', desc: 'Nồi cơm, lò vi sóng, hút bụi...' },
+                    { level: 'L3' as InspectionComplexityLevel, name: 'Cấp L3 - Chuyên Sâu', desc: 'Máy giặt, máy sấy, máy rửa bát...' },
+                    { level: 'L4' as InspectionComplexityLevel, name: 'Cấp L4 - Phức Tạp', desc: 'Tủ lạnh Side-by-Side, điều hòa...' },
+                  ].map((item) => {
+                    const isPending = Boolean(getPendingProposalForLevel(item.level));
+                    return (
+                      <button
+                        key={item.level}
+                        type="button"
+                        disabled={isPending}
+                        onClick={() => {
+                          if (!isPending) {
+                            setProposingLevel(item.level);
+                            setProposingLevelFeeError(null);
+                          }
+                        }}
+                        className={`p-3 rounded-xl text-left border transition ${isPending
+                            ? 'bg-slate-100/70 border-slate-200 opacity-60 cursor-not-allowed'
+                            : proposingLevel === item.level
+                              ? 'border-[#24263e] bg-slate-50 shadow-xs ring-1 ring-[#24263e] cursor-pointer'
+                              : 'border-slate-200 hover:border-slate-300 cursor-pointer'
+                          }`}
+                        title={isPending ? 'Cấp độ này đã có đề xuất đang chờ Admin duyệt' : undefined}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-black text-slate-900">{item.name}</span>
+                          {isPending ? (
+                            <span className="text-[9px] font-black uppercase text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                              Chờ duyệt
+                            </span>
+                          ) : proposingLevel === item.level ? (
+                            <Check className="w-4 h-4 text-[#c34c36]" />
+                          ) : null}
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">
+                          {isPending ? 'Đã gửi yêu cầu, đang chờ Admin duyệt' : item.desc}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Mức phí kiểm định đề xuất (VND) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min={1000}
+                  step={1000}
+                  required
+                  value={proposingLevelFeeAmount}
+                  onChange={(e) => setProposingLevelFeeAmount(e.target.value ? Number(e.target.value) : '')}
+                  placeholder="Ví dụ: 150000"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-900 text-sm focus:border-[#c34c36] outline-none"
+                />
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {[50000, 100000, 150000, 200000, 250000, 300000, 400000, 500000].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setProposingLevelFeeAmount(amt)}
+                      className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer"
+                    >
+                      {formatVND(amt)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-[11px] text-amber-800 space-y-1">
+                <p className="font-bold flex items-center gap-1">
+                  <Info className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Lưu ý phê duyệt:</span>
+                </p>
+                <p>• Đề xuất sau khi gửi sẽ ở trạng thái <strong>CHỜ DUYỆT</strong> bởi Quản trị viên sàn SecondLife.</p>
+                <p>• Khi Admin phê duyệt, mức phí mới sẽ tự động áp dụng cho các đơn hàng kiểm định thiết bị thuộc cấp độ này.</p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsProposeLevelFeeModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer"
+                >
+                  Hủy Bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingLevelFee}
+                  className="px-5 py-2 bg-[#24263e] hover:bg-black text-white font-bold rounded-xl transition cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  {isSubmittingLevelFee ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Đang gửi...</span>
+                    </>
+                  ) : (
+                    <span>Gửi Đề Xuất Giá Cấp {proposingLevel}</span>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

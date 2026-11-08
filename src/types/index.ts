@@ -34,13 +34,16 @@ export interface PhotoChecklist {
 
 export interface InspectionChecklistItem {
   id: string;
+  rawId?: string | null;
   category: string;
   title: string;
   label?: string; // Compatibility alias for title
   description: string;
   status: 'pass' | 'fail' | 'warning' | 'pending';
+  mandatory?: boolean;
   notes?: string;
   testedValue?: string;
+  orderIndex?: number;
 }
 
 export interface MultiStagePhotos {
@@ -70,6 +73,7 @@ export interface Listing {
   sellerId: string;
   sellerName: string;
   sellerAddress?: string;
+  seller?: { name?: string; phone?: string };
   sellerAvatarUrl?: string;
   sellerAvatar?: string;
   sellerRating: number;
@@ -159,6 +163,7 @@ export interface InspectionReport {
   inspectedAt: string;
   completedAt?: string;
   verdict: 'PASS' | 'FAIL';
+  status?: 'PASSED' | 'FAILED';
   detectedGrade: ConditionGrade;
   conditionScore: number; // 0 - 100
   tamperSealId: string;
@@ -348,15 +353,45 @@ export interface SystemInspectionProposalPayload {
 export interface InspectionCenter {
   id: string;
   name: string;
-  city: string;
-  address: string;
+  city?: string;
+  address?: string | null;
+  phone?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  shippingAddressConfigured?: boolean;
+  status?: string;
+  capacityPerDay?: number;
+  currentQueue?: number;
+  certifiedCategories?: string[];
+  activeInspectors?: number;
+  passRatePercentage?: number;
+  slaHours?: number;
+}
+
+export interface InspectionCenterProfile {
+  id: string;
+  name: string;
+  phone: string | null;
+  province: string | null;
+  district: string | null;
+  ward: string | null;
+  streetAddress: string | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  shippingAddressConfigured: boolean;
+  updatedAt: string | null;
+}
+
+export interface UpdateInspectionCenterProfileRequest {
+  name: string;
   phone: string;
-  capacityPerDay: number;
-  currentQueue: number;
-  certifiedCategories: string[];
-  activeInspectors: number;
-  passRatePercentage: number;
-  slaHours: number;
+  province: string;
+  district?: string | null;
+  ward: string;
+  streetAddress: string;
+  latitude: number;
+  longitude: number;
 }
 
 export interface UserProfile {
@@ -470,6 +505,53 @@ export interface ItemBackend {
   name: string;
   categoryId: string;
   description?: string;
+  selectable?: boolean;
+  replacementForItemId?: string | null;
+  variantCode?: string | null;
+}
+
+export type InspectionComplexityLevel = 'L1' | 'L2' | 'L3' | 'L4';
+export type InspectionChecklistStatus = 'LEGACY' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN';
+
+export type InspectionChecklistPriceStatus =
+  | 'APPROVED'
+  | 'PENDING_APPROVAL'
+  | 'NOT_CONFIGURED'
+  | 'LEGACY'
+  | 'CENTER_UNAVAILABLE';
+
+export interface InspectionChecklistPricingResponse {
+  inspectionCenterId?: string;
+  inspectionCenterName?: string;
+  complexityLevel?: InspectionComplexityLevel;
+  baseInspectionFee?: number | null;
+  feeProposalId?: string;
+  feeReviewedAt?: string;
+  pendingBaseInspectionFee?: number | null;
+  pendingFeeProposalId?: string;
+  priceStatus?: InspectionChecklistPriceStatus;
+  applicable?: boolean;
+  unavailableReason?: string | null;
+}
+
+export interface InspectionChecklistSearchParams {
+  keyword?: string;
+  status?: InspectionChecklistStatus | 'ALL';
+  categoryId?: string;
+  itemId?: string;
+  complexityLevel?: InspectionComplexityLevel;
+  inspectionCenterId?: string;
+  active?: boolean;
+  page?: number;
+  size?: number;
+  sort?: string;
+}
+
+export interface InspectionCenterOption {
+  id: string;
+  name: string;
+  address?: string | null;
+  shippingAddressConfigured?: boolean;
 }
 
 export interface AiChatResponseDto {
@@ -584,7 +666,7 @@ export interface Negotiation {
 // 3. Order & Escrow Types
 // ==========================================
 export type OrderStatusBackend = 'PENDING' | 'PENDING_PAYMENT' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED' | 'WAITING_SELLER_APPROVAL';
-export type OrderBackendStatus = OrderStatusBackend;
+export type OrderBackendStatus = OrderStatusBackend | 'PASSED' | 'FAILED';
 export type EscrowStatusBackend = 'HELD' | 'RELEASED' | 'REFUNDED' | 'FROZEN';
 
 export interface OrderRequestDTO {

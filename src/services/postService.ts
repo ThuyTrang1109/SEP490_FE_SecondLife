@@ -205,6 +205,21 @@ export const postService = {
   },
 
   /**
+   * Chọn lại loại cụ thể (Item) cho bài cũ đã bị tách hoặc ngừng chọn
+   * PATCH /api/v1/posts/my-posts/{postId}/item
+   * Body: { itemId: string }
+   */
+  async reclassifyItem(postId: string, itemId: string): Promise<any> {
+    const cleanId = String(postId || '').trim();
+    const response = await request<any>(`/v1/posts/my-posts/${encodeURIComponent(cleanId)}/item`, {
+      method: 'PATCH',
+      body: JSON.stringify({ itemId }),
+      requiresAuth: true,
+    });
+    return (response as any)?.data || response;
+  },
+
+  /**
    * Khởi tạo bài đăng mới (POST /api/v1/posts/init)
    * Chuẩn Backend Main Flow 1: multipart/form-data chứa categoryId, itemId, images (3-6 files)
    * Có hỗ trợ graceful fallback JSON payload nếu backend cần JSON.

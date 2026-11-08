@@ -1,4 +1,4 @@
-import { request } from './apiClient';
+import { request, requestGet } from './apiClient';
 import { CategoryBackend } from '../types';
 
 export interface CategoryPayload {
@@ -18,8 +18,7 @@ export const categoryService = {
    * GET /api/v1/categories
    */
   async getCategories(): Promise<CategoryBackend[]> {
-    const response = await request<CategoryBackend[]>('/v1/categories', {
-      method: 'GET',
+    const response = await requestGet<CategoryBackend[]>('/v1/categories', {
       requiresAuth: false,
     });
     return (response as any)?.data || response;
@@ -80,8 +79,7 @@ export const categoryService = {
    */
   async getItems(categoryId?: string): Promise<any[]> {
     const url = categoryId ? `/v1/items?categoryId=${categoryId}` : '/v1/items';
-    const response = await request<any[]>(url, {
-      method: 'GET',
+    const response = await requestGet<any[]>(url, {
       requiresAuth: false,
     });
     return (response as any)?.data || response;

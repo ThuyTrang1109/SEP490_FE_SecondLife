@@ -1,3 +1,7 @@
+import { createInFlightRequests } from '../utils/inFlightRequests';
+
+const pendingGetRequests = createInFlightRequests();
+
 export interface ApiResponse<T> {
   success: boolean;
   message: string;
@@ -256,6 +260,7 @@ export const setStoredUser = (user: any) => {
 };
 
 export const clearAuthTokens = () => {
+  pendingGetRequests.clear();
   try {
     sessionStorage.removeItem(ACCESS_TOKEN_KEY);
     sessionStorage.removeItem(REFRESH_TOKEN_KEY);
@@ -579,11 +584,27 @@ export function translateApiError(msg: string | null | undefined): string {
   return s;
 }
 
+/** Opt-in sharing for identical reads from effects/components in the same session. */
+export function requestGet<T>(endpoint: string, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<ApiResponse<T>> {
+  const read = () => request<T>(endpoint, { ...options, method: 'GET' });
+  // A caller that owns cancellation must not cancel another component's request.
+  if (options.signal) return read();
+  const { headers, ...settings } = options;
+  const key = JSON.stringify([
+    resolveApiUrl(endpoint), getAccessToken(), getRefreshToken(),
+    Array.from(new Headers(headers).entries()).sort(), settings,
+  ]);
+  return pendingGetRequests.run(key, read);
+}
+
 export async function request<T>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<ApiResponse<T>> {
   const { requiresAuth = true, _retry = false, isBackground = false, headers: customHeaders, ...restOptions } = options;
+  const method = (restOptions.method ?? 'GET').toUpperCase();
+  const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+  if (isMutation) pendingGetRequests.clear();
 
   // Chỉ ghi nhận hoạt động người dùng khi request KHÔNG PHẢI là background polling ngầm
   // và chỉ khi người dùng chưa bị nhàn rỗi quá hạn (tránh background polling tự gia hạn activity giả tạo)
@@ -710,6 +731,7 @@ export async function request<T>(
       );
     }
 
+    if (isMutation) pendingGetRequests.clear();
     return resData as ApiResponse<T>;
   } catch (error: any) {
     if (error.name === 'AbortError') {

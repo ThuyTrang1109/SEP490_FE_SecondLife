@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, AlertCircle, Tag, Loader2, Check } from 'lucide-react';
 import { TopupPackage } from '../../types';
+import type { CreditPricingRuleResponseDto } from '../../services/adminCreditPricingService';
 import { formatVND } from '../../utils/translations';
 
 export interface PackageFormData {
@@ -17,40 +18,100 @@ interface PackageFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   editingPackage: TopupPackage | null;
+  creditPrices: CreditPricingRuleResponseDto[];
   onSave: (data: PackageFormData) => Promise<void>;
 }
+
+const CREDIT_TYPE_LABELS: Record<string, string> = {
+  LISTING: 'Đăng tin',
+  AI_CHAT: 'Chat AI',
+  VALUATION: 'Định giá AI',
+};
 
 export const PackageFormModal: React.FC<PackageFormModalProps> = ({
   isOpen,
   onClose,
   editingPackage,
+  creditPrices,
   onSave,
 }) => {
-  const [formData, setFormData] = useState<PackageFormData>({
+  const [formData, setFormData] = useState<Omit<PackageFormData, 'price'>>({
     name: '',
     description: '',
     postCredits: 1,
     chatCredits: 0,
     valuationCredits: 0,
-    price: 20000,
     active: true,
   });
+
+  const [price, setPrice] = useState<string>('');
+  const [discount, setDiscount] = useState<string>('');
+  const [pricingMode, setPricingMode] = useState<'price' | 'discount' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  // Sync form state only when modal opens or package target changes
+  // Helper tìm đơn giá VND đang hoạt động cho loại credit
+  const getActiveCreditRule = (type: string) => {
+    return creditPrices.find(
+      (r) =>
+        r.creditType === type &&
+        r.active !== false &&
+        (!r.currency || r.currency.toUpperCase() === 'VND') &&
+        typeof r.unitPrice === 'number' &&
+        r.unitPrice > 0
+    );
+  };
+
+  // Danh sách các quyền lợi credit trong gói
+  const creditItems = useMemo(
+    () => [
+      { type: 'LISTING', label: CREDIT_TYPE_LABELS.LISTING, quantity: Math.max(0, Math.floor(Number(formData.postCredits) || 0)) },
+      { type: 'AI_CHAT', label: CREDIT_TYPE_LABELS.AI_CHAT, quantity: Math.max(0, Math.floor(Number(formData.chatCredits) || 0)) },
+      { type: 'VALUATION', label: CREDIT_TYPE_LABELS.VALUATION, quantity: Math.max(0, Math.floor(Number(formData.valuationCredits) || 0)) },
+    ],
+    [formData.postCredits, formData.chatCredits, formData.valuationCredits]
+  );
+
+  const activeCreditItems = creditItems.filter((item) => item.quantity > 0);
+  const totalQuantity = activeCreditItems.reduce((sum, item) => sum + item.quantity, 0);
+
+  // Tìm các loại credit có trong gói (quantity > 0) nhưng thiếu đơn giá hoạt động
+  const missingPriceItems = activeCreditItems.filter((item) => !getActiveCreditRule(item.type));
+  const hasMissingPrices = missingPriceItems.length > 0;
+
+  // Tính giá mua lẻ bằng tổng số lượt của từng loại credit nhân với đơn giá VND đang hoạt động tương ứng
+  const retailPrice: number | null = useMemo(() => {
+    if (activeCreditItems.length === 0) return 0;
+    if (hasMissingPrices) return null;
+    return activeCreditItems.reduce((total, item) => {
+      const rule = getActiveCreditRule(item.type)!;
+      return total + item.quantity * rule.unitPrice;
+    }, 0);
+  }, [activeCreditItems, hasMissingPrices, creditPrices]);
+
+  // Sync form state khi modal mở hoặc thay đổi gói cần sửa
   useEffect(() => {
     if (isOpen) {
       if (editingPackage) {
+        const initPrice = editingPackage.price ?? editingPackage.priceVnd;
+        const priceStr = typeof initPrice === 'number' && Number.isFinite(initPrice) ? String(initPrice) : '';
         setFormData({
           name: editingPackage.name || editingPackage.packageName || '',
           description: editingPackage.description || '',
           postCredits: Number(editingPackage.postCredits || 0),
           chatCredits: Number(editingPackage.chatCredits || 0),
           valuationCredits: Number(editingPackage.valuationCredits || 0),
-          price: Number(editingPackage.price || editingPackage.priceVnd || 0),
           active: editingPackage.active !== false,
         });
+        if (priceStr.trim() !== '') {
+          setPrice(priceStr);
+          setDiscount('');
+          setPricingMode('price');
+        } else {
+          setPrice('');
+          setDiscount('');
+          setPricingMode(null);
+        }
       } else {
         setFormData({
           name: '',
@@ -58,14 +119,90 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
           postCredits: 1,
           chatCredits: 0,
           valuationCredits: 0,
-          price: 20000,
           active: true,
         });
+        setPrice('');
+        setDiscount('');
+        setPricingMode(null);
       }
       setError(null);
       setIsSaving(false);
     }
   }, [isOpen, editingPackage]);
+
+  // Tính giá bán khi người dùng nhập % giảm (ở chế độ discount)
+  const calculatedPriceFromDiscount = useMemo(() => {
+    if (pricingMode !== 'discount' || discount.trim() === '' || !retailPrice || retailPrice <= 0) return 0;
+    const d = parseFloat(discount);
+    if (isNaN(d)) return 0;
+    return Math.round(retailPrice * (1 - d / 100) * 100) / 100;
+  }, [pricingMode, discount, retailPrice]);
+
+  // Tính % giảm khi người dùng nhập Giá bán thực tế (ở chế độ price)
+  const calculatedDiscountFromPrice = useMemo(() => {
+    if (pricingMode !== 'price' || price.trim() === '' || !retailPrice || retailPrice <= 0) return '';
+    const p = parseFloat(price);
+    if (isNaN(p)) return '';
+    const rawDiscount = ((retailPrice - p) / retailPrice) * 100;
+    return String(Math.round(rawDiscount * 100) / 100);
+  }, [pricingMode, price, retailPrice]);
+
+  // Giá bán áp dụng xem trước
+  const displayPrice = useMemo(() => {
+    if (pricingMode === 'price') {
+      const p = parseFloat(price);
+      return !isNaN(p) && p > 0 ? p : null;
+    }
+    if (pricingMode === 'discount') {
+      return calculatedPriceFromDiscount > 0 ? calculatedPriceFromDiscount : null;
+    }
+    return null;
+  }, [pricingMode, price, calculatedPriceFromDiscount]);
+
+  // % giảm xem trước
+  const displayDiscount = useMemo(() => {
+    if (pricingMode === 'discount') {
+      return discount.trim() !== '' ? discount : null;
+    }
+    if (pricingMode === 'price') {
+      return calculatedDiscountFromPrice !== '' ? calculatedDiscountFromPrice : null;
+    }
+    return null;
+  }, [pricingMode, discount, calculatedDiscountFromPrice]);
+
+  // Người dùng nhập Giá bán thực tế -> Khóa ô % giảm
+  const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setPrice(val);
+    if (val.trim() === '') {
+      setPricingMode(null);
+    } else {
+      setPricingMode('price');
+    }
+  };
+
+  // Xóa giá bán -> Mở khóa cả hai ô
+  const handleClearPrice = () => {
+    setPrice('');
+    setPricingMode(null);
+  };
+
+  // Người dùng nhập % giảm -> Khóa ô Giá bán thực tế
+  const handleDiscountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setDiscount(val);
+    if (val.trim() === '') {
+      setPricingMode(null);
+    } else {
+      setPricingMode('discount');
+    }
+  };
+
+  // Xóa % giảm -> Mở khóa cả hai ô
+  const handleClearDiscount = () => {
+    setDiscount('');
+    setPricingMode(null);
+  };
 
   if (!isOpen) return null;
 
@@ -84,11 +221,7 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
       setError('Mô tả gói tối đa 255 ký tự.');
       return;
     }
-    const numPrice = Number(formData.price) || 0;
-    if (numPrice < 1000) {
-      setError('Giá gói tối thiểu là 1.000 VNĐ.');
-      return;
-    }
+
     const posts = Math.floor(Number(formData.postCredits) || 0);
     const chats = Math.floor(Number(formData.chatCredits) || 0);
     const vals = Math.floor(Number(formData.valuationCredits) || 0);
@@ -101,6 +234,47 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
       return;
     }
 
+    let finalPrice = 0;
+
+    if (pricingMode === 'discount') {
+      if (hasMissingPrices) {
+        setError('Không thể lưu giá theo % giảm do thiếu đơn giá của loại credit có trong gói.');
+        return;
+      }
+      if (discount.trim() === '') {
+        setError('Vui lòng nhập % giảm mong muốn.');
+        return;
+      }
+      const numDiscount = parseFloat(discount);
+      if (isNaN(numDiscount) || numDiscount < 0 || numDiscount > 100) {
+        setError('% giảm mong muốn phải từ 0% đến 100%.');
+        return;
+      }
+      if (calculatedPriceFromDiscount < 1000) {
+        setError('Giá bán sau khi giảm theo % tối thiểu là 1.000 VNĐ.');
+        return;
+      }
+      finalPrice = calculatedPriceFromDiscount;
+    } else if (pricingMode === 'price') {
+      if (price.trim() === '') {
+        setError('Vui lòng nhập giá bán thực tế (VNĐ).');
+        return;
+      }
+      const numPrice = parseFloat(price);
+      if (isNaN(numPrice) || !Number.isFinite(numPrice)) {
+        setError('Giá bán thực tế phải là một số hợp lệ.');
+        return;
+      }
+      if (numPrice < 1000) {
+        setError('Giá bán cuối cùng của gói tối thiểu là 1.000 VNĐ.');
+        return;
+      }
+      finalPrice = Math.round(numPrice * 100) / 100;
+    } else {
+      setError('Vui lòng nhập giá bán thực tế (VNĐ) hoặc % giảm mong muốn.');
+      return;
+    }
+
     setIsSaving(true);
     setError(null);
     try {
@@ -110,7 +284,7 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
         postCredits: posts,
         chatCredits: chats,
         valuationCredits: vals,
-        price: numPrice,
+        price: finalPrice,
         active: formData.active,
       });
       onClose();
@@ -170,7 +344,7 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
               required
               maxLength={100}
               value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
               placeholder="Ví dụ: Gói Tiết Kiệm, Pro Combo, 10 Tin Đăng..."
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 outline-none text-slate-800 font-bold transition"
             />
@@ -182,44 +356,9 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
               type="text"
               maxLength={255}
               value={formData.description}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
               placeholder="Ví dụ: 5 tin đăng, 25 lượt Chat AI, 5 lượt định giá..."
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 outline-none text-slate-800 transition"
-            />
-          </div>
-
-          <div>
-            <label className="block text-slate-700 font-bold mb-1">
-              Giá Bán Thực Tế (VNĐ) <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="number"
-              required
-              min={1000}
-              step="any"
-              value={formData.price === 0 ? '' : formData.price}
-              onChange={(e) => {
-                const val = e.target.value;
-                setFormData(prev => ({ ...prev, price: val === '' ? 0 : Number(val) }));
-              }}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 outline-none font-mono font-extrabold text-[#c34c36] text-sm transition"
-            />
-            <span className="text-[10px] text-slate-400 mt-1 block font-medium">
-              Số tiền người bán thực trả: {formatVND(Number(formData.price) || 0)}
-            </span>
-          </div>
-
-          {/* Trạng thái mở bán Toggle */}
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-            <div>
-              <span className="block text-slate-800 font-bold text-xs">Mở bán gói ngay lập tức</span>
-              <span className="text-[10px] text-slate-500">Người bán có thể nhìn thấy và mua gói này khi đang mở bán</span>
-            </div>
-            <input
-              type="checkbox"
-              checked={formData.active}
-              onChange={(e) => setFormData(prev => ({ ...prev, active: e.target.checked }))}
-              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
             />
           </div>
 
@@ -238,7 +377,7 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
                   value={formData.postCredits}
                   onChange={(e) => {
                     const val = e.target.value;
-                    setFormData(prev => ({ ...prev, postCredits: val === '' ? 0 : Math.max(0, parseInt(val) || 0) }));
+                    setFormData((prev) => ({ ...prev, postCredits: val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0) }));
                   }}
                   className="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-slate-50 font-mono font-bold text-xs outline-none focus:border-emerald-500 focus:bg-white"
                 />
@@ -252,7 +391,7 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
                   value={formData.chatCredits}
                   onChange={(e) => {
                     const val = e.target.value;
-                    setFormData(prev => ({ ...prev, chatCredits: val === '' ? 0 : Math.max(0, parseInt(val) || 0) }));
+                    setFormData((prev) => ({ ...prev, chatCredits: val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0) }));
                   }}
                   className="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-slate-50 font-mono font-bold text-xs outline-none focus:border-emerald-500 focus:bg-white"
                 />
@@ -266,13 +405,189 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
                   value={formData.valuationCredits}
                   onChange={(e) => {
                     const val = e.target.value;
-                    setFormData(prev => ({ ...prev, valuationCredits: val === '' ? 0 : Math.max(0, parseInt(val) || 0) }));
+                    setFormData((prev) => ({ ...prev, valuationCredits: val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0) }));
                   }}
                   className="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-slate-50 font-mono font-bold text-xs outline-none focus:border-emerald-500 focus:bg-white"
                 />
                 <span className="text-[10px] text-slate-400 mt-0.5 block">lượt định giá</span>
               </div>
             </div>
+          </div>
+
+          {/* Cấu Hình Giá Bán Loại Trừ & Khóa Tự Động */}
+          <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Cấu Hình Giá Bán Gói Dịch Vụ</span>
+              </label>
+              <span className="text-[10px] text-slate-500 font-medium">
+                (Khóa ô còn lại khi nhập)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Ô 1: Giá bán thực tế */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="package-price" className="text-slate-700 font-bold text-[11px] flex items-center gap-1">
+                    <span>Giá bán thực tế (VNĐ)</span>
+                    {pricingMode === 'discount' && (
+                      <span className="text-[9px] text-amber-700 font-bold bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                        Đã khóa
+                      </span>
+                    )}
+                  </label>
+                  {pricingMode === 'price' && price.trim() !== '' && (
+                    <button
+                      type="button"
+                      onClick={handleClearPrice}
+                      className="text-[10px] text-rose-600 hover:text-rose-700 font-bold hover:underline cursor-pointer"
+                    >
+                      Xóa giá
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  id="package-price"
+                  disabled={isSaving || pricingMode === 'discount'}
+                  min={1000}
+                  step="any"
+                  value={pricingMode === 'discount' ? (calculatedPriceFromDiscount > 0 ? String(calculatedPriceFromDiscount) : '') : price}
+                  onChange={handlePriceChange}
+                  placeholder={pricingMode === 'discount' ? 'Đã khóa (đang nhập %)' : 'Ví dụ: 80000'}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border outline-none font-mono font-extrabold text-sm transition ${
+                    pricingMode === 'discount'
+                      ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                      : 'border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 text-[#c34c36]'
+                  }`}
+                />
+              </div>
+
+              {/* Ô 2: % giảm mong muốn */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="package-discount" className="text-slate-700 font-bold text-[11px] flex items-center gap-1">
+                    <span>% giảm mong muốn</span>
+                    {pricingMode === 'price' && (
+                      <span className="text-[9px] text-amber-700 font-bold bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                        Đã khóa
+                      </span>
+                    )}
+                  </label>
+                  {pricingMode === 'discount' && discount.trim() !== '' && (
+                    <button
+                      type="button"
+                      onClick={handleClearDiscount}
+                      className="text-[10px] text-rose-600 hover:text-rose-700 font-bold hover:underline cursor-pointer"
+                    >
+                      Xóa %
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    id="package-discount"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="any"
+                    disabled={isSaving || pricingMode === 'price' || hasMissingPrices}
+                    value={pricingMode === 'price' ? (calculatedDiscountFromPrice !== '' ? calculatedDiscountFromPrice : '') : discount}
+                    onChange={handleDiscountChange}
+                    placeholder={hasMissingPrices ? 'Thiếu đơn giá' : pricingMode === 'price' ? 'Đã khóa (đang nhập giá)' : 'Ví dụ: 20'}
+                    className={`w-full pl-3.5 pr-8 py-2.5 rounded-xl border outline-none font-mono text-sm transition ${
+                      pricingMode === 'price' || hasMissingPrices
+                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                        : 'border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 text-slate-800'
+                    }`}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs pointer-events-none">
+                    %
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Hướng dẫn khóa và mở khóa ô */}
+            {pricingMode === 'discount' && (
+              <p className="text-[10px] text-slate-500 font-medium">
+                ℹ️ Ô <strong>"Giá bán thực tế"</strong> đang bị khóa và tự động tính theo % giảm. Nhấn <button type="button" onClick={handleClearDiscount} className="text-rose-600 font-bold hover:underline inline">Xóa %</button> để chuyển sang nhập giá bán thực tế.
+              </p>
+            )}
+            {pricingMode === 'price' && (
+              <p className="text-[10px] text-slate-500 font-medium">
+                ℹ️ Ô <strong>"% giảm mong muốn"</strong> đang bị khóa và tự động tính theo giá bán. Nhấn <button type="button" onClick={handleClearPrice} className="text-rose-600 font-bold hover:underline inline">Xóa giá</button> để chuyển sang nhập % giảm.
+              </p>
+            )}
+            {!pricingMode && (
+              <p className="text-[10px] text-slate-500 font-medium">
+                💡 Khi nhập vào 1 ô, ô còn lại sẽ tự động khóa và hiển thị giá trị tính toán tương ứng. Xóa giá trị để mở khóa ô còn lại.
+              </p>
+            )}
+
+            {/* Cảnh báo thiếu đơn giá hoạt động nếu có */}
+            {hasMissingPrices && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[11px] flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                <div className="leading-snug">
+                  <span className="font-bold">Không thể chọn nhập theo % giảm:</span> Thiếu đơn giá VND đang hoạt động cho{' '}
+                  {missingPriceItems.map((m) => `${m.label} (${m.type})`).join(', ')}. Bạn vẫn có thể nhập trực tiếp ô "Giá bán thực tế (VNĐ)".
+                </div>
+              </div>
+            )}
+
+            {/* Bảng xem trước: Giá mua lẻ & Giá bán dự kiến */}
+            <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1.5">
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-slate-500 font-semibold">Giá mua lẻ theo đơn giá (Retail Price):</span>
+                <span className="font-bold text-slate-800 font-mono">
+                  {retailPrice !== null && retailPrice > 0
+                    ? formatVND(retailPrice)
+                    : hasMissingPrices
+                    ? 'Chưa xác định (thiếu đơn giá)'
+                    : totalQuantity === 0
+                    ? '0 VNĐ (chưa chọn quyền lợi)'
+                    : '0 VNĐ'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-[11px] pt-1.5 border-t border-slate-100">
+                <span className="text-slate-700 font-bold">
+                  Giá bán áp dụng:
+                </span>
+                <div className="text-right">
+                  <span className="font-black text-[#c34c36] text-sm font-mono">
+                    {displayPrice !== null && displayPrice > 0
+                      ? formatVND(displayPrice)
+                      : 'Chưa nhập'}
+                  </span>
+                  {retailPrice !== null && retailPrice > 0 && displayPrice !== null && displayPrice > 0 && (
+                    <span className="text-[10px] text-emerald-700 font-semibold ml-2">
+                      {displayPrice < retailPrice ? (
+                        <>(Tiết kiệm {formatVND(retailPrice - displayPrice)} · {displayDiscount ? `${displayDiscount}%` : ''})</>
+                      ) : displayPrice === retailPrice ? (
+                        <>(Đúng giá mua lẻ · 0%)</>
+                      ) : null}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Trạng thái mở bán Toggle */}
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+            <div>
+              <span className="block text-slate-800 font-bold text-xs">Mở bán gói ngay lập tức</span>
+              <span className="text-[10px] text-slate-500">Người bán có thể nhìn thấy và mua gói này khi đang mở bán</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={formData.active}
+              onChange={(e) => setFormData((prev) => ({ ...prev, active: e.target.checked }))}
+              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+            />
           </div>
 
           {/* Action Buttons */}
@@ -308,4 +623,3 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
     </div>
   );
 };
-

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { EscrowOrder, Language, ShipmentBackend, ShipmentEventBackend, LalamoveTrackingResponse } from '../../types';
+import { EscrowOrder, Language, ShipmentBackend, ShipmentEventBackend, LalamoveTrackingResponse, CreateShipmentRequestDto } from '../../types';
 import { formatVND } from '../../utils/translations';
 import {
   Truck,
@@ -32,6 +32,7 @@ import { orderService } from '../../services/orderService';
 import { dialogService } from '../../utils/dialogService';
 import { translateApiError } from '../../services/apiClient';
 import { resolveListingCategory, resolveOrderListing } from '../../utils/catalogCache';
+import { resolveInspectionCenter } from '../../utils/orderUtils';
 
 interface GroupedShipmentEvent {
   key: string;

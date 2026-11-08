@@ -276,11 +276,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const mapBackendRole = (roles?: string[]): UserRole => {
     if (!roles || roles.length === 0) return 'buyer';
-    if (roles.includes('ROLE_ADMIN') || roles.includes('ADMIN')) return 'admin';
-    if (roles.includes('ROLE_INSPECTION_CENTER') || roles.includes('INSPECTION_CENTER')) return 'inspection_center';
-    if (roles.includes('ROLE_INSPECTOR') || roles.includes('INSPECTOR') || roles.includes('HUB_INSPECTOR')) return 'inspector';
-    if (roles.includes('ROLE_STAFF') || roles.includes('STAFF')) return 'staff';
-    if (roles.includes('ROLE_SELLER') || roles.includes('SELLER')) return 'seller';
+    const normalized = roles.map(r => String(r || '').toUpperCase().trim());
+    if (normalized.includes('ROLE_ADMIN') || normalized.includes('ADMIN')) return 'admin';
+    if (normalized.includes('ROLE_INSPECTION_CENTER') || normalized.includes('INSPECTION_CENTER')) return 'inspection_center';
+    if (normalized.includes('ROLE_INSPECTOR') || normalized.includes('INSPECTOR') || normalized.includes('HUB_INSPECTOR')) return 'inspector';
+    if (normalized.includes('ROLE_STAFF') || normalized.includes('STAFF')) return 'staff';
+    if (normalized.includes('ROLE_SELLER') || normalized.includes('SELLER')) return 'seller';
     return 'buyer';
   };
 
@@ -327,7 +328,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         gender: normalizedGender || undefined,
         emailVerified: Boolean(res.user.emailVerified),
       });
-      onClose();
     } catch (err: any) {
       soundFx.playCancel();
       setErrorMsg(
@@ -443,7 +443,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         emailVerified: Boolean(res.user.emailVerified),
       });
       setEmailOrPhone('');
-      onClose();
     } catch (err: any) {
       // FE-01: Clear password on failure to prevent memory leakage
       setPassword('');

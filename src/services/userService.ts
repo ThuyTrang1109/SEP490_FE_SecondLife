@@ -1,4 +1,4 @@
-import { request } from './apiClient';
+import { request, requestGet } from './apiClient';
 
 export interface UserProfileDto {
   id: string;
@@ -43,8 +43,7 @@ export interface ChangePasswordDto {
 
 export const userService = {
   async getMyProfile(): Promise<UserProfileDto> {
-    const res = await request<UserProfileDto>('/users/me', {
-      method: 'GET',
+    const res = await requestGet<UserProfileDto>('/users/me', {
       requiresAuth: true,
     });
     return res.data;

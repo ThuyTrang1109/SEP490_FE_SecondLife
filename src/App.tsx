@@ -120,10 +120,21 @@ export default function App() {
   });
 
   const [isRestoringSession, setIsRestoringSession] = useState(() => Boolean(getAccessToken()));
-  const route = resolveAppRoute(browserLocation, currentUser?.role || currentRole);
-  const routeAccess = getRouteAccess(route, currentUser, isRestoringSession);
+  const currentUserId = currentUser?.id;
+  const currentUserIdRef = useRef(currentUserId);
+  currentUserIdRef.current = currentUserId;
+  const isCenterAccount = currentUser?.role === 'inspection_center' || currentRole === 'inspection_center';
+  const effectiveUser = currentUser || (getAccessToken() ? getStoredUser() : null);
+  const effectiveRole = effectiveUser?.role || currentRole;
+  const route = resolveAppRoute(browserLocation, effectiveRole);
+  const routeAccess = getRouteAccess(route, effectiveUser, isRestoringSession);
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
+  const ordersScope = `${currentUser?.id || ''}:${currentRole}`;
+  const ordersScopeRef = useRef(ordersScope);
+  ordersScopeRef.current = ordersScope;
   const activeTab = route.tab;
-  const navigationRole = route.role && getUserRoles(currentUser).includes(route.role) ? route.role : currentRole;
+  const navigationRole = route.role && getUserRoles(effectiveUser).includes(route.role) ? route.role : effectiveRole;
   const setActiveTab = (value: React.SetStateAction<string>) => {
     const tab = typeof value === 'function' ? value(activeTab) : value;
     navigatePath(pathForTab(tab, navigationRole));
@@ -139,12 +150,14 @@ export default function App() {
 
   // Restore & verify session for THIS browser from Backend /me on startup/refresh
   React.useEffect(() => {
+    let cancelled = false;
     const token = getAccessToken();
     const stored = getStoredUser();
     const hadInitialSession = hadSessionRef.current || Boolean(token || stored || getRefreshToken());
 
     if (token) {
       userService.getMyProfile().then(async (profile) => {
+        if (cancelled) return;
         if (profile) {
           // Xác định vai trò người dùng để tránh gọi sai API chuyên biệt
           const roleUpperList = (profile.roles || []).map((r: string) => (r || '').toUpperCase());
@@ -173,6 +186,7 @@ export default function App() {
             } catch (_) {}
           }
 
+          if (cancelled) return;
           const fullPickup = pickupAddr
             ? [pickupAddr.address, pickupAddr.wardName, pickupAddr.provinceName].filter(Boolean).join(', ')
             : '';
@@ -201,15 +215,15 @@ export default function App() {
             id: profile.id,
             name: profile.fullName || profile.email,
             email: profile.email,
-            role: (profile.roles?.includes('ADMIN') || profile.roles?.includes('ROLE_ADMIN'))
+            role: (roleUpperList.includes('ADMIN') || roleUpperList.includes('ROLE_ADMIN'))
               ? 'admin'
-              : (profile.roles?.includes('INSPECTION_CENTER') || profile.roles?.includes('ROLE_INSPECTION_CENTER'))
+              : (roleUpperList.includes('INSPECTION_CENTER') || roleUpperList.includes('ROLE_INSPECTION_CENTER'))
                 ? 'inspection_center'
-                : (profile.roles?.includes('INSPECTOR') || profile.roles?.includes('ROLE_INSPECTOR') || profile.roles?.includes('HUB_INSPECTOR'))
+                : (roleUpperList.includes('INSPECTOR') || roleUpperList.includes('ROLE_INSPECTOR') || roleUpperList.includes('HUB_INSPECTOR'))
                   ? 'inspector'
-                  : (profile.roles?.includes('STAFF') || profile.roles?.includes('ROLE_STAFF'))
+                  : (roleUpperList.includes('STAFF') || roleUpperList.includes('ROLE_STAFF'))
                     ? 'staff'
-                    : (profile.roles?.includes('SELLER') || profile.roles?.includes('ROLE_SELLER'))
+                    : (roleUpperList.includes('SELLER') || roleUpperList.includes('ROLE_SELLER'))
                       ? 'seller'
                       : 'buyer',
             phone: profile.phone || '',
@@ -255,6 +269,7 @@ export default function App() {
           }
         }
       }).catch(() => {
+        if (cancelled) return;
         clearAuthTokens();
         setCurrentUser(null);
         setCurrentRole('buyer');
@@ -267,7 +282,9 @@ export default function App() {
               : 'Session expired. Please log in again.'
           );
         }
-      }).finally(() => setIsRestoringSession(false));
+      }).finally(() => {
+        if (!cancelled) setIsRestoringSession(false);
+      });
     } else {
       setIsRestoringSession(false);
       if (hadInitialSession) {
@@ -287,6 +304,7 @@ export default function App() {
         setCurrentRole('buyer');
       }
     }
+    return () => { cancelled = true; };
   }, []);
 
     // The unauthorized_session listener was moved below state declarations to utilize toast and modal.
@@ -312,8 +330,14 @@ export default function App() {
 
   const closeRouteModal = (fallback: string) => {
     const previous = safeReturnPath(window.history.state?.returnPath || null);
-    if (previous && previous !== browserLocation) navigatePath(previous, { replace: true });
-    else navigatePath(fallback, { replace: true });
+    if (previous && previous !== browserLocation) {
+      const targetRoute = resolveAppRoute(previous, currentUser?.role || currentRole);
+      if (getRouteAccess(targetRoute, currentUser) === 'allowed') {
+        navigatePath(previous, { replace: true });
+        return;
+      }
+    }
+    navigatePath(fallback, { replace: true });
   };
   const openAuth = (mode: 'login' | 'register' | 'forgot' = 'login', returnTo?: string) => {
     setAuthModalMode(mode);
@@ -346,13 +370,14 @@ export default function App() {
 
   // Load wallet balance from Backend
   const loadUserWallet = React.useCallback(async () => {
-    if (currentUser && getAccessToken()) {
+    if (currentUserId && getAccessToken()) {
       try {
         const w = await walletService.getMyWallet();
+        if (currentUserIdRef.current !== currentUserId) return;
         if (w && typeof w.balance === 'number') {
           setWalletBalance(w.balance);
           setCurrentUser((prev) => {
-            if (!prev || (prev.walletBalanceVnd === w.balance && prev.walletBalance === w.balance)) return prev;
+            if (!prev || prev.id !== currentUserId || (prev.walletBalanceVnd === w.balance && prev.walletBalance === w.balance)) return prev;
             return { ...prev, walletBalance: w.balance, walletBalanceVnd: w.balance };
           });
         }
@@ -360,17 +385,17 @@ export default function App() {
         console.warn('Could not load wallet from server:', err);
       }
     }
-  }, [currentUser]);
+  }, [currentUserId]);
 
   // Fetch credit balance and wallet on load if user is logged in
   React.useEffect(() => {
-    if (currentUser && getAccessToken()) {
+    if (!isRestoringSession && currentUserId && getAccessToken()) {
       loadUserWallet();
 
       // Chỉ tài khoản Người bán (Seller) mới có và sử dụng credit
       const isSeller =
         currentRole === 'seller' ||
-        currentUser.role === 'seller';
+        currentUser?.role === 'seller';
 
       if (isSeller) {
         Promise.all([
@@ -393,7 +418,7 @@ export default function App() {
           .catch(() => { });
       }
     }
-  }, [currentUser, currentRole, loadUserWallet]);
+  }, [currentUserId, currentUser?.role, currentRole, isRestoringSession, loadUserWallet]);
 
 
   const handleConfirmLogout = () => {
@@ -573,7 +598,9 @@ export default function App() {
   const lastListingsFetchRef = useRef<number>(0);
   const isFetchingListingsRef = useRef<boolean>(false);
   const lastOrdersFetchRef = useRef<number>(0);
-  const isFetchingOrdersRef = useRef<boolean>(false);
+  const pendingOrdersRef = useRef<{ scope: string; refresh: boolean } | null>(null);
+  const lastOrdersScopeRef = useRef('');
+  const refreshOrdersRef = useRef<(force?: boolean) => Promise<void>>(undefined);
 
   // Sync orders whenever logged-in user changes (prevents account order bleed)
   const prevUserIdRef = useRef<string | null>(currentUser?.id || null);
@@ -1236,32 +1263,42 @@ export default function App() {
 
   // Synchronize orders directly with Backend
   const loadUserOrders = React.useCallback(async (force = false) => {
+    const currentUser = currentUserRef.current;
     if (!currentUser || !getAccessToken()) {
       setOrders([]);
       return;
     }
+    // The center page owns its orders. Avoid loading the same data (and chats) in App.
+    if (isRestoringSession || isCenterAccount) return;
+    const scope = `${currentUser.id}:${currentRole}`;
+    if (pendingOrdersRef.current?.scope === scope) {
+      if (force) pendingOrdersRef.current.refresh = true;
+      return;
+    }
+    if (lastOrdersScopeRef.current !== scope) lastOrdersFetchRef.current = 0;
     const now = Date.now();
-    if (!force && isFetchingOrdersRef.current) return;
     if (!force && now - lastOrdersFetchRef.current < 3000) {
       return;
     }
     lastOrdersFetchRef.current = now;
-    isFetchingOrdersRef.current = true;
+    lastOrdersScopeRef.current = scope;
+    const pending = { scope, refresh: false };
+    pendingOrdersRef.current = pending;
     try {
-      const isCenter = currentUser?.role === 'inspection_center' || currentRole === 'inspection_center';
       const isInspector = currentUser?.role === 'inspector' || currentRole === 'inspector';
       const isAdmin = currentUser?.role === 'admin' || currentRole === 'admin';
-      const isInternalRole = isCenter || isInspector || isAdmin;
+      const isStaff = currentUser?.role === 'staff' || currentRole === 'staff';
+      const isInternalRole = isInspector || isAdmin || isStaff;
 
-      const [buyerRes, sellerRes, inspBuyerRes, inspSellerRes, chatRooms, inspCenterRes, inspMyRes] = await Promise.all([
+      const [buyerRes, sellerRes, inspBuyerRes, inspSellerRes, chatRooms, inspMyRes] = await Promise.all([
         !isInternalRole ? orderService.getBuyerOrders(0, 50).catch(() => ({ content: [] })) : Promise.resolve({ content: [] }),
         !isInternalRole ? orderService.getSellerOrders(0, 50).catch(() => ({ content: [] })) : Promise.resolve({ content: [] }),
         !isInternalRole ? inspectorService.getMyBuyerOrders(0, 50).catch(() => ({ items: [] } as any)) : Promise.resolve({ items: [] } as any),
         !isInternalRole ? inspectorService.getMySellerOrders(0, 50).catch(() => ({ items: [] } as any)) : Promise.resolve({ items: [] } as any),
-        chatService.getChatRooms().catch(() => [] as any[]),
-        isCenter ? inspectorService.getAllOrders(undefined, 0, 100).catch(() => ({ items: [] } as any)) : Promise.resolve({ items: [] } as any),
+        !isInternalRole ? chatService.getChatRooms().catch(() => [] as any[]) : Promise.resolve([] as any[]),
         isInspector ? inspectorService.getMyOrders().catch(() => [] as any[]) : Promise.resolve([] as any[])
       ]);
+      if (ordersScopeRef.current !== scope) return;
 
       const buyerNameMap = new Map<string, string>();
       const buyerPhoneMap = new Map<string, string>();
@@ -1298,7 +1335,6 @@ export default function App() {
       const rawSellerItems = (sellerRes as any)?.content || (sellerRes as any)?.items || (Array.isArray(sellerRes) ? sellerRes : []);
       const rawInspBuyerItems = (inspBuyerRes as any)?.data?.items || (inspBuyerRes as any)?.items || (inspBuyerRes as any)?.content || (Array.isArray(inspBuyerRes) ? inspBuyerRes : []);
       const rawInspSellerItems = (inspSellerRes as any)?.data?.items || (inspSellerRes as any)?.items || (inspSellerRes as any)?.content || (Array.isArray(inspSellerRes) ? inspSellerRes : []);
-      const rawInspCenterItems = (inspCenterRes as any)?.data?.items || (inspCenterRes as any)?.items || (inspCenterRes as any)?.content || (Array.isArray(inspCenterRes) ? inspCenterRes : []);
       const rawInspMyItems = (inspMyRes as any)?.data?.items || (inspMyRes as any)?.items || (inspMyRes as any)?.content || (Array.isArray(inspMyRes) ? inspMyRes : []);
 
       // Collect cancelled post IDs from buyer and seller orders
@@ -1324,7 +1360,6 @@ export default function App() {
       rawSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: false }); });
       rawInspBuyerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
       rawInspSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
-      rawInspCenterItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
       rawInspMyItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
 
       // Nạp thêm các đơn kiểm định cục bộ từ my_seller_inspection_orders và recent_placed_orders
@@ -1934,8 +1969,6 @@ export default function App() {
             (currentRole === 'seller' && !isBuyer)
           );
           const isInspectionRole = Boolean(
-            currentUser?.role === 'inspection_center' ||
-            currentRole === 'inspection_center' ||
             currentUser?.role === 'inspector' ||
             currentRole === 'inspector' ||
             currentUser?.role === 'admin'
@@ -2025,6 +2058,7 @@ export default function App() {
       }
       lastOrdersFetchRef.current = Date.now();
     } catch (err) {
+      if (ordersScopeRef.current !== scope) return;
       console.warn('Could not load orders from backend:', err);
       const localRecentOrders = getLocalStoredOrders(currentUser);
       try {
@@ -2033,27 +2067,31 @@ export default function App() {
       reconcileBoughtListingIds(localRecentOrders);
       setOrders(localRecentOrders);
     } finally {
-      isFetchingOrdersRef.current = false;
+      if (pendingOrdersRef.current === pending) {
+        pendingOrdersRef.current = null;
+        if (pending.refresh && ordersScopeRef.current === scope) void refreshOrdersRef.current?.(true);
+      }
     }
-  }, [currentUser, currentRole, getLocalStoredOrders, mapBackendPostToListing]);
+  }, [currentUser?.id, currentUser?.role, currentRole, isCenterAccount, isRestoringSession, getLocalStoredOrders, mapBackendPostToListing]);
+  refreshOrdersRef.current = loadUserOrders;
 
   // Refresh listings on mount or when switching to listing-centric tabs
   React.useEffect(() => {
     if (routeAccess !== 'allowed' || isRestoringSession) return;
-    initCatalogCache();
     const listingTabs = ['home', 'marketplace', 'seller-dashboard', 'create-listing', 'admin-dashboard'];
     if (listingTabs.includes(activeTab)) {
+      initCatalogCache();
       loadListingsFromBackend();
     }
   }, [loadListingsFromBackend, activeTab, routeAccess, isRestoringSession]);
 
   // Orders are only refreshed when user accesses order-sensitive tabs or on auth change
   React.useEffect(() => {
-    const orderTabs = ['orders', 'seller-dashboard', 'disputes', 'buyer-inspection-decision', 'inspection-hub', 'inspection-center', 'admin-dashboard'];
+    const orderTabs = ['orders', 'seller-dashboard', 'disputes', 'buyer-inspection-decision', 'inspection-hub', 'admin-dashboard'];
     if (routeAccess === 'allowed' && !isRestoringSession && currentUser && orderTabs.includes(activeTab)) {
-      loadUserOrders(true);
+      loadUserOrders();
     }
-  }, [loadUserOrders, activeTab, currentUser, routeAccess, isRestoringSession]);
+  }, [loadUserOrders, activeTab, currentUser?.id, routeAccess, isRestoringSession]);
 
   // Realtime background polling for new orders when on orders or seller dashboard
   React.useEffect(() => {
@@ -2061,7 +2099,7 @@ export default function App() {
     const interval = setInterval(() => {
       // Nếu người dùng đã nhàn rỗi quá 30 phút, tạm ngưng polling ngầm để đồng bộ phiên hết hạn với Người Mua
       if (isUserIdle(30 * 60 * 1000)) return;
-      loadUserOrders(true);
+      loadUserOrders();
     }, 6000);
     return () => clearInterval(interval);
   }, [activeTab, currentUser, loadUserOrders, routeAccess, isRestoringSession]);
@@ -2736,7 +2774,8 @@ export default function App() {
 
   if (routeAccess !== 'allowed') return <ViewLoadingFallback />;
   if (activeTab === 'unauthorized' || activeTab === 'not-found') {
-    return <RouteStatusPage status={activeTab} home={currentUser ? getRoleLandingPath(currentRole) : '/'} />;
+    const landingHome = effectiveUser ? getRoleLandingPath(effectiveRole) : '/';
+    return <RouteStatusPage status={activeTab} home={landingHome} />;
   }
   if (route.params.productId && activeTab === 'create-listing' && editingDraft?.id !== route.params.productId) {
     return routeProductError ? <div className="p-12 text-center"><p>{routeProductError}</p><button onClick={() => navigatePath(paths.products)}>Về danh sách sản phẩm</button></div> : <ViewLoadingFallback />;
@@ -3007,6 +3046,7 @@ export default function App() {
 
         {activeTab === 'inspection-center' && (
           <InspectionCenterDashboardView
+            key={currentUserId}
             initialOrders={orders}
             currentUser={currentUser}
             lang={lang}
@@ -3020,6 +3060,7 @@ export default function App() {
         {activeTab === 'inspection-hub' && (
           (currentUser?.role === 'inspection_center' || currentRole === 'inspection_center') ? (
             <InspectionCenterDashboardView
+              key={currentUserId}
               initialOrders={orders}
               currentUser={currentUser}
               lang={lang}
@@ -3336,8 +3377,27 @@ export default function App() {
                 : `Welcome ${user.name}! Logged in successfully${['buyer', 'seller'].includes(user.role) ? '' : ` as ${user.role.toUpperCase()}`}.`
             );
             setIsAuthModalOpen(false);
-            const returnTo = safeReturnPath(new URL(window.location.href).searchParams.get('redirect'));
-            const destination = returnTo || (pendingTab ? pathForTab(pendingTab, user.role) : getRoleLandingPath(user.role));
+            const rawReturnTo = safeReturnPath(new URL(window.location.href).searchParams.get('redirect'));
+            let destination: string;
+
+            if (user.role === 'admin') {
+              if (rawReturnTo && rawReturnTo.startsWith('/admin') && getRouteAccess(resolveAppRoute(rawReturnTo, user.role), profileUser) === 'allowed') {
+                destination = rawReturnTo;
+              } else {
+                destination = getRoleLandingPath('admin');
+              }
+            } else if (rawReturnTo) {
+              const testRoute = resolveAppRoute(rawReturnTo, user.role);
+              const access = getRouteAccess(testRoute, profileUser);
+              if (access === 'allowed') {
+                destination = rawReturnTo;
+              } else {
+                destination = pendingTab ? pathForTab(pendingTab, user.role) : getRoleLandingPath(user.role);
+              }
+            } else {
+              destination = pendingTab ? pathForTab(pendingTab, user.role) : getRoleLandingPath(user.role);
+            }
+
             setPendingTab(null);
             navigatePath(destination, { replace: true });
             if (pendingCheckoutItem && ['buyer', 'seller'].includes(user.role)) {

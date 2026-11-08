@@ -22,7 +22,6 @@ import {
 } from '../../services/userReportService';
 import { orderService } from '../../services/orderService';
 import { OrderBackend } from '../../types';
-import { getStoredUser } from '../../services';
 
 interface UserReportModalProps {
   isOpen: boolean;
@@ -124,6 +123,7 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [submittedReport, setSubmittedReport] = useState<UserReportResponseDto | null>(null);
+  const descriptionRef = React.useRef<HTMLTextAreaElement>(null);
 
   const fetchBuyerOrders = async () => {
     setIsLoadingOrders(true);
@@ -229,12 +229,6 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
     }
     setErrorMessage(null);
 
-    const storedUser = getStoredUser();
-    if (storedUser?.role === 'seller') {
-      setErrorMessage('Tài khoản người bán không có quyền thực hiện tạo khiếu nại.');
-      return;
-    }
-
     const finalOrderId = targetType === 'ORDER' ? (orderId || selectedOrderId) : undefined;
     const finalPostId = targetType === 'LISTING' ? (postId || selectedPostId) : undefined;
 
@@ -248,13 +242,21 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
       return;
     }
 
+    if (!description.trim()) {
+      setErrorMessage('Vui lòng nhập mô tả chi tiết lý do khiếu nại (tối thiểu 10 ký tự).');
+      descriptionRef.current?.focus();
+      return;
+    }
+
     if (description.trim().length < 10) {
-      setErrorMessage('Vui lòng mô tả chi tiết lý do khiếu nại (tối thiểu 10 ký tự).');
+      setErrorMessage(`Nội dung mô tả quá ngắn (${description.trim().length}/10 ký tự). Vui lòng nhập tối thiểu 10 ký tự để làm rõ sự việc.`);
+      descriptionRef.current?.focus();
       return;
     }
 
     if (description.trim().length > 2000) {
       setErrorMessage('Nội dung mô tả vi phạm không được vượt quá 2000 ký tự.');
+      descriptionRef.current?.focus();
       return;
     }
 
@@ -570,16 +572,36 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
               <div>
                 <label className="block font-bold text-slate-700 mb-1.5 flex items-center justify-between">
                   <span>Mô tả chi tiết vi phạm <span className="text-rose-500">*</span></span>
-                  <span className="text-[10px] text-slate-400 font-normal">
-                    {description.trim().length}/2000 ký tự (Tối thiểu 10)
+                  <span className={`text-[10px] font-semibold transition-colors ${
+                    description.trim().length === 0
+                      ? 'text-slate-400'
+                      : description.trim().length < 10
+                      ? 'text-amber-600 font-bold'
+                      : 'text-emerald-600'
+                  }`}>
+                    {description.trim().length}/2000 ký tự {
+                      description.trim().length === 0
+                        ? '(Tối thiểu 10 ký tự)'
+                        : description.trim().length < 10
+                        ? `(Cần thêm ít nhất ${10 - description.trim().length} ký tự)`
+                        : '✓ Đủ điều kiện'
+                    }
                   </span>
                 </label>
                 <textarea
+                  ref={descriptionRef}
                   rows={3}
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Vui lòng cung cấp chi tiết sự việc, mốc thời gian, nội dung tin nhắn hoặc sai khác thực tế..."
-                  className="w-full text-xs p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#24263e] leading-relaxed"
+                  onChange={(e) => {
+                    setDescription(e.target.value);
+                    if (errorMessage) setErrorMessage(null);
+                  }}
+                  placeholder="Vui lòng cung cấp chi tiết sự việc, mốc thời gian, nội dung tin nhắn hoặc sai khác thực tế (tối thiểu 10 ký tự)..."
+                  className={`w-full text-xs p-3 bg-slate-50 border rounded-xl focus:outline-none transition-colors leading-relaxed ${
+                    errorMessage && description.trim().length < 10
+                      ? 'border-rose-400 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 bg-rose-50/20'
+                      : 'border-slate-200 focus:border-[#24263e]'
+                  }`}
                 />
               </div>
 
@@ -657,15 +679,9 @@ export const UserReportModal: React.FC<UserReportModalProps> = ({
                   Hủy
                 </button>
                 <button
-                  type="button"
-                  onClick={(e) => handleSubmit(e)}
-                  disabled={
-                    isSubmitting ||
-                    description.trim().length < 10 ||
-                    (targetType === 'ORDER' && !orderId && !selectedOrderId) ||
-                    (targetType === 'LISTING' && !postId && !selectedPostId.trim())
-                  }
-                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-xs shadow-md transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl font-black text-xs shadow-md transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>{isSubmitting ? 'Đang Gửi Khiếu Nại...' : 'Gửi Khiếu Nại Vi Phạm'}</span>

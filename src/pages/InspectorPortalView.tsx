@@ -56,6 +56,7 @@ import {
   Menu,
   User,
   Home,
+  Truck,
   LogOut
 } from 'lucide-react';
 import {
@@ -447,7 +448,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         candidateMap.set(bo.id, {
           ...existing,
           status: finalStatus as any,
-          backendStatus: finalStatus,
+          backendStatus: finalStatus as EscrowOrder['backendStatus'],
           escrowStatus: resolvedEscrowStatus,
           inspectorId: assignedId,
           inspectorName: assignedName,

@@ -1,4 +1,4 @@
-import { request } from './apiClient';
+import { request, requestGet } from './apiClient';
 import { ItemBackend } from '../types';
 
 export const itemService = {
@@ -7,8 +7,7 @@ export const itemService = {
    */
   async getItems(categoryId?: string): Promise<ItemBackend[]> {
     const url = categoryId ? `/v1/items?categoryId=${categoryId}` : '/v1/items';
-    const response = await request<ItemBackend[]>(url, {
-      method: 'GET',
+    const response = await requestGet<ItemBackend[]>(url, {
       requiresAuth: false,
     });
     return (response as any)?.data || response;

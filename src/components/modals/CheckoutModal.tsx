@@ -490,6 +490,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // References for request cancellation and sequence tracking
   const quoteRequestIdRef = useRef<number>(0);
   const quoteAbortControllerRef = useRef<AbortController | null>(null);
+  const inspectionQuoteRequestIdRef = useRef<number>(0);
+  const inspectionQuoteAbortControllerRef = useRef<AbortController | null>(null);
 
   // Invalidate quote when post or negotiation changes
   useEffect(() => {
@@ -497,12 +499,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       quoteAbortControllerRef.current.abort();
       quoteAbortControllerRef.current = null;
     }
+    if (inspectionQuoteAbortControllerRef.current) {
+      inspectionQuoteAbortControllerRef.current.abort();
+      inspectionQuoteAbortControllerRef.current = null;
+    }
     quoteRequestIdRef.current += 1;
+    inspectionQuoteRequestIdRef.current += 1;
     setGhnQuote(null);
     setQuoteError(null);
     setQuoteErrorCode(null);
     setQuoteErrorStatus(null);
     setQuoteErrorDetails(null);
+    setInspectionQuote(null);
   }, [listing.id, negotiationId]);
 
   // Live Inspection Quote State (POST /api/v1/inspection/quote)
@@ -732,29 +740,103 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const calculateGhnQuote = calculateLalamoveQuote;
 
-  // Fetch Live Inspection Quote from Backend API
-  const fetchInspectionQuote = useCallback(async (lat?: number, lng?: number) => {
+  // Fetch Live Inspection Quote from Backend API (POST /api/v1/inspection/quote)
+  const [inspectionQuoteError, setInspectionQuoteError] = useState<string | null>(null);
+  const [inspectionQuoteErrorCode, setInspectionQuoteErrorCode] = useState<string | null>(null);
+  const [inspectionQuoteErrorStatus, setInspectionQuoteErrorStatus] = useState<number | null>(null);
+
+  const isValidUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+
+  const formatLalamoveServiceType = (st?: string) => {
+    if (!st) return 'Lalamove';
+    switch (st.toUpperCase()) {
+      case 'MOTORCYCLE': return 'Xe máy';
+      case 'VAN': return 'Xe bán tải';
+      case 'TRUCK': return 'Xe tải';
+      case 'SEDAN':
+      case 'CAR': return 'Ô tô';
+      default: return st;
+    }
+  };
+
+  const fetchInspectionQuote = useCallback(async (lat?: number, lng?: number, centerId?: string) => {
     if (!listing.id) return;
+
+    if (inspectionQuoteAbortControllerRef.current) {
+      inspectionQuoteAbortControllerRef.current.abort();
+    }
+    const requestId = ++inspectionQuoteRequestIdRef.current;
+    const controller = new AbortController();
+    inspectionQuoteAbortControllerRef.current = controller;
+
     setLoadingInspectionQuote(true);
+    setInspectionQuoteError(null);
+    setInspectionQuoteErrorCode(null);
+    setInspectionQuoteErrorStatus(null);
     try {
+      const targetCenterId = isValidUuid(centerId) ? centerId : (isValidUuid(selectedCenterId) ? selectedCenterId : undefined);
       const q = await inspectorService.getQuote({
         postId: listing.id,
         buyerLatitude: lat || deliveryLatitude,
         buyerLongitude: lng || deliveryLongitude,
-      });
+        inspectionCenterId: targetCenterId,
+        orderType: inspectionMethod || 'AT_CENTER',
+      }, { signal: controller.signal });
+
+      if (requestId !== inspectionQuoteRequestIdRef.current) return;
+
       if (q) setInspectionQuote(q);
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || requestId !== inspectionQuoteRequestIdRef.current) {
+        return;
+      }
       console.warn('Could not fetch inspection quote:', err);
+      setInspectionQuote(null);
+
+      const status = typeof err?.status === 'number' ? err.status : undefined;
+      const code = err?.code || (err as any)?.response?.data?.code;
+      setInspectionQuoteErrorStatus(status ?? null);
+      setInspectionQuoteErrorCode(code ?? null);
+
+      if (status === 422 || code === 'NO_SUITABLE_VEHICLE_FOR_ROUTE') {
+        setInspectionQuoteError(
+          err?.message || (lang === 'vi'
+            ? 'Tuyến vận chuyển từ người bán đến trung tâm kiểm định không có xe Lalamove phù hợp kích thước/khối lượng kiện hàng. Vui lòng chọn trung tâm khác hoặc phương thức Kiểm định tại nhà.'
+            : 'No suitable Lalamove vehicle for this route. Please choose another center or on-site inspection.')
+        );
+      } else if (status === 429) {
+        setInspectionQuoteError(
+          lang === 'vi'
+            ? 'Hệ thống định giá Lalamove đang bận xử lý (quá giới hạn tần suất). Vui lòng thử lại sau giây lát.'
+            : 'Lalamove rate limit reached. Please try again shortly.'
+        );
+      } else if (status === 409) {
+        setInspectionQuoteError(
+          err?.message || (lang === 'vi'
+            ? 'Báo giá hoặc tiêu chuẩn kiểm định đã có cập nhật mới. Vui lòng tải lại báo giá.'
+            : 'Inspection pricing or criteria changed. Please refresh quote.')
+        );
+      } else if (status && status >= 500) {
+        setInspectionQuoteError(
+          lang === 'vi'
+            ? 'Hệ thống Lalamove hoặc máy chủ định giá tạm thời gián đoạn (502/503/504). Vui lòng thử lại sau.'
+            : 'Carrier integration temporarily unavailable. Please retry shortly.'
+        );
+      } else {
+        setInspectionQuoteError(err?.message || (lang === 'vi' ? 'Chưa thể lấy báo giá kiểm định cho sản phẩm này.' : 'Failed to get inspection quote.'));
+      }
     } finally {
-      setLoadingInspectionQuote(false);
+      if (requestId === inspectionQuoteRequestIdRef.current) {
+        setLoadingInspectionQuote(false);
+      }
     }
-  }, [listing.id, deliveryLatitude, deliveryLongitude]);
+  }, [listing.id, deliveryLatitude, deliveryLongitude, selectedCenterId, inspectionMethod, lang]);
 
   useEffect(() => {
     if (deliveryOption === 'INSPECTION') {
-      fetchInspectionQuote(deliveryLatitude, deliveryLongitude);
+      fetchInspectionQuote(deliveryLatitude, deliveryLongitude, selectedCenterId);
     }
-  }, [deliveryOption, deliveryLatitude, deliveryLongitude, fetchInspectionQuote]);
+  }, [deliveryOption, deliveryLatitude, deliveryLongitude, selectedCenterId, inspectionMethod, fetchInspectionQuote]);
 
   // Inspection fee & split calculations
   const isInspected = deliveryOption === 'INSPECTION';
@@ -762,17 +844,35 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const atHomeFee = inspectionQuote?.atHomePackage?.totalFee 
     ?? inspectionQuote?.atHomeTotalFee 
-    ?? 175000;
+    ?? 0;
   const atCenterFee = inspectionQuote?.atCenterPackage?.totalFee 
     ?? inspectionQuote?.atCenterTotalFee 
-    ?? 200000;
+    ?? 0;
+
+  const atCenterBaseFee = Number(inspectionQuote?.baseInspectionFee || inspectionQuote?.baseFee || 0);
+  const atCenterOutboundFee = Number(
+    inspectionQuote?.shippingQuote?.outbound?.shippingFee
+      ?? inspectionQuote?.shippingToCenterFee
+      ?? inspectionQuote?.atCenterPackage?.shippingToCenterFee
+      ?? 0
+  );
+  const atCenterReturnFee = Number(
+    inspectionQuote?.shippingQuote?.returnReserve?.shippingFee
+      ?? inspectionQuote?.returnShippingReserveFee
+      ?? inspectionQuote?.atCenterPackage?.returnReserveFee
+      ?? 0
+  );
+  const atCenterShippingQuote = inspectionQuote?.shippingQuote;
+  const isAtCenterQuoteExpired = atCenterShippingQuote?.expiresAt
+    ? new Date(atCenterShippingQuote.expiresAt).getTime() <= Date.now()
+    : false;
 
   const baseInspectionFee = isInspected ? (inspectionMethod === 'AT_HOME' ? atHomeFee : atCenterFee) : 0;
   const buyerInspectionFee = isInspected
     ? feeSplit === 'BUYER_100'
       ? baseInspectionFee
       : feeSplit === 'SPLIT_50_50'
-        ? Math.round(baseInspectionFee / 2)
+        ? (inspectionQuote?.atCenterSplitOptions?.SPLIT_50_50 ?? Math.round(baseInspectionFee / 2))
         : 0
     : 0;
   const sellerInspectionFee = isInspected ? baseInspectionFee - buyerInspectionFee : 0;
@@ -996,6 +1096,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       let finalTotalPaid = upfrontAmount;
 
       if (isInspected) {
+        if (inspectionMethod === 'AT_CENTER' && isAtCenterQuoteExpired) {
+          setOrderError(lang === 'vi' ? 'Báo giá Lalamove đã hết hạn. Vui lòng bấm làm mới báo giá trước khi tiếp tục.' : 'Lalamove shipping quote has expired. Please refresh quote.');
+          setSubmittingOrder(false);
+          return;
+        }
+
         // Gửi yêu cầu mua có kiểm định tới Backend qua POST /api/v1/inspection/requests
         const feePayerCode = feeSplit === 'BUYER_100' ? 'BUYER_PAYS' : feeSplit === 'SELLER_100' ? 'SELLER_PAYS' : 'SPLIT_50_50';
         let validPhone = (buyerPhone || currentUser?.phone || '').replace(/\D/g, '');
@@ -1007,6 +1113,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         const hubNote = selectedCenter ? `[Trung tâm tiếp nhận: ${selectedCenter.name} - ${selectedCenter.city}]` : '';
         const fullNote = [deliveryNote, hubNote].filter(Boolean).join(' | ');
 
+        const config = inspectionQuote?.inspectionConfiguration;
+        const targetCenterId = config?.inspectionCenterId || (isValidUuid(selectedCenterId) ? selectedCenterId : undefined);
         try {
           const beInspectionOrder = await inspectorService.createRequest({
             postId: listing.id,
@@ -1022,12 +1130,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               longitude: buyerLng,
             },
             note: fullNote || undefined,
+            inspectionCenterId: targetCenterId,
+            expectedFeeProposalId: config?.feeProposalId || undefined,
+            expectedChecklistTemplateId: config?.checklistTemplateId || undefined,
+            inspectionShippingQuoteId: inspectionMethod === 'AT_CENTER' ? (inspectionQuote?.shippingQuote?.id || undefined) : undefined,
           });
           if (beInspectionOrder?.id) {
             orderId = String(beInspectionOrder.id);
           }
         } catch (inspErr: any) {
-          console.warn('Backend inspection request issue, using client order id:', inspErr);
+          console.warn('Backend inspection request issue:', inspErr);
           const errMsg = (inspErr?.message || '').toLowerCase();
           if (errMsg.includes('chính mình') || errMsg.includes('own post')) {
             setOrderError(lang === 'vi' ? 'Bạn đang đăng nhập bằng tài khoản người bán của bài đăng này. Không thể tự mua hàng của chính mình.' : 'You cannot buy your own post.');
@@ -1039,6 +1151,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             setSubmittingOrder(false);
             return;
           }
+          if (inspErr?.status === 409 || errMsg.includes('409') || errMsg.includes('thay đổi') || errMsg.includes('mới')) {
+            setOrderError(lang === 'vi' ? 'Báo giá hoặc tiêu chuẩn kiểm định đã có cập nhật mới. Đang tải lại báo giá...' : 'Inspection pricing has updated. Refreshing quote...');
+            await fetchInspectionQuote(deliveryLatitude, deliveryLongitude, selectedCenterId);
+            setSubmittingOrder(false);
+            return;
+          }
+          setOrderError(inspErr?.message || (lang === 'vi' ? 'Không thể khởi tạo đơn kiểm định.' : 'Failed to create inspection order.'));
+          setSubmittingOrder(false);
+          return;
         }
       } else {
         // Gọi Backend Order trực tiếp qua POST /api/v1/orders
@@ -2220,42 +2341,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
-                    {inspectionCenters.map((hub) => {
-                      const isSelected = hub.id === selectedCenterId;
-                      return (
-                        <div
-                          key={hub.id}
-                          onClick={() => setSelectedCenterId(hub.id)}
-                          className={`p-2.5 rounded-xl border text-left cursor-pointer transition flex flex-col justify-between ${
-                            isSelected
-                              ? 'border-[#c34c36] bg-white shadow-xs ring-2 ring-[#c34c36]/20'
-                              : 'border-slate-200 hover:border-slate-300 bg-white/70'
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="font-extrabold text-[11px] text-slate-900 leading-snug line-clamp-1">
-                                {hub.city}
-                              </span>
-                              {isSelected ? (
-                                <BadgeCheck className="w-3.5 h-3.5 text-[#c34c36] shrink-0" />
-                              ) : (
-                                <div className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0" />
-                              )}
-                            </div>
-                            <p className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">
-                              {hub.name.replace('SecondLife Home Hub ', '')}
-                            </p>
-                          </div>
-                          <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9px] text-slate-500">
-                            <span className="font-bold text-emerald-700">⏱️ SLA: {hub.slaHours}h</span>
-                            <span className="font-semibold text-slate-600">Đạt: {hub.passRatePercentage}%</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  {inspectionCenters.length > 1 && (
+                    <div className="pt-1">
+                      <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                        {lang === 'vi' ? 'Chọn trạm Hub tiếp nhận:' : 'Select Inspection Hub:'}
+                      </label>
+                      <select
+                        value={selectedCenterId}
+                        onChange={(e) => {
+                          setSelectedCenterId(e.target.value);
+                          fetchInspectionQuote(deliveryLatitude, deliveryLongitude, e.target.value);
+                        }}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white text-slate-800 outline-none focus:border-[#c34c36] shadow-2xs cursor-pointer"
+                      >
+                        {inspectionCenters.map((hub) => (
+                          <option key={hub.id} value={hub.id}>
+                            {hub.name} {hub.address ? `- ${hub.address}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   {/* Chi tiết trung tâm đã chọn */}
                   <div className="mt-2 p-2.5 bg-white rounded-xl border border-slate-200 text-[11px] space-y-1">
@@ -2264,23 +2370,36 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         <MapPin className="w-3.5 h-3.5 text-[#c34c36] shrink-0" />
                         {selectedCenter.name}
                       </span>
-                      <span className="text-[10px] font-semibold text-slate-600 shrink-0">
-                        📞 Hotline: <strong className="text-slate-900">{selectedCenter.phone}</strong>
-                      </span>
+                      {selectedCenter.phone && (
+                        <span className="text-[10px] font-semibold text-slate-600 shrink-0">
+                          📞 Hotline: <strong className="text-slate-900">{selectedCenter.phone}</strong>
+                        </span>
+                      )}
                     </div>
-                    <p className="text-[10px] text-slate-600 pl-4.5">
-                      {selectedCenter.address}
-                    </p>
+                    {selectedCenter.address && (
+                      <p className="text-[10px] text-slate-600 pl-4.5">
+                        {selectedCenter.address}
+                      </p>
+                    )}
                     <div className="flex flex-wrap items-center gap-1.5 pl-4.5 pt-0.5 text-[9px] text-slate-500">
-                      <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-700">
-                        👨‍🔧 Đội ngũ: <strong>{selectedCenter.activeInspectors} kỹ sư</strong>
-                      </span>
-                      <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-700">
-                        📦 Công suất: <strong>{selectedCenter.capacityPerDay} máy/ngày</strong>
-                      </span>
                       <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
-                        ✅ Tỷ lệ thẩm định đạt: {selectedCenter.passRatePercentage}%
+                        🔬 Trạm thẩm định tiêu chuẩn ISO/IEC 17025
                       </span>
+                      {Boolean(selectedCenter.activeInspectors) && (
+                        <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-700">
+                          👨‍🔧 Đội ngũ: <strong>{selectedCenter.activeInspectors} kỹ sư</strong>
+                        </span>
+                      )}
+                      {Boolean(selectedCenter.capacityPerDay) && (
+                        <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-700">
+                          📦 Công suất: <strong>{selectedCenter.capacityPerDay} máy/ngày</strong>
+                        </span>
+                      )}
+                      {Boolean(selectedCenter.passRatePercentage) && (
+                        <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
+                          ✅ Tỷ lệ thẩm định đạt: {selectedCenter.passRatePercentage}%
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2307,7 +2426,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           : 'border-slate-200 hover:border-slate-300 bg-white/70'
                       }`}
                     >
-                      <div className="space-y-1.5">
+                      <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             <Building2 className="w-4 h-4 text-blue-600 shrink-0" />
@@ -2315,18 +2434,122 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                               {lang === 'vi' ? 'Đưa đến trung tâm' : 'Bring to Center'}
                             </span>
                           </div>
-                          <span className="text-[10px] font-black text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-200">
-                            {formatVND(atCenterFee)}
-                          </span>
+                          <div className="flex items-center gap-1">
+                            {loadingInspectionQuote && (
+                              <Loader2 className="w-3 h-3 text-blue-600 animate-spin" />
+                            )}
+                            <span className="text-[10px] font-black text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-200">
+                              {loadingInspectionQuote ? '...' : formatVND(atCenterFee)}
+                            </span>
+                          </div>
                         </div>
-                        <p className="text-[10px] text-slate-600 leading-relaxed">
-                          {lang === 'vi'
-                            ? `Chuyển hàng về Hub Lab SecondLife. Gồm phí ship trung tâm (${formatVND(inspectionQuote?.atCenterPackage?.shippingToCenterFee || 50000)}) và quỹ dự phòng chiều về (${formatVND(inspectionQuote?.atCenterPackage?.returnReserveFee || 50000)}).`
-                            : 'Shipped to Hub Lab. Includes shipping to center and return reserve fee.'}
-                        </p>
+
+                        {/* Chi tiết cước và biểu phí */}
+                        {loadingInspectionQuote ? (
+                          <div className="py-2.5 flex items-center gap-2 text-[10px] text-slate-500 animate-pulse">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600 shrink-0" />
+                            <span>{lang === 'vi' ? 'Đang gọi API Lalamove & tính cước thời gian thực...' : 'Fetching live Lalamove quote & fees...'}</span>
+                          </div>
+                        ) : inspectionQuoteError ? (
+                          <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-[10px] text-rose-800 space-y-1.5">
+                            <p className="font-semibold flex items-start gap-1.5 leading-snug">
+                              <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                              <span>{inspectionQuoteError}</span>
+                            </p>
+                            <div className="flex items-center gap-2 pt-1 border-t border-rose-200/60">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  fetchInspectionQuote(deliveryLatitude, deliveryLongitude, selectedCenterId);
+                                }}
+                                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-md text-[9px] font-bold cursor-pointer transition flex items-center gap-1"
+                              >
+                                <RefreshCw className="w-2.5 h-2.5" />
+                                <span>{lang === 'vi' ? 'Thử tải lại báo giá' : 'Retry'}</span>
+                              </button>
+                              {inspectionQuoteErrorStatus === 422 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setInspectionMethod('AT_HOME');
+                                  }}
+                                  className="text-[9px] font-bold text-purple-700 underline hover:text-purple-900 cursor-pointer"
+                                >
+                                  {lang === 'vi' ? 'Chuyển sang Kiểm định tại nhà' : 'Switch to On-site'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5 text-[10px] text-slate-600">
+                            <div className="flex justify-between items-center">
+                              <span>• {lang === 'vi' ? 'Phí kiểm định cơ sở' : 'Base inspection fee'}:</span>
+                              <span className="font-bold text-slate-800">{formatVND(atCenterBaseFee)}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="flex items-center gap-1">
+                                <span>• {lang === 'vi' ? 'Cước Lalamove giao Hub' : 'To Hub shipping'}:</span>
+                                {atCenterShippingQuote?.outbound?.serviceType && (
+                                  <span className="text-[9px] bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.2 rounded font-semibold">
+                                    {formatLalamoveVehicle(atCenterShippingQuote.outbound.serviceType).name}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="font-bold text-slate-800">{formatVND(atCenterOutboundFee)}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="flex items-center gap-1">
+                                <span>• {lang === 'vi' ? 'Dự phòng cước hoàn' : 'Return reserve'}:</span>
+                                {atCenterShippingQuote?.returnReserve?.serviceType && (
+                                  <span className="text-[9px] bg-slate-100 text-slate-600 px-1 py-0.2 rounded font-medium">
+                                    {formatLalamoveVehicle(atCenterShippingQuote.returnReserve.serviceType).name}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="font-bold text-slate-800">{formatVND(atCenterReturnFee)}</span>
+                            </div>
+                            <div className="text-[9px] text-slate-400 italic pl-2">
+                              ↳ {lang === 'vi' ? '(Khoản dự phòng hoàn lại nếu sản phẩm Đạt chuẩn kiểm định)' : '(Refunded if item passes inspection)'}
+                            </div>
+
+                            {/* Thông báo phân loại xe nếu có từ BE */}
+                            {atCenterShippingQuote?.outbound?.vehicleSelection?.message && (
+                              <p className="mt-1 text-[9px] text-amber-800 bg-amber-50 px-2 py-1.5 rounded-lg border border-amber-200 leading-snug">
+                                ℹ️ {atCenterShippingQuote.outbound.vehicleSelection.message}
+                              </p>
+                            )}
+
+                            {/* Trạng thái hết hạn báo giá */}
+                            {isAtCenterQuoteExpired && (
+                              <div className="mt-1.5 p-2 rounded-lg bg-rose-50 border border-rose-200 text-[9px] text-rose-700 flex items-center justify-between gap-1.5">
+                                <span className="font-medium">⏰ {lang === 'vi' ? 'Báo giá Lalamove đã hết hạn (quá thời hạn quotation).' : 'Quote expired.'}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    fetchInspectionQuote(deliveryLatitude, deliveryLongitude, selectedCenterId);
+                                  }}
+                                  className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded font-bold cursor-pointer shrink-0 transition"
+                                >
+                                  {lang === 'vi' ? 'Lấy giá mới' : 'Refresh'}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
+
                       <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9px] text-blue-700 font-bold">
-                        <span>🏷️ Đã bao gồm dự phòng 2 chiều</span>
+                        <span className="flex items-center gap-1">
+                          <span>🏷️ {lang === 'vi' ? 'Đã bao gồm cước 2 chiều Lalamove' : 'Includes 2-way shipping'}</span>
+                          {atCenterShippingQuote?.expiresAt && !isAtCenterQuoteExpired && (
+                            <span className="text-[9px] font-normal text-slate-400">
+                              (hạn: {new Date(atCenterShippingQuote.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                            </span>
+                          )}
+                        </span>
                         {inspectionMethod === 'AT_CENTER' && <Check className="w-3.5 h-3.5 text-blue-600" />}
                       </div>
                     </div>
@@ -3288,6 +3511,37 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             : `Seller pays 100% (${formatVND(sellerInspectionFee)})`)}
                   </span>
                 </div>
+
+                {inspectionMethod === 'AT_CENTER' && atCenterShippingQuote && (
+                  <div className="pt-1.5 border-t border-emerald-200/60 space-y-1 text-[10px] text-emerald-950 font-medium">
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">• {lang === 'vi' ? 'Phí kiểm định cơ sở:' : 'Base inspection:'}</span>
+                      <span className="font-bold text-slate-800">{formatVND(atCenterBaseFee)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 flex items-center gap-1">
+                        <span>• {lang === 'vi' ? 'Cước Lalamove giao Hub:' : 'Lalamove to Hub:'}</span>
+                        {atCenterShippingQuote?.outbound?.serviceType && (
+                          <span className="text-[9px] bg-blue-100 text-blue-800 px-1 py-0.2 rounded font-semibold">
+                            {formatLalamoveVehicle(atCenterShippingQuote.outbound.serviceType).name}
+                          </span>
+                        )}
+                      </span>
+                      <span className="font-bold text-slate-800">{formatVND(atCenterOutboundFee)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 flex items-center gap-1">
+                        <span>• {lang === 'vi' ? 'Dự phòng hoàn hàng (hoàn lại nếu Đạt):' : 'Return reserve (refunded if Pass):'}</span>
+                        {atCenterShippingQuote?.returnReserve?.serviceType && (
+                          <span className="text-[9px] bg-slate-100 text-slate-600 px-1 py-0.2 rounded font-medium">
+                            {formatLalamoveVehicle(atCenterShippingQuote.returnReserve.serviceType).name}
+                          </span>
+                        )}
+                      </span>
+                      <span className="font-bold text-slate-800">{formatVND(atCenterReturnFee)}</span>
+                    </div>
+                  </div>
+                )}
 
                 <div className="pt-1.5 border-t border-emerald-200/60 text-[10px] text-amber-900 flex items-center gap-1 font-medium">
                   <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />

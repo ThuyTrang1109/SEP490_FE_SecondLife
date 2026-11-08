@@ -1649,16 +1649,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       setIsLoadingItems(true);
       itemService.getItemsByCategory(selectedCategoryId)
         .then((itemList) => {
-          if (Array.isArray(itemList) && itemList.length > 0) {
-            setBackendItems(itemList);
+          const selectableList = (Array.isArray(itemList) ? itemList : []).filter(i => i.selectable !== false);
+          if (selectableList.length > 0) {
+            setBackendItems(selectableList);
             setSelectedItemId((prev) => {
-              if (initialDraft?.itemId && itemList.some(i => i.id === initialDraft.itemId)) {
+              if (initialDraft?.itemId && selectableList.some(i => i.id === initialDraft.itemId)) {
                 return initialDraft.itemId;
               }
-              if (prev && itemList.some(i => i.id === prev)) {
+              if (prev && selectableList.some(i => i.id === prev)) {
                 return prev;
               }
-              return itemList[0].id;
+              return '';
             });
           } else {
             setBackendItems([]);
@@ -2766,7 +2767,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <select
                 id="category-select"
                 value={selectedCategoryId}
-                onChange={(e) => setSelectedCategoryId(e.target.value)}
+                onChange={(e) => {
+                  const newCat = e.target.value;
+                  setSelectedCategoryId(newCat);
+                  setSelectedItemId('');
+                }}
                 disabled={isLoadingCategories}
                 className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none transition ${
                   hasSubmittedStep1 && categoryError

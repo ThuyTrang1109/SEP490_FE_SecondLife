@@ -123,7 +123,7 @@ test('canonicalization is idempotent, including detail URLs and order filters', 
 
 test('login return destinations retain queries but reject external and recursive auth URLs', () => {
   assert.equal(safeReturnPath('/buyer/orders/order-1?filter=shipping'), '/buyer/orders/order-1?filter=shipping');
-  for (const path of ['https://evil.example', '//evil.example', '/\\evil.example', '/login', '/login/', '/register', null]) {
+  for (const path of ['https://evil.example', '//evil.example', '/\\evil.example', '/login', '/login/', '/register', '/unauthorized', '/unauthorized/', '/404', null]) {
     assert.equal(safeReturnPath(path), null);
   }
 });
@@ -177,4 +177,22 @@ test('navigation pushes history, supports replacement, and ignores duplicate or 
     if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
     else Reflect.deleteProperty(globalThis, 'window');
   }
+});
+
+test('admin login redirects fall back safely to admin dashboard when returnTo is unauthorized or absent', () => {
+  const adminUser = { role: 'admin' as const, roles: ['ADMIN'] };
+  assert.equal(getRouteAccess(resolveAppRoute('/admin/dashboard'), adminUser), 'allowed');
+  
+  // Unauthorized routes for admin should not be used as destination
+  const sellerReturn = safeReturnPath('/seller/dashboard');
+  assert.equal(sellerReturn, '/seller/dashboard');
+  assert.equal(getRouteAccess(resolveAppRoute(sellerReturn!, adminUser.role), adminUser), 'unauthorized');
+
+  // Allowed admin subroutes can be preserved
+  const adminSubRoute = safeReturnPath('/admin/users');
+  assert.equal(adminSubRoute, '/admin/users');
+  assert.equal(getRouteAccess(resolveAppRoute(adminSubRoute!, adminUser.role), adminUser), 'allowed');
+
+  // /unauthorized is rejected by safeReturnPath
+  assert.equal(safeReturnPath('/unauthorized'), null);
 });

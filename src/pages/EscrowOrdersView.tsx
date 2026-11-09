@@ -3498,10 +3498,6 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                              ? (lang === 'vi' ? 'Đã Hết Hạn Đóng Phí' : 'Fee Payment Expired')
                                              : (lang === 'vi' ? `Nộp Phí Kiểm Định (${formatVND(buyerFee)})` : `Pay Fee (${formatVND(buyerFee)})`)}
                                          </span>
-                                             : isFeeExpired
-                                             ? (lang === 'vi' ? 'Đã Hết Hạn Đóng Phí' : 'Fee Payment Expired')
-                                             : (lang === 'vi' ? `Nộp Phí Kiểm Định (${formatVND(buyerFee)})` : `Pay Fee (${formatVND(buyerFee)})`)}
-                                         </span>
                                        </button>
                                      );
                                    })()

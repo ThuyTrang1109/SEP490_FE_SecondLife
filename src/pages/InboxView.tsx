@@ -1,7 +1,7 @@
 import { useBrowserLocation, navigatePath } from '../app/router/browser';
 import { resolveAppRoute, paths } from '../app/router/paths';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Listing, Language, UserRole, UserProfile, Negotiation } from '../types';
+import { Listing, Language, UserRole, UserProfile, Negotiation, InspectionProposalPrefillData } from '../types';
 import {
   MessageSquare,
   Clock,
@@ -30,6 +30,7 @@ import {
 import { formatVND } from '../utils/translations';
 import { DedicatedChatRoom } from '../components/chat/DedicatedChatRoom';
 import { buildChatProductListing, getChatPostStatusBadge } from '../utils/chatProduct';
+import { inspectionChatParams, isInspectionProposalForPost, resolveChatRoomPath } from '../utils/inspectionChatDraft';
 
 interface InboxViewProps {
   listings: Listing[];
@@ -37,6 +38,7 @@ interface InboxViewProps {
   lang: Language;
   currentUser?: UserProfile | null;
   initialListing?: Listing | null;
+  initialInspectionDraft?: InspectionProposalPrefillData | null;
   initialRoomId?: string;
   initialPartnerName?: string;
   initialPartnerAvatar?: string;
@@ -58,6 +60,7 @@ export const InboxView: React.FC<InboxViewProps> = ({
   lang,
   currentUser,
   initialListing,
+  initialInspectionDraft,
   initialRoomId,
   initialRoom,
   onBuyClick,
@@ -65,14 +68,11 @@ export const InboxView: React.FC<InboxViewProps> = ({
 }) => {
   const routeLocation = useBrowserLocation();
   const chatRoute = resolveAppRoute(routeLocation, currentUser?.role || currentRole);
-  const requestedPostId = new URLSearchParams(routeLocation.split('?')[1] || '').get('postId');
-  useEffect(() => {
-    setSelectedRoomId(chatRoute.params.conversationId || null);
-  }, [chatRoute.params.conversationId]);
+  const requestedPostId = inspectionChatParams(routeLocation).get('postId');
+  const selectedRoomId = chatRoute.params.conversationId || (requestedPostId ? null : initialRoomId) || null;
   const [activeTab, setActiveTab] = useState<'chats' | 'negotiations'>('chats');
   const [rooms, setRooms] = useState<ChatRoomDto[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(initialRoomId || initialRoom?.id || null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<'all' | 'unread'>('all');
 
@@ -328,11 +328,18 @@ export const InboxView: React.FC<InboxViewProps> = ({
   // The post query represents an explicit request to open/create a conversation.
   // Once resolved, only the conversation URL controls selection, including Back/Forward.
   useEffect(() => {
-    if (initialRoomId || !requestedPostId || loading || openedListingRef.current === requestedPostId) return;
-    openedListingRef.current = requestedPostId;
-    const existing = rooms.find((room) => room.postId === requestedPostId);
+    if (selectedRoomId || !requestedPostId) {
+      openedListingRef.current = null;
+      return;
+    }
+    if (loading || openedListingRef.current === routeLocation) return;
+    openedListingRef.current = routeLocation;
+    const isInspectionRequest = isInspectionProposalForPost(routeLocation, requestedPostId);
+    const existing = rooms.find((room) => room.postId === requestedPostId &&
+      (!isInspectionRequest || room.buyerId === activeUserId));
+    const roomPath = (roomId: string) => resolveChatRoomPath(chatRoute.role || currentRole, roomId, routeLocation);
     if (existing) {
-      navigatePath(paths.chat(chatRoute.role || currentRole, existing.id), { replace: true });
+      navigatePath(roomPath(existing.id), { replace: true });
       return;
     }
     const requestedUrl = window.location.href;
@@ -340,15 +347,14 @@ export const InboxView: React.FC<InboxViewProps> = ({
       if (!room?.id) return;
       setRooms((previous) => [room, ...previous.filter((item) => item.id !== room.id)]);
       if (window.location.href === requestedUrl) {
-        navigatePath(paths.chat(chatRoute.role || currentRole, room.id), { replace: true });
+        navigatePath(roomPath(room.id), { replace: true });
       }
     }).catch((error) => {
       console.warn('Failed to get or create room for listing:', error);
     });
-  }, [initialRoomId, requestedPostId, rooms, loading]);
+  }, [selectedRoomId, requestedPostId, rooms, loading, routeLocation, activeUserId, chatRoute.role, currentRole]);
 
   const handleSelectRoom = (room: ChatRoomDto) => {
-    setSelectedRoomId(room.id);
     navigatePath(paths.chat(chatRoute.role || currentRole, room.id));
     if (activeUserId) {
       localStorage.setItem(`chat_room_last_read_${room.id}_${activeUserId}`, Date.now().toString());
@@ -720,7 +726,6 @@ export const InboxView: React.FC<InboxViewProps> = ({
                         onClick={() => {
                           const matched = rooms.find((r) => r.postId === neg.postId);
                           if (matched) {
-                                                    setSelectedRoomId(matched.id);
                             navigatePath(paths.chat(chatRoute.role || currentRole, matched.id));
                             setActiveTab('chats');
                           }
@@ -797,10 +802,11 @@ export const InboxView: React.FC<InboxViewProps> = ({
               key={selectedRoom.id}
               room={selectedRoom}
               listing={selectedListing}
+              initialInspectionDraft={initialInspectionDraft}
               currentUser={currentUser}
               currentRole={currentRole}
               lang={lang}
-              onBack={() => { setSelectedRoomId(null); navigatePath(paths.chat(chatRoute.role || currentRole)); }}
+              onBack={() => navigatePath(paths.chat(chatRoute.role || currentRole))}
               onBuyClick={onBuyClick}
               onOpenSellerReviews={onOpenSellerReviews}
               onRoomActivity={loadChatRooms}

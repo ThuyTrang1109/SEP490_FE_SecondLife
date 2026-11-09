@@ -1,4 +1,5 @@
 import { request, requestGet, PageResponse, getStoredUser } from './apiClient';
+import type { RequestOptions } from './apiClient';
 import {
   InspectionCenter,
   InspectionCenterProfile,
@@ -17,7 +18,6 @@ export type {
   InspectionChecklistPricingResponse,
   InspectionChecklistSearchParams
 };
-import { mockInspectionCenters } from '../data/mockData';
 
 // ============================================================================
 // DTOs & INTERFACES FOR PRODUCT INSPECTION SYSTEM
@@ -120,13 +120,30 @@ export interface InspectionQuoteRequest {
   expectedChecklistTemplateId?: string;
   orderType?: 'AT_HOME' | 'AT_CENTER';
   inspectionShippingQuoteId?: string;
+  negotiationId?: string;
+}
+
+export interface ConfirmInspectionPurchaseRequest {
+  requestId?: string;
+  shippingQuoteId?: string;
+  paymentMethod?: 'WALLET' | string;
+}
+
+export interface InspectionBuyerRespondRequest {
+  action: 'ACCEPT' | 'REJECT';
+  buyerConsentZin?: boolean;
+  note?: string;
+}
+
+export interface ReturnShippingPolicyResponse {
+  markupPercentage: number;
 }
 
 export interface CreateInspectionRequest {
   postId: string;
   orderType: 'AT_HOME' | 'AT_CENTER';
   feePayer: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
-  buyerConsentZinLoss: boolean;
+  buyerConsentZinLoss?: boolean;
   buyerConsentZin?: boolean;
   buyerLatitude?: number;
   buyerLongitude?: number;
@@ -141,6 +158,7 @@ export interface CreateInspectionRequest {
   expectedFeeProposalId?: string;
   expectedChecklistTemplateId?: string;
   inspectionShippingQuoteId?: string;
+  negotiationId?: string;
 }
 
 export interface InspectionSellerRespondRequest {
@@ -148,6 +166,7 @@ export interface InspectionSellerRespondRequest {
   counterOrderType?: 'AT_HOME' | 'AT_CENTER';
   counterFeePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
   sellerConsentZinLoss?: boolean;
+  sellerConsentZin?: boolean;
   rejectionReason?: string;
   rejectReason?: string;
 }
@@ -170,6 +189,9 @@ export interface SubmitInspectionReportRequest {
   videoProofUrl?: string;
   unboxingVideoUrl?: string;
   checklistResults?: ChecklistResultItem[];
+  proofPhotos?: string[];
+  inspectorPhotos?: string[];
+  evidenceUrls?: string[];
 }
 
 // Backward compatibility alias for SubmitInspectionReportRequest
@@ -328,6 +350,9 @@ export interface InspectionOrderDto {
   travelDistanceKm?: number;
   travelFee?: number;
   returnShippingReserveFee?: number;
+  buyerCommitmentDeposit?: number;
+  feeSettledAt?: string | null;
+  linkedOrderId?: string | null;
 
   buyerFeeShare?: number;
   sellerFeeShare?: number;
@@ -340,6 +365,7 @@ export interface InspectionOrderDto {
   checklistResultJson?: string;
   videoProofUrl?: string;
   unboxingVideoUrl?: string;
+  videoCleanedMessage?: string | null;
 
   buyerConsentZin?: boolean;
   sellerConsentZin?: boolean;
@@ -349,10 +375,15 @@ export interface InspectionOrderDto {
   tamperSealId?: string;
   barcode?: string;
 
+  proofPhotos?: string[];
+  inspectorPhotos?: string[];
+  evidenceUrls?: string[];
+
   finalPaymentDeadline?: string;
   finalPaymentPaidAt?: string;
   finalItemPrice?: number;
   finalShippingFee?: number;
+  inspectionShippingQuoteId?: string | null;
 
   initialDepositPaid?: number;
   finalPaymentRequired?: boolean;
@@ -450,7 +481,7 @@ export const inspectorService = {
       });
       const data = (res as any)?.data || res;
       if (Array.isArray(data)) {
-        return data
+        const mapped = data
           .filter((c: any) => c.shippingAddressConfigured !== false)
           .map((c: any) => ({
             id: c.id,
@@ -463,6 +494,12 @@ export const inspectorService = {
             shippingAddressConfigured: Boolean(c.shippingAddressConfigured),
             status: 'ACTIVE',
           }));
+        try {
+          if (typeof window !== 'undefined' && mapped.length > 0) {
+            localStorage.setItem('sl_api_inspection_centers', JSON.stringify(mapped));
+          }
+        } catch {}
+        return mapped;
       }
     } catch (err) {
       console.warn('Backend /inspection/centers error:', err);
@@ -556,21 +593,25 @@ export const inspectorService = {
       }
       : undefined;
 
-    const payload = {
+    const consentZin = data.buyerConsentZin ?? data.buyerConsentZinLoss;
+    const payload: any = {
       postId: data.postId,
       orderType: data.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER',
       feePayer: data.feePayer || 'BUYER_PAYS',
-      buyerConsentZin: true,
-      buyerConsentZinLoss: true,
-      buyerLatitude: buyerLat,
-      buyerLongitude: buyerLng,
+      buyerLatitude: data.orderType === 'AT_HOME' ? buyerLat : undefined,
+      buyerLongitude: data.orderType === 'AT_HOME' ? buyerLng : undefined,
       buyerDeliveryAddress: normalizedAddress,
       note: data.note || undefined,
+      negotiationId: data.negotiationId || undefined,
       inspectionCenterId: data.inspectionCenterId || undefined,
       expectedFeeProposalId: data.expectedFeeProposalId || undefined,
       expectedChecklistTemplateId: data.expectedChecklistTemplateId || undefined,
       inspectionShippingQuoteId: data.inspectionShippingQuoteId || undefined,
     };
+    if (consentZin) {
+      payload.buyerConsentZin = true;
+      payload.buyerConsentZinLoss = true;
+    }
 
     const res = await request<InspectionOrderDto>('/inspection/requests', {
       method: 'POST',
@@ -589,7 +630,7 @@ export const inspectorService = {
     const payload = {
       ...data,
       sellerConsentZinLoss: data.sellerConsentZinLoss ?? (data.action === 'ACCEPT'),
-      sellerConsentZin: data.sellerConsentZinLoss ?? (data.action === 'ACCEPT'),
+      sellerConsentZin: data.sellerConsentZin ?? data.sellerConsentZinLoss ?? (data.action === 'ACCEPT'),
     };
     const res = await request<InspectionOrderDto>(`/inspection/requests/${orderId}/respond`, {
       method: 'POST',
@@ -600,7 +641,26 @@ export const inspectorService = {
   },
 
   /**
-   * Buyer hoặc Seller nộp phí kiểm định từ Ví vào Escrow (Hạn 6h)
+   * Buyer phản hồi lại đề xuất chia phí của Seller
+   * POST /api/v1/inspection/requests/{orderId}/buyer-respond
+   */
+  async buyerRespondRequest(orderId: string, data: InspectionBuyerRespondRequest): Promise<InspectionOrderDto> {
+    const payload = {
+      action: data.action,
+      buyerConsentZin: data.action === 'ACCEPT' ? (data.buyerConsentZin ?? true) : undefined,
+      note: data.note || undefined,
+    };
+    const res = await request<InspectionOrderDto>(`/inspection/requests/${orderId}/buyer-respond`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Buyer hoặc Seller nộp phí kiểm định từ Ví vào Escrow.
+   * Hạn đóng phí thực tế do Backend trả về qua paymentDeadline (BE cấp 12h cho đơn mới chuyển sang WAITING_FEE_PAYMENT, đơn cũ trong DB có thể mang hạn 6h).
    */
   async payInspectionFee(orderId: string): Promise<InspectionOrderDto> {
     const res = await request<InspectionOrderDto>(`/inspection/orders/${orderId}/pay-fee`, {
@@ -643,9 +703,10 @@ export const inspectorService = {
   /**
    * Buyer thanh toán tiền hàng và phí vận chuyển cuối sau khi máy PASSED (Hạn 6h)
    */
-  async confirmPurchase(orderId: string): Promise<InspectionOrderDto> {
+  async confirmPurchase(orderId: string, body?: ConfirmInspectionPurchaseRequest): Promise<InspectionOrderDto> {
     const res = await request<InspectionOrderDto>(`/inspection/orders/${orderId}/confirm-purchase`, {
       method: 'POST',
+      body: body ? JSON.stringify(body) : undefined,
       requiresAuth: true,
     });
     return (res as any)?.data || res;
@@ -654,8 +715,8 @@ export const inspectorService = {
   /**
    * Buyer từ chối mua tiếp sau khi có kết quả kiểm định (Hủy đơn & thông báo cho Người bán)
    */
-  async rejectPurchase(orderId: string, reason?: string): Promise<any> {
-    const res = await request<any>(`/inspection/orders/${orderId}/reject-purchase`, {
+  async rejectPurchase(orderId: string, reason?: string): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspection/orders/${orderId}/reject-purchase`, {
       method: 'POST',
       body: JSON.stringify({ reason: reason || 'Người mua từ chối mua tiếp sau kiểm định' }),
       requiresAuth: true,
@@ -831,7 +892,12 @@ export const inspectorService = {
   /**
    * Manager xem danh sách tất cả các đơn kiểm định (fallback an toàn đa endpoint & giải nén đa tầng)
    */
-  async getAllOrders(status?: string, page: number = 0, size: number = 100): Promise<PageResponse<InspectionOrderDto>> {
+  async getAllOrders(
+    status?: string,
+    page: number = 0,
+    size: number = 100,
+    options?: Pick<RequestOptions, 'isBackground'>,
+  ): Promise<PageResponse<InspectionOrderDto>> {
     // Role inspector là Kỹ thuật viên, chỉ xem các đơn được phân công cho mình qua /inspector/orders
     const storedUser = getStoredUser();
     if (storedUser?.role === 'inspector') {
@@ -855,15 +921,18 @@ export const inspectorService = {
     // 1. Thử gọi endpoint chính của Inspection Center
     try {
       rawRes = await requestGet<PageResponse<InspectionOrderDto>>(`/inspector-center/orders?${params.toString()}`, {
+        ...options,
         requiresAuth: true,
       });
     } catch (e1) {
       // 2. Thử gọi endpoint thay thế trong InspectorController (/inspector/orders/all)
       try {
         rawRes = await requestGet<PageResponse<InspectionOrderDto>>(`/inspector/orders/all?${params.toString()}`, {
+          ...options,
           requiresAuth: true,
         });
       } catch (e2) {
+        if (options?.isBackground) throw e2;
         // 3. Fallback lấy từ /inspector/orders (chỉ áp dụng cho KTV inspector, không gọi khi là inspection_center/admin)
         if (storedUser?.role === 'inspector') {
           try {
@@ -1328,5 +1397,32 @@ export const inspectorService = {
     });
     const data = (res as any)?.data || res;
     return Array.isArray(data) ? data : [];
+  },
+
+  /**
+   * Lấy cấu hình tỷ lệ dự phòng cước trả hàng kiểm định
+   * GET /api/v1/admin/inspection/return-shipping-policy
+   */
+  async getReturnShippingPolicy(): Promise<ReturnShippingPolicyResponse> {
+    const res = await request<ReturnShippingPolicyResponse>('/admin/inspection/return-shipping-policy', {
+      method: 'GET',
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data ?? res;
+    return data as ReturnShippingPolicyResponse;
+  },
+
+  /**
+   * Cập nhật tỷ lệ dự phòng cước trả hàng kiểm định
+   * PUT /api/v1/admin/inspection/return-shipping-policy
+   */
+  async updateReturnShippingPolicy(markupPercentage: number): Promise<ReturnShippingPolicyResponse> {
+    const res = await request<ReturnShippingPolicyResponse>('/admin/inspection/return-shipping-policy', {
+      method: 'PUT',
+      body: JSON.stringify({ markupPercentage }),
+      requiresAuth: true,
+    });
+    const data = (res as any)?.data ?? res;
+    return data as ReturnShippingPolicyResponse;
   },
 };

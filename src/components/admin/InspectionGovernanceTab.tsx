@@ -26,7 +26,8 @@ import {
   RotateCcw,
   Tag,
   DollarSign,
-  Filter
+  Filter,
+  Loader2
 } from 'lucide-react';
 import {
   Language,
@@ -56,7 +57,15 @@ interface InspectionGovernanceTabProps {
 }
 
 export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = ({ currentUser }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'checklist_proposals' | 'proposals' | 'travel_tiers'>('checklist_proposals');
+  const [activeSubTab, setActiveSubTab] = useState<'checklist_proposals' | 'proposals' | 'travel_tiers' | 'return_shipping_policy'>('checklist_proposals');
+
+  // Return Shipping Reserve Policy state
+  const [policyMarkupPercentage, setPolicyMarkupPercentage] = useState<number>(20);
+  const [inputMarkupPercentage, setInputMarkupPercentage] = useState<string>('20');
+  const [isEditingPolicy, setIsEditingPolicy] = useState<boolean>(false);
+  const [isLoadingPolicy, setIsLoadingPolicy] = useState<boolean>(false);
+  const [isSavingPolicy, setIsSavingPolicy] = useState<boolean>(false);
+  const [policyValidationError, setPolicyValidationError] = useState<string | null>(null);
 
   // Checklist Proposals state (Item + Level L1-L4 + Search + Pricing)
   const [checklistProposals, setChecklistProposals] = useState<InspectionChecklistResponse[]>([]);
@@ -79,6 +88,60 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
   const [categories, setCategories] = useState<CategoryBackend[]>([]);
   const [items, setItems] = useState<ItemBackend[]>([]);
   const [centers, setCenters] = useState<InspectionCenter[]>([]);
+
+  // Fetch return shipping policy when subtab selected or on mount
+  useEffect(() => {
+    if (activeSubTab === 'return_shipping_policy') {
+      setIsEditingPolicy(false);
+      setPolicyValidationError(null);
+      setIsLoadingPolicy(true);
+      inspectorService.getReturnShippingPolicy()
+        .then((res) => {
+          const val = typeof res?.markupPercentage === 'number' ? res.markupPercentage : 20;
+          setPolicyMarkupPercentage(val);
+          setInputMarkupPercentage(String(val));
+        })
+        .catch((err) => {
+          console.warn('Failed to load return shipping policy:', err);
+        })
+        .finally(() => {
+          setIsLoadingPolicy(false);
+        });
+    }
+  }, [activeSubTab]);
+
+  const handleSavePolicy = async () => {
+    setPolicyValidationError(null);
+    const trimmed = inputMarkupPercentage.trim().replace(',', '.');
+    const num = parseFloat(trimmed);
+    if (isNaN(num) || num < 0 || num > 100) {
+      setPolicyValidationError('Tỷ lệ dự phòng phải là số từ 0 đến 100%.');
+      return;
+    }
+    if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+      setPolicyValidationError('Tỷ lệ dự phòng tối đa 2 chữ số thập phân (ví dụ: 15.5 hoặc 20).');
+      return;
+    }
+    setIsSavingPolicy(true);
+    try {
+      const res = await inspectorService.updateReturnShippingPolicy(num);
+      const updatedVal = typeof res?.markupPercentage === 'number' ? res.markupPercentage : num;
+      setPolicyMarkupPercentage(updatedVal);
+      setInputMarkupPercentage(String(updatedVal));
+      setIsEditingPolicy(false);
+      setFeedback({
+        type: 'success',
+        message: `Đã lưu thành công tỷ lệ dự phòng cước trả hàng kiểm định: ${updatedVal}%. Thay đổi sẽ áp dụng khi lấy báo giá mới.`
+      });
+    } catch (err: any) {
+      setFeedback({
+        type: 'error',
+        message: err?.message || 'Không thể lưu tỷ lệ dự phòng cước trả hàng.'
+      });
+    } finally {
+      setIsSavingPolicy(false);
+    }
+  };
 
   // Selected Checklist Proposal for Detail Modal
   const [viewingChecklistProposal, setViewingChecklistProposal] = useState<InspectionChecklistResponse | null>(null);
@@ -625,8 +688,8 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
         </div>
       </div>
 
-      {/* Balanced 3-Column Navigation Tab Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200/60">
+      {/* Balanced 4-Column Navigation Tab Bar */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200/60">
         <button
           type="button"
           onClick={() => setActiveSubTab('checklist_proposals')}
@@ -637,7 +700,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
           }`}
         >
           <CheckSquare className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span className="truncate">Đề Xuất Tiêu Chuẩn & Cấp Độ</span>
+          <span className="truncate">Tiêu Chuẩn & Cấp Độ</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
             activeSubTab === 'checklist_proposals' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
           }`}>
@@ -655,7 +718,7 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
           }`}
         >
           <FileText className="w-4 h-4 text-amber-600 shrink-0" />
-          <span className="truncate">Đề Xuất Biểu Phí KTV</span>
+          <span className="truncate">Biểu Phí KTV</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
             activeSubTab === 'proposals' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-600'
           }`}>
@@ -673,11 +736,29 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
           }`}
         >
           <Navigation className="w-4 h-4 text-blue-600 shrink-0" />
-          <span className="truncate">Bảng Cước Di Chuyển</span>
+          <span className="truncate">Cước Di Chuyển</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
             activeSubTab === 'travel_tiers' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-600'
           }`}>
             {travelTiers.length || 6} bậc
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('return_shipping_policy')}
+          className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+            activeSubTab === 'return_shipping_policy'
+              ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+          }`}
+        >
+          <RotateCcw className="w-4 h-4 text-purple-600 shrink-0" />
+          <span className="truncate">Dự Phòng Cước Trả Hàng</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+            activeSubTab === 'return_shipping_policy' ? 'bg-purple-100 text-purple-800' : 'bg-slate-200 text-slate-600'
+          }`}>
+            {policyMarkupPercentage}%
           </span>
         </button>
       </div>
@@ -1683,6 +1764,229 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* TAB 4: DỰ PHÒNG CƯỚC TRẢ HÀNG KIỂM ĐỊNH (RETURN SHIPPING POLICY)     */}
+      {/* ===================================================================== */}
+      {activeSubTab === 'return_shipping_policy' && (
+        <div className="space-y-5 animate-fadeIn">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-100">
+            <div>
+              <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
+                <RotateCcw className="w-4 h-4 text-purple-600" />
+                <span>Cấu Hình Tỷ Lệ Dự Phòng Cước Trả Hàng Kiểm Định</span>
+              </h3>
+              <p className="text-xs text-slate-500 font-medium">
+                Tỷ lệ phần trăm dự phòng cước trả hàng từ Trung tâm về cho Người bán đối với đơn kiểm định tại trung tâm (AT_CENTER)
+              </p>
+            </div>
+
+            {hasFeeManagePermission && (
+              <div className="flex items-center gap-2 shrink-0">
+                {isEditingPolicy ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditingPolicy(false);
+                        setInputMarkupPercentage(String(policyMarkupPercentage));
+                        setPolicyValidationError(null);
+                      }}
+                      disabled={isSavingPolicy}
+                      className="px-3.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer"
+                    >
+                      Hủy Bỏ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSavePolicy}
+                      disabled={isSavingPolicy || isLoadingPolicy}
+                      className="px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                    >
+                      {isSavingPolicy ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Đang lưu...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-3.5 h-3.5" />
+                          <span>Lưu Cấu Hình</span>
+                        </>
+                      )}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditingPolicy(true);
+                      setInputMarkupPercentage(String(policyMarkupPercentage));
+                      setPolicyValidationError(null);
+                    }}
+                    disabled={isLoadingPolicy}
+                    className="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>Chỉnh Sửa</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            {/* Cấu hình tỷ lệ */}
+            <div className="lg:col-span-2 bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <span className="text-xs font-bold text-slate-700">Tỷ lệ dự phòng hiện hành:</span>
+                <span className="text-xl font-black text-purple-700 bg-purple-50 px-3 py-1 rounded-xl border border-purple-200">
+                  {isLoadingPolicy ? '...' : `${policyMarkupPercentage}%`}
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 block">
+                    {isEditingPolicy ? 'Cập nhật tỷ lệ phần trăm dự phòng mới (%):' : 'Tỷ lệ phần trăm dự phòng (%):'}
+                  </label>
+                  {!isEditingPolicy && hasFeeManagePermission && (
+                    <span className="text-[11px] font-semibold text-slate-400">
+                      (Chế độ chỉ xem — bấm Chỉnh Sửa để thay đổi)
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.01}
+                      disabled={!isEditingPolicy || !hasFeeManagePermission || isSavingPolicy || isLoadingPolicy}
+                      value={isEditingPolicy ? inputMarkupPercentage : policyMarkupPercentage}
+                      onChange={(e) => {
+                        setInputMarkupPercentage(e.target.value);
+                        if (policyValidationError) setPolicyValidationError(null);
+                      }}
+                      placeholder="Nhập từ 0 đến 100..."
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-300 text-sm font-bold text-slate-900 focus:border-purple-600 focus:ring-2 focus:ring-purple-600/15 outline-none transition disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
+                    />
+                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                      %
+                    </span>
+                  </div>
+
+                  {!isEditingPolicy ? (
+                    hasFeeManagePermission && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingPolicy(true);
+                          setInputMarkupPercentage(String(policyMarkupPercentage));
+                          setPolicyValidationError(null);
+                        }}
+                        disabled={isLoadingPolicy}
+                        className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                        <span>Chỉnh Sửa</span>
+                      </button>
+                    )
+                  ) : (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingPolicy(false);
+                          setInputMarkupPercentage(String(policyMarkupPercentage));
+                          setPolicyValidationError(null);
+                        }}
+                        disabled={isSavingPolicy}
+                        className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer disabled:opacity-50"
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSavePolicy}
+                        disabled={!hasFeeManagePermission || isSavingPolicy || isLoadingPolicy}
+                        className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-md disabled:cursor-not-allowed shrink-0"
+                      >
+                        {isSavingPolicy ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Đang lưu...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Save className="w-4 h-4" />
+                            <span>Lưu Cấu Hình</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {policyValidationError && isEditingPolicy && (
+                  <p className="text-xs font-semibold text-rose-600 flex items-center gap-1.5 animate-fadeIn">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{policyValidationError}</span>
+                  </p>
+                )}
+
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Nhập giá trị từ <strong>0 đến 100</strong>, hỗ trợ tối đa <strong>2 chữ số thập phân</strong>. Cho phép giá trị 0% nếu không áp dụng dự phòng cước. Thay đổi áp dụng ngay cho các lượt lấy báo giá mới.
+                </p>
+              </div>
+
+              {!hasFeeManagePermission && (
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                  <span>Chỉ tài khoản Quản trị viên có quyền <code className="font-mono font-bold">INSPECTION_FEE_MANAGE</code> mới được thay đổi tỷ lệ dự phòng.</span>
+                </div>
+              )}
+            </div>
+
+            {/* Bảng diễn giải công thức và ví dụ */}
+            <div className="bg-slate-50 rounded-3xl p-5 border border-slate-200/80 space-y-3 text-xs">
+              <h4 className="font-black text-slate-900 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
+                <span>📐 Ví Dụ Minh Họa Tính Toán</span>
+              </h4>
+              <p className="text-slate-600 text-[11px] leading-relaxed">
+                Khi người mua chọn kiểm định <strong>Đưa đến trung tâm (AT_CENTER)</strong>:
+              </p>
+              <div className="space-y-2 bg-white p-3 rounded-2xl border border-slate-200/60 font-mono text-[11px] text-slate-700">
+                <div className="flex justify-between">
+                  <span>Phí kiểm định cơ sở:</span>
+                  <span className="font-bold text-slate-900">50.000 đ</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Cước chiều đi (Seller → Hub):</span>
+                  <span className="font-bold text-slate-900">30.000 đ</span>
+                </div>
+                <div className="flex justify-between text-purple-700">
+                  <span>Tỷ lệ dự phòng cấu hình:</span>
+                  <span className="font-bold">{policyMarkupPercentage}%</span>
+                </div>
+                <div className="flex justify-between text-purple-800 border-t border-slate-100 pt-1">
+                  <span>Dự phòng cước trả hàng:</span>
+                  <span className="font-bold">36.000 đ</span>
+                </div>
+                <div className="flex justify-between text-slate-900 border-t border-slate-200 pt-1 font-bold">
+                  <span>Tổng phí thu trước:</span>
+                  <span className="text-[#c34c36]">116.000 đ</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-500 italic leading-relaxed">
+                ↳ Khoản dự phòng 36.000đ sẽ được hoàn lại ví nếu người mua mua tiếp sau kiểm định ĐẠT, hoặc hoàn phần dư sau khi đối soát cước trả hàng thực tế.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 

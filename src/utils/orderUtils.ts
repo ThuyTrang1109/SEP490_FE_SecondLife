@@ -659,6 +659,11 @@ export interface ResolvedInspectionCenter {
   phone: string;
   lat: number;
   lng: number;
+  latitude: number;
+  longitude: number;
+  activeInspectors?: number;
+  capacityPerDay?: number;
+  passRatePercentage?: number;
 }
 
 /**
@@ -666,95 +671,102 @@ export interface ResolvedInspectionCenter {
  * Dựa trên cấu hình trung tâm của đơn hàng hoặc khu vực địa lý của giao dịch
  */
 export const resolveInspectionCenter = (order?: any): ResolvedInspectionCenter => {
-  const centers: ResolvedInspectionCenter[] = [
-    {
-      id: 'center-hcm-01',
-      name: 'SecondLife Home Hub HCMC - Quận 7 Flagship',
-      city: 'Hồ Chí Minh',
-      address: 'Số 1059 Nguyễn Văn Linh, Phường Tân Phong, Quận 7, TP. Hồ Chí Minh',
-      phone: '028 3822 9999',
-      lat: 10.7296,
-      lng: 106.7091,
-    },
-    {
-      id: 'center-hn-01',
-      name: 'SecondLife Home Hub Hanoi - Cầu Giấy Center',
-      city: 'Hà Nội',
-      address: 'Số 88 Trần Thái Tông, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội',
-      phone: '024 3788 8899',
-      lat: 21.0313,
-      lng: 105.7877,
-    },
-    {
-      id: 'center-dn-01',
-      name: 'SecondLife Home Hub Da Nang - Hải Châu Center',
-      city: 'Đà Nẵng',
-      address: '155 Nguyễn Văn Linh, Quận Hải Châu, TP. Đà Nẵng',
-      phone: '0236 365 7788',
-      lat: 16.0602,
-      lng: 108.2144,
-    },
-  ];
+  const directId = order?.inspectionCenterId || order?.centerId;
+  const directName = order?.inspectionCenterName || order?.centerName;
+  const directAddress = order?.inspectionCenterAddress || order?.centerAddress;
+  const directPhone = order?.inspectionCenterPhone || order?.centerPhone;
 
-  if (!order) return centers[0];
+  // 1. Đọc danh sách centers từ cache API lưu trong session
+  let apiCenters: any[] = [];
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem('sl_api_inspection_centers');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          apiCenters = parsed;
+        }
+      }
+    }
+  } catch {}
 
-  const directId = order.inspectionCenterId || order.centerId;
-  const directName = order.inspectionCenterName || order.centerName;
-  const directAddress = order.inspectionCenterAddress || order.centerAddress;
-  const directPhone = order.inspectionCenterPhone || order.centerPhone;
-
-  // 1. Khớp chính xác theo ID trung tâm
-  if (directId) {
-    const matched = centers.find((c) => c.id === directId || directId.toLowerCase().includes(c.id.toLowerCase()));
+  // 2. Khớp theo ID trong danh sách centers trả về từ API
+  if (directId && apiCenters.length > 0) {
+    const matched = apiCenters.find((c) => c.id === directId || String(directId).includes(c.id));
     if (matched) {
+      const lat = typeof matched.latitude === 'number' ? matched.latitude : 10.8752;
+      const lng = typeof matched.longitude === 'number' ? matched.longitude : 106.7725;
       return {
-        ...matched,
+        id: matched.id,
         name: directName || matched.name,
-        address: directAddress || matched.address,
-        phone: directPhone || matched.phone,
+        city: matched.city || 'Hồ Chí Minh',
+        address: directAddress || matched.address || '',
+        phone: directPhone || matched.phone || '',
+        lat,
+        lng,
+        latitude: lat,
+        longitude: lng,
+        activeInspectors: matched.activeInspectors ?? 4,
+        capacityPerDay: matched.capacityPerDay ?? 50,
+        passRatePercentage: matched.passRatePercentage ?? 98,
       };
     }
   }
 
-  // 2. Khớp theo Tên trung tâm hoặc Tỉnh/Thành phố chỉ định trong đơn hàng
-  const searchName = `${directName || ''} ${directAddress || ''} ${order.shippingLegs?.[0]?.destination || ''}`.toLowerCase();
-  if (searchName.includes('hà nội') || searchName.includes('hanoi') || searchName.includes('cầu giấy')) {
-    return { ...centers[1], name: directName || centers[1].name, address: directAddress || centers[1].address };
-  }
-  if (searchName.includes('đà nẵng') || searchName.includes('da nang') || searchName.includes('hải châu')) {
-    return { ...centers[2], name: directName || centers[2].name, address: directAddress || centers[2].address };
-  }
-  if (searchName.includes('hồ chí minh') || searchName.includes('hcm') || searchName.includes('quận 7') || searchName.includes('tân phong')) {
-    return { ...centers[0], name: directName || centers[0].name, address: directAddress || centers[0].address };
-  }
-
-  // 3. Khớp theo khu vực địa lý của Người bán hoặc Người mua
-  const sellerLoc = String(order.listing?.location || order.listing?.sellerAddress || order.sellerAddress || order.address || '').toLowerCase();
-  const buyerLoc = String(order.buyerAddress || order.deliveryAddress || '').toLowerCase();
-  const fullLoc = `${sellerLoc} ${buyerLoc}`;
-
-  if (fullLoc.includes('hà nội') || fullLoc.includes('ha noi') || fullLoc.includes('bắc ninh') || fullLoc.includes('hải phòng') || fullLoc.includes('quảng ninh')) {
-    return centers[1];
-  }
-  if (fullLoc.includes('đà nẵng') || fullLoc.includes('da nang') || fullLoc.includes('thừa thiên huế') || fullLoc.includes('huế') || fullLoc.includes('quảng nam')) {
-    return centers[2];
-  }
-
-  // 4. Nếu đơn hàng có sẵn địa chỉ trung tâm hợp lệ
-  if (directAddress && directAddress.trim().length > 6) {
+  // 3. Nếu có danh sách API centers, ưu tiên lấy center đầu tiên của hệ thống
+  if (apiCenters.length > 0) {
+    const first = apiCenters[0];
+    const lat = typeof first.latitude === 'number' ? first.latitude : 10.8752;
+    const lng = typeof first.longitude === 'number' ? first.longitude : 106.7725;
     return {
-      id: directId || centers[0].id,
-      name: directName || centers[0].name,
-      city: centers[0].city,
-      address: directAddress.trim(),
-      phone: directPhone || centers[0].phone,
-      lat: centers[0].lat,
-      lng: centers[0].lng,
+      id: directId || first.id,
+      name: directName || first.name,
+      city: first.city || 'Hồ Chí Minh',
+      address: directAddress || first.address || '',
+      phone: directPhone || first.phone || '',
+      lat,
+      lng,
+      latitude: lat,
+      longitude: lng,
+      activeInspectors: first.activeInspectors ?? 4,
+      capacityPerDay: first.capacityPerDay ?? 50,
+      passRatePercentage: first.passRatePercentage ?? 98,
     };
   }
 
-  // Mặc định trung tâm chính Hub TP.HCM (Quận 7)
-  return centers[0];
+  // 4. Nếu đơn hàng có sẵn thông tin trung tâm từ database
+  if (directName || directAddress) {
+    return {
+      id: directId || 'center-db-01',
+      name: directName || 'Trung Tam Kiem Dinh Chinh Thanh pho Ho Chi minh',
+      city: 'Hồ Chí Minh',
+      address: directAddress || 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh',
+      phone: directPhone || '0875456654',
+      lat: 10.8752,
+      lng: 106.7725,
+      latitude: 10.8752,
+      longitude: 106.7725,
+      activeInspectors: 4,
+      capacityPerDay: 50,
+      passRatePercentage: 98,
+    };
+  }
+
+  // 5. Mặc định là Trung tâm kiểm định chính thức của hệ thống (Trạm Linh Xuân, TP.HCM từ Database API)
+  return {
+    id: 'center-main-hcm',
+    name: 'Trung Tam Kiem Dinh Chinh Thanh pho Ho Chi minh',
+    city: 'Hồ Chí Minh',
+    address: 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh',
+    phone: '0875456654',
+    lat: 10.8752,
+    lng: 106.7725,
+    latitude: 10.8752,
+    longitude: 106.7725,
+    activeInspectors: 4,
+    capacityPerDay: 50,
+    passRatePercentage: 98,
+  };
 };
 
 

@@ -513,10 +513,10 @@ export const shippingService = {
           status: item.status ?? 1,
         }));
       }
-      return FALLBACK_PROVINCES;
+      return FALLBACK_PROVINCES.filter(province => province._id === 1000001 || province._id === 1000002);
     } catch (err) {
       console.warn('Backend /shipping/provinces failed, using fallback:', err);
-      return FALLBACK_PROVINCES;
+      return FALLBACK_PROVINCES.filter(province => province._id === 1000001 || province._id === 1000002);
     }
   },
 
@@ -750,8 +750,12 @@ export const shippingService = {
    * Lấy danh sách vận đơn của đơn kiểm định
    * GET /api/v1/inspection-orders/{inspectionId}/shipments
    */
-  async getInspectionShipments(inspectionId: string): Promise<ShipmentBackend[]> {
+  async getInspectionShipments(
+    inspectionId: string,
+    options?: Pick<RequestOptions, 'signal' | 'isBackground'>,
+  ): Promise<ShipmentBackend[]> {
     const res = await request<ShipmentBackend[]>(`/inspection-orders/${inspectionId}/shipments`, {
+      ...options,
       method: 'GET',
       requiresAuth: true,
     });

@@ -212,10 +212,24 @@ export interface EscrowOrder {
   inspectionCenterAddress?: string;
   inspectionCenterPhone?: string;
   inspectionMethod?: 'AT_CENTER' | 'AT_HOME';
+  sellerPaidAt?: string | null;
+  buyerPaidAt?: string | null;
+  sellerFeeShare?: number;
+  buyerFeeShare?: number;
+  buyerCommitmentDeposit?: number;
+  paymentDeadline?: string | null;
+  returnShippingReserveFee?: number;
+  feeSettledAt?: string | null;
+  linkedOrderId?: string | null;
+  inspectionStatus?: string;
+  inspectionNote?: string;
+  finalPaymentPaidAt?: string | null;
   inspectorId?: string;
   inspectorName?: string;
   inspectorEmail?: string;
   inspectorPhone?: string;
+  feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50' | string;
+  finalPaymentDeadline?: string | null;
   inspectionFeeSplit?: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
   buyerInspectionFeeVnd?: number;
   sellerInspectionFeeVnd?: number;
@@ -348,6 +362,48 @@ export interface SystemInspectionProposalPayload {
   proposalId?: string;
   orderId?: string;
   note?: string;
+
+  // Rich metadata for AT_CENTER negotiation
+  centerId?: string;
+  centerName?: string;
+  feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
+  baseInspectionFee?: number;
+  shippingToCenterFee?: number;
+  returnShippingReserveFee?: number;
+  totalAtCenterFee?: number;
+  buyerFeeShare?: number;
+  sellerFeeShare?: number;
+  orderStatus?: string;
+  counterFeePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
+  rejectionReason?: string;
+  isZinLossAcknowledged?: boolean;
+}
+
+export interface InspectionProposalPrefillData {
+  postId?: string;
+  buyerId?: string;
+  buyerLatitude?: number;
+  buyerLongitude?: number;
+  negotiationId?: string;
+  agreedPrice?: number;
+  centerId?: string;
+  centerName?: string;
+  centerAddress?: string;
+  centerPhone?: string;
+  inspectionMethod?: 'AT_CENTER' | 'AT_HOME';
+  feeSplit?: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
+  feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
+  isZinLossAcknowledged?: boolean;
+  quote?: any;
+  baseInspectionFee?: number;
+  shippingToCenterFee?: number;
+  returnShippingReserveFee?: number;
+  totalAtCenterFee?: number;
+  totalAtHomeFee?: number;
+  buyerInspectionFee?: number;
+  sellerInspectionFee?: number;
+  upfrontAmount?: number;
+  savedAt?: number;
 }
 
 export interface InspectionCenter {

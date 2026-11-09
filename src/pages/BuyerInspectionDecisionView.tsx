@@ -27,11 +27,20 @@ import {
   AlertCircle,
   Loader2,
   ExternalLink,
-  MessageSquare
+  MessageSquare,
+  Truck,
+  RotateCcw,
+  Building2
 } from 'lucide-react';
 import { inspectorService, InspectionOrderDto } from '../services/inspectorService';
+import { shippingService } from '../services/shippingService';
+import { ShipmentBackend, ShippingQuoteResponseDto } from '../types';
 import { walletService, WalletBackend } from '../services/walletService';
 import { saveScopedLocalNotification } from '../utils/notificationStorage';
+import { getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel } from '../utils/inspectionPurchase';
+import { getInspectionReportMedia, getInspectionStageOne } from '../utils/inspectionDecisionData';
+
+const formatAmount = (amount: number | null | undefined) => amount == null ? 'Chưa có dữ liệu' : formatVND(amount);
 
 interface BuyerInspectionDecisionViewProps {
   orderId?: string;
@@ -72,6 +81,17 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [alertNotice, setAlertNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // Shipping quote states (calculated via API from Inspection Center to Buyer)
+  const [finalShippingQuote, setFinalShippingQuote] = useState<ShippingQuoteResponseDto | null>(null);
+  const [isLoadingQuote, setIsLoadingQuote] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const quoteRequestIdRef = React.useRef(0);
+
+  // Return shipment states
+  const confirmRequestIdRef = React.useRef<string | null>(null);
+  const [returnShipments, setReturnShipments] = useState<ShipmentBackend[]>([]);
+  const [createdLinkedOrderId, setCreatedLinkedOrderId] = useState<string | null>(null);
+
   // Modal states
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [showRejectModal, setShowRejectModal] = useState<boolean>(false);
@@ -80,8 +100,9 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
 
   // Tab state for report view
   const [activeReportTab, setActiveReportTab] = useState<'checklist' | 'media' | 'verdict'>('checklist');
+  const [unavailableMediaUrls, setUnavailableMediaUrls] = useState<ReadonlySet<string>>(() => new Set());
 
-  // Load backend inspection order details & wallet
+  // Load the inspection report independently of the buyer's wallet.
   useEffect(() => {
     let isMounted = true;
     const fetchData = async () => {
@@ -93,8 +114,6 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
             setInspectionDto(dto);
           }
         }
-        const w = await walletService.getMyWallet().catch(() => null);
-        if (isMounted && w) setWallet(w);
       } catch (err) {
         console.warn('Failed to load inspection order details:', err);
       } finally {
@@ -106,12 +125,13 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   }, [effectiveOrderId]);
 
   // Status & Role Resolution
-  const backendStatus = String(inspectionDto?.status || (order as any)?.backendStatus || order?.status || '').toUpperCase();
+  const backendStatus = String(inspectionDto?.status || order?.inspectionStatus || order?.backendStatus || order?.status || '').toUpperCase();
   const escrowStatus = String(order?.escrowStatus || '').toUpperCase();
 
-  const isPassed = inspectionDto?.status === 'PASSED' || escrowStatus === 'INSPECTION_PASSED' || backendStatus === 'PASSED';
-  const isFailed = inspectionDto?.status === 'FAILED' || escrowStatus === 'INSPECTION_FAILED' || backendStatus === 'FAILED';
-  const isInspecting = escrowStatus === 'INSPECTION_IN_PROGRESS' || backendStatus === 'INSPECTING';
+  const purchaseDecision = getInspectionPurchaseDecision(order, inspectionDto);
+  const isPassed = purchaseDecision !== null;
+  const isFailed = !isPassed && (backendStatus === 'FAILED' || (!inspectionDto && escrowStatus === 'INSPECTION_FAILED'));
+  const isInspecting = !isPassed && (backendStatus === 'INSPECTING' || (!inspectionDto && escrowStatus === 'INSPECTION_IN_PROGRESS'));
   const isPending = !isPassed && !isFailed && !isInspecting;
 
   const currentUserId = String(currentUser?.id || '').trim().toLowerCase();
@@ -126,7 +146,9 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     String(currentUser?.role || '').toLowerCase() === 'seller' ||
     (Array.isArray((currentUser as any)?.roles) && (currentUser as any).roles.some((r: string) => String(r).toUpperCase().includes('SELLER')));
 
-  const isUserSeller = Boolean(
+  const orderBuyerId = String(inspectionDto?.buyerId || order?.buyerId || '').trim().toLowerCase();
+  const isUserBuyer = Boolean(currentUserId && currentUserId === orderBuyerId);
+  const isUserSeller = !isUserBuyer && Boolean(
     isRoleSeller ||
     (currentUserId && orderSellerId && currentUserId === orderSellerId) ||
     (currentUserEmail && orderSellerEmail && currentUserEmail === orderSellerEmail) ||
@@ -136,43 +158,139 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
       currentUserName.includes(orderSellerName)
     ))
   );
+  const canDecide = purchaseDecision === 'pending' && !isUserSeller;
+  const decisionSettled = purchaseDecision === 'accepted' || purchaseDecision === 'rejected';
+
+  useEffect(() => {
+    if (!canDecide || !inspectionDto) return;
+    let active = true;
+    walletService.getMyWallet()
+      .then((balance) => { if (active) setWallet(balance); })
+      .catch(() => { if (active) setWallet(null); });
+    return () => { active = false; };
+  }, [canDecide, inspectionDto, showConfirmModal]);
+
+  // Dynamic Center Lookup
+  const [resolvedCenter, setResolvedCenter] = useState<{ name: string; address?: string; phone?: string } | null>(null);
+
+  useEffect(() => {
+    const centerId = inspectionDto?.inspectionCenterId;
+    if (!centerId) return;
+    inspectorService.getInspectionCenters().then((centers) => {
+      const found = centers.find((c) => c.id === centerId || c.id?.toLowerCase() === centerId?.toLowerCase());
+      if (found) {
+        setResolvedCenter({ name: found.name, address: found.address, phone: found.phone });
+      }
+    }).catch(() => {});
+  }, [inspectionDto?.inspectionCenterId]);
 
   // Merge data between backend DTO and frontend order prop
   const postTitle = inspectionDto?.postTitle || order?.listing?.title || 'Thiết bị công nghệ / gia dụng';
   const postPrice = inspectionDto?.finalItemPrice || inspectionDto?.postPrice || order?.listing?.priceVnd || order?.itemPriceVnd || 0;
   const postImage = inspectionDto?.postImageUrl || inspectionDto?.postImageUrls?.[0] || order?.listing?.photos?.front || 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=800';
-  const centerName = (inspectionDto as any)?.centerName || order?.inspectionCenterName || 'Trung Tâm Giám Định SecondLife Hub Lab';
-  const inspectorName = isPassed || isFailed || isInspecting
-    ? (inspectionDto?.inspectorName || order?.inspectionReport?.inspectorName || 'Kỹ Thuật Viên Trưởng SecondLife')
-    : 'Chưa phân công KTV';
-  const tamperSealId = isPassed
-    ? (inspectionDto?.tamperSealId || order?.inspectionReport?.tamperSealId || `SL-SEAL-${(effectiveOrderId || '').slice(0, 6).toUpperCase()}`)
-    : 'Chưa dán tem (Chờ nghiệm thu)';
-  const conditionGrade = isPassed
-    ? (inspectionDto?.conditionGrade || order?.listing?.conditionGrade || 'Like New')
-    : (isFailed ? 'Không Đạt' : 'Chờ thẩm định');
-  const conditionScore = isPassed
-    ? (inspectionDto?.conditionScore || order?.inspectionReport?.conditionScore || null)
-    : null;
-  const inspectionFeePaid = inspectionDto?.buyerFeeShare || order?.inspectionFeeVnd || 120000;
-  const shippingFeePaid = inspectionDto?.shippingFee || order?.shippingFeeVnd || 30000;
-  const finalPriceToPay = postPrice;
+  const centerName = resolvedCenter?.name || 'Chưa có thông tin trung tâm';
+  const inspectorName = inspectionDto?.inspectorName || 'Chưa có thông tin kỹ thuật viên';
+  const tamperSealId = inspectionDto?.tamperSealId;
+  const conditionGrade = inspectionDto?.conditionGrade || 'Chưa có đánh giá';
+  const conditionScore = inspectionDto?.conditionScore;
+  const isAtHome = inspectionDto?.orderType === 'AT_HOME';
+  const feePayer = inspectionDto?.feePayer;
+  const { base: baseInspectionFee, transport: inspectionTransportFee, reserve: returnReserveFee,
+    buyerShare: buyerFeeShare, sellerShare: sellerFeeShare, total: totalInspectionFee } = getInspectionStageOne(inspectionDto);
+  const resolvedBuyerAddress = useMemo(() => {
+    const name = (inspectionDto?.buyerName || currentUser?.name || 'Khách Hàng').trim();
+    const rawPhone = currentUser?.phone || '0912345678';
+    let cleanedPhone = rawPhone.replace(/\D/g, '');
+    if (!cleanedPhone.startsWith('0') && !cleanedPhone.startsWith('84')) {
+      cleanedPhone = '0' + cleanedPhone;
+    }
+    const phone = cleanedPhone.length >= 10 ? cleanedPhone : '0912345678';
+    const address = currentUser?.address || (inspectionDto as any)?.address || (order as any)?.deliveryAddress?.address || 'TP. Hồ Chí Minh';
+    const latitude = Number(currentUser?.latitude ?? (inspectionDto as any)?.buyerLatitude ?? (order as any)?.deliveryAddress?.latitude) || 10.762622;
+    const longitude = Number(currentUser?.longitude ?? (inspectionDto as any)?.buyerLongitude ?? (order as any)?.deliveryAddress?.longitude) || 106.660172;
+    return { name, phone, address, latitude, longitude };
+  }, [inspectionDto, currentUser, order]);
+
+  // Tự động gọi API tính cước giao hàng từ Trung tâm kiểm định đến người mua (chiều 2)
+  useEffect(() => {
+    if (!inspectionDto?.postId || !canDecide) return;
+    const currentReq = ++quoteRequestIdRef.current;
+    setIsLoadingQuote(true);
+    setQuoteError(null);
+
+    shippingService.getShippingQuote({
+      postId: inspectionDto.postId,
+      deliveryAddress: {
+        name: resolvedBuyerAddress.name,
+        phone: resolvedBuyerAddress.phone,
+        latitude: resolvedBuyerAddress.latitude,
+        longitude: resolvedBuyerAddress.longitude,
+        address: resolvedBuyerAddress.address,
+      },
+    }).then((q) => {
+      if (currentReq === quoteRequestIdRef.current) {
+        if (q && Number.isFinite(q.shippingFee)) {
+          setFinalShippingQuote(q);
+        }
+      }
+    }).catch((err) => {
+      console.warn('Lỗi gọi API tính cước Lalamove từ Hub đến người mua:', err);
+      if (currentReq === quoteRequestIdRef.current) {
+        setQuoteError(err?.message || 'Chưa thể tải báo giá vận chuyển tự động');
+      }
+    }).finally(() => {
+      if (currentReq === quoteRequestIdRef.current) {
+        setIsLoadingQuote(false);
+      }
+    });
+  }, [inspectionDto?.postId, canDecide, resolvedBuyerAddress]);
+
+  // Phí giao tận tay (chiều 2) tính từ Trung tâm kiểm định qua người mua (Ưu tiên: từ API báo giá -> từ DTO backend -> cước vận chuyển chuẩn)
+  const apiDeliveryFee = finalShippingQuote?.shippingFee ?? inspectionDto?.finalShippingFee ?? (order?.shippingFeeVnd || 35000);
+  const finalItemPrice = finalShippingQuote?.productPrice ?? inspectionDto?.finalItemPrice ?? postPrice;
+  const finalPriceToPay = finalShippingQuote?.totalPayable ?? (finalItemPrice + apiDeliveryFee);
+  const inspectionTransportLabel = isAtHome ? 'Phí di chuyển kỹ thuật viên' : 'Cước Lalamove giao Hub';
+
+  const isWaitingSellerApproval = backendStatus === 'WAITING_SELLER_APPROVAL' || inspectionDto?.status === 'WAITING_SELLER_APPROVAL';
+  const isWaitingBuyerApproval = backendStatus === 'WAITING_BUYER_APPROVAL' || inspectionDto?.status === 'WAITING_BUYER_APPROVAL';
+  const isWaitingFeePayment = backendStatus === 'WAITING_FEE_PAYMENT' || inspectionDto?.status === 'WAITING_FEE_PAYMENT';
+
+  const feesPaid = Boolean(inspectionDto?.buyerPaidAt && (sellerFeeShare === 0 || inspectionDto.sellerPaidAt));
+  const feePaymentLabel = inspectionDto?.feeSettledAt ? 'ĐÃ ĐỐI SOÁT'
+    : isWaitingSellerApproval || isWaitingBuyerApproval ? 'CHỜ DUYỆT'
+    : feesPaid ? 'ĐÃ NỘP PHÍ'
+    : isWaitingFeePayment ? 'CHỜ NỘP PHÍ' : 'CHƯA XÁC NHẬN NỘP PHÍ';
+
+  // Load return shipments when rejected or failed
+  useEffect(() => {
+    if (!effectiveOrderId) return;
+    const isRejected = backendStatus === 'CANCELLED' || backendStatus === 'REJECTED' || (inspectionDto as any)?.status === 'REJECTED';
+    if (isFailed || isRejected) {
+      shippingService.getInspectionShipments(effectiveOrderId)
+        .then((shipments) => {
+          if (Array.isArray(shipments)) {
+            setReturnShipments(shipments.filter(s => s.leg === 'CENTER_TO_SELLER'));
+          }
+        })
+        .catch((err) => console.warn('Could not load return shipments:', err));
+    }
+  }, [effectiveOrderId, isFailed, backendStatus, inspectionDto?.status]);
+
+
 
   // Countdown timer for 6 hours final payment window based on backend finalPaymentDeadline
   const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number; isExpired: boolean }>({
-    hours: 6,
+    hours: 0,
     minutes: 0,
     seconds: 0,
     isExpired: false,
   });
 
   useEffect(() => {
-    if (!isPassed) return;
+    if (!canDecide || !inspectionDto?.finalPaymentDeadline) return;
+    const deadlineMs = Date.parse(inspectionDto.finalPaymentDeadline);
+    if (!Number.isFinite(deadlineMs)) return;
     const calculateTimeRemaining = () => {
-      if (!inspectionDto?.finalPaymentDeadline) {
-        return { hours: 6, minutes: 0, seconds: 0, isExpired: false };
-      }
-      const deadlineMs = new Date(inspectionDto.finalPaymentDeadline).getTime();
       const diffMs = deadlineMs - Date.now();
       if (diffMs <= 0) {
         return { hours: 0, minutes: 0, seconds: 0, isExpired: true };
@@ -189,41 +307,20 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
       setTimeLeft(calculateTimeRemaining());
     }, 1000);
     return () => clearInterval(timer);
-  }, [inspectionDto?.finalPaymentDeadline, isPassed]);
+  }, [inspectionDto?.finalPaymentDeadline, canDecide]);
 
-  // Media proof data - Lấy dữ liệu thực tế từ KTV, không hardcode mock video
-  const videoProofUrl = (
-    inspectionDto?.videoProofUrl ||
-    (order as any)?.videoProofUrl ||
-    (order?.inspectionReport as any)?.videoProofUrl ||
-    ''
-  ).trim();
-
-  const unboxingVideoUrl = (
-    inspectionDto?.unboxingVideoUrl ||
-    (order as any)?.unboxingVideoUrl ||
-    (order?.inspectionReport as any)?.unboxingVideoUrl ||
-    ''
-  ).trim();
-
-  const inspectorPhotos: string[] = useMemo(() => {
-    const raw =
-      order?.inspectionReport?.inspectorPhotos ||
-      order?.multiStagePhotos?.inspectorPhotos ||
-      (inspectionDto as any)?.inspectorPhotos ||
-      (inspectionDto as any)?.proofPhotos ||
-      [];
-    if (Array.isArray(raw)) {
-      return raw.filter((p): p is string => typeof p === 'string' && p.trim().length > 0);
-    }
-    return [];
-  }, [order, inspectionDto]);
-
+  const { videoProofUrl, unboxingVideoUrl, photos: inspectorPhotos, note: inspectorNote } = useMemo(
+    () => getInspectionReportMedia(inspectionDto, unavailableMediaUrls),
+    [inspectionDto, unavailableMediaUrls],
+  );
+  const markMediaUnavailable = (url: string) => {
+    setUnavailableMediaUrls((previous) => previous.has(url) ? previous : new Set(previous).add(url));
+  };
   const hasAnyVideo = Boolean(videoProofUrl || unboxingVideoUrl);
 
   // Parse checklist results - TUYỆT ĐỐI KHÔNG dùng mock data khi chưa kiểm định
   const checklistItems = useMemo(() => {
-    const jsonStr = inspectionDto?.checklistResultJson || (order?.inspectionReport as any)?.checklistResultJson || (order?.inspectionReport as any)?.checklistResults;
+    const jsonStr = inspectionDto?.checklistResultJson;
     if (jsonStr) {
       try {
         const parsed = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
@@ -231,8 +328,9 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
           return parsed.map((item: any, idx: number) => ({
             id: String(item.itemId || idx),
             title: item.itemTitle || item.name || `Hạng mục ${idx + 1}`,
-            status: item.isPassed !== false && item.passed !== false ? 'PASSED' : 'FAILED',
-            note: item.inspectorNote || item.note || 'Đạt tiêu chuẩn kỹ thuật',
+            status: (item.isPassed ?? item.passed) === true ? 'PASSED' :
+              (item.isPassed ?? item.passed) === false ? 'FAILED' : 'Chưa có đánh giá',
+            note: item.inspectorNote || item.note,
           }));
         }
       } catch {}
@@ -240,14 +338,32 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
 
     // Nếu chưa kiểm định thực tế thì danh sách rỗng, để giao diện hiển thị trạng thái đang chờ
     return [];
-  }, [inspectionDto, order?.inspectionReport]);
+  }, [inspectionDto?.checklistResultJson]);
 
   // Handle Confirm Final Purchase
   const handleConfirmPurchase = async () => {
+    if (!canDecide || isSubmitting || timeLeft.isExpired) return;
     setIsSubmitting(true);
     try {
+      if (!confirmRequestIdRef.current) {
+        confirmRequestIdRef.current = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `req-${Date.now()}`;
+      }
+      let confirmedLinkedOrderId: string | null = null;
       if (effectiveOrderId) {
-        await inspectorService.confirmPurchase(effectiveOrderId);
+        const confirmRes = await inspectorService.confirmPurchase(effectiveOrderId, {
+          requestId: confirmRequestIdRef.current,
+          paymentMethod: 'WALLET',
+          shippingQuoteId: finalShippingQuote?.quoteId,
+        }).catch(() => {
+          return inspectorService.confirmPurchase(effectiveOrderId);
+        });
+        if (confirmRes) {
+          setInspectionDto(confirmRes);
+          confirmedLinkedOrderId = confirmRes?.linkedOrderId || (confirmRes as any)?.orderId || null;
+          if (confirmedLinkedOrderId) {
+            setCreatedLinkedOrderId(confirmedLinkedOrderId);
+          }
+        }
       }
 
       // Update local storage order status
@@ -259,6 +375,8 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
             ...o,
             escrowStatus: 'SHIPPED_TO_BUYER' as const,
             backendStatus: 'DELIVERING_TO_BUYER' as any,
+            inspectionStatus: 'DELIVERING_TO_BUYER',
+            linkedOrderId: confirmedLinkedOrderId,
             totalPaidVnd: (o.totalPaidVnd || 0) + finalPriceToPay,
           } : o);
           localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
@@ -303,12 +421,12 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
 
   // Handle Reject / Cancel Purchase
   const handleRejectPurchase = async () => {
+    if (!canDecide) return;
     setIsSubmitting(true);
     try {
       const fullReason = `${selectedRejectReason}${customRejectNote ? `: ${customRejectNote}` : ''}`;
-      if (effectiveOrderId) {
-        await inspectorService.rejectPurchase(effectiveOrderId, fullReason);
-      }
+      const rejectedOrder = effectiveOrderId ? await inspectorService.rejectPurchase(effectiveOrderId, fullReason) : null;
+      if (rejectedOrder) setInspectionDto(rejectedOrder);
 
       // Update local storage order status
       try {
@@ -319,6 +437,8 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
             ...o,
             escrowStatus: 'REFUNDED_TO_BUYER' as const,
             backendStatus: 'CANCELLED' as any,
+            inspectionStatus: 'CANCELLED',
+            inspectionNote: rejectedOrder?.note,
           } : o);
           localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
         }
@@ -378,8 +498,69 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     }
   };
 
-  const currentWalletBal = wallet?.balance ?? 0;
-  const isWalletSufficient = currentWalletBal >= finalPriceToPay;
+  // Handle Seller Accept Proposal
+  const handleSellerAcceptProposal = async () => {
+    if (!effectiveOrderId) return;
+    setIsSubmitting(true);
+    try {
+      const res = await inspectorService.respondRequest(effectiveOrderId, {
+        action: 'ACCEPT',
+        sellerConsentZin: true,
+      });
+      setInspectionDto(res);
+      setAlertNotice({
+        type: 'success',
+        message: 'Bạn đã chấp nhận đề xuất kiểm định thành công. Đơn hàng chuyển sang trạng thái chờ nạp phí kiểm định.',
+      });
+    } catch (err: any) {
+      setAlertNotice({
+        type: 'error',
+        message: err?.message || 'Không thể đồng ý đề xuất. Vui lòng thử lại.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle Seller Reject Proposal
+  const handleSellerRejectProposal = async () => {
+    if (!effectiveOrderId) return;
+    setIsSubmitting(true);
+    try {
+      const res = await inspectorService.respondRequest(effectiveOrderId, {
+        action: 'REJECT',
+        rejectionReason: customRejectNote.trim() || selectedRejectReason || 'Người bán từ chối kiểm định',
+      });
+      setInspectionDto(res);
+      setShowRejectModal(false);
+      setAlertNotice({
+        type: 'success',
+        message: 'Bạn đã từ chối đề xuất kiểm định này.',
+      });
+    } catch (err: any) {
+      setAlertNotice({
+        type: 'error',
+        message: err?.message || 'Không thể từ chối đề xuất. Vui lòng thử lại.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const currentWalletBal = wallet?.balance ?? null;
+  const isWalletSufficient = currentWalletBal !== null ? currentWalletBal >= finalPriceToPay : true;
+  const walletShortfall = currentWalletBal !== null && finalPriceToPay !== null
+    ? Math.max(0, finalPriceToPay - currentWalletBal)
+    : null;
+
+  if (isLoading || !inspectionDto) {
+    return (
+      <div className="mx-auto max-w-xl space-y-4 p-8 text-center text-slate-700">
+        <p role="status">{isLoading ? 'Đang tải dữ liệu đơn kiểm định…' : 'Không tải được dữ liệu đơn kiểm định.'}</p>
+        {!isLoading && <button type="button" onClick={onBack} className="font-bold text-blue-700">Quay lại đơn hàng</button>}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-slate-100/50 to-white pb-16 font-sans animate-fadeIn">
@@ -402,6 +583,11 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                     <span>KẾT QUẢ: ĐẠT CHUẨN (PASSED)</span>
+                  </span>
+                )}
+                {purchaseDecision && (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700">
+                    {inspectionPurchaseDecisionLabel(purchaseDecision, lang)}
                   </span>
                 )}
                 {isFailed && (
@@ -432,7 +618,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
           </div>
 
           {/* 6-hour countdown pill (chỉ hiện khi đã ĐẠT và là người mua) */}
-          {isPassed && !isUserSeller && (
+          {canDecide && inspectionDto.finalPaymentDeadline && (
             <div className="hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold shadow-xs">
               <Clock className="w-4 h-4 text-amber-600 animate-pulse shrink-0" />
               <span>Hạn chốt quyết định:</span>
@@ -446,6 +632,62 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
 
       {/* Main Container */}
       <div className="w-full px-3 sm:px-5 lg:px-6 pt-6 space-y-6">
+
+        {/* Tiến trình hoàn hàng về cho người bán khi có chặng CENTER_TO_SELLER */}
+        {returnShipments.length > 0 && (
+          <div className="p-4 sm:p-5 rounded-3xl bg-amber-50/80 border border-amber-200/80 space-y-3 animate-fadeIn">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-600 text-white flex items-center justify-center font-bold">
+                  <RotateCcw className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs sm:text-sm font-black text-amber-950">
+                    Tiến Trình Trả Hàng Về Cho Người Bán (Chặng Hub → Seller)
+                  </h3>
+                  <p className="text-[11px] text-amber-800">
+                    Sản phẩm không tiếp tục mua và đang được hoàn trả về địa chỉ người bán
+                  </p>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-200/70 text-amber-900">
+                LALAMOVE RETURN
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-white p-3.5 rounded-2xl border border-amber-100 shadow-2xs">
+              <div>
+                <span className="text-[11px] text-slate-500 block">Trạng thái vận đơn:</span>
+                <span className="font-bold text-slate-900 uppercase">
+                  {returnShipments[0]?.status || 'ASSIGNING_DRIVER'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[11px] text-slate-500 block">Cước dự tính:</span>
+                <span className="font-bold text-slate-900">
+                  {formatAmount(returnShipments[0]?.quotedFee)}
+                </span>
+              </div>
+              <div>
+                <span className="text-[11px] text-slate-500 block">Cước thực tế:</span>
+                <span className="font-bold text-amber-700">
+                  {returnShipments[0]?.actualFee != null
+                    ? formatVND(returnShipments[0].actualFee)
+                    : 'Chờ đối soát thực tế'}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-amber-900 leading-relaxed bg-amber-100/50 p-2.5 rounded-xl border border-amber-200/50">
+              💡 <strong>Quyết toán dự phòng:</strong> Khoản tạm giữ dự phòng cước trả hàng ({formatAmount(returnReserveFee)}) sẽ được đối soát theo cước thực tế từ nhà vận chuyển.
+              {inspectionDto?.feeSettledAt && (
+                <span className="block mt-0.5 text-[10px] font-semibold text-amber-800">
+                  Mốc hạch toán phí: {new Date(inspectionDto.feeSettledAt).toLocaleString('vi-VN')}
+                </span>
+              )}
+            </p>
+          </div>
+        )}
 
         {/* Alert notification if any */}
         {alertNotice && (
@@ -467,7 +709,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         )}
 
         {/* Decision Banner Announcement - CHỈ HIỆN KHI ĐÃ ĐẠT VÀ LÀ NGƯỜI MUA */}
-        {isPassed && !isUserSeller ? (
+        {canDecide ? (
           <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-emerald-600 via-teal-600 to-[#24263e] text-white shadow-xl relative overflow-hidden">
             <div className="absolute right-0 top-0 bottom-0 w-96 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent_70%)] pointer-events-none" />
             <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -487,9 +729,8 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
                 <button
                   onClick={() => setShowRejectModal(true)}
-                  className="px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs sm:text-sm border border-white/25 transition cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+                  className="px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs sm:text-sm border border-white/25 transition cursor-pointer flex items-center justify-center shadow-sm"
                 >
-                  <XCircle className="w-4 h-4 text-red-300" />
                   <span>Từ Chối Mua Tiếp</span>
                 </button>
                 <button
@@ -502,7 +743,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               </div>
             </div>
           </div>
-        ) : isUserSeller ? (
+        ) : decisionSettled ? null : isUserSeller ? (
           /* Banner thông báo dành riêng cho Người bán */
           <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-slate-800 via-indigo-900 to-[#24263e] text-white shadow-xl relative overflow-hidden">
             <div className="relative z-10 space-y-2">
@@ -519,7 +760,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               </h2>
               <p className="text-xs sm:text-sm text-slate-200 leading-relaxed max-w-3xl">
                 {isPassed
-                  ? 'Khách mua đang có tối đa 6 giờ để xem biên bản kỹ thuật và thanh toán tiền hàng (Giai đoạn 2). Sau khi khách thanh toán xong, hệ thống sẽ mở nút để bạn bàn giao sản phẩm cho tài xế.'
+                  ? `Đang chờ người mua quyết định.${inspectionDto.finalPaymentDeadline ? ` Hạn quyết định: ${new Date(inspectionDto.finalPaymentDeadline).toLocaleString('vi-VN')}.` : ''}`
                   : isFailed
                   ? 'Đơn hàng kiểm định không đạt. Sản phẩm sẽ được thu xếp hoàn trả về địa chỉ của bạn.'
                   : 'Kỹ thuật viên đang tiếp nhận và kiểm định máy. Vui lòng theo dõi cập nhật biên bản trên hệ thống.'}
@@ -540,7 +781,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   : 'Đang chờ Người bán xác nhận & KTV tiếp nhận máy'}
               </h2>
               <p className="text-xs sm:text-sm text-amber-50 leading-relaxed max-w-3xl">
-                Bạn đã hoàn tất nộp cọc Giai đoạn 1 (phí kiểm định & vận chuyển). Tiền sản phẩm ({formatVND(finalPriceToPay)}) vẫn được giữ an toàn. Bạn chỉ cần quyết định mua tiếp sau khi Kỹ thuật viên kiểm tra xong và xuất biên bản ĐẠT CHUẨN.
+                {feesPaid ? 'Đã nộp phí kiểm định. ' : ''}Bạn có thể quyết định mua tiếp sau khi kỹ thuật viên trả biên bản đạt chuẩn.
               </p>
             </div>
           </div>
@@ -555,25 +796,29 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
             {/* Product & Inspector Card */}
             <div className="p-5 rounded-3xl bg-white border border-slate-200/80 shadow-xs space-y-4">
               <div className="flex items-start gap-4">
-                <img
+                {postImage ? <img
                   src={postImage}
                   alt={postTitle}
                   className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover border border-slate-200 shrink-0"
-                />
+                /> : (
+                  <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-slate-100">
+                    <ImageIcon className="h-6 w-6 text-slate-400" />
+                  </div>
+                )}
                 <div className="min-w-0 flex-1 space-y-1">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Sản phẩm thẩm định</span>
                   <h3 className="text-sm sm:text-base font-black text-slate-900 leading-snug line-clamp-2">
                     {postTitle}
                   </h3>
                   <div className="flex items-center gap-3 pt-1 text-xs text-slate-600">
-                    <span>Giá niêm yết: <strong className="text-slate-900 font-extrabold">{formatVND(postPrice)}</strong></span>
+                    <span>Giá niêm yết: <strong className="text-slate-900 font-extrabold">{formatAmount(postPrice)}</strong></span>
                     <span>•</span>
                     <span>Tình trạng: <strong className="text-emerald-700 font-bold">{conditionGrade}</strong></span>
                   </div>
-                  {order?.sellerName && (
+                  {inspectionDto.sellerName && (
                     <div className="text-[11px] text-slate-500 flex items-center gap-1.5 pt-0.5">
                       <User className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Người bán: <strong className="text-slate-700">{order.sellerName}</strong></span>
+                      <span>Người bán: <strong className="text-slate-700">{inspectionDto.sellerName}</strong></span>
                     </div>
                   )}
                 </div>
@@ -598,10 +843,143 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   </div>
                   <div className="min-w-0">
                     <span className="text-[10px] text-slate-400 block font-semibold">Tem niêm phong QR</span>
-                    <span className="font-mono font-bold text-slate-900 block truncate">{tamperSealId}</span>
-                    <span className="text-[10px] text-emerald-700 font-bold">Trạng thái: INTACT (Nguyên seal)</span>
+                    <span className="font-mono font-bold text-slate-900 block truncate">{tamperSealId || 'Chưa có mã tem'}</span>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* FULL PROPOSAL DETAILS CARD (Shown so Buyer and Seller see identical rich breakdown as chat & checkout) */}
+            <div className="p-5 sm:p-6 rounded-3xl bg-white border border-slate-200/80 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900">Chi tiết phương án kiểm định</h4>
+                    <span className="text-[10px] text-slate-500 font-medium">Mã đơn: #{effectiveOrderId.slice(0, 8).toUpperCase()}</span>
+                  </div>
+                </div>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border ${
+                    isWaitingSellerApproval
+                      ? 'bg-blue-100 text-blue-800 border-blue-300'
+                      : isWaitingBuyerApproval
+                      ? 'bg-purple-100 text-purple-800 border-purple-300'
+                      : isWaitingFeePayment
+                      ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
+                      : isPassed
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : isFailed || backendStatus === 'CANCELLED'
+                      ? 'bg-rose-100 text-rose-800 border-rose-300'
+                      : 'bg-teal-100 text-teal-900 border-teal-300'
+                  }`}
+                >
+                  {isWaitingSellerApproval
+                    ? '⏳ Chờ Người Bán Duyệt'
+                    : isWaitingBuyerApproval
+                    ? '⏳ Chờ Người Mua Duyệt Lại'
+                    : isWaitingFeePayment
+                    ? '💳 Chờ Nạp Phí Kiểm Định'
+                    : isPassed
+                    ? '✅ Đã Đạt Chuẩn'
+                    : isFailed
+                    ? '❌ Không Đạt'
+                    : feePaymentLabel}
+                </span>
+              </div>
+
+              {/* Center Details */}
+              <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/70 space-y-2 text-xs">
+                <div className="flex items-start gap-2.5 text-slate-800">
+                  <Building2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-slate-900 block">{centerName}</span>
+                    {resolvedCenter?.address && (
+                      <p className="text-[11px] text-slate-500">{resolvedCenter.address}</p>
+                    )}
+                    {resolvedCenter?.phone && (
+                      <p className="text-[11px] text-slate-500">Hotline: {resolvedCenter.phone}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-slate-200/60 flex items-center gap-1.5 text-slate-600 text-[11px]">
+                  <Truck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Phương thức giao nhận:</span>
+                  <strong className="text-slate-800">{isAtHome ? 'Kiểm định tại nhà' : inspectionDto.orderType === 'AT_CENTER' ? 'Gửi hàng đến trung tâm kiểm định' : 'Chưa có dữ liệu'}</strong>
+                </div>
+              </div>
+
+              {/* Sub-fee breakdown */}
+              <div className="p-4 bg-white rounded-2xl border border-slate-200 space-y-3 text-xs shadow-2xs">
+                <div className="flex justify-between items-center text-slate-700 font-bold border-b border-slate-100 pb-2">
+                  <span>Chi tiết các khoản phí kiểm định:</span>
+                  <span className="text-[10px] text-blue-800 font-extrabold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                    {feePayer === 'BUYER_PAYS'
+                      ? 'Người mua chịu 100%'
+                      : feePayer === 'SELLER_PAYS'
+                      ? 'Người bán chịu 100%'
+                      : feePayer === 'SPLIT_50_50' ? 'Chia đôi 50% - 50%' : 'Chưa có dữ liệu'}
+                  </span>
+                </div>
+
+                <div className="space-y-2 text-[11px] text-slate-600">
+                  <div className="flex justify-between items-center">
+                    <span>• Phí kiểm định cơ sở:</span>
+                    <span className="font-semibold text-slate-800">{formatAmount(baseInspectionFee)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>• {inspectionTransportLabel}:</span>
+                    <span className="font-semibold text-slate-800">{formatAmount(inspectionTransportFee)}</span>
+                  </div>
+                  {!isAtHome && <div className="flex justify-between items-center">
+                    <span>• Dự phòng hoàn hàng:</span>
+                    <span className="font-semibold text-slate-800">{formatAmount(returnReserveFee)}</span>
+                  </div>}
+                </div>
+
+                <div className="flex justify-between items-center pt-2 border-t border-slate-100 font-black">
+                  <span className="text-slate-800">• Tổng phí kiểm định:</span>
+                  <strong className="text-blue-900 font-black text-base">{formatAmount(totalInspectionFee)}</strong>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div className="p-2.5 bg-blue-50/50 rounded-xl border border-blue-100">
+                    <span className="text-[10px] text-slate-500 block">Người mua trả:</span>
+                    <span className="font-black text-xs sm:text-sm text-[#c34c36]">{formatAmount(buyerFeeShare)}</span>
+                  </div>
+                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-[10px] text-slate-500 block">Người bán chịu:</span>
+                    <span className="font-black text-xs sm:text-sm text-slate-800">{formatAmount(sellerFeeShare)}</span>
+                  </div>
+                </div>
+
+                {/* 2-stage escrow */}
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-[10px] space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-medium">Giai đoạn 1 (Trả trước):</span>
+                    <span className="font-bold text-slate-800">Phí kiểm định {formatAmount(buyerFeeShare)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-medium">Giai đoạn 2 (Sau khi máy ĐẠT):</span>
+                    <span className="font-bold text-emerald-800">
+                      Tiền sản phẩm {formatAmount(finalItemPrice)} + Cước Hub giao {formatVND(apiDeliveryFee)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Zin agreement notice */}
+                {inspectionDto.buyerConsentZin === true && inspectionDto.sellerConsentZin === true && (
+                  <div className="text-[11px] text-amber-800 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200/60">
+                    Người mua và người bán đã đồng ý cho phép tháo máy để kiểm định.
+                  </div>
+                )}
+
+                {/* Reserve refund notice */}
+                {returnReserveFee !== null && returnReserveFee > 0 && <p className="text-[10px] text-slate-500 italic leading-snug">
+                  ℹ️ Khoản dự phòng cước trả về sẽ được hoàn lại nếu Buyer mua tiếp hoặc hoàn phần dư sau khi đối soát cước trả hàng.
+                </p>}
               </div>
             </div>
 
@@ -610,7 +988,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2">
                   <FileCheck className="w-5 h-5 text-[#c34c36]" />
-                  <h4 className="text-sm font-black text-slate-900">Chi Tiết Biên Bản Kỹ Thuật (Điểm: {conditionScore}/100)</h4>
+                  <h4 className="text-sm font-black text-slate-900">Chi tiết biên bản kỹ thuật{conditionScore != null && ` (${conditionScore}/100)`}</h4>
                 </div>
                 <div className="flex gap-1.5 p-1 rounded-xl bg-slate-100 text-xs font-bold text-slate-600">
                   <button
@@ -657,14 +1035,19 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       >
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            {chk.status === 'PASSED' ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                              : chk.status === 'FAILED' ? <XCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                              : <FileCheck className="h-4 w-4 shrink-0 text-slate-400" />}
                             <span className="text-xs font-bold text-slate-900">{chk.title}</span>
                           </div>
-                          <p className="text-[11px] text-slate-500 pl-6 leading-relaxed">
+                          {chk.note && <p className="text-[11px] text-slate-500 pl-6 leading-relaxed">
                             {chk.note}
-                          </p>
+                          </p>}
                         </div>
-                        <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-extrabold uppercase shrink-0">
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase shrink-0 ${
+                          chk.status === 'PASSED' ? 'bg-emerald-100 text-emerald-800' :
+                            chk.status === 'FAILED' ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-700'
+                        }`}>
                           {chk.status}
                         </span>
                       </div>
@@ -681,22 +1064,18 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       Kết luận tổng thể của Kỹ thuật viên
                     </span>
                     <blockquote className="italic text-slate-700 text-xs sm:text-sm leading-relaxed border-l-2 border-emerald-600 pl-3">
-                      "{inspectionDto?.note || order?.inspectionReport?.summaryNotes || (isPassed ? 'Thiết bị đạt toàn bộ tiêu chuẩn kỹ thuật sau khi kiểm định.' : isFailed ? 'Thiết bị không đạt yêu cầu kiểm định.' : 'Chưa có nhận xét kiểm định từ kỹ thuật viên.')}"
+                      {inspectorNote || 'Chưa có nhận xét kiểm định từ kỹ thuật viên.'}
                     </blockquote>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="grid grid-cols-2 gap-3 text-center">
                     <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                      <span className="text-[10px] text-slate-400 block font-semibold">Độ nguyên bản</span>
-                      <strong className="text-sm font-black text-slate-900">{isPassed ? 'Đạt chuẩn' : 'Chờ kiểm định'}</strong>
-                    </div>
-                    <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                      <span className="text-[10px] text-slate-400 block font-semibold">Tình trạng pin</span>
-                      <strong className="text-sm font-black text-emerald-600">{isPassed ? 'Đạt chuẩn' : 'Chờ kiểm định'}</strong>
+                      <span className="text-[10px] text-slate-400 block font-semibold">Tình trạng sau kiểm định</span>
+                      <strong className="text-sm font-black text-slate-900">{conditionGrade}</strong>
                     </div>
                     <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
                       <span className="text-[10px] text-slate-400 block font-semibold">Điểm đánh giá</span>
-                      <strong className="text-sm font-black text-[#c34c36]">{conditionScore ? `${conditionScore}/100` : 'Chưa có'}</strong>
+                      <strong className="text-sm font-black text-[#c34c36]">{conditionScore != null ? `${conditionScore}/100` : 'Chưa có'}</strong>
                     </div>
                   </div>
                 </div>
@@ -739,7 +1118,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                                 playsInline
                                 preload="metadata"
                                 src={videoProofUrl}
-                                poster={postImage}
+                                onError={() => markMediaUnavailable(videoProofUrl)}
                                 className="w-full h-full object-contain"
                               >
                                 Trình duyệt của bạn không hỗ trợ phát video trực tiếp.
@@ -781,7 +1160,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                                 playsInline
                                 preload="metadata"
                                 src={unboxingVideoUrl}
-                                poster={postImage}
+                                onError={() => markMediaUnavailable(unboxingVideoUrl)}
                                 className="w-full h-full object-contain"
                               >
                                 Trình duyệt của bạn không hỗ trợ phát video trực tiếp.
@@ -791,16 +1170,16 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         </div>
                       )}
                     </>
-                  ) : (
+                  ) : inspectorPhotos.length === 0 && (
                     <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 space-y-2">
                       <VideoOff className="w-10 h-10 text-slate-400 mx-auto" />
-                      <p className="text-sm font-bold text-slate-800">Không có video kiểm định</p>
+                      <p className="text-sm font-bold text-slate-800">Chưa có ảnh hoặc video kiểm định khả dụng</p>
                       <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                        {isPending
+                        {inspectionDto.videoCleanedMessage || (isPending
                           ? 'Đơn hàng đang chờ xử lý. Kỹ thuật viên chưa tiếp nhận thiết bị để quay video kiểm định.'
                           : isInspecting
                           ? 'Kỹ thuật viên đang kiểm định thiết bị. Video quá trình tháo máy sẽ hiển thị tại đây sau khi hoàn tất.'
-                          : 'Kỹ thuật viên không tải lên video ghi hình tháo máy cho đơn hàng này.'}
+                          : 'Biên bản chưa có ảnh hoặc video có thể hiển thị.')}
                       </p>
                     </div>
                   )}
@@ -815,25 +1194,31 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         </span>
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {inspectorPhotos.map((photoUrl, idx) => (
-                          <a
-                            key={idx}
-                            href={photoUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="group relative aspect-square rounded-xl overflow-hidden bg-slate-200 block border border-slate-200/80 hover:shadow-md transition"
-                          >
-                            <img
-                              src={photoUrl}
-                              alt={`Ảnh kiểm định ${idx + 1}`}
-                              className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                            />
-                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-medium gap-1">
-                              <ExternalLink className="w-4 h-4" />
-                              <span>Xem ảnh gốc</span>
-                            </div>
-                          </a>
-                        ))}
+                        {inspectorPhotos.map((photoUrl, idx) => {
+                          const isMainPhoto = !hasAnyVideo && idx === 0;
+                          return (
+                            <a
+                              key={photoUrl}
+                              href={photoUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`group relative block overflow-hidden rounded-xl border border-slate-200/80 bg-slate-100 transition hover:shadow-md ${
+                                isMainPhoto ? 'col-span-full' : 'aspect-square'
+                              }`}
+                            >
+                              <img
+                                src={photoUrl}
+                                alt={`Ảnh kiểm định ${idx + 1}`}
+                                onError={() => markMediaUnavailable(photoUrl)}
+                                className={isMainPhoto ? 'max-h-[65vh] w-full object-contain' : 'h-full w-full object-cover'}
+                              />
+                              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-medium gap-1">
+                                <ExternalLink className="w-4 h-4" />
+                                <span>Xem ảnh gốc</span>
+                              </div>
+                            </a>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -856,29 +1241,47 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 <span className="text-[11px] font-bold text-slate-400">2 Giai Đoạn</span>
               </div>
 
-              {/* Stage 1: Already paid upfront */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
+              {/* Stage 1: Already paid upfront or waiting approval */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Giai đoạn 1 (Đã trả trước lúc đặt):</span>
+                    <span>Giai đoạn 1 (Phí kiểm định & vận chuyển):</span>
                   </span>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
-                    ĐÃ NỘP VÍ
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      feesPaid || inspectionDto.feeSettledAt ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'
+                    }`}
+                  >
+                    {feePaymentLabel}
                   </span>
                 </div>
-                <div className="space-y-1 text-xs text-slate-600 pl-5">
+                <div className="space-y-1.5 text-xs text-slate-600 pl-5">
                   <div className="flex justify-between">
-                    <span>Phí kiểm định kỹ thuật:</span>
-                    <span className="font-semibold text-slate-800">{formatVND(inspectionFeePaid)}</span>
+                    <span>• Phí kiểm định cơ sở:</span>
+                    <span className="font-semibold text-slate-800">{formatAmount(baseInspectionFee)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Phí vận chuyển Lalamove:</span>
-                    <span className="font-semibold text-slate-800">{formatVND(shippingFeePaid)}</span>
+                    <span>• {inspectionTransportLabel}:</span>
+                    <span className="font-semibold text-slate-800">{formatAmount(inspectionTransportFee)}</span>
                   </div>
+                  {!isAtHome && <div className="flex justify-between">
+                    <span>• Dự phòng hoàn hàng:</span>
+                    <span className="font-semibold text-slate-800">{formatAmount(returnReserveFee)}</span>
+                  </div>}
                   <div className="flex justify-between pt-1 border-t border-slate-200/60 font-bold text-slate-800">
-                    <span>Tổng cọc giai đoạn 1:</span>
-                    <span className="text-emerald-700">{formatVND(inspectionFeePaid + shippingFeePaid)}</span>
+                    <span>Tổng phí kiểm định GĐ 1:</span>
+                    <span className="text-blue-900 font-extrabold">{formatAmount(totalInspectionFee)}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 pt-1 text-[11px]">
+                    <div className="bg-blue-50/70 p-1.5 rounded-lg border border-blue-100">
+                      <span className="text-slate-500 block text-[10px]">Người mua trả:</span>
+                      <strong className="text-[#c34c36]">{formatAmount(buyerFeeShare)}</strong>
+                    </div>
+                    <div className="bg-slate-100 p-1.5 rounded-lg border border-slate-200">
+                      <span className="text-slate-500 block text-[10px]">Người bán chịu:</span>
+                      <strong className="text-slate-700">{formatAmount(sellerFeeShare)}</strong>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -891,26 +1294,43 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     <span>Giai đoạn 2 (Tiền sản phẩm):</span>
                   </span>
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                    isPassed && !isUserSeller
+                    canDecide
                       ? 'bg-amber-100 text-amber-900 animate-pulse'
                       : isUserSeller
                       ? 'bg-indigo-100 text-indigo-900'
                       : 'bg-slate-100 text-slate-600'
                   }`}>
-                    {isPassed
-                      ? (isUserSeller ? 'CHỜ NGƯỜI MUA CHỐT' : 'CHỜ BẠN DUYỆT')
+                    {purchaseDecision
+                      ? inspectionPurchaseDecisionLabel(purchaseDecision, lang)
                       : (isUserSeller ? 'CHỜ KTV KIỂM ĐỊNH' : 'CHƯA MỞ THANH TOÁN')}
                   </span>
                 </div>
-                <div className="space-y-1 text-xs text-slate-700 pl-5">
+                <div className="space-y-1.5 text-xs text-slate-700 pl-5">
                   <div className="flex justify-between">
                     <span>Tiền sản phẩm:</span>
-                    <span className="font-bold text-slate-900">{formatVND(finalPriceToPay)}</span>
+                    <span className="font-bold text-slate-900">{formatVND(finalItemPrice)}</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between items-center">
                     <span>Phí giao tận tay (chiều 2):</span>
-                    <span className="font-semibold text-emerald-700">Miễn phí (Tài xế Hub giao)</span>
+                    {isLoadingQuote ? (
+                      <span className="flex items-center gap-1.5 text-xs text-[#c34c36] font-semibold">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Đang tính cước qua API...
+                      </span>
+                    ) : (
+                      <div className="text-right">
+                        <span className="font-bold text-slate-900">{formatVND(apiDeliveryFee)}</span>
+                        <span className="ml-1 text-[10px] text-blue-700 font-semibold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                          Hub ➔ Người mua
+                        </span>
+                      </div>
+                    )}
                   </div>
+                  {quoteError && !isLoadingQuote && (
+                    <p className="text-[10px] text-amber-600 italic">
+                      ℹ️ Cước tạm tính dựa trên địa chỉ giao hàng của bạn
+                    </p>
+                  )}
                   <div className="flex justify-between pt-2 border-t border-amber-200/80 font-black text-sm text-[#24263e]">
                     <span>Tổng tiền thanh toán giai đoạn 2:</span>
                     <span className="text-base font-black text-[#c34c36]">{formatVND(finalPriceToPay)}</span>
@@ -919,7 +1339,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               </div>
 
               {/* Wallet Balance Status (chỉ hiện cho người mua khi đã Đạt và cần thanh toán) */}
-              {!isUserSeller && isPassed && (
+              {canDecide && (
                 <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/80 flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-xl bg-slate-200 flex items-center justify-center font-bold text-slate-700">
@@ -927,17 +1347,17 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-500 block font-semibold">Số dư Ví SecondLife</span>
-                      <span className="font-mono font-bold text-slate-900">{formatVND(currentWalletBal)}</span>
+                      <span className="font-mono font-bold text-slate-900">{formatAmount(currentWalletBal)}</span>
                     </div>
                   </div>
-                  {isWalletSufficient ? (
+                  {walletShortfall === null ? null : walletShortfall === 0 ? (
                     <span className="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[11px] font-bold">
                       Đủ số dư
                     </span>
                   ) : (
                     <div className="flex items-center gap-1.5">
                       <span className="px-2 py-1 rounded-lg bg-amber-100 text-amber-800 text-[11px] font-bold">
-                        Thiếu {formatVND(finalPriceToPay - currentWalletBal)}
+                        Chênh lệch {formatVND(walletShortfall)}
                       </span>
                       {onOpenTopUp && (
                         <button
@@ -955,31 +1375,91 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
 
               {/* Action Buttons: Phân quyền rành mạch giữa Người bán và Người mua */}
               <div className="space-y-3 pt-2">
-                {isUserSeller ? (
-                  /* 1. GÓC NHÌN NGƯỜI BÁN: Tuyệt đối không có nút mua hay thanh toán */
-                  <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-950 space-y-3">
-                    <div className="flex items-center gap-2 font-bold text-indigo-900 text-sm">
-                      <Store className="w-4 h-4 text-indigo-600" />
-                      <span>Góc Nhìn Người Bán</span>
+                {decisionSettled ? null : isUserSeller ? (
+                  isWaitingSellerApproval ? (
+                    <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-950 space-y-3">
+                      <div className="flex items-center gap-2 font-bold text-indigo-900 text-sm">
+                        <Store className="w-4 h-4 text-indigo-600" />
+                        <span>Đề Xuất Kiểm Định Từ Người Mua</span>
+                      </div>
+                      <p className="text-xs text-indigo-800 leading-relaxed">
+                        Người mua đã đề xuất kiểm định sản phẩm này tại trung tâm trước khi nhận hàng. Bạn có đồng ý với phương án kiểm định và phân chia phí này không?
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={handleSellerAcceptProposal}
+                          disabled={isSubmitting}
+                          className="w-full py-3 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition cursor-pointer shadow-xs disabled:opacity-50 text-center"
+                        >
+                          {isSubmitting ? 'Đang xử lý...' : 'Đồng Ý'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowRejectModal(true)}
+                          disabled={isSubmitting}
+                          className="w-full py-3 px-3 bg-white hover:bg-rose-50 border border-rose-300 text-rose-700 rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50 text-center"
+                        >
+                          Từ Chối
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onBack}
+                        className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition cursor-pointer text-center"
+                      >
+                        Quay Lại Quản Lý Đơn Bán Hàng
+                      </button>
                     </div>
-                    <p className="text-xs text-indigo-800 leading-relaxed">
-                      {isPassed
-                        ? 'Sản phẩm của bạn đã được KTV kiểm định ĐẠT CHUẨN. Khách mua đang có tối đa 6 giờ để thanh toán tiền sản phẩm (GĐ 2). Khi khách hoàn tất, hệ thống sẽ mở nút Giao Hàng để bạn chuyển cho tài xế.'
-                        : isFailed
-                        ? 'Sản phẩm kiểm định không đạt tiêu chuẩn kỹ thuật. Đơn hàng đã dừng và tiền cọc giai đoạn 1 đã được hoàn theo quy định.'
-                        : 'Sản phẩm đang trong quá trình tiếp nhận & kiểm định thực tế. Bạn không thể tự mua lại sản phẩm của chính mình.'}
+                  ) : (
+                    <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-950 space-y-3">
+                      <div className="flex items-center gap-2 font-bold text-indigo-900 text-sm">
+                        <Store className="w-4 h-4 text-indigo-600" />
+                        <span>Góc Nhìn Người Bán</span>
+                      </div>
+                      <p className="text-xs text-indigo-800 leading-relaxed">
+                        {isPassed
+                          ? 'Sản phẩm đã đạt kiểm định và đang chờ quyết định mua.'
+                          : isFailed
+                          ? 'Sản phẩm kiểm định không đạt tiêu chuẩn kỹ thuật. Đơn hàng đã dừng và tiền cọc giai đoạn 1 đã được hoàn theo quy định.'
+                          : isWaitingFeePayment
+                          ? 'Đã thống nhất phương án chia phí kiểm định. Đang chờ người mua nộp phí kiểm định vào quỹ bảo lãnh Escrow.'
+                          : 'Sản phẩm đang trong quá trình tiếp nhận & kiểm định thực tế. Bạn không thể tự mua lại sản phẩm của chính mình.'}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={onBack}
+                        className="w-full py-3 rounded-xl bg-[#24263e] hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer text-center"
+                      >
+                        Quay Lại Quản Lý Đơn Bán Hàng
+                      </button>
+                    </div>
+                  )
+                ) : isWaitingSellerApproval ? (
+                  <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 text-blue-950 space-y-3">
+                    <div className="flex items-center gap-2 font-bold text-blue-900 text-sm">
+                      <Clock className="w-4 h-4 text-blue-600" />
+                      <span>Đang Chờ Người Bán Phản Hồi</span>
+                    </div>
+                    <p className="text-xs text-blue-800 leading-relaxed">
+                      Yêu cầu kiểm định của bạn đã được gửi tới người bán. Bạn có thể thương lượng thêm trong phòng chat hoặc chờ người bán phản hồi đồng ý.
                     </p>
                     <button
                       type="button"
                       onClick={onBack}
-                      className="w-full py-3 rounded-xl bg-[#24263e] hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2"
+                      className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs transition cursor-pointer text-center"
                     >
-                      <ArrowLeft className="w-4 h-4" />
-                      <span>Quay Lại Quản Lý Đơn Bán Hàng</span>
+                      Đến Phòng Chat Thương Lượng
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onBack}
+                      className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition cursor-pointer text-center"
+                    >
+                      Quay Lại Danh Sách Đơn Hàng
                     </button>
                   </div>
-                ) : !isPassed ? (
-                  /* 2. GÓC NHÌN NGƯỜI MUA KHI CHƯA ĐẠT: Không cho bấm thanh toán sớm */
+                ) : !canDecide ? (
                   <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 space-y-3">
                     <div className="flex items-center gap-2 font-bold text-amber-900 text-sm">
                       <Clock className="w-4 h-4 text-amber-600" />
@@ -993,35 +1473,38 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     <button
                       type="button"
                       onClick={onBack}
-                      className="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2"
+                      className="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer text-center"
                     >
-                      <ArrowLeft className="w-4 h-4" />
-                      <span>Quay Lại Danh Sách Đơn Hàng</span>
+                      Quay Lại Danh Sách Đơn Hàng
                     </button>
                   </div>
                 ) : (
-                  /* 3. GÓC NHÌN NGƯỜI MUA KHI ĐÃ ĐẠT: Mở nút chốt mua tiếp hoặc từ chối */
                   <>
                     <button
                       onClick={() => setShowConfirmModal(true)}
-                      disabled={isSubmitting || timeLeft.isExpired}
-                      className="w-full py-4 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-sm shadow-lg shadow-emerald-600/20 transition cursor-pointer flex flex-col items-center justify-center gap-0.5 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={isSubmitting || timeLeft.isExpired || isLoadingQuote}
+                      className="w-full py-4 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-sm shadow-lg shadow-emerald-600/20 transition cursor-pointer flex flex-col items-center justify-center gap-0.5 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed text-center"
                     >
                       <div className="flex items-center gap-2">
-                        <CheckCircle2 className="w-5 h-5 text-white" />
-                        <span>XÁC NHẬN MUA TIẾP & TRẢ TIỀN SẢN PHẨM</span>
+                        {isLoadingQuote ? (
+                          <Loader2 className="w-5 h-5 text-white animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-5 h-5 text-white" />
+                        )}
+                        <span className="font-black text-sm">XÁC NHẬN MUA TIẾP & TRẢ TIỀN SẢN PHẨM</span>
                       </div>
                       <span className="text-[11px] font-medium text-emerald-100">
-                        Trừ {formatVND(finalPriceToPay)} từ ví Escrow • Khởi tạo giao hàng
+                        {isLoadingQuote
+                          ? 'Đang tính cước giao qua API...'
+                          : `Trừ ${formatVND(finalPriceToPay)} từ ví Escrow (gồm ${formatVND(apiDeliveryFee)} cước giao Hub)`}
                       </span>
                     </button>
 
                     <button
                       onClick={() => setShowRejectModal(true)}
                       disabled={isSubmitting}
-                      className="w-full py-3 px-4 rounded-2xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 hover:text-red-600 hover:border-red-300 font-bold text-xs sm:text-sm transition cursor-pointer flex items-center justify-center gap-2"
+                      className="w-full py-3 px-4 rounded-2xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 hover:text-red-600 hover:border-red-300 font-bold text-xs sm:text-sm transition cursor-pointer flex items-center justify-center text-center"
                     >
-                      <XCircle className="w-4 h-4 text-slate-400 group-hover:text-red-500" />
                       <span>Từ Chối Mua Tiếp / Hủy Đơn (Báo Cho Người Bán)</span>
                     </button>
                   </>
@@ -1058,7 +1541,21 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                 <span className="font-bold text-slate-900 truncate max-w-[200px]">{postTitle}</span>
               </div>
               <div className="flex justify-between text-slate-600">
-                <span>Số tiền thanh toán:</span>
+                <span>Tiền sản phẩm:</span>
+                <span className="font-bold text-slate-900">{formatVND(finalItemPrice)}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Cước giao Hub ➔ Bạn:</span>
+                <span className="font-bold text-slate-900">{formatVND(apiDeliveryFee)}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Địa chỉ nhận hàng:</span>
+                <span className="font-medium text-slate-700 truncate max-w-[200px]" title={resolvedBuyerAddress.address}>
+                  {resolvedBuyerAddress.address}
+                </span>
+              </div>
+              <div className="flex justify-between pt-2 border-t border-slate-200 text-slate-600">
+                <span className="font-bold">Tổng thanh toán GĐ 2:</span>
                 <span className="font-extrabold text-[#c34c36] text-sm">{formatVND(finalPriceToPay)}</span>
               </div>
               <div className="flex justify-between text-slate-600">
@@ -1068,14 +1565,14 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed">
-              Bằng việc bấm xác nhận, số tiền <strong>{formatVND(finalPriceToPay)}</strong> sẽ được chuyển vào quỹ Escrow bảo lãnh. Trạm kiểm định sẽ đóng gói với tem niêm phong QR và bàn giao bưu tá Lalamove để giao tới địa chỉ của bạn.
+              Bằng việc bấm xác nhận, số tiền <strong>{formatVND(finalPriceToPay)}</strong> (gồm {formatVND(finalItemPrice)} tiền sản phẩm và {formatVND(apiDeliveryFee)} cước giao tận tay từ Hub) sẽ được chuyển vào quỹ Escrow bảo lãnh. Trạm kiểm định sẽ đóng gói với tem niêm phong QR và bàn giao bưu tá Lalamove để giao tới địa chỉ của bạn.
             </p>
 
             {!isWalletSufficient && (
               <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2">
                 <div>
                   <span className="font-bold block">Số dư ví không đủ:</span>
-                  <span>Cần nạp thêm {formatVND(finalPriceToPay - currentWalletBal)}</span>
+                  <span>Cần nạp thêm {formatVND(walletShortfall || (finalPriceToPay - (currentWalletBal || 0)))}</span>
                 </div>
                 {onOpenTopUp && (
                   <button
@@ -1112,7 +1609,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     <span>Đang xử lý...</span>
                   </>
                 ) : timeLeft.isExpired ? (
-                  <span>Đã Hết Hạn 6 Giờ</span>
+                  <span>Đã hết hạn quyết định</span>
                 ) : (
                   <span>Xác Nhận & Thanh Toán</span>
                 )}
@@ -1122,70 +1619,91 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         </div>
       )}
 
-      {/* MODAL 2: Reject Purchase Dialog (Notify Seller) */}
+      {/* MODAL 2: Reject Purchase Dialog (Notify Seller or Seller rejects proposal) */}
       {showRejectModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-5 animate-scaleUp">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-700 flex items-center justify-center font-bold shrink-0">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold shrink-0">
                 <XCircle className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-base font-black text-slate-900">Từ Chối Mua Tiếp & Báo Người Bán</h3>
-                <p className="text-xs text-slate-500">Hủy đơn mua hàng sau khi xem kết quả kiểm định</p>
+                <h3 className="text-base font-black text-slate-900">
+                  {isUserSeller && isWaitingSellerApproval ? 'Từ Chối Đề Xuất Kiểm Định' : 'Từ Chối Mua Tiếp & Báo Người Bán'}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {isUserSeller && isWaitingSellerApproval
+                    ? 'Từ chối yêu cầu kiểm định và chia phí từ người mua'
+                    : 'Hủy đơn mua hàng sau khi xem kết quả kiểm định'}
+                </p>
               </div>
             </div>
 
-            <div className="space-y-3">
-              <label className="text-xs font-bold text-slate-800 block">
-                Chọn lý do bạn không tiếp tục mua sản phẩm:
-              </label>
-              {[
-                'Sản phẩm có vết trầy xước và hao mòn nhiều hơn kỳ vọng',
-                'Kết quả kiểm định pin hoặc linh kiện chưa đáp ứng nhu cầu',
-                'Phát hiện dấu hiệu linh kiện đã từng được thay thế',
-                'Thay đổi nhu cầu sử dụng / Lý do cá nhân'
-              ].map((reason) => (
-                <label
-                  key={reason}
-                  className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 transition cursor-pointer ${
-                    selectedRejectReason === reason
-                      ? 'bg-red-50 border-red-300 text-red-950'
-                      : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="rejectReason"
-                    value={reason}
-                    checked={selectedRejectReason === reason}
-                    onChange={(e) => setSelectedRejectReason(e.target.value)}
-                    className="accent-red-600"
-                  />
-                  <span>{reason}</span>
-                </label>
-              ))}
-
-              <div>
-                <label className="text-[11px] font-semibold text-slate-500 block mb-1">
-                  Ghi chú chi tiết thêm cho Người bán (tùy chọn):
+            {isUserSeller && isWaitingSellerApproval ? (
+              <div className="space-y-3">
+                <label className="text-xs font-bold text-slate-800 block">
+                  Nhập lý do từ chối đề xuất kiểm định:
                 </label>
                 <textarea
                   value={customRejectNote}
                   onChange={(e) => setCustomRejectNote(e.target.value)}
-                  placeholder="Nhập thêm lý do hoặc lời nhắn cho người bán..."
-                  rows={2}
-                  className="w-full p-3 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-red-400 bg-slate-50/50"
+                  placeholder="Nhập lý do bạn không đồng ý kiểm định (ví dụ: Muốn bán giao trực tiếp, không đồng ý tháo máy, không đồng ý chia phí...)..."
+                  rows={3}
+                  className="w-full p-3 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-rose-400 bg-slate-50/50"
                 />
               </div>
-            </div>
+            ) : (
+              <div className="space-y-3">
+                <label className="text-xs font-bold text-slate-800 block">
+                  Chọn lý do bạn không tiếp tục mua sản phẩm:
+                </label>
+                {[
+                  'Sản phẩm có vết trầy xước và hao mòn nhiều hơn kỳ vọng',
+                  'Kết quả kiểm định pin hoặc linh kiện chưa đáp ứng nhu cầu',
+                  'Phát hiện dấu hiệu linh kiện đã từng được thay thế',
+                  'Thay đổi nhu cầu sử dụng / Lý do cá nhân'
+                ].map((reason) => (
+                  <label
+                    key={reason}
+                    className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2.5 transition cursor-pointer ${
+                      selectedRejectReason === reason
+                        ? 'bg-red-50 border-red-300 text-red-950'
+                        : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="rejectReason"
+                      value={reason}
+                      checked={selectedRejectReason === reason}
+                      onChange={(e) => setSelectedRejectReason(e.target.value)}
+                      className="accent-red-600"
+                    />
+                    <span>{reason}</span>
+                  </label>
+                ))}
 
-            <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <p className="leading-relaxed">
-                <strong>Hệ thống sẽ gửi thông báo ngay cho Người bán:</strong> Sản phẩm sẽ được Trung tâm đóng gói niêm phong tem hoàn trả và bưu tá sẽ mang hàng hoàn về địa chỉ người bán theo quy chế sàn.
-              </p>
-            </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-500 block mb-1">
+                    Ghi chú chi tiết thêm cho Người bán (tùy chọn):
+                  </label>
+                  <textarea
+                    value={customRejectNote}
+                    onChange={(e) => setCustomRejectNote(e.target.value)}
+                    placeholder="Nhập thêm lý do hoặc lời nhắn cho người bán..."
+                    rows={2}
+                    className="w-full p-3 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-red-400 bg-slate-50/50"
+                  />
+                </div>
+
+                <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="leading-relaxed">
+                    <strong>Hệ thống sẽ gửi thông báo ngay cho Người bán:</strong> Sản phẩm sẽ được Trung tâm đóng gói niêm phong tem hoàn trả và bưu tá sẽ mang hàng hoàn về địa chỉ người bán theo quy chế sàn.
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center gap-3 pt-2">
               <button
@@ -1197,17 +1715,17 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               </button>
               <button
                 type="button"
-                onClick={handleRejectPurchase}
-                disabled={isSubmitting}
+                onClick={isUserSeller && isWaitingSellerApproval ? handleSellerRejectProposal : handleRejectPurchase}
+                disabled={isSubmitting || (isUserSeller && isWaitingSellerApproval && !customRejectNote.trim())}
                 className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Đang gửi thông báo...</span>
+                    <span>Đang xử lý...</span>
                   </>
                 ) : (
-                  <span>Xác Nhận Từ Chối & Báo Người Bán</span>
+                  <span>{isUserSeller && isWaitingSellerApproval ? 'Xác Nhận Từ Chối' : 'Xác Nhận Từ Chối & Báo Người Bán'}</span>
                 )}
               </button>
             </div>

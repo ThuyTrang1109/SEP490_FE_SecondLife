@@ -3,7 +3,8 @@ import { resolveAppRoute } from '../app/router/paths';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { EscrowOrder, InspectionChecklistItem, Language, UserProfile, InspectionCenter } from '../types';
 import { formatVND } from '../utils/translations';
-import { mockInspectionCenters, mockStandardChecklist } from '../data/mockData';
+import { resolveInspectionCenter } from '../utils/orderUtils';
+import { getInspectionTaskResult, getInspectionTaskStage } from '../utils/inspectionTaskStatus';
 import { ProductInspectionStationView } from './ProductInspectionStationView';
 import { DigitalInspectionCertificateModal } from '../components/modals/DigitalInspectionCertificateModal';
 import { BarcodeScannerModal, playScanBeep } from '../components/modals/BarcodeScannerModal';
@@ -83,82 +84,6 @@ interface InspectorPortalViewProps {
 export type InspectorDashboardTab = 'workbench' | 'tasks' | 'certificates' | 'standards';
 export type ManagerPortalTab = 'center_dispatch' | 'center_staff' | 'center_checklists_tiers' | 'center_finance';
 
-/**
- * Helper to match if an inspection assignment belongs to the current technician.
- * Supports matching by ID, Email, Full Name, registered staff aliases, or role-based technician seed.
- */
-export const isAssignedToInspector = (
-  assignedId?: string | null,
-  assignedName?: string | null,
-  assignedEmail?: string | null,
-  inspectorUser?: UserProfile | null
-): boolean => {
-  if (!assignedId && !assignedName && !assignedEmail) return false;
-  if (assignedName === 'Chưa phân công' || assignedId === 'unassigned') return false;
-
-  const currentId = String(inspectorUser?.id || '').trim().toLowerCase();
-  const currentName = String(inspectorUser?.name || '').trim().toLowerCase();
-  const currentEmail = String(inspectorUser?.email || '').trim().toLowerCase();
-
-  const aId = String(assignedId || '').trim().toLowerCase();
-  const aName = String(assignedName || '').trim().toLowerCase();
-  const aEmail = String(assignedEmail || '').trim().toLowerCase();
-
-  // 1. Direct ID match
-  if (currentId && aId && (currentId === aId || currentId.includes(aId) || aId.includes(currentId))) {
-    return true;
-  }
-
-  // 2. Direct Email match
-  if (currentEmail && (currentEmail === aEmail || currentEmail === aId || aEmail.includes(currentEmail))) {
-    return true;
-  }
-
-  // 3. Direct Name match
-  if (currentName && aName && (currentName.includes(aName) || aName.includes(currentName))) {
-    return true;
-  }
-
-  // 4. Check aliases in registered staff list ('center_registered_staff')
-  try {
-    const rawStaff = localStorage.getItem('center_registered_staff');
-    if (rawStaff) {
-      const staffList: any[] = JSON.parse(rawStaff);
-      const matchingStaff = staffList.find((s) =>
-        (aId && (String(s.id).toLowerCase() === aId || aId.includes(String(s.id).toLowerCase()))) ||
-        (aEmail && s.email && String(s.email).toLowerCase() === aEmail) ||
-        (aName && s.fullName && (String(s.fullName).toLowerCase() === aName || aName.includes(String(s.fullName).toLowerCase())))
-      );
-      if (matchingStaff) {
-        if (
-          (currentEmail && matchingStaff.email && String(matchingStaff.email).toLowerCase() === currentEmail) ||
-          (currentId && matchingStaff.id && String(matchingStaff.id).toLowerCase() === currentId) ||
-          (currentName && matchingStaff.fullName && (currentName.includes(String(matchingStaff.fullName).toLowerCase()) || String(matchingStaff.fullName).toLowerCase().includes(currentName)))
-        ) {
-          return true;
-        }
-      }
-    }
-  } catch {}
-
-  // 5. Fallback for demo / standard seed inspector (inspector@secondlife.com or 'Kiểm Định Viên 1' or id: a50d1568-...)
-  if (
-    inspectorUser?.role === 'inspector' &&
-    (
-      aId.includes('a50d1568') ||
-      aEmail.includes('inspector') ||
-      aName.includes('kiểm định') ||
-      aName.includes('ktv') ||
-      aName.includes('inspector') ||
-      !currentId
-    )
-  ) {
-    return true;
-  }
-
-  return false;
-};
-
 export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   orders,
   currentUser,
@@ -201,10 +126,15 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   const stationCode = 'STATION-HCM-02';
 
   // --- ORDERS & QUEUE STATES ---
-  const [selectedOrderId, setSelectedOrderIdState] = useState<string>(requestedInspectionId || orders[0]?.id || '');
+  const [selectedOrderId, setSelectedOrderIdState] = useState<string>(requestedInspectionId || '');
   const setSelectedOrderId = (id: string) => {
     setSelectedOrderIdState(id);
-    navigatePath(`/inspector/inspections/${encodeURIComponent(id)}`);
+    if (id) {
+      setInspectorTab('workbench');
+      navigatePath(`/inspector/inspections/${encodeURIComponent(id)}`);
+    } else {
+      navigatePath('/inspector/inspections');
+    }
   };
   useEffect(() => {
     if (requestedInspectionId) setSelectedOrderIdState(requestedInspectionId);
@@ -227,41 +157,11 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     setTimeout(() => setNoticeMessage(null), 4500);
   };
 
-  // --- LOAD INSPECTOR'S ASSIGNED ORDERS FROM BACKEND & STORAGE ---
+  // --- LOAD INSPECTOR'S ASSIGNED ORDERS ---
   const loadInspectorOrders = async () => {
     setIsLoadingBackendOrders(true);
     try {
-      const myOrdersRes = await inspectorService.getMyOrders().catch(() => []);
-      const myItems = Array.isArray(myOrdersRes) ? myOrdersRes : ((myOrdersRes as any)?.items || []);
-
-      const orderMap = new Map<string, InspectionOrderDto>();
-      myItems.forEach((o: any) => { if (o?.id) orderMap.set(o.id, o); });
-
-      try {
-        const rawCenter = localStorage.getItem('center_inspection_orders');
-        if (rawCenter) {
-          const list = JSON.parse(rawCenter);
-          if (Array.isArray(list)) {
-            list.forEach((o: any) => {
-              if (o?.id && !orderMap.has(o.id)) orderMap.set(o.id, o);
-            });
-          }
-        }
-      } catch {}
-
-      try {
-        const rawRecent = localStorage.getItem('recent_placed_orders');
-        if (rawRecent) {
-          const list = JSON.parse(rawRecent);
-          if (Array.isArray(list)) {
-            list.forEach((o: any) => {
-              if (o?.id && !orderMap.has(o.id)) orderMap.set(o.id, o);
-            });
-          }
-        }
-      } catch {}
-
-      setBackendOrders(Array.from(orderMap.values()));
+      setBackendOrders(await inspectorService.getMyOrders());
     } catch (err) {
       console.warn('Lỗi tải danh sách đơn từ backend:', err);
     } finally {
@@ -319,16 +219,25 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         if (!existing.some((s) => s.id === staffObj.id || s.email === staffObj.email)) {
           localStorage.setItem('center_registered_staff', JSON.stringify([...existing, staffObj]));
         }
-      } catch {}
+      } catch { }
     }
   }, [currentUser]);
 
   // --- MANAGER FALLBACK STATES ---
-  const [activeCenter, setActiveCenter] = useState<InspectionCenter>(mockInspectionCenters[0]);
+  const [activeCenter, setActiveCenter] = useState<InspectionCenter | null>(null);
   const [allOrdersList, setAllOrdersList] = useState<InspectionOrderDto[]>([]);
   const [isLoadingAllOrders, setIsLoadingAllOrders] = useState(false);
   const [staffList, setStaffList] = useState<InspectionStaffDto[]>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
+
+  // Load active inspection center from API
+  useEffect(() => {
+    inspectorService.getInspectionCenters().then((hubs) => {
+      if (hubs && hubs.length > 0) {
+        setActiveCenter(hubs[0]);
+      }
+    }).catch(() => { });
+  }, []);
 
   // Load Manager Data if role is center manager
   useEffect(() => {
@@ -336,99 +245,83 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       inspectorService.getAllOrders().then((res) => {
         const items = res?.items || (res as any)?.content || (Array.isArray(res) ? res : []);
         setAllOrdersList(items);
-      }).catch(() => {});
+      }).catch(() => { });
       inspectorService.getStaff().then((data) => {
         if (Array.isArray(data)) setStaffList(data);
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }, [isCenterManager]);
 
-  const isOrderReceivedAtHub = (order: any): boolean => {
-    if (!order) return false;
-    if (order.inspectionMethod === 'AT_HOME' || order.orderType === 'AT_HOME') return true;
-    const s = String(order.status || order.backendStatus || order.escrowStatus || '').toUpperCase();
-    if (['RECEIVED_AT_CENTER', 'AWAITING_INSPECTION', 'INSPECTING', 'PASSED', 'FAILED', 'COMPLETED', 'DELIVERING_TO_BUYER', 'SHIPPED_TO_BUYER'].includes(s)) {
-      return true;
-    }
-    if (typeof window !== 'undefined') {
-      if (localStorage.getItem(`hub_package_received_${order.id}`) === 'true') {
-        return true;
-      }
-    }
-    return false;
-  };
-
-  // Convert backendOrders into EscrowOrder format if available, and unify with prop orders strictly assigned to this technician
+  // Use the assigned orders API for membership and status. Props can supply listing details.
   const effectiveOrders: EscrowOrder[] = useMemo(() => {
-    const candidateMap = new Map<string, EscrowOrder>();
+    const orderDetails = new Map(orders.map((order) => [order.id, order]));
 
-    // 1. Process orders passed via props (from App.tsx)
-    orders.forEach((o) => {
-      if (
-        !o.hasInspectionService &&
-        !o.inspectionMethod &&
-        (!o.inspectionFeeVnd || o.inspectionFeeVnd <= 0)
-      ) {
-        return;
-      }
-
-      let assignedId = (o as any).inspectorId;
-      let assignedName = (o as any).inspectorName;
-      let assignedEmail = (o as any).inspectorEmail;
-      try {
-        const assignedJson = localStorage.getItem(`order_assigned_inspector_${o.id}`);
-        if (assignedJson) {
-          const parsed = JSON.parse(assignedJson);
-          assignedId = parsed.inspectorId || assignedId;
-          assignedName = parsed.inspectorName || assignedName;
-          assignedEmail = parsed.inspectorEmail || assignedEmail;
-        }
-      } catch {}
-
-      if (isAssignedToInspector(assignedId, assignedName, assignedEmail, currentUser)) {
-        candidateMap.set(o.id, {
-          ...o,
-          inspectorId: assignedId,
-          inspectorName: assignedName,
-        });
-      }
-    });
-
-    // 2. Process backendOrders (which includes /inspector/orders, /inspector-center/orders, and localStorage inspection orders)
-    (backendOrders || []).forEach((bo) => {
-      let assignedId = bo.inspectorId;
-      let assignedName = bo.inspectorName;
-      let assignedEmail = (bo as any).inspectorEmail;
-      try {
-        const assignedJson = localStorage.getItem(`order_assigned_inspector_${bo.id}`);
-        if (assignedJson) {
-          const parsed = JSON.parse(assignedJson);
-          assignedId = parsed.inspectorId || assignedId;
-          assignedName = parsed.inspectorName || assignedName;
-          assignedEmail = parsed.inspectorEmail || assignedEmail;
-        }
-      } catch {}
-
-      if (!isAssignedToInspector(assignedId, assignedName, assignedEmail, currentUser)) {
-        return;
-      }
-
-      const localStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${bo.id}`) : null;
-      const finalStatus = (localStatus === 'PASSED' || bo.status === 'PASSED')
-        ? 'PASSED'
-        : (localStatus === 'FAILED' || bo.status === 'FAILED')
-        ? 'FAILED'
-        : (bo.status || 'INSPECTING');
+    const result = backendOrders.map((bo): EscrowOrder => {
+      const { inspectorId: assignedId, inspectorName: assignedName, status: finalStatus } = bo;
       const resolvedEscrowStatus = (finalStatus === 'PASSED')
         ? 'INSPECTION_PASSED'
         : (finalStatus === 'FAILED')
-        ? 'INSPECTION_FAILED'
-        : (bo.status ? (bo.status as any) : 'INSPECTING');
+          ? 'INSPECTION_FAILED'
+          : finalStatus as EscrowOrder['escrowStatus'];
 
       const realPostImg = bo.postImageUrl || bo.postImageUrls?.[0];
 
-      // If already in candidateMap, enrich it
-      const existing = candidateMap.get(bo.id);
+      let parsedChecklistResults: any[] = [];
+      if (bo.checklistResultJson) {
+        try {
+          const results = JSON.parse(bo.checklistResultJson);
+          if (Array.isArray(results)) parsedChecklistResults = results;
+        } catch { }
+      }
+
+      let parsedInspectorPhotos: string[] = [];
+      if (Array.isArray((bo as any).inspectorPhotos) && (bo as any).inspectorPhotos.length > 0) {
+        parsedInspectorPhotos = (bo as any).inspectorPhotos;
+      } else if (Array.isArray((bo as any).proofPhotos) && (bo as any).proofPhotos.length > 0) {
+        parsedInspectorPhotos = (bo as any).proofPhotos;
+      } else if (Array.isArray((bo as any).evidenceUrls) && (bo as any).evidenceUrls.length > 0) {
+        parsedInspectorPhotos = (bo as any).evidenceUrls;
+      } else if (bo.note) {
+        const photoMatch = bo.note.match(/\[Photos:\s*(\[.*?\])\]/);
+        if (photoMatch && photoMatch[1]) {
+          try {
+            const parsed = JSON.parse(photoMatch[1]);
+            if (Array.isArray(parsed)) parsedInspectorPhotos = parsed;
+          } catch { }
+        }
+      }
+
+      const result = getInspectionTaskResult(bo);
+      const backendReport: EscrowOrder['inspectionReport'] = result ? {
+        id: `REP-${bo.id.slice(0, 8)}`,
+        orderId: bo.id,
+        centerId: bo.inspectionCenterId || 'center-hcm-01',
+        centerName: 'SecondLife Hub Flagship Lab',
+        inspectorName: assignedName || 'Kỹ Thuật Viên Kiểm Định SecondLife',
+        inspectedAt: bo.updatedAt || bo.createdAt || new Date().toISOString(),
+        completedAt: bo.updatedAt || bo.createdAt || new Date().toISOString(),
+        verdict: result.verdict,
+        status: result.verdict === 'PASS' ? 'PASSED' : 'FAILED',
+        detectedGrade: (bo.conditionGrade || 'Like New') as any,
+        conditionScore: result.conditionScore,
+        tamperSealId: bo.tamperSealId || '',
+        checklistResults: parsedChecklistResults,
+        inspectorPhotos: parsedInspectorPhotos,
+        summaryNotes: bo.note || '',
+      } : undefined;
+
+      const existing = orderDetails.get(bo.id);
+      const inspectionFields = {
+        status: finalStatus,
+        backendStatus: finalStatus as EscrowOrder['backendStatus'],
+        inspectionStatus: finalStatus,
+        escrowStatus: resolvedEscrowStatus,
+        inspectorId: assignedId,
+        inspectorName: assignedName,
+        inspectionMethod: bo.orderType === 'AT_HOME' ? 'AT_HOME' as const : 'AT_CENTER' as const,
+        appointmentScheduledAt: bo.appointmentScheduledAt,
+        inspectionReport: backendReport,
+      };
       if (existing) {
         const existingPhotos = existing.listing?.photos;
         const cleanFront = (existingPhotos?.front && !existingPhotos.front.includes('photo-1584269600464') && !existingPhotos.front.includes('photo-1555041469')) ? existingPhotos.front : '';
@@ -445,14 +338,9 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
           ? bo.postImageUrls
           : (realPostImg ? [realPostImg] : (existing.listing?.photoGallery || [finalFront]));
 
-        candidateMap.set(bo.id, {
+        return {
           ...existing,
-          status: finalStatus as any,
-          backendStatus: finalStatus as EscrowOrder['backendStatus'],
-          escrowStatus: resolvedEscrowStatus,
-          inspectorId: assignedId,
-          inspectorName: assignedName,
-          inspectionMethod: bo.orderType === 'AT_HOME' ? 'AT_HOME' : (existing.inspectionMethod || 'AT_CENTER'),
+          ...inspectionFields,
           buyerName: bo.buyerName || existing.buyerName,
           sellerName: bo.sellerName || existing.sellerName,
           listing: existing.listing ? {
@@ -460,131 +348,99 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
             photos: newPhotos,
             photoGallery: newGallery,
           } : existing.listing,
-        });
-      } else {
-        // Build new EscrowOrder from bo
-        const fallbackFront = realPostImg || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400';
-        const mappedEscrow: EscrowOrder = {
-          id: bo.id,
-          listing: {
-            id: bo.postId || bo.id,
-            title: bo.postTitle || 'Thiết bị đo kiểm',
-            category: 'KITCHEN_APPLIANCES' as any,
-            brand: 'Chính hãng',
-            model: 'Model tiêu chuẩn',
-            purchaseYear: 2023,
-            priceVnd: bo.postPrice || 1000000,
-            conditionGrade: 'Good' as any,
-            declaredConditionText: 'Máy hoạt động tốt',
-            description: bo.note || 'Thiết bị cần đo kiểm theo quy trình',
-            location: 'TP. Hồ Chí Minh',
-            sellerId: bo.sellerId || 'seller-1',
-            sellerName: bo.sellerName || 'Người bán',
-            sellerRating: 5.0,
-            sellerCompletedOrders: 10,
-            sellerVerified: true,
-            status: 'ACTIVE' as any,
-            createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
-            isInspectionGuaranteed: true,
-            requiresInspection: true,
-            photos: {
-              front: fallbackFront,
-              back: bo.postImageUrls?.[1] || bo.postImageUrl || '',
-              screenOrDetails: bo.postImageUrls?.[2] || '',
-              accessoriesOrBox: '',
-              serialOrReceipt: '',
-            },
-            photoGallery: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : [fallbackFront]),
-          },
-          listingId: bo.postId || bo.id,
-          buyerId: bo.buyerId || 'buyer-1',
-          buyerName: bo.buyerName || 'Khách hàng',
-          buyerPhone: '0912345678',
-          buyerAddress: 'TP. Hồ Chí Minh',
+        };
+      }
+      const fallbackFront = realPostImg || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400';
+      return {
+        ...inspectionFields,
+        id: bo.id,
+        listing: {
+          id: bo.postId || bo.id,
+          title: bo.postTitle || 'Thiết bị đo kiểm',
+          category: 'KITCHEN_APPLIANCES' as any,
+          brand: 'Chính hãng',
+          model: 'Model tiêu chuẩn',
+          purchaseYear: 2023,
+          priceVnd: bo.postPrice || 1000000,
+          conditionGrade: 'Good' as any,
+          declaredConditionText: 'Máy hoạt động tốt',
+          description: bo.note || 'Thiết bị cần đo kiểm theo quy trình',
+          location: 'TP. Hồ Chí Minh',
           sellerId: bo.sellerId || 'seller-1',
           sellerName: bo.sellerName || 'Người bán',
-          inspectorId: assignedId,
-          inspectorName: assignedName,
-          itemPriceVnd: bo.postPrice || 1000000,
-          inspectionFeeVnd: bo.inspectionFee || 150000,
-          shippingFeeVnd: bo.shippingFee || 30000,
-          platformFeeVnd: 0,
-          totalPaidVnd: (bo.postPrice || 1000000) + (bo.inspectionFee || 150000) + (bo.shippingFee || 30000),
-          totalAmountVnd: (bo.postPrice || 1000000) + (bo.inspectionFee || 150000) + (bo.shippingFee || 30000),
-          escrowStatus: resolvedEscrowStatus,
-          status: finalStatus as any,
-          backendStatus: finalStatus,
-          hasInspectionService: true,
-          requiresInspection: true,
-          inspectionMethod: bo.orderType === 'AT_HOME' ? 'AT_HOME' : 'AT_CENTER',
-          inspectionFeeSplit: bo.feePayer === 'SELLER_PAYS' ? 'SELLER_100' : bo.feePayer === 'BUYER_PAYS' ? 'BUYER_100' : 'SPLIT_50_50',
-          shippingLegs: [],
-          multiStagePhotos: {
-            listingPhotos: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : [fallbackFront]),
-          },
+          sellerRating: 5.0,
+          sellerCompletedOrders: 10,
+          sellerVerified: true,
+          status: 'ACTIVE' as any,
           createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
-          deliveryAddress: 'TP. Hồ Chí Minh',
-          deliveryOption: 'INSPECTION',
-        } as unknown as EscrowOrder;
-
-        candidateMap.set(bo.id, mappedEscrow);
-      }
+          isInspectionGuaranteed: true,
+          requiresInspection: true,
+          photos: {
+            front: fallbackFront,
+            back: bo.postImageUrls?.[1] || bo.postImageUrl || '',
+            screenOrDetails: bo.postImageUrls?.[2] || '',
+            accessoriesOrBox: '',
+            serialOrReceipt: '',
+          },
+          photoGallery: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : [fallbackFront]),
+        },
+        listingId: bo.postId || bo.id,
+        buyerId: bo.buyerId || 'buyer-1',
+        buyerName: bo.buyerName || 'Khách hàng',
+        buyerPhone: '0912345678',
+        buyerAddress: 'TP. Hồ Chí Minh',
+        sellerId: bo.sellerId || 'seller-1',
+        sellerName: bo.sellerName || 'Người bán',
+        itemPriceVnd: bo.postPrice || 1000000,
+        inspectionFeeVnd: bo.inspectionFee || 150000,
+        shippingFeeVnd: bo.shippingFee || 30000,
+        platformFeeVnd: 0,
+        totalPaidVnd: (bo.postPrice || 1000000) + (bo.inspectionFee || 150000) + (bo.shippingFee || 30000),
+        totalAmountVnd: (bo.postPrice || 1000000) + (bo.inspectionFee || 150000) + (bo.shippingFee || 30000),
+        hasInspectionService: true,
+        requiresInspection: true,
+        inspectionFeeSplit: bo.feePayer === 'SELLER_PAYS' ? 'SELLER_100' : bo.feePayer === 'BUYER_PAYS' ? 'BUYER_100' : 'SPLIT_50_50',
+        shippingLegs: [],
+        multiStagePhotos: {
+          listingPhotos: bo.postImageUrls || (bo.postImageUrl ? [bo.postImageUrl] : [fallbackFront]),
+        },
+        createdAt: bo.appointmentScheduledAt || new Date().toISOString(),
+        deliveryAddress: 'TP. Hồ Chí Minh',
+        deliveryOption: 'INSPECTION',
+      } as unknown as EscrowOrder;
     });
 
-    const result = Array.from(candidateMap.values());
     result.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     return result;
-  }, [backendOrders, orders, currentUser]);
-
-  // Auto-select first order when effectiveOrders loads and nothing is selected
-  useEffect(() => {
-    if (!requestedInspectionId && (!selectedOrderId || !effectiveOrders.some((o) => o.id === selectedOrderId)) && effectiveOrders.length > 0) {
-      setSelectedOrderIdState(effectiveOrders[0].id);
-    }
-  }, [effectiveOrders, selectedOrderId, requestedInspectionId]);
+  }, [backendOrders, orders]);
 
   // --- KPI COMPUTATIONS FOR INSPECTOR ---
   const activeOrder = useMemo(() => {
-    return effectiveOrders.find((o) => o.id === selectedOrderId) || effectiveOrders[0];
-  }, [effectiveOrders, selectedOrderId, requestedInspectionId]);
+    if (!selectedOrderId) return null;
+    return effectiveOrders.find((o) => o.id === selectedOrderId) || null;
+  }, [effectiveOrders, selectedOrderId]);
 
   const assignedCount = effectiveOrders.length;
   const atHomeCount = effectiveOrders.filter((o) => o.inspectionMethod === 'AT_HOME').length;
-  const completedOrders = useMemo(() => {
-    return effectiveOrders.filter(
-      (o) =>
-        Boolean(o.inspectionReport) ||
-        (o.escrowStatus as string) === 'COMPLETED' ||
-        o.escrowStatus === 'COMPLETED_RELEASED' ||
-        o.escrowStatus === 'INSPECTION_PASSED' ||
-        o.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
-        (o as any).status === 'PASSED' ||
-        (o as any).backendStatus === 'PASSED' ||
-        (typeof window !== 'undefined' && localStorage.getItem(`inspection_status_${o.id}`) === 'PASSED')
-    );
-  }, [effectiveOrders]);
-  const completedCount = completedOrders.length;
-  const inProgressCount = Math.max(0, assignedCount - completedCount);
-  const passRate = 96.8;
+  const completedOrders = effectiveOrders.filter((order) => order.inspectionReport);
+  const completedCount = effectiveOrders.filter((order) => getInspectionTaskStage(order.inspectionStatus) === 'completed').length;
+  const inProgressCount = effectiveOrders.filter((order) => {
+    const stage = getInspectionTaskStage(order.inspectionStatus);
+    return stage !== 'completed' && stage !== 'cancelled';
+  }).length;
+  const passedCount = completedOrders.filter((order) => order.inspectionReport?.verdict === 'PASS').length;
+  const passRate = completedOrders.length ? ((passedCount / completedOrders.length) * 100).toFixed(1) : '—';
 
   // --- FILTERED TASKS FOR TAB 2 ---
   const filteredTasks = useMemo(() => {
     return effectiveOrders.filter((o) => {
       const isAtHome = o.inspectionMethod === 'AT_HOME';
-      const isCompleted =
-        Boolean(o.inspectionReport) ||
-        (o.escrowStatus as string) === 'COMPLETED' ||
-        o.escrowStatus === 'COMPLETED_RELEASED' ||
-        o.escrowStatus === 'INSPECTION_PASSED' ||
-        o.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
-        (o as any).status === 'PASSED' ||
-        (o as any).backendStatus === 'PASSED' ||
-        (typeof window !== 'undefined' && localStorage.getItem(`inspection_status_${o.id}`) === 'PASSED');
+      const stage = getInspectionTaskStage(o.inspectionStatus);
 
       if (taskFilter === 'AT_CENTER' && isAtHome) return false;
       if (taskFilter === 'AT_HOME' && !isAtHome) return false;
-      if (taskFilter === 'PENDING' && isCompleted) return false;
-      if (taskFilter === 'DONE' && !isCompleted) return false;
+      if (taskFilter === 'PENDING' && (stage === 'completed' || stage === 'cancelled')) return false;
+      if (taskFilter === 'DONE' && stage !== 'completed') return false;
 
       if (taskSearchTerm) {
         const q = taskSearchTerm.toLowerCase();
@@ -605,13 +461,14 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     showNotice(lang === 'vi' ? `Quét thành công mã: ${code}` : `Scanned code: ${code}`);
 
     const clean = code.replace(/^(sl-insp-|inspection-|order-)/i, '').trim().toLowerCase();
-    // Try finding order by ID or code
-    const found = orders.find((o) => {
+    // Search only the orders assigned to this technician by the API.
+    const found = effectiveOrders.find((o) => {
       const oId = o.id.toLowerCase();
       return oId === clean || oId.includes(clean) || clean.includes(oId);
     });
     if (found) {
       setSelectedOrderId(found.id);
+      setInspectorTab('workbench');
       showNotice(
         lang === 'vi'
           ? `Đã nhận diện thiết bị đơn hàng #${found.id} và mở bàn kiểm định.`
@@ -676,14 +533,14 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                 <span>Cổng Quản Lý Trung Tâm Kiểm Định Chuẩn ISO/IEC 17025</span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-black mt-2 text-[#24263e] flex items-center gap-2">
-                <span>{activeCenter.name}</span>
+                <span>{(activeCenter?.name || resolveInspectionCenter().name)}</span>
                 <span className="text-xs bg-[#c34c36] text-white px-2.5 py-0.5 rounded-full font-bold">
-                  {activeCenter.city} Hub
+                  {(activeCenter?.city || resolveInspectionCenter().city)} Hub
                 </span>
               </h1>
               <p className="text-xs sm:text-sm text-[#24263e]/80 mt-1 font-semibold flex items-center gap-2">
                 <MapPin className="w-3.5 h-3.5 text-[#c34c36]" />
-                <span>{activeCenter.address}</span>
+                <span>{(activeCenter?.address || resolveInspectionCenter().address)}</span>
               </p>
             </div>
           </div>
@@ -693,18 +550,16 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         <div className="flex border-b border-slate-200 gap-2 overflow-x-auto bg-white p-2 rounded-2xl shadow-xs">
           <button
             onClick={() => setManagerTab('center_dispatch')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer whitespace-nowrap ${
-              managerTab === 'center_dispatch' ? 'bg-[#24263e] text-white' : 'text-slate-600 hover:bg-slate-100'
-            }`}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer whitespace-nowrap ${managerTab === 'center_dispatch' ? 'bg-[#24263e] text-white' : 'text-slate-600 hover:bg-slate-100'
+              }`}
           >
             <ClipboardList className="w-4 h-4" />
             <span>Điều Phối Đơn Kiểm Định</span>
           </button>
           <button
             onClick={() => setManagerTab('center_staff')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer whitespace-nowrap ${
-              managerTab === 'center_staff' ? 'bg-[#24263e] text-white' : 'text-slate-600 hover:bg-slate-100'
-            }`}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer whitespace-nowrap ${managerTab === 'center_staff' ? 'bg-[#24263e] text-white' : 'text-slate-600 hover:bg-slate-100'
+              }`}
           >
             <Users className="w-4 h-4" />
             <span>Đội Ngũ Kỹ Thuật Viên</span>
@@ -868,9 +723,8 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       <div className="flex-1 flex relative w-full">
         {/* LEFT SIDEBAR (EXACT CENTER STYLE: bg-[#fce5da] text-[#24263e]) */}
         <aside
-          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] ${
-            isSidebarCollapsed ? 'w-16' : 'w-60 sm:w-64'
-          } ${isMobileSidebarOpen ? 'fixed inset-y-13 left-0 shadow-2xl block' : 'hidden md:flex'}`}
+          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] ${isSidebarCollapsed ? 'w-16' : 'w-60 sm:w-64'
+            } ${isMobileSidebarOpen ? 'fixed inset-y-13 left-0 shadow-2xl block' : 'hidden md:flex'}`}
         >
           {/* User Block with Live Online indicator */}
           <div
@@ -920,18 +774,16 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                     setInspectorTab(item.id);
                     setIsMobileSidebarOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs transition cursor-pointer group ${
-                    isActive
-                      ? 'bg-white text-[#24263e] shadow-sm font-black'
-                      : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/40 font-bold'
-                  }`}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs transition cursor-pointer group ${isActive
+                    ? 'bg-white text-[#24263e] shadow-sm font-black'
+                    : 'text-[#24263e]/80 hover:text-[#24263e] hover:bg-white/40 font-bold'
+                    }`}
                   title={item.label}
                 >
                   <div className="flex items-center gap-3 truncate">
                     <Icon
-                      className={`w-4 h-4 shrink-0 transition ${
-                        isActive ? 'text-[#24263e]' : 'text-[#24263e]/75 group-hover:text-[#24263e]'
-                      }`}
+                      className={`w-4 h-4 shrink-0 transition ${isActive ? 'text-[#24263e]' : 'text-[#24263e]/75 group-hover:text-[#24263e]'
+                        }`}
                     />
                     {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
                   </div>
@@ -944,9 +796,8 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                         </span>
                       )}
                       <ChevronRight
-                        className={`w-3.5 h-3.5 transition-transform ${
-                          isActive ? 'text-[#24263e] translate-x-0.5' : 'text-[#24263e]/50 group-hover:text-[#24263e]'
-                        }`}
+                        className={`w-3.5 h-3.5 transition-transform ${isActive ? 'text-[#24263e] translate-x-0.5' : 'text-[#24263e]/50 group-hover:text-[#24263e]'
+                          }`}
                       />
                     </div>
                   )}
@@ -963,8 +814,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                 <span className="font-mono text-[#c34c36] font-bold">{stationCode}</span>
               </div>
               <div className="text-[9px] text-[#24263e]/60 flex items-center gap-1">
-                <Clock className="w-3 h-3 text-amber-600" />
-                <span>08:00 - 17:30 (Ca chính)</span>
+
               </div>
             </div>
           )}
@@ -1005,13 +855,12 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                 </span>
               </h1>
               <p className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-medium">
-                <span>KTV: <strong className="text-slate-800">{inspectorName}</strong></span>
+                <span>Kĩ thuật viên: <strong className="text-slate-800">{inspectorName}</strong></span>
                 <span>•</span>
                 <span>Mã: <strong className="font-mono text-[#c34c36]">{inspectorId}</strong></span>
                 <span>•</span>
                 <span>Trạm: <strong>{stationCode}</strong></span>
-                <span>•</span>
-                <span>Ca làm việc: <strong>08:00 - 17:30</strong></span>
+
               </p>
             </div>
 
@@ -1126,7 +975,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
               </div>
               <div className="mt-3">
                 <div className="text-2xl font-black text-emerald-600">
-                  {passRate}% <span className="text-xs font-semibold text-slate-500">({completedCount} đơn)</span>
+                  {completedOrders.length ? `${passRate}%` : passRate} <span className="text-xs font-semibold text-slate-500">({completedOrders.length} đơn)</span>
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5 font-medium">
                   {lang === 'vi' ? 'Đã cấp tem niêm phong số hóa' : 'Digital seal issued'}
@@ -1139,612 +988,609 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
             </div>
           </div>
 
-      {/* NOTIFICATION MESSAGE */}
-      {noticeMessage && (
-        <div
-          className={`p-4 rounded-2xl border text-sm font-bold flex items-center justify-between gap-3 animate-fadeIn ${
-            noticeMessage.isError
-              ? 'bg-rose-50 border-rose-200 text-rose-800'
-              : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-          }`}
-        >
-          <div className="flex items-center gap-2.5">
-            {noticeMessage.isError ? (
-              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
-            ) : (
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-            )}
-            <span>{translateSystemNotification(noticeMessage.text)}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setNoticeMessage(null)}
-            className="text-slate-400 hover:text-slate-700 cursor-pointer p-1"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* ===================================================================== */}
-      {/* TAB 1: WORKBENCH (BÀN ĐO KIỂM THỰC TẾ 5 BƯỚC)                         */}
-      {/* ===================================================================== */}
-      {inspectorTab === 'workbench' && requestedInspectionId && !effectiveOrders.some((order) => order.id === requestedInspectionId) ? (
-        <p className="p-10 text-center">{isLoadingBackendOrders ? 'Đang tải đơn kiểm định...' : 'Không tìm thấy đơn kiểm định được phân công cho bạn.'}</p>
-      ) : inspectorTab === 'workbench' && (
-        <ProductInspectionStationView
-          orders={effectiveOrders}
-          currentUser={currentUser}
-          onCompleteInspection={onCompleteInspection}
-          lang={lang}
-          hideTopBar={true}
-          selectedOrderId={selectedOrderId}
-          onSelectOrder={setSelectedOrderId}
-          initialStep="intake"
-        />
-      )}
-
-      {/* ===================================================================== */}
-      {/* TAB 2: TASKS QUEUE & APPOINTMENTS (HÀNG ĐỢI NHIỆM VỤ & LỊCH HẸN)     */}
-      {/* ===================================================================== */}
-      {inspectorTab === 'tasks' && (
-        <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/90 shadow-sm space-y-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-100">
-            <div>
-              <h2 className="text-xl font-black text-[#24263e] flex items-center gap-2.5">
-                <span>{lang === 'vi' ? 'Hàng Đợi Nhiệm Vụ & Lịch Đo Kiểm' : 'Assigned Task Queue & Schedule'}</span>
-                <span className="text-xs bg-slate-100 text-slate-700 font-bold px-2.5 py-0.5 rounded-full">
-                  {filteredTasks.length} nhiệm vụ
-                </span>
-              </h2>
-              <p className="text-xs text-slate-500 mt-1 font-medium">
-                {lang === 'vi'
-                  ? 'Theo dõi danh sách thiết bị cần đo kiểm, lịch khảo sát tại nhà khách hàng và tiến độ thực thi SLA.'
-                  : 'Manage and prioritize your daily inspection tasks and on-site appointments.'}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={loadInspectorOrders}
-                disabled={isLoadingBackendOrders}
-                className="px-3.5 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-1.5 transition cursor-pointer"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingBackendOrders ? 'animate-spin' : ''}`} />
-                <span>{lang === 'vi' ? 'Làm mới' : 'Refresh'}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Search & Filter Controls */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div className="relative max-w-md w-full">
-              <Search className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
-              <input
-                type="text"
-                value={taskSearchTerm}
-                onChange={(e) => setTaskSearchTerm(e.target.value)}
-                placeholder={lang === 'vi' ? 'Tìm theo mã đơn, tên thiết bị, khách hàng...' : 'Search by order ID, title, customer...'}
-                className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/10"
-              />
-              {taskSearchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setTaskSearchTerm('')}
-                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* Filter Pills */}
-            <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-2xl text-xs">
-              <button
-                type="button"
-                onClick={() => setTaskFilter('ALL')}
-                className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
-                  taskFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+          {/* NOTIFICATION MESSAGE */}
+          {noticeMessage && (
+            <div
+              className={`p-4 rounded-2xl border text-sm font-bold flex items-center justify-between gap-3 animate-fadeIn ${noticeMessage.isError
+                ? 'bg-rose-50 border-rose-200 text-rose-800'
+                : 'bg-emerald-50 border-emerald-200 text-emerald-800'
                 }`}
-              >
-                Tất cả ({assignedCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setTaskFilter('AT_CENTER')}
-                className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
-                  taskFilter === 'AT_CENTER' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Tại Hub Lab ({Math.max(0, assignedCount - atHomeCount)})
-              </button>
-              <button
-                type="button"
-                onClick={() => setTaskFilter('AT_HOME')}
-                className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
-                  taskFilter === 'AT_HOME' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Tận Nhà ({atHomeCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setTaskFilter('PENDING')}
-                className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
-                  taskFilter === 'PENDING' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Chưa kiểm ({inProgressCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setTaskFilter('DONE')}
-                className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
-                  taskFilter === 'DONE' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Đã xong ({completedCount})
-              </button>
-            </div>
-          </div>
-
-          {/* Task Grid Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredTasks.length === 0 ? (
-              <div className="col-span-full py-16 text-center text-slate-400">
-                <ClipboardList className="w-12 h-12 mx-auto stroke-1 mb-2 opacity-50" />
-                <p className="text-sm font-semibold">Không tìm thấy nhiệm vụ kiểm định nào phù hợp bộ lọc.</p>
+            >
+              <div className="flex items-center gap-2.5">
+                {noticeMessage.isError ? (
+                  <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                ) : (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                )}
+                <span>{translateSystemNotification(noticeMessage.text)}</span>
               </div>
-            ) : (
-              filteredTasks.map((ord) => {
-                const isAtHome = ord.inspectionMethod === 'AT_HOME';
-                const isCompleted =
-                  Boolean(ord.inspectionReport) ||
-                  (ord.escrowStatus as string) === 'COMPLETED' ||
-                  ord.escrowStatus === 'COMPLETED_RELEASED' ||
-                  ord.escrowStatus === 'INSPECTION_PASSED' ||
-                  ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
-                  (ord as any).status === 'PASSED' ||
-                  (ord as any).backendStatus === 'PASSED' ||
-                  (typeof window !== 'undefined' && localStorage.getItem(`inspection_status_${ord.id}`) === 'PASSED');
-                const photoUrl =
-                  (ord as any).postImageUrl ||
-                  (ord as any).postImageUrls?.[0] ||
-                  (ord.listing?.photos?.front && !ord.listing.photos.front.includes('photo-1584269600464') && !ord.listing.photos.front.includes('photo-1555041469') ? ord.listing.photos.front : '') ||
-                  (ord.listing?.photoGallery?.[0] && !ord.listing.photoGallery[0].includes('photo-1584269600464') && !ord.listing.photoGallery[0].includes('photo-1555041469') ? ord.listing.photoGallery[0] : '') ||
-                  ord.listing?.photos?.front ||
-                  ord.listing?.photos?.screenOrDetails ||
-                  'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400';
+              <button
+                type="button"
+                onClick={() => setNoticeMessage(null)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
-                return (
-                  <div
-                    key={ord.id}
-                    className={`rounded-2xl border transition-all duration-200 overflow-hidden flex flex-col justify-between ${
-                      selectedOrderId === ord.id
-                        ? 'border-[#c34c36] shadow-md ring-2 ring-[#c34c36]/15'
-                        : 'border-slate-200/90 hover:border-slate-300 hover:shadow-sm'
-                    } bg-white`}
+          {/* ===================================================================== */}
+          {/* TAB 1: WORKBENCH (BÀN ĐO KIỂM THỰC TẾ 5 BƯỚC)                         */}
+          {/* ===================================================================== */}
+          {inspectorTab === 'workbench' && requestedInspectionId && !effectiveOrders.some((order) => order.id === requestedInspectionId) ? (
+            <p className="p-10 text-center">{isLoadingBackendOrders ? 'Đang tải đơn kiểm định...' : 'Không tìm thấy đơn kiểm định được phân công cho bạn.'}</p>
+          ) : inspectorTab === 'workbench' && (
+            <ProductInspectionStationView
+              orders={effectiveOrders}
+              currentUser={currentUser}
+              onCompleteInspection={onCompleteInspection}
+              lang={lang}
+              hideTopBar={true}
+              selectedOrderId={selectedOrderId}
+              onSelectOrder={setSelectedOrderId}
+              initialStep="intake"
+            />
+          )}
+
+          {/* ===================================================================== */}
+          {/* TAB 2: TASKS QUEUE & APPOINTMENTS (HÀNG ĐỢI NHIỆM VỤ & LỊCH HẸN)     */}
+          {/* ===================================================================== */}
+          {inspectorTab === 'tasks' && (
+            <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/90 shadow-sm space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+                <div>
+                  <h2 className="text-xl font-black text-[#24263e] flex items-center gap-2.5">
+                    <span>{lang === 'vi' ? 'Hàng Đợi Nhiệm Vụ & Lịch Đo Kiểm' : 'Assigned Task Queue & Schedule'}</span>
+                    <span className="text-xs bg-slate-100 text-slate-700 font-bold px-2.5 py-0.5 rounded-full">
+                      {filteredTasks.length} nhiệm vụ
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">
+                    {lang === 'vi'
+                      ? 'Theo dõi danh sách thiết bị cần đo kiểm, lịch khảo sát tại nhà khách hàng và tiến độ thực thi SLA.'
+                      : 'Manage and prioritize your daily inspection tasks and on-site appointments.'}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={loadInspectorOrders}
+                    disabled={isLoadingBackendOrders}
+                    className="px-3.5 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-1.5 transition cursor-pointer"
                   >
-                    {/* Top Row: Thumbnail & Badges */}
-                    <div className="p-4 space-y-3">
-                      <div className="flex items-start gap-3">
-                        <img
-                          src={photoUrl}
-                          alt={ord.listing?.title || 'Thiết bị'}
-                          className="w-16 h-16 rounded-xl object-cover border border-slate-100 shrink-0"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-[10px] font-mono font-bold text-slate-400 flex items-center gap-1">
-                              #{ord.id.slice(0, 8)}
-                              <button
-                                type="button"
-                                onClick={() => copyToClipboard(ord.id, ord.id)}
-                                title="Copy mã đơn"
-                                className="hover:text-slate-700 cursor-pointer"
-                              >
-                                {copiedId === ord.id ? (
-                                  <Check className="w-3 h-3 text-emerald-600" />
-                                ) : (
-                                  <Copy className="w-3 h-3 text-slate-400" />
-                                )}
-                              </button>
-                            </span>
-                            {(() => {
-                              const isHubReceived = isOrderReceivedAtHub(ord);
-                              const apptTime = ord.appointmentScheduledAt || (typeof window !== 'undefined' ? localStorage.getItem(`appointment_time_${ord.id}`) : null);
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingBackendOrders ? 'animate-spin' : ''}`} />
+                    <span>{lang === 'vi' ? 'Làm mới' : 'Refresh'}</span>
+                  </button>
+                </div>
+              </div>
 
-                              if (isCompleted) {
-                                return (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                    Đã Nghiệm Thu
-                                  </span>
-                                );
-                              }
+              {/* Search & Filter Controls */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="relative max-w-md w-full">
+                  <Search className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
+                  <input
+                    type="text"
+                    value={taskSearchTerm}
+                    onChange={(e) => setTaskSearchTerm(e.target.value)}
+                    placeholder={lang === 'vi' ? 'Tìm theo mã đơn, tên thiết bị, khách hàng...' : 'Search by order ID, title, customer...'}
+                    className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/10"
+                  />
+                  {taskSearchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setTaskSearchTerm('')}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
 
-                              if (!isAtHome && !isHubReceived) {
-                                return (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200">
-                                    Chờ Hàng Đến Hub
-                                  </span>
-                                );
-                              }
+                {/* Filter Pills */}
+                <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-2xl text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setTaskFilter('ALL')}
+                    className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${taskFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                  >
+                    Tất cả ({assignedCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTaskFilter('AT_CENTER')}
+                    className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${taskFilter === 'AT_CENTER' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                  >
+                    Tại Hub Lab ({Math.max(0, assignedCount - atHomeCount)})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTaskFilter('AT_HOME')}
+                    className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${taskFilter === 'AT_HOME' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                  >
+                    Tận Nhà ({atHomeCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTaskFilter('PENDING')}
+                    className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${taskFilter === 'PENDING' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                  >
+                    Chưa kiểm ({inProgressCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTaskFilter('DONE')}
+                    className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${taskFilter === 'DONE' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                  >
+                    Đã xong ({completedCount})
+                  </button>
+                </div>
+              </div>
 
-                              if (isAtHome && apptTime) {
-                                const formattedAppt = new Date(apptTime).toLocaleString('vi-VN', {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                });
-                                return (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                                    Đến Theo Hẹn ({formattedAppt})
-                                  </span>
-                                );
-                              }
+              {/* Task Grid Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {filteredTasks.length === 0 ? (
+                  <div className="col-span-full py-16 text-center text-slate-400">
+                    <ClipboardList className="w-12 h-12 mx-auto stroke-1 mb-2 opacity-50" />
+                    <p className="text-sm font-semibold">Không tìm thấy nhiệm vụ kiểm định nào phù hợp bộ lọc.</p>
+                  </div>
+                ) : (
+                  filteredTasks.map((ord) => {
+                    const isAtHome = ord.inspectionMethod === 'AT_HOME';
+                    const stage = getInspectionTaskStage(ord.inspectionStatus);
+                    const canOpenWorkbench = stage === 'assigned' || stage === 'inspecting';
+                    const photoUrl =
+                      (ord as any).postImageUrl ||
+                      (ord as any).postImageUrls?.[0] ||
+                      (ord.listing?.photos?.front && !ord.listing.photos.front.includes('photo-1584269600464') && !ord.listing.photos.front.includes('photo-1555041469') ? ord.listing.photos.front : '') ||
+                      (ord.listing?.photoGallery?.[0] && !ord.listing.photoGallery[0].includes('photo-1584269600464') && !ord.listing.photoGallery[0].includes('photo-1555041469') ? ord.listing.photoGallery[0] : '') ||
+                      ord.listing?.photos?.front ||
+                      ord.listing?.photos?.screenOrDetails ||
+                      'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400';
 
-                              if (isAtHome && !apptTime) {
-                                return (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-                                    Chờ Khách Đặt Hẹn
-                                  </span>
-                                );
-                              }
-
-                              return (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                                  Chờ Đo Kiểm
+                    return (
+                      <div
+                        key={ord.id}
+                        className={`rounded-2xl border transition-all duration-200 overflow-hidden flex flex-col justify-between ${selectedOrderId === ord.id
+                          ? 'border-[#c34c36] shadow-md ring-2 ring-[#c34c36]/15'
+                          : 'border-slate-200/90 hover:border-slate-300 hover:shadow-sm'
+                          } bg-white`}
+                      >
+                        {/* Top Row: Thumbnail & Badges */}
+                        <div className="p-4 space-y-3">
+                          <div className="flex items-start gap-3">
+                            <img
+                              src={photoUrl}
+                              alt={ord.listing?.title || 'Thiết bị'}
+                              className="w-16 h-16 rounded-xl object-cover border border-slate-100 shrink-0"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-[10px] font-mono font-bold text-slate-400 flex items-center gap-1">
+                                  #{ord.id.slice(0, 8)}
+                                  <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(ord.id, ord.id)}
+                                    title="Copy mã đơn"
+                                    className="hover:text-slate-700 cursor-pointer"
+                                  >
+                                    {copiedId === ord.id ? (
+                                      <Check className="w-3 h-3 text-emerald-600" />
+                                    ) : (
+                                      <Copy className="w-3 h-3 text-slate-400" />
+                                    )}
+                                  </button>
                                 </span>
-                              );
-                            })()}
+                                {(() => {
+                                  const apptTime = ord.appointmentScheduledAt;
+
+                                  if (stage === 'completed') {
+                                    const failed = ord.inspectionStatus === 'FAILED';
+                                    return (
+                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${failed ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                                        {failed ? 'Kiểm Định Không Đạt' : 'Kiểm Định Đạt'}
+                                      </span>
+                                    );
+                                  }
+
+                                  if (stage === 'cancelled' || stage === 'disputed') {
+                                    return (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                                        {stage === 'cancelled' ? 'Đã Hủy' : 'Đang Khiếu Nại'}
+                                      </span>
+                                    );
+                                  }
+
+                                  if (stage === 'inspecting') {
+                                    return (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                                        Đang Đo Kiểm
+                                      </span>
+                                    );
+                                  }
+
+                                  if (stage === 'inbound') {
+                                    return (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200">
+                                        Đang Giao Về Hub
+                                      </span>
+                                    );
+                                  }
+
+                                  if (isAtHome && apptTime) {
+                                    const formattedAppt = new Date(apptTime).toLocaleString('vi-VN', {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      day: '2-digit',
+                                      month: '2-digit',
+                                    });
+                                    return (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                                        Đến Theo Hẹn ({formattedAppt})
+                                      </span>
+                                    );
+                                  }
+
+                                  if (isAtHome && !apptTime) {
+                                    return (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                                        Chờ Khách Đặt Hẹn
+                                      </span>
+                                    );
+                                  }
+
+                                  return (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                                      {stage === 'assigned' ? 'Chờ Đo Kiểm' : 'Chờ Xử Lý'}
+                                    </span>
+                                  );
+                                })()}
+                              </div>
+
+                              <h3 className="text-xs sm:text-sm font-bold text-[#24263e] line-clamp-2 mt-1" title={ord.listing?.title}>
+                                {ord.listing?.title || 'Thiết bị gia dụng kiểm định'}
+                              </h3>
+                              <div className="text-xs font-black text-[#c34c36] mt-0.5">
+                                {formatVND(ord.itemPriceVnd || ord.listing?.priceVnd || 0)}
+                              </div>
+                            </div>
                           </div>
 
-                          <h3 className="text-xs sm:text-sm font-bold text-[#24263e] line-clamp-2 mt-1" title={ord.listing?.title}>
-                            {ord.listing?.title || 'Thiết bị gia dụng kiểm định'}
-                          </h3>
-                          <div className="text-xs font-black text-[#c34c36] mt-0.5">
-                            {formatVND(ord.itemPriceVnd || ord.listing?.priceVnd || 0)}
-                          </div>
-                        </div>
-                      </div>
+                          {/* Method & Location Badge */}
+                          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5 text-[11px]">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold flex items-center gap-1.5 text-slate-700">
+                                {isAtHome ? (
+                                  <Navigation className="w-3.5 h-3.5 text-purple-600" />
+                                ) : (
+                                  <Building2 className="w-3.5 h-3.5 text-blue-600" />
+                                )}
+                                {isAtHome ? 'Đo kiểm tại nhà khách' : 'Đo kiểm tại trạm Lab Hub'}
+                              </span>
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.2 rounded-full ${isAtHome ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                                  }`}
+                              >
+                                {isAtHome ? 'AT_HOME' : 'AT_CENTER'}
+                              </span>
+                            </div>
 
-                      {/* Method & Location Badge */}
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5 text-[11px]">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold flex items-center gap-1.5 text-slate-700">
                             {isAtHome ? (
-                              <Navigation className="w-3.5 h-3.5 text-purple-600" />
+                              <div className="space-y-0.5">
+                                <p className="text-slate-500 line-clamp-1 flex items-center gap-1">
+                                  <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                                  {ord.buyerAddress || '128 Nguyễn Đình Chiểu, Q.3, TP.HCM'}
+                                </p>
+                                {ord.appointmentScheduledAt ? (
+                                  <p className="text-blue-600 font-bold flex items-center gap-1">
+                                    <Clock className="w-3 h-3 text-blue-500 shrink-0" />
+                                    Hẹn: {new Date(ord.appointmentScheduledAt).toLocaleString('vi-VN')}
+                                  </p>
+                                ) : (
+                                  <p className="text-purple-600 font-medium flex items-center gap-1">
+                                    <Clock className="w-3 h-3 text-purple-400 shrink-0" />
+                                    Chờ khách chốt lịch hẹn khảo sát
+                                  </p>
+                                )}
+                              </div>
                             ) : (
-                              <Building2 className="w-3.5 h-3.5 text-blue-600" />
+                              <div className="space-y-0.5">
+                                <p className="text-slate-500 line-clamp-1 flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                                  Tiếp nhận bàn test #{stationCode}
+                                </p>
+                                {stage === 'inbound' && (
+                                  <p className="text-cyan-700 font-medium flex items-center gap-1">
+                                    <Truck className="w-3 h-3 text-cyan-600 shrink-0" />
+                                    Chờ shipper giao kiện hàng đến Hub
+                                  </p>
+                                )}
+                              </div>
                             )}
-                            {isAtHome ? 'Đo kiểm tại nhà khách' : 'Đo kiểm tại trạm Lab Hub'}
-                          </span>
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.2 rounded-full ${
-                              isAtHome ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                            }`}
+                          </div>
+
+                          {/* Customer / Seller info */}
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                            <span>Khách: <strong className="text-slate-700">{ord.buyerName || 'Người mua'}</strong></span>
+                            <span>Người bán: <strong className="text-slate-700">{ord.sellerName || 'Người bán'}</strong></span>
+                          </div>
+                        </div>
+
+                        {/* Bottom Action Footer */}
+                        <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center gap-2">
+                          {ord.inspectionReport ? (
+                            <button
+                              type="button"
+                              onClick={() => setCertificateModalOrder(ord)}
+                              className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200 flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
+                              title="Đơn hàng đã hoàn thành kiểm định. Nhấn để xem chứng thư số & biên bản nghiệm thu."
+                            >
+                              <Award className="w-4 h-4 text-emerald-600" />
+                              <span>Xem Chứng Thư / Biên Bản Giám Định</span>
+                            </button>
+                          ) : !canOpenWorkbench ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="flex-1 py-2 px-3 rounded-xl bg-slate-100 text-slate-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-not-allowed border border-slate-200"
+                            >
+                              <Clock className="w-3.5 h-3.5 text-slate-400" />
+                              <span>{stage === 'inbound' ? 'Chờ Hàng Về Hub' : stage === 'completed' ? 'Chưa có biên bản để xem' : 'Bàn đo kiểm chưa khả dụng'}</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedOrderId(ord.id);
+                              }}
+                              className="flex-1 py-2 px-3 rounded-xl bg-[#24263e] hover:bg-[#1a1c2e] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+                            >
+                              <Wrench className="w-3.5 h-3.5 text-[#fce5da]" />
+                              <span>{isAtHome ? 'Vào Bàn Đo Kiểm (Tại Nhà)' : 'Vào Bàn Đo Kiểm'}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ===================================================================== */}
+          {/* TAB 3: CERTIFICATES & INSPECTION HISTORY (SỔ TAY CHỨNG THƯ SỐ)       */}
+          {/* ===================================================================== */}
+          {inspectorTab === 'certificates' && (
+            <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/90 shadow-sm space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+                <div>
+                  <h2 className="text-xl font-black text-[#24263e] flex items-center gap-2.5">
+                    <FileCheck className="w-6 h-6 text-emerald-600" />
+                    <span>{lang === 'vi' ? 'Sổ Tay Hồ Sơ & Chứng Thư Số Đã Cấp' : 'Digital Certificates & Inspection Records'}</span>
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">
+                    {lang === 'vi'
+                      ? 'Lưu trữ toàn bộ chứng nhận chất lượng, tem niêm phong tamper-proof và kết quả thẩm định kỹ thuật.'
+                      : 'Full audit log of verified devices, tamper seals, and technical reports.'}
+                  </p>
+                </div>
+
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <span>{completedOrders.length} Hồ Sơ Kiểm Định</span>
+                </div>
+              </div>
+
+              {/* Certificates Table / Cards */}
+              <div className="space-y-3">
+                {completedOrders.length === 0 ? (
+                  <div className="py-16 text-center text-slate-400">
+                    <Award className="w-12 h-12 mx-auto stroke-1 mb-2 opacity-50 text-slate-400" />
+                    <p className="text-sm font-semibold">Chưa có chứng thư số nào được nghiệm thu.</p>
+                    <button
+                      type="button"
+                      onClick={() => setInspectorTab('workbench')}
+                      className="mt-3 px-4 py-2 rounded-xl bg-[#24263e] text-white text-xs font-bold cursor-pointer"
+                    >
+                      Mở Bàn Kiểm Định Ngay
+                    </button>
+                  </div>
+                ) : (
+                  completedOrders.map((ord) => {
+                    const { tamperSealId, conditionScore, detectedGrade, verdict, inspectorName } = ord.inspectionReport!;
+                    const isPass = verdict === 'PASS';
+
+                    return (
+                      <div
+                        key={ord.id}
+                        className="p-4 sm:p-5 rounded-2xl border border-slate-200 hover:border-slate-300 hover:shadow-xs transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white"
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${isPass ? 'bg-emerald-50 border border-emerald-100 text-emerald-600' : 'bg-rose-50 border border-rose-100 text-rose-600'}`}>
+                            <Award className="w-6 h-6" />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-xs font-extrabold text-[#c34c36] bg-red-50 border border-red-100 px-2 py-0.5 rounded">
+                                {tamperSealId || 'Chưa có mã niêm phong'}
+                              </span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isPass ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                                {isPass ? 'ĐẠT CHUẨN PASS' : 'TỪ CHỐI FAILED'}
+                              </span>
+                              <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full">
+                                Grade: {detectedGrade} ({conditionScore}/100)
+                              </span>
+                            </div>
+                            <h4 className="text-sm font-bold text-[#24263e]">
+                              {ord.listing?.title || 'Thiết bị gia dụng kiểm định'}
+                            </h4>
+                            <p className="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
+                              <span>Mã đơn: <strong className="text-slate-700">#{ord.id.slice(0, 8)}</strong></span>
+                              <span>•</span>
+                              <span>Kỹ thuật viên: <strong className="text-slate-700">{inspectorName}</strong></span>
+                              <span>•</span>
+                              <span>Khách hàng: <strong className="text-slate-700">{ord.buyerName}</strong></span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end md:self-center">
+                          <button
+                            type="button"
+                            onClick={() => setCertificateModalOrder(ord)}
+                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
                           >
-                            {isAtHome ? 'AT_HOME' : 'AT_CENTER'}
-                          </span>
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Xem Chứng Thư Số</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => window.print()}
+                            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition cursor-pointer"
+                            title="In báo cáo"
+                          >
+                            <Printer className="w-4 h-4" />
+                          </button>
                         </div>
-
-                        {isAtHome ? (
-                          <div className="space-y-0.5">
-                            <p className="text-slate-500 line-clamp-1 flex items-center gap-1">
-                              <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                              {ord.buyerAddress || '128 Nguyễn Đình Chiểu, Q.3, TP.HCM'}
-                            </p>
-                            {ord.appointmentScheduledAt ? (
-                              <p className="text-blue-600 font-bold flex items-center gap-1">
-                                <Clock className="w-3 h-3 text-blue-500 shrink-0" />
-                                Hẹn: {new Date(ord.appointmentScheduledAt).toLocaleString('vi-VN')}
-                              </p>
-                            ) : (
-                              <p className="text-purple-600 font-medium flex items-center gap-1">
-                                <Clock className="w-3 h-3 text-purple-400 shrink-0" />
-                                Chờ khách chốt lịch hẹn khảo sát
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="space-y-0.5">
-                            <p className="text-slate-500 line-clamp-1 flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-slate-400 shrink-0" />
-                              Tiếp nhận bàn test #{stationCode}
-                            </p>
-                            {!isOrderReceivedAtHub(ord) && (
-                              <p className="text-cyan-700 font-medium flex items-center gap-1">
-                                <Truck className="w-3 h-3 text-cyan-600 shrink-0" />
-                                Chờ shipper giao kiện hàng đến Hub
-                              </p>
-                            )}
-                          </div>
-                        )}
                       </div>
-
-                      {/* Customer / Seller info */}
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-                        <span>Khách: <strong className="text-slate-700">{ord.buyerName || 'Người mua'}</strong></span>
-                        <span>Người bán: <strong className="text-slate-700">{ord.sellerName || 'Người bán'}</strong></span>
-                      </div>
-                    </div>
-
-                    {/* Bottom Action Footer */}
-                    <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center gap-2">
-                      {!isAtHome && !isOrderReceivedAtHub(ord) && !isCompleted ? (
-                        <button
-                          type="button"
-                          disabled
-                          className="flex-1 py-2 px-3 rounded-xl bg-slate-100 text-slate-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-not-allowed border border-slate-200"
-                          title="Kiện hàng chưa về đến Hub. Bàn đo kiểm sẽ mở sau khi hàng check-in tại quầy."
-                        >
-                          <Clock className="w-3.5 h-3.5 text-slate-400" />
-                          <span>Chờ Hàng Về Hub</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedOrderId(ord.id);
-                          }}
-                          className="flex-1 py-2 px-3 rounded-xl bg-[#24263e] hover:bg-[#1a1c2e] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
-                        >
-                          <Wrench className="w-3.5 h-3.5 text-[#fce5da]" />
-                          <span>{isAtHome ? 'Vào Bàn Đo Kiểm (Tại Nhà)' : 'Vào Bàn Đo Kiểm'}</span>
-                        </button>
-                      )}
-
-                      {isCompleted && (
-                        <button
-                          type="button"
-                          onClick={() => setCertificateModalOrder(ord)}
-                          className="py-2 px-3 rounded-xl border border-slate-200 hover:bg-white text-slate-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                          title="Xem chứng thư số"
-                        >
-                          <Award className="w-3.5 h-3.5 text-amber-500" />
-                          <span>Xem Số</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ===================================================================== */}
-      {/* TAB 3: CERTIFICATES & INSPECTION HISTORY (SỔ TAY CHỨNG THƯ SỐ)       */}
-      {/* ===================================================================== */}
-      {inspectorTab === 'certificates' && (
-        <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/90 shadow-sm space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
-            <div>
-              <h2 className="text-xl font-black text-[#24263e] flex items-center gap-2.5">
-                <FileCheck className="w-6 h-6 text-emerald-600" />
-                <span>{lang === 'vi' ? 'Sổ Tay Hồ Sơ & Chứng Thư Số Đã Cấp' : 'Digital Certificates & Inspection Records'}</span>
-              </h2>
-              <p className="text-xs text-slate-500 mt-1 font-medium">
-                {lang === 'vi'
-                  ? 'Lưu trữ toàn bộ chứng nhận chất lượng, tem niêm phong tamper-proof và kết quả thẩm định kỹ thuật.'
-                  : 'Full audit log of verified devices, tamper seals, and technical reports.'}
-              </p>
-            </div>
-
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>{completedCount} Chứng Thư Đã Ký Số</span>
-            </div>
-          </div>
-
-          {/* Certificates Table / Cards */}
-          <div className="space-y-3">
-            {completedOrders.length === 0 ? (
-              <div className="py-16 text-center text-slate-400">
-                <Award className="w-12 h-12 mx-auto stroke-1 mb-2 opacity-50 text-slate-400" />
-                <p className="text-sm font-semibold">Chưa có chứng thư số nào được nghiệm thu.</p>
-                <button
-                  type="button"
-                  onClick={() => setInspectorTab('workbench')}
-                  className="mt-3 px-4 py-2 rounded-xl bg-[#24263e] text-white text-xs font-bold cursor-pointer"
-                >
-                  Mở Bàn Kiểm Định Ngay
-                </button>
+                    );
+                  })
+                )}
               </div>
-            ) : (
-              completedOrders.map((ord, idx) => {
-                const sealId = ord.inspectionReport?.tamperSealId || `SL-SEAL-${8820000 + idx * 137}`;
-                const score = ord.inspectionReport?.conditionScore || 94;
-                const grade = ord.listing?.conditionGrade || 'Like New';
+            </div>
+          )}
 
-                return (
-                  <div
-                    key={ord.id}
-                    className="p-4 sm:p-5 rounded-2xl border border-slate-200 hover:border-slate-300 hover:shadow-xs transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white"
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
-                        <Award className="w-6 h-6" />
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-xs font-extrabold text-[#c34c36] bg-red-50 border border-red-100 px-2 py-0.5 rounded">
-                            {sealId}
-                          </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                            ĐẠT CHUẨN PASS
-                          </span>
-                          <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full">
-                            Grade: {grade} ({score}/100)
-                          </span>
-                        </div>
-                        <h4 className="text-sm font-bold text-[#24263e]">
-                          {ord.listing?.title || 'Thiết bị gia dụng kiểm định'}
-                        </h4>
-                        <p className="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
-                          <span>Mã đơn: <strong className="text-slate-700">#{ord.id.slice(0, 8)}</strong></span>
-                          <span>•</span>
-                          <span>Kỹ thuật viên: <strong className="text-slate-700">{inspectorName}</strong></span>
-                          <span>•</span>
-                          <span>Khách hàng: <strong className="text-slate-700">{ord.buyerName}</strong></span>
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 self-end md:self-center">
-                      <button
-                        type="button"
-                        onClick={() => setCertificateModalOrder(ord)}
-                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>Xem Chứng Thư Số</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => window.print()}
-                        className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition cursor-pointer"
-                        title="In báo cáo"
-                      >
-                        <Printer className="w-4 h-4" />
-                      </button>
-                    </div>
+          {/* ===================================================================== */}
+          {/* TAB 4: TECHNICAL STANDARDS & ISO 17025 LAB PROTOCOLS                 */}
+          {/* ===================================================================== */}
+          {inspectorTab === 'standards' && (
+            <div className="space-y-6">
+              {/* ISO Introduction Card */}
+              <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/90 shadow-sm space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-[#fce5da] flex items-center justify-center text-[#c34c36]">
+                    <Layers className="w-6 h-6" />
                   </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
+                  <div>
+                    <h2 className="text-xl font-black text-[#24263e]">
+                      Tiêu Chuẩn Đo Kiểm Phòng Lab Kỹ Thuật ISO/IEC 17025
+                    </h2>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Quy chuẩn kỹ thuật áp dụng cho thiết bị điện lạnh và gia dụng đã qua sử dụng trên sàn SecondLife.
+                    </p>
+                  </div>
+                </div>
 
-      {/* ===================================================================== */}
-      {/* TAB 4: TECHNICAL STANDARDS & ISO 17025 LAB PROTOCOLS                 */}
-      {/* ===================================================================== */}
-      {inspectorTab === 'standards' && (
-        <div className="space-y-6">
-          {/* ISO Introduction Card */}
-          <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/90 shadow-sm space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-[#fce5da] flex items-center justify-center text-[#c34c36]">
-                <Layers className="w-6 h-6" />
-              </div>
-              <div>
-                <h2 className="text-xl font-black text-[#24263e]">
-                  Tiêu Chuẩn Đo Kiểm Phòng Lab Kỹ Thuật ISO/IEC 17025
-                </h2>
-                <p className="text-xs text-slate-500 font-medium">
-                  Quy chuẩn kỹ thuật áp dụng cho thiết bị điện lạnh và gia dụng đã qua sử dụng trên sàn SecondLife.
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Mỗi thiết bị được tiếp nhận vào hệ thống SecondLife Hub đều bắt buộc phải trải qua 5 phân hệ kiểm định độc lập với sai số cho phép không vượt quá ngưỡng tiêu chuẩn quốc tế. Mọi kết quả đo đều được số hóa, mã hóa bằng chuỗi SHA-256 và phát hành tem niêm phong vật lý Tamper-Proof.
                 </p>
               </div>
-            </div>
 
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Mỗi thiết bị được tiếp nhận vào hệ thống SecondLife Hub đều bắt buộc phải trải qua 5 phân hệ kiểm định độc lập với sai số cho phép không vượt quá ngưỡng tiêu chuẩn quốc tế. Mọi kết quả đo đều được số hóa, mã hóa bằng chuỗi SHA-256 và phát hành tem niêm phong vật lý Tamper-Proof.
-            </p>
-          </div>
+              {/* 5 Technical Standard Modules */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {/* Module 1 */}
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                      MODULE-01
+                    </span>
+                    <Zap className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <h3 className="font-bold text-sm text-[#24263e]">An Toàn Nguồn Điện & Tiếp Địa</h3>
+                  <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
+                    <li>Kiểm tra rò rỉ điện vỏ kim loại: dòng rò &lt; 0.25mA</li>
+                    <li>Điện trở cách điện Megohmmeter &gt; 5.0 MΩ ở 500VDC</li>
+                    <li>Dây cáp nguồn không nứt gãy, phích cắm nguyên bản</li>
+                  </ul>
+                </div>
 
-          {/* 5 Technical Standard Modules */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {/* Module 1 */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
-                  MODULE-01
-                </span>
-                <Zap className="w-4 h-4 text-blue-600" />
+                {/* Module 2 */}
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
+                      MODULE-02
+                    </span>
+                    <Wrench className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <h3 className="font-bold text-sm text-[#24263e]">Máy Nén Compressor & Ga Lạnh</h3>
+                  <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
+                    <li>Đo áp suất hút/nén chuẩn môi chất (R600a/R134a/R32)</li>
+                    <li>Đo độ ồn vận hành decibel &lt; 42 dB khi máy nén hoạt động</li>
+                    <li>Kiểm tra độ rung cơ khí máy nén &amp; dàn ngưng tụ</li>
+                  </ul>
+                </div>
+
+                {/* Module 3 */}
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
+                      MODULE-03
+                    </span>
+                    <Thermometer className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <h3 className="font-bold text-sm text-[#24263e]">Cảm Biến Nhiệt & Rơ-Le Đóng Ngắt</h3>
+                  <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
+                    <li>Đo nhiệt độ thực tế bằng nhiệt kế hồng ngoại laser (±0.5°C)</li>
+                    <li>Chu kỳ đóng ngắt nhiệt tự động đúng dải thiết lập</li>
+                    <li>Rơ-le bảo vệ quá nhiệt ngắt an toàn 100%</li>
+                  </ul>
+                </div>
+
+                {/* Module 4 */}
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded">
+                      MODULE-04
+                    </span>
+                    <Cpu className="w-4 h-4 text-purple-600" />
+                  </div>
+                  <h3 className="font-bold text-sm text-[#24263e]">Bo Mạch IC, Inverter & Màn Hình</h3>
+                  <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
+                    <li>Bo mạch Inverter biến tần nguyên bản chưa câu dây</li>
+                    <li>Màn hình LED/OLED sáng đều, không điểm chết cảm ứng</li>
+                    <li>Quét mã lỗi DTC qua cổng giao tiếp kỹ thuật</li>
+                  </ul>
+                </div>
+
+                {/* Module 5 */}
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded">
+                      MODULE-05
+                    </span>
+                    <ShieldCheck className="w-4 h-4 text-teal-600" />
+                  </div>
+                  <h3 className="font-bold text-sm text-[#24263e]">Gioăng Cửa, Ngoại Quan & Niêm Phong</h3>
+                  <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
+                    <li>Độ hít nam châm gioăng cao su khép kín 100% không thoát nhiệt</li>
+                    <li>Khử khuẩn buồng máy bằng dung dịch sát trùng y tế &amp; Ozone</li>
+                    <li>Dán tem niêm phong vật lý Tamper Seal chống can thiệp trái phép</li>
+                  </ul>
+                </div>
+
+                {/* Guidelines & Safety */}
+                <div className="bg-[#fce5da]/50 rounded-2xl p-5 border border-[#c34c36]/20 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold text-[#c34c36] bg-white px-2 py-0.5 rounded">
+                      SAFETY NOTE
+                    </span>
+                    <ShieldAlert className="w-4 h-4 text-[#c34c36]" />
+                  </div>
+                  <h3 className="font-bold text-sm text-[#24263e]">Quy Tắc An Toàn Kỹ Thuật Viên</h3>
+                  <p className="text-xs text-slate-700 leading-relaxed">
+                    Kỹ thuật viên bắt buộc đeo găng tay cách điện, kính bảo hộ khi đo mạch cao áp và kiểm tra áp suất bình chứa khí gas. Mọi hành vi làm sai lệch kết quả đo kiểm sẽ bị đình chỉ chứng chỉ ISO vĩnh viễn.
+                  </p>
+                </div>
               </div>
-              <h3 className="font-bold text-sm text-[#24263e]">An Toàn Nguồn Điện & Tiếp Địa</h3>
-              <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
-                <li>Kiểm tra rò rỉ điện vỏ kim loại: dòng rò &lt; 0.25mA</li>
-                <li>Điện trở cách điện Megohmmeter &gt; 5.0 MΩ ở 500VDC</li>
-                <li>Dây cáp nguồn không nứt gãy, phích cắm nguyên bản</li>
-              </ul>
             </div>
-
-            {/* Module 2 */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
-                  MODULE-02
-                </span>
-                <Wrench className="w-4 h-4 text-amber-600" />
-              </div>
-              <h3 className="font-bold text-sm text-[#24263e]">Máy Nén Compressor & Ga Lạnh</h3>
-              <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
-                <li>Đo áp suất hút/nén chuẩn môi chất (R600a/R134a/R32)</li>
-                <li>Đo độ ồn vận hành decibel &lt; 42 dB khi máy nén hoạt động</li>
-                <li>Kiểm tra độ rung cơ khí máy nén &amp; dàn ngưng tụ</li>
-              </ul>
-            </div>
-
-            {/* Module 3 */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-                  MODULE-03
-                </span>
-                <Thermometer className="w-4 h-4 text-emerald-600" />
-              </div>
-              <h3 className="font-bold text-sm text-[#24263e]">Cảm Biến Nhiệt & Rơ-Le Đóng Ngắt</h3>
-              <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
-                <li>Đo nhiệt độ thực tế bằng nhiệt kế hồng ngoại laser (±0.5°C)</li>
-                <li>Chu kỳ đóng ngắt nhiệt tự động đúng dải thiết lập</li>
-                <li>Rơ-le bảo vệ quá nhiệt ngắt an toàn 100%</li>
-              </ul>
-            </div>
-
-            {/* Module 4 */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded">
-                  MODULE-04
-                </span>
-                <Cpu className="w-4 h-4 text-purple-600" />
-              </div>
-              <h3 className="font-bold text-sm text-[#24263e]">Bo Mạch IC, Inverter & Màn Hình</h3>
-              <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
-                <li>Bo mạch Inverter biến tần nguyên bản chưa câu dây</li>
-                <li>Màn hình LED/OLED sáng đều, không điểm chết cảm ứng</li>
-                <li>Quét mã lỗi DTC qua cổng giao tiếp kỹ thuật</li>
-              </ul>
-            </div>
-
-            {/* Module 5 */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded">
-                  MODULE-05
-                </span>
-                <ShieldCheck className="w-4 h-4 text-teal-600" />
-              </div>
-              <h3 className="font-bold text-sm text-[#24263e]">Gioăng Cửa, Ngoại Quan & Niêm Phong</h3>
-              <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
-                <li>Độ hít nam châm gioăng cao su khép kín 100% không thoát nhiệt</li>
-                <li>Khử khuẩn buồng máy bằng dung dịch sát trùng y tế &amp; Ozone</li>
-                <li>Dán tem niêm phong vật lý Tamper Seal chống can thiệp trái phép</li>
-              </ul>
-            </div>
-
-            {/* Guidelines & Safety */}
-            <div className="bg-[#fce5da]/50 rounded-2xl p-5 border border-[#c34c36]/20 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold text-[#c34c36] bg-white px-2 py-0.5 rounded">
-                  SAFETY NOTE
-                </span>
-                <ShieldAlert className="w-4 h-4 text-[#c34c36]" />
-              </div>
-              <h3 className="font-bold text-sm text-[#24263e]">Quy Tắc An Toàn Kỹ Thuật Viên</h3>
-              <p className="text-xs text-slate-700 leading-relaxed">
-                Kỹ thuật viên bắt buộc đeo găng tay cách điện, kính bảo hộ khi đo mạch cao áp và kiểm tra áp suất bình chứa khí gas. Mọi hành vi làm sai lệch kết quả đo kiểm sẽ bị đình chỉ chứng chỉ ISO vĩnh viễn.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+          )}
         </main>
       </div>
 

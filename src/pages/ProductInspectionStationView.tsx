@@ -7,7 +7,8 @@ import {
   UserProfile
 } from '../types';
 import { formatVND } from '../utils/translations';
-import { mockStandardChecklist } from '../data/mockData';
+import { getInspectionTaskStage } from '../utils/inspectionTaskStatus';
+import { DigitalInspectionCertificateModal } from '../components/modals/DigitalInspectionCertificateModal';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -45,15 +46,18 @@ import {
   Thermometer,
   ShieldAlert,
   ArrowRight,
-  PackageCheck
+  PackageCheck,
+  Package,
+  Lock
 } from 'lucide-react';
-import { inspectorService, InspectionOrderDto, InspectionChecklistResponse } from '../services';
+import { inspectorService, InspectionOrderDto, InspectionChecklistResponse, mediaService } from '../services';
 import { BarcodeScannerModal, playScanBeep } from '../components/modals/BarcodeScannerModal';
 import { PrintTamperSealModal } from '../components/modals/PrintTamperSealModal';
 import { InspectionSealVerificationModal } from '../components/modals/InspectionSealVerificationModal';
 import { ScannableQRCode } from '../components/common/ScannableQRCode';
 import { resolveListingCategory, resolveOrderListing } from '../utils/catalogCache';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
+import { getInspectionRemoteMediaUrl, isInspectionProofImage } from '../utils/inspectionDecisionData';
 
 interface ProductInspectionStationViewProps {
   orders: EscrowOrder[];
@@ -112,7 +116,7 @@ export async function generateValidSealCode(): Promise<string> {
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
       checksum = hashHex.substring(0, 2).toUpperCase();
-    } catch {}
+    } catch { }
   }
   return `SL-SEAL-${dateStr}-${randomCode}-${checksum}`;
 }
@@ -132,6 +136,34 @@ export const isOrderReceivedAtHub = (order: any): boolean => {
   return false;
 };
 
+export const isOrderInspectionCompleted = (order: any): boolean => {
+  if (!order) return false;
+  if (order.inspectionStatus) {
+    const stage = getInspectionTaskStage(order.inspectionStatus);
+    return stage === 'completed' || (stage === 'cancelled' && Boolean(order.inspectionReport));
+  }
+  const s = String(order.status || order.backendStatus || order.escrowStatus || '').toUpperCase();
+  if (['PASSED', 'FAILED', 'COMPLETED', 'COMPLETED_RELEASED', 'DELIVERED_INSPECTION_WINDOW', 'INSPECTION_PASSED', 'INSPECTION_FAILED'].includes(s)) {
+    return true;
+  }
+  if (Boolean(order.inspectionReport)) return true;
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem(`inspection_status_${order.id}`);
+    if (stored === 'PASSED' || stored === 'FAILED') return true;
+  }
+  return false;
+};
+
+function getStationReport(order: EscrowOrder) {
+  if (order.inspectionStatus || order.inspectionReport) return order.inspectionReport;
+  try {
+    const stored = localStorage.getItem(`inspection_report_${order.id}`);
+    return stored ? JSON.parse(stored) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export const ProductInspectionStationView: React.FC<ProductInspectionStationViewProps> = ({
   orders,
   currentUser,
@@ -147,11 +179,9 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const inspectorName = currentUser?.name || 'Kỹ thuật viên kiểm định';
   const inspectorCode = currentUser?.id ? `INS-${currentUser.id}` : 'INS-STAFF';
 
-  // State: Task Queue
-  const [selectedOrderId, setSelectedOrderId] = useState<string>(externalSelectedOrderId || orders[0]?.id || '');
-  const [taskFilter, setTaskFilter] = useState<'ALL' | 'AT_CENTER' | 'AT_HOME' | 'DONE'>('ALL');
-  const [taskSearch, setTaskSearch] = useState('');
-  const [isSyncing, setIsSyncing] = useState(false);
+  // State: Active Order & Image Gallery
+  const [selectedOrderId, setSelectedOrderId] = useState<string>(externalSelectedOrderId || '');
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [barcodeScanInput, setBarcodeScanInput] = useState('');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannerMode, setScannerMode] = useState<'intake' | 'serial' | 'tamper'>('intake');
@@ -160,16 +190,52 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     if (externalSelectedOrderId) {
       setSelectedOrderId(externalSelectedOrderId);
       setCurrentStep('intake');
-    } else if ((!selectedOrderId || !orders.some((o) => o.id === selectedOrderId)) && orders.length > 0) {
-      setSelectedOrderId(orders[0].id);
-      onSelectOrder?.(orders[0].id);
+    } else if (externalSelectedOrderId === '') {
+      setSelectedOrderId('');
     }
-  }, [externalSelectedOrderId, orders, selectedOrderId, onSelectOrder]);
+  }, [externalSelectedOrderId]);
 
-  // Active Order
+  // Active Order (chỉ tải khi đã quét mã hoặc chọn đơn cụ thể, không tự ý nạp orders[0])
   const activeOrder = useMemo(() => {
-    return orders.find((o) => o.id === selectedOrderId) || orders[0];
+    if (!selectedOrderId) return null;
+    return orders.find((o) => o.id === selectedOrderId) || null;
   }, [orders, selectedOrderId]);
+
+  // Danh sách hình ảnh bài đăng sản phẩm để KTV trực tiếp đối chiếu
+  const productImages = useMemo(() => {
+    if (!activeOrder) return [];
+    const images: string[] = [];
+    const anyOrder = activeOrder as any;
+    const listing = activeOrder.listing as any;
+
+    if (Array.isArray(anyOrder.postImageUrls) && anyOrder.postImageUrls.length > 0) {
+      images.push(...anyOrder.postImageUrls.filter(Boolean));
+    }
+    if (anyOrder.postImageUrl) {
+      images.push(anyOrder.postImageUrl);
+    }
+    if (Array.isArray(listing?.photoGallery) && listing.photoGallery.length > 0) {
+      images.push(...listing.photoGallery.filter(Boolean));
+    }
+    if (Array.isArray(listing?.photos?.listingPhotos) && listing.photos.listingPhotos.length > 0) {
+      images.push(...listing.photos.listingPhotos.filter(Boolean));
+    }
+    if (listing?.photos?.front) images.push(listing.photos.front);
+    if (listing?.photos?.screenOrDetails) images.push(listing.photos.screenOrDetails);
+    if (listing?.photos?.back) images.push(listing.photos.back);
+    if (listing?.imageUrl) images.push(listing.imageUrl);
+    if (anyOrder.imageUrl) images.push(anyOrder.imageUrl);
+
+    return Array.from(new Set(images.filter((img) => typeof img === 'string' && img.trim().length > 0)));
+  }, [activeOrder]);
+
+  // Tự động chuyển về ảnh đầu tiên khi chuyển đơn hàng
+  useEffect(() => {
+    setActiveImageIndex(0);
+  }, [activeOrder?.id]);
+
+  const isAtHomeOrder = Boolean(activeOrder?.inspectionMethod === 'AT_HOME' || (activeOrder as any)?.orderType === 'AT_HOME');
+  const isCompletedOrder = Boolean(activeOrder && isOrderInspectionCompleted(activeOrder));
 
   // Stepper state - Bắt đầu từ Bước 1: Tiếp nhận (intake)
   const [currentStep, setCurrentStep] = useState<InspectionStep>(initialStep || 'intake');
@@ -185,79 +251,15 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const [exteriorScore, setExteriorScore] = useState<number>(95);
   const [exteriorNotes, setExteriorNotes] = useState('');
 
-  // Helper to detect category from activeOrder
-  const detectCategoryFromOrder = (order: any): string => {
-    const rawCat = resolveListingCategory(order?.listing) || order?.listing?.category || '';
-    const text = `${rawCat} ${order?.listing?.itemName || ''} ${order?.listing?.title || ''} ${order?.postTitle || ''}`.toLowerCase();
-
-    if (text.includes('giặt') || text.includes('sấy') || text.includes('washing')) {
-      return 'Máy giặt & Máy sấy';
-    }
-    if (text.includes('lạnh') || text.includes('đông') || text.includes('mát') || text.includes('refrigerator') || text.includes('fridge')) {
-      return 'Tủ lạnh & Tủ đông';
-    }
-    if (text.includes('điều hòa') || text.includes('máy lạnh') || text.includes('lọc không khí') || text.includes('air conditioner') || text.includes('purifier')) {
-      return 'Điều hòa & Máy lọc';
-    }
-    if (text.includes('robot') || text.includes('hút bụi') || text.includes('vacuum')) {
-      return 'Robot & Máy hút bụi';
-    }
-    if (text.includes('lò vi sóng') || text.includes('lò nướng') || text.includes('microwave') || text.includes('oven')) {
-      return 'Lò vi sóng & Lò nướng';
-    }
-    if (text.includes('nồi cơm') || text.includes('bếp từ') || text.includes('bếp hồng ngoại') || text.includes('bếp điện') || text.includes('nồi')) {
-      return 'Nồi cơm & Bếp từ';
-    }
-    if (text.includes('bàn trà') || text.includes('bàn sofa') || text.includes('bàn cafe') || text.includes('bàn tròn')) {
-      return 'Bàn trà / Bàn sofa';
-    }
-    if (text.includes('sofa') || text.includes('ghế dài')) {
-      return 'Sofa / Ghế dài';
-    }
-    if (text.includes('quần áo') || text.includes('giường') || text.includes('nệm')) {
-      return 'Phòng ngủ';
-    }
-    if (rawCat && rawCat !== 'Đồ gia dụng') return rawCat;
-    return order?.listing?.itemName || 'Đồ gia dụng';
-  };
-
   // --- STEP 3: TECHNICAL CHECKLIST ---
-  const initialCat = activeOrder ? detectCategoryFromOrder(activeOrder) : 'Máy giặt & Máy sấy';
-  const [selectedCategory, setSelectedCategory] = useState<string>(initialCat);
   const [backendChecklist, setBackendChecklist] = useState<InspectionChecklistResponse | null>(null);
-  const [checklist, setChecklist] = useState<InspectionChecklistItem[]>(() => {
-    const list = mockStandardChecklist[initialCat] || [];
-    return list.map((item, idx) => ({
-      ...item,
-      id: item.id || `chk-init-${idx}`,
-      rawId: null,
-      status: 'pending' as const,
-    }));
-  });
-
-  const STANDARD_CATEGORIES = useMemo(
-    () => [
-      'Máy giặt & Máy sấy',
-      'Tủ lạnh & Tủ đông',
-      'Điều hòa & Máy lọc',
-      'Robot & Máy hút bụi',
-      'Lò vi sóng & Lò nướng',
-      'Nồi cơm & Bếp từ',
-    ],
-    []
-  );
-
-  const availableCategories = useMemo(() => {
-    const list = [...STANDARD_CATEGORIES];
-    if (selectedCategory && !list.includes(selectedCategory)) {
-      list.unshift(selectedCategory);
-    }
-    const backendCat = backendChecklist?.categoryName || backendChecklist?.itemName;
-    if (backendCat && !list.includes(backendCat)) {
-      list.unshift(backendCat);
-    }
-    return Array.from(new Set(list));
-  }, [STANDARD_CATEGORIES, selectedCategory, backendChecklist]);
+  const [checklist, setChecklist] = useState<InspectionChecklistItem[]>([]);
+  const [checklistLoad, setChecklistLoad] = useState<{ orderId: string; message?: string } | null>(null);
+  const [checklistRetry, setChecklistRetry] = useState(0);
+  const isChecklistLoaded = Boolean(activeOrder && checklistLoad?.orderId === activeOrder.id);
+  const canUseChecklist = isChecklistLoaded && checklist.length > 0;
+  const listingCategory = resolveListingCategory(activeOrder?.listing);
+  const selectedCategory = (isChecklistLoaded && (backendChecklist?.categoryName || backendChecklist?.itemName)) || listingCategory;
 
   const mapBackendItems = (
     res: InspectionChecklistResponse,
@@ -280,35 +282,6 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     });
   };
 
-  const mapPresetItems = (cat: string): InspectionChecklistItem[] => {
-    const list = mockStandardChecklist[cat] || [];
-    return list.map((item, idx) => ({
-      ...item,
-      id: item.id ? String(item.id) : `chk-preset-${cat}-${idx}`,
-      rawId: null,
-      category: item.category || cat,
-      status: 'pending' as const,
-    }));
-  };
-
-  // Re-sync checklist when technician manually changes category in dropdown
-  const handleCategoryChange = (newCat: string) => {
-    setSelectedCategory(newCat);
-
-    // Nếu người dùng chọn lại đúng danh mục/sản phẩm của backend checklist
-    const backendCat = backendChecklist?.categoryName || backendChecklist?.itemName;
-    if (
-      backendChecklist?.items?.length &&
-      (newCat === backendCat || newCat === detectCategoryFromOrder(activeOrder))
-    ) {
-      setChecklist(mapBackendItems(backendChecklist, activeOrder?.id || 'curr', newCat));
-      return;
-    }
-
-    // Nếu chọn ngành hàng khác, tải preset chuẩn tương ứng (thay thế sạch, không bị trùng hay dồn đống)
-    setChecklist(mapPresetItems(newCat));
-  };
-
   // --- STEP 4: PROOFS & SEALS ---
   const [tamperSealInput, setTamperSealInput] = useState(
     'SL-SEAL-' + Math.floor(1000000 + Math.random() * 9000000)
@@ -320,6 +293,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const [isPrintSealModalOpen, setIsPrintSealModalOpen] = useState(false);
   const [isVerifySealModalOpen, setIsVerifySealModalOpen] = useState(false);
   const [verifySealId, setVerifySealId] = useState<string>('');
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   // --- STEP 5: VERDICT & SUMMARY ---
   const [overallVerdict, setOverallVerdict] = useState<'PASS' | 'FAIL'>('PASS');
@@ -327,61 +301,76 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const [inspectorNotes, setInspectorNotes] = useState('');
   const [isDigitalSigned, setIsDigitalSigned] = useState(false);
 
-  // Load dynamic checklist from backend for activeOrder & notify inspection started
   useEffect(() => {
+    if (activeOrder?.id && !isCompletedOrder) {
+      void inspectorService.startInspection(activeOrder.id).catch(() => {});
+    }
+  }, [activeOrder?.id, isCompletedOrder]);
+
+  // Load the saved report or the checklist assigned by the API.
+  useEffect(() => {
+    setChecklistLoad(null);
+    setChecklist([]);
+    setBackendChecklist(null);
     if (!activeOrder?.id) return;
+    const orderId = activeOrder.id;
+
+    const effectiveReport = getStationReport(activeOrder);
 
     // Nếu đơn hàng đã có biên bản kiểm định hoàn thành với checklistResults, tải lại chính xác
-    if (activeOrder.inspectionReport?.checklistResults && activeOrder.inspectionReport.checklistResults.length > 0) {
+    if (effectiveReport?.checklistResults?.length) {
       setChecklist(
-        activeOrder.inspectionReport.checklistResults.map((item, idx) => ({
+        effectiveReport.checklistResults.map((item: any, idx: number) => ({
           ...item,
           id: item.id || `chk-report-${idx}`,
-          rawId: (item as any).rawId ?? item.id,
+          rawId: item.rawId ?? item.id,
         }))
       );
+      setChecklistLoad({ orderId });
       return;
     }
 
-    const detected = detectCategoryFromOrder(activeOrder);
-    setSelectedCategory(detected);
+    if (isCompletedOrder) {
+      setChecklistLoad({ orderId, message: 'Biên bản chưa có kết quả checklist.' });
+      return;
+    }
 
-    inspectorService.startInspection(activeOrder.id).catch(() => {});
+    let active = true;
     inspectorService
-      .getOrderChecklist(activeOrder.id)
+      .getOrderChecklist(orderId)
       .then((res) => {
-        if (res?.items && Array.isArray(res.items) && res.items.length > 0) {
+        if (!active) return;
+        if (Array.isArray(res?.items) && res.items.length > 0) {
           setBackendChecklist(res);
-          const effectiveCat = res.categoryName || res.itemName || detected;
-          setSelectedCategory(effectiveCat);
-          setChecklist(mapBackendItems(res, activeOrder.id, effectiveCat));
+          setChecklist(mapBackendItems(res, orderId, listingCategory));
+          setChecklistLoad({ orderId });
         } else {
-          setBackendChecklist(null);
-          setChecklist(mapPresetItems(detected));
+          setChecklistLoad({ orderId, message: 'Chưa có checklist cho đơn kiểm định này.' });
         }
       })
       .catch((err) => {
-        console.warn('Không thể tải checklist backend của đơn hàng, chuyển về mẫu chuẩn:', err);
-        setBackendChecklist(null);
-        setChecklist(mapPresetItems(detected));
+        if (active) setChecklistLoad({ orderId, message: err?.message || 'Không tải được checklist từ máy chủ.' });
       });
-  }, [activeOrder?.id]);
+    return () => { active = false; };
+  }, [activeOrder?.id, activeOrder?.inspectionReport?.checklistResults, isCompletedOrder, checklistRetry]);
 
   // Reset or populate fields when activeOrder changes
   useEffect(() => {
     if (activeOrder) {
-      if (activeOrder.inspectionReport) {
-        setActualSerialNo((activeOrder.inspectionReport as any).serialNumber || '');
-        setAccessoriesNote((activeOrder.inspectionReport as any).accessoriesNote || '');
-        setExteriorNotes((activeOrder.inspectionReport as any).exteriorNotes || '');
-        setInspectorNotes(activeOrder.inspectionReport.summaryNotes || '');
-        setOverallVerdict(activeOrder.inspectionReport.verdict || 'PASS');
-        setConditionScore(activeOrder.inspectionReport.conditionScore || 90);
-        setSelectedGrade(activeOrder.inspectionReport.detectedGrade || 'Like New');
-        setTamperSealInput(activeOrder.inspectionReport.tamperSealId || ('SL-SEAL-' + Math.floor(1000000 + Math.random() * 9000000)));
-        setProofPhotos(activeOrder.inspectionReport.inspectorPhotos || []);
-        setVideoProofUrl((activeOrder as any).videoProofUrl || '');
-        setUnboxingVideoUrl((activeOrder as any).unboxingVideoUrl || '');
+      const effectiveReport = getStationReport(activeOrder);
+
+      if (effectiveReport) {
+        setActualSerialNo((effectiveReport as any).serialNumber || '');
+        setAccessoriesNote((effectiveReport as any).accessoriesNote || '');
+        setExteriorNotes((effectiveReport as any).exteriorNotes || '');
+        setInspectorNotes(effectiveReport.summaryNotes || '');
+        setOverallVerdict(effectiveReport.verdict || 'PASS');
+        setConditionScore(effectiveReport.conditionScore || 90);
+        setSelectedGrade(effectiveReport.detectedGrade || 'Like New');
+        setTamperSealInput(effectiveReport.tamperSealId || ('SL-SEAL-' + Math.floor(1000000 + Math.random() * 9000000)));
+        setProofPhotos(effectiveReport.inspectorPhotos || []);
+        setVideoProofUrl((activeOrder as any).videoProofUrl || (effectiveReport as any).videoProofUrl || '');
+        setUnboxingVideoUrl((activeOrder as any).unboxingVideoUrl || (effectiveReport as any).unboxingVideoUrl || '');
         setSealConfirmed(true);
         setIsDigitalSigned(true);
         setCurrentStep('verdict');
@@ -465,6 +454,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
     if (match) {
       setSelectedOrderId(match.id);
+      onSelectOrder?.(match.id);
       setBarcodeScanInput(match.id);
       setCurrentStep('intake');
       notify(
@@ -520,10 +510,46 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     setProofPhotos(proofPhotos.filter((_, i) => i !== idx));
   };
 
+  const handleUploadProofPhoto = async (file: File) => {
+    if (!file) return;
+    setIsUploadingPhoto(true);
+    try {
+      const res = await mediaService.uploadImage(file, 'secondlife/inspections/proofs');
+      if (res && res.url) {
+        setProofPhotos((prev) => [...prev, res.url]);
+        notify('Đã tải ảnh bằng chứng lên máy chủ thành công');
+      } else {
+        throw new Error('Không nhận được URL ảnh từ máy chủ');
+      }
+    } catch (err: any) {
+      console.warn('Lỗi tải ảnh lên Cloudinary/Backend, dùng bộ nhớ cục bộ dự phòng:', err);
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setProofPhotos((prev) => [...prev, reader.result as string]);
+          notify('Đã lưu ảnh bằng chứng vào phiên làm việc');
+        }
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
   // Submit Final Result
   const handleSubmitInspection = async () => {
     if (!activeOrder) {
       notify('Không tìm thấy thông tin đơn hàng cần thẩm định', true);
+      return;
+    }
+
+    if (isOrderInspectionCompleted(activeOrder)) {
+      notify('Đơn hàng này đã có kết quả kiểm định chính thức, không thể kiểm định lại.', true);
+      return;
+    }
+
+    if (!canUseChecklist) {
+      notify('Cần tải checklist của đơn trước khi nộp biên bản.', true);
       return;
     }
 
@@ -547,19 +573,27 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     try {
       // 1. Đảm bảo đơn đã chuyển sang trạng thái INSPECTING trên backend trước khi submit
       try {
-        await inspectorService.startInspection(activeOrder.id).catch(() => {});
-      } catch {}
+        await inspectorService.startInspection(activeOrder.id).catch(() => { });
+      } catch { }
 
       // 2. Nộp kết quả thẩm định lên backend API
+      const photoPayload = proofPhotos.map((url) => url.trim()).filter((url) =>
+        getInspectionRemoteMediaUrl(url) || isInspectionProofImage(url),
+      );
+      const persistedVideoUrl = getInspectionRemoteMediaUrl(videoProofUrl);
+      const persistedUnboxingUrl = getInspectionRemoteMediaUrl(unboxingVideoUrl);
       await inspectorService.submitReport(activeOrder.id, {
         status: overallVerdict === 'PASS' ? 'PASSED' : 'FAILED',
-        note: `[Tem: ${effectiveSeal}][Grade: ${selectedGrade}][Điểm: ${conditionScore}/100] ${inspectorNotes}`,
+        note: `[Tem: ${effectiveSeal}][Grade: ${selectedGrade}][Điểm: ${conditionScore}/100][Bao bì: ${packagingStatus === 'INTACT' ? 'Nguyên vẹn' : packagingStatus === 'SLIGHT_DAMAGE' ? 'Hơi móp méo' : 'Hư hại'}]${accessoriesNote ? ` [Phụ kiện: ${accessoriesNote}]` : ''}${photoPayload.length > 0 ? ` [Photos: ${JSON.stringify(photoPayload)}]` : ''} ${inspectorNotes}`,
         conditionScore,
         conditionGrade: selectedGrade,
         tamperSealId: effectiveSeal,
         barcode: barcodeScanInput || `BC-${activeOrder.id}`,
-        videoProofUrl: videoProofUrl || proofPhotos[0] || undefined,
-        unboxingVideoUrl: unboxingVideoUrl || undefined,
+        videoProofUrl: persistedVideoUrl || photoPayload[0] || undefined,
+        unboxingVideoUrl: persistedUnboxingUrl || undefined,
+        proofPhotos: photoPayload,
+        inspectorPhotos: photoPayload,
+        evidenceUrls: photoPayload,
         checklistResults: checklist.map((item) => ({
           itemId: item.rawId ?? (item.id && !item.id.startsWith('chk-') ? item.id : null),
           itemTitle: item.title,
@@ -573,10 +607,40 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       try {
         const resultStatus = overallVerdict === 'PASS' ? 'PASSED' : 'FAILED';
         localStorage.setItem(`inspection_status_${activeOrder.id}`, resultStatus);
+        localStorage.setItem(`inspection_seal_${activeOrder.id}`, effectiveSeal);
+
+        const fullReport = {
+          id: `REP-${Math.floor(1000 + Math.random() * 9000)}`,
+          orderId: activeOrder.id,
+          centerId: activeOrder.inspectionCenterId || 'center-hcm-01',
+          centerName: activeOrder.inspectionCenterName || 'SecondLife Hub Flagship Lab',
+          inspectorName: inspectorName,
+          inspectedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+          verdict: overallVerdict,
+          status: resultStatus,
+          detectedGrade: selectedGrade,
+          conditionScore: conditionScore,
+          tamperSealId: effectiveSeal,
+          checklistResults: checklist.map((item) => ({
+            id: item.id,
+            rawId: item.rawId,
+            category: item.category || selectedCategory,
+            title: item.title,
+            description: item.description || '',
+            status: item.status === 'pass' ? 'pass' : 'fail',
+            notes: item.notes,
+            testedValue: item.testedValue,
+          })),
+          inspectorPhotos: proofPhotos,
+          summaryNotes: `[Grade: ${selectedGrade}][Điểm: ${conditionScore}/100] ${inspectorNotes}`,
+        };
+        localStorage.setItem(`inspection_report_${activeOrder.id}`, JSON.stringify(fullReport));
+
         window.dispatchEvent(new CustomEvent('secondlife_inspection_completed', {
           detail: { orderId: activeOrder.id, status: resultStatus }
         }));
-      } catch {}
+      } catch { }
 
       onCompleteInspection(
         activeOrder.id,
@@ -598,8 +662,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
           })),
           inspectorPhotos: proofPhotos,
           inspectorNotes,
-          videoProofUrl,
-          unboxingVideoUrl,
+          videoProofUrl: persistedVideoUrl,
+          unboxingVideoUrl: persistedUnboxingUrl,
           order: activeOrder,
         }
       );
@@ -616,36 +680,6 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     }
   };
 
-  // Filter tasks
-  const filteredOrders = useMemo(() => {
-    return orders.filter((o) => {
-      const isAtHome = o.inspectionMethod === 'AT_HOME';
-      const isCompleted =
-        (o.escrowStatus as string) === 'COMPLETED' ||
-        o.escrowStatus === 'COMPLETED_RELEASED' ||
-        o.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
-        o.escrowStatus === 'INSPECTION_PASSED' ||
-        o.escrowStatus === 'INSPECTION_FAILED' ||
-        (o as any).backendStatus === 'PASSED' ||
-        (o as any).backendStatus === 'FAILED' ||
-        (o as any).status === 'PASSED' ||
-        (o as any).status === 'FAILED' ||
-        (typeof window !== 'undefined' && (localStorage.getItem(`inspection_status_${o.id}`) === 'PASSED' || localStorage.getItem(`inspection_status_${o.id}`) === 'FAILED'));
-
-      if (taskFilter === 'AT_CENTER' && isAtHome) return false;
-      if (taskFilter === 'AT_HOME' && !isAtHome) return false;
-      if (taskFilter === 'DONE' && !isCompleted) return false;
-
-      if (taskSearch) {
-        const q = taskSearch.toLowerCase();
-        const matchesId = o.id.toLowerCase().includes(q);
-        const matchesTitle = o.listing?.title?.toLowerCase().includes(q);
-        if (!matchesId && !matchesTitle) return false;
-      }
-      return true;
-    });
-  }, [orders, taskFilter, taskSearch]);
-
   const stepsList: { key: InspectionStep; title: string; desc: string; icon: any }[] = [
     { key: 'intake', title: '1. Tiếp Nhận', desc: 'Đối chiếu hồ sơ máy', icon: QrCode },
     { key: 'exterior', title: '2. Ngoại Quan', desc: 'Phân hạng Grade vỏ máy', icon: Layers },
@@ -653,6 +687,84 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     { key: 'proofs', title: '4. Bằng Chứng', desc: 'Ảnh soi vi mạch & Dán tem', icon: Camera },
     { key: 'verdict', title: '5. Kết Luận', desc: 'Ký số & Xuất chứng thư', icon: ShieldCheck },
   ];
+
+  // Thứ tự bắt buộc tuần tự 5 bước
+  const STEP_ORDER: InspectionStep[] = ['intake', 'exterior', 'technical', 'proofs', 'verdict'];
+
+  // Bước cao nhất đã mở khóa cho đơn hàng hiện tại (0: intake, 1: exterior, 2: technical, 3: proofs, 4: verdict)
+  const [maxReachedStepIndex, setMaxReachedStepIndex] = useState<number>(0);
+
+  // Tự động đồng bộ bước khi đổi đơn hàng
+  useEffect(() => {
+    if (isOrderInspectionCompleted(activeOrder)) {
+      setMaxReachedStepIndex(4);
+    } else {
+      setMaxReachedStepIndex(0);
+      setCurrentStep('intake');
+    }
+  }, [activeOrder?.id]);
+
+  // Điều hướng có kiểm soát không cho nhảy cóc các bước
+  const handleSelectStep = (targetStep: InspectionStep) => {
+    const targetIdx = STEP_ORDER.indexOf(targetStep);
+    const isCompleted = isOrderInspectionCompleted(activeOrder);
+
+    if (!isCompleted && targetIdx > maxReachedStepIndex) {
+      notify(`Không thể nhảy cóc sang "${stepsList[targetIdx]?.title || 'bước này'}"! Quy trình kiểm định yêu cầu hoàn thành tuần tự từ Bước 1 đến Bước 5.`, true);
+      return;
+    }
+    setCurrentStep(targetStep);
+  };
+
+  // Chuyển sang bước tiếp theo tuần tự
+  const handleNextStep = (nextStep: InspectionStep) => {
+    const nextIdx = STEP_ORDER.indexOf(nextStep);
+
+    // Kiểm tra điều kiện bắt buộc ở Bước 3 Kỹ thuật: phải hoàn thành các tiêu chuẩn bắt buộc (*)
+    if (currentStep === 'technical' && !isCompletedOrder) {
+      if (!canUseChecklist) {
+        notify('Cần tải checklist của đơn trước khi chuyển bước.', true);
+        return;
+      }
+      const pendingMandatory = checklist.filter((item) => item.mandatory && item.status === 'pending');
+      if (pendingMandatory.length > 0) {
+        notify(`Vui lòng kiểm tra và đánh giá tất cả ${pendingMandatory.length} tiêu chuẩn bắt buộc (*) trước khi sang Bước 4!`, true);
+        return;
+      }
+    }
+
+    if (nextIdx > maxReachedStepIndex) {
+      setMaxReachedStepIndex(nextIdx);
+    }
+    setCurrentStep(nextStep);
+  };
+
+  // Kiểm tra một bước đã hoàn thành để hiển thị tích Xanh báo hiệu đã ổn
+  const isStepCompleted = (stepKey: InspectionStep, idx: number): boolean => {
+    const isCompleted = isOrderInspectionCompleted(activeOrder);
+    if (isCompleted) return true;
+
+    // Nếu KTV đã hoàn thành bước này và tiến tới các bước tiếp theo
+    if (idx < maxReachedStepIndex) return true;
+
+    // Hoặc kiểm tra điều kiện hoàn thành của bước hiện tại:
+    switch (stepKey) {
+      case 'intake':
+        return maxReachedStepIndex > 0;
+      case 'exterior':
+        return maxReachedStepIndex > 1;
+      case 'technical': {
+        const pendingMandatory = checklist.filter((item) => item.mandatory && item.status === 'pending');
+        return canUseChecklist && (maxReachedStepIndex > 2 || pendingMandatory.length === 0);
+      }
+      case 'proofs':
+        return maxReachedStepIndex > 3 || (proofPhotos.length > 0 && sealConfirmed);
+      case 'verdict':
+        return Boolean(overallVerdict && (sealConfirmed || isDigitalSigned));
+      default:
+        return false;
+    }
+  };
 
   return (
     <div className={`space-y-6 pb-20 text-[#24263e] ${isFocusMode ? 'fixed inset-0 z-50 bg-[#faf8f5] p-6 overflow-y-auto' : ''}`}>
@@ -665,7 +777,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
               <span>TRẠM KIỂM ĐỊNH THỰC TẾ SECONDLIFE • LAB TIÊU CHUẨN ISO/IEC 17025</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2">
-              <span>Bàn Kiểm Định Thiết Bị</span>
+              <span>Khu vực kiểm định</span>
               <span className="text-xs bg-[#c34c36] text-white px-2.5 py-0.5 rounded-full font-bold">
                 Station #{inspectorCode}
               </span>
@@ -676,10 +788,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 Kỹ thuật viên: {inspectorName}
               </span>
               <span>•</span>
-              <span className="flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-emerald-400" />
-                Ca trực: 08:00 - 17:30 (Đang trực ca)
-              </span>
+
             </p>
           </div>
 
@@ -719,11 +828,10 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       {/* Notifications */}
       {noticeMessage && (
         <div
-          className={`p-4 rounded-2xl border text-sm font-bold flex items-center gap-2 animate-fadeIn ${
-            noticeMessage.isError
-              ? 'bg-red-50 border-red-200 text-red-800'
-              : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-          }`}
+          className={`p-4 rounded-2xl border text-sm font-bold flex items-center gap-2 animate-fadeIn ${noticeMessage.isError
+            ? 'bg-red-50 border-red-200 text-red-800'
+            : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            }`}
         >
           {noticeMessage.isError ? (
             <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
@@ -806,8 +914,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
             <div className="flex items-center justify-between text-[11px] text-gray-500 pt-0.5">
               <span className="flex items-center gap-1">
-                <Zap className="w-3 h-3 text-amber-500" />
-                <span>Hỗ trợ máy quét USB, Camera & quét ảnh</span>
+
               </span>
               <button
                 type="button"
@@ -822,129 +929,6 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
             </div>
           </div>
 
-          {/* Queue Filter Tabs */}
-          <div className="bg-white rounded-2xl p-3 border border-gray-200 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="text-xs font-black uppercase tracking-wider text-gray-500">
-                Nhiệm vụ kiểm định ({filteredOrders.length})
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSyncing(true);
-                  setTimeout(() => {
-                    setIsSyncing(false);
-                    notify('Đã đồng bộ đơn hàng mới nhất từ hệ thống');
-                  }, 600);
-                }}
-                className="text-xs text-[#c34c36] font-bold flex items-center gap-1 hover:underline cursor-pointer"
-              >
-                <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span>Đồng bộ</span>
-              </button>
-            </div>
-
-            <div className="flex flex-wrap gap-1">
-              {[
-                { id: 'ALL', label: 'Tất cả' },
-                { id: 'AT_CENTER', label: 'Tại Lab' },
-                { id: 'AT_HOME', label: 'Tại Nhà' },
-                { id: 'DONE', label: 'Đã Xong' },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setTaskFilter(tab.id as any)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                    taskFilter === tab.id
-                      ? 'bg-[#24263e] text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-gray-400" />
-              <input
-                type="text"
-                value={taskSearch}
-                onChange={(e) => setTaskSearch(e.target.value)}
-                placeholder="Tìm tên máy, mã đơn..."
-                className="w-full pl-8 pr-3 py-1.5 bg-[#faf8f5] border border-gray-200 rounded-lg text-xs outline-none focus:border-[#c34c36]"
-              />
-            </div>
-
-            {/* Task Items List */}
-            <div className="space-y-2.5 max-h-[640px] overflow-y-auto pr-1">
-              {filteredOrders.length === 0 ? (
-                <div className="py-8 text-center text-gray-400 text-xs">
-                  Không có đơn kiểm định phù hợp trong bộ lọc này
-                </div>
-              ) : (
-                filteredOrders.map((ord) => {
-                  const isSelected = ord.id === activeOrder?.id;
-                  const isAtHome = ord.inspectionMethod === 'AT_HOME';
-
-                  return (
-                    <div
-                      key={ord.id}
-                      onClick={() => {
-                        setSelectedOrderId(ord.id);
-                        onSelectOrder?.(ord.id);
-                        notify(`Đã chuyển sang đơn #${ord.id}`);
-                      }}
-                      className={`p-3.5 rounded-2xl border transition cursor-pointer space-y-2 ${
-                        isSelected
-                          ? 'bg-[#24263e] text-white border-[#24263e] shadow-md ring-2 ring-[#c34c36]/40'
-                          : 'bg-[#faf8f5] border-gray-200 hover:border-[#c34c36] text-[#24263e]'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`text-xs font-mono font-bold ${isSelected ? 'text-[#fce5da]' : 'text-[#c34c36]'}`}>
-                              #{ord.id}
-                            </span>
-                            {isAtHome ? (
-                              <span className="px-2 py-0.2 rounded-full text-[9px] font-bold bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-0.5">
-                                <Navigation className="w-2.5 h-2.5 text-purple-600" />
-                                Tại Nhà
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.2 rounded-full text-[9px] font-bold bg-blue-100 text-blue-800 border border-blue-200 flex items-center gap-0.5">
-                                <Building2 className="w-2.5 h-2.5 text-blue-600" />
-                                Tại Lab Hub
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs font-black line-clamp-1">{ord.listing?.title}</div>
-                        </div>
-
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${
-                            isSelected ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
-                          }`}
-                        >
-                          Cần Thẩm Định
-                        </span>
-                      </div>
-
-                      <div className={`text-[11px] flex items-center justify-between pt-1 border-t ${isSelected ? 'border-white/10 text-gray-300' : 'border-gray-200 text-gray-500'}`}>
-                        <span>Giá: <strong className="font-mono">{formatVND(ord.itemPriceVnd)}</strong></span>
-                        <span className="flex items-center gap-1 text-[10px]">
-                          <Clock className="w-3 h-3 text-amber-500" />
-                          SLA: &lt; 4 giờ
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
         </div>
 
         {/* ===================================================================== */}
@@ -952,163 +936,306 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         {/* ===================================================================== */}
         <div className="lg:col-span-8 bg-white rounded-3xl p-6 border border-gray-200 shadow-sm space-y-6">
           {!activeOrder ? (
-            <div className="py-20 text-center flex flex-col items-center justify-center space-y-3">
-              <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
-                <Wrench className="w-8 h-8 stroke-[1.5]" />
+            <div className="py-24 text-center flex flex-col items-center justify-center space-y-4">
+              <div className="w-20 h-20 rounded-3xl bg-amber-50 border border-amber-200/60 text-[#c34c36] flex items-center justify-center shadow-2xs">
+                <QrCode className="w-10 h-10 stroke-[1.75]" />
               </div>
-              <h3 className="text-base font-bold text-[#24263e]">Chưa có nhiệm vụ đo kiểm trực tiếp</h3>
-              <p className="text-xs text-slate-500 max-w-md">
-                Hiện tại bạn chưa được Trung tâm phân công đơn kiểm định nào. Khi Trung tâm điều phối giao task cho bạn, thiết bị sẽ xuất hiện ở danh sách bên trái để bắt đầu đo kiểm 5 bước.
-              </p>
-            </div>
-          ) : (
-            <>
-          {/* Header of Active Order */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-gray-100 gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-[#c34c36] uppercase tracking-wider flex items-center gap-1">
-                  <Wrench className="w-3.5 h-3.5" />
-                  Đang Kiểm Định Trực Tiếp
-                </span>
-                <span className="text-xs font-mono font-bold text-gray-500">
-                  Mã: #{activeOrder?.id}
-                </span>
+              <div className="space-y-1.5 max-w-md">
+                <h3 className="text-lg font-black text-[#24263e]">
+                  Sẵn Sàng Tiếp Nhận Thiết Bị Đo Kiểm
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Vui lòng quét Barcode hoặc nhập mã đơn hàng ở khung bên trái để bắt đầu đo kiểm 5 bước.
+                </p>
               </div>
-              <h2 className="text-xl font-black text-[#24263e] mt-0.5">
-                {activeOrder?.listing?.title}
-              </h2>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowCertificateModal(true)}
-                className="px-3.5 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 text-xs font-bold text-gray-700 flex items-center gap-1.5 transition cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5 text-[#c34c36]" />
-                <span>Xem Biên Bản Giám Định</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Stepper Navigation */}
-          <div className="grid grid-cols-5 gap-1 p-1.5 bg-[#faf8f5] rounded-2xl border border-gray-200">
-            {stepsList.map((step) => {
-              const StepIcon = step.icon;
-              const isActive = currentStep === step.key;
-              return (
+              <div className="pt-2 flex items-center gap-2">
                 <button
-                  key={step.key}
                   type="button"
-                  onClick={() => setCurrentStep(step.key)}
-                  className={`py-2 px-1 rounded-xl text-center transition cursor-pointer flex flex-col items-center gap-1 ${
-                    isActive
-                      ? 'bg-[#24263e] text-white shadow-xs font-bold'
-                      : 'text-gray-500 hover:text-gray-900 hover:bg-white/60'
-                  }`}
+                  onClick={() => {
+                    setScannerMode('intake');
+                    setIsScannerOpen(true);
+                  }}
+                  className="px-4 py-2.5 bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-xs transition cursor-pointer"
                 >
-                  <StepIcon className={`w-4 h-4 ${isActive ? 'text-[#fce5da]' : 'text-gray-400'}`} />
-                  <span className="text-[11px] font-bold line-clamp-1">{step.title}</span>
+                  <Camera className="w-4 h-4" />
+                  <span>Mở Camera Quét Mã</span>
                 </button>
-              );
-            })}
-          </div>
-
-          {/* =================================================================== */}
-          {/* STEP 1: INTAKE & PROFILE MATCHING                                  */}
-          {/* =================================================================== */}
-          {currentStep === 'intake' && (
-            <div className="space-y-5 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
-                <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              </div>
+            </div>
+          ) : isAtHomeOrder ? (
+            /* =================================================================== */
+            /* KIỂM ĐỊNH TẠI NHÀ: HIỂN THỊ THÔNG TIN SẢN PHẨM & LỊCH HẸN TƯƠNG ỨNG */
+            /* =================================================================== */
+            <div className="space-y-6 animate-fadeIn">
+              {/* Header đơn tại nhà */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-gray-100 gap-3">
                 <div>
-                  <strong>Bước 1 - Tiếp nhận & Đối chiếu hồ sơ thiết bị:</strong> So sánh máy thực tế với mô tả bài đăng của người bán để phát hiện ngay các sai lệch về chủng loại, model hoặc thiếu hụt phụ kiện.
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
+                      <Navigation className="w-3.5 h-3.5 text-purple-600" />
+                      Kiểm Định Tại Nhà Khách Hàng (On-site)
+                    </span>
+                    <span className="text-xs font-mono font-bold text-gray-500">
+                      Mã: #{activeOrder?.id}
+                    </span>
+                  </div>
+                  <h2 className="text-xl font-black text-[#24263e] mt-1">
+                    {activeOrder?.listing?.title}
+                  </h2>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedOrderId('');
+                      onSelectOrder?.('');
+                    }}
+                    className="px-3 py-2 rounded-xl border border-purple-200 hover:bg-purple-50 text-xs font-bold text-purple-700 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                    title="Đóng đơn hiện tại và quay về màn hình chờ quét barcode"
+                  >
+                    <QrCode className="w-3.5 h-3.5 text-purple-600" />
+                    <span>Quét Đơn Khác</span>
+                  </button>
                 </div>
               </div>
 
-              {/* Cảnh báo nếu đơn tại Hub chưa nhận được hàng */}
-              {activeOrder?.inspectionMethod !== 'AT_HOME' && !isOrderReceivedAtHub(activeOrder) && (
-                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 flex items-start gap-3 text-xs text-amber-950 animate-fadeIn">
-                  <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                  <div className="space-y-1.5 flex-1">
-                    <div className="font-black text-sm text-amber-900">Kiện hàng chưa được tiếp nhận tại trạm Lab Hub</div>
-                    <p className="text-amber-800 leading-relaxed">
-                      Sản phẩm này cần kiểm định tại phòng Lab Hub nhưng trạm chưa ghi nhận kiện hàng thực tế được giao đến. Bàn đo kiểm khuyến nghị tiếp nhận kiện hàng thực tế trước khi tháo máy kiểm định.
-                    </p>
-                    <div className="pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          try {
-                            localStorage.setItem(`hub_package_received_${activeOrder.id}`, 'true');
-                            window.dispatchEvent(new CustomEvent('secondlife_hub_package_received', { detail: { orderId: activeOrder.id } }));
-                            notify('Đã xác nhận tiếp nhận kiện hàng tại Hub thành công! Bạn có thể bắt đầu đo kiểm.');
-                          } catch {}
-                        }}
-                        className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+              {/* Thông tin lịch hẹn khảo sát */}
+              <div className="p-4 rounded-2xl bg-purple-50/80 border border-purple-200 text-xs text-purple-950 space-y-2">
+                <div className="flex items-center gap-2 font-bold text-purple-900 text-sm">
+                  <Calendar className="w-4 h-4 text-purple-600" />
+                  <span>Khung Giờ Hẹn Khảo Sát & Đo Kiểm Tại Nhà</span>
+                </div>
+                {activeOrder.appointmentScheduledAt ? (
+                  <p className="text-purple-800 text-xs leading-relaxed">
+                    Khung giờ hẹn đã chốt: <strong className="text-purple-950 font-bold text-sm">{new Date(activeOrder.appointmentScheduledAt).toLocaleString('vi-VN')}</strong>. Kỹ thuật viên lưu động di chuyển đến địa chỉ theo lịch hẹn.
+                  </p>
+                ) : (
+                  <p className="text-purple-800 text-xs">
+                    Đang chờ khách hàng đặt lịch hẹn ngày giờ khảo sát (hoặc KTV liên hệ qua số điện thoại để chốt lịch hẹn trước khi đến).
+                  </p>
+                )}
+              </div>
+
+              {/* Grid 2 cột: Ảnh sản phẩm và Thông tin chi tiết */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Cột 1: Ảnh sản phẩm bài đăng người bán */}
+                <div className="space-y-3">
+                  <div className="text-xs font-bold uppercase text-gray-500 flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <Camera className="w-3.5 h-3.5 text-[#c34c36]" />
+                      Ảnh Thiết Bị Bài Đăng
+                    </span>
+                    {productImages.length > 0 && (
+                      <span className="text-[10px] text-gray-400 font-mono">
+                        {activeImageIndex + 1}/{productImages.length}
+                      </span>
+                    )}
+                  </div>
+
+                  {productImages.length > 0 ? (
+                    <div className="space-y-2">
+                      <div
+                        className="relative group rounded-2xl overflow-hidden border border-gray-200 bg-slate-50 cursor-pointer aspect-4/3 flex items-center justify-center shadow-2xs"
+                        onClick={() => setPreviewPhoto(productImages[activeImageIndex] || productImages[0])}
+                        title="Nhấn để phóng to ảnh xem chi tiết"
                       >
-                        <PackageCheck className="w-3.5 h-3.5" />
-                        <span>Bưu tá đã giao hàng - Xác nhận nhận kiện hàng tại Hub</span>
-                      </button>
+                        <img
+                          src={productImages[activeImageIndex] || productImages[0]}
+                          alt={activeOrder?.listing?.title || 'Ảnh sản phẩm'}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-bold backdrop-blur-[1px]">
+                          <Maximize2 className="w-4 h-4" />
+                          <span>Phóng to ảnh</span>
+                        </div>
+                      </div>
+
+                      {productImages.length > 1 && (
+                        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                          {productImages.map((img, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => setActiveImageIndex(idx)}
+                              className={`w-12 h-12 rounded-xl overflow-hidden border-2 shrink-0 transition cursor-pointer ${activeImageIndex === idx ? 'border-purple-600 shadow-xs' : 'border-gray-200 opacity-60'
+                                }`}
+                            >
+                              <img src={img} alt={`Thumb ${idx + 1}`} className="w-full h-full object-cover" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="py-12 text-center rounded-2xl bg-[#faf8f5] border border-dashed border-gray-200 text-gray-400 space-y-1">
+                      <Camera className="w-8 h-8 mx-auto text-gray-300" />
+                      <p className="text-xs">Chưa có ảnh bài đăng</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Cột 2: Thông tin sản phẩm & Khách hàng */}
+                <div className="space-y-4 text-xs">
+                  <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-2">
+                    <div className="font-bold text-gray-700 uppercase text-[11px] pb-1 border-b border-gray-200/80">
+                      Thông Tin Sản Phẩm Bài Đăng
+                    </div>
+                    <div><strong>Tên sản phẩm:</strong> {activeOrder?.listing?.title}</div>
+                    <div>
+                      <strong>Giá niêm yết:</strong>{' '}
+                      <span className="font-mono text-[#c34c36] font-bold">
+                        {formatVND(activeOrder?.itemPriceVnd || activeOrder?.listing?.priceVnd || 0)}
+                      </span>
+                    </div>
+                    <div><strong>Người bán:</strong> {activeOrder?.sellerName}</div>
+                    <div><strong>Người mua:</strong> {activeOrder?.buyerName}</div>
+                    {activeOrder?.listing?.description && (
+                      <div className="pt-1 text-gray-500 text-[11px] line-clamp-3">
+                        <strong>Mô tả:</strong> {activeOrder.listing.description}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-white border border-purple-200 space-y-2.5 shadow-2xs">
+                    <div className="font-bold text-purple-900 uppercase text-[11px] pb-1 border-b border-purple-100 flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Địa Chỉ & Liên Hệ Khách Hàng</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Địa chỉ khảo sát:</span>
+                      <div className="font-semibold text-gray-900 mt-0.5">
+                        {activeOrder.buyerAddress || 'Quận Cầu Giấy, TP. Hà Nội'}
+                      </div>
+                    </div>
+                    <div className="pt-1 flex items-center justify-between">
+                      <div>
+                        <span className="text-gray-500">Số điện thoại:</span>
+                        <div className="font-mono font-bold text-slate-800">
+                          {activeOrder.buyerPhone || '0988 123 456'}
+                        </div>
+                      </div>
+                      <a
+                        href={`tel:${activeOrder.buyerPhone || '0988123456'}`}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                      >
+                        <Phone className="w-3.5 h-3.5" />
+                        <span>Gọi Điện</span>
+                      </a>
                     </div>
                   </div>
                 </div>
-              )}
-
-              {/* Thông tin lịch hẹn nếu kiểm định tại nhà */}
-              {activeOrder?.inspectionMethod === 'AT_HOME' && (
-                <div className="p-3.5 rounded-2xl bg-purple-50 border border-purple-200 flex items-start gap-3 text-xs text-purple-950 animate-fadeIn">
-                  <Calendar className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <div className="font-bold text-purple-900">Kiểm định tại nhà khách hàng (On-site)</div>
-                    {activeOrder.appointmentScheduledAt ? (
-                      <p className="text-purple-800">
-                        Lịch hẹn đã chốt: <strong className="text-purple-950 font-bold">{new Date(activeOrder.appointmentScheduledAt).toLocaleString('vi-VN')}</strong>. Kỹ thuật viên di chuyển đến địa chỉ theo lịch hẹn.
-                      </p>
-                    ) : (
-                      <p className="text-purple-800">
-                        Đang chờ khách hàng đặt lịch hẹn ngày giờ khảo sát (hoặc KTV có thể liên hệ số điện thoại khách để chốt lịch hẹn trước khi đến).
-                      </p>
-                    )}
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Header of Active Order */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-gray-100 gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-[#c34c36] uppercase tracking-wider flex items-center gap-1">
+                      <Wrench className="w-3.5 h-3.5" />
+                      Đang Kiểm Định Trực Tiếp
+                    </span>
+                    <span className="text-xs font-mono font-bold text-gray-500">
+                      Mã: #{activeOrder?.id}
+                    </span>
                   </div>
-                </div>
-              )}
-
-              {/* Order Info & Method details */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-2 text-xs">
-                  <div className="font-bold text-gray-700 uppercase text-[11px]">Thông Tin Bài Đăng Người Bán</div>
-                  <div><strong>Tên máy:</strong> {activeOrder?.listing?.title}</div>
-                  <div><strong>Giá bán niêm yết:</strong> <span className="font-mono text-[#c34c36] font-bold">{formatVND(activeOrder?.itemPriceVnd || 0)}</span></div>
-                  <div><strong>Người bán:</strong> {activeOrder?.sellerName}</div>
-                  <div><strong>Người mua:</strong> {activeOrder?.buyerName}</div>
+                  <h2 className="text-xl font-black text-[#24263e] mt-0.5">
+                    {activeOrder?.listing?.title}
+                  </h2>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-2 text-xs">
-                  <div className="font-bold text-gray-700 uppercase text-[11px]">Hình Thức & Địa Chỉ Kiểm Định</div>
-                  {activeOrder?.inspectionMethod === 'AT_HOME' ? (
-                    <>
-                      <div className="text-purple-900 font-bold flex items-center gap-1">
-                        <Navigation className="w-3.5 h-3.5 text-purple-600" />
-                        Cử Kỹ Thuật Viên Đến Tận Nhà
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedOrderId('');
+                      onSelectOrder?.('');
+                    }}
+                    className="px-3 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 text-xs font-bold text-gray-600 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                    title="Đóng đơn hiện tại và quay về màn hình chờ quét barcode"
+                  >
+                    <QrCode className="w-3.5 h-3.5 text-gray-500" />
+                    <span>Quét Đơn Khác</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Stepper Navigation */}
+              <div className="grid grid-cols-5 gap-1 p-1.5 bg-[#faf8f5] rounded-2xl border border-gray-200">
+                {stepsList.map((step, idx) => {
+                  const StepIcon = step.icon;
+                  const isActive = currentStep === step.key;
+                  const isCompletedOrder = Boolean(activeOrder && isOrderInspectionCompleted(activeOrder));
+                  const isUnlocked = isCompletedOrder || idx <= maxReachedStepIndex;
+                  const isCompleted = isStepCompleted(step.key, idx);
+
+                  return (
+                    <button
+                      key={step.key}
+                      type="button"
+                      disabled={!isUnlocked}
+                      onClick={() => handleSelectStep(step.key)}
+                      title={
+                        !isUnlocked
+                          ? `Chưa mở khóa: Cần hoàn thành tuần tự các bước trước đó`
+                          : step.desc
+                      }
+                      className={`py-2 px-1 rounded-xl text-center transition flex flex-col items-center gap-1 relative ${isActive
+                        ? 'bg-[#24263e] text-white shadow-xs font-bold cursor-default'
+                        : isUnlocked
+                          ? isCompleted
+                            ? 'text-emerald-900 bg-emerald-50/70 hover:bg-emerald-100/70 cursor-pointer font-semibold border border-emerald-200/60'
+                            : 'text-gray-700 hover:text-gray-900 hover:bg-white/80 cursor-pointer font-semibold'
+                          : 'opacity-40 text-gray-400 bg-transparent cursor-not-allowed'
+                        }`}
+                    >
+                      <div className="flex items-center gap-1">
+                        <StepIcon
+                          className={`w-4 h-4 shrink-0 ${isActive
+                            ? 'text-[#fce5da]'
+                            : isUnlocked
+                              ? isCompleted
+                                ? 'text-emerald-600'
+                                : 'text-[#c34c36]'
+                              : 'text-gray-400'
+                            }`}
+                        />
+                        {!isUnlocked && <Lock className="w-2.5 h-2.5 text-gray-400" />}
                       </div>
-                      <div className="text-gray-600 flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-red-500 shrink-0" />
-                        <span>{activeOrder.buyerAddress || 'Quận Cầu Giấy, TP. Hà Nội'}</span>
+                      <div className="flex items-center justify-center w-full">
+                        <span className="text-[11px] font-bold truncate">{step.title}</span>
                       </div>
-                      <div className="flex items-center gap-2 pt-1">
-                        <a
-                          href={`tel:${activeOrder.buyerPhone || '0988123456'}`}
-                          className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg font-bold flex items-center gap-1"
-                        >
-                          <Phone className="w-3 h-3" />
-                          Gọi {activeOrder.buyerPhone || '0988 123 456'}
-                        </a>
-                      </div>
-                    </>
-                  ) : (
-                    <>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* =================================================================== */}
+              {/* STEP 1: INTAKE & PROFILE MATCHING                                  */}
+              {/* =================================================================== */}
+              {currentStep === 'intake' && (
+                <div className="space-y-5 animate-fadeIn">
+                  <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
+                    <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Bước 1 - Tiếp nhận & Đối chiếu ngoại quan thùng hàng:</strong>Đánh giá ngoại quan khi nhận hàng trước quá trình kiểm định chi tiết.
+                    </div>
+                  </div>
+
+                  {/* Order Info & Method details */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-2 text-xs">
+                      <div className="font-bold text-gray-700 uppercase text-[11px]">Thông Tin Bài Đăng Người Bán</div>
+                      <div><strong>Tên máy:</strong> {activeOrder?.listing?.title}</div>
+                      <div><strong>Giá bán:</strong> <span className="font-mono text-[#c34c36] font-bold">{formatVND(activeOrder?.itemPriceVnd || 0)}</span></div>
+                      <div><strong>Người bán:</strong> {activeOrder?.sellerName}</div>
+                      <div><strong>Người mua:</strong> {activeOrder?.buyerName}</div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-2 text-xs">
+                      <div className="font-bold text-gray-700 uppercase text-[11px]">Hình Thức & Địa Chỉ Kiểm Định</div>
                       <div className="text-blue-900 font-bold flex items-center gap-1">
                         <Building2 className="w-3.5 h-3.5 text-blue-600" />
                         Bàn Giao Nhận Tại Phòng Lab Hub
@@ -1116,640 +1243,773 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       <div className="text-gray-600">
                         Bưu tá giao hàng bọc đệm khí tới quầy tiếp nhận Hub.
                       </div>
-                    </>
-                  )}
-                </div>
-              </div>
+                    </div>
+                  </div>
 
-              {/* Serial & Packaging verification */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="font-bold text-gray-700">Số Serial / IMEI Thực Tế Trên Tem Máy *</label>
+                  {/* Hiện trạng đóng gói & Phụ kiện khi tiếp nhận */}
+                  <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-gray-200/80 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <Package className="w-4 h-4 text-[#c34c36]" />
+                        <span className="font-bold text-gray-800 text-xs uppercase tracking-wide">
+                          Hiện Trạng Đóng Gói & Phụ Kiện Khi Tiếp Nhận
+                        </span>
+                      </div>
+                      {packagingStatus && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Đã ghi nhận bao bì (Ổn)
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                      <div className="space-y-1.5">
+                        <label className="font-bold text-gray-700 flex items-center gap-1">
+                          <span>Tình trạng hộp & Bao bì đóng gói khi nhận</span>
+                          <span className="text-[#c34c36]">*</span>
+                        </label>
+                        <select
+                          value={packagingStatus}
+                          disabled={isCompletedOrder}
+                          onChange={(e) => setPackagingStatus(e.target.value as any)}
+                          className={`w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl font-semibold outline-none focus:border-[#c34c36] shadow-2xs text-gray-800 transition ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed opacity-80' : ''}`}
+                        >
+                          <option value="INTACT">Nguyên vẹn 100% - Đóng gói mút xốp / bọc chuẩn</option>
+                          <option value="SLIGHT_DAMAGE">Bao bì / hộp hơi trầy xước nhưng máy an toàn</option>
+                          <option value="HEAVY_DAMAGE">Bao bì rách nặng / Thùng móp méo có nguy cơ va đập</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="font-bold text-gray-700 flex items-center justify-between">
+                          <span>Phụ Kiện Đi Kèm & Ghi Chú Tiếp Nhận</span>
+                          <span className="text-[10px] text-gray-400 font-normal">(Tùy chọn)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={accessoriesNote}
+                          disabled={isCompletedOrder}
+                          onChange={(e) => setAccessoriesNote(e.target.value)}
+                          placeholder="VD: Đầy đủ dây nguồn, phụ kiện, chân đế, phiếu bảo hành..."
+                          className={`w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl outline-none focus:border-[#c34c36] shadow-2xs text-gray-800 transition ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed opacity-80' : ''}`}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-3">
                     <button
                       type="button"
-                      onClick={() => {
-                        setScannerMode('serial');
-                        setIsScannerOpen(true);
-                      }}
-                      className="text-[11px] text-[#c34c36] hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                      onClick={() => handleNextStep('exterior')}
+                      className="px-6 py-2.5 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
                     >
-                      <Camera className="w-3 h-3" />
-                      <span>Quét Barcode Tem</span>
+                      <span>Chuyển sang Bước 2: Ngoại Quan</span>
+                      <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
-                  <input
-                    type="text"
-                    value={actualSerialNo}
-                    onChange={(e) => setActualSerialNo(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl font-mono font-bold text-slate-800 outline-none focus:border-[#c34c36]"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="font-bold text-gray-700">Tình Trạng Hộp & Bao Bì Đóng Gói Khi Nhận *</label>
-                  <select
-                    value={packagingStatus}
-                    onChange={(e) => setPackagingStatus(e.target.value as any)}
-                    className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl font-semibold outline-none focus:border-[#c34c36]"
-                  >
-                    <option value="INTACT">Nguyên vẹn 100% - Đóng gói mút xốp chuẩn</option>
-                    <option value="SLIGHT_DAMAGE">Hộp hơi móp méo nhưng thiết bị bên trong an toàn</option>
-                    <option value="HEAVY_DAMAGE">Hộp rách nặng / Có nguy cơ va đập linh kiện</option>
-                  </select>
-                </div>
-
-                <div className="sm:col-span-2 space-y-1.5">
-                  <label className="font-bold text-gray-700">Phụ Kiện Đi Kèm & Ghi Chú Tiếp Nhận</label>
-                  <input
-                    type="text"
-                    value={accessoriesNote}
-                    onChange={(e) => setAccessoriesNote(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl outline-none focus:border-[#c34c36]"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-3">
-                <button
-                  type="button"
-                  onClick={() => setCurrentStep('exterior')}
-                  className="px-6 py-2.5 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <span>Chuyển sang Bước 2: Ngoại Quan</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* =================================================================== */}
-          {/* STEP 2: EXTERIOR & COSMETIC GRADING                                */}
-          {/* =================================================================== */}
-          {currentStep === 'exterior' && (
-            <div className="space-y-5 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
-                <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                <div>
-                  <strong>Bước 2 - Kiểm tra Ngoại Quan & Phân Hạng Grade:</strong> Đánh giá mức độ trầy xước, cấn móp, độ nguyên vẹn của khung vỏ, kính chịu lực và các khớp nối.
-                </div>
-              </div>
-
-              {/* Grade Selection Cards */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                  Chọn Phân Hạng Ngoại Quan Chuẩn SecondLife (Grade):
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                  {[
-                    { id: 'Like New' as ConditionGrade, label: 'Grade S / A+ (99%)', desc: 'Như mới, không tì vết' },
-                    { id: 'Good' as ConditionGrade, label: 'Grade A / B (90-95%)', desc: 'Rất đẹp, trầy xước dăm siêu nhẹ' },
-                    { id: 'Fair' as ConditionGrade, label: 'Grade C (80-85%)', desc: 'Cấn móp / Trầy xước nhìn thấy rõ' },
-                  ].map((gr) => (
-                    <div
-                      key={gr.id}
-                      onClick={() => {
-                        setSelectedGrade(gr.id);
-                        if (gr.id === 'Like New') setExteriorScore(98);
-                        else if (gr.id === 'Good') setExteriorScore(90);
-                        else setExteriorScore(80);
-                      }}
-                      className={`p-3.5 rounded-2xl border transition cursor-pointer text-center space-y-1 ${
-                        selectedGrade === gr.id
-                          ? 'bg-[#24263e] text-white border-[#24263e] shadow-md'
-                          : 'bg-[#faf8f5] border-gray-200 hover:border-[#c34c36] text-gray-800'
-                      }`}
-                    >
-                      <div className="font-black text-xs">{gr.label}</div>
-                      <div className={`text-[10px] ${selectedGrade === gr.id ? 'text-gray-300' : 'text-gray-500'}`}>
-                        {gr.desc}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Score slider */}
-              <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-2 text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-gray-700">Điểm Đánh Giá Ngoại Quan Chi Tiết:</span>
-                  <span className="font-mono font-black text-lg text-[#c34c36]">{exteriorScore}/100</span>
-                </div>
-                <input
-                  type="range"
-                  min="60"
-                  max="100"
-                  value={exteriorScore}
-                  onChange={(e) => setExteriorScore(Number(e.target.value))}
-                  className="w-full accent-[#c34c36] cursor-pointer"
-                />
-              </div>
-
-              {/* Notes */}
-              <div className="space-y-1.5 text-xs">
-                <label className="font-bold text-gray-700">Mô Tả Chi Tiết Vết Xước / Ngoại Quan Của Kỹ Sư:</label>
-                <textarea
-                  value={exteriorNotes}
-                  onChange={(e) => setExteriorNotes(e.target.value)}
-                  rows={3}
-                  className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl outline-none focus:border-[#c34c36]"
-                />
-              </div>
-
-              <div className="flex justify-between pt-3">
-                <button
-                  type="button"
-                  onClick={() => setCurrentStep('intake')}
-                  className="px-5 py-2.5 border border-gray-200 hover:bg-gray-50 text-xs font-bold rounded-xl cursor-pointer"
-                >
-                  Quay lại
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentStep('technical')}
-                  className="px-6 py-2.5 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <span>Chuyển sang Bước 3: Kỹ Thuật</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* =================================================================== */}
-          {/* STEP 3: TECHNICAL & FUNCTIONAL CHECKLIST                           */}
-          {/* =================================================================== */}
-          {currentStep === 'technical' && (
-            <div className="space-y-5 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
-                <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                <div>
-                  <strong>Bước 3 - Kiểm Định Kỹ Thuật & Bo Mạch Phòng Lab:</strong> Thử tải điện áp, máy nén, cảm biến nhiệt, motor truyền động và đo đạc chỉ số vận hành thực tế.
-                </div>
-              </div>
-
-              {/* Category Selector */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-gray-100">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-bold text-gray-700">Bộ Checklist Ngành Hàng:</span>
-                  <select
-                    value={selectedCategory}
-                    onChange={(e) => handleCategoryChange(e.target.value)}
-                    className="px-3 py-1.5 rounded-xl border border-gray-200 bg-[#faf8f5] text-xs font-bold text-gray-800 outline-none focus:border-[#c34c36]"
-                  >
-                    {availableCategories.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                  </select>
-                  {backendChecklist?.title && (
-                    <span
-                      className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200"
-                      title={backendChecklist.description || ''}
-                    >
-                      {backendChecklist.title}
-                    </span>
-                  )}
-                </div>
-
-                <div className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 shrink-0">
-                  {checklist.filter((c) => c.status === 'pass').length}/{checklist.length} tiêu chuẩn Đạt
-                </div>
-              </div>
-
-              {/* Checklist Items Table */}
-              <div className="space-y-3">
-                {checklist.map((item, idx) => (
-                  <div
-                    key={item.id || `chk-card-${idx}`}
-                    className="p-4 rounded-2xl border border-gray-200 bg-[#faf8f5] space-y-2.5 text-xs transition"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div>
-                        <span className="text-[10px] font-bold text-[#c34c36] uppercase tracking-wider">
-                          [{item.category || selectedCategory || 'Kỹ thuật'}]
-                        </span>
-                        <h4 className="font-bold text-slate-900 text-sm">{item.title}</h4>
-                        <p className="text-gray-500 text-[11px] mt-0.5">{item.description}</p>
-                      </div>
-
-                      <div className="flex gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleChecklist(item.id, 'pass')}
-                          className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer flex items-center gap-1 ${
-                            item.status === 'pass'
-                              ? 'bg-emerald-600 text-white shadow-xs'
-                              : 'bg-white border border-gray-200 text-gray-600 hover:bg-emerald-50'
-                          }`}
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>ĐẠT</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleToggleChecklist(item.id, 'fail')}
-                          className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer flex items-center gap-1 ${
-                            item.status === 'fail'
-                              ? 'bg-red-600 text-white shadow-xs'
-                              : 'bg-white border border-gray-200 text-gray-600 hover:bg-red-50'
-                          }`}
-                        >
-                          <X className="w-3.5 h-3.5" />
-                          <span>LỖI</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 border-t border-gray-200 flex items-center gap-2">
-                      <span className="text-gray-500 text-[11px] shrink-0">Chỉ số đo đạc thực tế:</span>
-                      <input
-                        type="text"
-                        value={item.testedValue || ''}
-                        onChange={(e) => handleUpdateTestedValue(item.id, e.target.value)}
-                        placeholder="VD: Nhiệt độ -19.2°C, độ ồn 38dB, cách điện an toàn..."
-                        className="flex-1 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs outline-none focus:border-[#c34c36]"
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex justify-between pt-3">
-                <button
-                  type="button"
-                  onClick={() => setCurrentStep('exterior')}
-                  className="px-5 py-2.5 border border-gray-200 hover:bg-gray-50 text-xs font-bold rounded-xl cursor-pointer"
-                >
-                  Quay lại
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentStep('proofs')}
-                  className="px-6 py-2.5 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <span>Chuyển sang Bước 4: Bằng Chứng & Tem</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* =================================================================== */}
-          {/* STEP 4: PROOFS & TAMPER SEAL                                       */}
-          {/* =================================================================== */}
-          {currentStep === 'proofs' && (
-            <div className="space-y-5 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
-                <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                <div>
-                  <strong>Bước 4 - Ảnh Bằng Chứng Vi Mạch & Dán Tem Niêm Phong:</strong> Chụp ảnh soi kính hiển vi, số seri bo mạch và dán tem niêm phong chống tráo đổi linh kiện theo tiêu chuẩn SecondLife.
-                </div>
-              </div>
-
-              {/* Tamper Seal Serial Box */}
-              <div className="p-4 rounded-2xl bg-orange-50/60 border border-orange-200 space-y-3 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-black text-orange-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-[#c34c36]" />
-                    Số Seri Tem Niêm Phong Chống Bóc Tách (NFC / Hologram Seal) *
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleGenerateBackendSeal}
-                    disabled={isGeneratingSeal}
-                    className="text-xs text-[#c34c36] font-bold hover:underline cursor-pointer flex items-center gap-1 disabled:opacity-50"
-                  >
-                    {isGeneratingSeal && <Loader2 className="w-3 h-3 animate-spin" />}
-                    <span>Sinh mã tem từ hệ thống</span>
-                  </button>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <input
-                    type="text"
-                    value={tamperSealInput}
-                    onChange={(e) => setTamperSealInput(e.target.value)}
-                    className="flex-1 min-w-[200px] px-3.5 py-2.5 bg-white border border-orange-200 rounded-xl font-mono font-bold text-slate-800 text-sm outline-none focus:border-[#c34c36]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setScannerMode('tamper');
-                      setIsScannerOpen(true);
-                    }}
-                    className="px-3 py-2 bg-slate-800 hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
-                    title="Quét Barcode / QR tem niêm phong"
-                  >
-                    <Camera className="w-3.5 h-3.5" />
-                    <span>Quét Tem</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsPrintSealModalOpen(true)}
-                    className="px-3.5 py-2 bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
-                    title="Tạo mã in tem niêm phong chuẩn dán máy"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    <span>In Tem QR</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setVerifySealId(tamperSealInput);
-                      setIsVerifySealModalOpen(true);
-                    }}
-                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
-                    title="Tra cứu trạng thái xác thực tem trên Backend"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Xác Thực Tem</span>
-                  </button>
-                </div>
-
-                <label className="flex items-center gap-2 cursor-pointer pt-1">
-                  <input
-                    type="checkbox"
-                    checked={sealConfirmed}
-                    onChange={(e) => setSealConfirmed(e.target.checked)}
-                    className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer"
-                  />
-                  <span className="font-bold text-gray-800">
-                    Xác nhận: Tôi đã dán tem niêm phong vật lý đè lên ốc vít / khớp nối máy của thiết bị này.
-                  </span>
-                </label>
-              </div>
-
-              {/* Photo Upload & Gallery */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                    Thư Viện Ảnh Bằng Chứng Kiểm Định:
-                  </span>
-
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {proofPhotos.map((url, idx) => (
-                    <div key={idx} className="relative group rounded-xl overflow-hidden border border-gray-200 aspect-video bg-gray-100">
-                      <img
-                        src={url}
-                        alt="Proof"
-                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300 cursor-pointer"
-                        onClick={() => setPreviewPhoto(url)}
-                      />
-                      <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition">
-                        <button
-                          type="button"
-                          onClick={() => handleRemovePhoto(idx)}
-                          className="p-1 rounded-md bg-black/70 hover:bg-red-600 text-white cursor-pointer"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                      <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-black/60 text-white">
-                        Ảnh #{idx + 1}
-                      </span>
-                    </div>
-                  ))}
-
-                  <label className="border-2 border-dashed border-gray-300 hover:border-[#c34c36] rounded-xl flex flex-col items-center justify-center p-3 text-center cursor-pointer hover:bg-orange-50/30 transition aspect-video">
-                    <Camera className="w-5 h-5 text-gray-400 mb-1" />
-                    <span className="text-[11px] font-bold text-gray-600">Thêm ảnh mới</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const fakeUrl = URL.createObjectURL(file);
-                          setProofPhotos([...proofPhotos, fakeUrl]);
-                          notify('Đã tải ảnh bằng chứng lên thành công');
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              {/* Video Proofs & Unboxing URLs */}
-              <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-3 text-xs">
-                <span className="font-extrabold text-[#24263e] uppercase tracking-wider flex items-center gap-1.5">
-                  <Camera className="w-4 h-4 text-blue-600" />
-                  Bằng Chứng Video Thử Nghiệm Máy & Mở Thùng (Cloudinary / S3 URL):
-                </span>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[11px] font-bold text-gray-600 block mb-1">
-                      Video Chẩn Đoán / Test Máy (Inspection Proof Video URL):
-                    </label>
-                    <input
-                      type="url"
-                      value={videoProofUrl}
-                      onChange={(e) => setVideoProofUrl(e.target.value)}
-                      placeholder="https://res.cloudinary.com/.../inspection_test.mp4"
-                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold text-gray-600 block mb-1">
-                      Video Mở Thùng Đồng Kiểm (Unboxing Video URL):
-                    </label>
-                    <input
-                      type="url"
-                      value={unboxingVideoUrl}
-                      onChange={(e) => setUnboxingVideoUrl(e.target.value)}
-                      placeholder="https://res.cloudinary.com/.../unboxing.mp4"
-                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36]"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-between pt-3">
-                <button
-                  type="button"
-                  onClick={() => setCurrentStep('technical')}
-                  className="px-5 py-2.5 border border-gray-200 hover:bg-gray-50 text-xs font-bold rounded-xl cursor-pointer"
-                >
-                  Quay lại
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentStep('verdict')}
-                  className="px-6 py-2.5 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <span>Chuyển sang Bước 5: Kết Luận</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* =================================================================== */}
-          {/* STEP 5: FINAL VERDICT & DIGITAL SIGNATURE                           */}
-          {/* =================================================================== */}
-          {currentStep === 'verdict' && (
-            <div className="space-y-5 animate-fadeIn">
-              <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
-                <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                <div>
-                  <strong>Bước 5 - Kết Luận, Ký Số & Phát Hành Chứng Thư:</strong> Hoàn tất thẩm định, chọn kết luận Đạt hoặc Từ chối và ký số điện tử để cấp Chứng thư giám định cho đơn hàng.
-                </div>
-              </div>
-
-              {/* Verdict buttons */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                  Kết Luận Thẩm Định Cuối Cùng *:
-                </label>
-                <div className="grid grid-cols-2 gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setOverallVerdict('PASS')}
-                    className={`py-3.5 px-4 rounded-2xl border text-sm font-black transition flex items-center justify-center gap-2 cursor-pointer ${
-                      overallVerdict === 'PASS'
-                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-300'
-                        : 'bg-[#faf8f5] text-gray-700 border-gray-200 hover:bg-emerald-50'
-                    }`}
-                  >
-                    <CheckCircle2 className="w-5 h-5" />
-                    <span>ĐẠT CHUẨN (PASS)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setOverallVerdict('FAIL')}
-                    className={`py-3.5 px-4 rounded-2xl border text-sm font-black transition flex items-center justify-center gap-2 cursor-pointer ${
-                      overallVerdict === 'FAIL'
-                        ? 'bg-red-600 text-white border-red-600 shadow-md ring-2 ring-red-300'
-                        : 'bg-[#faf8f5] text-gray-700 border-gray-200 hover:bg-red-50'
-                    }`}
-                  >
-                    <XCircle className="w-5 h-5" />
-                    <span>TỪ CHỐI (REJECTED)</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Quality score slider */}
-              <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-2 text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-gray-700">Điểm Đánh Giá Chất Lượng Tổng Thể:</span>
-                  <span className="font-mono font-black text-xl text-[#c34c36]">{conditionScore}/100</span>
-                </div>
-                <input
-                  type="range"
-                  min="50"
-                  max="100"
-                  value={conditionScore}
-                  onChange={(e) => setConditionScore(Number(e.target.value))}
-                  className="w-full accent-[#c34c36] cursor-pointer"
-                />
-              </div>
-
-              {/* Diagnostic notes */}
-              <div className="space-y-1.5 text-xs">
-                <label className="font-bold text-gray-700">Ghi Chú Kết Luận Chi Tiết Của Kỹ Sư Giám Định:</label>
-                <textarea
-                  value={inspectorNotes}
-                  onChange={(e) => setInspectorNotes(e.target.value)}
-                  rows={3}
-                  className="w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl outline-none focus:border-[#c34c36]"
-                />
-              </div>
-
-              {/* Digital signature & Seal check */}
-              <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#24263e] text-white flex items-center justify-center font-bold shrink-0">
-                    <ShieldCheck className="w-5 h-5 text-[#fce5da]" />
-                  </div>
-                  <div>
-                    <div className="font-bold text-slate-900">Chữ Ký Số Kiểm Định Viên: {inspectorName}</div>
-                    <div className="text-[11px] text-gray-500 font-mono">
-                      Chứng thư số: SL-CA-2026-RSA4096 (Còn hiệu lực) • Tem: {tamperSealInput || 'Đã niêm phong'}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={sealConfirmed}
-                      onChange={(e) => setSealConfirmed(e.target.checked)}
-                      className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer"
-                    />
-                    <span className="font-bold text-gray-800">Đã dán tem</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isDigitalSigned}
-                      onChange={(e) => setIsDigitalSigned(e.target.checked)}
-                      className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer"
-                    />
-                    <span className="font-bold text-gray-800">Đính kèm chữ ký</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="pt-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowCertificateModal(true)}
-                  className="w-full sm:w-auto px-5 py-2.5 border border-gray-300 hover:bg-gray-50 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Eye className="w-4 h-4 text-gray-500" />
-                  <span>Xem Trước Chứng Thư</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSubmitInspection}
-                  disabled={isSubmitting}
-                  className="w-full sm:w-auto px-8 py-3 bg-[#24263e] hover:bg-black text-white text-sm font-black rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin text-white" />
-                      <span>Đang nộp kết quả & ký số...</span>
-                    </>
-                  ) : (
-                    <>
-                      <ShieldCheck className="w-4 h-4 text-[#fce5da]" />
-                      <span>Ký Số & Phát Hành Biên Bản Nghiệm Thu</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {noticeMessage && (
-                <div
-                  className={`p-3.5 rounded-xl border text-xs font-bold flex items-center gap-2 animate-fadeIn ${
-                    noticeMessage.isError
-                      ? 'bg-red-50 border-red-200 text-red-800'
-                      : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                  }`}
-                >
-                  {noticeMessage.isError ? (
-                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-                  ) : (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  )}
-                  <span>{translateSystemNotification(noticeMessage.text)}</span>
                 </div>
               )}
-            </div>
-          )}
+
+              {/* =================================================================== */}
+              {/* STEP 2: EXTERIOR & COSMETIC GRADING                                */}
+              {/* =================================================================== */}
+              {currentStep === 'exterior' && (
+                <div className="space-y-5 animate-fadeIn">
+                  <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
+                    <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Bước 2 - Kiểm tra Ngoại Quan & Phân Hạng Grade:</strong> Đánh giá mức độ trầy xước, cấn móp, độ nguyên vẹn của khung vỏ, kính chịu lực và các khớp nối.
+                    </div>
+                  </div>
+
+                  {/* Grade Selection Cards */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                        Chọn Phân Hạng Ngoại Quan:
+                      </label>
+                      {selectedGrade && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Đã chọn {selectedGrade}
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      {[
+                        { id: 'Like New' as ConditionGrade, label: 'Grade S / A+', desc: 'Như mới, không tì vết' },
+                        { id: 'Good' as ConditionGrade, label: 'Grade A / B ', desc: 'Rất đẹp, trầy xước dăm siêu nhẹ' },
+                        { id: 'Fair' as ConditionGrade, label: 'Grade C', desc: 'Cấn móp / Trầy xước nhìn thấy rõ' },
+                      ].map((gr) => (
+                        <div
+                          key={gr.id}
+                          onClick={() => {
+                            if (isCompletedOrder) return;
+                            setSelectedGrade(gr.id);
+                            if (gr.id === 'Like New') setExteriorScore(98);
+                            else if (gr.id === 'Good') setExteriorScore(90);
+                            else setExteriorScore(80);
+                          }}
+                          className={`p-3.5 rounded-2xl border transition text-center space-y-1 ${isCompletedOrder ? 'cursor-default opacity-85' : 'cursor-pointer'
+                            } ${selectedGrade === gr.id
+                              ? 'bg-[#24263e] text-white border-[#24263e] shadow-md ring-2 ring-emerald-400'
+                              : 'bg-[#faf8f5] border-gray-200 hover:border-[#c34c36] text-gray-800'
+                            }`}
+                        >
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className="font-black text-xs">{gr.label}</span>
+                            {selectedGrade === gr.id && (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            )}
+                          </div>
+                          <div className={`text-[10px] ${selectedGrade === gr.id ? 'text-gray-300' : 'text-gray-500'}`}>
+                            {gr.desc}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Notes */}
+                  <div className="space-y-1.5 text-xs">
+                    <label className="font-bold text-gray-700">Mô tả chi tiết (Nếu có): </label>
+                    <textarea
+                      value={exteriorNotes}
+                      readOnly={isCompletedOrder}
+                      onChange={(e) => setExteriorNotes(e.target.value)}
+                      rows={3}
+                      className={`w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed text-gray-700' : ''}`}
+                    />
+                  </div>
+
+                  <div className="flex justify-between pt-3">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectStep('intake')}
+                      className="px-5 py-2.5 border border-gray-200 hover:bg-gray-50 text-xs font-bold rounded-xl cursor-pointer"
+                    >
+                      Quay lại Bước 1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleNextStep('technical')}
+                      className="px-6 py-2.5 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <span>Chuyển sang Bước 3: Kỹ Thuật</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* =================================================================== */}
+              {/* STEP 3: TECHNICAL & FUNCTIONAL CHECKLIST                           */}
+              {/* =================================================================== */}
+              {currentStep === 'technical' && (
+                <div className="space-y-5 animate-fadeIn">
+                  <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
+                    <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Bước 3 - Kiểm Định Kỹ Thuật & Bo Mạch Phòng Lab:</strong> Thử tải điện áp, máy nén, cảm biến nhiệt, motor truyền động và đo đạc chỉ số vận hành thực tế.
+                    </div>
+                  </div>
+
+                  {/* Category Display (Fixed from Listing) */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-gray-100">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold text-gray-700">Bộ Checklist ngành hàng:</span>
+                      <div
+                        className="px-3 py-1.5 rounded-xl border border-gray-200 bg-gray-50 text-xs font-bold text-gray-800 flex items-center gap-1.5 shadow-2xs"
+                        title="Ngành hàng được trích xuất trực tiếp từ bài đăng sản phẩm, cố định theo quy trình kiểm định"
+                      >
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span>{selectedCategory}</span>
+                      </div>
+                      {isChecklistLoaded && backendChecklist?.title && (
+                        <span
+                          className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200"
+                          title={backendChecklist.description || ''}
+                        >
+                          {backendChecklist.title}
+                        </span>
+                      )}
+                    </div>
+
+                    {canUseChecklist && <div className="flex items-center gap-2">
+                      <div className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 shrink-0 flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{checklist.filter((c) => c.status === 'pass').length}/{checklist.length} tiêu chuẩn Đạt</span>
+                      </div>
+                      {checklist.length > 0 && checklist.every((c) => !c.mandatory || c.status !== 'pending') && (
+                        <div className="text-xs font-bold text-white bg-emerald-600 px-3 py-1 rounded-full shadow-xs flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                          <span>Đã ổn tất cả tiêu chuẩn bắt buộc</span>
+                        </div>
+                      )}
+                    </div>}
+                  </div>
+
+                  {/* Checklist Items Table */}
+                  <div className="space-y-3">
+                    {!canUseChecklist && (
+                      <div role="status" className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-700">
+                        {!isChecklistLoaded && <Loader2 className="h-4 w-4 animate-spin" />}
+                        <span>{isChecklistLoaded ? checklistLoad?.message : 'Đang tải checklist của đơn kiểm định…'}</span>
+                        {isChecklistLoaded && !isCompletedOrder && (
+                          <button type="button" onClick={() => setChecklistRetry((retry) => retry + 1)}
+                            className="inline-flex items-center gap-1 font-bold text-blue-700 hover:underline"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" /> Tải lại
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {canUseChecklist && checklist.map((item, idx) => (
+                      <div
+                        key={item.id || `chk-card-${idx}`}
+                        className={`p-4 rounded-2xl border space-y-2.5 text-xs transition ${item.status === 'pass'
+                          ? 'border-emerald-300 bg-emerald-50/20'
+                          : item.status === 'fail'
+                            ? 'border-red-300 bg-red-50/20'
+                            : 'border-gray-200 bg-[#faf8f5]'
+                          }`}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold text-[#c34c36] uppercase tracking-wider">
+                                [{item.category || selectedCategory || 'Kỹ thuật'}]
+                              </span>
+                              {item.status === 'pass' && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  ĐÃ ỔN (ĐẠT)
+                                </span>
+                              )}
+                              {item.status === 'fail' && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-black text-red-700 bg-red-100 px-2 py-0.5 rounded-full border border-red-300">
+                                  <X className="w-3 h-3 text-red-600" />
+                                  PHÁT HIỆN LỖI
+                                </span>
+                              )}
+                            </div>
+                            <h4 className="font-bold text-slate-900 text-sm mt-0.5 flex items-center gap-1.5">
+                              {item.status === 'pass' && (
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                              )}
+                              <span>{item.title}</span>
+                              {item.mandatory && (
+                                <span className="text-[10px] text-red-500 font-bold ml-1">*Bắt buộc</span>
+                              )}
+                            </h4>
+                            <p className="text-gray-500 text-[11px] mt-0.5">{item.description}</p>
+                          </div>
+
+                          <div className="flex gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              disabled={isCompletedOrder}
+                              onClick={() => handleToggleChecklist(item.id, 'pass')}
+                              className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1 ${isCompletedOrder ? 'cursor-default opacity-85' : 'cursor-pointer'
+                                } ${item.status === 'pass'
+                                  ? 'bg-emerald-600 text-white shadow-xs'
+                                  : 'bg-white border border-gray-200 text-gray-600 hover:bg-emerald-50'
+                                }`}
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>ĐẠT</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={isCompletedOrder}
+                              onClick={() => handleToggleChecklist(item.id, 'fail')}
+                              className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1 ${isCompletedOrder ? 'cursor-default opacity-85' : 'cursor-pointer'
+                                } ${item.status === 'fail'
+                                  ? 'bg-red-600 text-white shadow-xs'
+                                  : 'bg-white border border-gray-200 text-gray-600 hover:bg-red-50'
+                                }`}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>LỖI</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-gray-200 flex items-center gap-2">
+                          <span className="text-gray-500 text-[11px] shrink-0">Chỉ số đo đạc thực tế:</span>
+                          <input
+                            type="text"
+                            readOnly={isCompletedOrder}
+                            value={item.testedValue || ''}
+                            onChange={(e) => handleUpdateTestedValue(item.id, e.target.value)}
+                            placeholder="VD: Nhiệt độ -19.2°C, độ ồn 38dB, cách điện an toàn..."
+                            className={`flex-1 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed text-gray-700' : ''}`}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex justify-between pt-3">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectStep('exterior')}
+                      className="px-5 py-2.5 border border-gray-200 hover:bg-gray-50 text-xs font-bold rounded-xl cursor-pointer"
+                    >
+                      Quay lại Bước 2
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleNextStep('proofs')}
+                      disabled={!isCompletedOrder && !canUseChecklist}
+                      className="px-6 py-2.5 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <span>Chuyển sang Bước 4: Bằng Chứng</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* =================================================================== */}
+              {/* STEP 4: PROOFS & TAMPER SEAL                                       */}
+              {/* =================================================================== */}
+              {currentStep === 'proofs' && (
+                <div className="space-y-5 animate-fadeIn">
+                  <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
+                    <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Bước 4 - Ảnh Bằng Chứng Vi Mạch & Dán Tem Niêm Phong:</strong> Chụp ảnh soi kính hiển vi, số seri bo mạch và dán tem niêm phong chống tráo đổi linh kiện theo tiêu chuẩn SecondLife.
+                    </div>
+                  </div>
+
+                  {/* Tamper Seal Serial Box */}
+                  <div className="p-4 rounded-2xl bg-orange-50/60 border border-orange-200 space-y-3 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-orange-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-[#c34c36]" />
+                        Số Seri Tem Niêm Phong Chống Bóc Tách (NFC / Hologram Seal) *
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleGenerateBackendSeal}
+                        disabled={isGeneratingSeal}
+                        className="text-xs text-[#c34c36] font-bold hover:underline cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                      >
+                        {isGeneratingSeal && <Loader2 className="w-3 h-3 animate-spin" />}
+                        <span>Sinh mã tem từ hệ thống</span>
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        type="text"
+                        value={tamperSealInput}
+                        readOnly={isCompletedOrder}
+                        onChange={(e) => setTamperSealInput(e.target.value)}
+                        className={`flex-1 min-w-[200px] px-3.5 py-2.5 bg-white border border-orange-200 rounded-xl font-mono font-bold text-slate-800 text-sm outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                      />
+                      <button
+                        type="button"
+                        disabled={isCompletedOrder}
+                        onClick={() => {
+                          setScannerMode('tamper');
+                          setIsScannerOpen(true);
+                        }}
+                        className="px-3 py-2 bg-slate-800 hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Quét Barcode / QR tem niêm phong"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                        <span>Quét Tem</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsPrintSealModalOpen(true)}
+                        className="px-3.5 py-2 bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
+                        title="Tạo mã in tem niêm phong chuẩn dán máy"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>In Tem QR</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVerifySealId(tamperSealInput);
+                          setIsVerifySealModalOpen(true);
+                        }}
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
+                        title="Tra cứu trạng thái xác thực tem trên Backend"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span>Xác Thực Tem</span>
+                      </button>
+                    </div>
+
+                    <label className="flex items-center gap-2 cursor-pointer pt-1">
+                      <input
+                        type="checkbox"
+                        disabled={isCompletedOrder}
+                        checked={sealConfirmed}
+                        onChange={(e) => setSealConfirmed(e.target.checked)}
+                        className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer disabled:cursor-not-allowed"
+                      />
+                      <span className="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
+                        <span>Xác nhận: Tôi đã dán tem niêm phong vật lý đè lên ốc vít / khớp nối máy của thiết bị này.</span>
+                        {sealConfirmed && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            ĐÃ DÁN TEM (ĐÃ ỔN)
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Photo Upload & Gallery */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                        Thư Viện Ảnh Bằng Chứng Kiểm Định:
+                      </span>
+                      {proofPhotos.length > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Đã có {proofPhotos.length} ảnh bằng chứng (Đã ổn)
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {proofPhotos.map((url, idx) => (
+                        <div key={idx} className="relative group rounded-xl overflow-hidden border border-gray-200 aspect-video bg-gray-100">
+                          <img
+                            src={url}
+                            alt="Proof"
+                            className="w-full h-full object-cover group-hover:scale-105 transition duration-300 cursor-pointer"
+                            onClick={() => setPreviewPhoto(url)}
+                          />
+                          {!isCompletedOrder && (
+                            <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition">
+                              <button
+                                type="button"
+                                onClick={() => handleRemovePhoto(idx)}
+                                className="p-1 rounded-md bg-black/70 hover:bg-red-600 text-white cursor-pointer"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-black/60 text-white">
+                            Ảnh #{idx + 1}
+                          </span>
+                        </div>
+                      ))}
+
+                      {!isCompletedOrder && (
+                        <label className="border-2 border-dashed border-gray-300 hover:border-[#c34c36] rounded-xl flex flex-col items-center justify-center p-3 text-center cursor-pointer hover:bg-orange-50/30 transition aspect-video relative">
+                          {isUploadingPhoto ? (
+                            <div className="flex flex-col items-center gap-1.5 text-xs text-[#c34c36]">
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                              <span className="font-semibold text-[10px]">Đang tải ảnh lên...</span>
+                            </div>
+                          ) : (
+                            <>
+                              <Camera className="w-5 h-5 text-gray-400 mb-1" />
+                              <span className="text-[11px] font-bold text-gray-600">Thêm ảnh mới</span>
+                              <span className="text-[9px] text-gray-400">JPG, PNG, WEBP</span>
+                            </>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            disabled={isUploadingPhoto}
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                handleUploadProofPhoto(file);
+                              }
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Video Proofs & Unboxing URLs */}
+                  <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-3 text-xs">
+                    <span className="font-extrabold text-[#24263e] uppercase tracking-wider flex items-center gap-1.5">
+                      <Camera className="w-4 h-4 text-blue-600" />
+                      Bằng Chứng Video Thử Nghiệm Máy & Mở Thùng (Cloudinary / S3 URL):
+                    </span>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-gray-600 block mb-1">
+                          Video Chẩn Đoán / Test Máy (Inspection Proof Video URL):
+                        </label>
+                        <input
+                          type="url"
+                          value={videoProofUrl}
+                          onChange={(e) => setVideoProofUrl(e.target.value)}
+                          placeholder="https://res.cloudinary.com/.../inspection_test.mp4"
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-gray-600 block mb-1">
+                          Video Mở Thùng Đồng Kiểm (Unboxing Video URL):
+                        </label>
+                        <input
+                          type="url"
+                          value={unboxingVideoUrl}
+                          onChange={(e) => setUnboxingVideoUrl(e.target.value)}
+                          placeholder="https://res.cloudinary.com/.../unboxing.mp4"
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between pt-3">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectStep('technical')}
+                      className="px-5 py-2.5 border border-gray-200 hover:bg-gray-50 text-xs font-bold rounded-xl cursor-pointer"
+                    >
+                      Quay lại Bước 3
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleNextStep('verdict')}
+                      className="px-6 py-2.5 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <span>Chuyển sang Bước 5: Kết Luận</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* =================================================================== */}
+              {/* STEP 5: FINAL VERDICT & DIGITAL SIGNATURE                           */}
+              {/* =================================================================== */}
+              {currentStep === 'verdict' && (
+                <div className="space-y-5 animate-fadeIn">
+                  <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
+                    <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Bước 5 - Kết Luận, Ký Số & Phát Hành Chứng Thư:</strong> Hoàn tất thẩm định, chọn kết luận Đạt hoặc Từ chối và ký số điện tử để cấp Chứng thư giám định cho đơn hàng.
+                    </div>
+                  </div>
+
+                  {isCompletedOrder && (
+                    <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-300 flex items-start sm:items-center gap-3 text-xs text-emerald-900 shadow-2xs">
+                      <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5 sm:mt-0" />
+                      <div>
+                        <strong className="text-emerald-950 text-sm block">Đơn hàng đã có kết quả kiểm định chính thức & niêm phong số hóa</strong>
+                        <span className="text-[11px] text-emerald-800">
+                          Hồ sơ và kết quả đo kiểm đã được ký số phát hành chứng thư. Không được phép chỉnh sửa hoặc thẩm định lại.
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Verdict buttons */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                        Kết Luận Thẩm Định Cuối Cùng *:
+                      </label>
+                      {overallVerdict && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Đã chốt: {overallVerdict === 'PASS' ? 'ĐẠT CHUẨN' : 'TỪ CHỐI'} (Đã ổn)
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        type="button"
+                        disabled={isCompletedOrder}
+                        onClick={() => setOverallVerdict('PASS')}
+                        className={`py-3.5 px-4 rounded-2xl border text-sm font-black transition flex items-center justify-center gap-2 ${isCompletedOrder ? 'cursor-default' : 'cursor-pointer'
+                          } ${overallVerdict === 'PASS'
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-300'
+                            : 'bg-[#faf8f5] text-gray-700 border-gray-200 hover:bg-emerald-50'
+                          }`}
+                      >
+                        <CheckCircle2 className="w-5 h-5" />
+                        <span>ĐẠT CHUẨN (PASS)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isCompletedOrder}
+                        onClick={() => setOverallVerdict('FAIL')}
+                        className={`py-3.5 px-4 rounded-2xl border text-sm font-black transition flex items-center justify-center gap-2 ${isCompletedOrder ? 'cursor-default' : 'cursor-pointer'
+                          } ${overallVerdict === 'FAIL'
+                            ? 'bg-red-600 text-white border-red-600 shadow-md ring-2 ring-red-300'
+                            : 'bg-[#faf8f5] text-gray-700 border-gray-200 hover:bg-red-50'
+                          }`}
+                      >
+                        <XCircle className="w-5 h-5" />
+                        <span>TỪ CHỐI (REJECTED)</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Quality score slider */}
+                  <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-2 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-gray-700">Điểm Đánh Giá Chất Lượng Tổng Thể:</span>
+                      <span className="font-mono font-black text-xl text-[#c34c36]">{conditionScore}/100</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="50"
+                      max="100"
+                      disabled={isCompletedOrder}
+                      value={conditionScore}
+                      onChange={(e) => setConditionScore(Number(e.target.value))}
+                      className={`w-full accent-[#c34c36] ${isCompletedOrder ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                    />
+                  </div>
+
+                  {/* Diagnostic notes */}
+                  <div className="space-y-1.5 text-xs">
+                    <label className="font-bold text-gray-700">Ghi Chú Kết Luận Chi Tiết Của Kỹ Sư Giám Định:</label>
+                    <textarea
+                      value={inspectorNotes}
+                      readOnly={isCompletedOrder}
+                      onChange={(e) => setInspectorNotes(e.target.value)}
+                      rows={3}
+                      className={`w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed text-gray-700' : ''}`}
+                    />
+                  </div>
+
+                  {/* Digital signature & Seal check */}
+                  <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-[#24263e] text-white flex items-center justify-center font-bold shrink-0">
+                        <ShieldCheck className="w-5 h-5 text-[#fce5da]" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-slate-900">Chữ Ký Số Kiểm Định Viên: {inspectorName}</div>
+                        <div className="text-[11px] text-gray-500 font-mono">
+                          Chứng thư số: SL-CA-2026-RSA4096 (Còn hiệu lực) • Tem: {tamperSealInput || 'Đã niêm phong'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          disabled={isCompletedOrder}
+                          checked={sealConfirmed}
+                          onChange={(e) => setSealConfirmed(e.target.checked)}
+                          className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer disabled:cursor-not-allowed"
+                        />
+                        <span className="font-bold text-gray-800 flex items-center gap-1">
+                          <span>Đã dán tem</span>
+                          {sealConfirmed && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 inline" />}
+                        </span>
+                      </label>
+
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          disabled={isCompletedOrder}
+                          checked={isDigitalSigned}
+                          onChange={(e) => setIsDigitalSigned(e.target.checked)}
+                          className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer disabled:cursor-not-allowed"
+                        />
+                        <span className="font-bold text-gray-800 flex items-center gap-1">
+                          <span>Đính kèm chữ ký</span>
+                          {isDigitalSigned && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 inline" />}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="pt-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-3">
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => handleSelectStep('proofs')}
+                        className="px-5 py-2.5 border border-gray-200 hover:bg-gray-50 text-xs font-bold rounded-xl cursor-pointer"
+                      >
+                        Quay lại Bước 4
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      {isCompletedOrder ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowCertificateModal(true)}
+                          className="w-full sm:w-auto px-8 py-3 bg-[#24263e] hover:bg-black text-white text-sm font-black rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition"
+                        >
+                          <Printer className="w-4 h-4 text-[#fce5da]" />
+                          <span>Xem Biên Bản Giám Định</span>
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setShowCertificateModal(true)}
+                            className="px-5 py-2.5 border border-gray-300 hover:bg-gray-50 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Eye className="w-4 h-4 text-gray-500" />
+                            <span>Xem Trước Chứng Thư</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleSubmitInspection}
+                            disabled={isSubmitting}
+                            className="w-full sm:w-auto px-8 py-3 bg-[#24263e] hover:bg-black text-white text-sm font-black rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                          >
+                            {isSubmitting ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin text-white" />
+                                <span>Đang nộp kết quả & ký số...</span>
+                              </>
+                            ) : (
+                              <>
+                                <ShieldCheck className="w-4 h-4 text-[#fce5da]" />
+                                <span>Ký Số & Phát Hành Biên Bản Nghiệm Thu</span>
+                              </>
+                            )}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {noticeMessage && (
+                    <div
+                      className={`p-3.5 rounded-xl border text-xs font-bold flex items-center gap-2 animate-fadeIn ${noticeMessage.isError
+                        ? 'bg-red-50 border-red-200 text-red-800'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        }`}
+                    >
+                      {noticeMessage.isError ? (
+                        <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      )}
+                      <span>{translateSystemNotification(noticeMessage.text)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -1758,112 +2018,13 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       {/* ===================================================================== */}
       {/* MODAL: PREVIEW & PRINT DIGITAL CERTIFICATE                            */}
       {/* ===================================================================== */}
-      {showCertificateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fadeIn overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl border border-slate-100 my-8">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 print:hidden">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Chứng Thư Thẩm Định Kỹ Thuật Số Hóa
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="px-3.5 py-1.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>In Chứng Thư (Print)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowCertificateModal(false)}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Certificate Paper */}
-            <div className="p-6 border-4 border-double border-[#24263e] rounded-2xl bg-white space-y-5 text-[#24263e] relative overflow-hidden">
-              <div className="text-center space-y-1">
-                <div className="inline-flex items-center gap-1 text-[11px] font-black tracking-widest text-[#c34c36] uppercase">
-                  <ShieldCheck className="w-4 h-4" />
-                  HỆ THỐNG KIỂM ĐỊNH CHẤT LƯỢNG SECONDLIFE VIỆT NAM
-                </div>
-                <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-[#24263e]">
-                  CHỨNG THƯ GIÁM ĐỊNH KỸ THUẬT & XÁC THỰC
-                </h2>
-                <p className="text-[11px] text-gray-500 font-mono">
-                  Số hiệu: SL-CERT-{activeOrder?.id || '2026'}-{tamperSealInput.slice(-4)} • Ngày cấp: {new Date().toLocaleDateString('vi-VN')}
-                </p>
-              </div>
-
-              <div className="p-3.5 bg-slate-50 rounded-xl space-y-2 text-xs border border-slate-200">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <span className="text-gray-500">Thiết bị giám định:</span>
-                    <div className="font-bold text-slate-900">{activeOrder?.listing?.title}</div>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Mã đơn hàng Escrow:</span>
-                    <div className="font-bold font-mono text-[#c34c36]">#{activeOrder?.id}</div>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Phân hạng ngoại quan:</span>
-                    <div className="font-bold text-slate-900">Grade {selectedGrade} ({exteriorScore}/100)</div>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Mã tem niêm phong:</span>
-                    <div className="flex items-center gap-2 mt-1">
-                      <ScannableQRCode value={tamperSealInput} size={48} />
-                      <div className="font-bold font-mono text-orange-900">{tamperSealInput}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 text-center">
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
-                  <span className="text-[10px] font-bold text-emerald-700 uppercase">Kết Quả Chung</span>
-                  <div className="text-lg font-black text-emerald-800 mt-0.5">
-                    {overallVerdict === 'PASS' ? 'ĐẠT CHUẨN' : 'TỪ CHỐI'}
-                  </div>
-                </div>
-                <div className="p-3 rounded-xl bg-blue-50 border border-blue-200">
-                  <span className="text-[10px] font-bold text-blue-700 uppercase">Điểm Chất Lượng</span>
-                  <div className="text-lg font-black text-blue-800 mt-0.5 font-mono">
-                    {conditionScore} / 100
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200 text-xs text-gray-700 italic">
-                "{inspectorNotes}"
-              </div>
-
-              <div className="pt-4 border-t border-gray-200 grid grid-cols-2 gap-4 text-center text-xs">
-                <div>
-                  <div className="text-gray-500">KỸ THUẬT VIÊN GIÁM ĐỊNH</div>
-                  <div className="h-14 flex items-center justify-center font-serif italic text-base text-blue-900 font-bold">
-                    {inspectorName}
-                  </div>
-                  <div className="text-[11px] font-bold text-gray-700">{inspectorName}</div>
-                </div>
-
-                <div>
-                  <div className="text-gray-500">DẤU MỘC XÁC THỰC</div>
-                  <div className="h-14 flex items-center justify-center">
-                    <span className="px-3 py-1 rounded-full border-2 border-red-600 text-red-600 font-black text-[10px] uppercase rotate-[-6deg]">
-                      SECONDLIFE APPROVED
-                    </span>
-                  </div>
-                  <div className="text-[11px] font-bold text-gray-700">Hub Inspection Center</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Official Digital Certificate Modal */}
+      {showCertificateModal && activeOrder && (
+        <DigitalInspectionCertificateModal
+          order={activeOrder}
+          onClose={() => setShowCertificateModal(false)}
+          lang={lang}
+        />
       )}
 
       {/* Lightbox Preview */}

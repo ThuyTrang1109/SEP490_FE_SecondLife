@@ -28,6 +28,33 @@ const CREDIT_TYPE_LABELS: Record<string, string> = {
   VALUATION: 'Định giá AI',
 };
 
+type CreditField = 'postCredits' | 'chatCredits' | 'valuationCredits';
+
+interface PackageFormState {
+  name: string;
+  description: string;
+  postCredits: string;
+  chatCredits: string;
+  valuationCredits: string;
+  active: boolean;
+}
+
+// Kiểm tra số lượng lượt credit có hợp lệ (chỉ chấp nhận chuỗi số nguyên không âm hoặc rỗng khi đang gõ)
+const isCreditValid = (val: string | number) => {
+  const str = String(val ?? '').trim();
+  if (str === '') return true;
+  return /^\d+$/.test(str);
+};
+
+// Chuyển đổi an toàn sang số nguyên dương để tính giá và lưu dữ liệu
+const getCreditNumber = (val: string | number) => {
+  const str = String(val ?? '').trim();
+  if (/^\d+$/.test(str)) {
+    return parseInt(str, 10);
+  }
+  return 0;
+};
+
 export const PackageFormModal: React.FC<PackageFormModalProps> = ({
   isOpen,
   onClose,
@@ -35,12 +62,12 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
   creditPrices,
   onSave,
 }) => {
-  const [formData, setFormData] = useState<Omit<PackageFormData, 'price'>>({
+  const [formData, setFormData] = useState<PackageFormState>({
     name: '',
     description: '',
-    postCredits: 1,
-    chatCredits: 0,
-    valuationCredits: 0,
+    postCredits: '1',
+    chatCredits: '0',
+    valuationCredits: '0',
     active: true,
   });
 
@@ -65,15 +92,20 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
   // Danh sách các quyền lợi credit trong gói
   const creditItems = useMemo(
     () => [
-      { type: 'LISTING', label: CREDIT_TYPE_LABELS.LISTING, quantity: Math.max(0, Math.floor(Number(formData.postCredits) || 0)) },
-      { type: 'AI_CHAT', label: CREDIT_TYPE_LABELS.AI_CHAT, quantity: Math.max(0, Math.floor(Number(formData.chatCredits) || 0)) },
-      { type: 'VALUATION', label: CREDIT_TYPE_LABELS.VALUATION, quantity: Math.max(0, Math.floor(Number(formData.valuationCredits) || 0)) },
+      { type: 'LISTING', label: CREDIT_TYPE_LABELS.LISTING, quantity: getCreditNumber(formData.postCredits) },
+      { type: 'AI_CHAT', label: CREDIT_TYPE_LABELS.AI_CHAT, quantity: getCreditNumber(formData.chatCredits) },
+      { type: 'VALUATION', label: CREDIT_TYPE_LABELS.VALUATION, quantity: getCreditNumber(formData.valuationCredits) },
     ],
     [formData.postCredits, formData.chatCredits, formData.valuationCredits]
   );
 
   const activeCreditItems = creditItems.filter((item) => item.quantity > 0);
   const totalQuantity = activeCreditItems.reduce((sum, item) => sum + item.quantity, 0);
+
+  // Trạng thái hợp lệ của từng ô số lượng credit
+  const postCreditInvalid = !isCreditValid(formData.postCredits);
+  const chatCreditInvalid = !isCreditValid(formData.chatCredits);
+  const valuationCreditInvalid = !isCreditValid(formData.valuationCredits);
 
   // Tìm các loại credit có trong gói (quantity > 0) nhưng thiếu đơn giá hoạt động
   const missingPriceItems = activeCreditItems.filter((item) => !getActiveCreditRule(item.type));
@@ -98,9 +130,9 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
         setFormData({
           name: editingPackage.name || editingPackage.packageName || '',
           description: editingPackage.description || '',
-          postCredits: Number(editingPackage.postCredits || 0),
-          chatCredits: Number(editingPackage.chatCredits || 0),
-          valuationCredits: Number(editingPackage.valuationCredits || 0),
+          postCredits: String(editingPackage.postCredits ?? 0),
+          chatCredits: String(editingPackage.chatCredits ?? 0),
+          valuationCredits: String(editingPackage.valuationCredits ?? 0),
           active: editingPackage.active !== false,
         });
         if (priceStr.trim() !== '') {
@@ -116,9 +148,9 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
         setFormData({
           name: '',
           description: '',
-          postCredits: 1,
-          chatCredits: 0,
-          valuationCredits: 0,
+          postCredits: '1',
+          chatCredits: '0',
+          valuationCredits: '0',
           active: true,
         });
         setPrice('');
@@ -170,9 +202,79 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
     return null;
   }, [pricingMode, discount, calculatedDiscountFromPrice]);
 
+  // Xử lý thay đổi số lượng credit:
+  // - Nếu người dùng nhập chữ tiếng Việt / ký tự không hợp lệ: không tự ý xóa mà hiển thị cảnh báo "Số lượng không hợp lệ"
+  // - Nếu người dùng nhập số có số 0 ở đầu (ví dụ: "01", "001212"): tự động chuẩn hóa bỏ số 0 thừa thành "1", "1212"
+  const handleCreditChange = (field: CreditField, rawVal: string) => {
+    let cleanVal = rawVal;
+    // Tự động bỏ số 0 thừa ở đầu nếu toàn bộ là chữ số (ví dụ: "01212" -> "1212", "00" -> "0")
+    if (/^\d+$/.test(cleanVal) && cleanVal.length > 1 && cleanVal.startsWith('0')) {
+      cleanVal = cleanVal.replace(/^0+/, '') || '0';
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      [field]: cleanVal,
+    }));
+
+    // Báo lỗi tức thì nếu chứa chữ cái, tiếng Việt hoặc ký tự không hợp lệ
+    if (cleanVal.trim() !== '' && !/^\d+$/.test(cleanVal.trim())) {
+      setError('Số lượng không hợp lệ: vui lòng chỉ nhập số nguyên không âm cho quyền lợi dịch vụ.');
+    } else {
+      setError((prevErr) =>
+        prevErr && prevErr.includes('Số lượng không hợp lệ') ? null : prevErr
+      );
+    }
+  };
+
+  // Khi rời khỏi ô nhập credit:
+  // - Nếu ô đang để trống thì đặt lại về '0'
+  // - Nếu ô chứa chữ / tiếng Việt thì giữ nguyên để người dùng thấy lỗi và sửa
+  const handleCreditBlur = (field: CreditField) => {
+    const val = String(formData[field] ?? '').trim();
+    if (val === '') {
+      setFormData((prev) => ({ ...prev, [field]: '0' }));
+    } else if (!/^\d+$/.test(val)) {
+      setError('Số lượng không hợp lệ: vui lòng chỉ nhập số nguyên không âm cho quyền lợi dịch vụ.');
+    }
+  };
+
+  // Chặn chữ cái cho ô nhập % giảm (chỉ cho phép số và 1 dấu chấm thập phân)
+  const handleDiscountKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (
+      [
+        'Backspace',
+        'Delete',
+        'Tab',
+        'ArrowLeft',
+        'ArrowRight',
+        'ArrowUp',
+        'ArrowDown',
+        'Home',
+        'End',
+        'Enter',
+      ].includes(e.key)
+    ) {
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      return;
+    }
+    if (e.key === '.' && !discount.includes('.')) {
+      return;
+    }
+    if (!/^[0-9]$/.test(e.key)) {
+      e.preventDefault();
+    }
+  };
+
   // Người dùng nhập Giá bán thực tế -> Khóa ô % giảm
   const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
+    let val = e.target.value;
+    if (val.length > 1 && val.startsWith('0') && !val.startsWith('0.')) {
+      val = val.replace(/^0+/, '') || '0';
+      e.target.value = val;
+    }
     setPrice(val);
     if (val.trim() === '') {
       setPricingMode(null);
@@ -189,7 +291,11 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
 
   // Người dùng nhập % giảm -> Khóa ô Giá bán thực tế
   const handleDiscountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
+    let val = e.target.value;
+    if (val.length > 1 && val.startsWith('0') && !val.startsWith('0.')) {
+      val = val.replace(/^0+/, '') || '0';
+      e.target.value = val;
+    }
     setDiscount(val);
     if (val.trim() === '') {
       setPricingMode(null);
@@ -222,9 +328,14 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
       return;
     }
 
-    const posts = Math.floor(Number(formData.postCredits) || 0);
-    const chats = Math.floor(Number(formData.chatCredits) || 0);
-    const vals = Math.floor(Number(formData.valuationCredits) || 0);
+    if (!isCreditValid(formData.postCredits) || !isCreditValid(formData.chatCredits) || !isCreditValid(formData.valuationCredits)) {
+      setError('Số lượng không hợp lệ: vui lòng chỉ nhập số nguyên không âm cho quyền lợi dịch vụ.');
+      return;
+    }
+
+    const posts = getCreditNumber(formData.postCredits);
+    const chats = getCreditNumber(formData.chatCredits);
+    const vals = getCreditNumber(formData.valuationCredits);
     if (posts < 0 || chats < 0 || vals < 0) {
       setError('Số lượng lượt dịch vụ phải là số nguyên không âm.');
       return;
@@ -372,44 +483,71 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
               <div className="p-2.5 bg-white rounded-xl border border-slate-200">
                 <label className="block text-[11px] text-slate-600 mb-1 font-bold">Đăng Tin</label>
                 <input
-                  type="number"
-                  min={0}
+                  type="text"
+                  inputMode="numeric"
                   value={formData.postCredits}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setFormData((prev) => ({ ...prev, postCredits: val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0) }));
-                  }}
-                  className="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-slate-50 font-mono font-bold text-xs outline-none focus:border-emerald-500 focus:bg-white"
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => handleCreditChange('postCredits', e.target.value)}
+                  onBlur={() => handleCreditBlur('postCredits')}
+                  className={`w-full px-2 py-1.5 rounded-lg border font-mono font-bold text-xs outline-none transition ${
+                    postCreditInvalid
+                      ? 'border-rose-400 bg-rose-50/60 text-rose-700 focus:border-rose-500 focus:ring-1 focus:ring-rose-200'
+                      : 'border-slate-300 bg-slate-50 text-slate-800 focus:border-emerald-500 focus:bg-white'
+                  }`}
                 />
-                <span className="text-[10px] text-slate-400 mt-0.5 block">tin bài</span>
+                {postCreditInvalid ? (
+                  <span className="text-[10px] text-rose-600 font-bold mt-0.5 block">
+                    Số lượng không hợp lệ
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">tin bài</span>
+                )}
               </div>
               <div className="p-2.5 bg-white rounded-xl border border-slate-200">
                 <label className="block text-[11px] text-slate-600 mb-1 font-bold">Chat AI</label>
                 <input
-                  type="number"
-                  min={0}
+                  type="text"
+                  inputMode="numeric"
                   value={formData.chatCredits}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setFormData((prev) => ({ ...prev, chatCredits: val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0) }));
-                  }}
-                  className="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-slate-50 font-mono font-bold text-xs outline-none focus:border-emerald-500 focus:bg-white"
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => handleCreditChange('chatCredits', e.target.value)}
+                  onBlur={() => handleCreditBlur('chatCredits')}
+                  className={`w-full px-2 py-1.5 rounded-lg border font-mono font-bold text-xs outline-none transition ${
+                    chatCreditInvalid
+                      ? 'border-rose-400 bg-rose-50/60 text-rose-700 focus:border-rose-500 focus:ring-1 focus:ring-rose-200'
+                      : 'border-slate-300 bg-slate-50 text-slate-800 focus:border-emerald-500 focus:bg-white'
+                  }`}
                 />
-                <span className="text-[10px] text-slate-400 mt-0.5 block">lượt chat</span>
+                {chatCreditInvalid ? (
+                  <span className="text-[10px] text-rose-600 font-bold mt-0.5 block">
+                    Số lượng không hợp lệ
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">lượt chat</span>
+                )}
               </div>
               <div className="p-2.5 bg-white rounded-xl border border-slate-200">
                 <label className="block text-[11px] text-slate-600 mb-1 font-bold">Định Giá AI</label>
                 <input
-                  type="number"
-                  min={0}
+                  type="text"
+                  inputMode="numeric"
                   value={formData.valuationCredits}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setFormData((prev) => ({ ...prev, valuationCredits: val === '' ? 0 : Math.max(0, parseInt(val, 10) || 0) }));
-                  }}
-                  className="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-slate-50 font-mono font-bold text-xs outline-none focus:border-emerald-500 focus:bg-white"
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => handleCreditChange('valuationCredits', e.target.value)}
+                  onBlur={() => handleCreditBlur('valuationCredits')}
+                  className={`w-full px-2 py-1.5 rounded-lg border font-mono font-bold text-xs outline-none transition ${
+                    valuationCreditInvalid
+                      ? 'border-rose-400 bg-rose-50/60 text-rose-700 focus:border-rose-500 focus:ring-1 focus:ring-rose-200'
+                      : 'border-slate-300 bg-slate-50 text-slate-800 focus:border-emerald-500 focus:bg-white'
+                  }`}
                 />
-                <span className="text-[10px] text-slate-400 mt-0.5 block">lượt định giá</span>
+                {valuationCreditInvalid ? (
+                  <span className="text-[10px] text-rose-600 font-bold mt-0.5 block">
+                    Số lượng không hợp lệ
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">lượt định giá</span>
+                )}
               </div>
             </div>
           </div>
@@ -455,6 +593,7 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
                   min={1000}
                   step="any"
                   value={pricingMode === 'discount' ? (calculatedPriceFromDiscount > 0 ? String(calculatedPriceFromDiscount) : '') : price}
+                  onFocus={(e) => e.target.select()}
                   onChange={handlePriceChange}
                   placeholder={pricingMode === 'discount' ? 'Đã khóa (đang nhập %)' : 'Ví dụ: 80000'}
                   className={`w-full px-3.5 py-2.5 rounded-xl border outline-none font-mono font-extrabold text-sm transition ${
@@ -495,6 +634,8 @@ export const PackageFormModal: React.FC<PackageFormModalProps> = ({
                     step="any"
                     disabled={isSaving || pricingMode === 'price' || hasMissingPrices}
                     value={pricingMode === 'price' ? (calculatedDiscountFromPrice !== '' ? calculatedDiscountFromPrice : '') : discount}
+                    onFocus={(e) => e.target.select()}
+                    onKeyDown={handleDiscountKeyDown}
                     onChange={handleDiscountChange}
                     placeholder={hasMissingPrices ? 'Thiếu đơn giá' : pricingMode === 'price' ? 'Đã khóa (đang nhập giá)' : 'Ví dụ: 20'}
                     className={`w-full pl-3.5 pr-8 py-2.5 rounded-xl border outline-none font-mono text-sm transition ${

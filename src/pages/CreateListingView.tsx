@@ -31,7 +31,8 @@ import {
   Eye,
   Trash2,
   RotateCcw,
-  PlayCircle
+  PlayCircle,
+  Lock
 } from 'lucide-react';
 import {
   ItemCategory,
@@ -113,6 +114,37 @@ export const cleanDescriptionFromQuestionTemplate = (desc: string): string => {
   });
 
   return filtered.join('\n').replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B00}-\u{2BFF}\uFE0F\u200D\u20E3]/gu, '').replace(/(^|\s)\*\*[ \t]+/gm, '$1**').replace(/^([ \t]*[-*+•]\s+)[ \t]+/gm, '$1').replace(/^[ \t]+(?![-*+•\d])/gm, '').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+};
+
+/**
+ * Loại bỏ các dòng/từ kết thúc dở dang, cụt lửng do AI bị cạn token hoặc ngắt kết nối giữa chừng (ví dụ dòng cuối chỉ có "Thông", "Đặc điểm:", "•", v.v.).
+ */
+export const trimDanglingAiSentences = (desc: string): string => {
+  if (!desc || typeof desc !== 'string') return '';
+  let lines = desc.trim().split('\n');
+
+  while (lines.length > 0) {
+    const lastLine = lines[lines.length - 1].trim();
+    if (!lastLine) {
+      lines.pop();
+      continue;
+    }
+    // Dòng cộc lốc chỉ có 1-2 từ không có dấu câu kết thúc (như "Thông", "Đặc điểm", "Lưu ý")
+    const isDanglingWord =
+      /^(thông|thông tin|thông số|đặc điểm|tính năng|chi tiết|lưu ý|cam kết|phụ kiện|hiện trạng|tình trạng|yêu cầu)[:\s-]*$/i.test(lastLine) ||
+      (lastLine.split(/\s+/).length <= 2 && !/[.!?:;]$/.test(lastLine) && lastLine.length < 25);
+
+    // Dòng kết thúc bằng dấu hai chấm dở dang hoặc dấu bullet point không có nội dung
+    const isDanglingSymbol = /[:\-–—*•]\s*$/.test(lastLine);
+
+    if (isDanglingWord || isDanglingSymbol) {
+      lines.pop();
+    } else {
+      break;
+    }
+  }
+
+  return lines.join('\n').trim();
 };
 
 export const generateUUID = (): string => {
@@ -373,6 +405,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [purchaseYear, setPurchaseYear] = useState<number>(() => {
     return currentYear;
   });
+  const [purchaseTimeNote, setPurchaseTimeNote] = useState<string>('');
   const [originalPriceVnd, setOriginalPriceVnd] = useState<number | ''>('');
   const [itemCondition, setItemCondition] = useState<string>('USED_GOOD');
   const [description, setDescription] = useState('');
@@ -420,9 +453,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   }, [selectedCategoryId, selectedItemId, backendItems]);
 
   const photoError = useMemo(() => {
-    if (photoPreviews.length < 1) return 'Vui lòng tải lên ít nhất 1 ảnh sản phẩm thực tế (tối đa 6 ảnh).';
+    if (photoPreviews.length < 3) {
+      return lang === 'vi'
+        ? 'Vui lòng tải lên tối thiểu 3 ảnh sản phẩm thực tế (tối đa 6 ảnh).'
+        : 'Please upload at least 3 product photos (maximum 6 photos).';
+    }
     return null;
-  }, [photoPreviews.length]);
+  }, [photoPreviews.length, lang]);
 
   const originalPriceError = useMemo(() => {
     if (originalPriceVnd === '' || originalPriceVnd === null || originalPriceVnd === undefined) {
@@ -608,6 +645,16 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     return validParcel(parcel, catalog);
   }, [parcel, catalog]);
 
+  const isLengthLessThanWidth = useMemo(() => {
+    return (
+      typeof shippingLength === 'number' &&
+      typeof shippingWidth === 'number' &&
+      shippingLength > 0 &&
+      shippingWidth > 0 &&
+      shippingLength < shippingWidth
+    );
+  }, [shippingLength, shippingWidth]);
+
   const fitting = useMemo(() => {
     if (!catalog || !city || !parcelIsValid) return [];
     return city.vehicles.filter((v) => fitsVehicle(parcel, v, catalog));
@@ -669,6 +716,23 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [draftPost, setDraftPost] = useState<ListingDraftResponse | null>(null);
   const [isDeletingDraft, setIsDeletingDraft] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+
+  // Modal Cảnh báo xác nhận khi người dùng muốn rời khỏi / hủy quy trình đăng bài
+  const [isConfirmExitModalOpen, setIsConfirmExitModalOpen] = useState(false);
+
+  // Modal Cảnh báo xác nhận trước khi Gửi Đăng Bài chính thức
+  const [isConfirmSubmitModalOpen, setIsConfirmSubmitModalOpen] = useState(false);
+
+  // Modal Cảnh báo khi người dùng nhấn chuyển sang bước tiếp theo (không cho phép quay lại)
+  interface StepTransitionWarningState {
+    targetStep: number;
+    title: string;
+    stepName: string;
+    warningMessage: string;
+    confirmButtonText?: string;
+    onConfirm: () => void | Promise<void>;
+  }
+  const [stepTransitionWarning, setStepTransitionWarning] = useState<StepTransitionWarningState | null>(null);
 
   const handleDeleteCurrentDraft = async () => {
     const draftId = postId || initialDraft?.id;
@@ -783,6 +847,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       setBrand(initialDraft.brand || '');
       setModel(initialDraft.model || '');
       if (initialDraft.purchaseYear) setPurchaseYear(initialDraft.purchaseYear);
+      const savedTimeNote = (initialDraft as any).purchaseTimeNote || localStorage.getItem(`post_purchase_time_note_${initialDraft.id}`);
+      if (savedTimeNote) setPurchaseTimeNote(savedTimeNote);
       const existingSellingPrice = initialDraft.priceVnd || (initialDraft as any).price || '';
       const existingOrigPrice = extractSellerOriginalPrice(initialDraft) || initialDraft.originalPriceVnd || Number(localStorage.getItem(`post_original_price_${initialDraft.id}`));
       if (existingOrigPrice) {
@@ -1228,6 +1294,42 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
   };
 
+  const isSuggestionActive = (currentVal: string, suggestion: string): boolean => {
+    if (!currentVal || !suggestion) return false;
+    const trimmedSug = suggestion.trim().toLowerCase();
+    const items = currentVal
+      .split(/[,;\n]+/)
+      .map((i) => i.trim().toLowerCase())
+      .filter(Boolean);
+    return items.includes(trimmedSug);
+  };
+
+  const handleToggleSuggestion = (idx: number, suggestion: string) => {
+    const rawCurrent = questionAnswers[idx] || '';
+    const trimmedSug = suggestion.trim();
+    if (!trimmedSug) return;
+
+    // Tách chuỗi hiện tại theo dấu phẩy, chấm phẩy hoặc dấu xuống dòng
+    const currentItems = rawCurrent
+      .split(/[,;\n]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    const lowerSug = trimmedSug.toLowerCase();
+    const existingIndex = currentItems.findIndex((item) => item.toLowerCase() === lowerSug);
+
+    let nextItems: string[];
+    if (existingIndex >= 0) {
+      // Đã chọn -> Bỏ chọn (toggle off)
+      nextItems = currentItems.filter((_, i) => i !== existingIndex);
+    } else {
+      // Chưa chọn -> Thêm vào danh sách (toggle on)
+      nextItems = [...currentItems, trimmedSug];
+    }
+
+    handleAnswerChange(idx, nextItems.join(', '));
+  };
+
     // Tự động tạo tiêu đề bài đăng hấp dẫn chuẩn sàn TMĐT từ thông tin & khảo sát
   const buildSmartProductTitle = (): string => {
     const selectedCat = backendCategories.find(c => c.id === selectedCategoryId);
@@ -1336,11 +1438,15 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     if (brand && brand.trim()) basicSpecs.push(`• Thương hiệu: ${brand.trim()}`);
     if (model && model.trim()) basicSpecs.push(`• Model: ${model.trim()}`);
     if (purchaseYear) {
-      if (purchaseYear >= currentYear) {
+      if (purchaseTimeNote && purchaseTimeNote.trim()) {
+        basicSpecs.push(`• Thời gian mua: Năm ${purchaseYear} (${purchaseTimeNote.trim()})`);
+      } else if (purchaseYear >= currentYear) {
         basicSpecs.push('• Thời gian mua: Mua mới đầu năm nay (đã qua sử dụng)');
       } else {
         basicSpecs.push(`• Năm mua: ${purchaseYear}`);
       }
+    } else if (purchaseTimeNote && purchaseTimeNote.trim()) {
+      basicSpecs.push(`• Khoảng thời gian mua: ${purchaseTimeNote.trim()}`);
     }
 
     if (basicSpecs.length > 0) {
@@ -1427,17 +1533,22 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     if (brand && brand.trim()) basicInfoParts.push(`Thương hiệu: ${brand.trim()}`);
     if (model && model.trim()) basicInfoParts.push(`Model: ${model.trim()}`);
     if (purchaseYear) {
-      if (purchaseYear >= currentYear) {
+      if (purchaseTimeNote && purchaseTimeNote.trim()) {
+        basicInfoParts.push(`Thời gian mua: Năm ${purchaseYear} (${purchaseTimeNote.trim()})`);
+      } else if (purchaseYear >= currentYear) {
         basicInfoParts.push('Thời gian mua: Mua mới đầu năm nay (đã qua sử dụng)');
       } else {
         basicInfoParts.push(`Năm mua: ${purchaseYear}`);
       }
+    } else if (purchaseTimeNote && purchaseTimeNote.trim()) {
+      basicInfoParts.push(`Khoảng thời gian mua: ${purchaseTimeNote.trim()}`);
     }
 
     const basicStr = basicInfoParts.length > 0 ? `Thông tin sản phẩm: ${basicInfoParts.join(', ')}.\n` : '';
     const visualStr = aiVisualReport ? `Ghi nhận ngoại quan từ ảnh chụp: ${aiVisualReport}.\n` : '';
     const surveyStr = formattedAnswers ? `Khảo sát hiện trạng thực tế từ người bán: ${formattedAnswers}.\n` : '';
-    const promptMessage = `${basicStr}${visualStr}${surveyStr}`.trim();
+    const instructionStr = `Yêu cầu biên tập: Viết bài mô tả súc tích (khoảng 150-200 từ), kết câu trọn vẹn, không viết dở dang. Hãy trình bày gồm đoạn mở đầu giới thiệu và các gạch đầu dòng thông số, hiện trạng thực tế từ các câu trả lời trên.`;
+    const promptMessage = `${basicStr}${visualStr}${surveyStr}${instructionStr}`.trim();
 
     try {
       // Gửi trực tiếp promptMessage qua finalizeChat để AI biên tập mô tả và tiêu đề, trừ 1 credit chat
@@ -1445,7 +1556,71 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       const reply = finalizeRes?.description || (finalizeRes as any)?.message || '';
       
       if (reply) {
-        const cleanedReply = cleanDescriptionFromQuestionTemplate(reply);
+        let cleanedReply = cleanDescriptionFromQuestionTemplate(reply);
+        cleanedReply = trimDanglingAiSentences(cleanedReply);
+
+        // Kiểm tra xem bài viết AI đã bao gồm thông tin khảo sát chưa
+        // Nếu AI chỉ viết được đoạn mở đầu rồi bị ngắt hoặc cạn token (chưa có phần thông số/hiện trạng khảo sát)
+        const hasDetailedSections = /(thông số|hiện trạng|tình trạng thực tế|cam kết)/i.test(cleanedReply) && cleanedReply.length > 350;
+
+        if (!hasDetailedSections && answeredCount > 0) {
+          const introParagraph = cleanedReply || '';
+          const supplementarySections: string[] = [];
+          if (introParagraph) {
+            supplementarySections.push(introParagraph);
+          }
+
+          // Thông số cơ bản
+          const basicSpecs: string[] = [];
+          if (brand && brand.trim()) basicSpecs.push(`• Thương hiệu: ${brand.trim()}`);
+          if (model && model.trim()) basicSpecs.push(`• Model: ${model.trim()}`);
+          if (purchaseYear) {
+            if (purchaseTimeNote && purchaseTimeNote.trim()) {
+              basicSpecs.push(`• Thời gian mua: Năm ${purchaseYear} (${purchaseTimeNote.trim()})`);
+            } else if (purchaseYear >= currentYear) {
+              basicSpecs.push('• Thời gian mua: Mua mới đầu năm nay (đã qua sử dụng)');
+            } else {
+              basicSpecs.push(`• Năm mua: ${purchaseYear}`);
+            }
+          } else if (purchaseTimeNote && purchaseTimeNote.trim()) {
+            basicSpecs.push(`• Khoảng thời gian mua: ${purchaseTimeNote.trim()}`);
+          }
+          if (basicSpecs.length > 0 && !introParagraph.includes('Thương hiệu:')) {
+            supplementarySections.push('**Thông số cơ bản:**\n' + basicSpecs.join('\n'));
+          }
+
+          // Hiện trạng thực tế từ khảo sát người dùng
+          const answerLines: string[] = [];
+          effectiveQuestions.forEach((q, idx) => {
+            const ans = questionAnswers[idx]?.trim();
+            if (!ans) return;
+            const parsed = parseQuestionItem(q, idx);
+            let naturalLabel = parsed.label;
+            const lower = naturalLabel.toLowerCase();
+            if (lower.includes('tần suất') || lower.includes('mức độ sử dụng')) {
+              naturalLabel = 'Tần suất & mức độ sử dụng';
+            } else if (lower.includes('ngoại quan') || lower.includes('phụ kiện')) {
+              naturalLabel = 'Hiện trạng ngoại quan & phụ kiện';
+            } else if (lower.startsWith('thông số kỹ thuật')) {
+              naturalLabel = 'Thông số kỹ thuật & công năng';
+            } else if (lower.includes('hoạt động') || lower.includes('vận hành') || lower.includes('bảo hành') || lower.includes('sửa chữa')) {
+              naturalLabel = 'Tình trạng máy móc & bảo hành';
+            } else {
+              naturalLabel = naturalLabel.replace(/^(\d+[\.\)]\s*|\*\*)/, '').replace(/\s+(?:là\s+bao\s+nhiêu|khoảng\s+bao\s+nhiêu|bao\s+nhiêu|như\s+thế\s+nào)[^?]*\??$/i, '').replace(/(\*\*|\?)\s*$/, '').trim();
+            }
+            answerLines.push(`• ${naturalLabel}: ${ans}`);
+          });
+
+          if (answerLines.length > 0) {
+            supplementarySections.push('**Hiện trạng thực tế từ người bán:**\n' + answerLines.join('\n'));
+          }
+
+          // Cam kết
+          supplementarySections.push('**Cam kết:** Sản phẩm hoạt động tốt, đúng như hình ảnh và thông tin mô tả. Khách mua có thể kiểm tra hàng thoải mái khi nhận.');
+
+          cleanedReply = supplementarySections.join('\n\n').trim();
+        }
+
         setDescription(cleanedReply);
         const generatedTitle = (finalizeRes as any)?.title;
         if (generatedTitle && generatedTitle.trim()) {
@@ -1491,7 +1666,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       const res = await aiChatService.regenerate(sessionId);
       const newDesc = res?.description || (res as any)?.message || '';
       if (newDesc) {
-        setDescription(cleanDescriptionFromQuestionTemplate(newDesc));
+        let cleaned = cleanDescriptionFromQuestionTemplate(newDesc);
+        cleaned = trimDanglingAiSentences(cleaned);
+        setDescription(cleaned);
       }
       const newTitle = (res as any)?.title;
       if (newTitle && newTitle.trim()) {
@@ -1541,6 +1718,67 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [imageMismatchReason, setImageMismatchReason] = useState<string | null>(null);
   const [showMismatchModal, setShowMismatchModal] = useState<boolean>(false);
   const [showAiScanConfirmModal, setShowAiScanConfirmModal] = useState<boolean>(false);
+
+  // Xử lý yêu cầu thoát/hủy đăng bài: Chặn khi đang đăng bài và mở cảnh báo xác nhận
+  const handleRequestCancel = () => {
+    if (isSubmittingPost) {
+      showToast(lang === 'vi' ? 'Hệ thống đang tiến hành đăng bài, vui lòng không quay lại lúc này!' : 'Post submission in progress, please do not leave!');
+      return;
+    }
+    // Nếu người dùng đã nhập thông tin hoặc đang ở Bước 2+ hoặc đã có postId
+    if (postId || currentStep > 1 || photoPreviews.length > 0 || title.trim() || description.trim()) {
+      setIsConfirmExitModalOpen(true);
+    } else {
+      handleCancelCreation();
+    }
+  };
+
+  // Chặn phím Back trình duyệt (popstate) và reload tab (beforeunload) khi đang đăng bài
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isSubmittingPost || (!submitResult && (postId || currentStep > 1 || photoPreviews.length > 0))) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+
+    const handlePopState = () => {
+      if (isSubmittingPost) {
+        window.history.pushState(null, '', window.location.href);
+        showToast(
+          lang === 'vi'
+            ? 'Hệ thống đang tiến hành đăng bài, vui lòng không quay lại lúc này!'
+            : 'Submitting post, please do not go back!'
+        );
+        return;
+      }
+
+      if (currentStep > 1) {
+        window.history.pushState(null, '', window.location.href);
+        showToast(
+          lang === 'vi'
+            ? 'Quy trình đăng bài không cho phép quay lại bước trước!'
+            : 'Cannot go back to the previous step in listing process!'
+        );
+        return;
+      }
+
+      if (!submitResult && (postId || photoPreviews.length > 0)) {
+        window.history.pushState(null, '', window.location.href);
+        setIsConfirmExitModalOpen(true);
+      }
+    };
+
+    window.history.pushState(null, '', window.location.href);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [isSubmittingPost, postId, currentStep, photoPreviews.length, submitResult, lang]);
 
   // Load Seller Credits
   const loadCredits = async (showFeedback?: boolean | unknown) => {
@@ -1799,11 +2037,41 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     return true;
   };
 
+  const handleRequestManualPost = () => {
+    if (!validateStep1()) return;
+
+    setStepTransitionWarning({
+      targetStep: 2,
+      title: lang === 'vi' ? 'Xác Nhận Chuyển Sang Bước 2' : 'Confirm Move to Step 2',
+      stepName: lang === 'vi' ? 'Bước 2: Tự Nhập Tiêu Đề & Mô Tả Sản Phẩm' : 'Step 2: Title & Description',
+      warningMessage:
+        lang === 'vi'
+          ? 'Sau khi chuyển sang Bước 2, bạn sẽ KHÔNG THỂ quay lại Bước 1 để thay đổi danh mục hoặc chọn lại ảnh sản phẩm. Bạn có chắc chắn thông tin và ảnh đã chính xác?'
+          : 'Once you proceed to Step 2, you will NOT be able to go back to Step 1 to change categories or photos. Are you sure you want to proceed?',
+      confirmButtonText: lang === 'vi' ? 'Xác Nhận & Sang Bước 2' : 'Confirm & Go to Step 2',
+      onConfirm: () => {
+        handleInitPost('manual');
+      },
+    });
+  };
+
   const handleTriggerAiChat = () => {
     if (!validateStep1()) return;
 
     if (postId || initialDraft?.id) {
-      handleInitPost('ai');
+      setStepTransitionWarning({
+        targetStep: 2,
+        title: lang === 'vi' ? 'Xác Nhận Chuyển Sang Bước 2' : 'Confirm Move to Step 2',
+        stepName: lang === 'vi' ? 'Bước 2: Hoàn Thiện Mô Tả Cùng Trợ Lý AI' : 'Step 2: AI Description & Chat',
+        warningMessage:
+          lang === 'vi'
+            ? 'Sau khi chuyển sang Bước 2, bạn sẽ KHÔNG THỂ quay lại Bước 1 để thay đổi danh mục hoặc chọn lại ảnh sản phẩm. Bạn có chắc chắn muốn tiếp tục?'
+            : 'Once you proceed to Step 2, you will NOT be able to go back to Step 1 to change categories or photos. Are you sure you want to proceed?',
+        confirmButtonText: lang === 'vi' ? 'Xác Nhận & Sang Bước 2' : 'Confirm & Go to Step 2',
+        onConfirm: () => {
+          handleInitPost('ai');
+        },
+      });
       return;
     }
     if ((credits?.chatCredits ?? 0) < 1) {
@@ -1919,6 +2187,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             localStorage.setItem(`post_original_price_${initRes.postId}`, String(numOrig));
           } catch {}
         }
+        if (purchaseTimeNote && purchaseTimeNote.trim()) {
+          try {
+            localStorage.setItem(`post_purchase_time_note_${initRes.postId}`, purchaseTimeNote.trim());
+          } catch {}
+        }
         savePostMetadata({
           postId: initRes.postId,
           categoryId: selectedCategoryId,
@@ -1929,6 +2202,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           brand: brand?.trim() || '',
           model: model?.trim() || '',
           purchaseYear,
+          purchaseTimeNote: purchaseTimeNote.trim() || undefined,
           originalPriceVnd: numOrig > 0 ? numOrig : undefined
         });
 
@@ -2186,6 +2460,16 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       );
       return;
     }
+    if (isLengthLessThanWidth) {
+      showToast(
+        lang === 'vi'
+          ? 'Kích thước kiện hàng không hợp lệ: Chiều dài phải lớn hơn hoặc bằng chiều rộng (Dài ≥ Rộng).'
+          : 'Invalid package dimensions: Length must be greater than or equal to width.'
+      );
+      const el = document.querySelector('input[placeholder*="VD: 30"]') || document.querySelector('input[inputmode="decimal"]');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
     if (!parcelIsValid) {
       showToast(
         lang === 'vi'
@@ -2207,39 +2491,26 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       return;
     }
 
-    setCurrentStep(3);
+    setStepTransitionWarning({
+      targetStep: 3,
+      title: lang === 'vi' ? 'Xác Nhận Chuyển Sang Bước 3' : 'Confirm Move to Step 3',
+      stepName: lang === 'vi' ? 'Bước 3: Xác Nhận Mô Tả & Vật Phẩm' : 'Step 3: Confirm Description & Item',
+      warningMessage:
+        lang === 'vi'
+          ? 'Sau khi chuyển sang Bước 3, bạn sẽ KHÔNG THỂ quay lại Bước 2 để chỉnh sửa tiêu đề, mô tả, câu hỏi AI hay kích thước đóng gói vận chuyển. Bạn có chắc chắn muốn tiếp tục?'
+          : 'Once you proceed to Step 3, you will NOT be able to return to Step 2 to edit title, description, or parcel dimensions. Are you sure you want to proceed?',
+      confirmButtonText: lang === 'vi' ? 'Xác Nhận & Sang Bước 3' : 'Confirm & Go to Step 3',
+      onConfirm: () => {
+        setCurrentStep(3);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      },
+    });
   };
 
   // =========================================================================
   // STEP 3: Save Draft & Accept Description (PUT /draft & POST /accept-description)
   // =========================================================================
-  const handleSaveAndAcceptDescription = async () => {
-    setHasSubmittedStep3(true);
-    if (!postId) return;
-    if (!title.trim()) {
-      showToast(lang === 'vi' ? 'Vui lòng nhập Tiêu đề bài đăng' : 'Please enter Title');
-      return;
-    }
-    if (!description.trim()) {
-      showToast(lang === 'vi' ? 'Vui lòng nhập hoặc áp dụng Mô tả sản phẩm' : 'Please enter Description');
-      return;
-    }
-
-    if (isManualPricingInStep3) {
-      if (!finalPriceVnd || finalPriceVnd < 1000) {
-        showToast(lang === 'vi' ? 'Vui lòng nhập giá bán hợp lệ (ít nhất 1.000đ)' : 'Please enter a valid price (min 1,000)');
-        const el = document.querySelector('input[placeholder*="500.000"]');
-        (el as HTMLElement)?.focus?.();
-        return;
-      }
-      if (finalPriceVnd > 1000000000) {
-        showToast(lang === 'vi' ? 'Giá bán không được vượt quá 1.000.000.000đ (1 tỷ VNĐ)' : 'Price cannot exceed 1 billion VND');
-        const el = document.querySelector('input[placeholder*="500.000"]');
-        (el as HTMLElement)?.focus?.();
-        return;
-      }
-    }
-
+  const executeSaveAndAcceptDescription = async () => {
     setIsAcceptingDescription(true);
     try {
       const numOrig = typeof originalPriceVnd === 'number' && originalPriceVnd > 0 ? originalPriceVnd : Number(localStorage.getItem(`post_original_price_${postId}`) || 0);
@@ -2270,9 +2541,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
       if (isManualPricingInStep3) {
         setCurrentStep(5);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
         // Chuyển sang Bước 4 ngay lập tức
         setCurrentStep(4);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
         if (credits?.valuationCredits !== undefined && credits.valuationCredits > 0) {
           handleRunAiValuation();
         }
@@ -2282,6 +2555,48 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     } finally {
       setIsAcceptingDescription(false);
     }
+  };
+
+  const handleSaveAndAcceptDescription = async () => {
+    setHasSubmittedStep3(true);
+    if (!postId) return;
+    if (!title.trim()) {
+      showToast(lang === 'vi' ? 'Vui lòng nhập Tiêu đề bài đăng' : 'Please enter Title');
+      return;
+    }
+    if (!description.trim()) {
+      showToast(lang === 'vi' ? 'Vui lòng nhập hoặc áp dụng Mô tả sản phẩm' : 'Please enter Description');
+      return;
+    }
+
+    if (isManualPricingInStep3) {
+      if (!finalPriceVnd || finalPriceVnd < 1000) {
+        showToast(lang === 'vi' ? 'Vui lòng nhập giá bán hợp lệ (ít nhất 1.000đ)' : 'Please enter a valid price (min 1,000)');
+        const el = document.querySelector('input[placeholder*="500.000"]');
+        (el as HTMLElement)?.focus?.();
+        return;
+      }
+      if (finalPriceVnd > 1000000000) {
+        showToast(lang === 'vi' ? 'Giá bán không được vượt quá 1.000.000.000đ (1 tỷ VNĐ)' : 'Price cannot exceed 1 billion VND');
+        const el = document.querySelector('input[placeholder*="500.000"]');
+        (el as HTMLElement)?.focus?.();
+        return;
+      }
+    }
+
+    setStepTransitionWarning({
+      targetStep: isManualPricingInStep3 ? 5 : 4,
+      title: lang === 'vi' ? `Xác Nhận Mô Tả & Chuyển Sang Bước ${isManualPricingInStep3 ? 5 : 4}` : 'Confirm Description & Proceed',
+      stepName: lang === 'vi' ? (isManualPricingInStep3 ? 'Bước 5: Xem Lại & Gửi Đăng Bài' : 'Bước 4: Định Giá AI') : (isManualPricingInStep3 ? 'Step 5: Review & Submit' : 'Step 4: AI Valuation'),
+      warningMessage:
+        lang === 'vi'
+          ? 'Sau khi xác nhận mô tả, nội dung bài đăng sẽ được lưu chính thức và bạn sẽ KHÔNG THỂ quay lại Bước 3 để thay đổi mô tả. Bạn có chắc chắn muốn tiếp tục?'
+          : 'Once confirmed, description will be locked into this post. You will NOT be able to return to Step 3 to edit. Are you sure you want to proceed?',
+      confirmButtonText: lang === 'vi' ? 'Xác Nhận & Tiếp Tục' : 'Confirm & Proceed',
+      onConfirm: async () => {
+        await executeSaveAndAcceptDescription();
+      },
+    });
   };
 
   // =========================================================================
@@ -2361,11 +2676,158 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     }
   };
 
+  const handleGoToStep5 = () => {
+    if (!finalPriceVnd || finalPriceVnd < 1000 || finalPriceVnd > 1000000000) {
+      showToast(
+        lang === 'vi'
+          ? 'Vui lòng chọn hoặc nhập giá bán hợp lệ (từ 1.000đ đến 1 tỷ VNĐ) trước khi tiếp tục!'
+          : 'Please enter a valid price before proceeding!'
+      );
+      return;
+    }
+    setStepTransitionWarning({
+      targetStep: 5,
+      title: lang === 'vi' ? 'Xác Nhận Chuyển Sang Bước 5' : 'Confirm Move to Step 5',
+      stepName: lang === 'vi' ? 'Bước 5: Xem Lại & Gửi Đăng Bài' : 'Step 5: Review & Submit Listing',
+      warningMessage:
+        lang === 'vi'
+          ? `Mức giá bạn đã chọn là ${finalPriceVnd.toLocaleString('vi-VN')} đ. Sau khi chuyển sang Bước 5 để xem lại và gửi đăng, bạn sẽ KHÔNG THỂ quay lại Bước 4 để thay đổi giá bán. Bạn có chắc chắn muốn tiếp tục?`
+          : `Current selected price is ${finalPriceVnd.toLocaleString('vi-VN')} VND. Once you proceed to Step 5, you will NOT be able to return to Step 4 to change price. Are you sure you want to proceed?`,
+      confirmButtonText: lang === 'vi' ? 'Xác Nhận & Sang Bước 5' : 'Confirm & Go to Step 5',
+      onConfirm: () => {
+        setCurrentStep(5);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      },
+    });
+  };
+
+  const handleFinishAndExit = (overrideResult?: PostSubmitResponse | null) => {
+    if (!postId) return;
+    const effectiveSubmitRes = overrideResult || submitResult;
+    const catObj = backendCategories.find((c) => c.id === selectedCategoryId);
+    const itmObj = backendItems.find((i) => i.id === selectedItemId);
+    const catName = catObj?.name || 'Đồ gia dụng';
+    const itmName = itmObj?.name || '';
+    const finalDisplayCategory = itmName || catName;
+    const finalBrand = brand?.trim() || 'Hàng nhập khẩu';
+
+    const numericOrigPrice = typeof originalPriceVnd === 'number' && originalPriceVnd > 0 ? originalPriceVnd : undefined;
+
+    if (purchaseTimeNote && purchaseTimeNote.trim()) {
+      try {
+        localStorage.setItem(`post_purchase_time_note_${postId}`, purchaseTimeNote.trim());
+      } catch {}
+    }
+    savePostMetadata({
+      postId,
+      categoryId: selectedCategoryId,
+      itemId: selectedItemId,
+      categoryName: catName,
+      itemName: itmName,
+      category: finalDisplayCategory,
+      brand: finalBrand,
+      model: model?.trim() || '',
+      purchaseYear,
+      purchaseTimeNote: purchaseTimeNote.trim() || undefined,
+      originalPriceVnd: numericOrigPrice
+    });
+
+    // Địa chỉ của sản phẩm được cập nhật theo địa chỉ người bán (chỉ lấy phường và thành phố)
+    const finalLocation = effectiveDisplayLocation;
+    const finalSellerAddress = cleanFullAddress(currentSellerFullAddress) || finalLocation;
+
+    const newListing: Listing = {
+      id: postId,
+      categoryId: selectedCategoryId,
+      itemId: selectedItemId,
+      categoryName: catName,
+      itemName: itmName,
+      title: title || 'Sản phẩm SecondLife',
+      category: finalDisplayCategory as ItemCategory,
+      brand: finalBrand,
+      model: model || 'Model',
+      purchaseYear,
+      priceVnd: finalPriceVnd,
+      originalPriceVnd: numericOrigPrice,
+      conditionGrade: 'Like New',
+      declaredConditionText: itemCondition,
+      description: description || 'Mô tả bài đăng đã qua kiểm duyệt AI',
+      location: finalLocation,
+      sellerAddress: finalSellerAddress,
+      sellerId: currentUser?.id || 'current-user',
+      sellerName: currentUser?.name || 'Người bán SecondLife',
+      sellerRating: currentUser?.sellerRating || 5.0,
+      sellerCompletedOrders: currentUser?.completedOrdersCount || 1,
+      sellerVerified: true,
+      status: (effectiveSubmitRes?.status === 'ACTIVE'
+        ? 'active'
+        : effectiveSubmitRes?.status === 'REJECTED'
+          ? 'rejected'
+          : 'pending'),
+      backendStatus: effectiveSubmitRes?.status || 'PENDING',
+      rejectionReason: effectiveSubmitRes?.reviewReason || effectiveSubmitRes?.message,
+      createdAt: new Date().toISOString(),
+      isInspectionGuaranteed: finalPriceVnd > 5000000,
+      requiresInspection: finalPriceVnd > 5000000,
+      photos: {
+        front: photoPreviews[0] || '',
+        back: photoPreviews[1] || '',
+        screenOrDetails: photoPreviews[2] || '',
+        accessoriesOrBox: photoPreviews[3] || '',
+        serialOrReceipt: photoPreviews[4] || '',
+        extraDetail: photoPreviews[5] || ''
+      },
+      photoGallery: photoPreviews,
+      shippingWeight: Number(shippingWeight) || undefined,
+      shippingLength: Number(shippingLength) || undefined,
+      shippingWidth: Number(shippingWidth) || undefined,
+      shippingHeight: Number(shippingHeight) || undefined,
+    };
+    try {
+      const parsedWeight = Math.round(Number(shippingWeight) || 0);
+      const parsedLength = Math.round(Number(shippingLength) || 0);
+      const parsedWidth = Math.round(Number(shippingWidth) || 0);
+      const parsedHeight = Math.round(Number(shippingHeight) || 0);
+      if (parsedWeight > 0) {
+        localStorage.setItem(`post_parcel_${postId}`, JSON.stringify({
+          weight: parsedWeight,
+          length: parsedLength,
+          width: parsedWidth,
+          height: parsedHeight
+        }));
+      }
+      if (numericOrigPrice) {
+        localStorage.setItem(`post_original_price_${postId}`, String(numericOrigPrice));
+        if (effectiveSubmitRes?.id) {
+          localStorage.setItem(`post_original_price_${effectiveSubmitRes.id}`, String(numericOrigPrice));
+        }
+        if (effectiveSubmitRes?.postId) {
+          localStorage.setItem(`post_original_price_${effectiveSubmitRes.postId}`, String(numericOrigPrice));
+        }
+      }
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('create_listing_active_draft_') || key === 'create_listing_active_draft')) {
+          localStorage.removeItem(key);
+        }
+      }
+    } catch {}
+    onListingCreated(newListing);
+  };
+
   // =========================================================================
   // STEP 5: Final Submit (POST /api/v1/posts/submit/{postId})
   // =========================================================================
   const handleSubmitPostFinal = async () => {
     if (!postId) return;
+    if (!photoPreviews || photoPreviews.length < 3) {
+      showToast(
+        lang === 'vi'
+          ? 'Bài đăng bắt buộc phải có tối thiểu 3 ảnh sản phẩm thực tế.'
+          : 'At least 3 product photos are required.'
+      );
+      return;
+    }
     if (!finalPriceVnd || finalPriceVnd < 1000) {
       showToast(lang === 'vi' ? 'Vui lòng nhập giá bán hợp lệ (tối thiểu 1.000 đ)' : 'Please enter valid price');
       return;
@@ -2381,6 +2843,16 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       return;
     }
 
+    if (isLengthLessThanWidth) {
+      showToast(
+        lang === 'vi'
+          ? 'Kích thước kiện hàng không hợp lệ: Chiều dài phải lớn hơn hoặc bằng chiều rộng (Dài ≥ Rộng).'
+          : 'Invalid package dimensions: Length must be greater than or equal to width.'
+      );
+      const el = document.querySelector('input[placeholder*="VD: 30"]') || document.querySelector('input[inputmode="decimal"]');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
     if (!parcelIsValid) {
       showToast(
         lang === 'vi'
@@ -2452,6 +2924,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       const submitItmName = submitItm?.name || '';
       const finalOrigPrice = numericOrigPrice > 0 ? numericOrigPrice : undefined;
 
+      if (purchaseTimeNote && purchaseTimeNote.trim()) {
+        try {
+          localStorage.setItem(`post_purchase_time_note_${postId}`, purchaseTimeNote.trim());
+        } catch {}
+      }
       savePostMetadata({
         postId,
         categoryId: selectedCategoryId,
@@ -2462,6 +2939,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         brand: brand?.trim() || '',
         model: model?.trim() || '',
         purchaseYear,
+        purchaseTimeNote: purchaseTimeNote.trim() || undefined,
         originalPriceVnd: finalOrigPrice
       });
 
@@ -2489,6 +2967,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
       // Reload credits (if ACTIVE, minus 1 LISTING)
       await loadCredits();
+
+      // Nếu ĐĂNG BÀI THÀNH CÔNG: Tự động quay về Sàn đồ cũ (Marketplace)
+      const isFailed = submitRes.status === 'REJECTED' || submitRes.status === 'INSUFFICIENT_CREDIT';
+      if (!isFailed) {
+        handleFinishAndExit(submitRes);
+        return;
+      }
     } catch (err: any) {
       if (err?.message?.includes('400') || err?.message?.toLowerCase().includes('insufficient') || err?.message?.toLowerCase().includes('không đủ lượt')) {
         setShowNoCreditsModal(true);
@@ -2502,113 +2987,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     } finally {
       setIsSubmittingPost(false);
     }
-  };
-
-  const handleFinishAndExit = () => {
-    if (!postId) return;
-    const catObj = backendCategories.find((c) => c.id === selectedCategoryId);
-    const itmObj = backendItems.find((i) => i.id === selectedItemId);
-    const catName = catObj?.name || 'Đồ gia dụng';
-    const itmName = itmObj?.name || '';
-    const finalDisplayCategory = itmName || catName;
-    const finalBrand = brand?.trim() || 'Hàng nhập khẩu';
-
-    const numericOrigPrice = typeof originalPriceVnd === 'number' && originalPriceVnd > 0 ? originalPriceVnd : undefined;
-
-    savePostMetadata({
-      postId,
-      categoryId: selectedCategoryId,
-      itemId: selectedItemId,
-      categoryName: catName,
-      itemName: itmName,
-      category: finalDisplayCategory,
-      brand: finalBrand,
-      model: model?.trim() || '',
-      purchaseYear,
-      originalPriceVnd: numericOrigPrice
-    });
-
-    // Địa chỉ của sản phẩm được cập nhật theo địa chỉ người bán (chỉ lấy phường và thành phố)
-    const finalLocation = effectiveDisplayLocation;
-    const finalSellerAddress = cleanFullAddress(currentSellerFullAddress) || finalLocation;
-
-    const newListing: Listing = {
-      id: postId,
-      categoryId: selectedCategoryId,
-      itemId: selectedItemId,
-      categoryName: catName,
-      itemName: itmName,
-      title: title || 'Sản phẩm SecondLife',
-      category: finalDisplayCategory as ItemCategory,
-      brand: finalBrand,
-      model: model || 'Model',
-      purchaseYear,
-      priceVnd: finalPriceVnd,
-      originalPriceVnd: numericOrigPrice,
-      conditionGrade: 'Like New',
-      declaredConditionText: itemCondition,
-      description: description || 'Mô tả bài đăng đã qua kiểm duyệt AI',
-      location: finalLocation,
-      sellerAddress: finalSellerAddress,
-      sellerId: currentUser?.id || 'current-user',
-      sellerName: currentUser?.name || 'Người bán SecondLife',
-      sellerRating: currentUser?.sellerRating || 5.0,
-      sellerCompletedOrders: currentUser?.completedOrdersCount || 1,
-      sellerVerified: true,
-      status: (submitResult?.status === 'ACTIVE'
-        ? 'active'
-        : submitResult?.status === 'REJECTED'
-          ? 'rejected'
-          : 'pending'),
-      backendStatus: submitResult?.status || 'PENDING',
-      rejectionReason: submitResult?.reviewReason || submitResult?.message,
-      createdAt: new Date().toISOString(),
-      isInspectionGuaranteed: finalPriceVnd > 5000000,
-      requiresInspection: finalPriceVnd > 5000000,
-      photos: {
-        front: photoPreviews[0] || '',
-        back: photoPreviews[1] || '',
-        screenOrDetails: photoPreviews[2] || '',
-        accessoriesOrBox: photoPreviews[3] || '',
-        serialOrReceipt: photoPreviews[4] || '',
-        extraDetail: photoPreviews[5] || ''
-      },
-      photoGallery: photoPreviews,
-      shippingWeight: Number(shippingWeight) || undefined,
-      shippingLength: Number(shippingLength) || undefined,
-      shippingWidth: Number(shippingWidth) || undefined,
-      shippingHeight: Number(shippingHeight) || undefined,
-    };
-    try {
-      const parsedWeight = Math.round(Number(shippingWeight) || 0);
-      const parsedLength = Math.round(Number(shippingLength) || 0);
-      const parsedWidth = Math.round(Number(shippingWidth) || 0);
-      const parsedHeight = Math.round(Number(shippingHeight) || 0);
-      if (parsedWeight > 0) {
-        localStorage.setItem(`post_parcel_${postId}`, JSON.stringify({
-          weight: parsedWeight,
-          length: parsedLength,
-          width: parsedWidth,
-          height: parsedHeight
-        }));
-      }
-      if (numericOrigPrice) {
-        localStorage.setItem(`post_original_price_${postId}`, String(numericOrigPrice));
-        if (submitResult?.id) {
-          localStorage.setItem(`post_original_price_${submitResult.id}`, String(numericOrigPrice));
-        }
-        if (submitResult?.postId) {
-          localStorage.setItem(`post_original_price_${submitResult.postId}`, String(numericOrigPrice));
-        }
-      }
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const key = localStorage.key(i);
-        if (key && (key.startsWith('create_listing_active_draft_') || key === 'create_listing_active_draft')) {
-          localStorage.removeItem(key);
-        }
-      }
-    } catch {}
-    onListingCreated(newListing);
   };
 
   return (
@@ -2675,8 +3053,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             <button
               type="button"
               onClick={() => setIsConfirmDeleteOpen(true)}
-              disabled={isDeletingDraft}
-              className="px-3.5 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-xs font-bold text-rose-300 hover:text-white border border-rose-500/30 transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              disabled={isDeletingDraft || isSubmittingPost}
+              className="px-3.5 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-xs font-bold text-rose-300 hover:text-white border border-rose-500/30 transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               title={lang === 'vi' ? 'Xóa bản nháp này vĩnh viễn' : 'Delete this draft permanently'}
             >
               <Trash2 className="w-3.5 h-3.5 text-rose-400" />
@@ -2684,8 +3062,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             </button>
           )}
           <button
-            onClick={handleCancelCreation}
-            className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-300 hover:text-white border border-white/10 transition cursor-pointer"
+            type="button"
+            onClick={handleRequestCancel}
+            disabled={isSubmittingPost || isDeletingDraft}
+            className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-300 hover:text-white border border-white/10 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            title={lang === 'vi' ? 'Rời khỏi quy trình đăng bài' : 'Leave listing creation'}
           >
             {lang === 'vi' ? 'Hủy bỏ' : 'Cancel'}
           </button>
@@ -2891,6 +3272,53 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               )}
             </div>
 
+            {/* Ghi chú khoảng thời gian mua */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-[#24263e]">
+                  {lang === 'vi' ? 'Ghi chú khoảng thời gian mua' : 'Purchase Time Note'}
+                </label>
+                <span className="text-[10px] text-slate-400 font-medium">
+                  {lang === 'vi' ? '(Không bắt buộc)' : '(Optional)'}
+                </span>
+              </div>
+              <input
+                id="purchase-time-note-input"
+                type="text"
+                value={purchaseTimeNote}
+                onChange={(e) => setPurchaseTimeNote(e.target.value)}
+                placeholder={
+                  lang === 'vi'
+                    ? 'VD: Mua khoảng giữa năm 2023, đã dùng khoảng 6 tháng, mua đợt Tết...'
+                    : 'E.g. Bought around mid-2023, used for ~6 months...'
+                }
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36] transition"
+              />
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {[
+                  'Dưới 6 tháng',
+                  'Khoảng 6 - 12 tháng',
+                  'Khoảng 1 - 2 năm',
+                  'Trên 2 năm',
+                  'Mua mới đầu năm nay',
+                  'Mua cuối năm ngoái'
+                ].map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setPurchaseTimeNote(purchaseTimeNote === tag ? '' : tag)}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors cursor-pointer ${
+                      purchaseTimeNote === tag
+                        ? 'bg-[#c34c36] text-white border border-[#c34c36]'
+                        : 'bg-white border border-gray-200 hover:border-[#c34c36] hover:text-[#c34c36] text-slate-700'
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-[#24263e]">
                 {initialDraft
@@ -2961,18 +3389,20 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           <div id="photos-section" className={`space-y-3 pt-2 border-t ${hasSubmittedStep1 && photoError ? 'p-3 rounded-2xl border-2 border-rose-300 bg-rose-50/20' : 'border-gray-100'}`}>
             <div>
               <label className="text-xs font-bold text-[#24263e] flex items-center gap-2">
-                <span>Ảnh chụp sản phẩm thực tế (Tối đa 6 ảnh) *</span>
+                <span>Ảnh chụp sản phẩm thực tế (Tối thiểu 3 - Tối đa 6 ảnh) *</span>
                 <span
-                  className={`text-[10px] font-black px-2 py-0.5 rounded-full ${photoPreviews.length >= 1 && photoPreviews.length <= 6
+                  className={`text-[10px] font-black px-2 py-0.5 rounded-full ${photoPreviews.length >= 3 && photoPreviews.length <= 6
                     ? 'bg-emerald-100 text-emerald-800'
-                    : 'bg-slate-100 text-slate-600'
+                    : photoPreviews.length > 0
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-slate-100 text-slate-600'
                     }`}
                 >
-                  Đã có: {photoPreviews.length}/6 ảnh
+                  Đã có: {photoPreviews.length}/6 ảnh {photoPreviews.length < 3 ? `(Thiếu ${3 - photoPreviews.length} ảnh)` : '✓ Đủ điều kiện'}
                 </span>
               </label>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Đăng bao nhiêu ảnh hiển thị bấy nhiêu (tối đa 6 ảnh). Tải lên ảnh thực tế rõ nét để AI định giá tối ưu.
+                Bắt buộc tải lên tối thiểu 3 ảnh thực tế (tối đa 6 ảnh) để thể hiện các góc cạnh của sản phẩm, giúp AI và người mua kiểm định trực quan.
               </p>
             </div>
 
@@ -3015,6 +3445,12 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 animate-fadeIn pt-1">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                 <span>{photoError}</span>
+              </p>
+            )}
+            {!hasSubmittedStep1 && photoPreviews.length > 0 && photoPreviews.length < 3 && (
+              <p className="text-[11px] text-amber-700 font-medium flex items-center gap-1 animate-fadeIn pt-1">
+                <Info className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                <span>Vui lòng tải thêm ít nhất {3 - photoPreviews.length} ảnh nữa (bắt buộc tối thiểu 3 ảnh sản phẩm).</span>
               </p>
             )}
 
@@ -3080,17 +3516,26 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           {/* Action Buttons: Tự Đăng Bài & Chat Với AI */}
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pt-4 border-t border-gray-100">
             <div className="text-xs text-slate-500 font-medium">
-              <span>Đã chọn: <strong>{photoPreviews.length} ảnh</strong>. Bạn có thể chọn tự điền thông tin hoặc để AI hỗ trợ.</span>
+              <span>
+                Đã chọn: <strong className={photoPreviews.length < 3 ? 'text-rose-600' : 'text-emerald-700'}>{photoPreviews.length}/6 ảnh</strong>
+                {photoPreviews.length < 3 ? ' (Cần tối thiểu 3 ảnh để tiếp tục).' : '. Bạn có thể chọn tự điền thông tin hoặc để AI hỗ trợ.'}
+              </span>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 justify-end">
               {/* Nút 1: Tự đăng bài / Tiếp tục bản nháp */}
               <button
                 type="button"
-                onClick={() => handleInitPost('manual')}
-                disabled={isInitializingPost || (!postId && !initialDraft?.id && photoPreviews.length < 1)}
+                onClick={handleRequestManualPost}
+                disabled={isInitializingPost || photoPreviews.length < 3}
                 className="px-6 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xs flex items-center justify-center gap-2 transition cursor-pointer border-2 border-[#24263e]/20 bg-white text-[#24263e] hover:bg-slate-50 hover:border-[#24263e] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
-                title={postId || initialDraft?.id ? 'Tiếp tục chỉnh sửa thông tin bản nháp' : 'Tự nhập tiêu đề, mô tả và đăng bài nhanh chóng'}
+                title={
+                  photoPreviews.length < 3
+                    ? 'Vui lòng tải lên tối thiểu 3 ảnh sản phẩm để tiếp tục'
+                    : postId || initialDraft?.id
+                      ? 'Tiếp tục chỉnh sửa thông tin bản nháp'
+                      : 'Tự nhập tiêu đề, mô tả và đăng bài nhanh chóng'
+                }
               >
                 {isInitializingPost && initMode === 'manual' ? (
                   <>
@@ -3110,9 +3555,15 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <button
                 type="button"
                 onClick={handleTriggerAiChat}
-                disabled={isInitializingPost || (!postId && !initialDraft?.id && photoPreviews.length < 1)}
+                disabled={isInitializingPost || photoPreviews.length < 3}
                 className="px-7 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-md flex items-center justify-center gap-2.5 transition cursor-pointer bg-gradient-to-r from-[#c34c36] to-[#24263e] text-white hover:opacity-95 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
-                title={postId || initialDraft?.id ? 'Nhờ AI tối ưu mô tả cho bản nháp này' : 'Sử dụng trí tuệ nhân tạo để phân tích ảnh và hoàn thiện mô tả'}
+                title={
+                  photoPreviews.length < 3
+                    ? 'Vui lòng tải lên tối thiểu 3 ảnh sản phẩm để tiếp tục'
+                    : postId || initialDraft?.id
+                      ? 'Nhờ AI tối ưu mô tả cho bản nháp này'
+                      : 'Sử dụng trí tuệ nhân tạo để phân tích ảnh và hoàn thiện mô tả'
+                }
               >
                 {isInitializingPost && initMode === 'ai' ? (
                   <>
@@ -3246,22 +3697,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <p className="text-slate-700 leading-relaxed italic">
                 "{aiVisualReport}"
               </p>
-              <div className="flex items-center justify-between pt-1 border-t border-blue-200/50 text-[10px] text-slate-500">
+              <div className="pt-1 border-t border-blue-200/50 text-[10px] text-slate-500">
                 <span>* Đây là ghi nhận khách quan của AI qua ảnh để đối chiếu thông số và hỗ trợ định giá.</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (aiVisualReport && description.includes(aiVisualReport.trim())) {
-                      showToast(lang === 'vi' ? 'Nhận xét ảnh đã có trong phần mô tả rồi' : 'Visual review already in description');
-                      return;
-                    }
-                    setDescription(prev => prev.trim() ? `${prev.trim()}\n\n${aiVisualReport}` : aiVisualReport);
-                    showToast(lang === 'vi' ? 'Đã chèn nhận xét ảnh vào ô Mô tả' : 'Inserted visual review into description');
-                  }}
-                  className="text-blue-700 hover:text-blue-900 font-bold underline cursor-pointer"
-                >
-                  Chèn vào mô tả
-                </button>
               </div>
             </div>
           )}
@@ -3367,21 +3804,32 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                       {/* Các nút bấm Gợi ý nhanh (+ 6 tháng, + 1 năm...) */}
                       {parsed.examples.length > 0 && (
                         <div className="flex items-center gap-1.5 flex-wrap mb-2 sm:pl-8">
-                          <span className="text-[10px] text-slate-400 font-bold">Gợi ý nhanh:</span>
-                          {parsed.examples.map((ex, exIdx) => (
-                            <button
-                              key={exIdx}
-                              type="button"
-                              onClick={() => handleAnswerChange(idx, ex)}
-                              className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold border transition cursor-pointer ${currentVal === ex
-                                  ? 'bg-[#c34c36] text-white border-[#c34c36]'
-                                  : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200'
+                          <span className="text-[10px] text-slate-400 font-bold">Gợi ý nhanh (chọn nhiều):</span>
+                          {parsed.examples.map((ex, exIdx) => {
+                            const isSelected = isSuggestionActive(currentVal, ex);
+                            return (
+                              <button
+                                key={exIdx}
+                                type="button"
+                                onClick={() => handleToggleSuggestion(idx, ex)}
+                                className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold border transition cursor-pointer flex items-center gap-1 ${
+                                  isSelected
+                                    ? 'bg-[#c34c36] text-white border-[#c34c36] shadow-2xs hover:bg-[#a83c28]'
+                                    : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200 hover:border-amber-400'
                                 }`}
-                              title={`Bấm để điền nhanh "${ex}"`}
-                            >
-                              + {ex}
-                            </button>
-                          ))}
+                                title={isSelected ? `Đã chọn - Bấm để bỏ chọn "${ex}"` : `Bấm để chọn thêm "${ex}"`}
+                              >
+                                {isSelected ? (
+                                  <>
+                                    <Check className="w-3 h-3 stroke-[2.5]" />
+                                    <span>{ex}</span>
+                                  </>
+                                ) : (
+                                  <span>+ {ex}</span>
+                                )}
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
 
@@ -3430,16 +3878,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <div className="flex flex-wrap items-center gap-2.5 w-full xl:w-auto shrink-0 justify-start sm:justify-end">
                   <button
                     type="button"
-                    onClick={handleApplyAnswersToDescription}
-                    disabled={answeredCount === 0 || isApplyingAnswers}
-                    className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-xl border border-amber-300 bg-white hover:bg-amber-50 text-amber-900 text-xs font-bold transition disabled:opacity-40 cursor-pointer whitespace-nowrap text-center"
-                    title="Chèn nguyên văn câu trả lời vào mô tả"
-                  >
-                    {isApplyingAnswers ? 'Đang chèn...' : 'Chèn vào mô tả'}
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={handleSendAnswersToAi}
                     disabled={answeredCount === 0 || isSubmittingAnswersToAi || (credits?.chatCredits ?? 0) < 1}
                     className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] hover:opacity-95 text-white text-xs font-black flex flex-wrap sm:flex-nowrap items-center justify-center gap-2 shadow-sm transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer max-w-full"
@@ -3460,28 +3898,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                       </>
                     )}
                   </button>
-
-                  {sessionId && (
-                    <button
-                      type="button"
-                      onClick={handleRegenerateWithAi}
-                      disabled={isRegeneratingAi || isSubmittingAnswersToAi || (credits?.chatCredits ?? 0) < 1}
-                      className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-xl border border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-900 text-xs font-bold flex items-center justify-center gap-1.5 transition disabled:opacity-40 cursor-pointer whitespace-nowrap"
-                      title="Yêu cầu AI viết lại bản nháp mô tả theo phong cách khác (-1 credit AI)"
-                    >
-                      {isRegeneratingAi ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-700" />
-                          <span>Đang viết lại...</span>
-                        </>
-                      ) : (
-                        <>
-                          <RotateCcw className="w-3.5 h-3.5 text-indigo-700" />
-                          <span>Viết lại bản nháp AI</span>
-                        </>
-                      )}
-                    </button>
-                  )}
                 </div>
               </div>
             </div>
@@ -3539,22 +3955,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <label className="text-xs font-bold text-[#24263e]">Mô tả chi tiết sản phẩm *</label>
-                  {sessionId && (
-                    <button
-                      type="button"
-                      onClick={handleRegenerateWithAi}
-                      disabled={isRegeneratingAi || (credits?.chatCredits ?? 0) < 1}
-                      className="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-md border border-indigo-200 flex items-center gap-1 transition cursor-pointer disabled:opacity-40"
-                      title="AI viết lại bản nháp mô tả khác (-1 credit AI)"
-                    >
-                      {isRegeneratingAi ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <RotateCcw className="w-3 h-3" />
-                      )}
-                      <span>Viết lại bằng AI</span>
-                    </button>
-                  )}
                 </div>
                 <span className="text-[10px] text-slate-400">{description.length}/10.000 ký tự</span>
               </div>
@@ -3569,7 +3969,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               {hasSubmittedStep2 && (!description || description.trim().length < 10) && (
                 <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  <span>Vui lòng nhập mô tả chi tiết sản phẩm (tối thiểu 10 ký tự) hoặc trả lời 4 câu hỏi phía trên rồi bấm 'Chèn vào mô tả' / 'Gửi AI Hoàn Thiện Mô Tả'.</span>
+                  <span>Vui lòng nhập mô tả chi tiết sản phẩm (tối thiểu 10 ký tự) hoặc trả lời các câu hỏi khảo sát phía trên rồi bấm 'Gửi AI Hoàn Thiện Mô Tả'.</span>
                 </p>
               )}
               {postMode === 'manual' && (
@@ -3577,41 +3977,6 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   * Đối với tự mô tả bài đăng, bạn cần mô tả cụ thể và kỹ càng tình trạng, chức năng, phụ kiện đi kèm để tránh khiếu nại sau này.
                 </p>
               )}
-            </div>
-
-            {/* Phân loại tình trạng thông minh: Tự động suy luận từ bộ câu hỏi */}
-            <div className="p-3.5 bg-gradient-to-r from-slate-50 via-amber-50/20 to-slate-50 border border-slate-200/90 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-              <div className="flex items-start sm:items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-black text-[#24263e]">Tình trạng phân loại sản phẩm</span>
-                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-md">
-                      Tự động từ khảo sát
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Hệ thống tự động suy luận theo câu trả lời phía trên để hiển thị huy hiệu trên sàn và định giá.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 self-end sm:self-auto">
-                <select
-                  value={itemCondition}
-                  onChange={(e) => setItemCondition(e.target.value)}
-                  className="px-3 py-1.5 bg-white border border-gray-300 rounded-xl text-xs font-bold text-[#24263e] focus:outline-none focus:border-[#c34c36] shadow-2xs cursor-pointer"
-                  title="Bấm để điều chỉnh nếu muốn"
-                >
-                  <option value="NEW">Mới 100% (Nguyên hộp)</option>
-                  <option value="LIKE_NEW">Như mới (Grade A+ 99%)</option>
-                  <option value="USED_GOOD">Đã qua sử dụng - Tốt (Grade A)</option>
-                  <option value="USED_FAIR">Đã qua sử dụng - Xước nhẹ (Grade B)</option>
-                  <option value="USED">Cũ bình thường (Grade C)</option>
-                </select>
-              </div>
             </div>
 
             {/* Thông tin đóng gói Lalamove với bộ chọn đơn vị thông minh (kg/g, cm/m) */}
@@ -3684,7 +4049,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
                 {/* Chiều dài */}
                 {(() => {
-                  const isInvalid = Boolean(rawLengthInput.trim() && toBaseInteger(rawLengthInput, dimensionUnit === 'm' ? 2 : 0) === null);
+                  const isFormatInvalid = Boolean(rawLengthInput.trim() && toBaseInteger(rawLengthInput, dimensionUnit === 'm' ? 2 : 0) === null);
+                  const isInvalid = isFormatInvalid || isLengthLessThanWidth;
                   return (
                     <div className="space-y-1.5 flex flex-col justify-between">
                       <div className="h-7 flex items-center justify-between">
@@ -3719,9 +4085,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                         }`}
                       />
                       <div className="h-5 flex items-center pl-1 text-[10px]">
-                        {isInvalid ? (
+                        {isFormatInvalid ? (
                           <span className="font-bold text-rose-600 truncate">
                             ⚠️ Cần nhập số hợp lệ (≥ 1 {dimensionUnit === 'm' ? 'cm: 0.01 m' : 'cm'})
+                          </span>
+                        ) : isLengthLessThanWidth ? (
+                          <span className="font-bold text-rose-600 truncate" title="Chiều dài phải lớn hơn hoặc bằng chiều rộng">
+                            ⚠️ Dài phải ≥ rộng
                           </span>
                         ) : typeof shippingLength === 'number' && shippingLength >= 1 ? (
                           <span className="font-bold text-emerald-600 truncate">
@@ -3737,7 +4107,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
                 {/* Chiều rộng */}
                 {(() => {
-                  const isInvalid = Boolean(rawWidthInput.trim() && toBaseInteger(rawWidthInput, dimensionUnit === 'm' ? 2 : 0) === null);
+                  const isFormatInvalid = Boolean(rawWidthInput.trim() && toBaseInteger(rawWidthInput, dimensionUnit === 'm' ? 2 : 0) === null);
+                  const isInvalid = isFormatInvalid || isLengthLessThanWidth;
                   return (
                     <div className="space-y-1.5 flex flex-col justify-between">
                       <div className="h-7 flex items-center justify-between">
@@ -3772,9 +4143,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                         }`}
                       />
                       <div className="h-5 flex items-center pl-1 text-[10px]">
-                        {isInvalid ? (
+                        {isFormatInvalid ? (
                           <span className="font-bold text-rose-600 truncate">
                             ⚠️ Cần nhập số hợp lệ (≥ 1 {dimensionUnit === 'm' ? 'cm: 0.01 m' : 'cm'})
+                          </span>
+                        ) : isLengthLessThanWidth ? (
+                          <span className="font-bold text-rose-600 truncate" title="Chiều rộng phải nhỏ hơn hoặc bằng chiều dài">
+                            ⚠️ Rộng phải ≤ dài
                           </span>
                         ) : typeof shippingWidth === 'number' && shippingWidth >= 1 ? (
                           <span className="font-bold text-emerald-600 truncate">
@@ -3841,6 +4216,15 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   );
                 })()}
               </div>
+
+              {isLengthLessThanWidth && (
+                <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-900 flex items-center gap-2 animate-fadeIn">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span className="font-semibold">
+                    Quy chuẩn kích thước: <strong>Chiều dài phải lớn hơn hoặc bằng chiều rộng</strong> (Dài: {shippingLength} cm &lt; Rộng: {shippingWidth} cm). Vui lòng điều chỉnh lại cho đúng.
+                  </span>
+                </div>
+              )}
 
               {/* Trạng thái đối chiếu xe Lalamove (Luôn hiển thị kể cả khi bảng thu gọn) */}
               <div className="pt-1">
@@ -3911,6 +4295,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     >
                       Thử lại
                     </button>
+                  </div>
+                ) : isLengthLessThanWidth ? (
+                  <div className="p-3 bg-rose-50/90 border border-rose-300 rounded-xl text-xs text-rose-950 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span className="font-bold text-rose-700">
+                      Kích thước không hợp lệ: Chiều dài phải lớn hơn hoặc bằng chiều rộng (Dài ≥ Rộng).
+                    </span>
                   </div>
                 ) : !parcelIsValid ? (
                   <div className="p-3 bg-slate-100/90 border border-slate-200 rounded-xl text-xs text-slate-700 flex items-center gap-2">
@@ -4081,13 +4472,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
           {/* Navigation Buttons */}
           <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-gray-100">
-            <button
-              onClick={() => setCurrentStep(1)}
-              className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer w-full sm:w-auto"
+            <div
+              className="px-4 py-2.5 rounded-xl border border-gray-200 bg-slate-50 text-slate-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-not-allowed select-none opacity-70 w-full sm:w-auto"
+              title="Không thể quay lại bước trước sau khi đã chuyển bước"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Quay lại Bước 1</span>
-            </button>
+              <Lock className="w-3.5 h-3.5 text-slate-400" />
+              <span>Không thể quay lại Bước 1</span>
+            </div>
 
             <button
               onClick={handleGoToStep3}
@@ -4238,13 +4629,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
           {/* Navigation Buttons */}
           <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-gray-100">
-            <button
-              onClick={() => setCurrentStep(2)}
-              className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer w-full sm:w-auto"
+            <div
+              className="px-4 py-2.5 rounded-xl border border-gray-200 bg-slate-50 text-slate-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-not-allowed select-none opacity-70 w-full sm:w-auto"
+              title="Không thể quay lại bước trước sau khi đã chuyển bước"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Sửa lại mô tả</span>
-            </button>
+              <Lock className="w-3.5 h-3.5 text-slate-400" />
+              <span>Không thể quay lại Bước 2</span>
+            </div>
 
             <button
               onClick={handleSaveAndAcceptDescription}
@@ -4563,16 +4954,16 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
           {/* Navigation Buttons */}
           <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-gray-100">
-            <button
-              onClick={() => setCurrentStep(3)}
-              className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer w-full sm:w-auto"
+            <div
+              className="px-4 py-2.5 rounded-xl border border-gray-200 bg-slate-50 text-slate-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-not-allowed select-none opacity-70 w-full sm:w-auto"
+              title="Không thể quay lại bước trước sau khi đã chuyển bước"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Quay lại Xác nhận mô tả</span>
-            </button>
+              <Lock className="w-3.5 h-3.5 text-slate-400" />
+              <span>Không thể quay lại Bước 3</span>
+            </div>
 
             <button
-              onClick={() => setCurrentStep(5)}
+              onClick={handleGoToStep5}
               disabled={!finalPriceVnd || finalPriceVnd < 1000 || finalPriceVnd > 1000000000}
               className="px-6 py-2.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-black shadow-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50 w-full sm:w-auto"
             >
@@ -4613,7 +5004,12 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
             {/* Photos Preview */}
             <div>
-              <span className="text-xs font-bold text-slate-600 block mb-2">Bộ ảnh sản phẩm đã tải:</span>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-600">Bộ ảnh sản phẩm đã tải:</span>
+                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${photoPreviews.length >= 3 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-700'}`}>
+                  {photoPreviews.length}/6 ảnh {photoPreviews.length < 3 ? '(Chưa đủ 3 ảnh tối thiểu)' : '✓ Đạt chuẩn'}
+                </span>
+              </div>
               <div className="flex flex-wrap gap-2">
                 {photoPreviews.map((p, i) => (
                   <img
@@ -4627,6 +5023,21 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   />
                 ))}
               </div>
+              {photoPreviews.length < 3 && (
+                <div className="mt-2.5 p-2.5 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-950 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span className="font-bold">Bài đăng bắt buộc phải có tối thiểu 3 ảnh sản phẩm thực tế.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentStep(1)}
+                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shrink-0 cursor-pointer transition"
+                  >
+                    Bổ sung ảnh (Bước 1)
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Description Preview */}
@@ -4644,14 +5055,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   <Truck className="w-4 h-4 text-blue-600" />
                   Thông tin kiện hàng (Sử dụng để tính phí vận chuyển):
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setCurrentStep(2)}
-                  className="text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer flex items-center gap-1"
-                >
-                  <FileEdit className="w-3.5 h-3.5" />
-                  Sửa kích thước
-                </button>
+                <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+                  <Lock className="w-3 h-3" />
+                  Đã cố định
+                </span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white p-3.5 rounded-xl border border-gray-200">
                 <div className="p-2 rounded-lg bg-slate-50/50">
@@ -4666,7 +5073,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   )}
                 </div>
 
-                <div className="p-2 rounded-lg bg-slate-50/50">
+                <div className={`p-2 rounded-lg ${isLengthLessThanWidth ? 'bg-rose-50 border border-rose-200' : 'bg-slate-50/50'}`}>
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Dài</label>
                   <div className="mt-1 text-xs font-bold text-[#24263e]">
                     {displayLength}
@@ -4678,7 +5085,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   )}
                 </div>
 
-                <div className="p-2 rounded-lg bg-slate-50/50">
+                <div className={`p-2 rounded-lg ${isLengthLessThanWidth ? 'bg-rose-50 border border-rose-200' : 'bg-slate-50/50'}`}>
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Chiều Rộng</label>
                   <div className="mt-1 text-xs font-bold text-[#24263e]">
                     {displayWidth}
@@ -4704,7 +5111,23 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
 
               {/* Tóm tắt phương tiện phù hợp theo catalog */}
-              {fitting.length > 0 ? (
+              {isLengthLessThanWidth ? (
+                <div className="mt-2.5 p-2.5 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-950 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span className="font-bold">
+                      Kích thước không hợp lệ: Chiều dài phải lớn hơn hoặc bằng chiều rộng.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentStep(2)}
+                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shrink-0 cursor-pointer transition"
+                  >
+                    Sửa ngay
+                  </button>
+                </div>
+              ) : fitting.length > 0 ? (
                 <div className="mt-2.5 p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-950 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -4963,10 +5386,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={handleFinishAndExit}
+                      onClick={() => handleFinishAndExit()}
                       className="px-4 py-1.5 rounded-xl bg-[#24263e] hover:bg-black text-white text-xs font-bold transition cursor-pointer"
                     >
-                      Hoàn tất & Về Bàn làm việc
+                      Hoàn tất & Về Sàn đồ cũ
                     </button>
                   </>
                 )}
@@ -4984,21 +5407,23 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           {/* Navigation & Submit Button */}
           {!submitResult && (
             <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-gray-100">
-              <button
-                onClick={() => setCurrentStep(4)}
-                className="px-5 py-2.5 rounded-xl border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer w-full sm:w-auto"
+              <div
+                className="px-4 py-2.5 rounded-xl border border-gray-200 bg-slate-50 text-slate-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-not-allowed select-none opacity-70 w-full sm:w-auto"
+                title="Không thể quay lại bước trước sau khi đã chuyển bước"
               >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Quay lại Định giá</span>
-              </button>
+                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                <span>Không thể quay lại Bước 4</span>
+              </div>
 
               <button
+                type="button"
                 onClick={() => {
+                  if (isSubmittingPost) return;
                   if ((credits?.postCredits ?? 0) < 1) {
                     setShowNoCreditsModal(true);
                     return;
                   }
-                  handleSubmitPostFinal();
+                  setIsConfirmSubmitModalOpen(true);
                 }}
                 disabled={isSubmittingPost}
                 className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white font-black text-sm shadow-md flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50 w-full sm:w-auto"
@@ -5200,13 +5625,25 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
 
               {/* Hộp Cảnh Báo Tiêu Tốn Tài Nguyên */}
-              <div className="bg-amber-50/90 border border-amber-300 rounded-2xl p-3.5 text-left mb-6 shadow-2xs">
+              <div className="bg-amber-50/90 border border-amber-300 rounded-2xl p-3.5 text-left mb-3 shadow-2xs">
                 <div className="flex items-start gap-2.5">
                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <p className="text-[11px] text-amber-950 font-medium leading-relaxed">
                     {lang === 'vi'
                       ? 'Lưu ý: Quá trình quét ảnh tiêu tốn tài nguyên AI thực tế. Nếu thông tin bạn nhập (loại máy hoặc thương hiệu) không khớp với ảnh, 1 credit vẫn sẽ bị trừ. Vui lòng đảm bảo thông tin trên là chính xác!'
                       : 'Note: Visual scanning consumes AI computing power. If your entered info does not match the photos, 1 credit will still be consumed.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Cảnh Báo Không Thể Quay Lại */}
+              <div className="bg-rose-50 border border-rose-300 rounded-2xl p-3 text-left mb-6 shadow-2xs">
+                <div className="flex items-start gap-2.5">
+                  <Lock className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-rose-950 font-medium leading-relaxed">
+                    {lang === 'vi'
+                      ? 'Không thể quay lại: Sau khi xác nhận quét AI và chuyển sang Bước 2, bạn sẽ không thể quay lại Bước 1 để thay đổi danh mục hoặc chọn lại ảnh sản phẩm.'
+                      : 'Notice: Once confirmed and moved to Step 2, you cannot return to Step 1 to change categories or photos.'}
                   </p>
                 </div>
               </div>
@@ -5441,6 +5878,173 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 )}
                 <span>{lang === 'vi' ? 'Xóa vĩnh viễn' : 'Delete Draft'}</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal Cảnh báo khi người dùng muốn Hủy / Thoát / Quay lại quy trình đăng bài */}
+      {isConfirmExitModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-amber-200 flex flex-col items-center text-center animate-scaleUp">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4 ring-8 ring-amber-50/50 shadow-inner">
+              <AlertTriangle className="w-7 h-7 text-amber-600" />
+            </div>
+
+            <h3 className="text-lg font-black text-slate-900 mb-2">
+              {lang === 'vi' ? 'Rời khỏi quy trình đăng bài?' : 'Leave Listing Creation?'}
+            </h3>
+
+            <p className="text-xs text-slate-600 mb-6 leading-relaxed">
+              {lang === 'vi'
+                ? 'Bạn đang trong tiến trình tạo bài đăng. Nếu rời khỏi bây giờ, các thông tin đang thao tác có thể bị gián đoạn hoặc hủy bỏ. Bạn có chắc chắn muốn rời đi không?'
+                : 'You are currently creating a listing. Leaving now may cause your progress to be lost. Are you sure you want to leave?'}
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 w-full">
+              <button
+                type="button"
+                onClick={() => setIsConfirmExitModalOpen(false)}
+                className="py-2.5 px-4 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 transition cursor-pointer"
+              >
+                {lang === 'vi' ? 'Ở lại tiếp tục' : 'Stay Here'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsConfirmExitModalOpen(false);
+                  handleCancelCreation();
+                }}
+                className="py-2.5 px-4 rounded-xl bg-[#24263e] hover:bg-black text-white font-bold text-xs shadow-md transition cursor-pointer"
+              >
+                {lang === 'vi' ? 'Xác nhận rời khỏi' : 'Confirm Leave'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Cảnh báo xác nhận trước khi Gửi Đăng Bài */}
+      {isConfirmSubmitModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 flex flex-col text-left animate-scaleUp">
+            <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
+              <div className="w-12 h-12 rounded-2xl bg-orange-50 text-[#c34c36] flex items-center justify-center shrink-0 shadow-inner">
+                <ShieldCheck className="w-6 h-6 text-[#c34c36]" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900">
+                  {lang === 'vi' ? 'Xác nhận nộp bài đăng lên sàn' : 'Confirm Post Submission'}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {lang === 'vi' ? 'Vui lòng kiểm tra lại thông tin trước khi hoàn tất gửi đăng' : 'Please review your details before final publish'}
+                </p>
+              </div>
+            </div>
+
+            {/* Tóm tắt thông tin */}
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-2.5 text-xs mb-4">
+              <div className="flex justify-between items-start gap-2">
+                <span className="text-slate-500 shrink-0">Tiêu đề:</span>
+                <span className="font-bold text-[#24263e] text-right line-clamp-1">{title}</span>
+              </div>
+              <div className="flex justify-between items-center gap-2">
+                <span className="text-slate-500">Giá niêm yết:</span>
+                <span className="font-black text-[#c34c36] text-sm">{formatVND(finalPriceVnd)}</span>
+              </div>
+              <div className="flex justify-between items-center gap-2">
+                <span className="text-slate-500">Kiện hàng vận chuyển:</span>
+                <span className="font-semibold text-slate-700">{displayWeight} • {displayLength} × {displayWidth} × {displayHeight}</span>
+              </div>
+              <div className="flex justify-between items-center gap-2 pt-2 border-t border-slate-200">
+                <span className="text-slate-500">Phí đăng bài:</span>
+                <span className="font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md">
+                  1 credit đăng bài
+                </span>
+              </div>
+            </div>
+
+            {/* Cảnh báo quan trọng */}
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 mb-5 flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-[11px] text-amber-900 leading-relaxed font-medium">
+                {lang === 'vi'
+                  ? 'Lưu ý: Khi đang gửi bài, hệ thống sẽ tạm khóa chức năng quay lại để đồng bộ dữ liệu. Bạn hãy chắc chắn mọi thông tin trên đã hoàn toàn chính xác.'
+                  : 'Note: Going back will be disabled while submitting to ensure data integrity. Please verify all information.'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setIsConfirmSubmitModalOpen(false)}
+                className="py-2.5 px-4 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 transition cursor-pointer"
+              >
+                {lang === 'vi' ? 'Xem lại thông tin' : 'Review Again'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsConfirmSubmitModalOpen(false);
+                  handleSubmitPostFinal();
+                }}
+                className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white font-bold text-xs shadow-md transition cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>{lang === 'vi' ? 'Xác nhận & Gửi đăng' : 'Confirm & Publish'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Cảnh Báo Khi Ấn Chuyển Sang Bước Tiếp Theo - Không Thể Quay Lại */}
+      {stepTransitionWarning && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-amber-200 animate-scaleUp">
+            <div className="p-6 text-center">
+              <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-inner ring-8 ring-amber-50/50">
+                <AlertTriangle className="w-7 h-7" />
+              </div>
+              <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900 text-[11px] font-black uppercase tracking-wider mb-2 inline-block">
+                {stepTransitionWarning.title}
+              </span>
+              <h3 className="text-base font-black text-slate-900 mb-1">
+                {stepTransitionWarning.stepName}
+              </h3>
+
+              <div className="bg-amber-50/90 border border-amber-300 rounded-2xl p-4 text-left my-4 space-y-2 text-xs">
+                <div className="flex items-center gap-1.5 text-amber-950 font-bold">
+                  <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>{lang === 'vi' ? 'Cảnh báo không thể quay lại:' : 'Notice: Cannot return to previous step:'}</span>
+                </div>
+                <p className="text-slate-700 leading-relaxed text-xs">
+                  {stepTransitionWarning.warningMessage}
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setStepTransitionWarning(null)}
+                  className="flex-1 py-3 px-4 rounded-xl font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                >
+                  {lang === 'vi' ? 'Kiểm Tra Lại' : 'Review Again'}
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const action = stepTransitionWarning.onConfirm;
+                    setStepTransitionWarning(null);
+                    await action();
+                  }}
+                  className="flex-1 py-3 px-4 rounded-xl font-black text-xs bg-gradient-to-r from-amber-600 to-[#c34c36] hover:opacity-95 text-white transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>{stepTransitionWarning.confirmButtonText || (lang === 'vi' ? 'Xác Nhận & Tiếp Tục' : 'Confirm & Proceed')}</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>

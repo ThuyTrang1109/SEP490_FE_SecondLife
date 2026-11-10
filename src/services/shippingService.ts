@@ -77,7 +77,8 @@ export function validParcel(parcel: Parcel, catalog: VehicleCatalog): boolean {
     .every(value => Number.isSafeInteger(value) && value <= 2147483647)
     && parcel.weight >= 1
     && [parcel.length, parcel.width, parcel.height]
-      .every(value => value >= catalog.minDimensionCm);
+      .every(value => value >= catalog.minDimensionCm)
+    && parcel.length >= parcel.width;
 }
 
 export function fitsVehicle(

@@ -881,7 +881,7 @@ export default function App() {
           ? `Bài đăng "${newListing.title}" đang chờ Kỹ thuật viên kiểm định chất lượng (PENDING_INSPECTION).`
           : `Listing "${newListing.title}" is pending Inspection Hub review.`
       );
-      setActiveTab('seller-dashboard');
+      setActiveTab('marketplace');
       return;
     }
 
@@ -892,7 +892,7 @@ export default function App() {
           ? `Bài đăng "${newListing.title}" đã được gửi và đang chờ duyệt (PENDING).`
           : `Listing "${newListing.title}" is pending review.`
       );
-      setActiveTab('seller-dashboard');
+      setActiveTab('marketplace');
       return;
     }
 
@@ -907,8 +907,8 @@ export default function App() {
       return;
     }
 
-    // 5. Trường hợp AI duyệt thành công (ACTIVE)
-    const targetTab = createListingReturnTab || (editingDraft ? 'seller-dashboard' : 'marketplace');
+    // 5. Trường hợp AI duyệt thành công (ACTIVE): Tự động quay về Sàn đồ cũ
+    const targetTab = 'marketplace';
     setActiveTab(targetTab as any);
     showToast(
       lang === 'vi'

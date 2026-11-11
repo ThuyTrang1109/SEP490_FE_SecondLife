@@ -130,7 +130,8 @@ export interface ConfirmInspectionPurchaseRequest {
 }
 
 export interface InspectionBuyerRespondRequest {
-  action: 'ACCEPT' | 'REJECT';
+  action: 'ACCEPT' | 'REJECT' | 'COUNTER';
+  counterFeePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
   buyerConsentZin?: boolean;
   note?: string;
 }
@@ -192,6 +193,7 @@ export interface SubmitInspectionReportRequest {
   proofPhotos?: string[];
   inspectorPhotos?: string[];
   evidenceUrls?: string[];
+  evidencePhotoUrls?: string[];
 }
 
 // Backward compatibility alias for SubmitInspectionReportRequest
@@ -316,7 +318,7 @@ export interface ReviewInspectionAppealRequest {
 
 export interface ProposeTravelTiersRequest {
   categoryId?: string;
-  baseInspectionFee: number;
+  baseInspectionFee?: number;
   tiers: InspectionTravelTierDto[];
 }
 
@@ -343,12 +345,14 @@ export interface InspectionOrderDto {
   orderType?: 'AT_HOME' | 'AT_CENTER' | string;
   feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50' | string;
   status: string;
+  customerStatus?: string;
   note?: string;
 
   inspectionFee?: number;
   shippingFee?: number;
   travelDistanceKm?: number;
   travelFee?: number;
+  travelFeeRoundTrip?: number;
   returnShippingReserveFee?: number;
   buyerCommitmentDeposit?: number;
   feeSettledAt?: string | null;
@@ -378,6 +382,7 @@ export interface InspectionOrderDto {
   proofPhotos?: string[];
   inspectorPhotos?: string[];
   evidenceUrls?: string[];
+  evidencePhotoUrls?: string[] | null;
 
   finalPaymentDeadline?: string;
   finalPaymentPaidAt?: string;
@@ -647,6 +652,7 @@ export const inspectorService = {
   async buyerRespondRequest(orderId: string, data: InspectionBuyerRespondRequest): Promise<InspectionOrderDto> {
     const payload = {
       action: data.action,
+      counterFeePayer: data.counterFeePayer,
       buyerConsentZin: data.action === 'ACCEPT' ? (data.buyerConsentZin ?? true) : undefined,
       note: data.note || undefined,
     };
@@ -673,8 +679,9 @@ export const inspectorService = {
   /**
    * Lấy chi tiết đơn kiểm định
    */
-  async getOrder(orderId: string): Promise<InspectionOrderDto> {
+  async getOrder(orderId: string, options?: Pick<RequestOptions, 'isBackground' | 'signal'>): Promise<InspectionOrderDto> {
     const res = await requestGet<InspectionOrderDto>(`/inspection/orders/${orderId}`, {
+      ...options,
       requiresAuth: true,
     });
     return (res as any)?.data || res;

@@ -27,6 +27,7 @@ import {
   SystemOfferPayload,
   reputationService,
   SellerReputationDto,
+  notificationWsClient,
 } from '../../services';
 import { SystemInspectionProposalPayload, InspectionProposalPrefillData } from '../../types';
 import { inspectorService, InspectionOrderDto } from '../../services/inspectorService';
@@ -235,7 +236,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
 
   const loadInspectionOrderForRoom = useCallback(async () => {
     const postId = room.postId || listing.id;
-    if (!postId) return;
+    if (!postId) return null;
     try {
       setLoadingInspectionOrder(true);
       const res = isSeller
@@ -243,23 +244,54 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
         : await inspectorService.getMyBuyerOrders(0, 50);
       const list: InspectionOrderDto[] = (res as any)?.content || (res as any)?.items || (Array.isArray(res) ? res : []);
 
-      const matched = list.find((o: InspectionOrderDto) => {
+      const matchingOrders = list.filter((o: InspectionOrderDto) => {
         const matchPost = String(o.postId) === String(postId);
         const matchBuyer = !room.buyerId || !o.buyerId || String(o.buyerId).toLowerCase() === String(room.buyerId).toLowerCase();
         const matchSeller = !room.sellerId || !o.sellerId || String(o.sellerId).toLowerCase() === String(room.sellerId).toLowerCase();
         return matchPost && matchBuyer && matchSeller;
       });
 
+      const activeStatuses = [
+        'WAITING_SELLER_APPROVAL',
+        'WAITING_BUYER_APPROVAL',
+        'WAITING_FEE_PAYMENT',
+        'CONFIRMED_PENDING_DISPATCH',
+        'ASSIGNED',
+        'INSPECTING',
+        'COMPLETED',
+      ];
+      // Ưu tiên đơn đang hoạt động (active), nếu không có thì lấy đơn mới nhất
+      const matched = matchingOrders.find((o) => activeStatuses.includes(o.status)) || matchingOrders[0];
+
       if (matched?.id) {
         const fresh = await inspectorService.getOrder(matched.id);
-        setCurrentInspectionOrder(fresh || matched);
+        const finalOrder = fresh || matched;
+        setCurrentInspectionOrder(finalOrder);
+        return finalOrder;
       }
     } catch (err) {
       console.warn('[DedicatedChatRoom] Could not load inspection order:', err);
     } finally {
       setLoadingInspectionOrder(false);
     }
+    return null;
   }, [room.postId, room.buyerId, room.sellerId, listing.id, isSeller]);
+
+  const refreshCurrentInspectionOrder = useCallback(async (orderId?: string) => {
+    const targetId = orderId || currentInspectionOrder?.id;
+    if (targetId) {
+      try {
+        const fresh = await inspectorService.getOrder(targetId);
+        if (fresh) {
+          setCurrentInspectionOrder(fresh);
+          return fresh;
+        }
+      } catch (err) {
+        console.warn('[DedicatedChatRoom] Could not refresh order by id:', err);
+      }
+    }
+    return loadInspectionOrderForRoom();
+  }, [currentInspectionOrder?.id, loadInspectionOrderForRoom]);
 
   useEffect(() => {
     loadInspectionOrderForRoom();
@@ -322,57 +354,58 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
   }, [effectiveUserId, currentUser?.name, resolvedPartnerName, isSeller, room.sellerId]);
 
   // Load message history from backend
+  const reloadMessages = useCallback(async () => {
+    try {
+      const history = await chatService.getMessages(room.id);
+      if (Array.isArray(history)) {
+        // Deduplicate by message ID and consolidate negotiation offers by negotiationId
+        const seenIds = new Set<string>();
+        const negotiationIndexMap = new Map<string, number>();
+        const mapped: ChatMessage[] = [];
+
+        for (const dto of history) {
+          if (dto.id && seenIds.has(dto.id)) continue;
+          if (dto.id) seenIds.add(dto.id);
+
+          const chatMsg = mapDtoToChatMessage(dto);
+          const negoId = chatMsg.negotiationId;
+
+          if (negoId) {
+            if (negotiationIndexMap.has(negoId)) {
+              // Update the existing card in place with latest status & details from newer message
+              const idx = negotiationIndexMap.get(negoId)!;
+              mapped[idx] = chatMsg;
+              continue;
+            }
+            negotiationIndexMap.set(negoId, mapped.length);
+          }
+          if (chatMsg.isInspectionProposal && chatMsg.inspectionProposal?.orderId) {
+            inspectorService.getOrder(chatMsg.inspectionProposal.orderId).then((ord) => {
+              if (ord) setCurrentInspectionOrder(ord);
+            }).catch(() => {});
+          }
+          mapped.push(chatMsg);
+        }
+        setMessages(mapped);
+      }
+    } catch (err) {
+      console.warn('[DedicatedChatRoom] Failed to load messages:', err);
+    }
+  }, [room.id, mapDtoToChatMessage]);
+
   useEffect(() => {
     let isMounted = true;
     setLoadingMessages(true);
     markRoomAsRead();
 
-    chatService.getMessages(room.id)
-      .then((history) => {
-        if (!isMounted) return;
-        if (Array.isArray(history)) {
-          // Deduplicate by message ID and consolidate negotiation offers by negotiationId
-          const seenIds = new Set<string>();
-          const negotiationIndexMap = new Map<string, number>();
-          const mapped: ChatMessage[] = [];
-
-          for (const dto of history) {
-            if (dto.id && seenIds.has(dto.id)) continue;
-            if (dto.id) seenIds.add(dto.id);
-
-            const chatMsg = mapDtoToChatMessage(dto);
-            const negoId = chatMsg.negotiationId;
-
-            if (negoId) {
-              if (negotiationIndexMap.has(negoId)) {
-                // Update the existing card in place with latest status & details from newer message
-                const idx = negotiationIndexMap.get(negoId)!;
-                mapped[idx] = chatMsg;
-                continue;
-              }
-              negotiationIndexMap.set(negoId, mapped.length);
-            }
-            if (chatMsg.isInspectionProposal && chatMsg.inspectionProposal?.orderId) {
-              inspectorService.getOrder(chatMsg.inspectionProposal.orderId).then(ord => {
-                if (ord) setCurrentInspectionOrder(ord);
-              }).catch(() => {});
-            }
-            mapped.push(chatMsg);
-          }
-          setMessages(mapped);
-        }
-      })
-      .catch((err) => {
-        console.warn('[DedicatedChatRoom] Failed to load messages:', err);
-      })
-      .finally(() => {
-        if (isMounted) setLoadingMessages(false);
-      });
+    reloadMessages().finally(() => {
+      if (isMounted) setLoadingMessages(false);
+    });
 
     return () => {
       isMounted = false;
     };
-  }, [room.id, mapDtoToChatMessage, markRoomAsRead]);
+  }, [reloadMessages, markRoomAsRead]);
 
   // Robust deduplication and synchronization for incoming messages (WebSocket or API response)
   const syncIncomingMessage = useCallback((incoming: ChatMessage) => {
@@ -392,19 +425,6 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
           next[existingOfferIndex] = incoming;
           // Filter out any other duplicate cards for this same negotiationId
           return next.filter((m, idx) => idx === existingOfferIndex || m.negotiationId !== incoming.negotiationId);
-        }
-      }
-
-      // 2.5. If it's an inspection proposal: match and update existing proposal card by orderId
-      const incomingOrderId = incoming.inspectionProposal?.orderId;
-      if (incomingOrderId) {
-        const existingProposalIndex = prev.findIndex(
-          (m) => m.inspectionProposal?.orderId === incomingOrderId
-        );
-        if (existingProposalIndex !== -1) {
-          const next = [...prev];
-          next[existingProposalIndex] = incoming;
-          return next.filter((m, idx) => idx === existingProposalIndex || m.inspectionProposal?.orderId !== incomingOrderId);
         }
       }
 
@@ -450,6 +470,20 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
         syncIncomingMessage(incoming);
         markRoomAsRead();
 
+        // Also check if this message is or mentions an inspection order
+        const parsedSys = parseSystemMessage(dto.messageContent);
+        const orderId = incoming.inspectionProposal?.orderId || parsedSys.inspectionProposal?.orderId;
+        if (orderId) {
+          refreshCurrentInspectionOrder(orderId);
+        } else if (
+          dto.messageContent?.includes('KIỂM ĐỊNH') ||
+          dto.messageContent?.includes('INSPECTION') ||
+          dto.messageContent?.includes('ĐỀ XUẤT') ||
+          dto.messageContent?.includes('phí kiểm định')
+        ) {
+          refreshCurrentInspectionOrder();
+        }
+
         // Auto-scroll down smoothly if user is already near bottom
         if (messagesContainerRef.current) {
           const { scrollHeight, scrollTop, clientHeight } = messagesContainerRef.current;
@@ -463,7 +497,102 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
     return () => {
       unsubscribe();
     };
-  }, [room.id, mapDtoToChatMessage, markRoomAsRead, syncIncomingMessage, scrollToBottom]);
+  }, [room.id, mapDtoToChatMessage, markRoomAsRead, syncIncomingMessage, scrollToBottom, refreshCurrentInspectionOrder]);
+
+  // Real-time notification, order update, and focus/visibility listener
+  useEffect(() => {
+    const handleNotification = (notif: any) => {
+      if (!notif) return;
+      const type = String(notif.type || '').toUpperCase();
+      const refType = String(notif.referenceType || '').toUpperCase();
+      const title = String(notif.title || '').toLowerCase();
+      const message = String(notif.message || '').toLowerCase();
+      const refId = notif.referenceId;
+
+      const isInspectionRelated =
+        type === 'INSPECTION' ||
+        refType === 'INSPECTION_ORDER' ||
+        title.includes('kiểm định') ||
+        title.includes('phí') ||
+        title.includes('đề xuất') ||
+        message.includes('kiểm định') ||
+        message.includes('đề xuất');
+
+      if (isInspectionRelated) {
+        refreshCurrentInspectionOrder(refId);
+        reloadMessages();
+      }
+    };
+
+    const unsubWs = notificationWsClient.subscribeListener(handleNotification);
+
+    const handleCustomEvent = (e: any) => {
+      if (e.detail) {
+        handleNotification(e.detail);
+      }
+    };
+    window.addEventListener('secondlife_notification', handleCustomEvent);
+
+    const handleOrderUpdated = (e: any) => {
+      if (e.detail?.order) {
+        setCurrentInspectionOrder(e.detail.order);
+      } else {
+        refreshCurrentInspectionOrder();
+      }
+      reloadMessages();
+    };
+    window.addEventListener('inspection_order_updated', handleOrderUpdated);
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        refreshCurrentInspectionOrder();
+        reloadMessages();
+      }
+    };
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
+    return () => {
+      unsubWs();
+      window.removeEventListener('secondlife_notification', handleCustomEvent);
+      window.removeEventListener('inspection_order_updated', handleOrderUpdated);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    };
+  }, [refreshCurrentInspectionOrder, reloadMessages]);
+
+  // Active polling heartbeat while an inspection order is in negotiation or payment stage
+  useEffect(() => {
+    const activeStatuses = [
+      'WAITING_SELLER_APPROVAL',
+      'WAITING_BUYER_APPROVAL',
+      'WAITING_FEE_PAYMENT',
+      'CONFIRMED_PENDING_DISPATCH',
+    ];
+    if (!currentInspectionOrder?.id || !activeStatuses.includes(currentInspectionOrder.status)) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      refreshCurrentInspectionOrder(currentInspectionOrder.id);
+    }, 3500);
+
+    return () => clearInterval(intervalId);
+  }, [currentInspectionOrder?.id, currentInspectionOrder?.status, refreshCurrentInspectionOrder]);
+
+  // If currentInspectionOrder is not loaded yet, check if any message contains an inspection proposal
+  useEffect(() => {
+    if (!currentInspectionOrder) {
+      for (const m of messages) {
+        const parsed = parseSystemMessage(m.text);
+        const orderId = m.inspectionProposal?.orderId || parsed.inspectionProposal?.orderId;
+        if (orderId) {
+          refreshCurrentInspectionOrder(orderId);
+          break;
+        }
+      }
+    }
+  }, [messages, currentInspectionOrder, refreshCurrentInspectionOrder]);
 
   // Analyze negotiation offers from messages
   const negotiationMap = useMemo(() => {
@@ -487,10 +616,36 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
     return map;
   }, [messages, listing.priceVnd]);
 
-  // Consolidate offer & inspection cards so each appears exactly once in the chat timeline with its latest status
+  // Find the latest inspection proposal message in the conversation
+  const latestInspectionProposalMsgId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const parsed = parseSystemMessage(messages[i].text);
+      if ((parsed.isSystem && Boolean(parsed.inspectionProposal)) || messages[i].isInspectionProposal) {
+        return messages[i].id;
+      }
+    }
+    return null;
+  }, [messages]);
+
+  // Map each orderId to its latest proposal message ID in the conversation
+  const latestMsgIdByOrderId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const parsed = parseSystemMessage(messages[i].text);
+      const orderId = parsed.inspectionProposal?.orderId || messages[i].inspectionProposal?.orderId;
+      if (orderId) {
+        const key = String(orderId).toLowerCase();
+        if (!map.has(key)) {
+          map.set(key, messages[i].id);
+        }
+      }
+    }
+    return map;
+  }, [messages]);
+
+  // Consolidate offer cards so each appears once, while letting inspection proposals flow chronologically
   const displayMessages = useMemo(() => {
     const latestNegoMsgMap = new Map<string, ChatMessage>();
-    const latestInspectionMsgMap = new Map<string, ChatMessage>();
 
     for (const m of messages) {
       const parsed = parseSystemMessage(m.text);
@@ -498,20 +653,14 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       if (negoId) {
         latestNegoMsgMap.set(negoId, m);
       }
-      const orderId = parsed.inspectionProposal?.orderId || m.inspectionProposal?.orderId;
-      if (orderId) {
-        latestInspectionMsgMap.set(orderId, m);
-      }
     }
 
     const seenNegotiationIds = new Set<string>();
-    const seenInspectionOrderIds = new Set<string>();
     const result: ChatMessage[] = [];
 
     for (const m of messages) {
       const parsed = parseSystemMessage(m.text);
       const negoId = parsed.offer?.negotiationId || m.negotiationId;
-      const orderId = parsed.inspectionProposal?.orderId || m.inspectionProposal?.orderId;
 
       if (negoId) {
         if (seenNegotiationIds.has(negoId)) {
@@ -519,19 +668,22 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
         }
         seenNegotiationIds.add(negoId);
         result.push(latestNegoMsgMap.get(negoId) || m);
-      } else if (orderId) {
-        if (seenInspectionOrderIds.has(orderId)) {
-          continue;
-        }
-        seenInspectionOrderIds.add(orderId);
-        result.push(latestInspectionMsgMap.get(orderId) || m);
       } else {
         result.push(m);
       }
     }
 
-    // If an active inspection order exists from API but no message exists in chat yet, inject it into the stream
-    if (currentInspectionOrder && hasActiveInspection && !seenInspectionOrderIds.has(currentInspectionOrder.id)) {
+    // Check if an inspection proposal message for this specific currentInspectionOrder exists in messages
+    const hasThisInspectionInMessages = currentInspectionOrder
+      ? messages.some((m) => {
+          const parsed = parseSystemMessage(m.text);
+          const orderId = parsed.inspectionProposal?.orderId || m.inspectionProposal?.orderId;
+          return Boolean(orderId && String(orderId).toLowerCase() === String(currentInspectionOrder.id).toLowerCase());
+        })
+      : false;
+
+    // If an active inspection order exists from API but no message exists in chat yet for this specific order, inject it into the stream
+    if (currentInspectionOrder && hasActiveInspection && !hasThisInspectionInMessages) {
       const totalFee =
         (currentInspectionOrder.inspectionFee || 0) +
         (currentInspectionOrder.shippingFee || 0) +
@@ -541,17 +693,19 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
         currentInspectionOrder.feePayer === 'BUYER_PAYS'
           ? 'BUYER_100'
           : currentInspectionOrder.feePayer === 'SELLER_PAYS'
-          ? 'SELLER_100'
-          : 'SPLIT_50_50';
+            ? 'SELLER_100'
+            : 'SPLIT_50_50';
 
-      const payloadStatus: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED' =
+      const payloadStatus: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED' | 'COUNTERED' =
         currentInspectionOrder.status === 'WAITING_FEE_PAYMENT' || currentInspectionOrder.status === 'CONFIRMED_PENDING_DISPATCH'
           ? 'ACCEPTED'
           : currentInspectionOrder.status === 'REJECTED'
-          ? 'REJECTED'
-          : currentInspectionOrder.status === 'CANCELLED'
-          ? 'CANCELLED'
-          : 'PENDING';
+            ? 'REJECTED'
+            : currentInspectionOrder.status === 'CANCELLED'
+              ? 'CANCELLED'
+              : currentInspectionOrder.status === 'WAITING_BUYER_APPROVAL'
+                ? 'COUNTERED'
+                : 'PENDING';
 
       const payload: SystemInspectionProposalPayload = {
         type: 'INSPECTION_PROPOSAL',
@@ -886,7 +1040,6 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
 
   // Handle proposal submission from InspectionProposalModal
   const handleProposalSubmitSuccess = async (newOrder: InspectionOrderDto) => {
-    setCurrentInspectionOrder(newOrder);
     setShowInspectionProposalModal(false);
 
     const totalAtCenterFee =
@@ -901,8 +1054,8 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
         newOrder.feePayer === 'BUYER_PAYS'
           ? 'BUYER_100'
           : newOrder.feePayer === 'SELLER_PAYS'
-          ? 'SELLER_100'
-          : 'SPLIT_50_50',
+            ? 'SELLER_100'
+            : 'SPLIT_50_50',
       estimatedFeeVnd: totalAtCenterFee,
       proposedByRole: 'buyer',
       orderStatus: newOrder.status || 'WAITING_SELLER_APPROVAL',
@@ -917,6 +1070,22 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       isZinLossAcknowledged: true,
     };
 
+    // Tạo tin nhắn lạc quan ngay để thẻ đề xuất mới xuất hiện tức thì ở dưới cùng, không bị trễ hay ghi đè thẻ cũ
+    const tempMsgId = `temp-proposal-${newOrder.id}-${Date.now()}`;
+    const optimisticMsg: ChatMessage = {
+      id: tempMsgId,
+      senderId: effectiveUserId || '',
+      senderName: currentUser?.name || 'Tôi',
+      senderRole: 'buyer',
+      text: `SYSTEM: ${JSON.stringify(proposalPayload)}`,
+      timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      isOffer: false,
+      isInspectionProposal: true,
+      inspectionProposal: proposalPayload,
+    };
+    syncIncomingMessage(optimisticMsg);
+    setCurrentInspectionOrder(newOrder);
+
     try {
       const serverDto = await chatService.sendMessage(room.id, `SYSTEM: ${JSON.stringify(proposalPayload)}`);
       if (serverDto) {
@@ -927,11 +1096,11 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
         newOrder.feePayer === 'BUYER_PAYS'
           ? 'Người mua chịu 100%'
           : newOrder.feePayer === 'SELLER_PAYS'
-          ? 'Người bán chịu 100%'
-          : 'Chia đôi 50/50';
+            ? 'Người bán chịu 100%'
+            : 'Chia đôi 50/50';
       const textDto = await chatService.sendMessage(
         room.id,
-        `[ĐỀ XUẤT KIỂM ĐỊNH] Người mua đã gửi yêu cầu kiểm định tại trung tâm SecondLife Hub (#${newOrder.id.slice(0, 8).toUpperCase()}). Phương án: ${feeSplitText}. Tổng phí: ${formatVND(totalAtCenterFee)}. Vui lòng xem và phản hồi trên thẻ đề xuất!`
+        `[ĐỀ XUẤT KIỂM ĐỊNH]: -  Người mua đã gửi yêu cầu kiểm định tại trung tâm. Phương án: ${feeSplitText}. Tổng phí: ${formatVND(totalAtCenterFee)}. Vui lòng xem và phản hồi trên thẻ đề xuất!`
       );
       if (textDto) {
         syncIncomingMessage(mapDtoToChatMessage(textDto));
@@ -946,7 +1115,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
 
   // Handle updates when Seller or Buyer interacts with proposal card
   const handleInspectionOrderUpdated = async (updated: InspectionOrderDto) => {
-    setCurrentInspectionOrder(updated);
+    window.dispatchEvent(new CustomEvent('inspection_order_updated', { detail: { order: updated } }));
 
     const totalAtCenterFee =
       (updated.inspectionFee || 0) + (updated.shippingFee || 0) + (updated.returnShippingReserveFee || 0);
@@ -958,15 +1127,17 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
         updated.status === 'WAITING_FEE_PAYMENT' || updated.status === 'CONFIRMED_PENDING_DISPATCH'
           ? 'ACCEPTED'
           : updated.status === 'REJECTED' || updated.status === 'CANCELLED'
-          ? 'REJECTED'
-          : 'PENDING',
+            ? 'REJECTED'
+            : updated.status === 'WAITING_BUYER_APPROVAL' || updated.status === 'WAITING_SELLER_APPROVAL'
+              ? 'COUNTERED'
+              : 'PENDING',
       method: 'AT_CENTER',
       feeSplit:
         updated.feePayer === 'BUYER_PAYS'
           ? 'BUYER_100'
           : updated.feePayer === 'SELLER_PAYS'
-          ? 'SELLER_100'
-          : 'SPLIT_50_50',
+            ? 'SELLER_100'
+            : 'SPLIT_50_50',
       estimatedFeeVnd: totalAtCenterFee,
       proposedByRole: isSeller ? 'seller' : 'buyer',
       orderStatus: updated.status,
@@ -979,13 +1150,63 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
       shippingToCenterFee: updated.shippingFee || (currentInspectionOrder as any)?.shippingFee,
       returnShippingReserveFee: updated.returnShippingReserveFee || (currentInspectionOrder as any)?.returnShippingReserveFee,
       isZinLossAcknowledged: true,
+      note: updated.note,
+      rejectionReason: updated.note,
     };
+
+    // Tạo tin nhắn lạc quan để thẻ cập nhật trạng thái lập tức
+    const tempUpdateId = `temp-proposal-${updated.id}-${Date.now()}`;
+    const optimisticUpdateMsg: ChatMessage = {
+      id: tempUpdateId,
+      senderId: effectiveUserId || '',
+      senderName: currentUser?.name || (isSeller ? 'Người bán' : 'Người mua'),
+      senderRole: isSeller ? 'seller' : 'buyer',
+      text: `SYSTEM: ${JSON.stringify(proposalPayload)}`,
+      timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      isOffer: false,
+      isInspectionProposal: true,
+      inspectionProposal: proposalPayload,
+    };
+    syncIncomingMessage(optimisticUpdateMsg);
+    setCurrentInspectionOrder(updated);
 
     try {
       const serverDto = await chatService.sendMessage(room.id, `SYSTEM: ${JSON.stringify(proposalPayload)}`);
       if (serverDto) {
         syncIncomingMessage(mapDtoToChatMessage(serverDto));
       }
+
+      let updateNoticeText = '';
+      if (updated.status === 'WAITING_BUYER_APPROVAL') {
+        const feeSplitLabel =
+          updated.feePayer === 'BUYER_PAYS'
+            ? 'Người mua chịu 100%'
+            : updated.feePayer === 'SELLER_PAYS'
+              ? 'Người bán chịu 100%'
+              : 'Chia đôi 50/50';
+        updateNoticeText = `[ĐỀ XUẤT LẠI KIỂM ĐỊNH]: Người bán đã đề xuất lại phương án chi phí: ${feeSplitLabel}. Vui lòng xem và phản hồi trên thẻ đề xuất!`;
+      } else if (updated.status === 'WAITING_SELLER_APPROVAL') {
+        const feeSplitLabel =
+          updated.feePayer === 'BUYER_PAYS'
+            ? 'Người mua chịu 100%'
+            : updated.feePayer === 'SELLER_PAYS'
+              ? 'Người bán chịu 100%'
+              : 'Chia đôi 50/50';
+        updateNoticeText = `[ĐỀ XUẤT LẠI KIỂM ĐỊNH]: Người mua đã đề xuất lại phương án chi phí: ${feeSplitLabel}. Vui lòng xem và phản hồi trên thẻ đề xuất!`;
+      } else if (updated.status === 'WAITING_FEE_PAYMENT' || updated.status === 'CONFIRMED_PENDING_DISPATCH') {
+        updateNoticeText = `[CHẤP NHẬN ĐỀ XUẤT]: Đề xuất kiểm định đã được đồng ý. Vui lòng tiến hành nộp phí kiểm định theo quy định!`;
+      } else if (updated.status === 'REJECTED' || updated.status === 'CANCELLED') {
+        const reasonDetail = updated.note ? `. Lý do: ${updated.note}` : '.';
+        updateNoticeText = `[TỪ CHỐI ĐỀ XUẤT]: Đề xuất kiểm định đã bị từ chối${reasonDetail}`;
+      }
+
+      if (updateNoticeText) {
+        const textDto = await chatService.sendMessage(room.id, updateNoticeText);
+        if (textDto) {
+          syncIncomingMessage(mapDtoToChatMessage(textDto));
+        }
+      }
+
       markRoomAsRead();
       setTimeout(() => scrollToBottom('smooth'), 100);
     } catch (err) {
@@ -1262,69 +1483,89 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
 
                 {/* SYSTEM INSPECTION PROPOSAL CARD */}
                 {parsedSys.isSystem && parsedSys.inspectionProposal ? (
-                  <InspectionProposalCard
-                    order={
-                      currentInspectionOrder && currentInspectionOrder.id === parsedSys.inspectionProposal.orderId
-                        ? ({
-                            ...currentInspectionOrder,
-                            inspectionFee: currentInspectionOrder.inspectionFee || parsedSys.inspectionProposal.baseInspectionFee,
-                            shippingFee: currentInspectionOrder.shippingFee || parsedSys.inspectionProposal.shippingToCenterFee,
-                            returnShippingReserveFee: currentInspectionOrder.returnShippingReserveFee || parsedSys.inspectionProposal.returnShippingReserveFee,
-                            centerName: (currentInspectionOrder as any).centerName || parsedSys.inspectionProposal.centerName,
-                            orderType: currentInspectionOrder.orderType || parsedSys.inspectionProposal.method || 'AT_CENTER',
-                            feePayer: currentInspectionOrder.feePayer || parsedSys.inspectionProposal.feePayer,
-                            buyerFeeShare: currentInspectionOrder.buyerFeeShare || parsedSys.inspectionProposal.buyerFeeShare,
-                            sellerFeeShare:
-                              currentInspectionOrder.sellerFeeShare !== undefined && currentInspectionOrder.sellerFeeShare !== null && currentInspectionOrder.sellerFeeShare > 0
-                                ? currentInspectionOrder.sellerFeeShare
-                                : parsedSys.inspectionProposal.sellerFeeShare,
-                            inspectionCenterId: currentInspectionOrder.inspectionCenterId || parsedSys.inspectionProposal.centerId,
-                            buyerConsentZin: (currentInspectionOrder as any).buyerConsentZin ?? parsedSys.inspectionProposal.isZinLossAcknowledged ?? true,
-                            postPrice: listing.priceVnd,
-                            postTitle: listing.title,
-                            postImageUrl: listing.photos?.front,
-                          } as any)
-                        : ({
-                            id: parsedSys.inspectionProposal.orderId || msg.id,
-                            postId: listing.id,
-                            postTitle: listing.title,
-                            postImageUrl: listing.photos?.front,
-                            buyerId: room.buyerId,
-                            sellerId: room.sellerId,
-                            status:
-                              parsedSys.inspectionProposal.orderStatus ||
-                              (parsedSys.inspectionProposal.status === 'PENDING'
-                                ? 'WAITING_SELLER_APPROVAL'
-                                : parsedSys.inspectionProposal.status),
-                            orderType: parsedSys.inspectionProposal.method || 'AT_CENTER',
-                            feePayer: parsedSys.inspectionProposal.feePayer ||
-                              (parsedSys.inspectionProposal.feeSplit === 'BUYER_100' ? 'BUYER_PAYS' : parsedSys.inspectionProposal.feeSplit === 'SELLER_100' ? 'SELLER_PAYS' : 'SPLIT_50_50'),
-                            inspectionFee:
-                              parsedSys.inspectionProposal.baseInspectionFee || 0,
-                            shippingFee: parsedSys.inspectionProposal.shippingToCenterFee || 0,
-                            returnShippingReserveFee: parsedSys.inspectionProposal.returnShippingReserveFee || 0,
-                            buyerFeeShare:
-                              parsedSys.inspectionProposal.buyerFeeShare ??
-                              Math.round(parsedSys.inspectionProposal.estimatedFeeVnd / 2),
-                            sellerFeeShare:
-                              parsedSys.inspectionProposal.sellerFeeShare ??
-                              parsedSys.inspectionProposal.estimatedFeeVnd -
-                                Math.round(parsedSys.inspectionProposal.estimatedFeeVnd / 2),
-                            inspectionCenterId: parsedSys.inspectionProposal.centerId,
-                            centerName: parsedSys.inspectionProposal.centerName,
-                            buyerConsentZin: parsedSys.inspectionProposal.isZinLossAcknowledged ?? true,
-                            postPrice: listing.priceVnd,
-                          } as any)
-                    }
-                    listing={listing}
-                    currentUserId={effectiveUserId}
-                    isSeller={isSeller}
-                    isBuyer={isBuyer}
-                    currentRole={currentRole}
-                    lang={lang}
-                    onOrderUpdated={handleInspectionOrderUpdated}
-                    onViewDetails={(orderId) => navigatePath(paths.decision(currentRole, orderId))}
-                  />
+                  (() => {
+                    const payload = parsedSys.inspectionProposal;
+                    const msgOrderId = payload.orderId;
+                    const key = msgOrderId ? String(msgOrderId).toLowerCase() : '';
+                    const latestMsgIdForThisOrder = key ? latestMsgIdByOrderId.get(key) : null;
+                    const isLatestForThisOrder = !latestMsgIdForThisOrder || msg.id === latestMsgIdForThisOrder;
+
+                    // Chỉ đồng bộ dữ liệu live từ currentInspectionOrder NẾU tin nhắn này đúng là thuộc về currentInspectionOrder!
+                    const isMatchingCurrentOrder = Boolean(
+                      currentInspectionOrder &&
+                      msgOrderId &&
+                      String(msgOrderId).toLowerCase() === String(currentInspectionOrder.id).toLowerCase()
+                    );
+
+                    const orderForCard: InspectionOrderDto = isMatchingCurrentOrder
+                      ? ({
+                        ...currentInspectionOrder!,
+                        inspectionFee: currentInspectionOrder!.inspectionFee ?? payload.baseInspectionFee,
+                        shippingFee: currentInspectionOrder!.shippingFee ?? payload.shippingToCenterFee,
+                        returnShippingReserveFee: currentInspectionOrder!.returnShippingReserveFee ?? payload.returnShippingReserveFee,
+                        centerName: (currentInspectionOrder as any).centerName || payload.centerName,
+                        orderType: currentInspectionOrder!.orderType || payload.method || 'AT_CENTER',
+                        feePayer: currentInspectionOrder!.feePayer || (payload.feePayer as any) ||
+                          (payload.feeSplit === 'BUYER_100' ? 'BUYER_PAYS' : payload.feeSplit === 'SELLER_100' ? 'SELLER_PAYS' : 'SPLIT_50_50'),
+                        buyerFeeShare: currentInspectionOrder!.buyerFeeShare ?? payload.buyerFeeShare,
+                        sellerFeeShare: currentInspectionOrder!.sellerFeeShare ?? payload.sellerFeeShare,
+                        inspectionCenterId: currentInspectionOrder!.inspectionCenterId || payload.centerId,
+                        buyerConsentZin: (currentInspectionOrder as any).buyerConsentZin ?? payload.isZinLossAcknowledged ?? true,
+                        note: currentInspectionOrder!.note || payload.note || payload.rejectionReason,
+                        postPrice: listing.priceVnd,
+                        postTitle: listing.title,
+                        postImageUrl: listing.photos?.front,
+                      } as any)
+                      : ({
+                        id: payload.orderId || msg.id,
+                        postId: listing.id,
+                        postTitle: listing.title,
+                        postImageUrl: listing.photos?.front,
+                        buyerId: room.buyerId,
+                        sellerId: room.sellerId,
+                        status: !isLatestForThisOrder
+                          ? 'SUPERSEDED'
+                          : (payload.orderStatus ||
+                            (payload.status === 'PENDING'
+                              ? 'WAITING_SELLER_APPROVAL'
+                              : payload.status === 'COUNTERED'
+                                ? 'WAITING_BUYER_APPROVAL'
+                                : payload.status === 'ACCEPTED'
+                                  ? 'WAITING_FEE_PAYMENT'
+                                  : payload.status === 'REJECTED' || payload.status === 'CANCELLED'
+                                    ? 'CANCELLED'
+                                    : payload.status)),
+                        orderType: payload.method || 'AT_CENTER',
+                        feePayer: (payload.feePayer as any) ||
+                          (payload.feeSplit === 'BUYER_100' ? 'BUYER_PAYS' : payload.feeSplit === 'SELLER_100' ? 'SELLER_PAYS' : 'SPLIT_50_50'),
+                        inspectionFee: payload.baseInspectionFee || 0,
+                        shippingFee: payload.shippingToCenterFee || 0,
+                        returnShippingReserveFee: payload.returnShippingReserveFee || 0,
+                        buyerFeeShare: payload.buyerFeeShare,
+                        sellerFeeShare: payload.sellerFeeShare,
+                        inspectionCenterId: payload.centerId,
+                        centerName: payload.centerName,
+                        buyerConsentZin: payload.isZinLossAcknowledged ?? true,
+                        note: payload.note || payload.rejectionReason,
+                        postPrice: listing.priceVnd,
+                      } as any);
+
+                    return (
+                      <InspectionProposalCard
+                        key={msg.id}
+                        order={orderForCard}
+                        listing={listing}
+                        currentUserId={effectiveUserId}
+                        isSeller={isSeller}
+                        isBuyer={isBuyer}
+                        currentRole={currentRole}
+                        lang={lang}
+                        isSuperseded={!isLatestForThisOrder}
+                        onOrderUpdated={handleInspectionOrderUpdated}
+                        onViewDetails={(orderId) => navigatePath(paths.decision(currentRole, orderId))}
+                      />
+                    );
+                  })()
                 ) : parsedSys.isSystem && parsedSys.offer ? (
                   (() => {
                     const offer = parsedSys.offer;

@@ -1,4 +1,5 @@
 import type { Language, ShipmentBackend } from '../types';
+import type { InspectionOrderDto } from '../services/inspectorService';
 
 export function getCenterTabDataNeeds(tab: string) {
   return {
@@ -12,8 +13,30 @@ const inboundTrackingStatuses = new Set([
   'WAITING_INSPECTION', 'AWAITING_INSPECTION', 'RECEIVED_AT_CENTER', 'INSPECTING',
 ]);
 
+const dispatchStatuses = new Set([
+  ...inboundTrackingStatuses, 'PENDING', 'ASSIGNED', 'INSPECTION_IN_PROGRESS',
+]);
+
+export function getCenterDispatchStage(
+  order: Pick<InspectionOrderDto, 'orderType' | 'status' | 'inspectorId'>,
+  receivedAtHub: boolean,
+) {
+  if (!dispatchStatuses.has(order.status)) return null;
+  if (order.orderType !== 'AT_HOME' && !receivedAtHub) return 'WAITING_FOR_HUB';
+  return order.inspectorId ? 'ASSIGNED' : 'READY_TO_ASSIGN';
+}
+
 export function shouldTrackInboundShipment(order: { orderType?: string; status: string }) {
   return order.orderType === 'AT_CENTER' && inboundTrackingStatuses.has(order.status);
+}
+
+export function canReadCenterInspectionShipments(order: Pick<InspectionOrderDto, 'inspectionCenterId'>, centerId?: string) {
+  return Boolean(centerId && order.inspectionCenterId === centerId);
+}
+
+export function shouldTrackCenterInspectionShipments(order: InspectionOrderDto, centerId?: string, role?: string) {
+  return canReadCenterInspectionShipments(order, centerId) &&
+    (shouldTrackInboundShipment(order) || isPaidHubBuyerDelivery(order) || isCenterReturnEligible(order, centerId, role));
 }
 
 export function getLatestInboundShipment(shipments: ShipmentBackend[]): ShipmentBackend | null {
@@ -42,6 +65,44 @@ export function canBookHubBuyerDelivery(shipment: ShipmentBackend | null | undef
   return shipment === null || shipment?.status === 'CANCELLED';
 }
 
+export function isHubReturnCase(order?: Pick<InspectionOrderDto, 'orderType' | 'status'> | null) {
+  return order?.orderType === 'AT_CENTER' && ['FAILED', 'CANCELLED'].includes(order.status);
+}
+
+export function isCenterReturnEligible(order: InspectionOrderDto, centerId?: string, role?: string) {
+  return role?.toLowerCase() === 'inspection_center' && Boolean(centerId && centerId === order.inspectionCenterId) &&
+    isHubReturnCase(order) && Boolean(order.feeSettledAt) && order.returnShippingReserveFee != null &&
+    order.finalPaymentPaidAt == null;
+}
+
+export function getHubReturnState(shipments: ShipmentBackend[]) {
+  const returns = shipments.filter((shipment) => shipment.leg === 'CENTER_TO_SELLER').reverse();
+  return {
+    received: shipments.some((shipment) => shipment.leg === 'SELLER_TO_CENTER' && shipment.status === 'DELIVERED'),
+    shipment: returns.find((shipment) => shipment.status !== 'CANCELLED') ?? returns[0] ?? null,
+  };
+}
+
+export function getHubReturnProgress(shipment: ShipmentBackend, lang: Language = 'vi') {
+  const progress = getInboundShipmentProgress({ status: shipment.status, providerStatus: null }, lang);
+  if (shipment.status === 'CREATION_UNCERTAIN') return { ...progress, label: lang === 'vi' ? 'Chờ đối soát với Lalamove' : 'Awaiting Lalamove reconciliation' };
+  if (progress.step === 3) return { ...progress, label: lang === 'vi' ? 'Đã trả về người bán' : 'Delivered back to the seller' };
+  if (progress.step === 2) return { ...progress, label: lang === 'vi' ? 'Đang trả về người bán' : 'Returning to the seller' };
+  return progress;
+}
+
+export function getReturnReserveMessage(reserve: number | null | undefined, shipment: ShipmentBackend) {
+  if (shipment.status !== 'DELIVERED') return 'Phần dự phòng còn dư sẽ được đối soát sau khi giao hàng.';
+  if (reserve == null || shipment.actualFee == null || shipment.actualFee > reserve) return 'Đang chờ đối soát cước trả hàng.';
+  if (shipment.actualFee === reserve) return 'Cước thực tế bằng khoản dự phòng. Không có phần dư.';
+  return 'Xem lịch sử ví để xác nhận khoản dự phòng được hoàn.';
+}
+
+export function canAppealInspection(order: InspectionOrderDto, sellerId?: string, now = Date.now()) {
+  return Boolean(sellerId && sellerId === order.sellerId && order.status === 'FAILED' &&
+    (!order.appealStatus || order.appealStatus === 'NONE') && order.appealDeadline && Date.parse(order.appealDeadline) > now);
+}
+
 export function getHubBuyerShipmentLabel(shipment: ShipmentBackend) {
   const progress = getInboundShipmentProgress(shipment);
   if (progress.step === 3) return 'Đã giao cho người mua';
@@ -63,6 +124,7 @@ export function getInboundShipmentProgress(
     case 'CANCELLED': return progress(null, 'Vận đơn đã hủy', 'Shipment cancelled');
     case 'FAILED': return progress(null, 'Vận đơn thất bại', 'Shipment failed');
     case 'RETURNED': return progress(null, 'Vận đơn đã hoàn trả', 'Shipment returned');
+    case 'CREATING': return progress(null, 'Đang tạo vận đơn', 'Creating shipment');
     case 'CREATION_UNCERTAIN': return progress(null, 'Đang xác minh vận đơn', 'Verifying shipment');
   }
   switch ((shipment.providerStatus || shipment.status).toUpperCase()) {

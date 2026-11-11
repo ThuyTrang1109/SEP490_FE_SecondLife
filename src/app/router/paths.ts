@@ -76,6 +76,7 @@ routeGroups.admin.push({ path: '/admin/users/:userId', role: 'admin', tab: 'admi
 routeGroups.admin.push({ path: '/admin/products/:productId', role: 'admin', tab: 'admin-dashboard', section: 'listings', modal: 'product' });
 routeGroups.staff.push({ path: '/staff/products/create', role: 'staff', tab: 'create-listing' });
 routeGroups.inspector.push({ path: '/inspector/inspections/:inspectionId', role: 'inspector', tab: 'inspection-hub', section: 'workbench' });
+routeGroups.inspector.push({ path: '/inspector/inspections/:inspectionId/result', role: 'inspector', tab: 'inspection-hub', section: 'result' });
 for (const role of ['buyer', 'seller', 'staff', 'inspector', 'inspection_center', 'admin'] as UserRole[]) {
   const prefix = role.replace('_', '-');
   routeGroups[role].push(
@@ -92,6 +93,7 @@ export const paths = {
   chat: (role: UserRole, id?: string) => `/${role === 'seller' ? 'seller' : 'buyer'}/chat${id ? `/${encodeURIComponent(id)}` : ''}`,
   orders: (role: UserRole, id?: string) => `/${role === 'seller' ? 'seller' : 'buyer'}/orders${id ? `/${encodeURIComponent(id)}` : ''}`,
   decision: (role: UserRole, id: string) => `/${role === 'seller' ? 'seller' : 'buyer'}/inspections/${encodeURIComponent(id)}/decision`,
+  inspectorResult: (id: string) => `/inspector/inspections/${encodeURIComponent(id)}/result`,
   editProduct: (id: string) => `/seller/products/${encodeURIComponent(id)}/edit`,
 };
 

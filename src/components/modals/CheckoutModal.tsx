@@ -2934,11 +2934,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         )}
                         <div className="flex flex-wrap items-center gap-1.5 pl-4.5 pt-0.5 text-[9px] text-slate-500">
                           <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
-                            🔬 Trạm thẩm định tiêu chuẩn ISO/IEC 17025
+                            🔬 Trạm thẩm định tiêu chuẩn 
                           </span>
                           {Boolean(selectedCenter.activeInspectors) && (
                             <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-700">
-                              👨‍🔧 Đội ngũ: <strong>{selectedCenter.activeInspectors} kỹ sư</strong>
+                              👨‍🔧 Đội ngũ: <strong>{selectedCenter.activeInspectors} chuyên viên</strong>
                             </span>
                           )}
                           {Boolean(selectedCenter.capacityPerDay) && (

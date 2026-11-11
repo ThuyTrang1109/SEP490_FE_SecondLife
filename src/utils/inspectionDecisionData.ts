@@ -64,7 +64,9 @@ export function getInspectionReportMedia(
   const proof = order?.videoProofUrl?.trim() || '';
   const unboxing = order?.unboxingVideoUrl?.trim() || '';
   const proofImages = [proof, unboxing].filter(isInspectionProofImage);
+  const rawEvidencePhotos = Array.isArray(order?.evidencePhotoUrls) ? order.evidencePhotoUrls : [];
   const photos = [...new Set([
+    ...rawEvidencePhotos,
     ...(order?.inspectorPhotos ?? []),
     ...(order?.proofPhotos ?? []),
     ...(order?.evidenceUrls ?? []).filter(isInspectionProofImage),

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getBuyerInspectionStage, getInspectionPurchaseDecision } from '../utils/inspectionPurchase';
+import { getBuyerInspectionStage, getCustomerInspectionStatus, getInspectionPurchaseDecision } from '../utils/inspectionPurchase';
 
 test('the buyer only sees inspection status while the item is on its way to the hub or being inspected', () => {
   const order = { inspectionStatus: 'SHIPPING_TO_CENTER', shippingDeliveredAt: '2026-11-09T08:00:00Z' };
@@ -13,6 +13,15 @@ test('passing inspection opens the purchase decision and does not count as recei
   const order = { inspectionStatus: 'PASSED' };
   assert.equal(getInspectionPurchaseDecision(order), 'pending');
   assert.equal(getBuyerInspectionStage(order), 'decision');
+});
+
+test('an assigned inspection is in progress for customers while retaining the dispatch status for operations', () => {
+  assert.equal(getCustomerInspectionStatus('DISPATCHED', 'INSPECTING', 'ktv-1'), 'INSPECTING');
+  assert.equal(getBuyerInspectionStage({ inspectionStatus: 'DISPATCHED', inspectorId: 'ktv-1' }), 'inspecting');
+  assert.equal(getBuyerInspectionStage({ inspectionStatus: 'SCHEDULED', inspectorId: 'ktv-1' }), 'inspecting');
+  assert.equal(getBuyerInspectionStage({ inspectionStatus: 'SCHEDULED' }), 'waiting');
+  assert.equal(getBuyerInspectionStage({ inspectionStatus: 'SHIPPING_TO_CENTER', inspectorId: 'ktv-1' }), 'waiting');
+  assert.equal(getCustomerInspectionStatus('PASSED', undefined, 'ktv-1'), 'PASSED');
 });
 
 test('a purchase accepted by the buyer uses final payment data, not inbound delivery', () => {

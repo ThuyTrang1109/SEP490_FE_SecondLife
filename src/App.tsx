@@ -7,7 +7,7 @@ import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, Use
 import { formatVND } from './utils/translations';
 import { extractWardAndCity, getSavedSellerAddress, saveSellerAddress, cleanFullAddress, formatCombinedAddress } from './utils/addressUtils';
 import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, isOrderCancelledOrRefunded, getResolvedPostParcel, extractListingIdFromOrder } from './utils/orderUtils';
-import { getBuyerInspectionStage } from './utils/inspectionPurchase';
+import { getBuyerInspectionStage, getCustomerInspectionStatus } from './utils/inspectionPurchase';
 import { resolveCategoryAndItem, initCatalogCache, resolveOrderListing, resolveListingCategory, extractSellerOriginalPrice } from './utils/catalogCache';
 import { translateSystemNotification } from './utils/systemNotificationTranslator';
 import { lazyWithRetry } from './utils/lazyWithRetry';
@@ -67,7 +67,7 @@ const ViewLoadingFallback = () => (
   </div>
 );
 
-export const VALID_MAIN_TABS = [
+const VALID_MAIN_TABS = [
   'home',
   'marketplace',
   'seller-dashboard',
@@ -83,9 +83,9 @@ export const VALID_MAIN_TABS = [
   'disputes'
 ] as const;
 
-export const TAB_STORAGE_KEY = 'secondlife_active_tab';
+const TAB_STORAGE_KEY = 'secondlife_active_tab';
 
-export function getInitialActiveTab(): string {
+function getInitialActiveTab(): string {
   const role = getStoredUser()?.role || 'buyer';
   return resolveAppRoute(typeof window === 'undefined' ? '/' : window.location.href, role).tab;
 }
@@ -528,8 +528,7 @@ export default function App() {
         combined.forEach((o) => {
           if (o?.id && !seenIds.has(o.id)) {
             const isLocalConfirmed = typeof window !== 'undefined' && (
-              localStorage.getItem(`order_receipt_confirmed_${o.id}`) === 'true' ||
-              o.id === '16915c88-96a2-4cb0-8f6c-cc9a931a6e89'
+              localStorage.getItem(`order_receipt_confirmed_${o.id}`) === 'true'
             );
             const isLocalCancelled = typeof window !== 'undefined' && (
               localStorage.getItem(`order_cancellation_info_${o.id}`) !== null ||
@@ -609,7 +608,15 @@ export default function App() {
 
   // Core Data State
   const [listings, setListings] = useState<Listing[]>([]);
-  const [orders, setOrders] = useState<EscrowOrder[]>(() => getLocalStoredOrders(getStoredUser()));
+  const [orders, setOrders] = useState<EscrowOrder[]>(() => {
+    // Only use local stored orders if NO access token (guest/unauthenticated)
+    // Authenticated users must load real orders from server to prevent status jumping and bleed
+    if (getAccessToken()) {
+      return [];
+    }
+    return getLocalStoredOrders(getStoredUser());
+  });
+  const [isOrdersLoading, setIsOrdersLoading] = useState<boolean>(() => Boolean(getAccessToken()));
   const [disputes, setDisputes] = useState<DisputeCase[]>([]);
 
   const listingsRef = useRef<Listing[]>(listings);
@@ -628,12 +635,17 @@ export default function App() {
     const currentId = currentUser?.id || null;
     if (prevUserIdRef.current !== currentId) {
       prevUserIdRef.current = currentId;
-      setOrders(getLocalStoredOrders(currentUser));
       if (!currentId) {
         setOrders([]);
+        setIsOrdersLoading(false);
+      } else if (getAccessToken()) {
+        setIsOrdersLoading(true);
+        void refreshOrdersRef.current?.(true);
+      } else {
+        setOrders(getLocalStoredOrders(currentUser));
       }
     }
-  }, [currentUser, getLocalStoredOrders]);
+  }, [currentUser?.id, getLocalStoredOrders]);
 
   // Modals
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
@@ -1298,10 +1310,14 @@ export default function App() {
     const currentUser = currentUserRef.current;
     if (!currentUser || !getAccessToken()) {
       setOrders([]);
+      setIsOrdersLoading(false);
       return;
     }
     // The center page owns its orders. Avoid loading the same data (and chats) in App.
-    if (isRestoringSession || isCenterAccount) return;
+    if (isRestoringSession || isCenterAccount) {
+      if (isCenterAccount) setIsOrdersLoading(false);
+      return;
+    }
     const scope = `${currentUser.id}:${currentRole}`;
     if (pendingOrdersRef.current?.scope === scope) {
       if (force) pendingOrdersRef.current.refresh = true;
@@ -1517,8 +1533,9 @@ export default function App() {
           const inspFee = Number(bOrd.inspectionFeeVnd || bOrd.buyerInspectionFeeVnd || bOrd.buyerFeeShare || bOrd.inspectionFee || 0);
           const isInspectionOrder = Boolean(bOrd.__isInspection || bOrd.hasInspectionService || inspFee > 0 || bOrd.orderType);
           const rawStatusUpper = String(bOrd.status || (bOrd as any).backendStatus || '').toUpperCase();
+          const customerInspectionStatus = getCustomerInspectionStatus(rawStatusUpper, bOrd.customerStatus, bOrd.inspectorId);
           const inspectionStage = bOrd.__isInspection && getBuyerInspectionStage({
-            inspectionStatus: rawStatusUpper,
+            inspectionStatus: customerInspectionStatus,
             inspectionNote: bOrd.note,
             finalPaymentPaidAt: bOrd.finalPaymentPaidAt,
             linkedOrderId: bOrd.linkedOrderId,
@@ -1527,8 +1544,7 @@ export default function App() {
           const isReceiptConfirmedLocal =
             !inspectionStage &&
             typeof window !== 'undefined' &&
-            (localStorage.getItem(`order_receipt_confirmed_${bOrd.id}`) === 'true' ||
-             bOrd.id === '16915c88-96a2-4cb0-8f6c-cc9a931a6e89');
+            localStorage.getItem(`order_receipt_confirmed_${bOrd.id}`) === 'true';
 
           const isCompletedOrReleased = Boolean(
             bOrd.escrowStatus === 'RELEASED' ||
@@ -1538,8 +1554,7 @@ export default function App() {
             (bOrd as any).backendStatus === 'COMPLETED' ||
             bOrd.releasedAt ||
             bOrd.released_at ||
-            isReceiptConfirmedLocal ||
-            bOrd.id === '16915c88-96a2-4cb0-8f6c-cc9a931a6e89'
+            isReceiptConfirmedLocal
           );
 
           const activeInspectionStatuses = [
@@ -1586,13 +1601,13 @@ export default function App() {
             mappedEscrowStatus = 'REFUNDED_TO_BUYER';
           } else if (isInspectionOrder) {
             const localSavedStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${bOrd.id}`) : null;
-            const s = String(localSavedStatus || bOrd.status || bOrd.backendStatus || '');
+            const s = bOrd.__isInspection && (bOrd.customerStatus || customerInspectionStatus === 'INSPECTING')
+              ? customerInspectionStatus : String(localSavedStatus || bOrd.status || bOrd.backendStatus || '');
             if (s === 'PASSED') {
               mappedEscrowStatus = 'INSPECTION_PASSED';
             } else if (s === 'FAILED' || s === 'REJECTED') {
               mappedEscrowStatus = 'INSPECTION_FAILED';
             } else if (s === 'INSPECTING') {
-              // Chỉ sau khi gửi cho trung tâm hoặc KTV đến nhà quét mã kiểm định mới sang INSPECTION_IN_PROGRESS
               mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
             } else if (s === 'DELIVERING_TO_BUYER') {
               mappedEscrowStatus = 'SHIPPED_TO_BUYER';
@@ -1835,7 +1850,7 @@ export default function App() {
             inspectionCenterName: bOrd.inspectionCenterName || (bOrd as any).inspectionCenter?.name || rawInspOrder.inspectionCenterName || undefined,
             inspectionCenterAddress: bOrd.inspectionCenterAddress || (bOrd as any).inspectionCenter?.address || rawInspOrder.inspectionCenterAddress || undefined,
             inspectionCenterPhone: bOrd.inspectionCenterPhone || (bOrd as any).inspectionCenter?.phone || rawInspOrder.inspectionCenterPhone || undefined,
-            inspectionStatus: bOrd.__isInspection ? rawStatusUpper : undefined,
+            inspectionStatus: bOrd.__isInspection ? customerInspectionStatus : undefined,
             inspectionNote: bOrd.__isInspection ? bOrd.note : undefined,
             linkedOrderId: bOrd.__isInspection ? bOrd.linkedOrderId : undefined,
             finalPaymentPaidAt: bOrd.__isInspection ? bOrd.finalPaymentPaidAt : undefined,
@@ -1937,7 +1952,22 @@ export default function App() {
                 ],
             createdAt: bOrd.createdAt || bOrd.createdDate || bOrd.created_at || bOrd.paidAt || bOrd.sellerConfirmedAt || bOrd.updatedAt || new Date().toISOString(),
             multiStagePhotos: {
-              listingPhotos: [matchedListing.photos.front, matchedListing.photos.back]
+              listingPhotos: Array.from(new Set([
+                ...((bOrd as any).postImageUrls || []),
+                (bOrd as any).postImageUrl,
+                ...(matchedListing.photoGallery || []),
+                matchedListing.photos?.front,
+                matchedListing.photos?.back,
+                matchedListing.photos?.screenOrDetails,
+                matchedListing.photos?.accessoriesOrBox,
+                matchedListing.photos?.serialOrReceipt,
+              ].filter((u): u is string => typeof u === 'string' && u.trim().length > 0))),
+              inspectorPhotos: Array.isArray((bOrd as any).inspectorPhotos) && (bOrd as any).inspectorPhotos.length > 0
+                ? (bOrd as any).inspectorPhotos
+                : (Array.isArray((bOrd as any).proofPhotos) && (bOrd as any).proofPhotos.length > 0
+                  ? (bOrd as any).proofPhotos
+                  : []),
+              handoverPhotos: (bOrd as any).tamperSealPhoto ? [(bOrd as any).tamperSealPhoto] : [],
             }
           };
           if (isCompletedOrReleased && typeof window !== 'undefined') {
@@ -1972,7 +2002,6 @@ export default function App() {
 
         localRecentOrders.forEach((locOrd) => {
           const isLocCompleted =
-            locOrd.id === '16915c88-96a2-4cb0-8f6c-cc9a931a6e89' ||
             (typeof window !== 'undefined' && localStorage.getItem(`order_receipt_confirmed_${locOrd.id}`) === 'true') ||
             (locOrd.escrowStatus as any) === 'RELEASED' ||
             locOrd.escrowStatus === 'COMPLETED_RELEASED' ||
@@ -2156,6 +2185,7 @@ export default function App() {
       reconcileBoughtListingIds(localRecentOrders);
       setOrders(localRecentOrders);
     } finally {
+      setIsOrdersLoading(false);
       if (pendingOrdersRef.current === pending) {
         pendingOrdersRef.current = null;
         if (pending.refresh && ordersScopeRef.current === scope) void refreshOrdersRef.current?.(true);
@@ -2192,6 +2222,13 @@ export default function App() {
     }, 6000);
     return () => clearInterval(interval);
   }, [activeTab, currentUser, loadUserOrders, routeAccess, isRestoringSession]);
+
+  React.useEffect(() => {
+    if (routeAccess !== 'allowed' || isRestoringSession || !currentUser?.id || !['orders', 'seller-dashboard'].includes(activeTab)) return;
+    return notificationWsClient.subscribeListener((notification) => {
+      if (notification.referenceType === 'INSPECTION_ORDER') void loadUserOrders(true);
+    });
+  }, [activeTab, currentUser?.id, loadUserOrders, routeAccess, isRestoringSession]);
 
   // Listen for instant order placement events across windows/tabs (debounced to avoid loop)
   React.useEffect(() => {
@@ -3175,6 +3212,7 @@ export default function App() {
               navigatePath(paths.decision(navigationRole, ord.id));
             }}
             onNavigateToDisputes={() => handleTabChange('disputes')}
+            isLoading={isOrdersLoading}
           />
         )}
 

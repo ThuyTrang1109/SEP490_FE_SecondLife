@@ -1,18 +1,18 @@
+import { ResizableSidebarControls } from '../components/common/ResizableSidebarControls';
 import { usePanelTab, useBrowserLocation, navigatePath } from '../app/router/browser';
-import { resolveAppRoute } from '../app/router/paths';
+import { paths, resolveAppRoute } from '../app/router/paths';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { EscrowOrder, InspectionChecklistItem, Language, UserProfile, InspectionCenter } from '../types';
 import { formatVND } from '../utils/translations';
 import { resolveInspectionCenter } from '../utils/orderUtils';
 import { getInspectionTaskResult, getInspectionTaskStage } from '../utils/inspectionTaskStatus';
-import { ProductInspectionStationView } from './ProductInspectionStationView';
+import { isOrderInspectionCompleted, ProductInspectionStationView } from './ProductInspectionStationView';
 import { DigitalInspectionCertificateModal } from '../components/modals/DigitalInspectionCertificateModal';
 import { BarcodeScannerModal, playScanBeep } from '../components/modals/BarcodeScannerModal';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import logoImg from '../assets/logo.png';
 import {
   Building2,
-  QrCode,
   CheckCircle2,
   XCircle,
   ShieldCheck,
@@ -81,7 +81,7 @@ interface InspectorPortalViewProps {
   onViewWebsite?: () => void;
 }
 
-export type InspectorDashboardTab = 'workbench' | 'tasks' | 'certificates' | 'standards';
+export type InspectorDashboardTab = 'workbench' | 'tasks' | 'certificates' | 'standards' | 'result';
 export type ManagerPortalTab = 'center_dispatch' | 'center_staff' | 'center_checklists_tiers' | 'center_finance';
 
 export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
@@ -104,6 +104,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
   // --- Sidebar Collapse & Mobile Sidebar State ---
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(256);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // --- User Profile Dropdown State ---
@@ -126,28 +127,23 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   const stationCode = 'STATION-HCM-02';
 
   // --- ORDERS & QUEUE STATES ---
-  const [selectedOrderId, setSelectedOrderIdState] = useState<string>(requestedInspectionId || '');
+  const selectedOrderId = requestedInspectionId || '';
   const setSelectedOrderId = (id: string) => {
-    setSelectedOrderIdState(id);
     if (id) {
-      setInspectorTab('workbench');
       navigatePath(`/inspector/inspections/${encodeURIComponent(id)}`);
     } else {
       navigatePath('/inspector/inspections');
     }
   };
-  useEffect(() => {
-    if (requestedInspectionId) setSelectedOrderIdState(requestedInspectionId);
-  }, [requestedInspectionId]);
   const [backendOrders, setBackendOrders] = useState<InspectionOrderDto[]>([]);
-  const [isLoadingBackendOrders, setIsLoadingBackendOrders] = useState(false);
+  const [savedResults, setSavedResults] = useState<ReadonlyMap<string, InspectionOrderDto>>(new Map());
+  const [isLoadingBackendOrders, setIsLoadingBackendOrders] = useState(Boolean(requestedInspectionId));
   const [taskSearchTerm, setTaskSearchTerm] = useState('');
   const [taskFilter, setTaskFilter] = useState<'ALL' | 'AT_CENTER' | 'AT_HOME' | 'PENDING' | 'DONE'>('ALL');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // --- MODALS ---
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
-  const [certificateModalOrder, setCertificateModalOrder] = useState<EscrowOrder | null>(null);
 
   // --- NOTIFICATION BANNER ---
   const [noticeMessage, setNoticeMessage] = useState<{ text: string; isError?: boolean } | null>(null);
@@ -256,7 +252,9 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
   const effectiveOrders: EscrowOrder[] = useMemo(() => {
     const orderDetails = new Map(orders.map((order) => [order.id, order]));
 
-    const result = backendOrders.map((bo): EscrowOrder => {
+    const result = backendOrders.map((order): EscrowOrder => {
+      const bo = getInspectionTaskStage(order.status) === 'completed' || getInspectionTaskResult(order)
+        ? order : savedResults.get(order.id) || order;
       const { inspectorId: assignedId, inspectorName: assignedName, status: finalStatus } = bo;
       const resolvedEscrowStatus = (finalStatus === 'PASSED')
         ? 'INSPECTION_PASSED'
@@ -271,11 +269,14 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         try {
           const results = JSON.parse(bo.checklistResultJson);
           if (Array.isArray(results)) parsedChecklistResults = results;
+          else if (Array.isArray(results?.items)) parsedChecklistResults = results.items;
         } catch { }
       }
 
       let parsedInspectorPhotos: string[] = [];
-      if (Array.isArray((bo as any).inspectorPhotos) && (bo as any).inspectorPhotos.length > 0) {
+      if (bo.evidencePhotoUrls?.length) {
+        parsedInspectorPhotos = bo.evidencePhotoUrls;
+      } else if (Array.isArray((bo as any).inspectorPhotos) && (bo as any).inspectorPhotos.length > 0) {
         parsedInspectorPhotos = (bo as any).inspectorPhotos;
       } else if (Array.isArray((bo as any).proofPhotos) && (bo as any).proofPhotos.length > 0) {
         parsedInspectorPhotos = (bo as any).proofPhotos;
@@ -412,13 +413,29 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
     result.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     return result;
-  }, [backendOrders, orders]);
+  }, [backendOrders, orders, savedResults]);
 
   // --- KPI COMPUTATIONS FOR INSPECTOR ---
   const activeOrder = useMemo(() => {
-    if (!selectedOrderId) return null;
     return effectiveOrders.find((o) => o.id === selectedOrderId) || null;
   }, [effectiveOrders, selectedOrderId]);
+
+  const isPublishedOrder = isOrderInspectionCompleted(activeOrder);
+  const showResult = inspectorTab === 'result' || (inspectorTab === 'workbench' && isPublishedOrder);
+  const resultHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (showResult) resultHeading.current?.focus();
+  }, [showResult, requestedInspectionId]);
+  useEffect(() => {
+    if (inspectorTab === 'workbench' && activeOrder && isPublishedOrder) {
+      navigatePath(paths.inspectorResult(activeOrder.id), { replace: true });
+    }
+  }, [inspectorTab, activeOrder?.id, isPublishedOrder]);
+
+  const handleResultSaved = (order: InspectionOrderDto) => {
+    setSavedResults((previous) => new Map(previous).set(order.id, order));
+    navigatePath(paths.inspectorResult(order.id), { replace: true });
+  };
 
   const assignedCount = effectiveOrders.length;
   const atHomeCount = effectiveOrders.filter((o) => o.inspectionMethod === 'AT_HOME').length;
@@ -467,8 +484,11 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       return oId === clean || oId.includes(clean) || clean.includes(oId);
     });
     if (found) {
+      if (isOrderInspectionCompleted(found)) {
+        navigatePath(paths.inspectorResult(found.id));
+        return;
+      }
       setSelectedOrderId(found.id);
-      setInspectorTab('workbench');
       showNotice(
         lang === 'vi'
           ? `Đã nhận diện thiết bị đơn hàng #${found.id} và mở bàn kiểm định.`
@@ -616,37 +636,28 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
             </div>
           </div>
 
-          {/* Toggle Sidebar Button */}
+          {/* Mobile navigation trigger */}
           <button
+            type="button"
             onClick={() => {
-              setIsSidebarCollapsed(!isSidebarCollapsed);
-              setIsMobileSidebarOpen(!isMobileSidebarOpen);
+              setIsSidebarCollapsed(false);
+              setIsMobileSidebarOpen((open) => !open);
             }}
-            className="p-1.5 rounded-lg text-white hover:bg-white/10 transition cursor-pointer"
-            title="Đóng / Mở menu"
+            className="p-1.5 rounded-lg text-white hover:bg-white/10 transition cursor-pointer md:hidden"
+            aria-expanded={isMobileSidebarOpen}
+            aria-label={lang === 'vi' ? 'Đóng / Mở menu' : 'Toggle menu'}
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
-        {/* Right: ISO Badge + Quick Scan + Profile Dropdown */}
+        {/* Right: ISO Badge + Profile Dropdown */}
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Live ISO Badge */}
           <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-xs font-bold text-white/90">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
             <span>ISO/IEC 17025 • {stationCode}</span>
           </div>
-
-          {/* Quick Barcode Scan */}
-          <button
-            type="button"
-            onClick={() => setIsBarcodeScannerOpen(true)}
-            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#e0624a] hover:from-[#b03d29] hover:to-[#c34c36] text-white text-xs font-bold shadow-md shadow-[#c34c36]/20 border border-white/20 flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
-            title="Quét Barcode / QR máy"
-          >
-            <QrCode className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Quét Barcode</span>
-          </button>
 
           {/* User Profile Button */}
           <div className="relative" ref={userDropdownRef}>
@@ -723,13 +734,13 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       <div className="flex-1 flex relative w-full">
         {/* LEFT SIDEBAR (EXACT CENTER STYLE: bg-[#fce5da] text-[#24263e]) */}
         <aside
-          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] ${isSidebarCollapsed ? 'w-16' : 'w-60 sm:w-64'
-            } ${isMobileSidebarOpen ? 'fixed inset-y-13 left-0 shadow-2xl block' : 'hidden md:flex'}`}
+          style={{ width: isSidebarCollapsed ? 64 : sidebarWidth }}
+          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 max-w-[85vw] flex-col shrink-0 select-none z-30 top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] md:sticky md:flex ${isMobileSidebarOpen ? 'fixed left-0 flex shadow-2xl md:shadow-none' : 'hidden'}`}
         >
           {/* User Block with Live Online indicator */}
           <div
             onClick={() => onOpenProfile?.()}
-            className="p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3 cursor-pointer hover:bg-black/5 transition"
+            className={`p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3 cursor-pointer hover:bg-black/5 transition ${isSidebarCollapsed ? '' : 'md:pr-11'}`}
             title="Xem hồ sơ cá nhân"
           >
             <div className="relative shrink-0">
@@ -756,6 +767,14 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
               </div>
             )}
           </div>
+
+          <ResizableSidebarControls
+            width={sidebarWidth}
+            collapsed={isSidebarCollapsed}
+            onResize={setSidebarWidth}
+            onToggle={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+            lang={lang}
+          />
 
           {/* Section Header: MAIN NAVIGATION */}
           <div className="px-4 pt-4 pb-2 text-[10px] font-black text-[#24263e]/80 uppercase tracking-wider">
@@ -830,6 +849,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
         {/* MAIN WORKSPACE CONTENT */}
         <main className="flex-1 overflow-y-auto bg-[#faf8f5] p-4 sm:p-6 lg:p-8 space-y-6 min-w-0">
+          {!showResult && <>
           {/* Top Title & Breadcrumb Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-gray-200/60">
             <div>
@@ -865,15 +885,6 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2.5">
-              <button
-                type="button"
-                onClick={() => setIsBarcodeScannerOpen(true)}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#e0624a] hover:from-[#b03d29] hover:to-[#c34c36] text-white text-xs font-bold shadow-md shadow-[#c34c36]/20 border border-white/20 flex items-center gap-2 transition active:scale-95 cursor-pointer"
-              >
-                <QrCode className="w-4 h-4" />
-                <span>Quét Barcode / QR Máy</span>
-              </button>
-
               <button
                 type="button"
                 onClick={loadInspectorOrders}
@@ -988,6 +999,8 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
             </div>
           </div>
 
+          </>}
+
           {/* NOTIFICATION MESSAGE */}
           {noticeMessage && (
             <div
@@ -1017,13 +1030,33 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
           {/* ===================================================================== */}
           {/* TAB 1: WORKBENCH (BÀN ĐO KIỂM THỰC TẾ 5 BƯỚC)                         */}
           {/* ===================================================================== */}
-          {inspectorTab === 'workbench' && requestedInspectionId && !effectiveOrders.some((order) => order.id === requestedInspectionId) ? (
+          {showResult ? (
+            activeOrder && isPublishedOrder ? (
+              <DigitalInspectionCertificateModal
+                key={activeOrder.id}
+                order={activeOrder}
+                onClose={() => setSelectedOrderId('')}
+                lang={lang}
+              />
+            ) : (
+              <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+                <header className="flex flex-wrap items-center justify-between gap-4">
+                  <h1 ref={resultHeading} tabIndex={-1} className="text-xl font-black text-[#24263e]">Kết quả kiểm định</h1>
+                  <button type="button" onClick={() => setSelectedOrderId('')} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                    Về hàng đợi nhiệm vụ
+                  </button>
+                </header>
+                <p className="text-sm text-slate-600">{isLoadingBackendOrders ? 'Đang tải kết quả…' : activeOrder ? 'Đơn này chưa có kết quả chính thức.' : 'Không tìm thấy đơn kiểm định được phân công cho bạn.'}</p>
+              </section>
+            )
+          ) : inspectorTab === 'workbench' && requestedInspectionId && !activeOrder ? (
             <p className="p-10 text-center">{isLoadingBackendOrders ? 'Đang tải đơn kiểm định...' : 'Không tìm thấy đơn kiểm định được phân công cho bạn.'}</p>
           ) : inspectorTab === 'workbench' && (
             <ProductInspectionStationView
               orders={effectiveOrders}
               currentUser={currentUser}
               onCompleteInspection={onCompleteInspection}
+              onResultSaved={handleResultSaved}
               lang={lang}
               hideTopBar={true}
               selectedOrderId={selectedOrderId}
@@ -1326,7 +1359,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                           {ord.inspectionReport ? (
                             <button
                               type="button"
-                              onClick={() => setCertificateModalOrder(ord)}
+                              onClick={() => navigatePath(paths.inspectorResult(ord.id))}
                               className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200 flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
                               title="Đơn hàng đã hoàn thành kiểm định. Nhấn để xem chứng thư số & biên bản nghiệm thu."
                             >
@@ -1443,7 +1476,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                         <div className="flex items-center gap-2 self-end md:self-center">
                           <button
                             type="button"
-                            onClick={() => setCertificateModalOrder(ord)}
+                            onClick={() => navigatePath(paths.inspectorResult(ord.id))}
                             className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
                           >
                             <Eye className="w-3.5 h-3.5" />
@@ -1604,15 +1637,6 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
           onClose={() => setIsBarcodeScannerOpen(false)}
           onScanSuccess={handleBarcodeScanSuccess}
           orders={orders}
-          lang={lang}
-        />
-      )}
-
-      {/* 2. Digital Certificate Modal */}
-      {certificateModalOrder && (
-        <DigitalInspectionCertificateModal
-          order={certificateModalOrder}
-          onClose={() => setCertificateModalOrder(null)}
           lang={lang}
         />
       )}

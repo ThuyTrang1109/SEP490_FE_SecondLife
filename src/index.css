@@ -178,3 +178,96 @@ input::-ms-clear {
   height: 0 !important;
   pointer-events: none !important;
 }
+
+/* ========================================================================= */
+/* THIẾT LẬP IN ẤN GIẤY CHỨNG NHẬN KIỂM ĐỊNH (CHUẨN KHỔ GIẤY A4 PORTRAIT)  */
+/* ========================================================================= */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 10mm 8mm 10mm;
+  }
+
+  /* Khi mở modal chứng nhận kiểm định, ẩn toàn bộ ứng dụng web nền (#root) */
+  body.certificate-modal-active #root,
+  body.certificate-modal-active > *:not(#certificate-modal-portal) {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  body.certificate-modal-active {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #1e293b !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #certificate-modal-portal {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  /* Ẩn các phần tử không cần thiết khi in (Backdrop, header toolbar, nút In, X, ghi chú footer) */
+  #certificate-modal-portal .print-hidden,
+  .print-hidden,
+  .no-print {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+  }
+
+  #certificate-modal-portal .modal-overlay-bg {
+    display: none !important;
+  }
+
+  #certificate-modal-portal .modal-card-container {
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  /* Giấy chứng nhận A4: Vừa vặn Trang 1 ở điều kiện bình thường */
+  #printable-certificate {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Tránh ngắt đôi khối quan trọng khi tràn sang Trang 2 nếu có nhiều ảnh / ghi chú */
+  .print-avoid-break {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .print-signatures-block {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .print-photos-grid {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+}
+

@@ -59,12 +59,22 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
   );
 
   // Quote state
-  const quoteKey = `${selectedCenterId}:${inspectionMethod}`;
-  const [quoteResult, setQuoteResult] = useState<{ key: string; value: InspectionQuoteResponse } | null>(() => {
+  interface CenterQuotesState {
+    centerId: string;
+    centerQuote?: InspectionQuoteResponse | null;
+    homeQuote?: InspectionQuoteResponse | null;
+  }
+
+  const [quotesState, setQuotesState] = useState<CenterQuotesState>(() => {
     const savedQuote = getReusableInspectionQuote(initialData, listing.id);
-    return savedQuote ? { key: quoteKey, value: savedQuote } : null;
+    if (!savedQuote || !initialData?.centerId) return { centerId: '' };
+    return {
+      centerId: initialData.centerId,
+      centerQuote: initialData.inspectionMethod === 'AT_CENTER' ? savedQuote : (savedQuote.atCenterTotalFee ? savedQuote : null),
+      homeQuote: initialData.inspectionMethod === 'AT_HOME' ? savedQuote : (savedQuote.atHomeTotalFee ? savedQuote : null),
+    };
   });
-  const quote = quoteResult?.key === quoteKey ? quoteResult.value : null;
+
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [isQuote409, setIsQuote409] = useState(false);
@@ -123,29 +133,63 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
     const controller = new AbortController();
     quoteController.current = controller;
     const reqId = ++quoteRequestIdRef.current;
-    setQuoteResult(null);
     setLoadingQuote(true);
     setQuoteError(null);
     setIsQuote409(false);
     setSubmitError(null);
 
     try {
-      const q = await inspectorService.getQuote({
-        postId: listing.id,
-        inspectionCenterId: centerId,
-        orderType: method,
-        buyerLatitude,
-        buyerLongitude,
-        negotiationId,
-      }, { signal: controller.signal });
+      let q: InspectionQuoteResponse | null = null;
+      let quoteErr: any = null;
+
+      // Always try AT_CENTER first because BE computes both AT_CENTER (with Lalamove shipping) and AT_HOME packages
+      try {
+        q = await inspectorService.getQuote({
+          postId: listing.id,
+          inspectionCenterId: centerId,
+          orderType: 'AT_CENTER',
+          buyerLatitude,
+          buyerLongitude,
+          negotiationId,
+        }, { signal: controller.signal });
+      } catch (err: any) {
+        if (controller.signal.aborted) return;
+        quoteErr = err;
+        // If AT_CENTER failed (e.g. shipping address issue), try AT_HOME if method is AT_HOME
+        if (method === 'AT_HOME') {
+          try {
+            q = await inspectorService.getQuote({
+              postId: listing.id,
+              inspectionCenterId: centerId,
+              orderType: 'AT_HOME',
+              buyerLatitude,
+              buyerLongitude,
+              negotiationId,
+            }, { signal: controller.signal });
+            quoteErr = null;
+          } catch (homeErr) {
+            quoteErr = homeErr;
+          }
+        }
+      }
 
       if (controller.signal.aborted || reqId !== quoteRequestIdRef.current) return;
-      const next = getReusableInspectionQuote({ centerId, inspectionMethod: method, quote: q }, listing.id);
-      if (!next) {
-        setQuoteError(lang === 'vi' ? 'Chưa nhận được báo giá kiểm định hợp lệ.' : 'No valid inspection quote was returned.');
-        return;
+
+      if (!q) {
+        throw quoteErr || new Error(lang === 'vi' ? 'Không thể lấy báo giá kiểm định.' : 'Could not fetch inspection quote.');
       }
-      setQuoteResult({ key: `${centerId}:${method}`, value: next });
+
+      const hasCenter = Boolean(q.shippingQuote && (q.atCenterPackage?.totalFee || q.atCenterTotalFee));
+      const hasHome = Boolean(q.atHomePackage?.totalFee || q.atHomeTotalFee);
+
+      setQuotesState((prev) => {
+        const isSameCenter = prev.centerId === centerId;
+        return {
+          centerId,
+          centerQuote: hasCenter ? q : (isSameCenter ? prev.centerQuote : null),
+          homeQuote: hasHome ? q : (isSameCenter ? prev.homeQuote : null),
+        };
+      });
     } catch (err: any) {
       if (controller.signal.aborted || reqId !== quoteRequestIdRef.current) return;
       console.warn('Failed to fetch inspection quote:', err);
@@ -169,11 +213,27 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
   }, [listing.id, buyerLatitude, buyerLongitude, negotiationId, lang]);
 
   useEffect(() => {
-    if (selectedCenterId && isOpen && (!quote || isInspectionQuoteExpired(quote, inspectionMethod))) {
+    if (!isOpen || !selectedCenterId) return;
+
+    const hasCenterQuote =
+      quotesState.centerId === selectedCenterId &&
+      Boolean(quotesState.centerQuote) &&
+      !isInspectionQuoteExpired(quotesState.centerQuote!, 'AT_CENTER');
+
+    const hasHomeQuote =
+      quotesState.centerId === selectedCenterId &&
+      Boolean(quotesState.homeQuote || quotesState.centerQuote?.atHomeTotalFee);
+
+    const needQuote =
+      quotesState.centerId !== selectedCenterId ||
+      (inspectionMethod === 'AT_CENTER' && !hasCenterQuote) ||
+      (inspectionMethod === 'AT_HOME' && !hasHomeQuote);
+
+    if (needQuote) {
       void fetchQuote(selectedCenterId, inspectionMethod);
     }
     return () => quoteController.current?.abort();
-  }, [selectedCenterId, inspectionMethod, isOpen, fetchQuote]);
+  }, [selectedCenterId, inspectionMethod, isOpen, fetchQuote, quotesState]);
 
   if (!isOpen) return null;
 
@@ -187,28 +247,64 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
 
   // Fee calculation from BE quote
   const isAtHome = inspectionMethod === 'AT_HOME';
-  const atHomeQuotedTotal = quote?.atHomePackage?.totalFee ?? quote?.atHomeTotalFee;
+  const currentCenterQuote = quotesState.centerId === selectedCenterId ? quotesState.centerQuote : null;
+  const currentHomeQuote = quotesState.centerId === selectedCenterId ? (quotesState.homeQuote || quotesState.centerQuote) : null;
+  const quote = isAtHome ? currentHomeQuote : currentCenterQuote;
+
+  // AT_HOME package fees
+  const atHomeBaseFee =
+    currentHomeQuote?.baseInspectionFee ??
+    (currentHomeQuote as any)?.baseFee ??
+    currentCenterQuote?.baseInspectionFee ??
+    (currentCenterQuote as any)?.baseFee ??
+    0;
+  const atHomeTravelFee =
+    currentHomeQuote?.atHomePackage?.travelFeeRoundTrip ??
+    currentHomeQuote?.travelFeeRoundTrip ??
+    currentCenterQuote?.atHomePackage?.travelFeeRoundTrip ??
+    currentCenterQuote?.travelFeeRoundTrip ??
+    0;
+  const atHomeTravelDistance =
+    currentHomeQuote?.atHomePackage?.distanceKm ??
+    currentHomeQuote?.travelDistanceKm ??
+    currentCenterQuote?.atHomePackage?.distanceKm ??
+    currentCenterQuote?.travelDistanceKm ??
+    0;
+  const atHomeQuotedTotal =
+    currentHomeQuote?.atHomePackage?.totalFee ??
+    currentHomeQuote?.atHomeTotalFee ??
+    currentCenterQuote?.atHomePackage?.totalFee ??
+    currentCenterQuote?.atHomeTotalFee ??
+    (atHomeBaseFee > 0 ? atHomeBaseFee + atHomeTravelFee : undefined);
   const atHomeTotalFee = atHomeQuotedTotal ?? 0;
 
-  const atCenterBaseFee = (quote as any)?.baseInspectionFee ?? (quote as any)?.baseFee ?? 0;
+  // AT_CENTER package fees
+  const atCenterBaseFee =
+    currentCenterQuote?.baseInspectionFee ??
+    (currentCenterQuote as any)?.baseFee ??
+    atHomeBaseFee;
   const atCenterOutboundFee =
-    quote?.shippingQuote?.outbound?.shippingFee ??
-    quote?.shippingToCenterFee ??
-    quote?.atCenterPackage?.shippingToCenterFee ??
+    currentCenterQuote?.shippingQuote?.outbound?.shippingFee ??
+    currentCenterQuote?.shippingToCenterFee ??
+    currentCenterQuote?.atCenterPackage?.shippingToCenterFee ??
     0;
   const atCenterReturnFee =
-    quote?.shippingQuote?.returnReserve?.shippingFee ??
-    quote?.returnShippingReserveFee ??
-    quote?.atCenterPackage?.returnReserveFee ??
+    currentCenterQuote?.shippingQuote?.returnReserve?.shippingFee ??
+    currentCenterQuote?.returnShippingReserveFee ??
+    currentCenterQuote?.atCenterPackage?.returnReserveFee ??
     0;
-  const atCenterQuotedTotal = quote?.atCenterPackage?.totalFee ?? quote?.atCenterTotalFee ??
-    (quote?.shippingQuote ? atCenterBaseFee + atCenterOutboundFee + atCenterReturnFee : undefined);
+  const atCenterQuotedTotal =
+    currentCenterQuote?.atCenterPackage?.totalFee ??
+    currentCenterQuote?.atCenterTotalFee ??
+    (currentCenterQuote?.shippingQuote ? atCenterBaseFee + atCenterOutboundFee + atCenterReturnFee : undefined);
   const atCenterTotalFee = atCenterQuotedTotal ?? 0;
 
   const activeTotalFee = isAtHome ? atHomeTotalFee : atCenterTotalFee;
-  const splitOptions = isAtHome ? quote?.atHomeSplitOptions : quote?.atCenterSplitOptions;
+  const splitOptions = isAtHome
+    ? (currentHomeQuote?.atHomeSplitOptions || currentCenterQuote?.atHomeSplitOptions)
+    : currentCenterQuote?.atCenterSplitOptions;
   const halfFee = splitOptions?.SPLIT_50_50 ?? Math.round(activeTotalFee / 2);
-  const formatQuotedFee = (fee: number | undefined) => fee === undefined ? '—' : formatVND(fee);
+  const formatQuotedFee = (fee: number | undefined) => (fee === undefined || fee === null ? '—' : formatVND(fee));
 
   // Split calculation
   let buyerShare = 0;
@@ -226,8 +322,8 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
   }
 
   // Quote expiration
-  const quoteExpiresAt = !isAtHome && quote?.shippingQuote?.expiresAt ? new Date(quote.shippingQuote.expiresAt) : null;
-  const isQuoteExpired = quote ? isInspectionQuoteExpired(quote, inspectionMethod) : false;
+  const quoteExpiresAt = !isAtHome && currentCenterQuote?.shippingQuote?.expiresAt ? new Date(currentCenterQuote.shippingQuote.expiresAt) : null;
+  const isQuoteExpired = !isAtHome && currentCenterQuote ? isInspectionQuoteExpired(currentCenterQuote, 'AT_CENTER') : false;
 
   // Submit Handler
   const handleSubmitProposal = async () => {
@@ -235,7 +331,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
       setSubmitError(lang === 'vi' ? 'Vui lòng chọn trung tâm kiểm định tiếp nhận.' : 'Please select an inspection center.');
       return;
     }
-    if (!quote || loadingQuote || isInspectionQuoteExpired(quote, inspectionMethod)) {
+    if (!quote || loadingQuote || isQuoteExpired) {
       setSubmitError(lang === 'vi' ? 'Báo giá chưa sẵn sàng hoặc đã hết hạn. Vui lòng thử lại.' : 'Quote is not ready or has expired.');
       return;
     }
@@ -251,7 +347,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
       const config = quote.inspectionConfiguration;
       const expectedFeeProposalId = config?.feeProposalId || undefined;
       const expectedChecklistTemplateId = config?.checklistTemplateId || undefined;
-      const shippingQuoteId = inspectionMethod === 'AT_CENTER' ? quote.shippingQuote?.id : undefined;
+      const shippingQuoteId = isAtHome ? undefined : currentCenterQuote?.shippingQuote?.id;
 
       const order = await inspectorService.createRequest({
         postId: listing.id,
@@ -270,9 +366,12 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
 
       const enrichedOrder: InspectionOrderDto = {
         ...order,
-        inspectionFee: order?.inspectionFee ?? atCenterBaseFee,
-        shippingFee: order?.shippingFee ?? atCenterOutboundFee,
-        returnShippingReserveFee: order?.returnShippingReserveFee ?? atCenterReturnFee,
+        inspectionFee: order?.inspectionFee ?? (isAtHome ? atHomeBaseFee : atCenterBaseFee),
+        shippingFee: order?.shippingFee ?? (isAtHome ? 0 : atCenterOutboundFee),
+        travelFee: order?.travelFee ?? (isAtHome ? atHomeTravelFee : 0),
+        travelFeeRoundTrip: order?.travelFeeRoundTrip ?? (isAtHome ? atHomeTravelFee : 0),
+        travelDistanceKm: order?.travelDistanceKm ?? (isAtHome ? atHomeTravelDistance : 0),
+        returnShippingReserveFee: order?.returnShippingReserveFee ?? (isAtHome ? 0 : atCenterReturnFee),
         buyerFeeShare: order?.buyerFeeShare ?? buyerShare,
         sellerFeeShare: order?.sellerFeeShare ?? sellerShare,
         inspectionCenterId: order?.inspectionCenterId || selectedCenterId,
@@ -433,11 +532,10 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
             <div className="grid grid-cols-2 gap-2">
               <div
                 onClick={() => setInspectionMethod('AT_CENTER')}
-                className={`p-2.5 rounded-xl border-2 transition cursor-pointer text-left ${
-                  inspectionMethod === 'AT_CENTER'
+                className={`p-2.5 rounded-xl border-2 transition cursor-pointer text-left ${inspectionMethod === 'AT_CENTER'
                     ? 'border-blue-600 bg-blue-50/50 shadow-xs'
                     : 'border-slate-200 bg-white hover:border-slate-300'
-                }`}
+                  }`}
               >
                 <div className="font-extrabold text-xs text-slate-800 flex items-center justify-between">
                   <span>🏢 {lang === 'vi' ? 'Đưa đến trung tâm' : 'At Center'}</span>
@@ -453,11 +551,10 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
 
               <div
                 onClick={() => setInspectionMethod('AT_HOME')}
-                className={`p-2.5 rounded-xl border-2 transition cursor-pointer text-left ${
-                  inspectionMethod === 'AT_HOME'
+                className={`p-2.5 rounded-xl border-2 transition cursor-pointer text-left ${inspectionMethod === 'AT_HOME'
                     ? 'border-purple-600 bg-purple-50/50 shadow-xs'
                     : 'border-slate-200 bg-white hover:border-slate-300'
-                }`}
+                  }`}
               >
                 <div className="font-extrabold text-xs text-slate-800 flex items-center justify-between">
                   <span>🏠 {lang === 'vi' ? 'Cử người đến nhà' : 'On-site'}</span>
@@ -492,12 +589,12 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
               )}
             </div>
 
-            {loadingQuote ? (
+            {loadingQuote && !quote ? (
               <div className="py-4 flex items-center justify-center gap-2 text-xs text-slate-500 animate-pulse">
                 <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
                 <span>{lang === 'vi' ? 'Đang gọi API Lalamove & tính biểu phí...' : 'Calculating quotation...'}</span>
               </div>
-            ) : quoteError ? (
+            ) : quoteError && !quote ? (
               <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl space-y-2 text-xs text-rose-800">
                 <div className="flex items-start gap-1.5 font-bold">
                   <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
@@ -516,10 +613,32 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
               <p className="text-xs text-slate-500">{lang === 'vi' ? 'Chưa có báo giá kiểm định.' : 'No inspection quote yet.'}</p>
             ) : inspectionMethod === 'AT_HOME' ? (
               <div className="space-y-2 text-xs text-slate-700 bg-white p-3 rounded-xl border border-slate-200">
+                {/* Dòng 1: Phí kiểm định cơ sở */}
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="text-slate-600">• {lang === 'vi' ? 'Phí dịch vụ kỹ thuật viên tại nhà' : 'On-site technician service'}:</span>
-                  <strong className="text-slate-900 font-bold">{formatVND(atHomeTotalFee)}</strong>
+                  <span className="text-slate-600">• {lang === 'vi' ? 'Phí kiểm định' : 'Inspection fee'}:</span>
+                  <strong className="text-slate-900 font-bold">{formatVND(atHomeBaseFee)}</strong>
                 </div>
+
+                {/* Dòng 2: Phí di chuyển KTV đến nhà */}
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="text-slate-600 flex items-center gap-1">
+                    <span>• {lang === 'vi' ? 'Phí di chuyển KTV đến nhà' : 'Technician travel fee'}:</span>
+                    {atHomeTravelDistance > 0 && (
+                      <span className="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.2 rounded font-semibold">
+                        {lang === 'vi' ? `Khứ hồi (${atHomeTravelDistance} km)` : `Round-trip (${atHomeTravelDistance} km)`}
+                      </span>
+                    )}
+                  </span>
+                  <strong className="text-slate-900 font-bold">{formatVND(atHomeTravelFee)}</strong>
+                </div>
+
+                {/* Dòng 3: Tổng phí thu trước */}
+                <div className="flex justify-between items-center pt-2 border-t border-slate-100 text-sm font-extrabold text-purple-900">
+                  <span>• {lang === 'vi' ? 'Tổng phí thu trước' : 'Total upfront fee'}:</span>
+                  <span className="font-black text-purple-700 text-base">{formatVND(atHomeTotalFee)}</span>
+                </div>
+
+                {/* Ghi chú */}
                 <div className="text-[11px] text-slate-600 italic bg-purple-50/70 p-2 rounded-lg border border-purple-100 flex items-start gap-1.5 leading-snug">
                   <Info className="w-3.5 h-3.5 text-purple-600 shrink-0 mt-0.5" />
                   <span>
@@ -527,10 +646,6 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
                       ? 'Kỹ thuật viên mang thiết bị thẩm định tới tận địa chỉ người bán để kiểm tra toàn bộ linh kiện theo checklist.'
                       : 'Technician visits seller location with testing equipment.'}
                   </span>
-                </div>
-                <div className="flex justify-between items-center pt-2 border-t border-slate-100 text-sm font-extrabold text-purple-900">
-                  <span>• {lang === 'vi' ? 'Tổng phí thu trước' : 'Total upfront fee'}:</span>
-                  <span className="font-black text-purple-700 text-base">{formatVND(atHomeTotalFee)}</span>
                 </div>
               </div>
             ) : (
@@ -545,9 +660,9 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
                 <div className="flex justify-between items-center py-0.5">
                   <span className="text-slate-600 flex items-center gap-1">
                     <span>• {lang === 'vi' ? 'Cước Seller → Trung tâm' : 'Seller → Center shipping'}:</span>
-                    {quote?.shippingQuote?.outbound?.serviceType && (
+                    {currentCenterQuote?.shippingQuote?.outbound?.serviceType && (
                       <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.2 rounded font-semibold">
-                        {formatLalamoveVehicle(quote.shippingQuote.outbound.serviceType).name}
+                        {formatLalamoveVehicle(currentCenterQuote.shippingQuote.outbound.serviceType).name}
                       </span>
                     )}
                   </span>
@@ -558,9 +673,9 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
                 <div className="flex justify-between items-center py-0.5">
                   <span className="text-slate-600 flex items-center gap-1">
                     <span>• {lang === 'vi' ? 'Tạm giữ dự phòng cước trả về Seller' : 'Return reserve fee'}:</span>
-                    {quote?.shippingQuote?.returnReserve?.serviceType && (
+                    {currentCenterQuote?.shippingQuote?.returnReserve?.serviceType && (
                       <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-medium">
-                        {formatLalamoveVehicle(quote.shippingQuote.returnReserve.serviceType).name}
+                        {formatLalamoveVehicle(currentCenterQuote.shippingQuote.returnReserve.serviceType).name}
                       </span>
                     )}
                   </span>
@@ -612,11 +727,10 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
               {/* Option 1: Người mua 100% */}
               <div
                 onClick={() => setFeePayer('BUYER_PAYS')}
-                className={`p-2.5 rounded-xl border-2 transition cursor-pointer text-center ${
-                  feePayer === 'BUYER_PAYS'
+                className={`p-2.5 rounded-xl border-2 transition cursor-pointer text-center ${feePayer === 'BUYER_PAYS'
                     ? 'border-[#c34c36] bg-orange-50/50 shadow-xs'
                     : 'border-slate-200 hover:border-slate-300 bg-white'
-                }`}
+                  }`}
               >
                 <div className="font-extrabold text-xs text-slate-800">
                   {lang === 'vi' ? 'Người mua 100%' : 'Buyer 100%'}
@@ -630,11 +744,10 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
               {/* Option 2: Chia đôi 50% - 50% */}
               <div
                 onClick={() => setFeePayer('SPLIT_50_50')}
-                className={`p-2.5 rounded-xl border-2 transition cursor-pointer text-center relative ${
-                  feePayer === 'SPLIT_50_50'
+                className={`p-2.5 rounded-xl border-2 transition cursor-pointer text-center relative ${feePayer === 'SPLIT_50_50'
                     ? 'border-indigo-600 bg-indigo-50/50 shadow-xs'
                     : 'border-slate-200 hover:border-slate-300 bg-white'
-                }`}
+                  }`}
               >
                 <span className="absolute -top-2 right-2 bg-indigo-600 text-white text-[8px] font-bold px-1.5 py-0.2 rounded-full uppercase">
                   Khuyên Dùng
@@ -653,11 +766,10 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
               {/* Option 3: Người bán 100% */}
               <div
                 onClick={() => setFeePayer('SELLER_PAYS')}
-                className={`p-2.5 rounded-xl border-2 transition cursor-pointer text-center ${
-                  feePayer === 'SELLER_PAYS'
+                className={`p-2.5 rounded-xl border-2 transition cursor-pointer text-center ${feePayer === 'SELLER_PAYS'
                     ? 'border-emerald-600 bg-emerald-50/50 shadow-xs'
                     : 'border-slate-200 hover:border-slate-300 bg-white'
-                }`}
+                  }`}
               >
                 <div className="font-extrabold text-xs text-slate-800">
                   {lang === 'vi' ? 'Người bán 100%' : 'Seller 100%'}
@@ -685,14 +797,12 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
           {/* 5. CAM KẾT ĐIỀU KHOẢN MỞ NIÊM PHONG (ZIN) */}
           <div
             onClick={() => setAgreedZinLoss(!agreedZinLoss)}
-            className={`p-3.5 rounded-2xl border-2 transition cursor-pointer flex items-start gap-2.5 ${
-              agreedZinLoss ? 'bg-emerald-50/70 border-emerald-400' : 'bg-amber-50/70 border-amber-300'
-            }`}
+            className={`p-3.5 rounded-2xl border-2 transition cursor-pointer flex items-start gap-2.5 ${agreedZinLoss ? 'bg-emerald-50/70 border-emerald-400' : 'bg-amber-50/70 border-amber-300'
+              }`}
           >
             <div
-              className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5 border transition ${
-                agreedZinLoss ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-300'
-              }`}
+              className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5 border transition ${agreedZinLoss ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-300'
+                }`}
             >
               {agreedZinLoss && <Check className="w-3.5 h-3.5" />}
             </div>
@@ -750,7 +860,7 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
                 <span>{lang === 'vi' ? 'Đang gửi đề xuất...' : 'Sending Proposal...'}</span>
               </>
             ) : (
-              <span>{lang === 'vi' ? 'Gửi Đề Xuất Cho Người Bán' : 'Send Inspection Proposal'}</span>
+              <span>{lang === 'vi' ? 'Gửi đề xuất cho người bán' : 'Send Inspection Proposal'}</span>
             )}
           </button>
         </div>

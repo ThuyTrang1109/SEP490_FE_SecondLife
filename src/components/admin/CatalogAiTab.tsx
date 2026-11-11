@@ -530,11 +530,10 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
       <div className="flex items-center gap-2 border-b border-gray-200 overflow-x-auto">
         <button
           onClick={() => setActiveSubTab('categories')}
-          className={`px-4 py-3 text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-            activeSubTab === 'categories'
+          className={`px-4 py-3 text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${activeSubTab === 'categories'
               ? 'border-[#c34c36] text-[#c34c36]'
               : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-          }`}
+            }`}
         >
           <FolderTree className="w-4 h-4" />
           Danh Mục (Categories)
@@ -542,11 +541,10 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
 
         <button
           onClick={() => setActiveSubTab('items')}
-          className={`px-4 py-3 text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-            activeSubTab === 'items'
+          className={`px-4 py-3 text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${activeSubTab === 'items'
               ? 'border-[#c34c36] text-[#c34c36]'
               : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-          }`}
+            }`}
         >
           <Tag className="w-4 h-4" />
           Loại Sản Phẩm (Items)
@@ -554,11 +552,10 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
 
         <button
           onClick={() => setActiveSubTab('templates')}
-          className={`px-4 py-3 text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-            activeSubTab === 'templates'
+          className={`px-4 py-3 text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${activeSubTab === 'templates'
               ? 'border-[#c34c36] text-[#c34c36]'
               : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-          }`}
+            }`}
         >
           <MessageSquareQuote className="w-4 h-4" />
           Kịch Bản Chính Thức (DB)
@@ -566,11 +563,10 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
 
         <button
           onClick={() => setActiveSubTab('proposals')}
-          className={`px-4 py-3 text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-            activeSubTab === 'proposals'
+          className={`px-4 py-3 text-sm font-bold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${activeSubTab === 'proposals'
               ? 'border-[#c34c36] text-[#c34c36]'
               : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-          }`}
+            }`}
         >
           <Sparkles className="w-4 h-4" />
           Đề Xuất AI Chờ Duyệt
@@ -787,11 +783,10 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
                           {catLabel}
                         </span>
                         <span
-                          className={`px-2 py-0.5 text-[10px] font-black rounded-md uppercase tracking-wider ${
-                            tpl.itemId
+                          className={`px-2 py-0.5 text-[10px] font-black rounded-md uppercase tracking-wider ${tpl.itemId
                               ? 'bg-amber-50 text-amber-700'
                               : 'bg-emerald-50 text-emerald-700'
-                          }`}
+                            }`}
                         >
                           {itemLabel}
                         </span>
@@ -847,11 +842,10 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
                 <button
                   key={opt.id}
                   onClick={() => setProposalStatusFilter(opt.id)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                    proposalStatusFilter === opt.id
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${proposalStatusFilter === opt.id
                       ? 'bg-[#24263e] text-white shadow-sm'
                       : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-                  }`}
+                    }`}
                 >
                   {opt.label}
                   {opt.id === 'PENDING' && pendingProposalsCount > 0 && (
@@ -887,9 +881,8 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
               return (
                 <div
                   key={proposal.id}
-                  className={`bg-white rounded-2xl border p-5 shadow-sm transition ${
-                    isPending ? 'border-amber-200' : 'border-gray-200'
-                  }`}
+                  className={`bg-white rounded-2xl border p-5 shadow-sm transition ${isPending ? 'border-amber-200' : 'border-gray-200'
+                    }`}
                 >
                   <div className="flex flex-col md:flex-row md:items-start justify-between border-b border-gray-100 pb-3 mb-3 gap-3">
                     <div className="space-y-1.5">
@@ -1406,7 +1399,7 @@ export const CatalogAiTab: React.FC<CatalogAiTabProps> = ({ lang: _lang }) => {
                 ) : (
                   <XCircle className="w-3.5 h-3.5" />
                 )}
-                Xác Nhận Từ Chối
+                Xác nhận từ chối
               </button>
             </div>
           </div>

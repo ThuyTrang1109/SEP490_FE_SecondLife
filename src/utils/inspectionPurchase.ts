@@ -4,10 +4,20 @@ import type { EscrowOrder, Language } from '../types';
 type InspectionOrderState = Partial<Pick<EscrowOrder,
   'hasInspectionService' | 'inspectionMethod' | 'inspectionCenterId' | 'inspectionFeeVnd' |
   'inspectionStatus' | 'inspectionNote' | 'status' | 'backendStatus' | 'escrowStatus' |
-  'finalPaymentPaidAt' | 'linkedOrderId'>>;
+  'finalPaymentPaidAt' | 'linkedOrderId' | 'inspectorId'>>;
 type InspectionDetails = Pick<InspectionOrderDto, 'status' | 'note' | 'finalPaymentPaidAt' | 'linkedOrderId'>;
 type PurchaseDecision = 'pending' | 'accepted' | 'rejected';
 type BuyerInspectionStage = 'waiting' | 'inspecting' | 'decision' | 'rejected' | 'failed' | 'closed';
+
+export function isExpiredInspectionPurchase(status?: string | null, note?: string | null) {
+  return status === 'CANCELLED' && Boolean(note?.includes('Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.'));
+}
+
+export function getCustomerInspectionStatus(status?: string | null, customerStatus?: string | null, inspectorId?: string | null) {
+  if (customerStatus) return customerStatus.toUpperCase();
+  const current = (status || '').toUpperCase();
+  return inspectorId && ['DISPATCHED', 'SCHEDULED'].includes(current) ? 'INSPECTING' : current;
+}
 
 function inspectionStatus(order?: InspectionOrderState | null, details?: InspectionDetails | null) {
   return (details?.status || order?.inspectionStatus || order?.backendStatus || order?.status || order?.escrowStatus || '').toUpperCase();
@@ -30,7 +40,7 @@ export function getInspectionPurchaseDecision(
 }
 
 export function getBuyerInspectionStage(order: InspectionOrderState): BuyerInspectionStage | null {
-  const status = inspectionStatus(order);
+  const status = getCustomerInspectionStatus(inspectionStatus(order), undefined, order.inspectorId);
   const escrow = order.escrowStatus;
   const hasInspection = Boolean(order.hasInspectionService || order.inspectionStatus || order.inspectionMethod ||
     order.inspectionCenterId || order.inspectionFeeVnd || escrow === 'AWAITING_INSPECTION' ||

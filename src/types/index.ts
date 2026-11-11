@@ -166,9 +166,10 @@ export interface InspectionReport {
   status?: 'PASSED' | 'FAILED';
   detectedGrade: ConditionGrade;
   conditionScore: number; // 0 - 100
-  tamperSealId: string;
+  tamperSealId?: string;
   checklistResults: InspectionChecklistItem[];
   inspectorPhotos: string[];
+  evidencePhotoUrls?: string[];
   summaryNotes: string;
   autoRefundTriggered?: boolean;
 }
@@ -354,7 +355,7 @@ export interface ChatMessage {
 
 export interface SystemInspectionProposalPayload {
   type: 'INSPECTION_PROPOSAL';
-  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED' | 'COUNTERED';
   method: 'AT_CENTER' | 'AT_HOME';
   feeSplit: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100';
   estimatedFeeVnd: number;
@@ -840,6 +841,7 @@ export interface CreateShipmentRequestDto {
   toAddress?: any;
   reason?: string;
   reportId?: string;
+  maxReturnFee?: number;
 }
 
 export interface ShipmentBackend {

@@ -11,17 +11,26 @@ interface LalamoveProgressProps {
   currentStep: number | null;
   completeCurrentStep?: boolean;
   finalStep?: { title: string; desc: string };
+  title?: string;
+  routeBadge?: string;
 }
 
-export function LalamoveProgress({ currentStep, completeCurrentStep, finalStep }: LalamoveProgressProps) {
+export function LalamoveProgress({ currentStep, completeCurrentStep, finalStep, title, routeBadge }: LalamoveProgressProps) {
   const steps = finalStep ? [...shipmentSteps, finalStep] : shipmentSteps;
 
   return (
     <div className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5">
-      <h4 className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-500">
-        <Package className="h-4 w-4 text-orange-600" />
-        Tiến trình vận chuyển Lalamove
-      </h4>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-500">
+          <Package className="h-4 w-4 text-orange-600" />
+          {title || 'Tiến trình vận chuyển Lalamove'}
+        </h4>
+        {routeBadge && (
+          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-700 border border-slate-200">
+            {routeBadge}
+          </span>
+        )}
+      </div>
 
       <ol className={`relative gap-2 pl-6 sm:grid sm:pl-0 ${finalStep ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
         {steps.map((step, index) => {

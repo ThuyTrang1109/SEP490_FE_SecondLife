@@ -32,7 +32,7 @@ import { dialogService } from '../../utils/dialogService';
 import { translateApiError } from '../../services/apiClient';
 import { resolveListingCategory, resolveOrderListing } from '../../utils/catalogCache';
 import { resolveInspectionCenter } from '../../utils/orderUtils';
-import { getInboundShipmentProgress, getLatestInboundShipment } from '../../utils/inspectionCenterData';
+import { getHubReturnProgress, getHubReturnState, getInboundShipmentProgress, getLatestInboundShipment } from '../../utils/inspectionCenterData';
 import { LalamoveProgress } from '../common/LalamoveProgress';
 
 const settlementStep = { title: 'Quyết toán', desc: 'Người mua xác nhận & giải ngân Escrow' };
@@ -111,6 +111,7 @@ interface OrderTrackingModalProps {
   onOpenLabelModal?: (shipment: ShipmentBackend) => void;
   onOrderUpdated?: () => void;
   onInboundShipmentLoaded?: (orderId: string, shipment: ShipmentBackend | null) => void;
+  initialShipmentId?: string;
 }
 
 function loadLeaflet(): Promise<any> {
@@ -142,10 +143,11 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   onOpenLabelModal,
   onOrderUpdated,
   onInboundShipmentLoaded,
+  initialShipmentId,
 }) => {
   const [shipments, setShipments] = useState<ShipmentBackend[]>([]);
-  const [activeShipmentId, setActiveShipmentId] = useState<string | null>(null);
-  const selectedShipmentId = useRef<string | null>(null);
+  const [activeShipmentId, setActiveShipmentId] = useState<string | null>(initialShipmentId || null);
+  const selectedShipmentId = useRef<string | null>(initialShipmentId || null);
   const shipmentRequest = useRef(0);
   const [events, setEvents] = useState<ShipmentEventBackend[]>([]);
   const [trackingData, setTrackingData] = useState<LalamoveTrackingResponse | null>(null);
@@ -429,7 +431,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
       if (request !== shipmentRequest.current) return;
 
       // Nạp từ localStorage nếu backend chưa đồng bộ hoặc chưa có bản ghi
-      if (!isHubSeller && shipList.length === 0) {
+      if (shipList.length === 0) {
         try {
           const raw = localStorage.getItem(`sl_order_shipments_${order.id}`) ||
             localStorage.getItem(`order_shipments_${order.id}`) ||
@@ -449,9 +451,10 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
       if (shipList.length > 0) {
         const selected = selectedShipmentId.current;
+        const returnShipment = getHubReturnState(shipList).shipment;
         const targetId = selected && shipList.some((s) => s.shipmentId === selected)
           ? selected
-          : ((isSeller && latestInbound) || shipList[0]).shipmentId;
+          : (returnShipment || (isSeller && latestInbound) || shipList[0]).shipmentId;
 
         if (selected !== targetId) selectShipment(targetId);
 
@@ -754,10 +757,10 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
       ? 'ON_GOING'
       : (trackingData?.providerStatus || activeShipment?.providerStatus);
 
-  const inboundProgress = activeShipment?.leg === 'SELLER_TO_CENTER'
-    ? getInboundShipmentProgress(activeShipment, lang)
-    : null;
-  const currentStep = inboundProgress ? (inboundProgress.step ?? -1) : getStepIndex(
+  const isReturnShipment = activeShipment?.leg === 'CENTER_TO_SELLER';
+  const hubProgress = isReturnShipment ? getHubReturnProgress(activeShipment, lang)
+    : activeShipment?.leg === 'SELLER_TO_CENTER' ? getInboundShipmentProgress(activeShipment, lang) : null;
+  const currentStep = hubProgress ? (hubProgress.step ?? -1) : getStepIndex(
     effectiveProviderStatus,
     activeShipment?.status || '',
     order.backendStatus === 'COMPLETED' || order.escrowStatus === 'COMPLETED_RELEASED'
@@ -850,7 +853,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   }, [events]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto">
       <div className="bg-[#FFFFFF] rounded-3xl max-w-3xl w-full max-h-[92vh] overflow-hidden shadow-2xl border border-gray-200 flex flex-col my-auto text-[#24263e]">
         {/* Modal Header */}
         <div className="p-5 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-[#ffe8d6] to-[#faf8f5] text-[#24263e] shrink-0">
@@ -1077,7 +1080,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                     : 'bg-gray-100 hover:bg-gray-200 text-slate-700'
                     }`}
                 >
-                  Kiện {idx + 1} ({s.leg || 'Lalamove'})
+                  Kiện {idx + 1} ({s.leg === 'SELLER_TO_CENTER' ? 'Chặng 1: Hub' : s.leg === 'CENTER_TO_SELLER' ? 'Hoàn trả' : s.leg === 'CENTER_TO_BUYER' ? 'Giao khách' : s.leg || 'Lalamove'})
                 </button>
               ))}
             </div>
@@ -1145,26 +1148,25 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
                   <div className="flex flex-col items-end gap-1.5">
                     <span className="text-[10px] text-slate-400 uppercase font-black">Trạng thái vận đơn</span>
-                    {inboundProgress ? (
-                      <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${inboundProgress.step === 3 ? 'border-emerald-300 bg-emerald-100 text-emerald-800' : 'border-blue-200 bg-blue-50 text-blue-800'
-                        }`}>{inboundProgress.label}</span>
+                    {hubProgress ? (
+                      <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${hubProgress.step === 3 ? 'border-emerald-300 bg-emerald-100 text-emerald-800' : 'border-blue-200 bg-blue-50 text-blue-800'
+                        }`}>{hubProgress.label}</span>
                     ) : getProviderStatusBadge(effectiveProviderStatus)}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                  <div className="p-3 bg-white rounded-2xl border border-gray-200/80">
-                    <span className="text-[10px] text-slate-400 font-bold uppercase block mb-0.5">Thời gian giao dự kiến</span>
-                    <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-orange-600" />
-                      <span>
-                        {trackingData?.expectedDeliveryTime || activeShipment.expectedDeliveryTime
-                          ? new Date(trackingData?.expectedDeliveryTime || activeShipment.expectedDeliveryTime!).toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-                          : 'Chưa có dự kiến'}
-                      </span>
-                    </div>
+                {isReturnShipment && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-700">
+                    <span>Cước trả hàng thực tế {activeShipment.actualFee == null ? 'đang chờ đối soát' : formatVND(activeShipment.actualFee)}</span>
+                    {(activeShipment.shareLink || trackingData?.shareLink) && (
+                      <a href={activeShipment.shareLink || trackingData?.shareLink} target="_blank" rel="noreferrer" className="font-bold text-blue-700 hover:underline">
+                        Theo dõi trên Lalamove
+                      </a>
+                    )}
                   </div>
+                )}
 
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div className="p-3 bg-white rounded-2xl border border-gray-200/80">
                     <span className="text-[10px] text-slate-400 font-bold uppercase block mb-0.5">Thời điểm giao thực tế</span>
                     <div className="font-bold text-slate-800 flex items-center gap-1.5">
@@ -1450,8 +1452,8 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
               <LalamoveProgress
                 currentStep={currentStep}
-                completeCurrentStep={inboundProgress ? currentStep === 3 : currentStep === 4}
-                finalStep={inboundProgress ? undefined : settlementStep}
+                completeCurrentStep={hubProgress ? currentStep === 3 : currentStep === 4}
+                finalStep={hubProgress ? undefined : settlementStep}
               />
 
               {/* Timeline of Events (GET /api/v1/shipments/{id}/events) */}
@@ -1561,7 +1563,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                     )} */}
 
                   {/* Cancel Shipment Button for Seller (only if before picked) */}
-                  {isSeller && (inboundProgress ? currentStep === 0 : currentStep <= 0) && activeShipment?.status !== 'CANCELLED' && (
+                  {isSeller && !isReturnShipment && (hubProgress ? currentStep === 0 : currentStep <= 0) && activeShipment?.status !== 'CANCELLED' && (
                     <button
                       onClick={handleCancelShipment}
                       disabled={isCancelling}
@@ -1573,7 +1575,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                 </div>
 
                 {/* Confirm Receipt for Buyer when Delivered (Section 12) */}
-                {!isSeller && !inboundProgress && (
+                {!isSeller && !hubProgress && (
                   <div>
                     {isReceiptConfirmed ? (
                       <span className="px-3.5 py-2 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 flex items-center gap-1.5">

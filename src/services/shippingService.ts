@@ -16,6 +16,22 @@ export interface ShippingParcel {
   height: number;
 }
 
+interface InspectionReturnContact {
+  name: string;
+  phone: string;
+  address: string;
+}
+
+export interface InspectionReturnQuote {
+  from: InspectionReturnContact;
+  to: InspectionReturnContact;
+  shippingFee: number;
+  reserveFee: number;
+  carrier: string;
+  serviceType: string | null;
+  expiresAt: string | null;
+}
+
 export interface VehicleLimit {
   serviceType: string;
   description: string;
@@ -734,8 +750,19 @@ export const shippingService = {
   },
 
   /**
-   * Nhân viên Staff / Admin tạo vận đơn giao nhận hàng kiểm định
-   * POST /api/v1/inspection-orders/{inspectionId}/shipments
+   * Lấy báo giá hiện tại cho chặng Hub trả hàng về người bán.
+   */
+  async getInspectionReturnQuote(inspectionId: string, signal: AbortSignal): Promise<InspectionReturnQuote> {
+    const res = await request<InspectionReturnQuote>(`/inspection-orders/${inspectionId}/shipments/return-quote`, {
+      method: 'POST',
+      signal,
+      requiresAuth: true,
+    });
+    return res.data;
+  },
+
+  /**
+   * Tạo vận đơn giao nhận hàng kiểm định.
    */
   async createInspectionShipment(inspectionId: string, body: CreateShipmentRequestDto): Promise<ShipmentBackend> {
     const res = await request<ShipmentBackend>(`/inspection-orders/${inspectionId}/shipments`, {

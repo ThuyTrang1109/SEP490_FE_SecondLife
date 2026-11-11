@@ -1,3 +1,4 @@
+import { ResizableSidebarControls } from '../components/common/ResizableSidebarControls';
 import { usePanelTab, useBrowserLocation, navigatePath } from '../app/router/browser';
 import { resolveAppRoute, panelPaths } from '../app/router/paths';
 import React, { useState, useMemo, useEffect } from 'react';
@@ -173,6 +174,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   // Sidebar toggle state (expanded / collapsed)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(256);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Collapsible cards state
@@ -1348,16 +1350,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </span>
           </div>
 
-          {/* Toggle Sidebar Button */}
+          {/* Mobile navigation trigger */}
           <button
+            type="button"
             onClick={() => {
-              setIsSidebarCollapsed(!isSidebarCollapsed);
-              setIsMobileSidebarOpen(!isMobileSidebarOpen);
+              setIsSidebarCollapsed(false);
+              setIsMobileSidebarOpen((open) => !open);
             }}
-            className="p-1.5 rounded-lg text-white hover:bg-white/10 transition cursor-pointer"
-            title={lang === 'vi' ? 'Đóng / Mở menu' : 'Toggle menu'}
+            className="p-1.5 rounded-lg text-white hover:bg-white/10 transition cursor-pointer md:hidden"
+            aria-expanded={isMobileSidebarOpen}
+            aria-label={lang === 'vi' ? 'Đóng / Mở menu' : 'Toggle menu'}
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="w-5 h-5" aria-hidden="true" />
           </button>
 
         </div>
@@ -1429,16 +1433,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       <div className="flex-1 flex relative">
         {/* LEFT SIDEBAR */}
         <aside
-          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] ${isSidebarCollapsed ? 'w-16' : 'w-60 sm:w-64'
-            } ${isMobileSidebarOpen
-              ? 'fixed inset-y-13 left-0 shadow-2xl block'
-              : 'hidden md:flex'
-            }`}
+          style={{ width: isSidebarCollapsed ? 64 : sidebarWidth }}
+          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 max-w-[85vw] flex-col shrink-0 select-none z-30 top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] md:sticky md:flex ${isMobileSidebarOpen ? 'fixed left-0 flex shadow-2xl md:shadow-none' : 'hidden'}`}
         >
           {/* User Block */}
           <div
             onClick={() => onOpenProfile?.()}
-            className="p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3 cursor-pointer hover:bg-black/5 transition"
+            className={`p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3 cursor-pointer hover:bg-black/5 transition ${isSidebarCollapsed ? '' : 'md:pr-11'}`}
             title={lang === 'vi' ? 'Xem hồ sơ cá nhân' : 'View profile'}
           >
             <div className="relative shrink-0">
@@ -1469,6 +1470,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </div>
             )}
           </div>
+
+          <ResizableSidebarControls
+            width={sidebarWidth}
+            collapsed={isSidebarCollapsed}
+            onResize={setSidebarWidth}
+            onToggle={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+            lang={lang}
+          />
 
           {/* Section: MAIN NAVIGATION */}
           <div className="px-4 pt-4 pb-2 text-[10px] font-black text-[#24263e]/80 uppercase tracking-wider">

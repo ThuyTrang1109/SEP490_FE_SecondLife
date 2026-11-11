@@ -234,25 +234,39 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
     }
   };
 
+  const itemPrice = (() => {
+    const val = Number(
+      order.itemPriceVnd ??
+      order.listing?.priceVnd ??
+      (order as any).price ??
+      (order as any).postPrice ??
+      (order as any).priceVnd ??
+      (order as any).amount ??
+      (order as any).totalAmount ??
+      0
+    );
+    return Number.isFinite(val) ? val : 0;
+  })();
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto">
-      <div className="relative w-full max-w-2xl sm:max-w-3xl min-h-[640px] rounded-3xl bg-white p-6 sm:p-8 shadow-2xl text-slate-900 border border-gray-200 my-auto flex flex-col justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn">
+      <div className="relative w-full max-w-2xl sm:max-w-3xl max-h-[92vh] rounded-3xl bg-white p-4 sm:p-6 shadow-2xl text-slate-900 border border-gray-200 my-auto flex flex-col justify-between overflow-hidden">
         {/* Header Toolbar */}
-        <div className="flex items-center justify-between pb-4 border-b border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] text-white flex items-center justify-center shadow-md">
-              <Truck className="w-5 h-5 text-white" />
+        <div className="flex items-center justify-between pb-3 border-b border-gray-200 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#dc4729] text-white flex items-center justify-center shadow-md shrink-0">
+              <Truck className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight">
                   Tạo Vận Đơn Giao Hàng Lalamove
                 </h3>
-                <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
                   {isHubInspection ? 'Chặng 1: Gửi Hub' : 'Giao Thẳng'}
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
                 Mã đơn hàng: <strong className="font-mono text-slate-700">#{order.id.slice(0, 12).toUpperCase()}</strong> •{' '}
                 {isHubInspection ? 'Lộ trình chuyển kiện hàng đến Trạm Kiểm Định SecondLife Hub' : 'Vận chuyển trực tiếp từ Người Bán đến Người Mua'}
               </p>
@@ -262,37 +276,37 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-900 transition cursor-pointer"
+            className="p-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-900 transition cursor-pointer"
             title="Đóng"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Form Body - Arranged Sequentially (Lần lượt từ trên xuống) */}
-        <form onSubmit={handleCreateShipment} className="flex-1 flex flex-col justify-between space-y-4 pt-4 text-xs text-slate-700">
+        {/* Form Body - Arranged Sequentially with compact spacing */}
+        <form onSubmit={handleCreateShipment} className="flex-1 overflow-y-auto pr-1 py-2.5 space-y-2.5 text-xs text-slate-700">
           {errorMsg && (
-            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-700 font-semibold flex items-center gap-2.5 animate-fadeIn">
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-semibold flex items-center gap-2 animate-fadeIn">
               <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>{translateSystemNotification(errorMsg)}</span>
             </div>
           )}
 
           {order.escrowStatus === 'AWAITING_PAYMENT' && (
-            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 font-semibold flex items-center gap-2.5 animate-fadeIn">
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 font-semibold flex items-center gap-2 animate-fadeIn">
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
               <span>
-                Đơn hàng đang chờ người mua nộp tiền ký quỹ Escrow. Theo quy định, chỉ có thể điều phối tài xế Lalamove sau khi tiền đã được bảo toàn trong Quỹ Escrow.
+                Đơn hàng đang chờ người mua nộp tiền ký quỹ Escrow. Chỉ có thể điều phối tài xế sau khi tiền đã vào Escrow.
               </span>
             </div>
           )}
 
           {/* MỤC 1: SẢN PHẨM CẦN GIAO */}
-          <div className="flex items-center gap-3.5 bg-slate-50 p-3 sm:p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
+          <div className="flex items-center gap-3 bg-slate-50 p-2.5 sm:p-3 rounded-2xl border border-gray-200 shadow-2xs">
             <img
               src={order.listing.photos.front}
               alt={order.listing.title}
-              className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl object-cover border border-gray-200 shrink-0 bg-white shadow-2xs"
+              className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover border border-gray-200 shrink-0 bg-white shadow-2xs"
             />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
@@ -303,12 +317,12 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                   {order.listing?.conditionGrade || 'Đã qua sử dụng'}
                 </span>
               </div>
-              <h4 className="font-bold text-slate-900 text-sm truncate mt-0.5">
+              <h4 className="font-bold text-slate-900 text-xs sm:text-sm truncate mt-0.5">
                 {order.listing.title}
               </h4>
-              <div className="text-xs text-slate-500 mt-1 flex items-center justify-between flex-wrap gap-2">
+              <div className="text-[11px] text-slate-500 mt-0.5 flex items-center justify-between flex-wrap gap-2">
                 <span>
-                  Giá trị hàng: <strong className="text-slate-900 font-bold text-sm">{formatVND(order.itemPriceVnd)}</strong>
+                  Giá trị hàng: <strong className="text-slate-900 font-bold text-xs sm:text-sm">{formatVND(itemPrice)}</strong>
                 </span>
                 <span className="text-[11px] text-slate-500">
                   Số lượng: <strong>01 kiện</strong>
@@ -318,9 +332,9 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
           </div>
 
           {/* MỤC 2: LỘ TRÌNH VẬN CHUYỂN CHẶNG 1 */}
-          <div className="space-y-3 bg-[#faf8f5] p-4 sm:p-4.5 rounded-2xl border border-gray-200 shadow-2xs">
+          <div className="space-y-2 bg-[#faf8f5] p-3 sm:p-3.5 rounded-2xl border border-gray-200 shadow-2xs">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <span className="font-extrabold uppercase text-[11px] text-slate-500 tracking-wider flex items-center gap-1.5">
+              <span className="font-extrabold uppercase text-[10px] sm:text-[11px] text-slate-500 tracking-wider flex items-center gap-1.5">
                 <Truck className="w-3.5 h-3.5 text-blue-600" />
                 {isHubInspection
                   ? 'Lộ trình Chặng 1: Kho người bán ➔ Trạm Kiểm Định SecondLife Hub'
@@ -332,44 +346,44 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             </div>
 
             {/* Điểm 1: Kho lấy hàng (Người bán) */}
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-700 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">
+            <div className="flex items-start gap-2.5">
+              <div className="w-5 h-5 rounded-md bg-amber-500/20 text-amber-700 flex items-center justify-center shrink-0 mt-0.5 font-bold text-[11px]">
                 1
               </div>
               <div className="space-y-0.5 min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-bold text-slate-900 text-xs sm:text-sm">Kho lấy hàng (Người bán)</span>
-                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.2 rounded font-semibold border border-emerald-200">
+                  <span className="font-bold text-slate-900 text-xs">Kho lấy hàng (Người bán)</span>
+                  <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold border border-emerald-200">
                     GPS Sẵn Sàng
                   </span>
                 </div>
-                <span className="text-slate-700 text-xs block leading-relaxed font-medium">
+                <span className="text-slate-700 text-xs block leading-tight font-medium truncate">
                   {order.listing.location || 'Địa chỉ kho đã lưu trong hồ sơ người bán'}
                 </span>
-                <span className="text-[11px] text-amber-700 italic block">
+                <span className="text-[10px] text-amber-700 italic block">
                   Tài xế Lalamove sẽ đến địa chỉ này lấy kiện hàng
                 </span>
               </div>
             </div>
 
             {/* Đường nối */}
-            <div className="w-0.5 h-3 bg-slate-300 ml-3" />
+            <div className="w-0.5 h-2 bg-slate-300 ml-2.5" />
 
             {/* Điểm 2: Hub SecondLife hoặc Người mua */}
-            <div className="flex items-start gap-3">
-              <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs ${
+            <div className="flex items-start gap-2.5">
+              <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5 font-bold text-[11px] ${
                 isHubInspection ? 'bg-blue-500/20 text-blue-700' : 'bg-emerald-500/20 text-emerald-700'
               }`}>
                 2
               </div>
               <div className="space-y-0.5 min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-bold text-slate-900 text-xs sm:text-sm">
+                  <span className="font-bold text-slate-900 text-xs">
                     {isHubInspection
                       ? `Điểm đến: ${hubCenter.name}`
                       : `Người nhận: ${order.buyerName} (${order.buyerPhone})`}
                   </span>
-                  <span className={`text-[10px] px-2 py-0.2 rounded font-semibold border ${
+                  <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold border ${
                     isHubInspection
                       ? 'bg-blue-100 text-blue-800 border-blue-200'
                       : 'bg-emerald-100 text-emerald-800 border-emerald-200'
@@ -377,14 +391,14 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                     {isHubInspection ? 'Trạm ISO/IEC 17025' : 'GPS Sẵn Sàng'}
                   </span>
                 </div>
-                <span className="text-slate-700 text-xs block leading-relaxed font-medium">
+                <span className="text-slate-700 text-xs block leading-tight font-medium truncate">
                   {isHubInspection
                     ? hubCenter.address
                     : order.buyerAddress}
                 </span>
                 {isHubInspection && (
-                  <span className="text-[11px] text-blue-700 italic block">
-                    Hotline Hub: {hubCenter.phone} • KTV tiếp nhận tháo máy, thẩm định 48 bước và cấp chứng thư
+                  <span className="text-[10px] text-blue-700 italic block">
+                    Hotline: {hubCenter.phone} • KTV tiếp nhận thẩm định 48 bước và cấp chứng thư
                   </span>
                 )}
               </div>
@@ -393,73 +407,73 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
 
           {/* MỤC 3: QUY TRÌNH GIAO NHẬN 2 CHẶNG (VERIFY THEN SHIP) */}
           {isHubInspection ? (
-            <div className="bg-gradient-to-br from-blue-50/90 via-indigo-50/60 to-blue-50/90 p-4 rounded-2xl border border-blue-200 space-y-2.5 shadow-2xs">
+            <div className="bg-gradient-to-br from-blue-50/90 via-indigo-50/60 to-blue-50/90 p-3 rounded-2xl border border-blue-200 space-y-2 shadow-2xs">
               <div className="flex items-center justify-between">
-                <span className="font-extrabold uppercase text-[11px] text-blue-900 tracking-wider flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-blue-600" />
+                <span className="font-extrabold uppercase text-[10px] sm:text-[11px] text-blue-900 tracking-wider flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
                   Quy trình giao nhận 2 chặng (Verify Then Ship)
                 </span>
-                <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-blue-200 text-blue-800 border border-blue-300">
+                <span className="text-[9px] font-black px-2 py-0.2 rounded-full bg-blue-200 text-blue-800 border border-blue-300">
                   Chặng 1 / 2
                 </span>
               </div>
 
-              <div className="space-y-2 text-xs text-slate-700">
-                <div className="flex items-start gap-2 bg-white/90 p-2.5 sm:p-3 rounded-xl border border-blue-100 shadow-2xs">
-                  <span className="font-bold text-blue-700 shrink-0">📦 Chặng 1 (Vận đơn này):</span>
-                  <span className="leading-relaxed">
-                    Bàn giao kiện hàng cho Lalamove vận chuyển đến <strong>{hubCenter.name}</strong> ({hubCenter.address}) để đo kiểm kỹ thuật.
+              <div className="space-y-1.5 text-xs text-slate-700">
+                <div className="flex items-start gap-2 bg-white/90 p-2 sm:p-2.5 rounded-xl border border-blue-100 shadow-2xs">
+                  <span className="font-bold text-blue-700 shrink-0 text-[11px]">📦 Chặng 1 (Vận đơn này):</span>
+                  <span className="leading-snug text-[11px]">
+                    Bàn giao cho Lalamove giao đến <strong>{hubCenter.name}</strong> để đo kiểm kỹ thuật.
                   </span>
                 </div>
 
-                <div className="space-y-1.5 bg-white/90 p-2.5 sm:p-3 rounded-xl border border-blue-100 shadow-2xs">
-                  <div className="font-bold text-slate-900">🚚 Chặng 2 (Kích hoạt sau khi có kết quả kiểm định):</div>
-                  <div className="flex items-start gap-2 text-emerald-800 leading-relaxed">
-                    <span className="font-bold shrink-0">✅ Nếu kiểm định ĐẠT (PASS):</span>
+                <div className="space-y-1 bg-white/90 p-2 sm:p-2.5 rounded-xl border border-blue-100 shadow-2xs text-[11px]">
+                  <div className="font-bold text-slate-900 text-[11px]">🚚 Chặng 2 (Kích hoạt sau khi có kết quả kiểm định):</div>
+                  <div className="flex items-start gap-1.5 text-emerald-800 leading-snug">
+                    <span className="font-bold shrink-0">✅ Nếu ĐẠT:</span>
                     <span>
-                      Hub kích hoạt Chặng 2 giao tận tay khách mua: <strong>{order.buyerName}</strong> ({order.buyerPhone || 'Đã xác minh'}) tại địa chỉ đăng ký.
+                      Hub kích hoạt Chặng 2 giao tận tay khách mua: <strong>{order.buyerName}</strong> ({order.buyerPhone || 'Đã xác minh'}).
                     </span>
                   </div>
-                  <div className="flex items-start gap-2 text-rose-800 leading-relaxed pt-1.5 border-t border-slate-100">
-                    <span className="font-bold shrink-0">❌ Nếu kiểm định KHÔNG ĐẠT (FAIL):</span>
+                  <div className="flex items-start gap-1.5 text-rose-800 leading-snug pt-1 border-t border-slate-100">
+                    <span className="font-bold shrink-0">❌ Nếu KHÔNG ĐẠT:</span>
                     <span>
-                      Hub kích hoạt vận đơn hoàn trả hàng về kho <strong>Người bán</strong>, đồng thời Quỹ Escrow hoàn tiền 100% cho <strong>Người mua</strong>.
+                      Hub hoàn trả hàng về kho <strong>Người bán</strong>, Quỹ Escrow hoàn tiền 100% cho <strong>Người mua</strong>.
                     </span>
                   </div>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="bg-slate-50 p-4 rounded-2xl border border-gray-200 space-y-2 text-xs text-slate-600 shadow-2xs">
-              <span className="font-bold text-slate-900 text-sm block">Cam kết giao hàng Lalamove On-Demand</span>
-              <p className="leading-relaxed">
+            <div className="bg-slate-50 p-3 rounded-2xl border border-gray-200 space-y-1 text-xs text-slate-600 shadow-2xs">
+              <span className="font-bold text-slate-900 text-xs block">Cam kết giao hàng Lalamove On-Demand</span>
+              <p className="leading-relaxed text-[11px]">
                 Tài xế Lalamove sẽ đến lấy kiện hàng trực tiếp tại kho của bạn và giao thẳng tới người mua: <strong>{order.buyerName}</strong> ({order.buyerPhone}).
               </p>
             </div>
           )}
 
           {/* MỤC 4: THÔNG BÁO LƯU Ý */}
-          <div className="p-3 sm:p-3.5 bg-blue-50/80 border border-blue-200 rounded-2xl flex items-start gap-2.5 text-xs text-blue-900 shadow-2xs">
-            <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-            <span className="leading-relaxed">
-              Sau khi tạo vận đơn, hệ thống sẽ cấp mã vận đơn Lalamove chính thức. Bạn có thể in phiếu gửi và chuẩn bị đóng gói để bàn giao cho tài xế.
+          <div className="p-2.5 bg-blue-50/80 border border-blue-200 rounded-xl flex items-center gap-2 text-[11px] text-blue-900 shadow-2xs">
+            <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span className="leading-normal">
+              Sau khi tạo vận đơn, hệ thống sẽ cấp mã vận đơn Lalamove chính thức. Vui lòng đóng gói sẵn sàng để bàn giao cho tài xế.
             </span>
           </div>
 
           {/* FOOTER ACTIONS - DƯỚI CÙNG */}
-          <div className="pt-3 border-t border-gray-200 flex items-center justify-end gap-3">
+          <div className="pt-2.5 border-t border-gray-200 flex items-center justify-end gap-2.5 shrink-0">
             <button
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs sm:text-sm cursor-pointer transition"
+              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer transition"
             >
               Hủy
             </button>
             <button
               type="submit"
               disabled={isSubmitting || order.escrowStatus === 'AWAITING_PAYMENT'}
-              className={`px-6 py-2.5 rounded-xl font-black text-xs sm:text-sm transition shadow-md flex items-center gap-2 ${
+              className={`px-5 py-2 rounded-xl font-bold text-xs transition shadow-md flex items-center gap-2 ${
                 order.escrowStatus === 'AWAITING_PAYMENT'
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : 'bg-[#c34c36] hover:bg-[#dc4729] text-white cursor-pointer disabled:opacity-50'
@@ -467,17 +481,17 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 text-white animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
                   <span>Đang kết nối Lalamove...</span>
                 </>
               ) : order.escrowStatus === 'AWAITING_PAYMENT' ? (
                 <>
-                  <AlertTriangle className="w-4 h-4 text-gray-500" />
+                  <AlertTriangle className="w-3.5 h-3.5 text-gray-500" />
                   <span>Chờ Khách Ký Quỹ Escrow</span>
                 </>
               ) : (
                 <>
-                  <Truck className="w-4 h-4 text-white" />
+                  <Truck className="w-3.5 h-3.5 text-white" />
                   <span>{isHubInspection ? 'Xác Nhận Tạo Vận Đơn Gửi Hub (Chặng 1)' : 'Xác Nhận Tạo Vận Đơn Lalamove'}</span>
                 </>
               )}

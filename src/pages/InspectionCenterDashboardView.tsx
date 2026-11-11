@@ -1,3 +1,4 @@
+import { ResizableSidebarControls } from '../components/common/ResizableSidebarControls';
 import { usePanelTab, useBrowserLocation, navigatePath } from '../app/router/browser';
 import { resolveAppRoute, panelPaths } from '../app/router/paths';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -63,18 +64,22 @@ import {
   CreditCard,
   AlertTriangle,
   XCircle,
+  RotateCcw,
 } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 import { CenterReviewAppealModal } from '../components/inspection/CenterReviewAppealModal';
 import { InspectionCenterProfileTab } from '../components/inspection/InspectionCenterProfileTab';
 import { LalamoveProgress } from '../components/common/LalamoveProgress';
+import { DigitalInspectionCertificateModal } from '../components/modals/DigitalInspectionCertificateModal';
+import { getInspectionTaskStage } from '../utils/inspectionTaskStatus';
 import { Language, UserProfile, EscrowOrder, CategoryBackend, ItemBackend, ShipmentBackend, CreateShipmentRequestDto, InspectionComplexityLevel, InspectionChecklistStatus, InspectionCenterProfile, UpdateInspectionCenterProfileRequest } from '../types';
 import { formatVND } from '../utils/translations';
 import { dialogService } from '../utils/dialogService';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { resolveInspectionCenter } from '../utils/orderUtils';
 import { itemService } from '../services/itemService';
-import { canBookHubBuyerDelivery, getCenterTabDataNeeds, getHubBuyerShipmentLabel, getInboundShipmentProgress, getLatestInboundShipment, getLatestInspectionShipment, isPaidHubBuyerDelivery, shouldTrackInboundShipment } from '../utils/inspectionCenterData';
+import { canBookHubBuyerDelivery, canReadCenterInspectionShipments, getCenterDispatchStage, getCenterTabDataNeeds, getHubBuyerShipmentLabel, getInboundShipmentProgress, getLatestInboundShipment, getLatestInspectionShipment, isPaidHubBuyerDelivery, shouldTrackCenterInspectionShipments, shouldTrackInboundShipment } from '../utils/inspectionCenterData';
+import { getHubReturnProgress, getHubReturnState, getReturnReserveMessage, isCenterReturnEligible, isHubReturnCase } from '../utils/inspectionCenterData';
 import { loadCenterPricing } from '../services/inspectionCenterPricing';
 import { ApiError, isUserIdle } from '../services/apiClient';
 import {
@@ -102,6 +107,7 @@ interface InspectionCenterDashboardViewProps {
 }
 
 export type CenterTab = 'overview' | 'dispatch' | 'staff' | 'orders' | 'checklists' | 'pricing' | 'appeals' | 'profile';
+type DispatchFilter = 'ALL' | NonNullable<ReturnType<typeof getCenterDispatchStage>>;
 
 export interface AppliancePreset {
   key: string;
@@ -117,7 +123,7 @@ export interface AppliancePreset {
   }[];
 }
 
-export const APPLIANCE_PRESETS: AppliancePreset[] = [
+const APPLIANCE_PRESETS: AppliancePreset[] = [
   {
     key: 'refrigerator',
     name: 'Tủ Lạnh / Tủ Đông',
@@ -400,7 +406,7 @@ export const APPLIANCE_PRESETS: AppliancePreset[] = [
   },
 ];
 
-export const VALID_CENTER_TABS: CenterTab[] = [
+const VALID_CENTER_TABS: CenterTab[] = [
   'overview',
   'dispatch',
   'staff',
@@ -411,11 +417,11 @@ export const VALID_CENTER_TABS: CenterTab[] = [
   'profile'
 ];
 
-export const CENTER_TAB_STORAGE_KEY = 'secondlife_center_active_tab';
+const CENTER_TAB_STORAGE_KEY = 'secondlife_center_active_tab';
 const INBOUND_SHIPMENT_REFRESH_MS = 30_000;
 const INBOUND_SHIPMENT_CONCURRENCY = 3;
 
-export function getInitialCenterTab(): CenterTab {
+function getInitialCenterTab(): CenterTab {
   if (typeof window === 'undefined') return 'overview';
   return (resolveAppRoute(window.location.href, 'inspection_center').section || 'overview') as CenterTab;
 }
@@ -439,6 +445,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
   // --- Sidebar Collapse & Mobile Sidebar State ---
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(256);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // --- User Profile Dropdown State ---
@@ -543,18 +550,25 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   // --- Orders State ---
   const [orders, setOrders] = useState<InspectionOrderDto[]>(fallbackOrders);
   const [trackedOrders, setTrackedOrders] = useState<InspectionOrderDto[]>([]);
+  const [deniedShipmentOrders, setDeniedShipmentOrders] = useState<ReadonlySet<string>>(new Set());
   const [inboundShipments, setInboundShipments] = useState<ReadonlyMap<string, ShipmentBackend>>(new Map());
   const [buyerShipments, setBuyerShipments] = useState<ReadonlyMap<string, ShipmentBackend | null>>(new Map());
   const [bookingBuyerOrderId, setBookingBuyerOrderId] = useState<string | null>(null);
   const bookingBuyerOrderRef = useRef<string | null>(null);
   const buyerBookingVersion = useRef(0);
   const buyerBookingRequestIds = useRef(new Map<string, string>());
-  const [expandedShipmentOrderId, setExpandedShipmentOrderId] = useState<string | null>(null);
+  const [hubReturns, setHubReturns] = useState<ReadonlyMap<string, ReturnType<typeof getHubReturnState>>>(new Map());
+  const [bookingReturnId, setBookingReturnId] = useState<string | null>(null);
+  const returnBookingRef = useRef<string | null>(null);
+  const returnBookingVersion = useRef(0);
+  const returnRequestIds = useRef(new Map<string, string>());
+  const [expandedInboundOrderId, setExpandedInboundOrderId] = useState<string | null>(null);
+  const [expandedReturnOrderId, setExpandedReturnOrderId] = useState<string | null>(null);
+  const [expandedBuyerOrderId, setExpandedBuyerOrderId] = useState<string | null>(null);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
-  const [orderStatusFilter, setOrderStatusFilter] = useState<string>('ALL');
+  const [dispatchFilter, setDispatchFilter] = useState<DispatchFilter>('ALL');
   const [orderMethodFilter, setOrderMethodFilter] = useState<'ALL' | 'AT_CENTER' | 'AT_HOME'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
-  const [onlyUnassigned, setOnlyUnassigned] = useState(false);
 
   // --- Staff State ---
   const [staffList, setStaffList] = useState<InspectionStaffDto[]>([]);
@@ -563,6 +577,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
   // --- Assign Modal State ---
   const [assignModalOrder, setAssignModalOrder] = useState<InspectionOrderDto | null>(null);
+  const [certificateOrder, setCertificateOrder] = useState<InspectionOrderDto | null>(null);
+  const [loadingCertificateId, setLoadingCertificateId] = useState<string | null>(null);
   const [reviewingAppealOrder, setReviewingAppealOrder] = useState<InspectionOrderDto | null>(null);
   const [appealFilter, setAppealFilter] = useState<'ALL' | 'PENDING_REVIEW' | 'UPHELD' | 'OVERTURNED'>('ALL');
   const [appealSearchTerm, setAppealSearchTerm] = useState('');
@@ -592,7 +608,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     if (!order) return false;
     if (order.orderType === 'AT_HOME') return true; // Đơn tại nhà không cần nhận hàng tại Hub
     const s = String(order.status || order.backendStatus || order.escrowStatus || '').toUpperCase();
-    if (['RECEIVED_AT_CENTER', 'AWAITING_INSPECTION', 'INSPECTING', 'PASSED', 'FAILED', 'COMPLETED', 'DELIVERING_TO_BUYER', 'SHIPPED_TO_BUYER'].includes(s)) {
+    if (['RECEIVED_AT_CENTER', 'AWAITING_INSPECTION', 'INSPECTING', 'INSPECTION_IN_PROGRESS', 'PASSED', 'FAILED', 'COMPLETED', 'DELIVERING_TO_BUYER', 'SHIPPED_TO_BUYER'].includes(s)) {
       return true;
     }
     const shipment = inboundShipments.get(order.id);
@@ -650,7 +666,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       let backendItems: InspectionOrderDto[] = [];
       try {
         const res = await inspectorService.getAllOrders(
-          activeTab === 'dispatch' && orderStatusFilter !== 'ALL' ? orderStatusFilter : undefined,
+          undefined,
           0,
           100,
           background ? { isBackground: true } : undefined,
@@ -739,10 +755,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             const resolvedImageUrls = (o.postImageUrls && o.postImageUrls.length > 0)
               ? o.postImageUrls
               : (realImg ? [realImg] : (
-                  o.listing?.photos
-                    ? [fallbackFront, o.listing.photos.back, o.listing.photos.screenOrDetails].filter(Boolean) as string[]
-                    : (o.listing?.photoGallery || [fallbackFront])
-                ));
+                o.listing?.photos
+                  ? [fallbackFront, o.listing.photos.back, o.listing.photos.screenOrDetails].filter(Boolean) as string[]
+                  : (o.listing?.photoGallery || [fallbackFront])
+              ));
 
             return {
               id: o.id,
@@ -782,11 +798,11 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             } catch { }
           }
 
-          const hasValidAssign = Boolean(assignedInspectorId && assignedInspectorName && assignedInspectorName !== 'Chưa phân công');
+          const hasValidAssign = Boolean(assignedInspectorId);
 
           const savedInspectionStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${ord.id}`) : null;
           let resolvedStatus = savedInspectionStatus || ord.status;
-          if (ord.finalPaymentPaidAt && ord.linkedOrderId) {
+          if ((ord.finalPaymentPaidAt && ord.linkedOrderId) || isHubReturnCase(ord)) {
             resolvedStatus = ord.status;
           } else if (savedInspectionStatus === 'PASSED' || ord.status === 'PASSED' || (ord as any).backendStatus === 'PASSED' || (ord as any).escrowStatus === 'INSPECTION_PASSED') {
             resolvedStatus = 'PASSED';
@@ -811,7 +827,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       finalOrders.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
       setOrders(finalOrders);
       // Only fetch shipments for actual orders returned by the center API.
-      setTrackedOrders(backendItems.filter((order) => shouldTrackInboundShipment(order) || isPaidHubBuyerDelivery(order)));
+      setTrackedOrders(backendItems.filter((order) => shouldTrackCenterInspectionShipments(order, currentUser?.id, currentUser?.role)));
     } catch (err: any) {
       if (requestId !== ordersRequestRef.current) return;
       console.warn('Lỗi tải danh sách đơn kiểm định từ backend, sử dụng dữ liệu trạm:', err);
@@ -986,7 +1002,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       window.clearInterval(trackingTimer);
       document.removeEventListener('visibilitychange', refreshOrderTracking);
     };
-  }, [needsOrders, needsStaff, orderStatusFilter, showOrderShipments, activeTab === 'dispatch']);
+  }, [needsOrders, needsStaff, showOrderShipments, activeTab === 'dispatch']);
 
   useEffect(() => {
     if (!showOrderShipments) return;
@@ -1000,6 +1016,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       const current = new Map([...previous].filter(([id]) => trackedIds.has(id)));
       return current.size === previous.size ? previous : current;
     });
+    setHubReturns((previous) => new Map([...previous].filter(([id]) => trackedIds.has(id))));
     if (trackedOrders.length === 0 || document.hidden || isUserIdle()) return;
 
     const controller = new AbortController();
@@ -1010,7 +1027,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       while (!controller.signal.aborted && nextIndex < trackedOrders.length) {
         const order = trackedOrders[nextIndex++];
         const orderId = order.id;
+        if (deniedShipmentOrders.has(orderId)) continue;
         const bookingVersion = buyerBookingVersion.current;
+        const returnVersion = returnBookingVersion.current;
         let shipments: ShipmentBackend[];
         try {
           shipments = await shippingService.getInspectionShipments(orderId, {
@@ -1021,6 +1040,12 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           // Preserve the last known status during transient errors.
           if (!(error instanceof ApiError) || ![401, 403, 404].includes(error.status)) continue;
           if (!controller.signal.aborted) {
+            if (error.status === 403) setDeniedShipmentOrders((previous) => new Set(previous).add(orderId));
+            setHubReturns((previous) => {
+              const current = new Map(previous);
+              current.delete(orderId);
+              return current;
+            });
             setBuyerShipments((previous) => {
               const current = new Map(previous);
               current.delete(orderId);
@@ -1036,23 +1061,27 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         }
         if (controller.signal.aborted) return;
 
+        if (isHubReturnCase(order) && returnVersion === returnBookingVersion.current) {
+          setHubReturns((previous) => new Map(previous).set(orderId, getHubReturnState(shipments)));
+        }
+
         const shipment = getLatestInboundShipment(shipments);
         if (isPaidHubBuyerDelivery(order) && bookingVersion === buyerBookingVersion.current) {
           const delivery = getLatestInspectionShipment(shipments, 'CENTER_TO_BUYER');
           setBuyerShipments((previous) => {
             const existing = previous.get(orderId);
             if (previous.has(orderId) && existing?.shipmentId === delivery?.shipmentId &&
-                existing?.status === delivery?.status && existing?.providerStatus === delivery?.providerStatus &&
-                existing?.orderCode === delivery?.orderCode) return previous;
+              existing?.status === delivery?.status && existing?.providerStatus === delivery?.providerStatus &&
+              existing?.orderCode === delivery?.orderCode) return previous;
             return new Map(previous).set(orderId, delivery);
           });
         }
         setInboundShipments((previous) => {
           const existing = previous.get(orderId);
           if (existing?.shipmentId === shipment?.shipmentId &&
-              existing?.status === shipment?.status &&
-              existing?.providerStatus === shipment?.providerStatus &&
-              existing?.orderCode === shipment?.orderCode) return previous;
+            existing?.status === shipment?.status &&
+            existing?.providerStatus === shipment?.providerStatus &&
+            existing?.orderCode === shipment?.orderCode) return previous;
 
           const current = new Map(previous);
           if (shipment) current.set(orderId, shipment);
@@ -1072,6 +1101,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       controller.abort();
       loadingShipmentsRef.current = false;
     };
+    // A denied ID is skipped on the next polling round without restarting other reads in this one.
   }, [showOrderShipments, trackedOrders]);
 
   // Checklists & Catalog State
@@ -1207,11 +1237,11 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
   // Inspection Shipment Modal State (GET/POST /api/v1/inspection-orders/{inspectionId}/shipments)
   const [shipmentModalOrder, setShipmentModalOrder] = useState<InspectionOrderDto | null>(null);
+  const shipmentModalRequestRef = useRef(0);
   const [inspectionShipments, setInspectionShipments] = useState<ShipmentBackend[]>([]);
   const [isLoadingShipments, setIsLoadingShipments] = useState(false);
   const [isCreatingShipment, setIsCreatingShipment] = useState(false);
   const [shipmentTab, setShipmentTab] = useState<'tracking' | 'create'>('tracking');
-  const [selectedLeg, setSelectedLeg] = useState<'SELLER_TO_CENTER' | 'CENTER_TO_SELLER'>('SELLER_TO_CENTER');
   const [senderName, setSenderName] = useState('');
   const [senderPhone, setSenderPhone] = useState('');
   const [senderAddress, setSenderAddress] = useState('');
@@ -1222,6 +1252,68 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   const [shipmentError, setShipmentError] = useState<string | null>(null);
   const [shipmentSuccess, setShipmentSuccess] = useState<string | null>(null);
   const isBuyerDeliveryModal = shipmentModalOrder !== null && isPaidHubBuyerDelivery(shipmentModalOrder);
+  const isReturnDeliveryModal = isHubReturnCase(shipmentModalOrder);
+  const canCreateInboundInModal = shipmentModalOrder && canReadCenterInspectionShipments(shipmentModalOrder, currentUser?.id) &&
+    shouldTrackInboundShipment(shipmentModalOrder);
+
+  const handleBookReturn = async (order: InspectionOrderDto) => {
+    const state = hubReturns.get(order.id);
+    if (returnBookingRef.current || !isCenterReturnEligible(order, currentUser?.id, currentUser?.role) ||
+      !state?.received || !canBookHubBuyerDelivery(state.shipment)) return;
+
+    returnBookingRef.current = order.id;
+    setBookingReturnId(order.id);
+    try {
+      const confirmed = await dialogService.confirm(
+        `Địa chỉ lấy và giao được lấy từ vận đơn chiều đi đã giao thành công. Dự phòng cước chiều về ${formatVND(order.returnShippingReserveFee ?? 0)}.`,
+        { title: 'Trả hàng từ Hub về người bán', confirmText: 'Tạo vận đơn trả Seller' },
+      );
+      if (!confirmed) return;
+
+      const key = `hub_return_request_${order.id}_${state.shipment?.shipmentId || 'first'}`;
+      let requestId = returnRequestIds.current.get(key);
+      if (!requestId) {
+        try { requestId = localStorage.getItem(key) || undefined; } catch { }
+        requestId ||= crypto.randomUUID();
+        returnRequestIds.current.set(key, requestId);
+        try { localStorage.setItem(key, requestId); } catch { }
+      }
+
+      returnBookingVersion.current++;
+      try {
+        const shipment = await shippingService.createInspectionShipment(order.id, { requestId, leg: 'CENTER_TO_SELLER' });
+        setHubReturns((previous) => new Map(previous).set(order.id, { received: true, shipment }));
+        if (['CANCELLED', 'FAILED'].includes(shipment.status)) {
+          void dialogService.error(shipment.lastError || getHubReturnProgress(shipment).label);
+        } else {
+          showNotice(getHubReturnProgress(shipment).label);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Không tạo được vận đơn trả người bán.';
+        void dialogService.error(error instanceof ApiError && error.status === 403
+          ? 'Trung tâm không phụ trách đơn hoặc tài khoản thiếu quyền.'
+          : error instanceof ApiError && error.status === 409 && /vượt.*dự phòng/i.test(message)
+            ? 'Cước chiều về vượt khoản dự phòng đã thu, cần xử lý chênh lệch trước khi đặt chuyến.'
+            : message);
+      } finally {
+        try {
+          const shipments = await shippingService.getInspectionShipments(order.id);
+          try {
+            if (Array.isArray(shipments) && shipments.length > 0) {
+              localStorage.setItem(`sl_order_shipments_${order.id}`, JSON.stringify(shipments));
+              localStorage.setItem(`order_shipments_${order.id}`, JSON.stringify(shipments));
+            }
+          } catch { }
+          returnBookingVersion.current++;
+          setHubReturns((previous) => new Map(previous).set(order.id, getHubReturnState(shipments)));
+        } catch { }
+        await loadOrders(true);
+      }
+    } finally {
+      returnBookingRef.current = null;
+      setBookingReturnId(null);
+    }
+  };
 
   const handleBookBuyerDelivery = async (order: InspectionOrderDto) => {
     const previousShipment = buyerShipments.get(order.id);
@@ -1239,10 +1331,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       const key = `hub_delivery_request_${order.id}_${previousShipment?.shipmentId || 'first'}`;
       let requestId = buyerBookingRequestIds.current.get(key);
       if (!requestId) {
-        try { requestId = sessionStorage.getItem(key) || undefined; } catch {}
+        try { requestId = sessionStorage.getItem(key) || undefined; } catch { }
         requestId ||= crypto.randomUUID();
         buyerBookingRequestIds.current.set(key, requestId);
-        try { sessionStorage.setItem(key, requestId); } catch {}
+        try { sessionStorage.setItem(key, requestId); } catch { }
       }
 
       const shipment = await shippingService.createInspectionShipment(order.id, {
@@ -1251,6 +1343,13 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       });
       buyerBookingVersion.current++;
       setBuyerShipments((previous) => new Map(previous).set(order.id, shipment));
+      try {
+        const raw = localStorage.getItem(`sl_order_shipments_${order.id}`) || localStorage.getItem(`order_shipments_${order.id}`);
+        const parsed = raw ? JSON.parse(raw) : [];
+        const updated = Array.isArray(parsed) ? [shipment, ...parsed.filter((s: any) => s.shipmentId !== shipment.shipmentId)] : [shipment];
+        localStorage.setItem(`sl_order_shipments_${order.id}`, JSON.stringify(updated));
+        localStorage.setItem(`order_shipments_${order.id}`, JSON.stringify(updated));
+      } catch { }
       showNotice(shipment.orderCode
         ? `Đã tạo vận đơn giao người mua #${shipment.orderCode}`
         : getHubBuyerShipmentLabel(shipment));
@@ -1263,7 +1362,6 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   };
 
   const updateAddressesForLeg = (
-    leg: 'SELLER_TO_CENTER' | 'CENTER_TO_SELLER',
     ord: InspectionOrderDto,
     profile = centerProfile
   ) => {
@@ -1285,89 +1383,57 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     const sPhone = (ord as any).sellerPhone || (ord as any).phone || '0912345678';
     const sAddress = (ord as any).sellerAddress || (ord as any).address || (ord as any).location || 'Địa chỉ kho người bán';
 
-    if (leg === 'SELLER_TO_CENTER') {
-      setSenderName(sName);
-      setSenderPhone(sPhone);
-      setSenderAddress(sAddress);
-      setReceiverName(hubName);
-      setReceiverPhone(hubPhone);
-      setReceiverAddress(hubAddress);
-    } else {
-      setSenderName(hubName);
-      setSenderPhone(hubPhone);
-      setSenderAddress(hubAddress);
-      setReceiverName(sName);
-      setReceiverPhone(sPhone);
-      setReceiverAddress(sAddress);
-    }
+    setSenderName(sName);
+    setSenderPhone(sPhone);
+    setSenderAddress(sAddress);
+    setReceiverName(hubName);
+    setReceiverPhone(hubPhone);
+    setReceiverAddress(hubAddress);
   };
 
   const handleOpenShipmentModal = async (ord: InspectionOrderDto) => {
+    const request = ++shipmentModalRequestRef.current;
     setShipmentModalOrder(ord);
     setInspectionShipments([]);
     setShipmentTab('tracking');
     setShipmentError(null);
     setShipmentSuccess(null);
 
-    let initLeg: 'SELLER_TO_CENTER' | 'CENTER_TO_SELLER' = 'SELLER_TO_CENTER';
-    if (ord.status === 'PASSED' && !ord.buyerName) {
-      initLeg = 'CENTER_TO_SELLER';
-    } else if (['FAILED', 'CANCELLED'].includes(ord.status)) {
-      initLeg = 'CENTER_TO_SELLER';
-    } else {
-      initLeg = 'SELLER_TO_CENTER';
+    if (!canReadCenterInspectionShipments(ord, currentUser?.id)) {
+      setShipmentError('Trung tâm chưa có quyền xem vận đơn của đơn kiểm định này.');
+      setIsLoadingShipments(false);
+      return;
     }
-    setSelectedLeg(initLeg);
-    updateAddressesForLeg(initLeg, ord);
 
+    const returnDelivery = isHubReturnCase(ord);
+    const buyerDelivery = isPaidHubBuyerDelivery(ord);
+    if (!returnDelivery && !buyerDelivery) updateAddressesForLeg(ord);
     setIsLoadingShipments(true);
     try {
       const [list, profile] = await Promise.all([
         shippingService.getInspectionShipments(ord.id),
-        isPaidHubBuyerDelivery(ord) || centerProfile ? Promise.resolve(centerProfile) : loadCenterProfile(),
+        returnDelivery || buyerDelivery || centerProfile ? Promise.resolve(centerProfile) : loadCenterProfile(),
       ]);
-      if (isPaidHubBuyerDelivery(ord)) {
-        setInspectionShipments(list.filter((shipment) => shipment.leg === 'CENTER_TO_BUYER'));
-        return;
+      if (request !== shipmentModalRequestRef.current) return;
+      if (returnDelivery || buyerDelivery) {
+        const leg = returnDelivery ? 'CENTER_TO_SELLER' : 'CENTER_TO_BUYER';
+        setInspectionShipments(list.filter((shipment) => shipment.leg === leg));
+      } else {
+        if (profile) updateAddressesForLeg(ord, profile);
+        const inbound = list.filter((shipment) => shipment.leg === 'SELLER_TO_CENTER');
+        setInspectionShipments(inbound);
+        setShipmentTab(inbound.length === 0 && shouldTrackInboundShipment(ord) ? 'create' : 'tracking');
       }
-      if (profile) updateAddressesForLeg(initLeg, ord, profile);
-      const localKey = `sl_insp_shipments_${ord.id}`;
-      const cached = localStorage.getItem(localKey);
-      let merged = Array.isArray(list) ? list : [];
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) {
-            const existingIds = new Set(merged.map(s => s.shipmentId || s.orderCode));
-            const newLocals = parsed.filter(p => !existingIds.has(p.shipmentId || p.orderCode));
-            merged = [...merged, ...newLocals];
-          }
-        } catch {}
-      }
-      setInspectionShipments(merged);
-      setShipmentTab(merged && merged.length > 0 ? 'tracking' : 'create');
-    } catch (err: any) {
-      console.warn('Load inspection shipments error:', err);
-      if (isPaidHubBuyerDelivery(ord)) {
-        setShipmentError(err?.message || 'Không tải được vận đơn giao người mua.');
-        return;
-      }
-      const localKey = `sl_insp_shipments_${ord.id}`;
-      const cached = localStorage.getItem(localKey);
-      let localList: ShipmentBackend[] = [];
-      if (cached) {
-        try { localList = JSON.parse(cached); } catch {}
-      }
-      setInspectionShipments(localList);
-      setShipmentTab(localList.length > 0 ? 'tracking' : 'create');
+    } catch (error) {
+      if (request === shipmentModalRequestRef.current) setShipmentError(error instanceof Error ? error.message : 'Không tải được vận đơn kiểm định.');
     } finally {
-      setIsLoadingShipments(false);
+      if (request === shipmentModalRequestRef.current) setIsLoadingShipments(false);
     }
   };
 
   const handleCreateInspectionShipment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!shipmentModalOrder || isBuyerDeliveryModal) return;
+    if (!shipmentModalOrder || !canCreateInboundInModal) return;
     setIsCreatingShipment(true);
     setShipmentError(null);
     setShipmentSuccess(null);
@@ -1383,84 +1449,29 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     const rName = receiverName.trim() || 'Người nhận';
     const rPhone = cleanPhone(receiverPhone, '0908123456');
 
-    const isFromHub = selectedLeg !== 'SELLER_TO_CENTER';
     const assignedProfile = centerProfile &&
       (!shipmentModalOrder.inspectionCenterId || shipmentModalOrder.inspectionCenterId === centerProfile.id)
       ? centerProfile : null;
     const hubCoords = assignedProfile?.latitude != null && assignedProfile?.longitude != null
       ? { latitude: assignedProfile.latitude, longitude: assignedProfile.longitude }
       : { latitude: 10.8415, longitude: 106.8098 };
-    const fromCoord = isFromHub
-      ? hubCoords
-      : { latitude: 10.7769, longitude: 106.7009 };
-    const toCoord = selectedLeg === 'SELLER_TO_CENTER'
-      ? hubCoords
-      : { latitude: 10.7769, longitude: 106.7009 };
-
     const payload: CreateShipmentRequestDto = {
       requestId: crypto.randomUUID(),
-      leg: selectedLeg,
-      fromAddress: {
-        name: sName,
-        phone: sPhone,
-        latitude: fromCoord.latitude,
-        longitude: fromCoord.longitude,
-      },
-      toAddress: {
-        name: rName,
-        phone: rPhone,
-        latitude: toCoord.latitude,
-        longitude: toCoord.longitude,
-      },
-      reason: `Điều phối vận đơn Hub: ${selectedLeg}`,
+      leg: 'SELLER_TO_CENTER',
+      fromAddress: { name: sName, phone: sPhone, latitude: 10.7769, longitude: 106.7009 },
+      toAddress: { name: rName, phone: rPhone, ...hubCoords },
+      reason: 'Điều phối vận đơn Hub: SELLER_TO_CENTER',
     };
 
     try {
-      const created: any = await shippingService.createInspectionShipment(shipmentModalOrder.id, payload);
-
-      if (!created || !created.orderCode) {
-        throw new Error(created?.lastError || 'Lalamove không phản hồi mã vận đơn.');
-      }
-
-      const localKey = `sl_insp_shipments_${shipmentModalOrder.id}`;
-      const existingStr = localStorage.getItem(localKey);
-      let localList: any[] = [];
-      try { if (existingStr) localList = JSON.parse(existingStr); } catch {}
-      const enrichedCreated = {
-        ...created,
-        senderName: sName,
-        senderPhone: sPhone,
-        senderAddress: senderAddress.trim(),
-        receiverName: rName,
-        receiverPhone: rPhone,
-        receiverAddress: receiverAddress.trim(),
-        driverName: (created as any).driverName || 'Trần Văn Mạnh (Lalamove Pro)',
-        driverPhone: (created as any).driverPhone || '0933888999',
-        driverPlateNumber: (created as any).driverPlateNumber || '59-S2 868.68',
-      };
-      const updatedLocal = [enrichedCreated, ...localList.filter(x => x.shipmentId !== created.shipmentId && x.orderCode !== created.orderCode)];
-      localStorage.setItem(localKey, JSON.stringify(updatedLocal));
-
-      try {
-        const backendList = await shippingService.getInspectionShipments(shipmentModalOrder.id);
-        const merged = [...(backendList || []), ...updatedLocal.filter(u => !(backendList || []).some(b => b.shipmentId === u.shipmentId || b.orderCode === u.orderCode))];
-        setInspectionShipments(merged);
-      } catch {
-        setInspectionShipments(updatedLocal);
-      }
-
-      const legTitle = selectedLeg === 'SELLER_TO_CENTER'
-        ? 'Chặng 1 (Lấy hàng về Hub)'
-        : 'Chặng 2 (Hoàn trả Người Bán)';
-
-      setShipmentSuccess(`Đã kích hoạt vận đơn Lalamove thành công cho ${legTitle}! Mã vận đơn: #${created.orderCode || created.shipmentId?.slice(0, 8)}`);
+      const created = await shippingService.createInspectionShipment(shipmentModalOrder.id, payload);
+      setInspectionShipments((previous) => [created, ...previous.filter((item) => item.shipmentId !== created.shipmentId)]);
       setShipmentTab('tracking');
-    } catch (err: any) {
-      if (err?.status === 409 || err?.response?.status === 409 || (err?.message || '').includes('409') || (err?.message || '').toLowerCase().includes('dự phòng') || (err?.message || '').toLowerCase().includes('vượt')) {
-        setShipmentError('Cước trả hàng vượt quá mức dự phòng đã thu. Giữ đơn ở trạng thái chờ xử lý chênh lệch cước.');
-      } else {
-        setShipmentError(err?.message || 'Không thể tạo vận đơn kiểm định.');
-      }
+      if (created.lastError) setShipmentError(created.lastError);
+      else if (created.orderCode && created.status !== 'CANCELLED') setShipmentSuccess(`Đã tạo vận đơn #${created.orderCode}`);
+      else setShipmentSuccess(getInboundShipmentProgress(created).label);
+    } catch (error) {
+      setShipmentError(error instanceof Error ? error.message : 'Không thể tạo vận đơn kiểm định.');
     } finally {
       setIsCreatingShipment(false);
     }
@@ -2024,9 +2035,6 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   };
 
   const validateProposeForm = (): string | null => {
-    if (proposeBaseFee === undefined || proposeBaseFee === null || isNaN(proposeBaseFee) || proposeBaseFee <= 0) {
-      return 'Phí kiểm định cơ sở phải là số dương lớn hơn 0';
-    }
     if (!proposeTiers || proposeTiers.length === 0) {
       return 'Biểu phí cần có ít nhất một bậc cước di chuyển';
     }
@@ -2108,6 +2116,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
   // Refresh all data
   const handleRefreshAll = () => {
+    if (showOrderShipments) setDeniedShipmentOrders(new Set());
     if (activeTab === 'profile' || activeTab === 'overview') loadCenterProfile();
     if (needsOrders) loadOrders();
     if (needsStaff) loadStaff();
@@ -2123,27 +2132,13 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     showNotice(lang === 'vi' ? 'Đã làm mới dữ liệu trung tâm kiểm định' : 'Center data refreshed successfully');
   };
 
-  // Danh sách đơn hàng thực tế đang cần giao task gấp (chờ điều phối)
-  const urgentDispatchOrders = useMemo(() => {
-    return orders.filter((o) => {
-      const isCancelled = o.status === 'CANCELLED' || o.status === 'CANCELED';
-      const isClosed = o.status === 'PASSED' || o.status === 'FAILED' || o.status === 'COMPLETED';
-      const isWaitingApproval =
-        o.status === 'WAITING_FEE_PAYMENT' ||
-        o.status === 'WAITING_SELLER_APPROVAL' ||
-        o.status === 'WAITING_BUYER_APPROVAL';
-      if (isCancelled || isClosed || isWaitingApproval) return false;
-
-      const isAssigned = Boolean(o.inspectorId && o.inspectorName && o.inspectorName !== 'Chưa phân công');
-      if (isAssigned) return false;
-
-      // Đơn tại nhà khách: Có thể giao task ngay
-      if (o.orderType === 'AT_HOME') return true;
-
-      // Đơn tại Lab Hub: CHỈ tính khi Hub ĐÃ NHẬN ĐƯỢC HÀNG!
-      return isOrderReceivedAtHub(o);
-    });
-  }, [orders]);
+  const dispatchOrders = useMemo(() => orders.flatMap((order) => {
+    const stage = getCenterDispatchStage(order, isOrderReceivedAtHub(order));
+    return stage ? [{ order, stage }] : [];
+  }), [orders, inboundShipments]);
+  const urgentDispatchOrders = useMemo(() => dispatchOrders
+    .filter(({ stage }) => stage === 'READY_TO_ASSIGN')
+    .map(({ order }) => order), [dispatchOrders]);
 
   // Staff Workload Map - Chỉ đếm số đơn thực tế đang giao / đang xử lý (không tính đơn hủy hay đã hoàn tất)
   const staffWorkloadMap = useMemo(() => {
@@ -2194,56 +2189,24 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     };
   }, [orders, urgentDispatchOrders, staffList]);
 
-  // Filtered Orders for Dispatch Tab
   const filteredOrders = useMemo(() => {
-    return orders.filter((ord) => {
-      // Unassigned toggle
-      const isAssigned = Boolean(ord.inspectorId && ord.inspectorName && ord.inspectorName !== 'Chưa phân công');
-      if (onlyUnassigned && isAssigned) return false;
-
-      // Method filter
-      if (orderMethodFilter !== 'ALL' && ord.orderType !== orderMethodFilter) {
-        return false;
-      }
-
-      // Status filter
-      if (orderStatusFilter !== 'ALL') {
-        const ordStatus = (ord.status || '').toUpperCase();
-        const filterStatus = orderStatusFilter.toUpperCase();
-        if (filterStatus === 'CONFIRMED_PENDING_DISPATCH') {
-          if (
-            ordStatus !== 'CONFIRMED_PENDING_DISPATCH' &&
-            ordStatus !== 'PENDING' &&
-            ordStatus !== 'WAITING_INSPECTION' &&
-            ordStatus !== 'AWAITING_INSPECTION'
-          ) {
-            return false;
-          }
-        } else if (filterStatus === 'DISPATCHED') {
-          if (ordStatus !== 'DISPATCHED' && ordStatus !== 'ASSIGNED' && ordStatus !== 'SCHEDULED') {
-            return false;
-          }
-        } else if (ordStatus !== filterStatus) {
-          return false;
-        }
-      }
-
-      // Search term filter
-      if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase().trim();
-        const matchesId = ord.id?.toLowerCase().includes(q);
-        const matchesTitle = ord.postTitle?.toLowerCase().includes(q);
-        const matchesInspector = ord.inspectorName?.toLowerCase().includes(q);
-        const matchesBuyer = ord.buyerName?.toLowerCase().includes(q) || ord.buyerEmail?.toLowerCase().includes(q);
-        const matchesSeller = ord.sellerName?.toLowerCase().includes(q) || ord.sellerEmail?.toLowerCase().includes(q);
-        if (!matchesId && !matchesTitle && !matchesInspector && !matchesBuyer && !matchesSeller) {
-          return false;
-        }
-      }
-
-      return true;
+    const query = searchTerm.trim().toLowerCase();
+    return dispatchOrders.filter(({ order, stage }) => {
+      if (dispatchFilter !== 'ALL' && stage !== dispatchFilter) return false;
+      if (orderMethodFilter !== 'ALL' && order.orderType !== orderMethodFilter) return false;
+      return !query || [
+        order.id, order.postTitle, order.inspectorName, order.buyerName,
+        order.buyerEmail, order.sellerName, order.sellerEmail,
+      ].some((value) => value?.toLowerCase().includes(query));
     });
-  }, [orders, onlyUnassigned, orderMethodFilter, orderStatusFilter, searchTerm]);
+  }, [dispatchOrders, dispatchFilter, orderMethodFilter, searchTerm]);
+
+  const openReadyDispatchQueue = () => {
+    setDispatchFilter('READY_TO_ASSIGN');
+    setOrderMethodFilter('ALL');
+    setSearchTerm('');
+    setActiveTab('dispatch');
+  };
 
   // Filtered Staff
   const filteredStaff = useMemo(() => {
@@ -2264,6 +2227,22 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       setSelectedInspectorId(assignModalOrder.inspectorId || staffList[0].id);
     }
   }, [assignModalOrder, selectedInspectorId, staffList]);
+
+  const handleOpenInspectionCertificate = async (orderId: string) => {
+    setLoadingCertificateId(orderId);
+    try {
+      const result = await inspectorService.getOrder(orderId);
+      if (getInspectionTaskStage(result.status) !== 'completed') {
+        void dialogService.warning('Đơn này chưa có kết quả kiểm định chính thức.');
+        return;
+      }
+      setCertificateOrder(result);
+    } catch (error) {
+      void dialogService.error(error instanceof Error ? error.message : 'Không thể tải biên bản kiểm định.');
+    } finally {
+      setLoadingCertificateId(null);
+    }
+  };
 
   // Helper: Open Assign Modal
   const handleOpenAssign = (order: InspectionOrderDto) => {
@@ -2288,32 +2267,23 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       return;
     }
 
-    if (
-      assignModalOrder.status === 'PASSED' ||
-      assignModalOrder.status === 'FAILED' ||
-      assignModalOrder.status === 'CANCELLED' ||
-      assignModalOrder.status === 'COMPLETED' ||
-      assignModalOrder.status === 'WAITING_SELLER_APPROVAL'
-    ) {
-      setAssignError(
-        assignModalOrder.status === 'WAITING_SELLER_APPROVAL'
-          ? 'Đơn kiểm định đang chờ người bán xác nhận, chưa thể phân công KTV.'
-          : `Đơn kiểm định đang ở trạng thái "${assignModalOrder.status}", không thể phân công KTV.`
-      );
+    const currentOrder = orders.find((order) => order.id === assignModalOrder.id) ?? assignModalOrder;
+    const stage = getCenterDispatchStage(currentOrder, isOrderReceivedAtHub(currentOrder));
+    if (!stage) {
+      setAssignError('Đơn kiểm định hiện không ở giai đoạn điều phối.');
       return;
     }
-
-    if (assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder)) {
-      setAssignError('Hub chưa nhận được hàng thực tế từ người bán. Vui lòng bấm "Xác Nhận Đã Nhận Hàng Tại Hub" trước khi giao task cho KTV.');
+    if (stage === 'WAITING_FOR_HUB') {
+      setAssignError('Hub cần xác nhận đã nhận kiện hàng trước khi giao task cho KTV.');
       return;
     }
 
     setIsAssigning(true);
     try {
-      await inspectorService.assignInspector(assignModalOrder.id, selectedInspectorId);
+      const assignedOrder = await inspectorService.assignInspector(assignModalOrder.id, selectedInspectorId);
 
       const inspectorObj = staffList.find((s) => s.id === selectedInspectorId);
-      const inspectorName = inspectorObj?.fullName || 'Kỹ thuật viên';
+      const inspectorName = assignedOrder.inspectorName || inspectorObj?.fullName || 'Kỹ thuật viên';
       const inspectorEmail = inspectorObj?.email;
       const inspectorPhone = inspectorObj?.phone;
 
@@ -2341,8 +2311,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 inspectorId: selectedInspectorId,
                 inspectorName: inspectorName,
                 inspectorEmail: inspectorEmail,
-                status: 'DISPATCHED',
-                backendStatus: 'DISPATCHED',
+                status: assignedOrder.status,
+                backendStatus: assignedOrder.status,
+                inspectionStatus: assignedOrder.customerStatus || assignedOrder.status,
               };
             }
             return o;
@@ -2351,7 +2322,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         }
       } catch { }
 
-      // Update center_inspection_orders (ensure the order is persisted and marked DISPATCHED)
+      // Update center_inspection_orders with the assignment returned by BE.
       try {
         const rawCenter = localStorage.getItem('center_inspection_orders');
         let listCenter = rawCenter ? JSON.parse(rawCenter) : [];
@@ -2363,8 +2334,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             inspectorId: selectedInspectorId,
             inspectorName: inspectorName,
             inspectorEmail: inspectorEmail,
-            status: 'DISPATCHED',
-            backendStatus: 'DISPATCHED',
+            status: assignedOrder.status,
+            backendStatus: assignedOrder.status,
           };
         } else {
           listCenter.unshift({
@@ -2372,8 +2343,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             inspectorId: selectedInspectorId,
             inspectorName: inspectorName,
             inspectorEmail: inspectorEmail,
-            status: 'DISPATCHED',
-            backendStatus: 'DISPATCHED',
+            status: assignedOrder.status,
+            backendStatus: assignedOrder.status,
           });
         }
         localStorage.setItem('center_inspection_orders', JSON.stringify(listCenter));
@@ -2585,7 +2556,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
     // --- PHÂN HÓA RÕ ĐƠN KIỂM ĐỊNH TẠI NHÀ VS TẠI HUB ---
     const isAtHome = ord?.orderType === 'AT_HOME';
-    const hasInspector = Boolean(ord?.inspectorId && ord?.inspectorName && ord?.inspectorName !== 'Chưa phân công');
+    const hasInspector = Boolean(ord?.inspectorId);
 
     if (isAtHome) {
       // 1. Kiểm định tại nhà khách
@@ -2639,7 +2610,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 whitespace-nowrap shadow-2xs">
           <Package className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-          <span>Chờ Người Bán Gửi Hub</span>
+          <span>{showOrderShipments && ord && shouldTrackInboundShipment(ord) &&
+            (!canReadCenterInspectionShipments(ord, currentUser?.id) || deniedShipmentOrders.has(ord.id))
+            ? 'Chưa xem được vận đơn' : 'Chờ Người Bán Gửi Hub'}</span>
         </span>
       );
     }
@@ -2736,27 +2709,24 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             </span>
           </div>
 
-          {/* Toggle Sidebar Button */}
+          {/* Mobile navigation trigger */}
           <button
+            type="button"
             onClick={() => {
-              setIsSidebarCollapsed(!isSidebarCollapsed);
-              setIsMobileSidebarOpen(!isMobileSidebarOpen);
+              setIsSidebarCollapsed(false);
+              setIsMobileSidebarOpen((open) => !open);
             }}
-            className="p-1.5 rounded-lg text-white hover:bg-white/10 transition cursor-pointer"
-            title="Đóng / Mở menu"
+            className="p-1.5 rounded-lg text-white hover:bg-white/10 transition cursor-pointer md:hidden"
+            aria-expanded={isMobileSidebarOpen}
+            aria-label={lang === 'vi' ? 'Đóng / Mở menu' : 'Toggle menu'}
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="w-5 h-5" aria-hidden="true" />
           </button>
 
         </div>
 
         {/* Right: ISO Hub Badge & Manager Profile Dropdown */}
         <div className="flex items-center gap-3">
-          {/* Live ISO Badge */}
-          <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-xs font-bold text-white/90">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>ISO/IEC 17025 Hub</span>
-          </div>
 
           {/* User Profile Button */}
           <div className="relative" ref={userDropdownRef}>
@@ -2838,13 +2808,13 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       <div className="flex-1 flex relative w-full">
         {/* LEFT SIDEBAR (EXACT ADMIN STYLE: bg-[#fce5da] text-[#24263e]) */}
         <aside
-          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 transition-all duration-300 flex flex-col shrink-0 select-none z-30 sticky top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] ${isSidebarCollapsed ? 'w-16' : 'w-60 lg:w-64'
-            } ${isMobileSidebarOpen ? 'fixed inset-y-13 left-0 shadow-2xl block' : 'hidden md:flex'}`}
+          style={{ width: isSidebarCollapsed ? 64 : sidebarWidth }}
+          className={`bg-[#fce5da] text-[#24263e] border-r border-[#24263e]/15 max-w-[85vw] flex-col shrink-0 select-none z-30 top-13 sm:top-14 h-[calc(100vh-3.25rem)] sm:h-[calc(100vh-3.5rem)] md:sticky md:flex ${isMobileSidebarOpen ? 'fixed left-0 flex shadow-2xl md:shadow-none' : 'hidden'}`}
         >
           {/* User Block with Live Online indicator */}
           <div
             onClick={() => onOpenProfile?.()}
-            className="p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3 cursor-pointer hover:bg-black/5 transition"
+            className={`p-3.5 sm:p-4 border-b border-[#24263e]/15 flex items-center gap-3 cursor-pointer hover:bg-black/5 transition ${isSidebarCollapsed ? '' : 'md:pr-11'}`}
             title="Xem hồ sơ cá nhân"
           >
             <div className="relative shrink-0">
@@ -2871,6 +2841,14 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               </div>
             )}
           </div>
+
+          <ResizableSidebarControls
+            width={sidebarWidth}
+            collapsed={isSidebarCollapsed}
+            onResize={setSidebarWidth}
+            onToggle={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+            lang={lang}
+          />
 
           {/* Section Header: MAIN NAVIGATION */}
           <div className="px-4 pt-4 pb-2 text-[10px] font-black text-[#24263e]/80 uppercase tracking-wider">
@@ -2951,7 +2929,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
             {/* Breadcrumbs & Action Buttons */}
             <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-1.5 text-xs text-slate-500 mr-2">
+              {activeTab !== 'dispatch' && <div className="flex items-center gap-1.5 text-xs text-slate-500 mr-2">
                 <Home className="w-3.5 h-3.5 text-slate-400" />
                 <button
                   onClick={() => setActiveTab('overview')}
@@ -2963,7 +2941,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 <span className="font-semibold text-slate-800 capitalize">
                   {activeTab === 'overview' ? 'Dashboard' : navItems.find((n) => n.id === activeTab)?.label}
                 </span>
-              </div>
+              </div>}
 
               {/* Refresh button */}
               <button
@@ -2977,7 +2955,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               </button>
 
               {/* Create Inspector Button */}
-              <button
+              {activeTab !== 'dispatch' && <button
                 type="button"
                 onClick={() => {
                   setCreateStaffError(null);
@@ -2988,7 +2966,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               >
                 <UserPlus className="w-3.5 h-3.5" />
                 <span>+ Cấp Tài Khoản KTV Mới</span>
-              </button>
+              </button>}
             </div>
           </div>
 
@@ -3072,10 +3050,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   </div>
                   <Clock className="absolute -right-2 -bottom-2 w-20 h-20 text-[#24263e]/10 group-hover:scale-110 transition-transform duration-300 pointer-events-none" />
                   <button
-                    onClick={() => {
-                      setOnlyUnassigned(true);
-                      setActiveTab('dispatch');
-                    }}
+                    onClick={openReadyDispatchQueue}
                     className="w-full bg-[#c34c36] hover:bg-[#a63f2d] text-white py-1.5 px-3 text-xs flex items-center justify-center gap-1.5 font-bold transition cursor-pointer"
                   >
                     <span>Điều phối ngay</span>
@@ -3181,7 +3156,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                   : count >= 2
                                     ? 'bg-amber-500'
                                     : 'bg-emerald-500'
-                                }`}
+                                  }`}
                                 style={{ width: `${count === 0 ? 0 : Math.max(8, pct)}%` }}
                               />
                             </div>
@@ -3273,10 +3248,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     </span>
                   </div>
                   <button
-                    onClick={() => {
-                      setOnlyUnassigned(true);
-                      setActiveTab('dispatch');
-                    }}
+                    onClick={openReadyDispatchQueue}
                     className="text-xs font-bold text-[#c34c36] hover:underline flex items-center gap-1 cursor-pointer"
                   >
                     <span>Vào bảng điều phối</span>
@@ -3307,7 +3279,6 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                         urgentDispatchOrders
                           .slice(0, 5)
                           .map((order, idx) => {
-                            const isReady = order.status !== 'WAITING_SELLER_APPROVAL';
                             return (
                               <tr key={order.id} className="hover:bg-slate-50/60 transition">
                                 <td className="py-3 px-3 font-mono text-slate-400 text-[11px] text-center">{idx + 1}</td>
@@ -3326,30 +3297,13 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                 </td>
                                 <td className="py-3 px-3">{renderStatusBadge(order)}</td>
                                 <td className="py-3 px-4 text-right">
-                                  {isReady ? (
-                                    <button
-                                      onClick={() => handleOpenAssign(order)}
-                                      className="px-3 py-1.5 rounded-lg bg-[#c34c36] hover:bg-[#a63f2d] text-white font-bold text-xs shadow-xs transition cursor-pointer"
-                                    >
-                                      Giao Task Ngay
-                                    </button>
-                                  ) : order.status === 'WAITING_FEE_PAYMENT' ? (
-                                    <button
-                                      onClick={() => handleOpenAssign(order)}
-                                      className="px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 font-bold text-xs hover:bg-amber-100 transition cursor-pointer flex items-center gap-1 ml-auto"
-                                      title="Chờ người mua đóng phí cọc kiểm định"
-                                    >
-                                      <CreditCard className="w-3 h-3 text-amber-600" />
-                                      <span>Chờ Đóng Phí KĐ</span>
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={() => handleOpenAssign(order)}
-                                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 font-semibold text-xs hover:bg-slate-200 transition cursor-pointer ml-auto"
-                                    >
-                                      Chi Tiết
-                                    </button>
-                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenAssign(order)}
+                                    className="cursor-pointer rounded-lg bg-[#c34c36] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#a63f2d]"
+                                  >
+                                    Giao Task Ngay
+                                  </button>
                                 </td>
                               </tr>
                             );
@@ -3366,347 +3320,154 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           {/* TAB 2: DISPATCH & ASSIGN TASKS                                            */}
           {/* ========================================================================= */}
           {activeTab === 'dispatch' && (
-            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] overflow-hidden">
-              {/* Header */}
-              <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-[#c34c36]/10 flex items-center justify-center text-[#c34c36] shrink-0">
-                    <Briefcase className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wide">
-                        HÀNG ĐỢI ĐIỀU PHỐI & PHÂN CÔNG KỸ THUẬT VIÊN
-                      </h3>
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-slate-200/80 text-slate-700">
-                        {filteredOrders.length} đơn
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Quản lý tiếp nhận kiện hàng, phân công KTV theo dõi thẩm định và cập nhật lộ trình
-                    </p>
-                  </div>
+            <section className="@container overflow-hidden rounded-xl border border-slate-200 border-t-4 border-t-[#c34c36] bg-white shadow-xs">
+              <header className="flex items-start gap-3 border-b border-slate-100 bg-slate-50/60 px-4 py-4 sm:px-5">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#c34c36]/10 text-[#c34c36]">
+                  <Briefcase aria-hidden="true" className="size-4" />
                 </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setOnlyUnassigned(!onlyUnassigned)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${onlyUnassigned
-                      ? 'bg-amber-500 text-white shadow-xs'
-                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                      }`}
-                  >
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Chỉ đơn chưa gán KTV ({stats.pendingDispatch})</span>
-                  </button>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                    <h2 className="text-sm font-extrabold text-slate-900 sm:text-base">Hàng đợi điều phối</h2>
+                    <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-xs font-bold text-slate-700">
+                      {dispatchOrders.length} đơn
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-slate-600">Tiếp nhận kiện hàng tại Hub, giao task và đổi kỹ thuật viên phụ trách.</p>
                 </div>
-              </div>
+              </header>
 
-              {/* Filters & Search */}
-              <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-white border-b border-slate-100">
-                <div className="relative sm:col-span-2">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <div className="grid grid-cols-1 gap-3 border-b border-slate-100 px-4 py-4 sm:px-5 @[34rem]:grid-cols-2 @[56rem]:grid-cols-[2fr_1fr_1fr]">
+                <div className="relative @[34rem]:col-span-2 @[56rem]:col-span-1">
+                  <Search aria-hidden="true" className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                   <input
-                    type="text"
+                    type="search"
+                    aria-label="Tìm đơn điều phối"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Tìm theo mã đơn, tên sản phẩm, người mua, người bán..."
-                    className="w-full pl-9 pr-8 py-2 rounded-lg border border-slate-200 text-xs focus:outline-none focus:border-[#c34c36] bg-slate-50/50"
+                    placeholder="Tìm theo mã đơn, sản phẩm, người mua hoặc người bán"
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-xs text-slate-900 focus-visible:outline-[#c34c36]"
                   />
-                  {searchTerm && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchTerm('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
                 </div>
-
-                <div>
-                  <select
-                    value={orderMethodFilter}
-                    onChange={(e) => setOrderMethodFilter(e.target.value as any)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-semibold focus:outline-none focus:border-[#c34c36] bg-slate-50/50 cursor-pointer"
-                  >
-                    <option value="ALL">-- Tất cả phương thức --</option>
-                    <option value="AT_CENTER">Tại Lab Hub (Trung tâm)</option>
-                    <option value="AT_HOME">Tại Nhà Khách (Tận nơi)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <select
-                    value={orderStatusFilter}
-                    onChange={(e) => setOrderStatusFilter(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-semibold focus:outline-none focus:border-[#c34c36] bg-slate-50/50 cursor-pointer"
-                  >
-                    <option value="ALL">-- Tất cả trạng thái --</option>
-                    <option value="CONFIRMED_PENDING_DISPATCH">Chờ phân công KTV</option>
-                    <option value="WAITING_FEE_PAYMENT">Chờ nộp phí kiểm định</option>
-                    <option value="WAITING_SELLER_APPROVAL">Chờ người bán duyệt</option>
-                    <option value="DISPATCHED">Đã phân công KTV</option>
-                    <option value="INSPECTING">Đang kiểm tra</option>
-                    <option value="PASSED">Đạt chuẩn (Passed)</option>
-                    <option value="FAILED">Từ chối (Failed)</option>
-                    <option value="COMPLETED">Đã hoàn tất</option>
-                    <option value="CANCELLED">Đã hủy</option>
-                  </select>
-                </div>
+                <select
+                  aria-label="Hình thức kiểm định"
+                  value={orderMethodFilter}
+                  onChange={(e) => setOrderMethodFilter(e.target.value as typeof orderMethodFilter)}
+                  className="h-10 w-full min-w-0 cursor-pointer rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-800 focus-visible:outline-[#c34c36]"
+                >
+                  <option value="ALL">Tất cả hình thức</option>
+                  <option value="AT_CENTER">Kiểm định tại Hub</option>
+                  <option value="AT_HOME">Kiểm định tại nhà</option>
+                </select>
+                <select
+                  aria-label="Giai đoạn điều phối"
+                  value={dispatchFilter}
+                  onChange={(e) => setDispatchFilter(e.target.value as DispatchFilter)}
+                  className="h-10 w-full min-w-0 cursor-pointer rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-800 focus-visible:outline-[#c34c36]"
+                >
+                  <option value="ALL">Tất cả giai đoạn</option>
+                  <option value="WAITING_FOR_HUB">Chờ nhận hàng tại Hub</option>
+                  <option value="READY_TO_ASSIGN">Sẵn sàng giao KTV</option>
+                  <option value="ASSIGNED">Đã phân công KTV</option>
+                </select>
               </div>
 
-              {/* Table of Orders */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs min-w-[760px] lg:min-w-0">
-                  <thead>
-                    <tr className="bg-slate-50/90 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
-                      <th className="py-2.5 px-2 w-8 text-center text-slate-400 font-mono text-[10.5px]">#</th>
-                      <th className="py-2.5 px-3 min-w-[170px]">Sản Phẩm & Mã Đơn</th>
-                      <th className="py-2.5 px-2 w-[115px] min-w-[105px]">Hình Thức & Phí</th>
-                      <th className="py-2.5 px-2 w-[140px] min-w-[130px]">Kỹ Thuật Viên</th>
-                      <th className="py-2.5 px-2 w-[150px] min-w-[140px] text-center">Trạng Thái</th>
-                      <th className="py-2.5 px-2 w-[185px] min-w-[180px] text-center">Thao Tác Giao Task</th>
+              <table aria-label="Hàng đợi điều phối kiểm định" role="table" className="block w-full text-left text-xs @[56rem]:table @[56rem]:table-fixed">
+                <thead role="rowgroup" className="hidden border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-600 @[56rem]:table-header-group">
+                  <tr role="row">
+                    <th scope="col" className="w-[5%] px-2 py-3 text-center">#</th>
+                    <th scope="col" className="w-[31%] px-4 py-3">Sản phẩm &amp; mã đơn</th>
+                    <th scope="col" className="w-[14%] px-4 py-3">Hình thức &amp; phí</th>
+                    <th scope="col" className="w-[17%] px-4 py-3">Kỹ thuật viên</th>
+                    <th scope="col" className="w-[19%] px-4 py-3">Trạng thái</th>
+                    <th scope="col" className="w-[14%] px-4 py-3 text-center">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody role="rowgroup" className="block divide-y divide-slate-100 @[56rem]:table-row-group">
+                  {isLoadingOrders || filteredOrders.length === 0 ? (
+                    <tr role="row" className="block @[56rem]:table-row">
+                      <td role="cell" colSpan={6} className="block px-4 py-12 text-center text-slate-600 @[56rem]:table-cell">
+                        {isLoadingOrders ? (
+                          <span role="status">
+                            <Loader2 aria-hidden="true" className="mx-auto mb-2 size-6 animate-spin text-[#c34c36]" />
+                            Đang tải hàng đợi điều phối…
+                          </span>
+                        ) : dispatchOrders.length === 0 ? 'Hiện chưa có đơn trong hàng đợi điều phối.' : 'Không có đơn phù hợp với bộ lọc.'}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {isLoadingOrders ? (
-                      <tr>
-                        <td colSpan={6} className="py-12 text-center text-slate-400">
-                          <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-[#c34c36]" />
-                          <span>Đang tải danh sách đơn kiểm định...</span>
-                        </td>
-                      </tr>
-                    ) : filteredOrders.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="py-12 text-center text-slate-400">
-                          Không tìm thấy đơn kiểm định nào phù hợp bộ lọc.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredOrders.map((ord, idx) => {
-                        const isCancelled = ord.status === 'CANCELLED' || ord.status === 'CANCELED';
-                        const isExpired = ord.status === 'PAYMENT_EXPIRED';
-                        const isTerminated = isCancelled || isExpired;
-                        return (
-                        <tr key={ord.id} className="hover:bg-slate-50/70 transition">
-                          <td className="py-2.5 px-2 font-mono text-slate-400 text-[11px] text-center">{idx + 1}</td>
-                          <td className="py-2.5 px-3">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              {ord.postImageUrls && ord.postImageUrls[0] ? (
-                                <img
-                                  src={ord.postImageUrls[0]}
-                                  alt="Thumb"
-                                  className="w-9 h-9 rounded-lg object-cover border border-slate-200 shrink-0"
-                                />
+                  ) : (
+                    filteredOrders.map(({ order, stage }, index) => {
+                      const thumbnail = order.postImageUrls?.[0] || order.postImageUrl;
+                      const assigned = Boolean(order.inspectorId);
+                      const inspectorName = order.inspectorName && order.inspectorName !== 'Chưa phân công'
+                        ? order.inspectorName : 'Kỹ thuật viên';
+                      const waitingForHub = stage === 'WAITING_FOR_HUB';
+                      const actionLabel = waitingForHub ? 'Nhận tại Hub' : assigned ? 'Đổi KTV' : 'Giao task';
+                      const ActionIcon = waitingForHub ? PackageCheck : assigned ? UserCheck : UserPlus;
+                      return (
+                        <tr key={order.id} role="row" className="grid grid-cols-2 items-center gap-3 px-4 py-3 transition hover:bg-slate-50/70 @[56rem]:table-row @[56rem]:p-0">
+                          <td role="cell" className="hidden px-2 py-3 text-center font-mono text-slate-500 @[56rem]:table-cell">{index + 1}</td>
+                          <td role="cell" className="col-span-2 min-w-0 @[56rem]:px-4 @[56rem]:py-3">
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              {thumbnail ? (
+                                <img src={thumbnail} alt="" className="size-10 shrink-0 rounded-lg border border-slate-200 object-cover" />
                               ) : (
-                                <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
-                                  <Layers className="w-4 h-4" />
+                                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
+                                  <Layers aria-hidden="true" className="size-4" />
                                 </div>
                               )}
-                              <div className="min-w-0 flex-1">
-                                <div className="font-bold text-slate-900 text-xs truncate" title={ord.postTitle}>{ord.postTitle}</div>
-                                <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400 mt-0.5" title={`Mã đơn: #${ord.id}`}>
-                                  <span>Mã:</span>
-                                  <span className="font-semibold text-slate-600 bg-slate-100 px-1 py-0.2 rounded">
-                                    #{ord.id ? `${ord.id.slice(0, 8)}...` : 'N/A'}
-                                  </span>
-                                </div>
-                                <div className="text-[11px] font-extrabold text-[#c34c36] font-mono mt-0.5">
-                                  {formatVND(ord.postPrice || 0)}
-                                </div>
+                              <div className="min-w-0">
+                                <div className="line-clamp-2 break-words font-bold text-slate-900" title={order.postTitle}>{order.postTitle || 'Sản phẩm kiểm định'}</div>
+                                <div className="mt-0.5 font-mono text-[11px] text-slate-500" title={order.id}>#{order.id.slice(0, 8)}</div>
                               </div>
                             </div>
                           </td>
-                          <td className="py-2.5 px-2 text-[11px]">
-                            <div className="mb-0.5">
-                              {ord.orderType === 'AT_HOME' ? (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10.5px] font-bold bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
-                                  <MapPin className="w-3 h-3 text-blue-500 shrink-0" />
-                                  Tại Nhà
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10.5px] font-bold bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap">
-                                  <Building2 className="w-3 h-3 text-slate-500 shrink-0" />
-                                  Tại Lab Hub
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[10.5px] font-mono text-slate-500 whitespace-nowrap">
-                              Phí: <span className="font-bold text-slate-700">{formatVND(ord.inspectionFee || (ord.orderType === 'AT_HOME' ? 200000 : 120000))}</span>
+                          <td role="cell" className="min-w-0 @[56rem]:px-4 @[56rem]:py-3">
+                            <div className="mb-0.5 text-[10px] font-bold uppercase text-slate-500 @[56rem]:hidden">Hình thức &amp; phí</div>
+                            <div className="font-semibold text-slate-800">{order.orderType === 'AT_HOME' ? 'Tại nhà' : 'Tại Hub'}</div>
+                            <div className="mt-0.5 text-[11px] tabular-nums text-slate-600">
+                              {order.inspectionFee == null ? 'Chưa có phí' : formatVND(order.inspectionFee)}
                             </div>
                           </td>
-                          <td className="py-2.5 px-2">
-                            {ord.inspectorName && ord.inspectorName !== 'Chưa phân công' ? (
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-[10px] shrink-0 border border-emerald-200">
-                                  {ord.inspectorName.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="font-bold text-slate-800 text-xs truncate" title={ord.inspectorName}>{ord.inspectorName}</div>
-                                  <div className="text-[9.5px] text-slate-400 font-mono truncate">ID: {ord.inspectorId?.slice(0, 8)}</div>
-                                </div>
+                          <td role="cell" className="min-w-0 @[56rem]:px-4 @[56rem]:py-3">
+                            <div className="mb-0.5 text-[10px] font-bold uppercase text-slate-500 @[56rem]:hidden">Kỹ thuật viên</div>
+                            {assigned ? (
+                              <div className="flex items-center gap-2">
+                                <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 font-bold text-emerald-800">
+                                  {inspectorName.charAt(0).toUpperCase()}
+                                </span>
+                                <span className="line-clamp-2 break-words font-semibold text-slate-800" title={inspectorName}>{inspectorName}</span>
                               </div>
                             ) : (
-                              <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 whitespace-nowrap shadow-2xs">
-                                <Clock className="w-3 h-3 text-amber-600 shrink-0" />
-                                <span>Chưa gán KTV</span>
-                              </span>
+                              <span className="font-medium text-slate-600">Chưa phân công</span>
                             )}
                           </td>
-                          <td className="py-2.5 px-2 text-center">
-                            <div className="flex justify-center items-center">
-                              {renderStatusBadge(ord)}
-                            </div>
+                          <td role="cell" className="min-w-0 @[56rem]:px-4 @[56rem]:py-3 [&_span]:whitespace-normal">
+                            {renderStatusBadge(order)}
                           </td>
-                          <td className="py-2.5 px-2 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              {/* Nút 1: Vận Đơn Hub / Tại Nhà */}
-                              {ord.orderType === 'AT_HOME' ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenShipmentModal(ord)}
-                                  disabled={isTerminated}
-                                  className={`w-[86px] h-7.5 rounded-lg border text-[10.5px] font-bold transition flex items-center justify-center gap-1 shadow-2xs shrink-0 ${
-                                    isTerminated
-                                      ? 'border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed opacity-60'
-                                      : 'border-blue-200 text-blue-700 bg-blue-50/70 hover:bg-blue-100 cursor-pointer'
-                                  }`}
-                                  title={isCancelled ? 'Đơn hàng đã bị hủy' : isExpired ? 'Đơn đã hết hạn nộp phí' : 'Kiểm định tại nhà khách - KTV di chuyển trực tiếp'}
-                                >
-                                  <MapPin className={`w-3 h-3 shrink-0 ${isTerminated ? 'text-slate-400' : 'text-blue-600'}`} />
-                                  <span>Tại Nhà</span>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenShipmentModal(ord)}
-                                  disabled={isTerminated}
-                                  className={`w-[86px] h-7.5 rounded-lg border text-[10.5px] font-bold transition flex items-center justify-center gap-1 shadow-2xs shrink-0 ${
-                                    isTerminated
-                                      ? 'border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed opacity-60'
-                                      : 'border-slate-200 text-slate-700 hover:text-orange-600 hover:bg-orange-50 bg-white cursor-pointer'
-                                  }`}
-                                  title={isCancelled ? 'Đơn hàng đã bị hủy' : isExpired ? 'Đơn đã hết hạn nộp phí' : 'Lộ trình vận đơn & kích hoạt giao vận Hub'}
-                                >
-                                  <Truck className={`w-3 h-3 shrink-0 ${isTerminated ? 'text-slate-400' : 'text-orange-600'}`} />
-                                  <span>Vận Đơn</span>
-                                </button>
-                              )}
-
-                              {/* Nút 2: Phân công / Trạng thái / Chi tiết */}
-                              {isCancelled ? (
-                                <button
-                                  type="button"
-                                  disabled
-                                  className="w-[86px] h-7.5 rounded-lg bg-slate-100 text-slate-400 border border-slate-200 text-[10.5px] font-bold flex items-center justify-center gap-1 cursor-not-allowed opacity-60 shadow-2xs shrink-0"
-                                  title="Đơn hàng đã bị hủy - Không thể giao task"
-                                >
-                                  <XCircle className="w-3 h-3 text-slate-400 shrink-0" />
-                                  <span>Đã Hủy</span>
-                                </button>
-                              ) : isExpired ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenAssign(ord)}
-                                  className="w-[86px] h-7.5 rounded-lg bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200 text-[10.5px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-2xs shrink-0"
-                                  title="Đơn đã quá hạn đóng phí kiểm định - Xem chi tiết"
-                                >
-                                  <AlertCircle className="w-3 h-3 text-slate-400 shrink-0" />
-                                  <span>Hết Hạn</span>
-                                </button>
-                              ) : ord.status === 'WAITING_SELLER_APPROVAL' ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenAssign(ord)}
-                                  className="w-[86px] h-7.5 rounded-lg bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 text-[10.5px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-2xs shrink-0"
-                                  title="Đơn đang chờ người bán xác nhận kiểm định"
-                                >
-                                  <Clock className="w-3 h-3 text-purple-600 shrink-0" />
-                                  <span>Chờ Duyệt</span>
-                                </button>
-                              ) : ord.status === 'WAITING_FEE_PAYMENT' ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenAssign(ord)}
-                                  className="w-[86px] h-7.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 text-[10.5px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-2xs shrink-0"
-                                  title="Chờ người mua hoàn tất thanh toán cọc phí kiểm định"
-                                >
-                                  <CreditCard className="w-3 h-3 text-amber-600 shrink-0" />
-                                  <span>Chờ Phí</span>
-                                </button>
-                              ) : ord.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(ord) ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleReceivePackageAtHub(ord.id, ord.postTitle)}
-                                  className="w-[86px] h-7.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10.5px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-xs shrink-0"
-                                  title="Xác nhận kiện hàng đã đến trạm Lab Hub để chuyển sang sẵn sàng giao task cho KTV"
-                                >
-                                  <PackageCheck className="w-3 h-3 shrink-0" />
-                                  <span>Nhận Hub</span>
-                                </button>
-                              ) : ord.status !== 'PASSED' && ord.status !== 'FAILED' && ord.status !== 'CANCELLED' && ord.status !== 'COMPLETED' ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenAssign(ord)}
-                                  className={`w-[86px] h-7.5 rounded-lg text-[10.5px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-xs shrink-0 ${!ord.inspectorId
-                                    ? 'bg-[#c34c36] hover:bg-[#a63f2d] text-white'
-                                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                                    }`}
-                                  title={!ord.inspectorId ? 'Phân công kỹ thuật viên phụ trách' : 'Thay đổi kỹ thuật viên phụ trách'}
-                                >
-                                  {!ord.inspectorId ? (
-                                    <>
-                                      <UserPlus className="w-3 h-3 shrink-0" />
-                                      <span>Giao Task</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <UserCheck className="w-3 h-3 text-emerald-600 shrink-0" />
-                                      <span>Đổi KTV</span>
-                                    </>
-                                  )}
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenAssign(ord)}
-                                  className="w-[86px] h-7.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200 text-[10.5px] font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-2xs shrink-0"
-                                  title="Xem chi tiết đơn kiểm định"
-                                >
-                                  <Eye className="w-3 h-3 text-slate-500 shrink-0" />
-                                  <span>Chi Tiết</span>
-                                </button>
-                              )}
-                            </div>
+                          <td role="cell" className="min-w-0 text-right @[56rem]:px-4 @[56rem]:py-3 @[56rem]:text-center">
+                            <button
+                              type="button"
+                              onClick={() => waitingForHub ? handleReceivePackageAtHub(order.id, order.postTitle) : handleOpenAssign(order)}
+                              className={`inline-flex min-h-9 w-full max-w-32 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-bold transition ${waitingForHub ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                                  : assigned ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                                    : 'border-[#c34c36] bg-[#c34c36] text-white hover:bg-[#a63f2d]'
+                                }`}
+                            >
+                              <ActionIcon aria-hidden="true" className="size-3.5 shrink-0" />
+                              {actionLabel}
+                            </button>
                           </td>
                         </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
 
-              {/* Table Footer / Summary */}
-              <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
-                <div className="text-[11px]">
-                  Hiển thị <span className="font-bold text-slate-800">{filteredOrders.length}</span> đơn kiểm định
-                  {onlyUnassigned && <span className="text-amber-600 font-semibold ml-1">(đang lọc đơn chưa gán KTV)</span>}
-                </div>
-                <div className="flex items-center gap-4 text-[11px]">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-                    Đã phân công: <strong className="text-slate-700">{filteredOrders.filter(o => o.inspectorId && o.inspectorName !== 'Chưa phân công').length}</strong>
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
-                    Chưa gán KTV: <strong className="text-slate-700">{filteredOrders.filter(o => !o.inspectorId || o.inspectorName === 'Chưa phân công').length}</strong>
-                  </span>
-                </div>
-              </div>
-            </div>
+              <footer className="border-t border-slate-100 bg-slate-50/60 px-4 py-3 text-xs tabular-nums text-slate-600 sm:px-5">
+                Hiển thị {filteredOrders.length} / {dispatchOrders.length} đơn trong hàng đợi
+              </footer>
+            </section>
           )}
 
           {/* ========================================================================= */}
@@ -3737,18 +3498,6 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:border-[#c34c36] bg-slate-50/50 w-48 sm:w-60"
                     />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCreateStaffError(null);
-                      setCreatedStaffSuccessData(null);
-                      setIsCreateStaffModalOpen(true);
-                    }}
-                    className="px-3.5 py-1.5 rounded-lg bg-[#c34c36] hover:bg-[#a63f2d] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition cursor-pointer shrink-0"
-                  >
-                    <UserPlus className="w-3.5 h-3.5" />
-                    <span>+ Cấp Tài Khoản Mới</span>
-                  </button>
                 </div>
               </div>
 
@@ -3760,7 +3509,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     Phạm vi quản lý nhân sự ({filteredStaff.length} KTV trực thuộc Trung tâm)
                   </div>
                   <p className="text-[11px] text-blue-800 leading-relaxed">
-                    Hệ thống phân quyền hiển thị các Kỹ thuật viên do chính Trung tâm của bạn quản lý. Để thêm kỹ thuật viên mới cho trạm, vui lòng bấm nút <strong>"+ Cấp Tài Khoản Mới"</strong> bên trên.
+                    Hệ thống phân quyền hiển thị các Kỹ thuật viên do chính Trung tâm của bạn quản lý. Để thêm kỹ thuật viên mới cho trạm, vui lòng bấm nút <strong>"+ Cấp Tài Khoản KTV Mới"</strong> bên trên.
                   </p>
                 </div>
               </div>
@@ -3877,21 +3626,21 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs min-w-[1000px]">
-                  <thead>
-                    <tr className="bg-slate-50/80 border-b border-slate-100 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
-                      <th className="py-2.5 px-3 w-12 text-center">#</th>
-                      <th className="py-2.5 px-4 w-[30%] min-w-[220px]">Mã Đơn & Sản Phẩm</th>
-                      <th className="py-2.5 px-3 w-[18%] min-w-[150px]">Người Bán / Khách Mua</th>
-                      <th className="py-2.5 px-3 w-[14%] min-w-[120px]">Hình Thức</th>
-                      <th className="py-2.5 px-3 w-[18%] min-w-[150px]">Kỹ Thuật Viên</th>
-                      <th className="py-2.5 px-4 w-[20%] min-w-[180px]">Trạng Thái</th>
+                <table role="table" className="block w-full text-left text-xs xl:table">
+                  <thead role="rowgroup" className="block xl:table-header-group">
+                    <tr role="row" className="grid grid-cols-2 bg-slate-50/80 border-b border-slate-100 text-slate-600 font-bold text-[11px] uppercase tracking-wider xl:table-row">
+                      <th role="columnheader" className="hidden py-2.5 px-3 text-center xl:table-cell">#</th>
+                      <th role="columnheader" className="py-2.5 px-4 xl:w-[25%]">Mã Đơn & Sản Phẩm</th>
+                      <th role="columnheader" className="hidden py-2.5 px-3 xl:table-cell xl:w-[19%]">Người Bán / Khách Mua</th>
+                      <th role="columnheader" className="hidden py-2.5 px-3 xl:table-cell xl:w-[12%]">Hình Thức</th>
+                      <th role="columnheader" className="hidden py-2.5 px-3 xl:table-cell xl:w-[16%]">Kỹ Thuật Viên</th>
+                      <th role="columnheader" className="py-2.5 px-4 xl:w-[24%]">Trạng Thái</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody role="rowgroup" className="block divide-y divide-slate-100 xl:table-row-group">
                     {orders.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="py-12 text-center text-slate-400">
+                      <tr role="row" className="block xl:table-row">
+                        <td role="cell" colSpan={6} className="block py-12 text-center text-slate-400 xl:table-cell">
                           Chưa có đơn kiểm định nào trong lịch sử trạm.
                         </td>
                       </tr>
@@ -3899,85 +3648,381 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       orders.map((ord, idx) => {
                         const shipment = inboundShipments.get(ord.id);
                         const buyerShipment = buyerShipments.get(ord.id);
+                        const isAtCenter = ord.orderType === 'AT_CENTER' || !ord.orderType || (ord as any).inspectionMethod === 'AT_CENTER';
                         const paidHubDelivery = isPaidHubBuyerDelivery(ord);
+                        const hasCertificate = getInspectionTaskStage(ord.status) === 'completed';
+                        const canViewInbound = isAtCenter && !paidHubDelivery && !isHubReturnCase(ord) &&
+                          (shouldTrackInboundShipment(ord) || hasCertificate) &&
+                          canReadCenterInspectionShipments(ord, currentUser?.id) && !deniedShipmentOrders.has(ord.id);
+                        const returnState = hubReturns.get(ord.id);
+                        const returnShipment = returnState?.shipment;
+                        const canBookReturn = returnState?.received && canBookHubBuyerDelivery(returnShipment) &&
+                          isCenterReturnEligible(ord, currentUser?.id, currentUser?.role);
                         const progress = shipment ? getInboundShipmentProgress(shipment) : null;
-                        const isExpanded = expandedShipmentOrderId === ord.id;
-                        const progressId = `shipment-progress-${ord.id}`;
+
+                        // Xác định xem kiện hàng từ Seller về Hub đã hoàn thành giao hay chưa
+                        const isInboundDelivered = Boolean(
+                          isAtCenter && (
+                            (shipment && (shipment.status === 'DELIVERED' || shipment.status === 'COMPLETED' || shipment.providerStatus === 'COMPLETED')) ||
+                            progress?.step === 3 ||
+                            isOrderReceivedAtHub(ord)
+                          )
+                        );
+
+                        // Tự động ẩn / thu gọn tiến trình Chặng 1 sau 15 phút từ lúc nhận hàng tại Hub
+                        const isInboundOver15Min = Boolean(
+                          isInboundDelivered && (() => {
+                            if (returnShipment || buyerShipment) return true;
+                            const rawDelivered = shipment?.deliveredAt || (shipment as any)?.completedAt || (shipment as any)?.updatedAt || ord.updatedAt || ord.createdAt;
+                            if (rawDelivered) {
+                              const ts = new Date(rawDelivered).getTime();
+                              if (!isNaN(ts) && (Date.now() - ts > 15 * 60 * 1000)) return true;
+                            }
+                            if (typeof window !== 'undefined' && ord.id) {
+                              const key = `inbound_delivered_ts_${ord.id}`;
+                              const stored = localStorage.getItem(key);
+                              if (stored) {
+                                const storedTs = Number(stored);
+                                if (!isNaN(storedTs) && (Date.now() - storedTs > 15 * 60 * 1000)) return true;
+                              } else {
+                                if (hasCertificate) {
+                                  localStorage.setItem(key, String(Date.now() - 20 * 60 * 1000));
+                                  return true;
+                                }
+                                localStorage.setItem(key, String(Date.now()));
+                              }
+                            }
+                            return false;
+                          })()
+                        );
+
+                        const isExpandedInbound = expandedInboundOrderId === ord.id;
+                        const isExpandedReturn = expandedReturnOrderId === ord.id;
+                        const isExpandedBuyer = expandedBuyerOrderId === ord.id;
+                        const inboundProgressId = `inbound-progress-${ord.id}`;
+                        const returnProgressId = `return-progress-${ord.id}`;
+                        const buyerProgressId = `buyer-progress-${ord.id}`;
+                        const hasInboundInfo = isAtCenter && (shipment || progress || shouldTrackInboundShipment(ord) || canViewInbound || isInboundDelivered);
+
                         return (
                           <React.Fragment key={ord.id}>
-                            <tr className="hover:bg-slate-50/60 transition">
-                              <td className="py-3 px-3 font-mono text-slate-400 text-[11px] text-center">{idx + 1}</td>
-                              <td className="py-3 px-4">
-                                <div className="font-bold text-slate-900 truncate" title={ord.postTitle}>{ord.postTitle}</div>
-                                <div className="text-[10px] font-mono text-slate-400">ID: #{ord.id}</div>
+                            <tr role="row" className="grid grid-cols-2 hover:bg-slate-50/60 transition xl:table-row">
+                              <td role="cell" className="hidden py-3 px-3 font-mono text-slate-400 text-[11px] text-center xl:table-cell">{idx + 1}</td>
+                              <td role="cell" className="min-w-0 py-3 px-4">
+                                <div className="break-words font-bold text-slate-900" title={ord.postTitle}>{ord.postTitle}</div>
+                                <div className="break-all text-[10px] font-mono text-slate-400">ID: #{ord.id}</div>
                                 <div className="text-[11px] font-bold text-[#c34c36] font-mono">
                                   {formatVND(ord.postPrice || 0)}
                                 </div>
+                                <div className="mt-1 space-y-0.5 text-[11px] text-slate-600 xl:hidden">
+                                  <div>Bán: {ord.sellerName || 'Người bán'}</div>
+                                  <div>Mua: {ord.buyerName || 'Khách mua'}</div>
+                                  <div>{ord.orderType === 'AT_HOME' ? 'Tại nhà' : 'Tại Hub'} · {ord.inspectorName || 'Chưa phân công KTV'}</div>
+                                </div>
                               </td>
-                              <td className="py-3 px-4 text-[11px] text-slate-600">
+                              <td role="cell" className="hidden py-3 px-4 text-[11px] text-slate-600 xl:table-cell">
                                 <div>Bán: {ord.sellerName || 'Người bán'}</div>
                                 <div>Mua: {ord.buyerName || 'Khách mua'}</div>
                               </td>
-                              <td className="py-3 px-4 text-[11px]">
+                              <td role="cell" className="hidden py-3 px-4 text-[11px] xl:table-cell">
                                 {ord.orderType === 'AT_HOME' ? 'Tại Nhà Khách' : 'Tại Lab Hub'}
                               </td>
-                              <td className="py-3 px-4">
+                              <td role="cell" className="hidden py-3 px-4 xl:table-cell">
                                 {ord.inspectorName ? (
                                   <span className="font-bold text-slate-800">{ord.inspectorName}</span>
                                 ) : (
                                   <span className="text-slate-400 italic">Chưa phân công</span>
                                 )}
                               </td>
-                              <td className="py-3 px-4">
-                                {renderStatusBadge(ord)}
-                                {paidHubDelivery && (
-                                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                                    {canBookHubBuyerDelivery(buyerShipment) ? (
-                                      <button
-                                        type="button"
-                                        disabled={bookingBuyerOrderId !== null}
-                                        onClick={() => void handleBookBuyerDelivery(ord)}
-                                        className="rounded-lg bg-teal-700 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-teal-800 disabled:opacity-60"
-                                      >
-                                        {bookingBuyerOrderId === ord.id ? 'Đang xử lý…' : 'Tạo vận đơn giao người mua'}
-                                      </button>
-                                    ) : buyerShipment && (
-                                      <button
-                                        type="button"
-                                        onClick={() => void handleOpenShipmentModal(ord)}
-                                        className="text-[11px] font-bold text-teal-700 hover:underline"
-                                      >
-                                        {buyerShipment.orderCode ? `Xem vận đơn #${buyerShipment.orderCode}` : 'Xem vận đơn giao người mua'}
-                                      </button>
+                              <td role="cell" className="min-w-0 py-3 px-4 [&_span]:whitespace-normal space-y-2">
+                                {/* 1. Trạng thái biên bản kiểm định & Nút xem biên bản */}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {renderStatusBadge(ord)}
+                                  {hasCertificate && (
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleOpenInspectionCertificate(ord.id)}
+                                      disabled={loadingCertificateId !== null}
+                                      aria-busy={loadingCertificateId === ord.id}
+                                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-100 disabled:cursor-wait shadow-2xs cursor-pointer"
+                                    >
+                                      {loadingCertificateId === ord.id
+                                        ? <Loader2 aria-hidden="true" className="size-3.5 shrink-0 animate-spin" />
+                                        : <Eye aria-hidden="true" className="size-3.5 shrink-0" />}
+                                      Xem biên bản
+                                    </button>
+                                  )}
+                                </div>
+
+                                {/* 2. CHẶNG 1: VẬN CHUYỂN TỪ NGƯỜI BÁN VỀ HUB (KIỂM ĐỊNH) */}
+                                {hasInboundInfo && (
+                                  <div className={`rounded-xl border p-2.5 text-[11px] transition-all shadow-2xs ${isInboundOver15Min
+                                      ? 'border-blue-200/80 bg-blue-50/40 text-slate-700'
+                                      : 'border-blue-200 bg-blue-50/70 text-blue-950'
+                                    }`}>
+                                    <div className="flex flex-wrap items-center justify-between gap-1.5 font-bold">
+                                      <span className="flex items-center gap-1.5 text-blue-950">
+                                        <Truck className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                                        Chặng 1: Người bán → Hub
+                                      </span>
+                                      {isInboundOver15Min ? (
+                                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 border border-emerald-300">
+                                          <Check className="h-3 w-3" />
+                                          Đã nhận tại Hub (&gt;15 phút)
+                                        </span>
+                                      ) : (
+                                        <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800 border border-blue-200">
+                                          {progress?.label || (isInboundDelivered ? 'Đã nhận tại Hub' : 'Đang điều phối')}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {shipment?.orderCode && (
+                                      <div className="mt-1 font-mono text-[10px] text-slate-600">
+                                        Lalamove #{shipment.orderCode}
+                                      </div>
+                                    )}
+
+                                    {shouldTrackInboundShipment(ord) && !shipment &&
+                                      (!canReadCenterInspectionShipments(ord, currentUser?.id) || deniedShipmentOrders.has(ord.id)) && (
+                                        <div className="mt-1 text-[10px] text-slate-500">
+                                          {ord.inspectionCenterId ? 'Trung tâm chưa có quyền xem vận đơn.' : 'Đơn chưa gắn trung tâm tiếp nhận.'}
+                                        </div>
+                                      )}
+
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                      {canViewInbound && (
+                                        <button
+                                          type="button"
+                                          onClick={() => void handleOpenShipmentModal(ord)}
+                                          className="inline-flex items-center gap-1 font-bold text-blue-700 hover:underline cursor-pointer"
+                                        >
+                                          <Eye className="h-3 w-3" />
+                                          Vận đơn về Hub
+                                        </button>
+                                      )}
+                                      {progress && (
+                                        <button
+                                          type="button"
+                                          aria-expanded={isExpandedInbound}
+                                          aria-controls={isExpandedInbound ? inboundProgressId : undefined}
+                                          onClick={() => setExpandedInboundOrderId(isExpandedInbound ? null : ord.id)}
+                                          className="inline-flex items-center gap-1 font-bold text-blue-800 hover:underline focus-visible:outline-blue-700 cursor-pointer"
+                                        >
+                                          {isInboundOver15Min ? (
+                                            <>
+                                              <RotateCcw className="h-3 w-3" />
+                                              {isExpandedInbound ? 'Ẩn tiến trình Chặng 1' : 'Mở lại xem tiến trình Chặng 1 (Seller → Hub)'}
+                                            </>
+                                          ) : (
+                                            <>
+                                              {isExpandedInbound ? 'Ẩn tiến trình' : 'Xem tiến trình'}
+                                            </>
+                                          )}
+                                          <ChevronDown aria-hidden="true" className={`h-3 w-3 transition-transform ${isExpandedInbound ? 'rotate-180' : ''}`} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* 3. CHẶNG HOÀN TRẢ: HUB ➔ NGƯỜI BÁN (KHI ĐƠN KHÔNG ĐẠT / TỪ CHỐI) */}
+                                {(canBookReturn || returnShipment || (isAtCenter && (ord.status === 'FAILED' || isHubReturnCase(ord)))) && (
+                                  <div className="rounded-xl border border-amber-300 bg-amber-50/70 p-2.5 text-[11px] shadow-2xs">
+                                    <div className="flex flex-wrap items-center justify-between gap-1.5 font-bold text-amber-950">
+                                      <span className="flex items-center gap-1.5">
+                                        <RotateCcw className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                                        Chặng Hoàn Trả: Hub → Người bán
+                                      </span>
+                                      {returnShipment ? (
+                                        <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900 border border-amber-300">
+                                          {getHubReturnProgress(returnShipment).label}
+                                        </span>
+                                      ) : (
+                                        <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                                          Chờ hoàn trả
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {canBookReturn && !returnShipment && (
+                                      <div className="mt-2">
+                                        <button
+                                          type="button"
+                                          disabled={bookingReturnId !== null}
+                                          onClick={() => void handleBookReturn(ord)}
+                                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-700 px-3 py-1.5 text-[11px] font-bold text-white shadow-xs hover:bg-amber-800 disabled:opacity-60 transition cursor-pointer"
+                                        >
+                                          <Truck className="h-3.5 w-3.5" />
+                                          {bookingReturnId === ord.id ? 'Đang xử lý…' : 'Tạo vận đơn trả Seller'}
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    {returnShipment && (
+                                      <div className="mt-1.5 space-y-1.5">
+                                        <div className="font-mono text-[10px] text-slate-700">
+                                          Mã vận đơn: <span className="font-bold">{returnShipment.orderCode ? `#${returnShipment.orderCode}` : `#${returnShipment.shipmentId}`}</span>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => void handleOpenShipmentModal(ord)}
+                                            className="font-bold text-amber-800 hover:underline cursor-pointer"
+                                          >
+                                            Chi tiết vận đơn
+                                          </button>
+                                          <button
+                                            type="button"
+                                            aria-expanded={isExpandedReturn}
+                                            aria-controls={isExpandedReturn ? returnProgressId : undefined}
+                                            onClick={() => setExpandedReturnOrderId(isExpandedReturn ? null : ord.id)}
+                                            className="inline-flex items-center gap-1 font-bold text-amber-800 hover:underline cursor-pointer"
+                                          >
+                                            {isExpandedReturn ? 'Ẩn tiến trình' : 'Xem tiến trình hoàn trả'}
+                                            <ChevronDown aria-hidden="true" className={`h-3 w-3 transition-transform ${isExpandedReturn ? 'rotate-180' : ''}`} />
+                                          </button>
+                                        </div>
+                                      </div>
                                     )}
                                   </div>
                                 )}
-                                {progress && isOrderReceivedAtHub(ord) && (
-                                  <div className="mt-1 text-[11px] text-slate-600">{progress.label}</div>
-                                )}
-                                {shipment?.orderCode && (
-                                  <div className="mt-1 break-all font-mono text-[11px] text-slate-600">
-                                    Lalamove #{shipment.orderCode}
+
+                                {/* 4. CHẶNG GIAO HÀNG: HUB ➔ NGƯỜI MUA (KHI ĐƠN ĐẠT CHUẨN) */}
+                                {(paidHubDelivery || buyerShipment) && (
+                                  <div className="rounded-xl border border-teal-300 bg-teal-50/70 p-2.5 text-[11px] shadow-2xs">
+                                    <div className="flex flex-wrap items-center justify-between gap-1.5 font-bold text-teal-950">
+                                      <span className="flex items-center gap-1.5">
+                                        <Truck className="h-3.5 w-3.5 text-teal-600 shrink-0" />
+                                        Chặng Giao Hàng: Hub → Người mua
+                                      </span>
+                                      {buyerShipment && (
+                                        <span className="rounded-md bg-teal-100 px-2 py-0.5 text-[10px] font-bold text-teal-900 border border-teal-300">
+                                          {getHubBuyerShipmentLabel(buyerShipment)}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {canBookHubBuyerDelivery(buyerShipment) ? (
+                                      <div className="mt-2">
+                                        <button
+                                          type="button"
+                                          disabled={bookingBuyerOrderId !== null}
+                                          onClick={() => void handleBookBuyerDelivery(ord)}
+                                          className="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-1.5 text-[11px] font-bold text-white shadow-xs hover:bg-teal-800 disabled:opacity-60 transition cursor-pointer"
+                                        >
+                                          <Truck className="h-3.5 w-3.5" />
+                                          {bookingBuyerOrderId === ord.id ? 'Đang xử lý…' : 'Tạo vận đơn giao người mua'}
+                                        </button>
+                                      </div>
+                                    ) : buyerShipment && (
+                                      <div className="mt-1.5 space-y-1.5">
+                                        <div className="font-mono text-[10px] text-slate-700">
+                                          Mã vận đơn: <span className="font-bold">{buyerShipment.orderCode ? `#${buyerShipment.orderCode}` : `#${buyerShipment.shipmentId}`}</span>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => void handleOpenShipmentModal(ord)}
+                                            className="font-bold text-teal-800 hover:underline cursor-pointer"
+                                          >
+                                            Chi tiết vận đơn
+                                          </button>
+                                          <button
+                                            type="button"
+                                            aria-expanded={isExpandedBuyer}
+                                            aria-controls={isExpandedBuyer ? buyerProgressId : undefined}
+                                            onClick={() => setExpandedBuyerOrderId(isExpandedBuyer ? null : ord.id)}
+                                            className="inline-flex items-center gap-1 font-bold text-teal-800 hover:underline cursor-pointer"
+                                          >
+                                            {isExpandedBuyer ? 'Ẩn tiến trình' : 'Xem tiến trình giao hàng'}
+                                            <ChevronDown aria-hidden="true" className={`h-3 w-3 transition-transform ${isExpandedBuyer ? 'rotate-180' : ''}`} />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                                {progress && (
-                                  <button
-                                    type="button"
-                                    aria-expanded={isExpanded}
-                                    aria-controls={isExpanded ? progressId : undefined}
-                                    onClick={() => setExpandedShipmentOrderId(isExpanded ? null : ord.id)}
-                                    className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-orange-700 hover:underline focus-visible:outline-orange-700"
-                                  >
-                                    {isExpanded ? 'Ẩn tiến trình' : 'Xem tiến trình'}
-                                    <ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 ${isExpanded ? 'rotate-180' : ''}`} />
-                                  </button>
                                 )}
                               </td>
                             </tr>
-                            {progress && isExpanded && (
-                              <tr id={progressId}>
-                                <td colSpan={6} className="bg-slate-50/60 px-4 py-3">
-                                  <LalamoveProgress currentStep={progress.step} completeCurrentStep={progress.step === 3} />
+
+                            {/* Dòng mở rộng: Tiến trình Chặng 1 (Người bán → Hub) */}
+                            {progress && isExpandedInbound && (
+                              <tr role="row" id={inboundProgressId} className="block xl:table-row animate-fadeIn">
+                                <td role="cell" colSpan={6} className="block bg-blue-50/40 px-4 py-3 xl:table-cell border-l-4 border-l-blue-500">
+                                  <div className="mb-2 flex items-center justify-between text-xs font-bold text-blue-900">
+                                    <span className="flex items-center gap-1.5">
+                                      <Truck className="h-4 w-4 text-blue-600" />
+                                      Lộ trình Chặng 1: Người Bán ({ord.sellerName || 'Người bán'}) ➔ Trung Tâm Kiểm Định (Hub)
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedInboundOrderId(null)}
+                                      className="text-[11px] font-semibold text-blue-700 hover:underline cursor-pointer"
+                                    >
+                                      ✕ Đóng
+                                    </button>
+                                  </div>
+                                  <LalamoveProgress
+                                    title="Tiến trình vận chuyển Lalamove (Người bán → Hub)"
+                                    routeBadge="Chặng 1: Seller ➔ Hub"
+                                    currentStep={progress.step}
+                                    completeCurrentStep={progress.step === 3}
+                                  />
+                                </td>
+                              </tr>
+                            )}
+
+                            {/* Dòng mở rộng: Tiến trình Chặng Hoàn Trả (Hub → Người bán) */}
+                            {returnShipment && isExpandedReturn && (
+                              <tr role="row" id={returnProgressId} className="block xl:table-row animate-fadeIn">
+                                <td role="cell" colSpan={6} className="block bg-amber-50/40 px-4 py-3 xl:table-cell border-l-4 border-l-amber-500">
+                                  <div className="mb-2 flex items-center justify-between text-xs font-bold text-amber-900">
+                                    <span className="flex items-center gap-1.5">
+                                      <RotateCcw className="h-4 w-4 text-amber-600" />
+                                      Lộ trình hoàn hàng: Trung Tâm Kiểm Định (Hub) ➔ Người Bán ({ord.sellerName || 'Người bán'})
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedReturnOrderId(null)}
+                                      className="text-[11px] font-semibold text-amber-700 hover:underline cursor-pointer"
+                                    >
+                                      ✕ Đóng
+                                    </button>
+                                  </div>
+                                  <LalamoveProgress
+                                    title="Tiến trình vận chuyển hoàn trả Lalamove (Hub → Người bán)"
+                                    routeBadge="Chặng Hoàn Trả: Hub ➔ Seller"
+                                    currentStep={getHubReturnProgress(returnShipment).step}
+                                    completeCurrentStep={returnShipment.status === 'DELIVERED'}
+                                  />
+                                </td>
+                              </tr>
+                            )}
+
+                            {/* Dòng mở rộng: Tiến trình Chặng Giao Hàng (Hub → Người mua) */}
+                            {buyerShipment && isExpandedBuyer && (
+                              <tr role="row" id={buyerProgressId} className="block xl:table-row animate-fadeIn">
+                                <td role="cell" colSpan={6} className="block bg-teal-50/40 px-4 py-3 xl:table-cell border-l-4 border-l-teal-500">
+                                  <div className="mb-2 flex items-center justify-between text-xs font-bold text-teal-900">
+                                    <span className="flex items-center gap-1.5">
+                                      <Truck className="h-4 w-4 text-teal-600" />
+                                      Lộ trình giao hàng: Trung Tâm Kiểm Định (Hub) ➔ Khách Mua ({ord.buyerName || 'Khách mua'})
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedBuyerOrderId(null)}
+                                      className="text-[11px] font-semibold text-teal-700 hover:underline cursor-pointer"
+                                    >
+                                      ✕ Đóng
+                                    </button>
+                                  </div>
+                                  <LalamoveProgress
+                                    title="Tiến trình vận chuyển giao hàng Lalamove (Hub → Khách mua)"
+                                    routeBadge="Chặng Giao Hàng: Hub ➔ Buyer"
+                                    currentStep={getInboundShipmentProgress(buyerShipment).step}
+                                    completeCurrentStep={buyerShipment.status === 'DELIVERED'}
+                                  />
                                 </td>
                               </tr>
                             )}
@@ -4243,9 +4288,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     {chk.complexityLevel && (
                                       <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${chk.complexityLevel === 'L1' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                                          chk.complexityLevel === 'L2' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                                            chk.complexityLevel === 'L3' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
-                                              'bg-rose-50 text-rose-700 border border-rose-200'
+                                        chk.complexityLevel === 'L2' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                          chk.complexityLevel === 'L3' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
+                                            'bg-rose-50 text-rose-700 border border-rose-200'
                                         }`}>
                                         Cấp {chk.complexityLevel}
                                       </span>
@@ -4496,8 +4541,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       <div
                         key={tier.level}
                         className={`rounded-2xl p-4 border flex flex-col justify-between transition ${pendingProp
-                            ? 'bg-amber-50/30 border-amber-300 ring-2 ring-amber-100 shadow-xs'
-                            : `bg-slate-50/60 border-slate-200 ${tier.borderColor} hover:shadow-xs`
+                          ? 'bg-amber-50/30 border-amber-300 ring-2 ring-amber-100 shadow-xs'
+                          : `bg-slate-50/60 border-slate-200 ${tier.borderColor} hover:shadow-xs`
                           }`}
                       >
                         <div className="space-y-2">
@@ -4893,9 +4938,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                 {prop.complexityLevel ? (
                                   <span className="inline-flex items-center gap-1.5 flex-wrap">
                                     <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${prop.complexityLevel === 'L1' ? 'bg-emerald-100 text-emerald-800' :
-                                        prop.complexityLevel === 'L2' ? 'bg-blue-100 text-blue-800' :
-                                          prop.complexityLevel === 'L3' ? 'bg-purple-100 text-purple-800' :
-                                            'bg-rose-100 text-rose-800'
+                                      prop.complexityLevel === 'L2' ? 'bg-blue-100 text-blue-800' :
+                                        prop.complexityLevel === 'L3' ? 'bg-purple-100 text-purple-800' :
+                                          'bg-rose-100 text-rose-800'
                                       }`}>
                                       Cấp {prop.complexityLevel}
                                     </span>
@@ -5335,8 +5380,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     value={selectedComplexityLevel}
                     onChange={(e) => setSelectedComplexityLevel(e.target.value as InspectionComplexityLevel)}
                     className={`w-full p-2.5 bg-slate-50 border rounded-xl font-bold text-xs focus:outline-none ${isLevelFeeApproved(selectedComplexityLevel)
-                        ? 'border-slate-200 text-slate-800 focus:border-[#c34c36]'
-                        : 'border-amber-300 text-amber-900 bg-amber-50/30 focus:border-amber-500'
+                      ? 'border-slate-200 text-slate-800 focus:border-[#c34c36]'
+                      : 'border-amber-300 text-amber-900 bg-amber-50/30 focus:border-amber-500'
                       }`}
                   >
                     {[
@@ -5594,8 +5639,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   }
                   onClick={handleSaveChecklist}
                   className={`px-5 py-2 rounded-xl font-black shadow-sm transition flex items-center gap-1.5 ${!isLevelFeeApproved(selectedComplexityLevel)
-                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-                      : 'bg-[#24263e] hover:bg-black text-white cursor-pointer disabled:opacity-50'
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                    : 'bg-[#24263e] hover:bg-black text-white cursor-pointer disabled:opacity-50'
                     }`}
                   title={
                     !isLevelFeeApproved(selectedComplexityLevel)
@@ -5766,11 +5811,11 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 </div>
                 <div>
                   <h3 className="font-black text-sm text-slate-900">
-                    Đề Xuất Điều Chỉnh Biểu Phí Kiểm Định
+                    Đề Xuất Điều Chỉnh Bậc Cước Di Chuyển
                   </h3>
                   <p className="text-[11px] text-slate-500">
                     {proposeStep === 'edit'
-                      ? 'Bước 1/2: Nhập biểu phí cơ sở và cấu hình các bậc cước di chuyển'
+                      ? 'Bước 1/2: Cấu hình các bậc cước di chuyển theo khoảng cách'
                       : 'Bước 2/2: Xem lại đề xuất trước khi gửi Admin sàn xét duyệt'}
                   </p>
                 </div>
@@ -5795,47 +5840,6 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             {/* STEP 1: EDIT FORM */}
             {proposeStep === 'edit' && (
               <div className="space-y-4">
-                {/* Category & Base Fee */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Danh mục sản phẩm áp dụng:
-                    </label>
-                    <select
-                      value={proposeCategoryId}
-                      onChange={(e) => setProposeCategoryId(e.target.value)}
-                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
-                    >
-                      <option value="">-- Áp dụng tất cả danh mục --</option>
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="text-[10px] text-slate-400 mt-0.5 block">
-                      Chọn danh mục cụ thể hoặc để trống để đề xuất chung
-                    </span>
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Phí kiểm định cơ sở (VND) <span className="text-rose-500">*</span>:
-                    </label>
-                    <input
-                      type="number"
-                      min={1000}
-                      step="any"
-                      value={proposeBaseFee}
-                      onChange={(e) => setProposeBaseFee(Number(e.target.value))}
-                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-black text-[#c34c36] text-xs focus:ring-2 focus:ring-amber-500 outline-hidden font-mono"
-                    />
-                    <span className="text-[10px] text-slate-500 mt-0.5 block font-bold">
-                      Hiển thị: {formatVND(proposeBaseFee || 0)}
-                    </span>
-                  </div>
-                </div>
-
                 {/* Tiers List */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -5954,26 +5958,6 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
                 {/* Summary Table */}
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
-                  <div className="grid grid-cols-2 gap-3 pb-3 border-b border-slate-200">
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-bold uppercase block">
-                        Danh mục áp dụng:
-                      </span>
-                      <span className="font-bold text-slate-800 text-xs">
-                        {categories.find((c) => c.id === proposeCategoryId)?.name ||
-                          'Tất cả danh mục sản phẩm'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-bold uppercase block">
-                        Phí kiểm định cơ sở đề xuất:
-                      </span>
-                      <span className="font-black text-[#c34c36] text-sm font-mono">
-                        {formatVND(proposeBaseFee)}
-                      </span>
-                    </div>
-                  </div>
-
                   <div>
                     <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">
                       Chi tiết {proposeTiers.length} bậc cước di chuyển đề xuất:
@@ -6169,6 +6153,22 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       )}
 
       {/* ========================================================================= */}
+      {certificateOrder && (
+        <DigitalInspectionCertificateModal
+          key={certificateOrder.id}
+          order={{
+            id: certificateOrder.id,
+            listing: { id: certificateOrder.postId, title: certificateOrder.postTitle },
+            buyerName: certificateOrder.buyerName,
+            sellerName: certificateOrder.sellerName,
+            inspectionCenterId: certificateOrder.inspectionCenterId ?? undefined,
+          }}
+          initialDto={certificateOrder}
+          lang={lang}
+          onClose={() => setCertificateOrder(null)}
+        />
+      )}
+
       {/* MODAL 1: GIAO TASK CHO KỸ THUẬT VIÊN (ASSIGN TASK MODAL)                 */}
       {/* ========================================================================= */}
       {assignModalOrder && (
@@ -6332,17 +6332,17 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
                 {staffList.length === 0 ? (
                   <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800 font-medium">
-                    Trung tâm chưa có kỹ thuật viên nào. Vui lòng bấm{' '}
-                    <strong
-                      className="underline cursor-pointer"
+                    Trung tâm chưa có kỹ thuật viên nào. Vui lòng cấp tài khoản ở trang{' '}
+                    <button
+                      type="button"
+                      className="cursor-pointer font-bold underline"
                       onClick={() => {
                         setAssignModalOrder(null);
-                        setIsCreateStaffModalOpen(true);
+                        setActiveTab('staff');
                       }}
                     >
-                      Cấp tài khoản KTV
-                    </strong>{' '}
-                    trước.
+                      Đội ngũ kỹ thuật viên
+                    </button>.
                   </div>
                 ) : (
                   <>
@@ -6463,21 +6463,20 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     assignModalOrder.status === 'CANCELED' ||
                     (assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder))
                   }
-                  className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 shadow-md ${
-                    isAssigning ||
+                  className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 shadow-md ${isAssigning ||
                     !selectedInspectorId ||
                     assignModalOrder.status === 'CANCELLED' ||
                     assignModalOrder.status === 'CANCELED' ||
                     (assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder))
-                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
-                      : 'bg-[#c34c36] hover:bg-[#a63f2d] text-white cursor-pointer'
-                  }`}
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
+                    : 'bg-[#c34c36] hover:bg-[#a63f2d] text-white cursor-pointer'
+                    }`}
                   title={
                     assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED'
                       ? 'Đơn hàng đã bị hủy, không thể giao task'
                       : assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder)
-                      ? 'Hub chưa nhận được hàng thực tế từ người bán, vui lòng bấm "Xác Nhận Đã Nhận Hàng Tại Hub" trước khi giao task'
-                      : 'Xác nhận phân công KTV'
+                        ? 'Hub chưa nhận được hàng thực tế từ người bán, vui lòng bấm "Xác Nhận Đã Nhận Hàng Tại Hub" trước khi giao task'
+                        : 'Xác nhận phân công KTV'
                   }
                 >
                   {isAssigning && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -6485,8 +6484,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     {assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED'
                       ? 'Đã Hủy - Không Thể Giao'
                       : assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder)
-                      ? 'Chờ Nhận Hàng Tại Hub Để Giao Task'
-                      : 'Xác Nhận Giao Task Cho KTV'}
+                        ? 'Chờ Nhận Hàng Tại Hub Để Giao Task'
+                        : 'Xác Nhận Giao Task Cho KTV'}
                   </span>
                 </button>
               </div>
@@ -6734,7 +6733,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 <Package className="w-3.5 h-3.5" />
                 <span>Lộ Trình Vận Đơn ({inspectionShipments.length})</span>
               </button>
-              {!isBuyerDeliveryModal && <button
+              {canCreateInboundInModal && <button
                 type="button"
                 onClick={() => setShipmentTab('create')}
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${shipmentTab === 'create'
@@ -6759,7 +6758,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-2xl space-y-2">
                     <Truck className="w-8 h-8 text-slate-300 mx-auto" />
                     <p className="font-bold text-slate-700">Chưa có vận đơn nào cho đơn kiểm định này.</p>
-                    {!isBuyerDeliveryModal && <button
+                    {canCreateInboundInModal && <button
                       type="button"
                       onClick={() => setShipmentTab('create')}
                       className="mt-2 px-4 py-2 bg-[#c34c36] text-white rounded-xl font-bold cursor-pointer hover:bg-[#a63f2d] transition"
@@ -6777,60 +6776,123 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       const legBadgeTitle = isSellerToCenter
                         ? 'Chặng 1: Người Bán ➔ Lab Hub'
                         : isCenterToBuyer
-                        ? 'Chặng 2: Lab Hub ➔ Người Mua (Đạt chuẩn)'
-                        : isCenterToSeller
-                        ? 'Chặng 2: Lab Hub ➔ Hoàn Trả Người Bán'
-                        : `Chặng: ${s.leg || 'Điều Phối Lab Hub'}`;
+                          ? 'Chặng 2: Lab Hub ➔ Người Mua (Đạt chuẩn)'
+                          : isCenterToSeller
+                            ? 'Chặng 2: Lab Hub ➔ Hoàn Trả Người Bán'
+                            : `Chặng: ${s.leg || 'Điều Phối Lab Hub'}`;
 
                       const legColorClass = isSellerToCenter
                         ? 'bg-blue-50 text-blue-800 border-blue-200'
                         : isCenterToBuyer
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                        : 'bg-amber-50 text-amber-800 border-amber-200';
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : 'bg-amber-50 text-amber-800 border-amber-200';
 
                       return (
                         <div key={s.shipmentId || idx} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-3">
                           <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-200/70">
                             <div className="flex items-center gap-2">
                               <span className="font-mono font-black text-slate-900 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-xs">
-                                #{s.orderCode || s.shipmentId?.slice(0, 8)}
+                                {s.orderCode ? `#${s.orderCode}` : 'Chưa có mã vận đơn'}
                               </span>
                               <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${legColorClass}`}>
                                 {legBadgeTitle}
                               </span>
                             </div>
                             <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                              {s.providerStatus || s.status || 'ĐANG_ĐIỀU_PHỐI'}
+                              {isCenterToSeller ? getHubReturnProgress(s).label : (s.providerStatus || s.status || 'ĐANG_ĐIỀU_PHỐI')}
                             </span>
                           </div>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                            <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1">
-                              <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px]">
-                                <MapPin className="w-3.5 h-3.5 text-blue-500" />
-                                <span>{isSellerToCenter ? 'Điểm Lấy Hàng (Nhà Người Bán):' : 'Điểm Gửi Hàng (Phòng Lab Hub):'}</span>
-                              </div>
-                              <div className="font-bold text-slate-800">{s.senderName || shipmentModalOrder.sellerName}</div>
-                              <div className="text-slate-500 font-mono text-[10px]">{s.senderPhone}</div>
-                              <div className="text-slate-600 text-[10px]">{s.senderAddress}</div>
+                          {isCenterToSeller && (
+                            <div className="space-y-2 text-[11px] text-slate-700">
+                              <LalamoveProgress currentStep={getHubReturnProgress(s).step} completeCurrentStep={s.status === 'DELIVERED'} />
+                              <p>Dự phòng {shipmentModalOrder.returnShippingReserveFee == null ? '—' : formatVND(shipmentModalOrder.returnShippingReserveFee)} · Cước thực tế {s.actualFee == null ? 'Chưa có' : formatVND(s.actualFee)}</p>
+                              {s.deliveredAt && <p>Giao hoàn lúc {new Date(s.deliveredAt).toLocaleString('vi-VN')}</p>}
+                              <p>{getReturnReserveMessage(shipmentModalOrder.returnShippingReserveFee, s)}</p>
+                              {s.shareLink && <a href={s.shareLink} target="_blank" rel="noreferrer" className="font-bold text-blue-700 hover:underline">Theo dõi trên Lalamove</a>}
+                              {s.status === 'CREATION_UNCERTAIN' && <p>Nhân viên hỗ trợ có thể đối soát với mã chuyến {s.shipmentId}.</p>}
+                              {s.lastError && <p className="text-rose-700">{s.lastError}</p>}
                             </div>
+                          )}
 
-                            <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1">
-                              <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px]">
-                                <MapPin className="w-3.5 h-3.5 text-emerald-500" />
-                                <span>
-                                  {isSellerToCenter
-                                    ? 'Điểm Tiếp Nhận (Phòng Lab Hub):'
-                                    : isCenterToBuyer
-                                    ? 'Điểm Giao Hàng (Khách Mua):'
-                                    : 'Điểm Nhận Trả (Người Bán):'}
-                                </span>
+                          {(() => {
+                            const inboundRef = inspectionShipments.find((item) => item.leg === 'SELLER_TO_CENTER') || inboundShipments.get(shipmentModalOrder.id);
+                            const resolvedCenter = resolveInspectionCenter({
+                              ...shipmentModalOrder,
+                              inspectionCenterName: (currentUser as any)?.centerName || currentUser?.name || (shipmentModalOrder as any).inspectionCenterName,
+                              inspectionCenterAddress: (currentUser as any)?.address || (shipmentModalOrder as any).inspectionCenterAddress,
+                              inspectionCenterPhone: (currentUser as any)?.phone || (shipmentModalOrder as any).inspectionCenterPhone,
+                            });
+                            const hubName = centerProfile?.name || resolvedCenter.name || 'Trung Tâm Kiểm Định SecondLife';
+                            const hubPhone = centerProfile?.phone || resolvedCenter.phone || '1900 8899';
+                            const hubAddress = centerProfile?.address || resolvedCenter.address || 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh';
+
+                            const sellerName = shipmentModalOrder.sellerName || inboundRef?.senderName || 'Người bán';
+                            const sellerPhone = shipmentModalOrder.sellerPhone || (shipmentModalOrder as any).phone || inboundRef?.senderPhone || '0912345678';
+                            const sellerAddress = shipmentModalOrder.sellerAddress || (shipmentModalOrder as any).address || (shipmentModalOrder as any).location || inboundRef?.senderAddress || 'Địa chỉ kho người bán';
+
+                            const buyerName = shipmentModalOrder.buyerName || 'Khách mua';
+                            const buyerPhone = (shipmentModalOrder as any).buyerPhone || (shipmentModalOrder as any).phone || '0987654321';
+                            const buyerAddress = (shipmentModalOrder as any).buyerAddress || (shipmentModalOrder as any).deliveryAddress || (shipmentModalOrder as any).address || 'Địa chỉ nhận hàng của người mua';
+
+                            const senderTitle = isSellerToCenter
+                              ? 'Điểm Lấy Hàng (Nhà Người Bán):'
+                              : 'Điểm Gửi Hàng (Phòng Lab Hub):';
+                            const displaySenderName = isSellerToCenter
+                              ? (s.senderName || sellerName)
+                              : (s.senderName || hubName);
+                            const displaySenderPhone = isSellerToCenter
+                              ? (s.senderPhone || sellerPhone)
+                              : (s.senderPhone || hubPhone);
+                            const displaySenderAddress = isSellerToCenter
+                              ? (s.senderAddress || sellerAddress)
+                              : (s.senderAddress || hubAddress);
+
+                            const receiverTitle = isSellerToCenter
+                              ? 'Điểm Tiếp Nhận (Phòng Lab Hub):'
+                              : isCenterToBuyer
+                                ? 'Điểm Giao Hàng (Khách Mua):'
+                                : 'Điểm Nhận Trả (Người Bán):';
+                            const displayReceiverName = isSellerToCenter
+                              ? (s.receiverName || hubName)
+                              : isCenterToBuyer
+                                ? (s.receiverName || buyerName)
+                                : (s.receiverName || sellerName);
+                            const displayReceiverPhone = isSellerToCenter
+                              ? (s.receiverPhone || hubPhone)
+                              : isCenterToBuyer
+                                ? (s.receiverPhone || buyerPhone)
+                                : (s.receiverPhone || sellerPhone);
+                            const displayReceiverAddress = isSellerToCenter
+                              ? (s.receiverAddress || hubAddress)
+                              : isCenterToBuyer
+                                ? (s.receiverAddress || buyerAddress)
+                                : (s.receiverAddress || sellerAddress);
+
+                            return (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                                <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1">
+                                  <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px]">
+                                    <MapPin className="w-3.5 h-3.5 text-blue-500" />
+                                    <span>{senderTitle}</span>
+                                  </div>
+                                  <div className="font-bold text-slate-800">{displaySenderName}</div>
+                                  {displaySenderPhone && <div className="text-slate-500 font-mono text-[10px]">{displaySenderPhone}</div>}
+                                  {displaySenderAddress && <div className="text-slate-600 text-[10px]">{displaySenderAddress}</div>}
+                                </div>
+
+                                <div className="p-3 rounded-xl bg-white border border-slate-100 space-y-1">
+                                  <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px]">
+                                    <MapPin className="w-3.5 h-3.5 text-emerald-500" />
+                                    <span>{receiverTitle}</span>
+                                  </div>
+                                  <div className="font-bold text-slate-800">{displayReceiverName}</div>
+                                  {displayReceiverPhone && <div className="text-slate-500 font-mono text-[10px]">{displayReceiverPhone}</div>}
+                                  {displayReceiverAddress && <div className="text-slate-600 text-[10px]">{displayReceiverAddress}</div>}
+                                </div>
                               </div>
-                              <div className="font-bold text-slate-800">{s.receiverName || (isCenterToBuyer ? shipmentModalOrder.buyerName : resolveInspectionCenter(shipmentModalOrder).name)}</div>
-                              <div className="text-slate-500 font-mono text-[10px]">{s.receiverPhone}</div>
-                              <div className="text-slate-600 text-[10px]">{s.receiverAddress}</div>
-                            </div>
-                          </div>
+                            );
+                          })()}
 
                           {/* Driver & Carrier Details */}
                           <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200 text-blue-900 flex flex-wrap items-center justify-between gap-2 text-[11px]">
@@ -6854,6 +6916,15 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                         setBuyerShipments((previous) => previous.get(shipmentModalOrder.id)?.shipmentId === synced.shipmentId
                                           ? new Map(previous).set(shipmentModalOrder.id, synced) : previous);
                                       }
+                                      if (isReturnDeliveryModal) {
+                                        returnBookingVersion.current++;
+                                        setHubReturns((previous) => {
+                                          const state = previous.get(shipmentModalOrder.id);
+                                          return state?.shipment?.shipmentId === synced.shipmentId
+                                            ? new Map(previous).set(shipmentModalOrder.id, { ...state, shipment: synced }) : previous;
+                                        });
+                                        void loadOrders(true);
+                                      }
                                     }
                                   } catch (syncErr: any) {
                                     setShipmentError(syncErr?.message || 'Không đồng bộ được vận đơn.');
@@ -6875,90 +6946,28 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               ) : (
                 <form onSubmit={handleCreateInspectionShipment} className="space-y-3.5">
                   {centerProfile && (!shipmentModalOrder.inspectionCenterId || shipmentModalOrder.inspectionCenterId === centerProfile.id) && (
-                  <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1.5 text-[11px]">
-                    <div className="font-bold text-slate-800">
-                      Điểm đến tiếp nhận: {centerProfile?.name || 'Trung Tâm Tiếp Nhận'}
-                    </div>
-                    <div className="text-slate-500 font-mono text-[10px]">
-                      Hotline: {centerProfile?.phone || 'Chưa thiết lập hotline'}
-                    </div>
-                    <div className="text-slate-600 text-[10px]">
-                      Địa chỉ: {centerProfile?.address || 'Chưa cấu hình địa chỉ tiếp nhận'}
-                    </div>
-                    {centerProfile && !centerProfile.shippingAddressConfigured && (
-                      <div className="p-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px] flex items-center gap-1.5 mt-1">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        <span>Trung tâm chưa cấu hình địa chỉ tiếp nhận & GPS. Vui lòng mở mục "Thông tin trung tâm" để cập nhật.</span>
+                    <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1.5 text-[11px]">
+                      <div className="font-bold text-slate-800">
+                        Điểm đến tiếp nhận: {centerProfile?.name || 'Trung Tâm Tiếp Nhận'}
                       </div>
-                    )}
-                  </div>
+                      <div className="text-slate-500 font-mono text-[10px]">
+                        Hotline: {centerProfile?.phone || 'Chưa thiết lập hotline'}
+                      </div>
+                      <div className="text-slate-600 text-[10px]">
+                        Địa chỉ: {centerProfile?.address || 'Chưa cấu hình địa chỉ tiếp nhận'}
+                      </div>
+                      {centerProfile && !centerProfile.shippingAddressConfigured && (
+                        <div className="p-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px] flex items-center gap-1.5 mt-1">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span>Trung tâm chưa cấu hình địa chỉ tiếp nhận & GPS. Vui lòng mở mục "Thông tin trung tâm" để cập nhật.</span>
+                        </div>
+                      )}
+                    </div>
                   )}
-                  {/* Select leg switcher */}
-                  <div className="space-y-1.5">
-                    <label className="font-bold text-slate-700 text-xs block">Chọn Chặng Giao Vận Hub:</label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedLeg('SELLER_TO_CENTER');
-                          if (shipmentModalOrder) updateAddressesForLeg('SELLER_TO_CENTER', shipmentModalOrder);
-                        }}
-                        className={`p-2.5 rounded-xl border text-left transition flex flex-col gap-1 cursor-pointer ${
-                          selectedLeg === 'SELLER_TO_CENTER'
-                            ? 'border-[#c34c36] bg-[#c34c36]/5 ring-1 ring-[#c34c36]'
-                            : 'border-slate-200 bg-white hover:border-slate-300'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-xs text-slate-900">Chặng 1: Về Hub</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-100 text-blue-700 font-bold">Lấy Hàng</span>
-                        </div>
-                        <p className="text-[10.5px] text-slate-500">Người Bán ➔ Lab Hub</p>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedLeg('CENTER_TO_SELLER');
-                          if (shipmentModalOrder) updateAddressesForLeg('CENTER_TO_SELLER', shipmentModalOrder);
-                        }}
-                        className={`p-2.5 rounded-xl border text-left transition flex flex-col gap-1 cursor-pointer ${
-                          selectedLeg === 'CENTER_TO_SELLER'
-                            ? 'border-[#c34c36] bg-[#c34c36]/5 ring-1 ring-[#c34c36]'
-                            : 'border-slate-200 bg-white hover:border-slate-300'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-xs text-slate-900">Chặng 2: Hoàn Trả</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-700 font-bold">Trả Bán</span>
-                        </div>
-                        <p className="text-[10.5px] text-slate-500">Lab Hub ➔ Người Bán</p>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 flex items-start gap-2">
-                    <Truck className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
-                    <div>
-                      {selectedLeg === 'SELLER_TO_CENTER' && (
-                        <span>
-                          <strong>Chặng 1 (Lấy hàng đưa về Hub):</strong> Kết nối đối tác Lalamove để tài xế tới nhà Người Bán tiếp nhận thiết bị, quét mã kiểm định và vận chuyển an toàn về phòng Lab Hub SecondLife.
-                        </span>
-                      )}
-                      {selectedLeg === 'CENTER_TO_SELLER' && (
-                        <span>
-                          <strong>Chặng 2 (Hoàn trả thiết bị cho Người Bán):</strong> Vận chuyển hoàn trả thiết bị từ phòng Lab Hub SecondLife về lại địa chỉ Người Bán kèm biên bản kỹ thuật và tem niêm phong.
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
                   {/* Sender address section */}
                   <div className="space-y-2">
                     <label className="font-bold text-slate-700 block text-xs">
-                      {selectedLeg === 'SELLER_TO_CENTER'
-                        ? 'Thông Tin Người Gửi (Nhà Người Bán):'
-                        : 'Thông Tin Điểm Gửi (Phòng Lab Hub SecondLife):'}
+                      Thông Tin Người Gửi (Nhà Người Bán)
                     </label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <input
@@ -6991,9 +7000,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   {/* Receiver address section */}
                   <div className="space-y-2">
                     <label className="font-bold text-slate-700 block text-xs">
-                      {selectedLeg === 'SELLER_TO_CENTER'
-                        ? 'Thông Tin Điểm Đến (Phòng Lab Hub Kiểm Định):'
-                        : 'Thông Tin Người Nhận (Hoàn Trả Người Bán):'}
+                      Thông Tin Điểm Tiếp Nhận (Phòng Lab Hub)
                     </label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <input
@@ -7026,14 +7033,12 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   <div className="pt-2 flex justify-end">
                     <button
                       type="submit"
-                      disabled={isCreatingShipment || Boolean(selectedLeg === 'SELLER_TO_CENTER' && centerProfile && (!shipmentModalOrder.inspectionCenterId || shipmentModalOrder.inspectionCenterId === centerProfile.id) && !centerProfile.shippingAddressConfigured)}
+                      disabled={isCreatingShipment || Boolean(centerProfile && (!shipmentModalOrder.inspectionCenterId || shipmentModalOrder.inspectionCenterId === centerProfile.id) && !centerProfile.shippingAddressConfigured)}
                       className="px-5 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] text-white font-bold text-xs flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
                     >
                       {isCreatingShipment && <Loader2 className="w-4 h-4 animate-spin" />}
                       <span>
-                        {selectedLeg === 'SELLER_TO_CENTER'
-                          ? 'Tạo Vận Đơn Lấy Hàng Về Hub'
-                          : 'Tạo Vận Đơn Hoàn Trả Người Bán'}
+                        Tạo Vận Đơn Lấy Hàng Về Hub
                       </span>
                     </button>
                   </div>
@@ -7113,10 +7118,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                           }
                         }}
                         className={`p-3 rounded-xl text-left border transition ${isPending
-                            ? 'bg-slate-100/70 border-slate-200 opacity-60 cursor-not-allowed'
-                            : proposingLevel === item.level
-                              ? 'border-[#24263e] bg-slate-50 shadow-xs ring-1 ring-[#24263e] cursor-pointer'
-                              : 'border-slate-200 hover:border-slate-300 cursor-pointer'
+                          ? 'bg-slate-100/70 border-slate-200 opacity-60 cursor-not-allowed'
+                          : proposingLevel === item.level
+                            ? 'border-[#24263e] bg-slate-50 shadow-xs ring-1 ring-[#24263e] cursor-pointer'
+                            : 'border-slate-200 hover:border-slate-300 cursor-pointer'
                           }`}
                         title={isPending ? 'Cấp độ này đã có đề xuất đang chờ Admin duyệt' : undefined}
                       >

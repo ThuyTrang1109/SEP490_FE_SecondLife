@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   EscrowOrder,
   Language,
@@ -50,7 +50,7 @@ import {
   Package,
   Lock
 } from 'lucide-react';
-import { inspectorService, InspectionOrderDto, InspectionChecklistResponse, mediaService } from '../services';
+import { inspectorService, InspectionOrderDto, InspectionChecklistResponse, SubmitInspectionReportRequest, mediaService } from '../services';
 import { BarcodeScannerModal, playScanBeep } from '../components/modals/BarcodeScannerModal';
 import { PrintTamperSealModal } from '../components/modals/PrintTamperSealModal';
 import { InspectionSealVerificationModal } from '../components/modals/InspectionSealVerificationModal';
@@ -72,6 +72,7 @@ interface ProductInspectionStationViewProps {
       conditionGrade?: ConditionGrade;
       checklistResults?: any[];
       inspectorPhotos?: string[];
+      evidencePhotoUrls?: string[];
       inspectorNotes?: string;
       videoProofUrl?: string;
       unboxingVideoUrl?: string;
@@ -83,7 +84,17 @@ interface ProductInspectionStationViewProps {
   hideTopBar?: boolean;
   selectedOrderId?: string;
   onSelectOrder?: (orderId: string) => void;
+  onResultSaved: (order: InspectionOrderDto) => void;
   initialStep?: InspectionStep;
+}
+
+export interface PhotoUploadItem {
+  id: string;
+  file?: File;
+  previewUrl: string;
+  remoteUrl?: string;
+  status: 'uploading' | 'success' | 'error';
+  errorMessage?: string;
 }
 
 export type InspectionStep = 'intake' | 'exterior' | 'technical' | 'proofs' | 'verdict';
@@ -173,6 +184,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   hideTopBar = false,
   selectedOrderId: externalSelectedOrderId,
   onSelectOrder,
+  onResultSaved,
   initialStep = 'intake',
 }) => {
   // Current active technician
@@ -235,6 +247,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   }, [activeOrder?.id]);
 
   const isAtHomeOrder = Boolean(activeOrder?.inspectionMethod === 'AT_HOME' || (activeOrder as any)?.orderType === 'AT_HOME');
+  const isAtCenterOrder = !isAtHomeOrder;
   const isCompletedOrder = Boolean(activeOrder && isOrderInspectionCompleted(activeOrder));
 
   // Stepper state - Bắt đầu từ Bước 1: Tiếp nhận (intake)
@@ -286,7 +299,11 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const [tamperSealInput, setTamperSealInput] = useState(
     'SL-SEAL-' + Math.floor(1000000 + Math.random() * 9000000)
   );
-  const [proofPhotos, setProofPhotos] = useState<string[]>([]);
+  const [photoUploadItems, setPhotoUploadItems] = useState<PhotoUploadItem[]>([]);
+  const proofPhotos = useMemo(
+    () => photoUploadItems.filter((p) => p.status === 'success' && p.remoteUrl).map((p) => p.remoteUrl!),
+    [photoUploadItems]
+  );
   const [videoProofUrl, setVideoProofUrl] = useState('');
   const [unboxingVideoUrl, setUnboxingVideoUrl] = useState('');
   const [sealConfirmed, setSealConfirmed] = useState(false);
@@ -302,10 +319,26 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const [isDigitalSigned, setIsDigitalSigned] = useState(false);
 
   useEffect(() => {
+    let active = true;
     if (activeOrder?.id && !isCompletedOrder) {
-      void inspectorService.startInspection(activeOrder.id).catch(() => {});
+      if (isAtCenterOrder) {
+        // Luồng tại trung tâm: gọi start với body rỗng.
+        // Chỉ tiếp tục từ giao diện khi BE xác nhận trạng thái INSPECTING. Nếu gọi start lỗi, tải lại đơn.
+        inspectorService.startInspection(activeOrder.id)
+          .catch(async () => {
+            try {
+              const reloaded = await inspectorService.getOrder(activeOrder.id);
+              if (active && reloaded && isOrderInspectionCompleted({ inspectionStatus: reloaded.status })) {
+                onResultSaved(reloaded);
+              }
+            } catch { }
+          });
+      } else {
+        void inspectorService.startInspection(activeOrder.id).catch(() => { });
+      }
     }
-  }, [activeOrder?.id, isCompletedOrder]);
+    return () => { active = false; };
+  }, [activeOrder?.id, isCompletedOrder, isAtCenterOrder]);
 
   // Load the saved report or the checklist assigned by the API.
   useEffect(() => {
@@ -368,7 +401,17 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         setConditionScore(effectiveReport.conditionScore || 90);
         setSelectedGrade(effectiveReport.detectedGrade || 'Like New');
         setTamperSealInput(effectiveReport.tamperSealId || ('SL-SEAL-' + Math.floor(1000000 + Math.random() * 9000000)));
-        setProofPhotos(effectiveReport.inspectorPhotos || []);
+        const repPhotos: string[] = (effectiveReport as any).evidencePhotoUrls?.length
+          ? (effectiveReport as any).evidencePhotoUrls
+          : (effectiveReport.inspectorPhotos || []);
+        setPhotoUploadItems(
+          repPhotos.map((url: string, i: number) => ({
+            id: `rep-${i}`,
+            previewUrl: url,
+            remoteUrl: url,
+            status: 'success',
+          }))
+        );
         setVideoProofUrl((activeOrder as any).videoProofUrl || (effectiveReport as any).videoProofUrl || '');
         setUnboxingVideoUrl((activeOrder as any).unboxingVideoUrl || (effectiveReport as any).unboxingVideoUrl || '');
         setSealConfirmed(true);
@@ -381,7 +424,21 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         setInspectorNotes('');
         setConditionScore(0);
         setSelectedGrade('Like New');
-        setProofPhotos([]);
+        const ordPhotos: string[] = (activeOrder as any).evidencePhotoUrls?.length
+          ? (activeOrder as any).evidencePhotoUrls
+          : ((activeOrder as any).inspectorPhotos?.length ? (activeOrder as any).inspectorPhotos : []);
+        if (ordPhotos.length > 0) {
+          setPhotoUploadItems(
+            ordPhotos.map((url: string, i: number) => ({
+              id: `ord-${i}`,
+              previewUrl: url,
+              remoteUrl: url,
+              status: 'success',
+            }))
+          );
+        } else {
+          setPhotoUploadItems([]);
+        }
         setVideoProofUrl((activeOrder as any).videoProofUrl || '');
         setUnboxingVideoUrl((activeOrder as any).unboxingVideoUrl || '');
         setSealConfirmed(false);
@@ -393,10 +450,48 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   // Submitting & Feedback states
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingResult = useRef(false);
   const [isGeneratingSeal, setIsGeneratingSeal] = useState(false);
   const [noticeMessage, setNoticeMessage] = useState<{ text: string; isError?: boolean } | null>(null);
   const [showCertificateModal, setShowCertificateModal] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
+
+  const livePreviewReport = useMemo(() => {
+    if (!activeOrder) return null;
+    const effectiveReport = getStationReport(activeOrder);
+    if (isCompletedOrder && effectiveReport) return effectiveReport;
+    const validPhotos = (proofPhotos || [])
+      .map((p: any) => (typeof p === 'string' ? p : p?.url))
+      .filter((u): u is string => Boolean(u && typeof u === 'string' && !u.startsWith('blob:') && !u.startsWith('data:')));
+    return {
+      id: `REP-${activeOrder.id.slice(0, 8)}`,
+      orderId: activeOrder.id,
+      centerId: activeOrder.inspectionCenterId || 'center-hcm-01',
+      centerName: activeOrder.inspectionCenterName || 'Trung Tâm Kiểm Định SecondLife',
+      inspectorName: inspectorName,
+      inspectedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      verdict: overallVerdict,
+      status: overallVerdict === 'PASS' ? 'PASSED' : 'FAILED',
+      detectedGrade: selectedGrade,
+      conditionScore: conditionScore,
+      tamperSealId: isAtCenterOrder ? undefined : (tamperSealInput || undefined),
+      checklistResults: checklist.map((item) => ({
+        id: item.id,
+        itemId: item.rawId ?? (item.id && !item.id.startsWith('chk-') ? item.id : null),
+        itemTitle: item.title,
+        category: item.category,
+        passed: item.status === 'pass',
+        isPassed: item.status === 'pass',
+        testedValue: item.testedValue,
+        notes: item.notes,
+        inspectorNote: item.testedValue || item.notes,
+      })),
+      inspectorPhotos: validPhotos,
+      evidencePhotoUrls: validPhotos,
+      summaryNotes: inspectorNotes,
+    };
+  }, [activeOrder, isCompletedOrder, inspectorName, overallVerdict, selectedGrade, conditionScore, isAtCenterOrder, tamperSealInput, checklist, proofPhotos, inspectorNotes]);
 
   const handleGenerateBackendSeal = async () => {
     if (!activeOrder?.id) return;
@@ -500,44 +595,140 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   // Add proof photo
   const handleAddProofPhoto = (url: string) => {
-    if (!proofPhotos.includes(url)) {
-      setProofPhotos([...proofPhotos, url]);
-      notify('Đã thêm ảnh bằng chứng kiểm nghiệm');
-    }
+    setPhotoUploadItems((prev) => {
+      if (prev.some((p) => p.remoteUrl === url)) return prev;
+      return [...prev, { id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, previewUrl: url, remoteUrl: url, status: 'success' }];
+    });
+    notify('Đã thêm ảnh bằng chứng kiểm nghiệm');
   };
 
-  const handleRemovePhoto = (idx: number) => {
-    setProofPhotos(proofPhotos.filter((_, i) => i !== idx));
-  };
-
-  const handleUploadProofPhoto = async (file: File) => {
-    if (!file) return;
-    setIsUploadingPhoto(true);
-    try {
-      const res = await mediaService.uploadImage(file, 'secondlife/inspections/proofs');
-      if (res && res.url) {
-        setProofPhotos((prev) => [...prev, res.url]);
-        notify('Đã tải ảnh bằng chứng lên máy chủ thành công');
-      } else {
-        throw new Error('Không nhận được URL ảnh từ máy chủ');
+  const handleRemovePhoto = (idxOrId: number | string) => {
+    setPhotoUploadItems((prev) => {
+      const item = typeof idxOrId === 'number' ? prev[idxOrId] : prev.find((p) => p.id === idxOrId);
+      if (item?.previewUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(item.previewUrl);
       }
-    } catch (err: any) {
-      console.warn('Lỗi tải ảnh lên Cloudinary/Backend, dùng bộ nhớ cục bộ dự phòng:', err);
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          setProofPhotos((prev) => [...prev, reader.result as string]);
-          notify('Đã lưu ảnh bằng chứng vào phiên làm việc');
+      return typeof idxOrId === 'number' ? prev.filter((_, i) => i !== idxOrId) : prev.filter((p) => p.id !== idxOrId);
+    });
+  };
+
+  const handleUploadFiles = async (files: FileList | File[]) => {
+    const fileList = Array.from(files).filter((f) => f && f.type.startsWith('image/'));
+    if (fileList.length === 0) return;
+
+    if (photoUploadItems.length + fileList.length > 10) {
+      notify(`Chỉ được tải lên tối đa 10 ảnh bằng chứng (hiện có ${photoUploadItems.length} ảnh, bạn chọn thêm ${fileList.length} ảnh)!`, true);
+      return;
+    }
+
+    const newItems: PhotoUploadItem[] = fileList.map((file) => ({
+      id: `proof-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      file,
+      previewUrl: URL.createObjectURL(file),
+      status: 'uploading',
+    }));
+
+    setPhotoUploadItems((prev) => [...prev, ...newItems]);
+    setIsUploadingPhoto(true);
+
+    try {
+      if (fileList.length === 1) {
+        const item = newItems[0];
+        try {
+          const res = await mediaService.uploadImage(item.file!, 'secondlife/inspections/proofs');
+          const uploadedUrl = (res as any)?.url || (res as any)?.data?.url;
+          if (uploadedUrl) {
+            setPhotoUploadItems((prev) =>
+              prev.map((p) => (p.id === item.id ? { ...p, status: 'success', remoteUrl: uploadedUrl, errorMessage: undefined } : p))
+            );
+            notify('Đã tải ảnh bằng chứng lên máy chủ thành công');
+          } else {
+            throw new Error('Máy chủ không trả về URL ảnh');
+          }
+        } catch (uploadErr: any) {
+          setPhotoUploadItems((prev) =>
+            prev.map((p) => (p.id === item.id ? { ...p, status: 'error', errorMessage: uploadErr?.message || 'Tải ảnh thất bại' } : p))
+          );
+          notify(uploadErr?.message || 'Tải ảnh thất bại', true);
         }
-      };
-      reader.readAsDataURL(file);
+      } else {
+        try {
+          const resList = await mediaService.uploadMultipleImages(fileList, 'secondlife/inspections/proofs');
+          const urlList = Array.isArray(resList) ? resList.map((r: any) => r?.url || r?.data?.url || r).filter(Boolean) : [];
+          setPhotoUploadItems((prev) =>
+            prev.map((p) => {
+              const matchedIdx = newItems.findIndex((ni) => ni.id === p.id);
+              if (matchedIdx !== -1) {
+                const url = urlList[matchedIdx];
+                if (url && typeof url === 'string') {
+                  return { ...p, status: 'success', remoteUrl: url, errorMessage: undefined };
+                } else {
+                  return { ...p, status: 'error', errorMessage: 'Lỗi tải ảnh lên máy chủ' };
+                }
+              }
+              return p;
+            })
+          );
+          notify(`Đã tải lên ${urlList.length}/${fileList.length} ảnh bằng chứng`);
+        } catch (multiErr: any) {
+          for (const item of newItems) {
+            try {
+              const res = await mediaService.uploadImage(item.file!, 'secondlife/inspections/proofs');
+              const url = (res as any)?.url || (res as any)?.data?.url;
+              if (url) {
+                setPhotoUploadItems((prev) =>
+                  prev.map((p) => (p.id === item.id ? { ...p, status: 'success', remoteUrl: url, errorMessage: undefined } : p))
+                );
+              } else {
+                throw new Error('Không nhận được URL');
+              }
+            } catch (singleErr: any) {
+              setPhotoUploadItems((prev) =>
+                prev.map((p) => (p.id === item.id ? { ...p, status: 'error', errorMessage: singleErr?.message || 'Lỗi tải ảnh' } : p))
+              );
+            }
+          }
+        }
+      }
     } finally {
       setIsUploadingPhoto(false);
     }
   };
 
+  const handleRetryUpload = async (id: string) => {
+    const target = photoUploadItems.find((p) => p.id === id);
+    if (!target || !target.file) return;
+
+    setPhotoUploadItems((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, status: 'uploading', errorMessage: undefined } : p))
+    );
+
+    try {
+      const res = await mediaService.uploadImage(target.file, 'secondlife/inspections/proofs');
+      const uploadedUrl = (res as any)?.url || (res as any)?.data?.url;
+      if (uploadedUrl) {
+        setPhotoUploadItems((prev) =>
+          prev.map((p) => (p.id === id ? { ...p, status: 'success', remoteUrl: uploadedUrl, errorMessage: undefined } : p))
+        );
+        notify('Đã tải lại ảnh thành công!');
+      } else {
+        throw new Error('Máy chủ không trả về URL ảnh');
+      }
+    } catch (err: any) {
+      setPhotoUploadItems((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, status: 'error', errorMessage: err?.message || 'Tải ảnh thất bại' } : p))
+      );
+      notify(err?.message || 'Tải ảnh thất bại, vui lòng thử lại', true);
+    }
+  };
+
+  const handleUploadProofPhoto = async (file: File) => {
+    return handleUploadFiles([file]);
+  };
+
   // Submit Final Result
   const handleSubmitInspection = async () => {
+    if (submittingResult.current) return;
     if (!activeOrder) {
       notify('Không tìm thấy thông tin đơn hàng cần thẩm định', true);
       return;
@@ -553,22 +744,41 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       return;
     }
 
+    const pendingMandatory = checklist.filter((item) => item.mandatory && item.status === 'pending');
+    if (pendingMandatory.length > 0) {
+      notify(`Vui lòng đánh giá tất cả ${pendingMandatory.length} tiêu chuẩn bắt buộc (*) trước khi nộp biên bản!`, true);
+      return;
+    }
+
     const hasFailedMandatory = checklist.some((item) => item.mandatory && item.status !== 'pass');
     if (overallVerdict === 'PASS' && hasFailedMandatory) {
       notify('Không thể kết luận ĐẠT (PASSED) khi có tiêu chí bắt buộc không đạt yêu cầu.', true);
       return;
     }
 
-    let effectiveSeal = tamperSealInput;
-    if (!effectiveSeal) {
-      effectiveSeal = 'SL-SEAL-' + Math.floor(1000000 + Math.random() * 9000000);
-      setTamperSealInput(effectiveSeal);
+    // Với AT_CENTER: kiểm tra số lượng ảnh hợp lệ 1-10
+    const validEvidencePhotoUrls = proofPhotos
+      .map((url) => url.trim())
+      .filter((url) => getInspectionRemoteMediaUrl(url) || isInspectionProofImage(url));
+
+    if (isAtCenterOrder) {
+      if (validEvidencePhotoUrls.length < 1 || validEvidencePhotoUrls.length > 10) {
+        notify('Yêu cầu từ 1 đến 10 ảnh bằng chứng đã upload thành công lên máy chủ trước khi nộp!', true);
+        return;
+      }
     }
 
-    // Tự động xác nhận dán tem & đính kèm chữ ký khi KTV ký số phát hành
-    setSealConfirmed(true);
+    let effectiveSeal = tamperSealInput;
+    if (!isAtCenterOrder) {
+      if (!effectiveSeal) {
+        effectiveSeal = 'SL-SEAL-' + Math.floor(1000000 + Math.random() * 9000000);
+        setTamperSealInput(effectiveSeal);
+      }
+      setSealConfirmed(true);
+    }
     setIsDigitalSigned(true);
 
+    submittingResult.current = true;
     setIsSubmitting(true);
     try {
       // 1. Đảm bảo đơn đã chuyển sang trạng thái INSPECTING trên backend trước khi submit
@@ -577,23 +787,14 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       } catch { }
 
       // 2. Nộp kết quả thẩm định lên backend API
-      const photoPayload = proofPhotos.map((url) => url.trim()).filter((url) =>
-        getInspectionRemoteMediaUrl(url) || isInspectionProofImage(url),
-      );
-      const persistedVideoUrl = getInspectionRemoteMediaUrl(videoProofUrl);
-      const persistedUnboxingUrl = getInspectionRemoteMediaUrl(unboxingVideoUrl);
-      await inspectorService.submitReport(activeOrder.id, {
+      const persistedVideoUrl = isAtHomeOrder ? getInspectionRemoteMediaUrl(videoProofUrl) : undefined;
+      const persistedUnboxingUrl = isAtHomeOrder ? getInspectionRemoteMediaUrl(unboxingVideoUrl) : undefined;
+
+      const payload: SubmitInspectionReportRequest = isAtCenterOrder ? {
         status: overallVerdict === 'PASS' ? 'PASSED' : 'FAILED',
-        note: `[Tem: ${effectiveSeal}][Grade: ${selectedGrade}][Điểm: ${conditionScore}/100][Bao bì: ${packagingStatus === 'INTACT' ? 'Nguyên vẹn' : packagingStatus === 'SLIGHT_DAMAGE' ? 'Hơi móp méo' : 'Hư hại'}]${accessoriesNote ? ` [Phụ kiện: ${accessoriesNote}]` : ''}${photoPayload.length > 0 ? ` [Photos: ${JSON.stringify(photoPayload)}]` : ''} ${inspectorNotes}`,
+        note: inspectorNotes.trim() || undefined,
         conditionScore,
         conditionGrade: selectedGrade,
-        tamperSealId: effectiveSeal,
-        barcode: barcodeScanInput || `BC-${activeOrder.id}`,
-        videoProofUrl: persistedVideoUrl || photoPayload[0] || undefined,
-        unboxingVideoUrl: persistedUnboxingUrl || undefined,
-        proofPhotos: photoPayload,
-        inspectorPhotos: photoPayload,
-        evidenceUrls: photoPayload,
         checklistResults: checklist.map((item) => ({
           itemId: item.rawId ?? (item.id && !item.id.startsWith('chk-') ? item.id : null),
           itemTitle: item.title,
@@ -601,13 +802,42 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
           isPassed: item.status === 'pass',
           inspectorNote: (item.testedValue || item.notes || '').slice(0, 4000) || undefined,
         })),
-      });
+        evidencePhotoUrls: validEvidencePhotoUrls,
+      } : {
+        status: overallVerdict === 'PASS' ? 'PASSED' : 'FAILED',
+        note: `[Tem: ${effectiveSeal}][Grade: ${selectedGrade}][Điểm: ${conditionScore}/100][Bao bì: ${packagingStatus === 'INTACT' ? 'Nguyên vẹn' : packagingStatus === 'SLIGHT_DAMAGE' ? 'Hơi móp méo' : 'Hư hại'}]${accessoriesNote ? ` [Phụ kiện: ${accessoriesNote}]` : ''}${validEvidencePhotoUrls.length > 0 ? ` [Photos: ${JSON.stringify(validEvidencePhotoUrls)}]` : ''} ${inspectorNotes}`,
+        conditionScore,
+        conditionGrade: selectedGrade,
+        tamperSealId: effectiveSeal,
+        barcode: barcodeScanInput || `BC-${activeOrder.id}`,
+        videoProofUrl: persistedVideoUrl || undefined,
+        unboxingVideoUrl: persistedUnboxingUrl || undefined,
+        proofPhotos: validEvidencePhotoUrls,
+        inspectorPhotos: validEvidencePhotoUrls,
+        evidenceUrls: validEvidencePhotoUrls,
+        evidencePhotoUrls: validEvidencePhotoUrls,
+        checklistResults: checklist.map((item) => ({
+          itemId: item.rawId ?? (item.id && !item.id.startsWith('chk-') ? item.id : null),
+          itemTitle: item.title,
+          passed: item.status === 'pass',
+          isPassed: item.status === 'pass',
+          inspectorNote: (item.testedValue || item.notes || '').slice(0, 4000) || undefined,
+        })),
+      };
+
+      const submittedDto = await inspectorService.submitReport(activeOrder.id, payload);
+      if (!submittedDto?.id || !isOrderInspectionCompleted({ inspectionStatus: submittedDto.status })) {
+        throw new Error('BE chưa xác nhận biên bản kiểm định đã được phát hành.');
+      }
+      onResultSaved(submittedDto);
 
       // 3. Hoàn tất kiểm định trong state ứng dụng và localStorage
       try {
         const resultStatus = overallVerdict === 'PASS' ? 'PASSED' : 'FAILED';
         localStorage.setItem(`inspection_status_${activeOrder.id}`, resultStatus);
-        localStorage.setItem(`inspection_seal_${activeOrder.id}`, effectiveSeal);
+        if (!isAtCenterOrder) {
+          localStorage.setItem(`inspection_seal_${activeOrder.id}`, effectiveSeal);
+        }
 
         const fullReport = {
           id: `REP-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -621,7 +851,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
           status: resultStatus,
           detectedGrade: selectedGrade,
           conditionScore: conditionScore,
-          tamperSealId: effectiveSeal,
+          tamperSealId: isAtCenterOrder ? undefined : effectiveSeal,
           checklistResults: checklist.map((item) => ({
             id: item.id,
             rawId: item.rawId,
@@ -632,8 +862,9 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
             notes: item.notes,
             testedValue: item.testedValue,
           })),
-          inspectorPhotos: proofPhotos,
-          summaryNotes: `[Grade: ${selectedGrade}][Điểm: ${conditionScore}/100] ${inspectorNotes}`,
+          inspectorPhotos: validEvidencePhotoUrls,
+          evidencePhotoUrls: validEvidencePhotoUrls,
+          summaryNotes: isAtCenterOrder ? inspectorNotes : `[Grade: ${selectedGrade}][Điểm: ${conditionScore}/100] ${inspectorNotes}`,
         };
         localStorage.setItem(`inspection_report_${activeOrder.id}`, JSON.stringify(fullReport));
 
@@ -645,8 +876,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       onCompleteInspection(
         activeOrder.id,
         overallVerdict,
-        effectiveSeal,
-        `[Grade: ${selectedGrade}][Điểm: ${conditionScore}/100] ${inspectorNotes}`,
+        isAtCenterOrder ? '' : effectiveSeal,
+        isAtCenterOrder ? inspectorNotes : `[Grade: ${selectedGrade}][Điểm: ${conditionScore}/100] ${inspectorNotes}`,
         {
           conditionScore,
           conditionGrade: selectedGrade,
@@ -660,22 +891,37 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
             notes: item.notes,
             testedValue: item.testedValue,
           })),
-          inspectorPhotos: proofPhotos,
+          inspectorPhotos: validEvidencePhotoUrls,
+          evidencePhotoUrls: validEvidencePhotoUrls,
           inspectorNotes,
           videoProofUrl: persistedVideoUrl,
           unboxingVideoUrl: persistedUnboxingUrl,
-          order: activeOrder,
+          order: {
+            ...activeOrder,
+            ...(submittedDto || {}),
+          },
         }
       );
 
       notify(
-        `Đã thẩm định thành công đơn #${activeOrder.id}! Báo cáo số hóa đã cấp và niêm phong bằng tem ${effectiveSeal}.`
+        isAtCenterOrder
+          ? `Đã thẩm định thành công đơn #${activeOrder.id}! Biên bản kiểm định đã được nộp thành công.`
+          : `Đã thẩm định thành công đơn #${activeOrder.id}! Báo cáo số hóa đã cấp và niêm phong bằng tem ${effectiveSeal}.`
       );
-      setShowCertificateModal(true);
     } catch (err: any) {
       console.error('Lỗi khi nộp biên bản kiểm định:', err);
-      notify(err?.message || 'Không thể lưu biên bản kiểm định lên hệ thống. Vui lòng thử lại.', true);
+      // Xử lý mất mạng hoặc lỗi: Đọc lại chi tiết đơn để xác định kết quả trước khi cho thử lại
+      try {
+        const reloaded = await inspectorService.getOrder(activeOrder.id);
+        if (reloaded && isOrderInspectionCompleted({ inspectionStatus: reloaded.status })) {
+          notify(`Đơn hàng #${activeOrder.id} đã được hệ thống lưu kết quả thành công!`);
+          onResultSaved(reloaded);
+          return;
+        }
+      } catch { }
+      notify(err?.message || 'Không thể lưu biên bản kiểm định lên hệ thống. Vui lòng kiểm tra lại ảnh hoặc kết nối.', true);
     } finally {
+      submittingResult.current = false;
       setIsSubmitting(false);
     }
   };
@@ -684,7 +930,12 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     { key: 'intake', title: '1. Tiếp Nhận', desc: 'Đối chiếu hồ sơ máy', icon: QrCode },
     { key: 'exterior', title: '2. Ngoại Quan', desc: 'Phân hạng Grade vỏ máy', icon: Layers },
     { key: 'technical', title: '3. Kỹ Thuật', desc: 'Đo đạc & Test chức năng', icon: Wrench },
-    { key: 'proofs', title: '4. Bằng Chứng', desc: 'Ảnh soi vi mạch & Dán tem', icon: Camera },
+    {
+      key: 'proofs',
+      title: isAtCenterOrder ? '4. Ảnh Bằng Chứng' : '4. Bằng Chứng & Niêm Phong',
+      desc: isAtCenterOrder ? 'Ảnh chụp hiện trạng máy' : 'Ảnh soi vi mạch & Dán tem',
+      icon: Camera,
+    },
     { key: 'verdict', title: '5. Kết Luận', desc: 'Ký số & Xuất chứng thư', icon: ShieldCheck },
   ];
 
@@ -733,6 +984,28 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       }
     }
 
+    if (currentStep === 'proofs' && !isCompletedOrder) {
+      if (isAtCenterOrder) {
+        if (proofPhotos.length < 1) {
+          notify('Vui lòng tải lên ít nhất 1 ảnh bằng chứng hiện trạng trước khi chuyển sang Bước 5!', true);
+          return;
+        }
+        if (proofPhotos.length > 10) {
+          notify('Tối đa 10 ảnh bằng chứng được phép nộp!', true);
+          return;
+        }
+      } else {
+        if (proofPhotos.length === 0) {
+          notify('Vui lòng thêm ảnh bằng chứng trước khi chuyển bước!', true);
+          return;
+        }
+        if (!sealConfirmed) {
+          notify('Vui lòng xác nhận đã dán tem niêm phong trước khi chuyển sang Bước 5!', true);
+          return;
+        }
+      }
+    }
+
     if (nextIdx > maxReachedStepIndex) {
       setMaxReachedStepIndex(nextIdx);
     }
@@ -758,8 +1031,14 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         return canUseChecklist && (maxReachedStepIndex > 2 || pendingMandatory.length === 0);
       }
       case 'proofs':
+        if (isAtCenterOrder) {
+          return maxReachedStepIndex > 3 || (proofPhotos.length >= 1 && proofPhotos.length <= 10);
+        }
         return maxReachedStepIndex > 3 || (proofPhotos.length > 0 && sealConfirmed);
       case 'verdict':
+        if (isAtCenterOrder) {
+          return Boolean(overallVerdict && (proofPhotos.length >= 1 || isDigitalSigned));
+        }
         return Boolean(overallVerdict && (sealConfirmed || isDigitalSigned));
       default:
         return false;
@@ -767,7 +1046,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   };
 
   return (
-    <div className={`space-y-6 pb-20 text-[#24263e] ${isFocusMode ? 'fixed inset-0 z-50 bg-[#faf8f5] p-6 overflow-y-auto' : ''}`}>
+    <div className={`space-y-6 pb-20 text-[#24263e] print:hidden ${isFocusMode ? 'fixed inset-0 z-50 bg-[#faf8f5] p-6 overflow-y-auto' : ''}`}>
       {/* Station Top Bar */}
       {!hideTopBar && (
         <div className="bg-[#24263e] text-white rounded-3xl p-5 sm:p-7 shadow-xl border border-[#24263e]/20 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -842,15 +1121,12 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         </div>
       )}
 
-      {/* Main Workspace Layout: Left Task Queue & Right Inspection Station */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* ===================================================================== */}
-        {/* LEFT COLUMN: ASSIGNED TASKS QUEUE                                    */}
-        {/* ===================================================================== */}
-        <div className="lg:col-span-4 space-y-4">
+      {/* Intake scanner above the full-width inspection workstation */}
+      <div className="flex flex-col gap-6">
+        <div className="w-full max-w-2xl">
           {/* Quick Scan Box */}
           <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-black uppercase tracking-wider text-[#24263e] flex items-center gap-1.5">
                 <QrCode className="w-4 h-4 text-[#c34c36]" />
                 <span>Quét Barcode / Mã Đơn Nhận Máy</span>
@@ -862,7 +1138,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
             </div>
 
             <div className="flex gap-2">
-              <div className="relative flex-1">
+              <div className="relative min-w-0 flex-1">
                 <input
                   type="text"
                   value={barcodeScanInput}
@@ -931,10 +1207,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
         </div>
 
-        {/* ===================================================================== */}
-        {/* RIGHT COLUMN: ACTIVE INSPECTION WORKSTATION                          */}
-        {/* ===================================================================== */}
-        <div className="lg:col-span-8 bg-white rounded-3xl p-6 border border-gray-200 shadow-sm space-y-6">
+        <div className="min-w-0 w-full bg-white rounded-3xl p-4 sm:p-6 border border-gray-200 shadow-sm space-y-6">
           {!activeOrder ? (
             <div className="py-24 text-center flex flex-col items-center justify-center space-y-4">
               <div className="w-20 h-20 rounded-3xl bg-amber-50 border border-amber-200/60 text-[#c34c36] flex items-center justify-center shadow-2xs">
@@ -945,7 +1218,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   Sẵn Sàng Tiếp Nhận Thiết Bị Đo Kiểm
                 </h3>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  Vui lòng quét Barcode hoặc nhập mã đơn hàng ở khung bên trái để bắt đầu đo kiểm 5 bước.
+                  Vui lòng quét Barcode hoặc nhập mã đơn hàng ở khung phía trên để bắt đầu đo kiểm 5 bước.
                 </p>
               </div>
               <div className="pt-2 flex items-center gap-2">
@@ -1581,133 +1854,192 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 flex items-start gap-3 text-xs text-blue-900">
                     <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                     <div>
-                      <strong>Bước 4 - Ảnh Bằng Chứng Vi Mạch & Dán Tem Niêm Phong:</strong> Chụp ảnh soi kính hiển vi, số seri bo mạch và dán tem niêm phong chống tráo đổi linh kiện theo tiêu chuẩn SecondLife.
+                      {isAtCenterOrder ? (
+                        <>
+                          <strong>Bước 4 - Ảnh Bằng Chứng Hiện Trạng Tại Hub:</strong> Chụp và tải lên từ 1 đến 10 ảnh hiện trạng máy (ảnh toàn cảnh, chi tiết linh kiện, số serial nếu có) trực tiếp tại Trạm kiểm định.
+                        </>
+                      ) : (
+                        <>
+                          <strong>Bước 4 - Ảnh Bằng Chứng Vi Mạch & Dán Tem Niêm Phong:</strong> Chụp ảnh soi kính hiển vi, số seri bo mạch và dán tem niêm phong chống tráo đổi linh kiện theo tiêu chuẩn SecondLife.
+                        </>
+                      )}
                     </div>
                   </div>
 
-                  {/* Tamper Seal Serial Box */}
-                  <div className="p-4 rounded-2xl bg-orange-50/60 border border-orange-200 space-y-3 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-orange-900 uppercase tracking-wider flex items-center gap-1.5">
-                        <ShieldCheck className="w-4 h-4 text-[#c34c36]" />
-                        Số Seri Tem Niêm Phong Chống Bóc Tách (NFC / Hologram Seal) *
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleGenerateBackendSeal}
-                        disabled={isGeneratingSeal}
-                        className="text-xs text-[#c34c36] font-bold hover:underline cursor-pointer flex items-center gap-1 disabled:opacity-50"
-                      >
-                        {isGeneratingSeal && <Loader2 className="w-3 h-3 animate-spin" />}
-                        <span>Sinh mã tem từ hệ thống</span>
-                      </button>
-                    </div>
+                  {/* Tamper Seal Serial Box (Chỉ áp dụng cho đơn kiểm định tại nhà AT_HOME) */}
+                  {!isAtCenterOrder && (
+                    <div className="p-4 rounded-2xl bg-orange-50/60 border border-orange-200 space-y-3 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-black text-orange-900 uppercase tracking-wider flex items-center gap-1.5">
+                          <ShieldCheck className="w-4 h-4 text-[#c34c36]" />
+                          Số Seri Tem Niêm Phong Chống Bóc Tách (NFC / Hologram Seal) *
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleGenerateBackendSeal}
+                          disabled={isGeneratingSeal}
+                          className="text-xs text-[#c34c36] font-bold hover:underline cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                        >
+                          {isGeneratingSeal && <Loader2 className="w-3 h-3 animate-spin" />}
+                          <span>Sinh mã tem từ hệ thống</span>
+                        </button>
+                      </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <input
-                        type="text"
-                        value={tamperSealInput}
-                        readOnly={isCompletedOrder}
-                        onChange={(e) => setTamperSealInput(e.target.value)}
-                        className={`flex-1 min-w-[200px] px-3.5 py-2.5 bg-white border border-orange-200 rounded-xl font-mono font-bold text-slate-800 text-sm outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                      />
-                      <button
-                        type="button"
-                        disabled={isCompletedOrder}
-                        onClick={() => {
-                          setScannerMode('tamper');
-                          setIsScannerOpen(true);
-                        }}
-                        className="px-3 py-2 bg-slate-800 hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Quét Barcode / QR tem niêm phong"
-                      >
-                        <Camera className="w-3.5 h-3.5" />
-                        <span>Quét Tem</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsPrintSealModalOpen(true)}
-                        className="px-3.5 py-2 bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
-                        title="Tạo mã in tem niêm phong chuẩn dán máy"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                        <span>In Tem QR</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setVerifySealId(tamperSealInput);
-                          setIsVerifySealModalOpen(true);
-                        }}
-                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
-                        title="Tra cứu trạng thái xác thực tem trên Backend"
-                      >
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>Xác Thực Tem</span>
-                      </button>
-                    </div>
+                      <div className="flex flex-wrap gap-2">
+                        <input
+                          type="text"
+                          value={tamperSealInput}
+                          readOnly={isCompletedOrder}
+                          onChange={(e) => setTamperSealInput(e.target.value)}
+                          className={`flex-1 min-w-[200px] px-3.5 py-2.5 bg-white border border-orange-200 rounded-xl font-mono font-bold text-slate-800 text-sm outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        />
+                        <button
+                          type="button"
+                          disabled={isCompletedOrder}
+                          onClick={() => {
+                            setScannerMode('tamper');
+                            setIsScannerOpen(true);
+                          }}
+                          className="px-3 py-2 bg-slate-800 hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Quét Barcode / QR tem niêm phong"
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                          <span>Quét Tem</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsPrintSealModalOpen(true)}
+                          className="px-3.5 py-2 bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
+                          title="Tạo mã in tem niêm phong chuẩn dán máy"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>In Tem QR</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVerifySealId(tamperSealInput);
+                            setIsVerifySealModalOpen(true);
+                          }}
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
+                          title="Tra cứu trạng thái xác thực tem trên Backend"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Xác Thực Tem</span>
+                        </button>
+                      </div>
 
-                    <label className="flex items-center gap-2 cursor-pointer pt-1">
-                      <input
-                        type="checkbox"
-                        disabled={isCompletedOrder}
-                        checked={sealConfirmed}
-                        onChange={(e) => setSealConfirmed(e.target.checked)}
-                        className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer disabled:cursor-not-allowed"
-                      />
-                      <span className="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
-                        <span>Xác nhận: Tôi đã dán tem niêm phong vật lý đè lên ốc vít / khớp nối máy của thiết bị này.</span>
-                        {sealConfirmed && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            ĐÃ DÁN TEM (ĐÃ ỔN)
-                          </span>
-                        )}
-                      </span>
-                    </label>
-                  </div>
+                      <label className="flex items-center gap-2 cursor-pointer pt-1">
+                        <input
+                          type="checkbox"
+                          disabled={isCompletedOrder}
+                          checked={sealConfirmed}
+                          onChange={(e) => setSealConfirmed(e.target.checked)}
+                          className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer disabled:cursor-not-allowed"
+                        />
+                        <span className="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
+                          <span>Xác nhận: Tôi đã dán tem niêm phong vật lý đè lên ốc vít / khớp nối máy của thiết bị này.</span>
+                          {sealConfirmed && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              ĐÃ DÁN TEM (ĐÃ ỔN)
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    </div>
+                  )}
 
                   {/* Photo Upload & Gallery */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                        Thư Viện Ảnh Bằng Chứng Kiểm Định:
+                        {isAtCenterOrder ? 'Thư Viện Ảnh Hiện Trạng Thiết Bị (1 - 10 ảnh) *:' : 'Thư Viện Ảnh Bằng Chứng Kiểm Định:'}
                       </span>
-                      {proofPhotos.length > 0 && (
+                      {proofPhotos.length > 0 ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          Đã có {proofPhotos.length} ảnh bằng chứng (Đã ổn)
+                          Đã có {proofPhotos.length}/10 ảnh đã tải lên thành công (Đã ổn)
                         </span>
-                      )}
+                      ) : isAtCenterOrder ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                          Yêu cầu từ 1 đến 10 ảnh bằng chứng đã upload thành công
+                        </span>
+                      ) : null}
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {proofPhotos.map((url, idx) => (
-                        <div key={idx} className="relative group rounded-xl overflow-hidden border border-gray-200 aspect-video bg-gray-100">
+                      {photoUploadItems.map((item, idx) => (
+                        <div
+                          key={item.id}
+                          className={`relative group rounded-xl overflow-hidden border aspect-video bg-gray-100 ${item.status === 'error'
+                            ? 'border-rose-400 bg-rose-50'
+                            : item.status === 'uploading'
+                              ? 'border-blue-300'
+                              : 'border-gray-200'
+                            }`}
+                        >
                           <img
-                            src={url}
-                            alt="Proof"
+                            src={item.previewUrl}
+                            alt={`Proof ${idx + 1}`}
                             className="w-full h-full object-cover group-hover:scale-105 transition duration-300 cursor-pointer"
-                            onClick={() => setPreviewPhoto(url)}
+                            onClick={() => setPreviewPhoto(item.previewUrl)}
                           />
-                          {!isCompletedOrder && (
+
+                          {item.status === 'uploading' && (
+                            <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex flex-col items-center justify-center text-white p-2">
+                              <Loader2 className="w-5 h-5 animate-spin text-white mb-1" />
+                              <span className="text-[10px] font-bold">Đang tải lên...</span>
+                            </div>
+                          )}
+
+                          {item.status === 'error' && (
+                            <div className="absolute inset-0 bg-rose-950/80 backdrop-blur-xs flex flex-col items-center justify-center text-white p-2 text-center">
+                              <AlertTriangle className="w-4 h-4 text-rose-300 mb-1" />
+                              <span className="text-[9px] font-bold text-rose-100 line-clamp-2 mb-1.5">
+                                {item.errorMessage || 'Tải ảnh thất bại'}
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRetryUpload(item.id)}
+                                  className="px-2 py-0.5 rounded bg-white text-rose-900 font-bold text-[10px] hover:bg-rose-50 flex items-center gap-1 cursor-pointer"
+                                >
+                                  <RefreshCw className="w-2.5 h-2.5" />
+                                  <span>Thử lại</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemovePhoto(item.id)}
+                                  className="p-1 rounded bg-black/50 hover:bg-black text-white cursor-pointer"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {item.status === 'success' && !isCompletedOrder && (
                             <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition">
                               <button
                                 type="button"
-                                onClick={() => handleRemovePhoto(idx)}
+                                onClick={() => handleRemovePhoto(item.id)}
                                 className="p-1 rounded-md bg-black/70 hover:bg-red-600 text-white cursor-pointer"
+                                title="Xóa ảnh"
                               >
                                 <Trash2 className="w-3 h-3" />
                               </button>
                             </div>
                           )}
+
                           <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-black/60 text-white">
-                            Ảnh #{idx + 1}
+                            Ảnh #{idx + 1} {item.status === 'success' ? '✓' : ''}
                           </span>
                         </div>
                       ))}
 
-                      {!isCompletedOrder && (
+                      {!isCompletedOrder && photoUploadItems.length < 10 && (
                         <label className="border-2 border-dashed border-gray-300 hover:border-[#c34c36] rounded-xl flex flex-col items-center justify-center p-3 text-center cursor-pointer hover:bg-orange-50/30 transition aspect-video relative">
                           {isUploadingPhoto ? (
                             <div className="flex flex-col items-center gap-1.5 text-xs text-[#c34c36]">
@@ -1718,18 +2050,18 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                             <>
                               <Camera className="w-5 h-5 text-gray-400 mb-1" />
                               <span className="text-[11px] font-bold text-gray-600">Thêm ảnh mới</span>
-                              <span className="text-[9px] text-gray-400">JPG, PNG, WEBP</span>
+                              <span className="text-[9px] text-gray-400">JPG, PNG, WEBP (Tối đa 10 ảnh)</span>
                             </>
                           )}
                           <input
                             type="file"
                             accept="image/*"
+                            multiple
                             disabled={isUploadingPhoto}
                             className="hidden"
                             onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                handleUploadProofPhoto(file);
+                              if (e.target.files && e.target.files.length > 0) {
+                                handleUploadFiles(e.target.files);
                               }
                               e.target.value = '';
                             }}
@@ -1739,41 +2071,42 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     </div>
                   </div>
 
-                  {/* Video Proofs & Unboxing URLs */}
-                  <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-3 text-xs">
-                    <span className="font-extrabold text-[#24263e] uppercase tracking-wider flex items-center gap-1.5">
-                      <Camera className="w-4 h-4 text-blue-600" />
-                      Bằng Chứng Video Thử Nghiệm Máy & Mở Thùng (Cloudinary / S3 URL):
-                    </span>
+                  {isAtHomeOrder && (
+                    <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-3 text-xs">
+                      <span className="font-extrabold text-[#24263e] uppercase tracking-wider flex items-center gap-1.5">
+                        <Camera className="w-4 h-4 text-blue-600" />
+                        Bằng Chứng Video Thử Nghiệm Máy & Mở Thùng (Cloudinary / S3 URL):
+                      </span>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[11px] font-bold text-gray-600 block mb-1">
-                          Video Chẩn Đoán / Test Máy (Inspection Proof Video URL):
-                        </label>
-                        <input
-                          type="url"
-                          value={videoProofUrl}
-                          onChange={(e) => setVideoProofUrl(e.target.value)}
-                          placeholder="https://res.cloudinary.com/.../inspection_test.mp4"
-                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36]"
-                        />
-                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] font-bold text-gray-600 block mb-1">
+                            Video Chẩn Đoán / Test Máy (Inspection Proof Video URL):
+                          </label>
+                          <input
+                            type="url"
+                            value={videoProofUrl}
+                            onChange={(e) => setVideoProofUrl(e.target.value)}
+                            placeholder="https://res.cloudinary.com/.../inspection_test.mp4"
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36]"
+                          />
+                        </div>
 
-                      <div>
-                        <label className="text-[11px] font-bold text-gray-600 block mb-1">
-                          Video Mở Thùng Đồng Kiểm (Unboxing Video URL):
-                        </label>
-                        <input
-                          type="url"
-                          value={unboxingVideoUrl}
-                          onChange={(e) => setUnboxingVideoUrl(e.target.value)}
-                          placeholder="https://res.cloudinary.com/.../unboxing.mp4"
-                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36]"
-                        />
+                        <div>
+                          <label className="text-[11px] font-bold text-gray-600 block mb-1">
+                            Video Mở Thùng Đồng Kiểm (Unboxing Video URL):
+                          </label>
+                          <input
+                            type="url"
+                            value={unboxingVideoUrl}
+                            onChange={(e) => setUnboxingVideoUrl(e.target.value)}
+                            placeholder="https://res.cloudinary.com/.../unboxing.mp4"
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36]"
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="flex justify-between pt-3">
                     <button
@@ -1811,7 +2144,11 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-300 flex items-start sm:items-center gap-3 text-xs text-emerald-900 shadow-2xs">
                       <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5 sm:mt-0" />
                       <div>
-                        <strong className="text-emerald-950 text-sm block">Đơn hàng đã có kết quả kiểm định chính thức & niêm phong số hóa</strong>
+                        <strong className="text-emerald-950 text-sm block">
+                          {isAtCenterOrder
+                            ? 'Đơn hàng đã có kết quả kiểm định chính thức từ Hub'
+                            : 'Đơn hàng đã có kết quả kiểm định chính thức & niêm phong số hóa'}
+                        </strong>
                         <span className="text-[11px] text-emerald-800">
                           Hồ sơ và kết quả đo kiểm đã được ký số phát hành chứng thư. Không được phép chỉnh sửa hoặc thẩm định lại.
                         </span>
@@ -1828,7 +2165,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       {overallVerdict && (
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          Đã chốt: {overallVerdict === 'PASS' ? 'ĐẠT CHUẨN' : 'TỪ CHỐI'} (Đã ổn)
+                          Đã chốt: {overallVerdict === 'PASS' ? 'ĐẠT CHUẨN' : 'TỪ CHỐI'}
                         </span>
                       )}
                     </div>
@@ -1901,25 +2238,31 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       <div>
                         <div className="font-bold text-slate-900">Chữ Ký Số Kiểm Định Viên: {inspectorName}</div>
                         <div className="text-[11px] text-gray-500 font-mono">
-                          Chứng thư số: SL-CA-2026-RSA4096 (Còn hiệu lực) • Tem: {tamperSealInput || 'Đã niêm phong'}
+                          {isAtCenterOrder ? (
+                            <span>Chứng thư số: SL-CA-2026-RSA4096 (Còn hiệu lực) • Hình thức: Kiểm định tại Lab Hub</span>
+                          ) : (
+                            <span>Chứng thư số: SL-CA-2026-RSA4096 (Còn hiệu lực) • Tem: {tamperSealInput || 'Đã niêm phong'}</span>
+                          )}
                         </div>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-4">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          disabled={isCompletedOrder}
-                          checked={sealConfirmed}
-                          onChange={(e) => setSealConfirmed(e.target.checked)}
-                          className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer disabled:cursor-not-allowed"
-                        />
-                        <span className="font-bold text-gray-800 flex items-center gap-1">
-                          <span>Đã dán tem</span>
-                          {sealConfirmed && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 inline" />}
-                        </span>
-                      </label>
+                      {!isAtCenterOrder && (
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            disabled={isCompletedOrder}
+                            checked={sealConfirmed}
+                            onChange={(e) => setSealConfirmed(e.target.checked)}
+                            className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer disabled:cursor-not-allowed"
+                          />
+                          <span className="font-bold text-gray-800 flex items-center gap-1">
+                            <span>Đã dán tem</span>
+                            {sealConfirmed && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 inline" />}
+                          </span>
+                        </label>
+                      )}
 
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
@@ -2022,6 +2365,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       {showCertificateModal && activeOrder && (
         <DigitalInspectionCertificateModal
           order={activeOrder}
+          previewReport={livePreviewReport}
           onClose={() => setShowCertificateModal(false)}
           lang={lang}
         />

@@ -24,11 +24,8 @@
 Thực hiện nghiêm ngặt nguyên tắc **"Không tạo dữ liệu ảo - Chưa kiểm định thì để nguyên trạng thái chờ"**, toàn bộ các điểm gán dữ liệu giả lập đã được xử lý:
 
 ### 1. `src/data/mockData.ts`
-- **Trước khi sửa:** `mockStandardChecklist` của tất cả danh mục (Máy giặt, Tủ lạnh, Robot, v.v.) bị gán sẵn `status: 'pass'` và điền sẵn kết quả đo giả như: *"Inverter DirectDrive 100% êm ái, độ ồn 54dB"*, *"Pin còn 98%"*, v.v. Điều này làm cho đơn hàng khi vừa tạo đã bị hiểu nhầm là đã pass 100%.
-- **Sau khi sửa:**
-  - Chuyển toàn bộ `status` của các tiêu chí về `'pending'` (Chờ kỹ thuật viên thực tế kiểm tra).
-  - Xóa bỏ toàn bộ các câu chữ kết quả đo giả (`testedValue: undefined`).
-  - Trong `mockInspectionCenters`: Xóa bỏ các chỉ số ảo như tỷ lệ đạt giả (`passRatePercentage: 95.4%`), số KTV trực giả.
+- Đã xóa checklist mẫu phía FE. Kỹ thuật viên dùng checklist của đơn từ `GET /api/v1/inspector/orders/{orderId}/checklist`. Khi API trả danh sách rỗng hoặc báo lỗi, màn hình cho tải lại và chờ có checklist trước khi nộp biên bản.
+- Trong `mockInspectionCenters`: Xóa bỏ các chỉ số ảo như tỷ lệ đạt giả (`passRatePercentage: 95.4%`), số KTV trực giả.
 
 ### 2. `src/data/mockReviews.ts`
 - **Trước khi sửa:** Hàm `getSellerTrustProfile` tự động gán cho mọi người bán chỉ số ảo: `trustScore: 100`, `rating: 5.0`, `hubPassRate: 100%`, `completionRate: 100%`, `cancellationRate: 0%`.

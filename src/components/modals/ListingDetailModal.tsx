@@ -567,13 +567,23 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   </div>
                 ) : (
                   <div className="space-y-1.5 pt-1">
-                    <button
-                      onClick={() => onBuyClick(listing)}
-                      className="w-full py-2.5 px-3 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white rounded-xl font-black text-xs shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <ShieldCheck className="w-3.5 h-3.5 text-white" />
-                      <span>{lang === 'vi' ? 'Mua Hàng' : 'Buy Now'}</span>
-                    </button>
+                    {listing.requiresInspection ? (
+                      <button
+                        onClick={() => onChatClick(listing)}
+                        className="w-full py-2.5 px-3 bg-gradient-to-r from-blue-600 to-indigo-700 hover:opacity-95 text-white rounded-xl font-black text-xs shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-white" />
+                        <span>{lang === 'vi' ? 'Đề Xuất Mua Kiểm Định (Qua Chat)' : 'Propose Inspection (Via Chat)'}</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => onBuyClick(listing)}
+                        className="w-full py-2.5 px-3 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white rounded-xl font-black text-xs shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-white" />
+                        <span>{lang === 'vi' ? 'Mua Hàng' : 'Buy Now'}</span>
+                      </button>
+                    )}
 
                     <button
                       onClick={() => onChatClick(listing)}
@@ -853,9 +863,14 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
               </div>
             </div>
 
-            <span className="text-[10px] font-black text-[#24263e] bg-white border border-[#24263e]/20 px-2.5 py-1 rounded-lg whitespace-nowrap shadow-xs">
-              {lang === 'vi' ? 'Phí kiểm định: 250,000đ' : 'Inspection: 250k VND'}
-            </span>
+            <button
+              type="button"
+              onClick={() => onChatClick(listing)}
+              className="text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-xl whitespace-nowrap shadow-xs flex items-center gap-1.5 cursor-pointer transition shrink-0"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>{lang === 'vi' ? 'Thương Lượng Kiểm Định' : 'Negotiate Inspection'}</span>
+            </button>
           </div>
         </div>
       </div>

@@ -3,10 +3,11 @@ import { getRoleLandingPath, getRouteAccess, getUserRoles, pathForTab, paths, re
 import { navigatePath, useBrowserLocation } from './app/router/browser';
 import { RouteStatusPage } from './app/router/RouteStatusPage';
 import React, { useState, lazy, Suspense, useRef, useCallback, useEffect } from 'react';
-import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit, ItemCategory, ConditionGrade, EscrowStatus, InspectionReport } from './types';
+import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit, ItemCategory, ConditionGrade, EscrowStatus, InspectionReport, InspectionProposalPrefillData } from './types';
 import { formatVND } from './utils/translations';
 import { extractWardAndCity, getSavedSellerAddress, saveSellerAddress, cleanFullAddress, formatCombinedAddress } from './utils/addressUtils';
-import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, isOrderCancelledOrRefunded, getResolvedPostParcel, extractListingIdFromOrder } from './utils/orderUtils';
+import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, isOrderCancelledOrRefunded, getResolvedPostParcel, extractListingIdFromOrder, resolveInspectionCenter } from './utils/orderUtils';
+import { getBuyerInspectionStage, getCustomerInspectionStatus } from './utils/inspectionPurchase';
 import { resolveCategoryAndItem, initCatalogCache, resolveOrderListing, resolveListingCategory, extractSellerOriginalPrice } from './utils/catalogCache';
 import { translateSystemNotification } from './utils/systemNotificationTranslator';
 import { lazyWithRetry } from './utils/lazyWithRetry';
@@ -66,7 +67,7 @@ const ViewLoadingFallback = () => (
   </div>
 );
 
-export const VALID_MAIN_TABS = [
+const VALID_MAIN_TABS = [
   'home',
   'marketplace',
   'seller-dashboard',
@@ -82,9 +83,9 @@ export const VALID_MAIN_TABS = [
   'disputes'
 ] as const;
 
-export const TAB_STORAGE_KEY = 'secondlife_active_tab';
+const TAB_STORAGE_KEY = 'secondlife_active_tab';
 
-export function getInitialActiveTab(): string {
+function getInitialActiveTab(): string {
   const role = getStoredUser()?.role || 'buyer';
   return resolveAppRoute(typeof window === 'undefined' ? '/' : window.location.href, role).tab;
 }
@@ -350,9 +351,28 @@ export default function App() {
   const openProfile = () => {
     navigatePath(paths.profile(navigationRole), { state: { returnPath: browserLocation } });
   };
-  const openChat = (listing: Listing) => {
+  const openChat = (listing: Listing, action?: string, prefill?: InspectionProposalPrefillData) => {
+    setSelectedListing(null);
     setChatListing(listing);
-    navigatePath(paths.chat(navigationRole) + `?postId=${encodeURIComponent(listing.id)}`);
+    setChatPredefinedRoomId(undefined);
+    setChatPartnerName(listing.sellerName);
+    setChatPartnerAvatar(listing.sellerAvatar);
+    setChatRoom(undefined);
+    const draft = prefill ? { ...prefill, postId: listing.id, buyerId: currentUser?.id } : null;
+    setInspectionChatDraft(draft);
+    if (draft) {
+      try {
+        sessionStorage.setItem(`secondlife_inspection_prefill_${listing.id}`, JSON.stringify(draft));
+      } catch (e) {
+        console.warn('Failed to save inspection prefill to sessionStorage:', e);
+      }
+    }
+    const query = `?postId=${encodeURIComponent(listing.id)}${action ? `&action=${encodeURIComponent(action)}` : ''}${
+      prefill?.centerId ? `&centerId=${encodeURIComponent(prefill.centerId)}` : ''
+    }${prefill?.inspectionMethod ? `&method=${encodeURIComponent(prefill.inspectionMethod)}` : ''}${
+      prefill?.feeSplit ? `&feeSplit=${encodeURIComponent(prefill.feeSplit)}` : ''
+    }`;
+    navigatePath(paths.chat(navigationRole) + query);
   };
   const openProduct = (listing: Listing, own = false) => {
     setSelectedListing(listing);
@@ -508,8 +528,7 @@ export default function App() {
         combined.forEach((o) => {
           if (o?.id && !seenIds.has(o.id)) {
             const isLocalConfirmed = typeof window !== 'undefined' && (
-              localStorage.getItem(`order_receipt_confirmed_${o.id}`) === 'true' ||
-              o.id === '16915c88-96a2-4cb0-8f6c-cc9a931a6e89'
+              localStorage.getItem(`order_receipt_confirmed_${o.id}`) === 'true'
             );
             const isLocalCancelled = typeof window !== 'undefined' && (
               localStorage.getItem(`order_cancellation_info_${o.id}`) !== null ||
@@ -589,7 +608,15 @@ export default function App() {
 
   // Core Data State
   const [listings, setListings] = useState<Listing[]>([]);
-  const [orders, setOrders] = useState<EscrowOrder[]>(() => getLocalStoredOrders(getStoredUser()));
+  const [orders, setOrders] = useState<EscrowOrder[]>(() => {
+    // Only use local stored orders if NO access token (guest/unauthenticated)
+    // Authenticated users must load real orders from server to prevent status jumping and bleed
+    if (getAccessToken()) {
+      return [];
+    }
+    return getLocalStoredOrders(getStoredUser());
+  });
+  const [isOrdersLoading, setIsOrdersLoading] = useState<boolean>(() => Boolean(getAccessToken()));
   const [disputes, setDisputes] = useState<DisputeCase[]>([]);
 
   const listingsRef = useRef<Listing[]>(listings);
@@ -608,18 +635,24 @@ export default function App() {
     const currentId = currentUser?.id || null;
     if (prevUserIdRef.current !== currentId) {
       prevUserIdRef.current = currentId;
-      setOrders(getLocalStoredOrders(currentUser));
       if (!currentId) {
         setOrders([]);
+        setIsOrdersLoading(false);
+      } else if (getAccessToken()) {
+        setIsOrdersLoading(true);
+        void refreshOrdersRef.current?.(true);
+      } else {
+        setOrders(getLocalStoredOrders(currentUser));
       }
     }
-  }, [currentUser, getLocalStoredOrders]);
+  }, [currentUser?.id, getLocalStoredOrders]);
 
   // Modals
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [checkoutListing, setCheckoutListing] = useState<Listing | null>(null);
   const [checkoutAgreedPrice, setCheckoutAgreedPrice] = useState<number | undefined>(undefined);
   const [chatListing, setChatListing] = useState<Listing | null>(null);
+  const [inspectionChatDraft, setInspectionChatDraft] = useState<InspectionProposalPrefillData | null>(null);
   const [chatPredefinedRoomId, setChatPredefinedRoomId] = useState<string | undefined>(undefined);
   const [chatPartnerName, setChatPartnerName] = useState<string | undefined>(undefined);
   const [chatPartnerAvatar, setChatPartnerAvatar] = useState<string | undefined>(undefined);
@@ -779,6 +812,17 @@ export default function App() {
       return;
     }
 
+    if (checkoutListing) {
+      const closedListingId = checkoutListing?.id;
+      if (closedListingId) {
+        markListingAsAvailable(String(closedListingId));
+        reconcileBoughtListingIds();
+      }
+      setCheckoutListing(null);
+      setCheckoutAgreedPrice(undefined);
+      setCheckoutNegotiationId(undefined);
+    }
+
     setActiveTab(tab);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -849,7 +893,7 @@ export default function App() {
           ? `Bài đăng "${newListing.title}" đang chờ Kỹ thuật viên kiểm định chất lượng (PENDING_INSPECTION).`
           : `Listing "${newListing.title}" is pending Inspection Hub review.`
       );
-      setActiveTab('seller-dashboard');
+      setActiveTab('marketplace');
       return;
     }
 
@@ -860,7 +904,7 @@ export default function App() {
           ? `Bài đăng "${newListing.title}" đã được gửi và đang chờ duyệt (PENDING).`
           : `Listing "${newListing.title}" is pending review.`
       );
-      setActiveTab('seller-dashboard');
+      setActiveTab('marketplace');
       return;
     }
 
@@ -875,8 +919,8 @@ export default function App() {
       return;
     }
 
-    // 5. Trường hợp AI duyệt thành công (ACTIVE)
-    const targetTab = createListingReturnTab || (editingDraft ? 'seller-dashboard' : 'marketplace');
+    // 5. Trường hợp AI duyệt thành công (ACTIVE): Tự động quay về Sàn đồ cũ
+    const targetTab = 'marketplace';
     setActiveTab(targetTab as any);
     showToast(
       lang === 'vi'
@@ -1266,10 +1310,14 @@ export default function App() {
     const currentUser = currentUserRef.current;
     if (!currentUser || !getAccessToken()) {
       setOrders([]);
+      setIsOrdersLoading(false);
       return;
     }
     // The center page owns its orders. Avoid loading the same data (and chats) in App.
-    if (isRestoringSession || isCenterAccount) return;
+    if (isRestoringSession || isCenterAccount) {
+      if (isCenterAccount) setIsOrdersLoading(false);
+      return;
+    }
     const scope = `${currentUser.id}:${currentRole}`;
     if (pendingOrdersRef.current?.scope === scope) {
       if (force) pendingOrdersRef.current.refresh = true;
@@ -1484,11 +1532,19 @@ export default function App() {
 
           const inspFee = Number(bOrd.inspectionFeeVnd || bOrd.buyerInspectionFeeVnd || bOrd.buyerFeeShare || bOrd.inspectionFee || 0);
           const isInspectionOrder = Boolean(bOrd.__isInspection || bOrd.hasInspectionService || inspFee > 0 || bOrd.orderType);
+          const rawStatusUpper = String(bOrd.status || (bOrd as any).backendStatus || '').toUpperCase();
+          const customerInspectionStatus = getCustomerInspectionStatus(rawStatusUpper, bOrd.customerStatus, bOrd.inspectorId);
+          const inspectionStage = bOrd.__isInspection && getBuyerInspectionStage({
+            inspectionStatus: customerInspectionStatus,
+            inspectionNote: bOrd.note,
+            finalPaymentPaidAt: bOrd.finalPaymentPaidAt,
+            linkedOrderId: bOrd.linkedOrderId,
+          });
 
           const isReceiptConfirmedLocal =
+            !inspectionStage &&
             typeof window !== 'undefined' &&
-            (localStorage.getItem(`order_receipt_confirmed_${bOrd.id}`) === 'true' ||
-             bOrd.id === '16915c88-96a2-4cb0-8f6c-cc9a931a6e89');
+            localStorage.getItem(`order_receipt_confirmed_${bOrd.id}`) === 'true';
 
           const isCompletedOrReleased = Boolean(
             bOrd.escrowStatus === 'RELEASED' ||
@@ -1498,8 +1554,7 @@ export default function App() {
             (bOrd as any).backendStatus === 'COMPLETED' ||
             bOrd.releasedAt ||
             bOrd.released_at ||
-            isReceiptConfirmedLocal ||
-            bOrd.id === '16915c88-96a2-4cb0-8f6c-cc9a931a6e89'
+            isReceiptConfirmedLocal
           );
 
           const activeInspectionStatuses = [
@@ -1514,7 +1569,6 @@ export default function App() {
             'PASSED',
             'DELIVERING_TO_BUYER',
           ];
-          const rawStatusUpper = String(bOrd.status || (bOrd as any).backendStatus || '').toUpperCase();
           const isActivelyProcessingInspection = isInspectionOrder && activeInspectionStatuses.includes(rawStatusUpper);
 
           if (isActivelyProcessingInspection && typeof window !== 'undefined') {
@@ -1547,13 +1601,13 @@ export default function App() {
             mappedEscrowStatus = 'REFUNDED_TO_BUYER';
           } else if (isInspectionOrder) {
             const localSavedStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${bOrd.id}`) : null;
-            const s = String(localSavedStatus || bOrd.status || bOrd.backendStatus || '');
+            const s = bOrd.__isInspection && (bOrd.customerStatus || customerInspectionStatus === 'INSPECTING')
+              ? customerInspectionStatus : String(localSavedStatus || bOrd.status || bOrd.backendStatus || '');
             if (s === 'PASSED') {
               mappedEscrowStatus = 'INSPECTION_PASSED';
             } else if (s === 'FAILED' || s === 'REJECTED') {
               mappedEscrowStatus = 'INSPECTION_FAILED';
             } else if (s === 'INSPECTING') {
-              // Chỉ sau khi gửi cho trung tâm hoặc KTV đến nhà quét mã kiểm định mới sang INSPECTION_IN_PROGRESS
               mappedEscrowStatus = 'INSPECTION_IN_PROGRESS';
             } else if (s === 'DELIVERING_TO_BUYER') {
               mappedEscrowStatus = 'SHIPPED_TO_BUYER';
@@ -1682,6 +1736,35 @@ export default function App() {
             }
           } catch {}
 
+          const rawInspOrder = (bOrd as any).inspectionOrder || {};
+          const resolvedFeePayer = bOrd.feePayer || (bOrd as any).counterFeePayer || rawInspOrder.feePayer || undefined;
+          const resolvedFeeSplit: 'BUYER_100' | 'SPLIT_50_50' | 'SELLER_100' =
+            bOrd.inspectionFeeSplit ||
+            rawInspOrder.inspectionFeeSplit ||
+            (resolvedFeePayer === 'SELLER_PAYS' ? 'SELLER_100' :
+             resolvedFeePayer === 'SPLIT_50_50' ? 'SPLIT_50_50' :
+             resolvedFeePayer === 'BUYER_PAYS' ? 'BUYER_100' :
+             (bOrd.sellerFeeShare && Number(bOrd.sellerFeeShare) > 0 && bOrd.buyerFeeShare && Number(bOrd.buyerFeeShare) > 0) ? 'SPLIT_50_50' :
+             (bOrd.sellerFeeShare && Number(bOrd.sellerFeeShare) > 0) ? 'SELLER_100' : 'BUYER_100');
+
+          const resolvedSellerFeeShare = bOrd.sellerFeeShare !== undefined && bOrd.sellerFeeShare !== null
+            ? Number(bOrd.sellerFeeShare)
+            : ((bOrd as any).sellerInspectionFeeVnd !== undefined && (bOrd as any).sellerInspectionFeeVnd !== null
+              ? Number((bOrd as any).sellerInspectionFeeVnd)
+              : (rawInspOrder.sellerFeeShare !== undefined ? Number(rawInspOrder.sellerFeeShare) :
+                (resolvedFeeSplit === 'SPLIT_50_50' ? Math.round(inspFee / 2) : (resolvedFeeSplit === 'SELLER_100' ? inspFee : 0))));
+
+          const resolvedBuyerFeeShare = bOrd.buyerFeeShare !== undefined && bOrd.buyerFeeShare !== null
+            ? Number(bOrd.buyerFeeShare)
+            : ((bOrd as any).buyerInspectionFeeVnd !== undefined && (bOrd as any).buyerInspectionFeeVnd !== null
+              ? Number((bOrd as any).buyerInspectionFeeVnd)
+              : (rawInspOrder.buyerFeeShare !== undefined ? Number(rawInspOrder.buyerFeeShare) :
+                (resolvedFeeSplit === 'SPLIT_50_50' ? Math.round(inspFee / 2) : (resolvedFeeSplit === 'BUYER_100' ? inspFee : 0))));
+
+          const resolvedPaymentDeadline = bOrd.paymentDeadline || rawInspOrder.paymentDeadline || null;
+          const resolvedBuyerPaidAt = bOrd.buyerPaidAt || (bOrd as any).buyer_paid_at || rawInspOrder.buyerPaidAt || null;
+          const resolvedSellerPaidAt = bOrd.sellerPaidAt || (bOrd as any).seller_paid_at || rawInspOrder.sellerPaidAt || null;
+
           const mappedOrder: EscrowOrder = {
             id: bOrd.id,
             listingId: bOrd.postId,
@@ -1750,6 +1833,27 @@ export default function App() {
             })()),
             cancelledBy: isCompletedOrReleased ? null : (bOrd.cancelledBy || null),
             hasInspectionService: isInspectionOrder,
+            feePayer: resolvedFeePayer,
+            inspectionFeeSplit: resolvedFeeSplit,
+            sellerFeeShare: resolvedSellerFeeShare,
+            buyerFeeShare: resolvedBuyerFeeShare,
+            sellerInspectionFeeVnd: resolvedSellerFeeShare,
+            buyerInspectionFeeVnd: resolvedBuyerFeeShare,
+            sellerPaidAt: resolvedSellerPaidAt,
+            buyerPaidAt: resolvedBuyerPaidAt,
+            paymentDeadline: resolvedPaymentDeadline,
+            finalPaymentDeadline: (bOrd as any).finalPaymentDeadline || rawInspOrder.finalPaymentDeadline || null,
+            buyerCommitmentDeposit: bOrd.buyerCommitmentDeposit !== undefined ? Number(bOrd.buyerCommitmentDeposit) : (rawInspOrder.buyerCommitmentDeposit !== undefined ? Number(rawInspOrder.buyerCommitmentDeposit) : 0),
+            returnShippingReserveFee: bOrd.returnShippingReserveFee !== undefined ? Number(bOrd.returnShippingReserveFee) : (rawInspOrder.returnShippingReserveFee !== undefined ? Number(rawInspOrder.returnShippingReserveFee) : 0),
+            feeSettledAt: bOrd.feeSettledAt || rawInspOrder.feeSettledAt || null,
+            inspectionCenterId: bOrd.inspectionCenterId || (bOrd as any).inspectionCenter?.id || rawInspOrder.inspectionCenterId || undefined,
+            inspectionCenterName: bOrd.inspectionCenterName || (bOrd as any).inspectionCenter?.name || rawInspOrder.inspectionCenterName || undefined,
+            inspectionCenterAddress: bOrd.inspectionCenterAddress || (bOrd as any).inspectionCenter?.address || rawInspOrder.inspectionCenterAddress || undefined,
+            inspectionCenterPhone: bOrd.inspectionCenterPhone || (bOrd as any).inspectionCenter?.phone || rawInspOrder.inspectionCenterPhone || undefined,
+            inspectionStatus: bOrd.__isInspection ? customerInspectionStatus : undefined,
+            inspectionNote: bOrd.__isInspection ? bOrd.note : undefined,
+            linkedOrderId: bOrd.__isInspection ? bOrd.linkedOrderId : undefined,
+            finalPaymentPaidAt: bOrd.__isInspection ? bOrd.finalPaymentPaidAt : undefined,
             inspectionMethod: isInspectionOrder
               ? ((bOrd.orderType === 'AT_HOME' || bOrd.inspectionMethod === 'AT_HOME') ? 'AT_HOME' : 'AT_CENTER')
               : undefined,
@@ -1761,8 +1865,8 @@ export default function App() {
                     carrier: 'Lalamove',
                     trackingNumber: (bOrd as any).shipmentOrderCode || (bOrd as any).trackingNumber || '',
                     status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : (bOrd.status === 'SHIPPED' ? 'IN_TRANSIT' : 'PENDING'),
-                    origin: matchedListing.sellerAddress || matchedListing.location || 'Địa chỉ kho người bán',
-                    destination: 'Trạm Kiểm Định SecondLife Hub Lab',
+                    origin: (bOrd as any).sellerAddress || matchedListing.sellerAddress || (matchedListing.location && matchedListing.location !== 'Đà Nẵng, Việt Nam' ? matchedListing.location : null) || 'Địa chỉ kho người bán',
+                    destination: (bOrd as any).inspectionCenterAddress || resolveInspectionCenter(bOrd).address || 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh',
                     estimatedDelivery: 'Trong ngày',
                     timeline: [
                       {
@@ -1778,7 +1882,7 @@ export default function App() {
                     carrier: 'Lalamove',
                     trackingNumber: '',
                     status: 'PENDING',
-                    origin: 'Trạm Kiểm Định SecondLife Hub Lab',
+                    origin: (bOrd as any).inspectionCenterAddress || resolveInspectionCenter(bOrd).address || 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh',
                     destination: buyerAddr,
                     estimatedDelivery: 'Giao nhanh trong ngày sau kiểm định',
                     timeline: [
@@ -1848,7 +1952,22 @@ export default function App() {
                 ],
             createdAt: bOrd.createdAt || bOrd.createdDate || bOrd.created_at || bOrd.paidAt || bOrd.sellerConfirmedAt || bOrd.updatedAt || new Date().toISOString(),
             multiStagePhotos: {
-              listingPhotos: [matchedListing.photos.front, matchedListing.photos.back]
+              listingPhotos: Array.from(new Set([
+                ...((bOrd as any).postImageUrls || []),
+                (bOrd as any).postImageUrl,
+                ...(matchedListing.photoGallery || []),
+                matchedListing.photos?.front,
+                matchedListing.photos?.back,
+                matchedListing.photos?.screenOrDetails,
+                matchedListing.photos?.accessoriesOrBox,
+                matchedListing.photos?.serialOrReceipt,
+              ].filter((u): u is string => typeof u === 'string' && u.trim().length > 0))),
+              inspectorPhotos: Array.isArray((bOrd as any).inspectorPhotos) && (bOrd as any).inspectorPhotos.length > 0
+                ? (bOrd as any).inspectorPhotos
+                : (Array.isArray((bOrd as any).proofPhotos) && (bOrd as any).proofPhotos.length > 0
+                  ? (bOrd as any).proofPhotos
+                  : []),
+              handoverPhotos: (bOrd as any).tamperSealPhoto ? [(bOrd as any).tamperSealPhoto] : [],
             }
           };
           if (isCompletedOrReleased && typeof window !== 'undefined') {
@@ -1883,7 +2002,6 @@ export default function App() {
 
         localRecentOrders.forEach((locOrd) => {
           const isLocCompleted =
-            locOrd.id === '16915c88-96a2-4cb0-8f6c-cc9a931a6e89' ||
             (typeof window !== 'undefined' && localStorage.getItem(`order_receipt_confirmed_${locOrd.id}`) === 'true') ||
             (locOrd.escrowStatus as any) === 'RELEASED' ||
             locOrd.escrowStatus === 'COMPLETED_RELEASED' ||
@@ -2067,6 +2185,7 @@ export default function App() {
       reconcileBoughtListingIds(localRecentOrders);
       setOrders(localRecentOrders);
     } finally {
+      setIsOrdersLoading(false);
       if (pendingOrdersRef.current === pending) {
         pendingOrdersRef.current = null;
         if (pending.refresh && ordersScopeRef.current === scope) void refreshOrdersRef.current?.(true);
@@ -2103,6 +2222,13 @@ export default function App() {
     }, 6000);
     return () => clearInterval(interval);
   }, [activeTab, currentUser, loadUserOrders, routeAccess, isRestoringSession]);
+
+  React.useEffect(() => {
+    if (routeAccess !== 'allowed' || isRestoringSession || !currentUser?.id || !['orders', 'seller-dashboard'].includes(activeTab)) return;
+    return notificationWsClient.subscribeListener((notification) => {
+      if (notification.referenceType === 'INSPECTION_ORDER') void loadUserOrders(true);
+    });
+  }, [activeTab, currentUser?.id, loadUserOrders, routeAccess, isRestoringSession]);
 
   // Listen for instant order placement events across windows/tabs (debounced to avoid loop)
   React.useEffect(() => {
@@ -2238,6 +2364,8 @@ export default function App() {
   };
 
   const handleConfirmReceipt = async (orderId: string) => {
+    const order = orders.find((item) => item.id === orderId);
+    if (order && getBuyerInspectionStage(order)) return;
     try {
       if (typeof window !== 'undefined') {
         localStorage.setItem(`order_receipt_confirmed_${orderId}`, 'true');
@@ -2864,7 +2992,9 @@ export default function App() {
       {/* Main Content Area */}
       <main
         className={
-          activeTab === 'chat'
+          checkoutListing
+            ? 'flex-1 w-full p-0 m-0 bg-[#f8fafc]'
+            : activeTab === 'chat'
             ? 'flex-1 min-h-0 w-full p-2 sm:p-2.5 m-0 overflow-hidden flex flex-col'
             : activeTab === 'admin-dashboard' ||
               activeTab === 'inspection-center' ||
@@ -2876,6 +3006,64 @@ export default function App() {
         }
       >
         <Suspense fallback={<ViewLoadingFallback />}>
+        {checkoutListing ? (
+          <CheckoutModal
+            listing={checkoutListing}
+            currentUser={currentUser}
+            agreedPrice={checkoutAgreedPrice}
+            negotiationId={checkoutNegotiationId}
+            onOpenDeposit={() => setIsTopUpModalOpen(true)}
+            onNavigateToChat={(item, prefill) => {
+              const closedListingId = checkoutListing?.id;
+              if (closedListingId) {
+                markListingAsAvailable(String(closedListingId));
+              }
+              setCheckoutListing(null);
+              setCheckoutAgreedPrice(undefined);
+              setCheckoutNegotiationId(undefined);
+              openChat(item, 'inspection_proposal', prefill);
+            }}
+            onClose={() => {
+              const closedListingId = checkoutListing?.id;
+              if (closedListingId) {
+                markListingAsAvailable(String(closedListingId));
+                reconcileBoughtListingIds();
+                setListings((prev) =>
+                  prev.map((l) =>
+                    String(l.id) === String(closedListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
+                  )
+                );
+              }
+              setCheckoutListing(null);
+              setCheckoutAgreedPrice(undefined);
+              setCheckoutNegotiationId(undefined);
+              if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
+              loadListingsFromBackend(true);
+            }}
+            onCancelUnpaid={(msg) => {
+              const cancelledListingId = checkoutListing?.id;
+              if (cancelledListingId) {
+                markListingAsAvailable(String(cancelledListingId));
+                reconcileBoughtListingIds();
+                setListings((prev) =>
+                  prev.map((l) =>
+                    String(l.id) === String(cancelledListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
+                  )
+                );
+              }
+              setCheckoutListing(null);
+              setCheckoutAgreedPrice(undefined);
+              setCheckoutNegotiationId(undefined);
+              if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
+              loadListingsFromBackend(true);
+              showToast(msg || (lang === 'vi' ? 'Đơn hàng chưa được thanh toán! Đã quay lại trang mua hàng.' : 'Order not paid. Returned to shopping page.'));
+            }}
+            showToast={showToast}
+            onOrderPlaced={handleOrderPlaced}
+            lang={lang}
+          />
+        ) : (
+          <>
         {activeTab === 'home' && (
           <HomePageView
             lang={lang}
@@ -3024,13 +3212,15 @@ export default function App() {
               navigatePath(paths.decision(navigationRole, ord.id));
             }}
             onNavigateToDisputes={() => handleTabChange('disputes')}
+            isLoading={isOrdersLoading}
           />
         )}
 
         {activeTab === 'buyer-inspection-decision' && (
           <BuyerInspectionDecisionView
+            key={route.params.inspectionId || inspectionDecisionOrderId || inspectionDecisionOrder?.id}
             orderId={route.params.inspectionId || inspectionDecisionOrderId || inspectionDecisionOrder?.id}
-            order={inspectionDecisionOrder}
+            order={!route.params.inspectionId || route.params.inspectionId === inspectionDecisionOrder?.id ? inspectionDecisionOrder : null}
             currentUser={currentUser}
             userRole={route.role === 'buyer' ? 'buyer' : currentRole}
             lang={lang}
@@ -3116,6 +3306,7 @@ export default function App() {
             currentUser={currentUser}
             lang={lang}
             initialListing={chatListing}
+            initialInspectionDraft={inspectionChatDraft}
             initialRoomId={route.params.conversationId}
             initialPartnerName={chatPartnerName}
             initialPartnerAvatar={chatPartnerAvatar}
@@ -3167,6 +3358,8 @@ export default function App() {
             }}
             onBack={() => handleTabChange('orders')}
           />
+        )}
+          </>
         )}
         </Suspense>
       </main>
@@ -3258,54 +3451,8 @@ export default function App() {
           />
         )}
 
-        {/* Checkout Modal */}
-        {checkoutListing && (
-          <CheckoutModal
-            listing={checkoutListing}
-            currentUser={currentUser}
-            agreedPrice={checkoutAgreedPrice}
-            negotiationId={checkoutNegotiationId}
-            onOpenDeposit={() => setIsTopUpModalOpen(true)}
-            onClose={() => {
-              const closedListingId = checkoutListing?.id;
-              if (closedListingId) {
-                markListingAsAvailable(String(closedListingId));
-                reconcileBoughtListingIds();
-                setListings((prev) =>
-                  prev.map((l) =>
-                    String(l.id) === String(closedListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
-                  )
-                );
-              }
-              setCheckoutListing(null);
-              setCheckoutAgreedPrice(undefined);
-              setCheckoutNegotiationId(undefined);
-              if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
-              loadListingsFromBackend(true);
-            }}
-            onCancelUnpaid={(msg) => {
-              const cancelledListingId = checkoutListing?.id;
-              if (cancelledListingId) {
-                markListingAsAvailable(String(cancelledListingId));
-                reconcileBoughtListingIds();
-                setListings((prev) =>
-                  prev.map((l) =>
-                    String(l.id) === String(cancelledListingId) ? { ...l, status: 'active', backendStatus: 'ACTIVE' } : l
-                  )
-                );
-              }
-              setCheckoutListing(null);
-              setCheckoutAgreedPrice(undefined);
-              setCheckoutNegotiationId(undefined);
-              if (!selectedListing && route.modal === 'product') closeRouteModal(paths.products);
-              loadListingsFromBackend(true);
-              showToast(msg || (lang === 'vi' ? 'Đơn hàng chưa được thanh toán! Đã quay lại trang mua hàng.' : 'Order not paid. Returned to shopping page.'));
-            }}
-            showToast={showToast}
-            onOrderPlaced={handleOrderPlaced}
-            lang={lang}
-          />
-        )}
+        {/* Checkout Modal rendered inside main */}
+
 
 {/* ChatModal popup has been replaced by the dedicated full-page Messenger chat view */}
 
@@ -3553,7 +3700,7 @@ export default function App() {
       />
 
       {/* E-Commerce Footer */}
-      {activeTab !== 'admin-dashboard' && activeTab !== 'inspection-hub' && activeTab !== 'inspection-center' && activeTab !== 'staff-workspace' && activeTab !== 'chat' && (
+      {activeTab !== 'admin-dashboard' && activeTab !== 'inspection-hub' && activeTab !== 'inspection-center' && activeTab !== 'staff-workspace' && (activeTab !== 'chat' || !!checkoutListing) && (
         <Footer
           lang={lang}
           currentRole={currentRole}

@@ -304,7 +304,7 @@ export const HomePageView: React.FC<HomePageViewProps> = ({
             </h3>
             <p className="text-xs text-[#24263e]/70 leading-relaxed">
               {lang === 'vi'
-                ? 'Hàng hóa gửi qua Trung tâm giám định SecondLife Home Hub tại Hà Nội, Đà Nẵng, TP.HCM. Kỹ sư chuyên môn đo áp suất gas, kiểm tra máy nén/bơm xả, kiểm thử lồng giặt/bo mạch và dán tem niêm phong NFC chống tráo.'
+                ? 'Hàng hóa gửi qua Trung tâm giám định SecondLife Home Hub tại Hà Nội và TP.HCM. Kỹ sư chuyên môn đo áp suất gas, kiểm tra máy nén/bơm xả, kiểm thử lồng giặt/bo mạch và dán tem niêm phong NFC chống tráo.'
                 : 'Hardware engineers thoroughly inspect compressor, gas pressure, washer drum, and control circuit before sealing with tamper-proof NFC tags.'}
             </p>
           </div>

@@ -32,12 +32,21 @@ interface LalamoveAddressPickerProps {
 
 // Preset supported cities in Vietnam according to Backend Lalamove Catalog Policy
 export const ALLOWED_CITIES = [
-  { name: 'Hà Nội', lat: 21.0285, lng: 105.8542, label: 'Hà Nội (Trung tâm Ba Đình/Hoàn Kiếm)' },
-  { name: 'Đà Nẵng', lat: 16.0544, lng: 108.2022, label: 'Đà Nẵng (Hải Châu)' },
-  { name: 'TP. Hồ Chí Minh', lat: 10.7769, lng: 106.7009, label: 'TP. Hồ Chí Minh (Quận 1 / Bến Nghé)' },
+  {
+    name: 'Hà Nội',
+    lat: 21.0285,
+    lng: 105.8542,
+    label: 'Hà Nội & khu vực lân cận (Bắc Ninh, Hải Phòng, Hưng Yên, Ninh Bình)',
+  },
+  {
+    name: 'TP. Hồ Chí Minh',
+    lat: 10.7769,
+    lng: 106.7009,
+    label: 'TP. Hồ Chí Minh & khu vực lân cận (Đồng Nai, Bình Dương, Vũng Tàu)',
+  },
 ];
 
-export const normalizeCityKey = (cityStr?: string): 'HANOI' | 'DANANG' | 'HO_CHI_MINH' | 'OTHER' => {
+export const normalizeCityKey = (cityStr?: string): 'HANOI' | 'HO_CHI_MINH' | 'OTHER' => {
   if (!cityStr) return 'OTHER';
   const clean = cityStr
     .toLowerCase()
@@ -45,9 +54,31 @@ export const normalizeCityKey = (cityStr?: string): 'HANOI' | 'DANANG' | 'HO_CHI
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]/g, '');
 
-  if (clean.includes('hanoi')) return 'HANOI';
-  if (clean.includes('hochiminh') || clean.includes('saigon') || clean.includes('sgn') || clean.includes('hcm')) return 'HO_CHI_MINH';
-  if (clean.includes('danang') || clean.includes('dad')) return 'DANANG';
+  // Khu vực Hà Nội & các tỉnh lân cận được Lalamove hỗ trợ
+  if (
+    clean.includes('hanoi') ||
+    clean.includes('bacninh') ||
+    clean.includes('haiphong') ||
+    clean.includes('hungyen') ||
+    clean.includes('ninhbinh')
+  ) {
+    return 'HANOI';
+  }
+
+  // Khu vực TP. Hồ Chí Minh & các tỉnh lân cận được Lalamove hỗ trợ
+  if (
+    clean.includes('hochiminh') ||
+    clean.includes('saigon') ||
+    clean.includes('sgn') ||
+    clean.includes('hcm') ||
+    clean.includes('dongnai') ||
+    clean.includes('binhduong') ||
+    clean.includes('bariavungtau') ||
+    clean.includes('vungtau')
+  ) {
+    return 'HO_CHI_MINH';
+  }
+
   return 'OTHER';
 };
 
@@ -55,23 +86,22 @@ export const getShortCityName = (fullName: string): string => {
   const key = normalizeCityKey(fullName);
   if (key === 'HANOI') return 'Hà Nội';
   if (key === 'HO_CHI_MINH') return 'TP. Hồ Chí Minh';
-  if (key === 'DANANG') return 'Đà Nẵng';
   return fullName.replace(/\([^)]*\)/g, '').trim() || fullName;
 };
 
 export const detectCityFromCoords = (lat: number, lng: number): string => {
-  if (lat >= 20.0 && lat <= 22.0 && lng >= 105.0 && lng <= 107.0) return 'Hà Nội';
-  if (lat >= 15.5 && lat <= 16.8 && lng >= 107.5 && lng <= 109.0) return 'Đà Nẵng';
-  if (lat >= 10.0 && lat <= 11.8 && lng >= 106.0 && lng <= 107.5) return 'TP. Hồ Chí Minh';
-  return 'Hà Nội';
+  // Hà Nội & lân cận (Bắc Ninh, Hải Phòng, Hưng Yên, Ninh Bình)
+  if (lat >= 19.8 && lat <= 22.2 && lng >= 105.0 && lng <= 107.2) return 'Hà Nội';
+  // TP. Hồ Chí Minh & lân cận (Bình Dương, Đồng Nai, Vũng Tàu)
+  if (lat >= 10.0 && lat <= 11.8 && lng >= 105.8 && lng <= 107.8) return 'TP. Hồ Chí Minh';
+  return 'OTHER';
 };
 
 export const getCityCoordinates = (locationStr?: string) => {
   if (!locationStr) return ALLOWED_CITIES[0];
   const key = normalizeCityKey(locationStr);
-  if (key === 'HO_CHI_MINH') return ALLOWED_CITIES[2]; // TP. Hồ Chí Minh
-  if (key === 'DANANG') return ALLOWED_CITIES[1];      // Đà Nẵng
-  return ALLOWED_CITIES[0];                            // Hà Nội
+  if (key === 'HO_CHI_MINH') return ALLOWED_CITIES[1]; // TP. Hồ Chí Minh
+  return ALLOWED_CITIES[0];                            // Hà Nội (mặc định)
 };
 
 export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
@@ -134,7 +164,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
             : coordFallback.lng;
           return { name: rawName, lat, lng, label: getShortCityName(rawName) };
         });
-        setSupportedCities(parsed);
+        setSupportedCities(parsed.filter(city => normalizeCityKey(city.name) !== 'OTHER'));
       }
     }).catch((err) => {
       console.warn('Cannot fetch dynamic /shipping/cities:', err);
@@ -186,7 +216,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
       throw new Error(lang === 'vi' ? 'Địa chỉ nằm ngoài lãnh thổ Việt Nam.' : 'Location outside Vietnam.');
     }
     if (normalizeCityKey(data.city) === 'OTHER') {
-      throw new Error(lang === 'vi' ? 'Địa chỉ nằm ngoài khu vực phục vụ (chỉ hỗ trợ Hà Nội, Đà Nẵng, TP. Hồ Chí Minh).' : 'Address outside supported service area (Hanoi, Da Nang, Ho Chi Minh City).');
+      throw new Error(lang === 'vi' ? 'Địa chỉ nằm ngoài khu vực phục vụ (chỉ hỗ trợ Hà Nội và TP. Hồ Chí Minh).' : 'Address outside supported service area (Hanoi and Ho Chi Minh City).');
     }
   };
 
@@ -476,6 +506,17 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
     const finalCity = resolvedCity;
     const finalAddr = resolvedAddress.trim();
 
+    // Kiểm tra khu vực được hỗ trợ (Hà Nội, TP.HCM & các tỉnh lân cận)
+    const cityKey = normalizeCityKey(finalCity || finalAddr);
+    if (cityKey === 'OTHER') {
+      setLookupError(
+        lang === 'vi'
+          ? 'Hệ thống hiện chỉ hỗ trợ giao hàng tại khu vực Hà Nội và TP. Hồ Chí Minh (kèm các khu vực lân cận được Lalamove hỗ trợ: Bắc Ninh, Hải Phòng, Hưng Yên, Ninh Bình, Đồng Nai, Bình Dương, Vũng Tàu). Vui lòng chọn địa chỉ trong khu vực hỗ trợ.'
+          : 'Service is only available in Hanoi and Ho Chi Minh City (& nearby regions supported by Lalamove). Please select an address within supported regions.'
+      );
+      return;
+    }
+
     setIsConfirmed(true);
     setLookupError(null);
 
@@ -517,6 +558,41 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
       </div>
 
 
+
+      {/* Quick City Preset Selection */}
+      <div className="p-3 bg-orange-50/70 rounded-2xl border border-orange-200/80 space-y-1.5 shadow-2xs">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold text-orange-950">
+            <Building2 className="w-3.5 h-3.5 text-orange-600 shrink-0" />
+            <span>{lang === 'vi' ? 'Khu vực phục vụ Lalamove:' : 'Supported Lalamove regions:'}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {ALLOWED_CITIES.map((c) => {
+              const isSelected = normalizeCityKey(resolvedCity) === normalizeCityKey(c.name);
+              return (
+                <button
+                  key={c.name}
+                  type="button"
+                  onClick={() => handleSelectCityPreset(c)}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border shadow-2xs ${
+                    isSelected
+                      ? 'bg-orange-600 text-white border-orange-600 ring-2 ring-orange-200'
+                      : 'bg-white text-slate-700 border-gray-200 hover:border-orange-400 hover:text-orange-600'
+                  }`}
+                  title={c.label}
+                >
+                  <span>{c.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <p className="text-[10px] text-orange-800/80 italic font-medium">
+          {lang === 'vi'
+            ? '✓ Hà Nội & lân cận (Bắc Ninh, Hải Phòng, Hưng Yên, Ninh Bình) | ✓ TP. Hồ Chí Minh & lân cận (Đồng Nai, Bình Dương, Vũng Tàu)'
+            : '✓ Hanoi & nearby (Bac Ninh, Hai Phong, Hung Yen, Ninh Binh) | ✓ Ho Chi Minh City & nearby (Dong Nai, Binh Duong, Vung Tau)'}
+        </p>
+      </div>
 
       {/* Contact inputs: Name & Phone */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -16,6 +16,22 @@ export interface ShippingParcel {
   height: number;
 }
 
+interface InspectionReturnContact {
+  name: string;
+  phone: string;
+  address: string;
+}
+
+export interface InspectionReturnQuote {
+  from: InspectionReturnContact;
+  to: InspectionReturnContact;
+  shippingFee: number;
+  reserveFee: number;
+  carrier: string;
+  serviceType: string | null;
+  expiresAt: string | null;
+}
+
 export interface VehicleLimit {
   serviceType: string;
   description: string;
@@ -77,7 +93,8 @@ export function validParcel(parcel: Parcel, catalog: VehicleCatalog): boolean {
     .every(value => Number.isSafeInteger(value) && value <= 2147483647)
     && parcel.weight >= 1
     && [parcel.length, parcel.width, parcel.height]
-      .every(value => value >= catalog.minDimensionCm);
+      .every(value => value >= catalog.minDimensionCm)
+    && parcel.length >= parcel.width;
 }
 
 export function fitsVehicle(
@@ -513,10 +530,10 @@ export const shippingService = {
           status: item.status ?? 1,
         }));
       }
-      return FALLBACK_PROVINCES;
+      return FALLBACK_PROVINCES.filter(province => province._id === 1000001 || province._id === 1000002);
     } catch (err) {
       console.warn('Backend /shipping/provinces failed, using fallback:', err);
-      return FALLBACK_PROVINCES;
+      return FALLBACK_PROVINCES.filter(province => province._id === 1000001 || province._id === 1000002);
     }
   },
 
@@ -734,8 +751,19 @@ export const shippingService = {
   },
 
   /**
-   * Nhân viên Staff / Admin tạo vận đơn giao nhận hàng kiểm định
-   * POST /api/v1/inspection-orders/{inspectionId}/shipments
+   * Lấy báo giá hiện tại cho chặng Hub trả hàng về người bán.
+   */
+  async getInspectionReturnQuote(inspectionId: string, signal: AbortSignal): Promise<InspectionReturnQuote> {
+    const res = await request<InspectionReturnQuote>(`/inspection-orders/${inspectionId}/shipments/return-quote`, {
+      method: 'POST',
+      signal,
+      requiresAuth: true,
+    });
+    return res.data;
+  },
+
+  /**
+   * Tạo vận đơn giao nhận hàng kiểm định.
    */
   async createInspectionShipment(inspectionId: string, body: CreateShipmentRequestDto): Promise<ShipmentBackend> {
     const res = await request<ShipmentBackend>(`/inspection-orders/${inspectionId}/shipments`, {
@@ -750,8 +778,12 @@ export const shippingService = {
    * Lấy danh sách vận đơn của đơn kiểm định
    * GET /api/v1/inspection-orders/{inspectionId}/shipments
    */
-  async getInspectionShipments(inspectionId: string): Promise<ShipmentBackend[]> {
+  async getInspectionShipments(
+    inspectionId: string,
+    options?: Pick<RequestOptions, 'signal' | 'isBackground'>,
+  ): Promise<ShipmentBackend[]> {
     const res = await request<ShipmentBackend[]>(`/inspection-orders/${inspectionId}/shipments`, {
+      ...options,
       method: 'GET',
       requiresAuth: true,
     });

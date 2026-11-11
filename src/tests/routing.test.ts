@@ -85,6 +85,14 @@ test('panel navigation maps existing sidebar sections without adding missing fea
   assert.equal(resolveAppRoute('/admin/reports').tab, 'not-found');
 });
 
+test('inspector inspection results use a dedicated route protected by the inspector role', () => {
+  const route = resolveAppRoute(paths.inspectorResult('inspection-1'));
+  assert.equal(route.params.inspectionId, 'inspection-1');
+  assert.equal(route.section, 'result');
+  assert.equal(getRouteAccess(route, { role: 'inspector' }), 'allowed');
+  assert.equal(getRouteAccess(route, { role: 'buyer' }), 'unauthorized');
+});
+
 test('ambiguous legacy customer routes follow the authenticated role', () => {
   assert.equal(resolveAppRoute('/orders', 'buyer').url, '/buyer/orders');
   assert.equal(resolveAppRoute('/orders', 'seller').url, '/seller/orders');

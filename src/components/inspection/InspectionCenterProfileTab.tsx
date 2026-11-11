@@ -131,15 +131,13 @@ export function parseReverseGeocodedAddress(
     streetAddress = ward;
   }
 
-  // 8. Chuẩn hóa tên Tỉnh / Thành phố theo danh mục 3 thành phố dịch vụ của Backend:
-  // "Thành phố Hồ Chí Minh", "Thành phố Hà Nội", "Thành phố Đà Nẵng"
+  // 8. Chuẩn hóa tên Tỉnh / Thành phố theo 2 khu vực dịch vụ hỗ trợ của Lalamove:
+  // "Thành phố Hồ Chí Minh" (kèm Bình Dương, Đồng Nai, Vũng Tàu), "Thành phố Hà Nội" (kèm Bắc Ninh, Hải Phòng, Hưng Yên, Ninh Bình)
   const checkCity = (province + ' ' + (cityHint || '')).toLowerCase();
-  if (/hồ chí minh|hochiminh|hcm|sài gòn|saigon|bình dương|bà rịa/i.test(checkCity)) {
+  if (/hồ chí minh|hochiminh|hcm|sài gòn|saigon|bình dương|bà rịa|vũng tàu|đồng nai/i.test(checkCity)) {
     province = 'Thành phố Hồ Chí Minh';
-  } else if (/hà nội|hanoi/i.test(checkCity)) {
+  } else if (/hà nội|hanoi|bắc ninh|hải phòng|hưng yên|ninh bình/i.test(checkCity)) {
     province = 'Thành phố Hà Nội';
-  } else if (/đà nẵng|danang|quảng nam/i.test(checkCity)) {
-    province = 'Thành phố Đà Nẵng';
   }
 
   return {
@@ -240,7 +238,7 @@ export const InspectionCenterProfileTab: React.FC<InspectionCenterProfileTabProp
       setIsPinConfirmed(false);
       setGeocodingNotice(
         err?.message ||
-          'Không thể tra cứu địa chỉ từ tọa độ này. Quý trung tâm vui lòng chọn điểm trong khu vực phục vụ (Hà Nội, Đà Nẵng, TP.HCM).'
+          'Không thể tra cứu địa chỉ từ tọa độ này. Quý trung tâm vui lòng chọn điểm trong khu vực phục vụ (Hà Nội và TP.HCM).'
       );
     } finally {
       setIsGeocoding(false);
@@ -918,7 +916,7 @@ export const InspectionCenterProfileTab: React.FC<InspectionCenterProfileTabProp
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold bg-slate-100/80 text-slate-700 cursor-not-allowed select-none outline-none"
                   />
                   <p className="text-[10px] text-slate-400">
-                    Thuộc khu vực phục vụ: Hà Nội, Đà Nẵng, TP.HCM.
+                    Thuộc khu vực phục vụ: Hà Nội và TP.HCM.
                   </p>
                 </div>
 

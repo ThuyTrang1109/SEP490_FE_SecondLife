@@ -316,6 +316,18 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   const [overallVerdict, setOverallVerdict] = useState<'PASS' | 'FAIL'>('PASS');
   const [conditionScore, setConditionScore] = useState<number>(0);
   const [inspectorNotes, setInspectorNotes] = useState('');
+
+  const dispatchNote = useMemo(() => {
+    if (!activeOrder?.id) return '';
+    try {
+      const direct = localStorage.getItem(`order_dispatch_note_${activeOrder.id}`);
+      if (direct) return direct;
+      const raw = localStorage.getItem(`order_assigned_inspector_${activeOrder.id}`);
+      return raw ? JSON.parse(raw)?.dispatchNote || '' : '';
+    } catch {
+      return '';
+    }
+  }, [activeOrder?.id]);
   const [isDigitalSigned, setIsDigitalSigned] = useState(false);
 
   useEffect(() => {
@@ -1518,6 +1530,17 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       </div>
                     </div>
                   </div>
+
+                  {/* Ghi chú hướng dẫn kỹ thuật từ Hub điều phối (nếu có) */}
+                  {dispatchNote && (
+                    <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl text-xs text-amber-900 flex items-start gap-2.5 shadow-2xs">
+                      <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-amber-950">Ghi chú hướng dẫn kỹ thuật từ Hub:</div>
+                        <p className="leading-relaxed text-amber-900 font-medium">{dispatchNote}</p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Hiện trạng đóng gói & Phụ kiện khi tiếp nhận */}
                   <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-3.5">

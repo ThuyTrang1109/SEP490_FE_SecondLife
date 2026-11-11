@@ -28,6 +28,7 @@ import { NotificationItem } from './types/notification';
 import { notificationWsClient } from './services/notificationWsClient';
 import { ShieldCheck, Sparkles, CheckCircle2, Store, AlertTriangle } from 'lucide-react';
 import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, getRefreshToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, isTokenExpiringSoon, recordUserActivity, resetActivityTimer, isUserIdle, refreshAccessToken, checkAndRenewSessionOnReturn, ChatRoomDto } from './services';
+import { inspectionCashConfirmedEvent } from './utils/inspectionCashShipping';
 
 // Code-split heavy views via lazyWithRetry to prevent dynamic import fetch errors
 const CreateListingView = lazyWithRetry(() => import('./pages/CreateListingView').then(m => ({ default: m.CreateListingView })), 'CreateListingView');
@@ -243,6 +244,7 @@ export default function App() {
             kycStatus: (profile.roles?.includes('SELLER') || profile.roles?.includes('ROLE_SELLER')) ? 'verified' : 'unverified',
             emailVerified: Boolean(profile.emailVerified),
             roles: profile.roles,
+            permissions: profile.permissions,
           };
           setCurrentUser(syncedUser);
           setCurrentRole(syncedUser.role);
@@ -406,6 +408,19 @@ export default function App() {
       }
     }
   }, [currentUserId]);
+
+  React.useEffect(() => {
+    const refreshWallet = () => { void loadUserWallet(); };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === inspectionCashConfirmedEvent) refreshWallet();
+    };
+    window.addEventListener(inspectionCashConfirmedEvent, refreshWallet);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener(inspectionCashConfirmedEvent, refreshWallet);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [loadUserWallet]);
 
   // Fetch credit balance and wallet on load if user is logged in
   React.useEffect(() => {
@@ -845,7 +860,7 @@ export default function App() {
     if (!getUserRoles(verifiedUser).includes(newRole)) {
       try {
         const profile = await userService.getMyProfile();
-        verifiedUser = { ...verifiedUser, roles: profile.roles };
+        verifiedUser = { ...verifiedUser, roles: profile.roles, permissions: profile.permissions };
       } catch { navigatePath(paths.unauthorized); return; }
     }
     if (!getUserRoles(verifiedUser).includes(newRole)) { navigatePath(paths.unauthorized); return; }
@@ -1837,6 +1852,7 @@ export default function App() {
             inspectionFeeSplit: resolvedFeeSplit,
             sellerFeeShare: resolvedSellerFeeShare,
             buyerFeeShare: resolvedBuyerFeeShare,
+            cashShippingSimulation: bOrd.cashShippingSimulation ?? rawInspOrder.cashShippingSimulation,
             sellerInspectionFeeVnd: resolvedSellerFeeShare,
             buyerInspectionFeeVnd: resolvedBuyerFeeShare,
             sellerPaidAt: resolvedSellerPaidAt,
@@ -2214,21 +2230,79 @@ export default function App() {
 
   // Realtime background polling for new orders when on orders or seller dashboard
   React.useEffect(() => {
-    if (routeAccess !== 'allowed' || isRestoringSession || !currentUser || !['orders', 'seller-dashboard'].includes(activeTab)) return;
-    const interval = setInterval(() => {
-      // Nếu người dùng đã nhàn rỗi quá 30 phút, tạm ngưng polling ngầm để đồng bộ phiên hết hạn với Người Mua
-      if (isUserIdle(30 * 60 * 1000)) return;
-      loadUserOrders();
-    }, 6000);
-    return () => clearInterval(interval);
+    const orderTabs = ['orders', 'seller-dashboard', 'disputes', 'buyer-inspection-decision', 'inspection-hub'];
+    if (routeAccess !== 'allowed' || isRestoringSession || !currentUser || !orderTabs.includes(activeTab)) return;
+
+    let timer: any = null;
+    const scheduleNext = () => {
+      // Khi WebSocket hoạt động: poll rất thưa (45s) làm safety net, giảm tải tối đa cho BE
+      // Khi WebSocket mất kết nối: poll dự phòng 20s
+      const intervalMs = notificationWsClient.isConnected() ? 45_000 : 20_000;
+      timer = setTimeout(() => {
+        // Tạm ngưng polling hoàn toàn khi người dùng ẩn tab trình duyệt hoặc nhàn rỗi
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+          scheduleNext();
+          return;
+        }
+        if (isUserIdle(30 * 60 * 1000)) {
+          scheduleNext();
+          return;
+        }
+
+        loadUserOrders().finally(() => {
+          scheduleNext();
+        });
+      }, intervalMs);
+    };
+
+    scheduleNext();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, [activeTab, currentUser, loadUserOrders, routeAccess, isRestoringSession]);
 
+  // Ensure WebSocket STOMP notification client is connected for authenticated user
   React.useEffect(() => {
-    if (routeAccess !== 'allowed' || isRestoringSession || !currentUser?.id || !['orders', 'seller-dashboard'].includes(activeTab)) return;
-    return notificationWsClient.subscribeListener((notification) => {
-      if (notification.referenceType === 'INSPECTION_ORDER') void loadUserOrders(true);
+    const token = getAccessToken();
+    if (token && currentUser?.id) {
+      notificationWsClient.connect(token);
+    }
+  }, [currentUser?.id]);
+
+  // Event-driven real-time synchronization via WebSocket STOMP
+  React.useEffect(() => {
+    if (routeAccess !== 'allowed' || isRestoringSession || !currentUser?.id) return;
+
+    // A. Lắng nghe real-time notification events từ WebSocket STOMP
+    const unsubWs = notificationWsClient.subscribeListener((notification) => {
+      const ref = String(notification.referenceType || '').toUpperCase();
+      if (
+        !ref ||
+        ref === 'INSPECTION_ORDER' ||
+        ref === 'ORDER' ||
+        ref === 'ESCROW' ||
+        ref === 'SHIPMENT' ||
+        ref === 'PAYMENT' ||
+        ref === 'DISPUTE'
+      ) {
+        void loadUserOrders(true);
+      }
     });
-  }, [activeTab, currentUser?.id, loadUserOrders, routeAccess, isRestoringSession]);
+
+    // B. Khi người dùng focus lại tab sau khi chuyển tab/cửa sổ khác -> Sync tức thì 1 lần
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible' && !isUserIdle(30 * 60 * 1000)) {
+        void loadUserOrders(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      unsubWs();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentUser?.id, loadUserOrders, routeAccess, isRestoringSession]);
 
   // Listen for instant order placement events across windows/tabs (debounced to avoid loop)
   React.useEffect(() => {
@@ -2911,7 +2985,7 @@ export default function App() {
 
   return (
     <div className={`min-h-screen flex flex-col font-sans bg-[#faf8f5] text-[#24263e] selection:bg-[#c34c36] selection:text-white ${
-      activeTab === 'chat' ? 'h-screen max-h-screen overflow-hidden' : ''
+      activeTab === 'chat' && !checkoutListing ? 'h-screen max-h-screen overflow-hidden' : ''
     }`}>
       {/* Navigation */}
       {activeTab !== 'admin-dashboard' &&
@@ -3505,6 +3579,7 @@ export default function App() {
               address: user.address || '',
               role: user.role,
               roles: user.roles,
+              permissions: user.permissions,
               avatar: user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256',
               kycStatus: user.role === 'seller' ? 'verified' : 'unverified',
               emailVerified: Boolean(user.emailVerified),

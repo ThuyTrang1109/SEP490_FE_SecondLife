@@ -26,6 +26,7 @@ export const panelPaths: Partial<Record<UserRole, Record<string, string>>> = {
     overview: '/inspection-center/dashboard', dispatch: '/inspection-center/dispatch', staff: '/inspection-center/staff',
     orders: '/inspection-center/orders', checklists: '/inspection-center/checklists', pricing: '/inspection-center/pricing',
     appeals: '/inspection-center/appeals', profile: '/inspection-center/center-profile',
+    wallet: '/inspection-center/wallet',
   },
   inspector: {
     workbench: '/inspector/dashboard', tasks: '/inspector/inspections',
@@ -174,7 +175,7 @@ export function resolveAppRoute(input: string, role: UserRole = 'buyer'): RouteM
     '/inspector-center/center-profile': '/inspection-center/center-profile',
     '/inspection-center/center-info': '/inspection-center/center-profile',
     '/inspector-center/center-info': '/inspection-center/center-profile',
-    '/buyer': '/buyer/dashboard', '/seller': '/seller/dashboard', '/staff': '/staff/dashboard', '/admin': '/admin/dashboard',
+    '/inspector-center/wallet': '/inspection-center/wallet',    '/buyer': '/buyer/dashboard', '/seller': '/seller/dashboard', '/staff': '/staff/dashboard', '/admin': '/admin/dashboard',
     '/buyer-inspection-decision': params.get('orderId') || params.get('id')
       ? paths.decision(role, params.get('orderId') || params.get('id')!) : pathForTab('orders', role),
   };

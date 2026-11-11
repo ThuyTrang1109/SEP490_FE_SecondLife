@@ -38,6 +38,7 @@ interface AuthModalProps {
     email: string;
     role: UserRole;
     roles?: string[];
+    permissions?: string[];
     phone?: string;
     address?: string;
     avatar?: string;
@@ -322,6 +323,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         email: res.user.email,
         role: mappedRole,
         roles: res.roles,
+        permissions: res.permissions,
         phone: res.user.phone || '',
         avatar: res.user.avatarUrl || undefined,
         address: '',
@@ -436,6 +438,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         email: res.user.email,
         role: mappedRole,
         roles: res.roles,
+        permissions: res.permissions,
         phone: res.user.phone || '',
         avatar: res.user.avatarUrl || undefined,
         address: '',

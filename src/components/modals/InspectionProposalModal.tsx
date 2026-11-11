@@ -23,6 +23,7 @@ import { Listing, Language, UserProfile, InspectionCenter, InspectionProposalPre
 import { formatVND } from '../../utils/translations';
 import { formatLalamoveVehicle } from './CheckoutModal';
 import { getReusableInspectionQuote, isInspectionQuoteExpired } from '../../utils/inspectionChatDraft';
+import { getCashInspectionFeeShares } from '../../utils/inspectionCashShipping';
 
 interface InspectionProposalModalProps {
   isOpen: boolean;
@@ -300,10 +301,14 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
   const atCenterTotalFee = atCenterQuotedTotal ?? 0;
 
   const activeTotalFee = isAtHome ? atHomeTotalFee : atCenterTotalFee;
+  const cashShipping = !isAtHome && currentCenterQuote?.cashShippingSimulationEnabled === true;
+  const cashShares = cashShipping ? getCashInspectionFeeShares(activeTotalFee, atCenterOutboundFee, feePayer) : null;
   const splitOptions = isAtHome
     ? (currentHomeQuote?.atHomeSplitOptions || currentCenterQuote?.atHomeSplitOptions)
     : currentCenterQuote?.atCenterSplitOptions;
-  const halfFee = splitOptions?.SPLIT_50_50 ?? Math.round(activeTotalFee / 2);
+  const halfFee = cashShipping
+    ? getCashInspectionFeeShares(activeTotalFee, atCenterOutboundFee, 'SPLIT_50_50').buyer
+    : splitOptions?.SPLIT_50_50 ?? Math.round(activeTotalFee / 2);
   const formatQuotedFee = (fee: number | undefined) => (fee === undefined || fee === null ? '—' : formatVND(fee));
 
   // Split calculation
@@ -319,6 +324,10 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
     // SPLIT_50_50
     buyerShare = halfFee;
     sellerShare = activeTotalFee - buyerShare;
+  }
+  if (cashShares) {
+    buyerShare = cashShares.buyer;
+    sellerShare = cashShares.seller;
   }
 
   // Quote expiration
@@ -781,14 +790,20 @@ export const InspectionProposalModal: React.FC<InspectionProposalModalProps> = (
               </div>
             </div>
 
+            {cashShares && (
+              <div className="rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
+                <strong>Mô phỏng Sandbox</strong>
+                <p>Cước seller ứng khi giao · {formatVND(atCenterOutboundFee)} (dự kiến)</p>
+              </div>
+            )}
             {/* Hiển thị chi tiết số tiền mỗi bên chịu */}
             <div className="p-2.5 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
               <div>
-                <span className="text-slate-500">{lang === 'vi' ? 'Bạn thanh toán:' : 'You pay:'}</span>{' '}
+                <span className="text-slate-500">{cashShares ? 'Buyer nộp trước' : lang === 'vi' ? 'Bạn thanh toán:' : 'You pay:'}</span>{' '}
                 <strong className="text-[#c34c36] font-black">{formatQuotedFee(quote ? buyerShare : undefined)}</strong>
               </div>
               <div>
-                <span className="text-slate-500">{lang === 'vi' ? 'Người bán chịu:' : 'Seller pays:'}</span>{' '}
+                <span className="text-slate-500">{cashShares ? 'Seller nộp trước' : lang === 'vi' ? 'Người bán chịu:' : 'Seller pays:'}</span>{' '}
                 <strong className="text-slate-800 font-bold">{formatQuotedFee(quote ? sellerShare : undefined)}</strong>
               </div>
             </div>

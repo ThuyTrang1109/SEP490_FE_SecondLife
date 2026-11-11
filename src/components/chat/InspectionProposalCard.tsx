@@ -21,8 +21,13 @@ import {
   InspectionOrderDto
 } from '../../services/inspectorService';
 import { walletService } from '../../services/walletService';
+import { shippingService } from '../../services/shippingService';
 import { Listing, Language, UserRole, EscrowOrder } from '../../types';
 import { formatVND } from '../../utils/translations';
+import { getCashInspectionFeeShares } from '../../utils/inspectionCashShipping';
+import { getChatInspectionFees } from '../../utils/chatInspection';
+import { CHAT_PRODUCT_PLACEHOLDER } from '../../utils/chatProduct';
+import { getCustomerInspectionStatus } from '../../utils/inspectionPurchase';
 import { CreateShipmentModal } from '../modals/CreateShipmentModal';
 import {
   formatInspectionDeadline,
@@ -35,27 +40,27 @@ import { navigatePath } from '../../app/router/browser';
 interface InspectionProposalCardProps {
   order: InspectionOrderDto;
   listing: Listing;
-  currentUserId?: string;
   isSeller: boolean;
   isBuyer: boolean;
   currentRole: UserRole;
   lang: Language;
   onOrderUpdated: (updatedOrder: InspectionOrderDto) => void;
+  onRefreshOrder: (orderId: string) => Promise<void>;
   onViewDetails?: (orderId: string) => void;
-  isSuperseded?: boolean;
 }
+
+const formatFee = (value?: number | null) => value == null ? '—' : formatVND(value);
 
 export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
   order,
   listing,
-  currentUserId,
   isSeller,
   isBuyer,
   currentRole,
   lang,
   onOrderUpdated,
+  onRefreshOrder,
   onViewDetails,
-  isSuperseded = false,
 }) => {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -71,127 +76,65 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
   // Payment Confirmation State
   const [showPayConfirmModal, setShowPayConfirmModal] = useState(false);
 
-  // Status flags
   const status = order.status;
-  const isWaitingSellerApproval = !isSuperseded && status === 'WAITING_SELLER_APPROVAL';
-  const isWaitingBuyerApproval = !isSuperseded && status === 'WAITING_BUYER_APPROVAL';
-  const isPassed = !isSuperseded && status === 'PASSED';
-  const isFailed = !isSuperseded && status === 'FAILED';
-  const isRejected = !isSuperseded && status === 'REJECTED';
-  const isCancelled = !isSuperseded && status === 'CANCELLED';
-
-  // Resolve prefill data from sessionStorage if order fields are missing
-  const prefill = useMemo(() => {
-    try {
-      const postId = order.postId || listing?.id;
-      if (!postId) return null;
-      const raw = sessionStorage.getItem(`secondlife_inspection_prefill_${postId}`);
-      return raw ? JSON.parse(raw) : null;
-    } catch { return null; }
-  }, [order.postId, listing?.id]);
-
-  // Center Name
-  const [centerName, setCenterName] = useState<string>(() => {
-    return (order as any).centerName || (order as any).inspectionCenterName || prefill?.centerName || '';
-  });
-
-  useEffect(() => {
-    if (centerName) return;
-    const centerId = order.inspectionCenterId || (order as any).centerId || prefill?.centerId;
-    if (centerId) {
-      inspectorService.getInspectionCenters().then((centers) => {
-        const found = centers.find((c) => c.id === centerId || c.id.toLowerCase() === centerId.toLowerCase());
-        if (found?.name) {
-          setCenterName(found.name);
-        } else {
-          setCenterName('Trung Tâm Kiểm Định Chính Thành phố Hồ Chí Minh');
-        }
-      }).catch(() => {
-        setCenterName('Trung Tâm Kiểm Định Chính Thành phố Hồ Chí Minh');
-      });
-    } else {
-      setCenterName('Trung Tâm Kiểm Định Chính Thành phố Hồ Chí Minh');
-    }
-  }, [order.inspectionCenterId, centerName, prefill?.centerId]);
-
-  // Sub-fees
+  const isWaitingSellerApproval = status === 'WAITING_SELLER_APPROVAL';
+  const isWaitingBuyerApproval = status === 'WAITING_BUYER_APPROVAL';
+  const isWaitingFeePayment = status === 'WAITING_FEE_PAYMENT';
+  const isConfirmedPendingDispatch = status === 'CONFIRMED_PENDING_DISPATCH';
+  const isPassed = status === 'PASSED';
+  const isFailed = status === 'FAILED';
+  const isRejected = status === 'REJECTED';
+  const isCancelled = status === 'CANCELLED';
+  const customerStatus = getCustomerInspectionStatus(status, order.customerStatus, order.inspectorId);
+  const isInspecting = ['INSPECTING', 'INSPECTION_IN_PROGRESS'].includes(customerStatus);
   const isAtHome = order.orderType === 'AT_HOME';
-  const baseInspectionFee = order.inspectionFee ?? (order as any).baseInspectionFee ?? prefill?.baseInspectionFee ?? 166000;
-  const travelFeeRoundTrip = (order as any).travelFeeRoundTrip ?? (order as any).travelFee ?? 0;
-  const shippingFeeToHub = isAtHome ? 0 : (order.shippingFee ?? (order as any).shippingToCenterFee ?? prefill?.shippingToCenterFee ?? 340000);
-  const returnReserveFee = isAtHome ? 0 : (order.returnShippingReserveFee ?? (order as any).returnReserveFee ?? prefill?.returnShippingReserveFee ?? 391000);
-  const calculatedTotalFee = isAtHome
-    ? baseInspectionFee + travelFeeRoundTrip
-    : baseInspectionFee + shippingFeeToHub + returnReserveFee;
-  const totalFee = isAtHome
-    ? (order.inspectionFee !== undefined && order.inspectionFee > 0 ? order.inspectionFee + travelFeeRoundTrip : calculatedTotalFee)
-    : (order.inspectionFee !== undefined && order.shippingFee !== undefined && order.returnShippingReserveFee !== undefined && (order.inspectionFee + order.shippingFee + order.returnShippingReserveFee) > 0
-      ? order.inspectionFee + order.shippingFee + order.returnShippingReserveFee
-      : (order.inspectionFee && order.inspectionFee > 0 ? order.inspectionFee : calculatedTotalFee));
+  const isAtCenter = order.orderType === 'AT_CENTER';
 
-  const buyerFeeShare =
-    order.buyerFeeShare ??
-    (order.feePayer === 'BUYER_PAYS' || (order as any).feeSplit === 'BUYER_100'
-      ? totalFee
-      : order.feePayer === 'SELLER_PAYS' || (order as any).feeSplit === 'SELLER_100'
-        ? 0
-        : Math.round(totalFee / 2));
+  const centerId = order.inspectionCenterId;
+  const [centerResult, setCenterResult] = useState<{ id: string; name?: string } | null>(null);
+  const centerName = order.inspectionCenterName || (centerResult?.id === centerId ? centerResult?.name : undefined);
+  useEffect(() => {
+    if (!centerId || order.inspectionCenterName) return;
+    let active = true;
+    void inspectorService.getAvailableCenters().then((centers) => {
+      if (active) setCenterResult({ id: centerId, name: centers.find((center) => center.id === centerId)?.name });
+    });
+    return () => { active = false; };
+  }, [centerId, order.inspectionCenterName]);
 
-  const sellerFeeShare =
-    order.sellerFeeShare ??
-    (order.feePayer === 'SELLER_PAYS' || (order as any).feeSplit === 'SELLER_100'
-      ? totalFee
-      : order.feePayer === 'BUYER_PAYS' || (order as any).feeSplit === 'BUYER_100'
-        ? 0
-        : totalFee - buyerFeeShare);
-  const buyerCommitmentDeposit = order.buyerCommitmentDeposit || 0;
+  const cashShipping = isAtCenter && order.cashShippingSimulation === true;
+  const { inspection: baseInspectionFee, travel: travelFeeRoundTrip, shipping: shippingFeeToHub,
+    reserve: returnReserveFee, total: totalFee } = getChatInspectionFees(order);
+  const buyerFeeShare = order.buyerFeeShare;
+  const sellerFeeShare = order.sellerFeeShare;
+  const buyerCommitmentDeposit = order.buyerCommitmentDeposit ?? 0;
+  const buyerAmount = buyerFeeShare == null ? undefined : buyerFeeShare + buyerCommitmentDeposit;
+  const itemPrice = order.finalItemPrice ?? order.postPrice;
+  const feePayerLabel = order.feePayer === 'BUYER_PAYS' ? 'Người mua chịu 100%'
+    : order.feePayer === 'SELLER_PAYS' ? 'Người bán chịu 100%'
+      : order.feePayer === 'SPLIT_50_50' ? 'Chia đôi 50% - 50%' : null;
 
-  // Payment role checks
-  const myFeeToPay = isSeller ? sellerFeeShare : buyerFeeShare + buyerCommitmentDeposit;
-  const isMyPaymentDone = isSeller ? Boolean(order.sellerPaidAt) : Boolean(order.buyerPaidAt);
-  const isBothPaid = Boolean(order.buyerPaidAt && (sellerFeeShare === 0 || order.sellerPaidAt));
-  const isWaitingFeePayment = !isSuperseded && status === 'WAITING_FEE_PAYMENT' && !isBothPaid;
-  const isConfirmedPendingDispatch = !isSuperseded && !isPassed && !isFailed && !isRejected && !isCancelled && (
-    status === 'CONFIRMED_PENDING_DISPATCH' || isBothPaid
-  );
+  const myFeeToPay = isSeller ? sellerFeeShare : buyerAmount;
+  const otherFeeToPay = isSeller ? buyerAmount : sellerFeeShare;
+  const canPay = myFeeToPay != null && myFeeToPay > 0;
+  const isMyPaymentDone = canPay && Boolean(isSeller ? order.sellerPaidAt : order.buyerPaidAt);
+  const isOtherPartyPaid = otherFeeToPay === 0 || Boolean(isSeller ? order.buyerPaidAt : order.sellerPaidAt);
 
-  // Lalamove Shipment State for Seller
   const [showShipmentModal, setShowShipmentModal] = useState(false);
-  const [isShipmentCreated, setIsShipmentCreated] = useState<boolean>(() => {
-    return (
-      (typeof window !== 'undefined' && (
-        localStorage.getItem(`order_shipment_created_${order.id}`) === 'true' ||
-        localStorage.getItem(`seller_shipped_to_hub_${order.id}`) === 'true'
-      )) ||
-      Boolean((order as any).shippingTrackingCode) ||
-      Boolean((order as any).inboundTrackingCode) ||
-      order.status === 'SHIPPING_TO_CENTER' ||
-      order.status === 'DISPATCHED'
-    );
-  });
-
+  const [shipmentState, setShipmentState] = useState<'checking' | 'created' | 'none' | 'unavailable'>('checking');
+  const [shipmentRetry, setShipmentRetry] = useState(0);
   useEffect(() => {
-    setIsShipmentCreated(
-      (typeof window !== 'undefined' && (
-        localStorage.getItem(`order_shipment_created_${order.id}`) === 'true' ||
-        localStorage.getItem(`seller_shipped_to_hub_${order.id}`) === 'true'
-      )) ||
-      Boolean((order as any).shippingTrackingCode) ||
-      Boolean((order as any).inboundTrackingCode) ||
-      order.status === 'SHIPPING_TO_CENTER' ||
-      order.status === 'DISPATCHED'
-    );
-  }, [order.id, order.status, (order as any).shippingTrackingCode]);
-
-  useEffect(() => {
-    const handleShipped = (e: any) => {
-      if (e.detail?.orderId === order.id) {
-        setIsShipmentCreated(true);
-      }
-    };
-    window.addEventListener('secondlife_seller_shipped_to_hub', handleShipped);
-    return () => window.removeEventListener('secondlife_seller_shipped_to_hub', handleShipped);
-  }, [order.id]);
+    if (!isSeller || !isAtCenter || !isConfirmedPendingDispatch) return;
+    let active = true;
+    setShipmentState('checking');
+    void shippingService.getInspectionShipments(order.id, { isBackground: true }).then((shipments) => {
+      if (active) setShipmentState(shipments.some((shipment) => shipment.leg === 'SELLER_TO_CENTER'
+        && shipment.status !== 'CANCELLED') ? 'created' : 'none');
+    }).catch(() => {
+      if (active) setShipmentState('unavailable');
+    });
+    return () => { active = false; };
+  }, [order.id, order.updatedAt, isSeller, isAtCenter, isConfirmedPendingDispatch, shipmentRetry]);
 
   const escrowOrderForShipment = useMemo<EscrowOrder>(() => {
     return {
@@ -199,17 +142,17 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
       orderType: (order.orderType as any) || (isAtHome ? 'AT_HOME' : 'AT_CENTER'),
       inspectionMethod: (order.orderType as any) || (isAtHome ? 'AT_HOME' : 'AT_CENTER'),
       hasInspectionService: true,
-      inspectionFeeVnd: totalFee,
+      inspectionFeeVnd: totalFee ?? 0,
       inspectionCenterId: order.inspectionCenterId || (order as any).centerId,
       inspectionCenterName: centerName,
       listing: listing as any,
       sellerId: order.sellerId || (listing as any)?.seller?.id || (listing as any)?.sellerId,
       sellerName: order.sellerName || (listing as any)?.seller?.name || 'Người bán',
-      sellerPhone: (order as any).sellerPhone || (listing as any)?.seller?.phone || '0912345678',
+      sellerPhone: (order as any).sellerPhone,
       buyerId: order.buyerId,
       buyerName: order.buyerName || 'Người mua',
-      buyerPhone: (order as any).buyerPhone || '0987654321',
-      totalAmount: (order.postPrice || listing?.priceVnd || 0) + totalFee,
+      buyerPhone: (order as any).buyerPhone,
+      totalAmount: (itemPrice ?? 0) + (totalFee ?? 0),
       itemTitle: order.postTitle || listing?.title || 'Sản phẩm',
       status: (order.status as any) || 'CONFIRMED_PENDING_DISPATCH',
       backendStatus: (order.status as any) || 'CONFIRMED_PENDING_DISPATCH',
@@ -217,7 +160,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
       createdAt: order.createdAt || new Date().toISOString(),
       updatedAt: order.updatedAt || new Date().toISOString(),
     } as unknown as EscrowOrder;
-  }, [order, listing, isAtHome, totalFee, centerName]);
+  }, [order, listing, isAtHome, totalFee, itemPrice, centerName]);
 
   // Dynamic countdown timer based on paymentDeadline
   const [timeLeft, setTimeLeft] = useState(() => calculateDeadlineTimeLeft(order.paymentDeadline, Date.now(), lang));
@@ -237,18 +180,14 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
       if (remaining.isExpired && !hasRefreshedAfterExpireRef.current) {
         hasRefreshedAfterExpireRef.current = true;
         // Tải lại trạng thái đơn từ BE khi tới hạn
-        inspectorService.getOrder(order.id)
-          .then((fresh) => {
-            if (fresh) onOrderUpdated(fresh);
-          })
-          .catch((err) => console.warn('Could not refresh order after deadline expired:', err));
+        void onRefreshOrder(order.id);
       }
     };
 
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [order.paymentDeadline, order.id, isWaitingFeePayment, lang, onOrderUpdated]);
+  }, [order.paymentDeadline, order.id, isWaitingFeePayment, lang, onRefreshOrder]);
 
   const isPaymentDeadlinePassed = timeLeft.isExpired || isInspectionPaymentExpired(order.paymentDeadline);
 
@@ -375,6 +314,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
 
   // 5. Pay Fee via Wallet
   const handlePayFee = async () => {
+    if (!isWaitingFeePayment || !canPay || isMyPaymentDone) return;
     if (isPaymentDeadlinePassed) {
       setActionError(
         lang === 'vi'
@@ -382,24 +322,19 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
           : `Inspection fee payment deadline has expired (${formatInspectionDeadline(order.paymentDeadline, lang)}).`
       );
       setShowPayConfirmModal(false);
-      inspectorService.getOrder(order.id)
-        .then((fresh) => {
-          if (fresh) onOrderUpdated(fresh);
-        })
-        .catch(() => { });
+      void onRefreshOrder(order.id);
       return;
     }
 
     setActionLoading(true);
     setActionError(null);
     try {
-      await inspectorService.payInspectionFee(order.id);
-      const fresh = await inspectorService.getOrder(order.id);
+      const fresh = await inspectorService.payInspectionFee(order.id);
+      setShowPayConfirmModal(false);
+      onOrderUpdated(fresh);
       try {
         await walletService.getMyWallet();
       } catch { }
-      setShowPayConfirmModal(false);
-      onOrderUpdated(fresh);
     } catch (err: any) {
       console.warn('Failed to pay inspection fee:', err);
       const msg =
@@ -407,29 +342,19 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
         (lang === 'vi' ? 'Không thể thanh toán phí kiểm định từ ví. Vui lòng kiểm tra số dư ví.' : 'Failed to pay fee from wallet.');
       setActionError(msg);
       // Nếu API thanh toán báo quá hạn, dùng thông báo BE và cập nhật đơn
-      inspectorService.getOrder(order.id)
-        .then((fresh) => {
-          if (fresh) onOrderUpdated(fresh);
-        })
-        .catch(() => { });
+      void onRefreshOrder(order.id);
     } finally {
       setActionLoading(false);
     }
   };
 
   // Preview numbers for Seller Counter option
-  let previewBuyerShare = 0;
-  let previewSellerShare = 0;
-  if (counterFeePayer === 'BUYER_PAYS') {
-    previewBuyerShare = totalFee;
-    previewSellerShare = 0;
-  } else if (counterFeePayer === 'SELLER_PAYS') {
-    previewBuyerShare = 0;
-    previewSellerShare = totalFee;
-  } else {
-    previewBuyerShare = Math.round(totalFee / 2);
-    previewSellerShare = totalFee - previewBuyerShare;
-  }
+  const shippingPaidDirectly = cashShipping ? shippingFeeToHub : 0;
+  const preview = totalFee != null && shippingPaidDirectly != null
+    ? getCashInspectionFeeShares(totalFee, shippingPaidDirectly, counterFeePayer) : null;
+  const previewHalf = totalFee != null && shippingPaidDirectly != null
+    ? getCashInspectionFeeShares(totalFee, shippingPaidDirectly, 'SPLIT_50_50') : null;
+  const sellerOnlyPreview = totalFee != null && shippingPaidDirectly != null ? totalFee - shippingPaidDirectly : undefined;
 
   return (
     <div className="flex justify-center my-3 animate-fadeIn w-full">
@@ -451,7 +376,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
             </div>
             <div>
               <span className="text-[11px] font-black uppercase tracking-wider text-slate-800 block">
-                {lang === 'vi' ? 'Đề Xuất Kiểm Định Tại Trung Tâm' : 'Center Inspection Proposal'}
+                {lang === 'vi' ? 'Đề xuất kiểm định' : 'Inspection proposal'}
               </span>
               <span className="text-[10px] text-slate-500 font-medium">Mã đơn: #{order.id.slice(0, 8).toUpperCase()}</span>
             </div>
@@ -459,32 +384,34 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
 
           {/* Status Badge */}
           <span
-            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border ${isSuperseded
-              ? 'bg-slate-100 text-slate-600 border-slate-300'
-              : isWaitingSellerApproval
-                ? 'bg-blue-100 text-blue-800 border-blue-300'
-                : isWaitingBuyerApproval
-                  ? 'bg-purple-100 text-purple-800 border-purple-300'
-                  : isWaitingFeePayment
-                    ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
-                    : isConfirmedPendingDispatch
-                      ? 'bg-teal-100 text-teal-900 border-teal-300'
-                      : isPassed
-                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                        : isFailed || isRejected || isCancelled
-                          ? 'bg-rose-100 text-rose-800 border-rose-300'
-                          : 'bg-slate-100 text-slate-800 border-slate-300'
+            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border ${isWaitingSellerApproval
+              ? 'bg-blue-100 text-blue-800 border-blue-300'
+              : isWaitingBuyerApproval
+                ? 'bg-purple-100 text-purple-800 border-purple-300'
+                : isWaitingFeePayment
+                  ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
+                  : isConfirmedPendingDispatch
+                    ? 'bg-teal-100 text-teal-900 border-teal-300'
+                    : isPassed
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : isFailed || isRejected || isCancelled
+                        ? 'bg-rose-100 text-rose-800 border-rose-300'
+                        : 'bg-slate-100 text-slate-800 border-slate-300'
               }`}
           >
-            {isSuperseded && (lang === 'vi' ? '📝 Đề Xuất Trước Đó' : 'Previous Proposal')}
-            {!isSuperseded && isWaitingSellerApproval && (lang === 'vi' ? '⏳ Chờ Người Bán Duyệt' : 'Waiting Seller')}
-            {!isSuperseded && isWaitingBuyerApproval && (lang === 'vi' ? '⏳ Chờ Người Mua Duyệt Lại' : 'Waiting Buyer')}
-            {!isSuperseded && isWaitingFeePayment && (lang === 'vi' ? '💳 Chờ Nạp Phí Kiểm Định' : 'Waiting Payment')}
-            {!isSuperseded && isConfirmedPendingDispatch && (lang === 'vi' ? '🚚 Đã Thu Đủ Phí - Chờ Gửi Hàng' : 'Ready For Dispatch')}
-            {!isSuperseded && isPassed && (lang === 'vi' ? '✅ Kiểm Định Đạt Chuẩn' : 'Passed')}
-            {!isSuperseded && isFailed && (lang === 'vi' ? '❌ Không Đạt Chuẩn' : 'Failed')}
-            {!isSuperseded && isRejected && (lang === 'vi' ? '🚫 Đã Từ Chối' : 'Rejected')}
-            {!isSuperseded && isCancelled && (lang === 'vi' ? 'Đã Hủy' : 'Cancelled')}
+            {isWaitingSellerApproval && (lang === 'vi' ? 'Chờ người bán duyệt' : 'Waiting for seller approval')}
+            {isWaitingBuyerApproval && (lang === 'vi' ? 'Chờ người mua duyệt lại' : 'Waiting for buyer approval')}
+            {isWaitingFeePayment && (lang === 'vi' ? 'Chờ nộp phí kiểm định' : 'Waiting for payment')}
+            {isConfirmedPendingDispatch && (lang === 'vi' ? 'Đã thu đủ phí' : 'Fees collected')}
+            {isInspecting && (lang === 'vi' ? 'Đang kiểm định' : 'Inspection in progress')}
+            {status === 'SHIPPING_TO_CENTER' && (lang === 'vi' ? 'Đang gửi hàng đến Hub' : 'Shipping to Hub')}
+            {isPassed && (lang === 'vi' ? 'Kiểm định đạt chuẩn' : 'Passed')}
+            {isFailed && (lang === 'vi' ? 'Không đạt chuẩn' : 'Failed')}
+            {isRejected && (lang === 'vi' ? 'Đã từ chối' : 'Rejected')}
+            {isCancelled && (lang === 'vi' ? 'Đã hủy' : 'Cancelled')}
+            {status === 'PAYMENT_EXPIRED' && (lang === 'vi' ? 'Hết hạn nộp phí' : 'Payment expired')}
+            {status === 'DELIVERING_TO_BUYER' && (lang === 'vi' ? 'Đã thanh toán tiền hàng' : 'Product payment received')}
+            {status === 'COMPLETED' && (lang === 'vi' ? 'Đã hoàn thành' : 'Completed')}
           </span>
         </div>
 
@@ -492,7 +419,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
         <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/80 mb-3 text-xs space-y-2">
           <div className="flex items-center gap-3">
             <img
-              src={order.postImageUrl || listing.photos?.front || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200'}
+              src={order.postImageUrl || order.postImageUrls?.[0] || listing.photos?.front || CHAT_PRODUCT_PLACEHOLDER}
               alt={order.postTitle || listing.title}
               className="w-12 h-12 rounded-xl object-cover border border-slate-200 shrink-0"
             />
@@ -502,7 +429,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
               </h5>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-xs font-black text-[#c34c36]">
-                  {formatVND(order.postPrice || listing.priceVnd)}
+                  {formatFee(itemPrice)}
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium">| Tiền sản phẩm</span>
               </div>
@@ -513,12 +440,16 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
             <div className="flex items-center gap-1.5 text-slate-700">
               <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
               <span className="font-bold text-slate-900 truncate">
-                {centerName || 'Trung Tâm Kiểm Định Chính Thành phố Hồ Chí Minh'}
+                {centerName || (centerId && centerResult?.id !== centerId
+                  ? (lang === 'vi' ? 'Đang tải tên trung tâm…' : 'Loading center name…')
+                  : (lang === 'vi' ? 'Chưa có tên trung tâm' : 'Center name unavailable'))}
               </span>
             </div>
             <div className="flex items-center gap-1 text-slate-500 text-[10px] pl-5">
               <span>Hình thức:</span>
-              <strong className="text-slate-700">Đưa đến trung tâm kiểm định Hub (Lalamove 2 chiều)</strong>
+              <strong className="text-slate-700">
+                {isAtHome ? 'Kiểm định tại nhà' : isAtCenter ? 'Đưa đến trung tâm kiểm định Hub' : 'Chưa có thông tin'}
+              </strong>
             </div>
           </div>
         </div>
@@ -527,13 +458,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
         <div className="p-3.5 bg-white rounded-2xl border border-slate-200/90 space-y-2.5 text-xs mb-3 shadow-2xs">
           <div className="flex justify-between items-center text-slate-700 font-bold border-b border-slate-100 pb-2">
             <span className="text-xs">{lang === 'vi' ? 'Chi tiết các khoản phí kiểm định:' : 'Inspection fee breakdown:'}</span>
-            <span className="text-[10px] text-blue-800 font-extrabold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-              {order.feePayer === 'BUYER_PAYS' || (order as any).feeSplit === 'BUYER_100'
-                ? 'Người mua chịu 100%'
-                : order.feePayer === 'SELLER_PAYS' || (order as any).feeSplit === 'SELLER_100'
-                  ? 'Người bán chịu 100%'
-                  : 'Chia đôi 50% - 50%'}
-            </span>
+            {feePayerLabel && <span className="text-[10px] text-blue-800 font-extrabold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">{feePayerLabel}</span>}
           </div>
 
           {/* Sub-fees */}
@@ -542,26 +467,26 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
               <>
                 <div className="flex justify-between items-center">
                   <span>• {lang === 'vi' ? 'Phí kiểm định cơ sở:' : 'Base inspection fee:'}</span>
-                  <span className="font-semibold text-slate-800">{formatVND(baseInspectionFee)}</span>
+                  <span className="font-semibold text-slate-800">{formatFee(baseInspectionFee)}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span>• {lang === 'vi' ? 'Phí di chuyển KTV đến nhà:' : 'Technician travel fee:'}</span>
-                  <span className="font-semibold text-slate-800">{formatVND(travelFeeRoundTrip)}</span>
+                  <span className="font-semibold text-slate-800">{formatFee(travelFeeRoundTrip)}</span>
                 </div>
               </>
-            ) : (
+            ) : isAtCenter ? (
               <>
                 <div className="flex justify-between items-center">
                   <span>• Phí kiểm định cơ sở:</span>
-                  <span className="font-semibold text-slate-800">{formatVND(baseInspectionFee)}</span>
+                  <span className="font-semibold text-slate-800">{formatFee(baseInspectionFee)}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span>• Cước Lalamove giao Hub:</span>
-                  <span className="font-semibold text-slate-800">{formatVND(shippingFeeToHub)}</span>
+                  <span className="font-semibold text-slate-800">{formatFee(shippingFeeToHub)}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span>• Dự phòng hoàn hàng (hoàn lại nếu Đạt):</span>
-                  <span className="font-semibold text-slate-800">{formatVND(returnReserveFee)}</span>
+                  <span className="font-semibold text-slate-800">{formatFee(returnReserveFee)}</span>
                 </div>
                 <div className="text-[10px] text-slate-500 italic bg-blue-50/50 p-1.5 rounded-lg border border-blue-100/70 leading-snug">
                   ℹ️ {lang === 'vi'
@@ -569,29 +494,34 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     : 'Return reserve is refunded if Buyer completes purchase or residual balance refunded after reconciliation.'}
                 </div>
               </>
-            )}
+            ) : null}
           </div>
 
           <div className="flex justify-between items-center pt-2 border-t border-slate-100 font-black">
-            <span className="text-slate-800 text-xs">• {lang === 'vi' ? 'Tổng phí kiểm định:' : 'Total fee:'}</span>
-            <strong className="text-blue-900 font-black text-sm sm:text-base">{formatVND(totalFee)}</strong>
+            <span className="text-slate-800 text-xs">• {cashShipping ? 'Tổng dự toán' : lang === 'vi' ? 'Tổng phí kiểm định:' : 'Total fee:'}</span>
+            <strong className="text-blue-900 font-black text-sm sm:text-base">{formatFee(totalFee)}</strong>
           </div>
 
+          {cashShipping && (
+            <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
+              <strong>Mô phỏng Sandbox</strong> · Cước seller ứng khi giao {formatFee(shippingFeeToHub)} (dự kiến)
+            </p>
+          )}
           {/* Split cards */}
           <div className="grid grid-cols-2 gap-2 pt-1">
             <div className="p-2.5 bg-blue-50/50 rounded-xl border border-blue-100">
-              <span className="text-[10px] text-slate-500 block">{lang === 'vi' ? 'Người mua trả:' : 'Buyer pays:'}</span>
-              <span className="font-black text-xs sm:text-sm text-[#c34c36]">{formatVND(buyerFeeShare)}</span>
+              <span className="text-[10px] text-slate-500 block">{cashShipping ? 'Buyer nộp trước' : lang === 'vi' ? 'Người mua trả:' : 'Buyer pays:'}</span>
+              <span className="font-black text-xs sm:text-sm text-[#c34c36]">{formatFee(buyerFeeShare)}</span>
               {buyerCommitmentDeposit > 0 && (
                 <span className="text-[9px] text-slate-500 block mt-0.5">
-                  + Cọc: <strong>{formatVND(buyerCommitmentDeposit)}</strong>
+                  + Cọc: <strong>{formatFee(buyerCommitmentDeposit)}</strong>
                 </span>
               )}
             </div>
 
             <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
-              <span className="text-[10px] text-slate-500 block">{lang === 'vi' ? 'Người bán chịu:' : 'Seller share:'}</span>
-              <span className="font-black text-xs sm:text-sm text-slate-800">{formatVND(sellerFeeShare)}</span>
+              <span className="text-[10px] text-slate-500 block">{cashShipping ? 'Seller nộp trước' : lang === 'vi' ? 'Người bán chịu:' : 'Seller share:'}</span>
+              <span className="font-black text-xs sm:text-sm text-slate-800">{formatFee(sellerFeeShare)}</span>
             </div>
           </div>
 
@@ -599,18 +529,18 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
           <div className="p-2.5 bg-slate-50/80 rounded-xl border border-slate-100 text-[10px] space-y-1">
             <div className="flex justify-between">
               <span className="text-slate-500 font-medium">Giai đoạn 1 (Thu trước):</span>
-              <span className="font-bold text-slate-800">Phí kiểm định {formatVND(buyerFeeShare)}</span>
+              <span className="font-bold text-slate-800">Buyer nộp trước {formatFee(buyerAmount)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500 font-medium">Giai đoạn 2 (Sau khi máy ĐẠT):</span>
-              <span className="font-bold text-emerald-800">Tiền sản phẩm {formatVND(order.postPrice || listing.priceVnd)}</span>
+              <span className="font-bold text-emerald-800">Tiền sản phẩm {formatFee(itemPrice)}</span>
             </div>
           </div>
 
           {/* Zin loss notice */}
-          <div className="text-[10px] text-amber-800 bg-amber-50/70 p-2 rounded-lg border border-amber-200/60 leading-snug">
-            ✓ <strong>Quy trình tháo máy:</strong> Đã đồng ý mở máy kiểm tra chuyên sâu (sẽ mất trạng thái tem zin của NSX).
-          </div>
+          {order.buyerConsentZin === true && <div className="text-[10px] text-amber-800 bg-amber-50/70 p-2 rounded-lg border border-amber-200/60 leading-snug">
+            ✓ <strong>Quy trình tháo máy:</strong> Đã đồng ý mở máy kiểm tra chuyên sâu sẽ mất trạng thái tem zin của nhà sản xuất (Nếu có).
+          </div>}
         </div>
 
         {/* ACTION / NOTIFICATION AREA BASED ON STATUS */}
@@ -621,17 +551,8 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
           </div>
         )}
 
-        {isSuperseded && (
-          <div className="pt-1">
-            <p className="text-xs text-slate-600 font-medium bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex items-center gap-1.5">
-              <Clock className="w-4 h-4 text-slate-400 shrink-0" />
-              <span>{lang === 'vi' ? 'Phương án này đã được đề xuất lại ở tin nhắn sau.' : 'This proposal was countered in a newer message.'}</span>
-            </p>
-          </div>
-        )}
-
         {/* 1. STATUS: WAITING_SELLER_APPROVAL */}
-        {!isSuperseded && isWaitingSellerApproval && (
+        {isWaitingSellerApproval && (
           <div className="space-y-2 pt-1">
             {isSeller ? (
               <>
@@ -649,7 +570,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     disabled={actionLoading}
                     className="flex-1 min-w-[100px] py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center shadow-xs cursor-pointer disabled:opacity-50"
                   >
-                    {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>{lang === 'vi' ? 'Đồng Ý' : 'Accept'}</span>}
+                    {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>{lang === 'vi' ? 'Đồng ý' : 'Accept'}</span>}
                   </button>
 
                   {/* Đề xuất lại */}
@@ -673,7 +594,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     disabled={actionLoading}
                     className="flex-1 min-w-[110px] py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center shadow-xs cursor-pointer disabled:opacity-50"
                   >
-                    <span>{lang === 'vi' ? 'Đề Xuất Lại' : 'Counter'}</span>
+                    <span>{lang === 'vi' ? 'Đề xuất lại' : 'Counter'}</span>
                   </button>
 
                   {/* Từ chối */}
@@ -687,7 +608,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     disabled={actionLoading}
                     className="py-2.5 px-3 bg-white hover:bg-rose-50 border border-rose-300 text-rose-700 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer disabled:opacity-50"
                   >
-                    <span>{lang === 'vi' ? 'Từ Chối' : 'Reject'}</span>
+                    <span>{lang === 'vi' ? 'Từ chối' : 'Reject'}</span>
                   </button>
                 </div>
 
@@ -729,7 +650,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                           }`}
                       >
                         <div>Chia 50/50</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">{formatVND(Math.round(totalFee / 2))}</div>
+                        <div className="text-[9px] opacity-80 mt-0.5">{formatFee(previewHalf?.seller)}</div>
                       </button>
 
                       <button
@@ -741,13 +662,13 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                           }`}
                       >
                         <div>Seller 100%</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">{formatVND(totalFee)}</div>
+                        <div className="text-[9px] opacity-80 mt-0.5">{formatFee(sellerOnlyPreview)}</div>
                       </button>
                     </div>
 
                     <div className="text-[11px] text-slate-600 flex justify-between bg-white p-2 rounded-lg border border-slate-200">
-                      <span>Người bán (Bạn) chịu: <strong>{formatVND(previewSellerShare)}</strong></span>
-                      <span>Người mua chịu: <strong>{formatVND(previewBuyerShare)}</strong></span>
+                      <span>{cashShipping ? 'Seller nộp trước' : 'Người bán (Bạn) chịu:'} <strong>{formatFee(preview?.seller)}</strong></span>
+                      <span>{cashShipping ? 'Buyer nộp trước' : 'Người mua chịu:'} <strong>{formatFee(preview?.buyer)}</strong></span>
                     </div>
 
                     <div className="flex justify-end gap-2 pt-1">
@@ -765,7 +686,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                         className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
                       >
                         {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                        <span>Xác Nhận Đề Xuất Lại</span>
+                        <span>Xác nhận đề xuất lại </span>
                       </button>
                     </div>
                   </div>
@@ -867,7 +788,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                           }`}
                       >
                         <div>Buyer 100%</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">{formatVND(totalFee)}</div>
+                        <div className="text-[9px] opacity-80 mt-0.5">{formatFee(totalFee)}</div>
                       </button>
 
                       <button
@@ -879,7 +800,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                           }`}
                       >
                         <div>Chia 50/50</div>
-                        <div className="text-[9px] opacity-80 mt-0.5">{formatVND(Math.round(totalFee / 2))}</div>
+                        <div className="text-[9px] opacity-80 mt-0.5">{formatFee(previewHalf?.buyer)}</div>
                       </button>
 
                       <button
@@ -896,8 +817,8 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     </div>
 
                     <div className="text-[11px] text-slate-600 flex justify-between bg-white p-2 rounded-lg border border-slate-200">
-                      <span>Người mua (Bạn) trả: <strong>{formatVND(previewBuyerShare)}</strong></span>
-                      <span>Người bán chịu: <strong>{formatVND(previewSellerShare)}</strong></span>
+                      <span>{cashShipping ? 'Buyer nộp trước' : 'Người mua (Bạn) trả:'} <strong>{formatFee(preview?.buyer)}</strong></span>
+                      <span>{cashShipping ? 'Seller nộp trước' : 'Người bán chịu:'} <strong>{formatFee(preview?.seller)}</strong></span>
                     </div>
 
                     <div className="flex justify-end gap-2 pt-1">
@@ -915,7 +836,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                         className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
                       >
                         {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                        <span>{lang === 'vi' ? 'Xác Nhận Đề Xuất Lại' : 'Confirm Counter'}</span>
+                        <span>{lang === 'vi' ? 'Xác nhận đề xuất lại' : 'Confirm Counter'}</span>
                       </button>
                     </div>
                   </div>
@@ -964,26 +885,60 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                       : `Inspection fee payment deadline has expired (${formatInspectionDeadline(order.paymentDeadline, lang)}).`}
                   </span>
                 </div>
-              ) : isMyPaymentDone ? (
-                <p className="text-emerald-700 font-bold text-[11px] flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>{lang === 'vi' ? 'Bạn đã thanh toán phí kiểm định thành công.' : 'You have completed your fee payment.'}</span>
-                </p>
+              ) : myFeeToPay == null ? (
+                <p className="text-slate-700">{lang === 'vi' ? 'Chưa có số tiền phải nộp từ hệ thống.' : 'Payment amount unavailable.'}</p>
               ) : myFeeToPay === 0 ? (
-                <p className="text-slate-700 font-bold text-[11px] flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
-                  <span>{lang === 'vi' ? 'Phần của bạn là 0 đ — Không cần thanh toán.' : 'Your share is 0 VND — No payment needed.'}</span>
-                </p>
+                <div className="space-y-1">
+                  <p className="text-blue-700 font-bold text-[11px] flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span>
+                      {lang === 'vi'
+                        ? `Phần phí của bạn là 0 ₫ (${isSeller ? 'Người mua' : 'Người bán'} chịu 100% phí kiểm định)`
+                        : `Your share is 0 VND (${isSeller ? 'Buyer' : 'Seller'} covers 100% inspection fee)`}
+                    </span>
+                  </p>
+                  {!isOtherPartyPaid && otherFeeToPay != null && (
+                    <p className="text-amber-800 text-[11px] flex items-center gap-1 font-medium">
+                      <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0 animate-pulse" />
+                      <span>
+                        {lang === 'vi'
+                          ? `Đang chờ ${isSeller ? 'người mua' : 'người bán'} nộp ${formatFee(otherFeeToPay)} vào Escrow.`
+                          : `Awaiting ${isSeller ? 'buyer' : 'seller'} to pay ${formatFee(otherFeeToPay)} into Escrow.`}
+                      </span>
+                    </p>
+                  )}
+                </div>
+              ) : isMyPaymentDone ? (
+                <div className="space-y-1">
+                  <p className="text-emerald-700 font-bold text-[11px] flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>
+                      {lang === 'vi'
+                        ? `Bạn đã thanh toán phí kiểm định (${formatFee(myFeeToPay)}) thành công.`
+                        : `You have completed your fee payment (${formatFee(myFeeToPay)}).`}
+                    </span>
+                  </p>
+                  {!isOtherPartyPaid && otherFeeToPay != null && (
+                    <p className="text-amber-800 text-[11px] flex items-center gap-1 font-medium">
+                      <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0 animate-pulse" />
+                      <span>
+                        {lang === 'vi'
+                          ? `Đang chờ ${isSeller ? 'người mua' : 'người bán'} nộp phần phí còn lại (${formatFee(otherFeeToPay)}).`
+                          : `Awaiting ${isSeller ? 'buyer' : 'seller'} to pay remaining fee (${formatFee(otherFeeToPay)}).`}
+                      </span>
+                    </p>
+                  )}
+                </div>
               ) : (
                 <p className="text-amber-900 text-[11px]">
                   {lang === 'vi' ? 'Số tiền bạn cần nộp vào Escrow:' : 'Amount to pay into Escrow:'}{' '}
-                  <strong className="text-[#c34c36] font-black text-sm">{formatVND(myFeeToPay)}</strong>
+                  <strong className="text-[#c34c36] font-black text-sm">{formatFee(myFeeToPay)}</strong>
                 </p>
               )}
             </div>
 
             {/* Nút thanh toán nếu tôi chưa trả */}
-            {!isMyPaymentDone && myFeeToPay > 0 && (
+            {!isMyPaymentDone && canPay && (
               isPaymentDeadlinePassed ? (
                 <button
                   type="button"
@@ -1002,8 +957,8 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                 >
                   <span>
                     {lang === 'vi'
-                      ? `Thanh Toán Phí Kiểm Định (${formatVND(myFeeToPay)})`
-                      : `Pay Inspection Fee (${formatVND(myFeeToPay)})`}
+                      ? `Thanh toán phí kiểm định (${formatFee(myFeeToPay)})`
+                      : `Pay Inspection Fee (${formatFee(myFeeToPay)})`}
                   </span>
                 </button>
               )
@@ -1019,34 +974,43 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
               <span>{lang === 'vi' ? 'Đã thu đủ phí kiểm định' : 'Fees collected'}</span>
             </div>
             <p className="text-[11px] text-teal-800 leading-relaxed">
-              {lang === 'vi'
-                ? isSeller
-                  ? 'Cả hai bên đã nộp đủ phí kiểm định. Vui lòng đóng gói thiết bị và bấm tạo đơn Lalamove để giao máy về Hub.'
-                  : 'Cả hai bên đã nộp đủ phí kiểm định. Người bán đang chuẩn bị đóng gói và gửi máy đến Trung tâm kiểm định.'
-                : 'All fees collected. Proceeding with dispatch to inspection center.'}
+              {isAtHome
+                ? (lang === 'vi' ? 'Chờ trung tâm điều phối kỹ thuật viên.' : 'Waiting for technician dispatch.')
+                : (lang === 'vi' ? 'Chờ điều phối vận chuyển đến trung tâm kiểm định.' : 'Waiting for shipment to the inspection center.')}
             </p>
 
             {/* Nút Tạo Vận Đơn Lalamove dành cho Người bán */}
-            {isSeller && !isAtHome && (
-              isShipmentCreated ? (
+            {isSeller && isAtCenter && (
+              shipmentState === 'created' ? (
                 <div className="mt-2 py-2 px-3 bg-emerald-100/90 border border-emerald-300 rounded-xl text-emerald-800 font-bold text-xs flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{lang === 'vi' ? 'Đã tạo vận đơn Lalamove • Đang chờ tài xế lấy hàng' : 'Lalamove shipment created • Awaiting pickup'}</span>
+                    <span>{lang === 'vi' ? 'Đã tạo vận đơn Lalamove' : 'Lalamove shipment created'}</span>
                   </div>
                   <span className="text-[10px] text-emerald-700 bg-white/70 px-2 py-0.5 rounded-md border border-emerald-200">
                     {lang === 'vi' ? 'Chặng 1' : 'Leg 1'}
                   </span>
                 </div>
-              ) : (
+              ) : shipmentState === 'none' ? (
                 <button
                   type="button"
                   onClick={() => setShowShipmentModal(true)}
                   className="w-full mt-2 py-2.5 px-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
                 >
                   <Truck className="w-4 h-4" />
-                  <span>{lang === 'vi' ? 'Đã Đóng Gói • Tạo Đơn Lalamove' : 'Packed • Create Lalamove Shipment'}</span>
+                  <span>{lang === 'vi' ? 'Đã gói hàng • Tạo đơn vận chuyển' : 'Packed • Create Lalamove Shipment'}</span>
                 </button>
+              ) : (
+                <p role="status" className="mt-2 text-[11px] text-slate-600">
+                  {shipmentState === 'checking'
+                    ? (lang === 'vi' ? 'Đang tải vận đơn…' : 'Loading shipment…')
+                    : (lang === 'vi' ? 'Chưa tải được vận đơn' : 'Shipment unavailable')}
+                  {shipmentState === 'unavailable' && (
+                    <button type="button" className="ml-2 font-semibold underline" onClick={() => setShipmentRetry((previous) => previous + 1)}>
+                      {lang === 'vi' ? 'Thử lại' : 'Retry'}
+                    </button>
+                  )}
+                </p>
               )
             )}
           </div>
@@ -1056,13 +1020,13 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
         {isPassed && (
           <p className="text-xs text-emerald-800 font-bold bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{lang === 'vi' ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Người mua có thể mua tiếp.' : 'Passed inspection.'}</span>
+            <span>{lang === 'vi' ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Bạn có thể mua tiếp.' : 'Passed inspection.'}</span>
           </p>
         )}
         {isFailed && (
           <p className="text-xs text-rose-800 font-bold bg-rose-50 p-2.5 rounded-xl border border-rose-200 flex items-center gap-1.5">
             <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{lang === 'vi' ? 'Sản phẩm kiểm định KHÔNG ĐẠT. Đang tiến hành trả hàng.' : 'Inspection failed. Returning item.'}</span>
+            <span>{lang === 'vi' ? 'Sản phẩm kiểm định không đạt.' : 'Inspection failed.'}</span>
           </p>
         )}
         {(isRejected || isCancelled) && (
@@ -1144,7 +1108,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
         )}
 
         {/* MODAL XÁC NHẬN NỘP PHÍ QUA VÍ */}
-        {showPayConfirmModal && (
+        {showPayConfirmModal && isWaitingFeePayment && canPay && !isMyPaymentDone && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 animate-fadeIn">
             <div className="bg-white rounded-2xl max-w-sm w-full p-4 shadow-xl border border-slate-200 space-y-3 animate-scaleIn">
               <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 flex items-center gap-1.5">
@@ -1154,7 +1118,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
               <div className="p-3 bg-orange-50/70 border border-orange-200 rounded-xl text-xs space-y-1">
                 <div className="flex justify-between">
                   <span className="text-slate-600">{lang === 'vi' ? 'Số tiền nộp:' : 'Amount:'}</span>
-                  <strong className="text-[#c34c36] font-black text-sm">{formatVND(myFeeToPay)}</strong>
+                  <strong className="text-[#c34c36] font-black text-sm">{formatFee(myFeeToPay)}</strong>
                 </div>
                 <div className="text-[10px] text-slate-500 pt-0.5">
                   {lang === 'vi' ? 'Phương thức: Trừ tiền tự động từ Ví khả dụng SecondLife' : 'Method: Auto-deduct from SecondLife Wallet'}
@@ -1199,16 +1163,14 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
         )}
 
         {/* Modal Tạo Vận Đơn Vận Chuyển Lalamove (dành cho Người bán) */}
-        {showShipmentModal && (
+        {showShipmentModal && isConfirmedPendingDispatch && isSeller && isAtCenter && (
           <CreateShipmentModal
             order={escrowOrderForShipment}
             onClose={() => setShowShipmentModal(false)}
             onShipmentCreated={() => {
               setShowShipmentModal(false);
-              setIsShipmentCreated(true);
-              inspectorService.getOrder(order.id).then((fresh) => {
-                if (fresh) onOrderUpdated(fresh);
-              }).catch(() => {});
+              setShipmentState('created');
+              void onRefreshOrder(order.id);
             }}
             lang={lang}
           />

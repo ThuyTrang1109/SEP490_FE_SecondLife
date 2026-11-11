@@ -79,6 +79,7 @@ export interface InspectionQuoteResponse {
   // AT_CENTER package
   shippingToCenterFee?: number;
   returnShippingReserveFee?: number;
+  cashShippingSimulationEnabled?: boolean;
   atCenterTotalFee?: number;
   atCenterSplitOptions?: Record<string, number>;
   atCenterPackage?: InspectionQuotePackageAtCenter;
@@ -326,6 +327,7 @@ export interface InspectionOrderDto {
   id: string;
   postId: string;
   inspectionCenterId?: string | null;
+  inspectionCenterName?: string | null;
   postTitle?: string;
   postImageUrl?: string;
   postImageUrls?: string[];
@@ -360,6 +362,7 @@ export interface InspectionOrderDto {
 
   buyerFeeShare?: number;
   sellerFeeShare?: number;
+  cashShippingSimulation?: boolean;
 
   paymentDeadline?: string;
   buyerPaidAt?: string;
@@ -408,6 +411,9 @@ export interface InspectionOrderDto {
   sellerPhone?: string;
   createdAt?: string;
   updatedAt?: string;
+
+  /** Khoản quyết toán BE đã ghi có vào ví trung tâm (Hub). Null = BE chưa ghi / chưa có dữ liệu. */
+  centerPayoutAmount?: number | null;
 }
 
 export interface InspectionStaffDto {
@@ -503,7 +509,7 @@ export const inspectorService = {
           if (typeof window !== 'undefined' && mapped.length > 0) {
             localStorage.setItem('sl_api_inspection_centers', JSON.stringify(mapped));
           }
-        } catch {}
+        } catch { }
         return mapped;
       }
     } catch (err) {
@@ -895,6 +901,14 @@ export const inspectorService = {
   // --------------------------------------------------------------------------
   // 3. INSPECTION CENTER PORTAL (/api/v1/inspector-center)
   // --------------------------------------------------------------------------
+
+  async getCenterOrderHistory(options?: Pick<RequestOptions, 'isBackground'>): Promise<PageResponse<InspectionOrderDto>> {
+    const result = await requestGet<PageResponse<InspectionOrderDto>>('/inspector-center/orders?page=0&size=100&sort=createdAt,desc', {
+      ...options,
+      requiresAuth: true,
+    });
+    return result.data;
+  },
 
   /**
    * Manager xem danh sách tất cả các đơn kiểm định (fallback an toàn đa endpoint & giải nén đa tầng)
@@ -1431,5 +1445,14 @@ export const inspectorService = {
     });
     const data = (res as any)?.data ?? res;
     return data as ReturnShippingPolicyResponse;
+  },
+
+  /**
+   * Đối soát tài chính đơn kiểm định (Admin)
+   * GET /api/v1/admin/inspection/orders/{inspectionOrderId}/funds
+   */
+  async getAdminInspectionOrderFunds(inspectionOrderId: string) {
+    const { getAdminInspectionOrderFunds } = await import('./adminInspectionFundsService');
+    return getAdminInspectionOrderFunds(inspectionOrderId);
   },
 };

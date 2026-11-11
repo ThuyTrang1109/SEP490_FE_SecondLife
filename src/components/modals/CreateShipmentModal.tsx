@@ -65,7 +65,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
       if (isMounted && list && list.length > 0) {
         setApiCenters(list);
       }
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Nếu đơn hàng có id, lấy chi tiết đơn kiểm định để nhận diện chính xác trung tâm đã gắn với đơn
     if (order.id) {
@@ -73,7 +73,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
         if (isMounted && dto) {
           setInspectionOrderInfo(dto);
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     return () => { isMounted = false; };
@@ -198,7 +198,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
         const existingRaw = localStorage.getItem(shipmentsKey) || localStorage.getItem(`order_shipments_${order.id}`);
         let existingList: ShipmentBackend[] = [];
         if (existingRaw) {
-          try { existingList = JSON.parse(existingRaw); } catch {}
+          try { existingList = JSON.parse(existingRaw); } catch { }
         }
         const updatedShipments = [shipment, ...existingList.filter((s) => s.shipmentId !== shipment.shipmentId)];
         localStorage.setItem(shipmentsKey, JSON.stringify(updatedShipments));
@@ -217,12 +217,12 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               );
               localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
             }
-          } catch {}
+          } catch { }
         }
 
         window.dispatchEvent(new CustomEvent('secondlife_seller_shipped_to_hub', { detail: { orderId: order.id } }));
         window.dispatchEvent(new StorageEvent('storage', { key: `seller_ready_${order.id}`, newValue: nowIso }));
-      } catch {}
+      } catch { }
 
       onShipmentCreated(shipment);
     } catch (err: any) {
@@ -371,9 +371,8 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
 
             {/* Điểm 2: Hub SecondLife hoặc Người mua */}
             <div className="flex items-start gap-2.5">
-              <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5 font-bold text-[11px] ${
-                isHubInspection ? 'bg-blue-500/20 text-blue-700' : 'bg-emerald-500/20 text-emerald-700'
-              }`}>
+              <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5 font-bold text-[11px] ${isHubInspection ? 'bg-blue-500/20 text-blue-700' : 'bg-emerald-500/20 text-emerald-700'
+                }`}>
                 2
               </div>
               <div className="space-y-0.5 min-w-0 flex-1">
@@ -383,11 +382,10 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                       ? `Điểm đến: ${hubCenter.name}`
                       : `Người nhận: ${order.buyerName} (${order.buyerPhone})`}
                   </span>
-                  <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold border ${
-                    isHubInspection
+                  <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold border ${isHubInspection
                       ? 'bg-blue-100 text-blue-800 border-blue-200'
                       : 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                  }`}>
+                    }`}>
                     {isHubInspection ? 'Trạm ISO/IEC 17025' : 'GPS Sẵn Sàng'}
                   </span>
                 </div>
@@ -411,7 +409,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               <div className="flex items-center justify-between">
                 <span className="font-extrabold uppercase text-[10px] sm:text-[11px] text-blue-900 tracking-wider flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                  Quy trình giao nhận 2 chặng (Verify Then Ship)
+                  Quy trình giao nhận 2 chặng
                 </span>
                 <span className="text-[9px] font-black px-2 py-0.2 rounded-full bg-blue-200 text-blue-800 border border-blue-300">
                   Chặng 1 / 2
@@ -473,11 +471,10 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting || order.escrowStatus === 'AWAITING_PAYMENT'}
-              className={`px-5 py-2 rounded-xl font-bold text-xs transition shadow-md flex items-center gap-2 ${
-                order.escrowStatus === 'AWAITING_PAYMENT'
+              className={`px-5 py-2 rounded-xl font-bold text-xs transition shadow-md flex items-center gap-2 ${order.escrowStatus === 'AWAITING_PAYMENT'
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : 'bg-[#c34c36] hover:bg-[#dc4729] text-white cursor-pointer disabled:opacity-50'
-              }`}
+                }`}
             >
               {isSubmitting ? (
                 <>

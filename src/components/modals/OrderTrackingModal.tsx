@@ -864,7 +864,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-extrabold text-base sm:text-lg text-[#24263e]">
-                  Hành Trình Giao Hàng Lalamove
+                  Quá trình giao hàng
                 </h3>
                 <span className="text-xs font-mono bg-white/80 px-2 py-0.5 rounded-md border border-[#24263e]/15 font-bold">
                   #{order.id.slice(0, 12)}

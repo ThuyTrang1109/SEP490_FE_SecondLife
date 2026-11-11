@@ -6,7 +6,7 @@ import React, { useState, lazy, Suspense, useRef, useCallback, useEffect } from 
 import { UserRole, Language, Listing, EscrowOrder, DisputeCase, UserProfile, UserCredit, ItemCategory, ConditionGrade, EscrowStatus, InspectionReport, InspectionProposalPrefillData } from './types';
 import { formatVND } from './utils/translations';
 import { extractWardAndCity, getSavedSellerAddress, saveSellerAddress, cleanFullAddress, formatCombinedAddress } from './utils/addressUtils';
-import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, isOrderCancelledOrRefunded, getResolvedPostParcel, extractListingIdFromOrder } from './utils/orderUtils';
+import { getSortableOrderTimestamp, getBoughtListingIds, markListingAsBought, markListingAsAvailable, reconcileBoughtListingIds, isOrderCancelledOrRefunded, getResolvedPostParcel, extractListingIdFromOrder, resolveInspectionCenter } from './utils/orderUtils';
 import { getBuyerInspectionStage, getCustomerInspectionStatus } from './utils/inspectionPurchase';
 import { resolveCategoryAndItem, initCatalogCache, resolveOrderListing, resolveListingCategory, extractSellerOriginalPrice } from './utils/catalogCache';
 import { translateSystemNotification } from './utils/systemNotificationTranslator';
@@ -1865,8 +1865,8 @@ export default function App() {
                     carrier: 'Lalamove',
                     trackingNumber: (bOrd as any).shipmentOrderCode || (bOrd as any).trackingNumber || '',
                     status: bOrd.status === 'DELIVERED' ? 'DELIVERED' : (bOrd.status === 'SHIPPED' ? 'IN_TRANSIT' : 'PENDING'),
-                    origin: matchedListing.sellerAddress || matchedListing.location || 'Địa chỉ kho người bán',
-                    destination: 'Trạm Kiểm Định SecondLife Hub Lab',
+                    origin: (bOrd as any).sellerAddress || matchedListing.sellerAddress || (matchedListing.location && matchedListing.location !== 'Đà Nẵng, Việt Nam' ? matchedListing.location : null) || 'Địa chỉ kho người bán',
+                    destination: (bOrd as any).inspectionCenterAddress || resolveInspectionCenter(bOrd).address || 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh',
                     estimatedDelivery: 'Trong ngày',
                     timeline: [
                       {
@@ -1882,7 +1882,7 @@ export default function App() {
                     carrier: 'Lalamove',
                     trackingNumber: '',
                     status: 'PENDING',
-                    origin: 'Trạm Kiểm Định SecondLife Hub Lab',
+                    origin: (bOrd as any).inspectionCenterAddress || resolveInspectionCenter(bOrd).address || 'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh',
                     destination: buyerAddr,
                     estimatedDelivery: 'Giao nhanh trong ngày sau kiểm định',
                     timeline: [

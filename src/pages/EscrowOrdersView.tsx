@@ -1437,14 +1437,16 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold ${
-          failed ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-        }`}>
-          {failed ? buyerInspectionStageLabel('failed', lang) : expired
-            ? (lang === 'vi' ? 'Đã hủy do hết hạn thanh toán' : 'Cancelled after payment expired')
-            : decision && inspectionPurchaseDecisionLabel(decision, lang)}
-        </span>
-        {returnShipment && (
+        {!isInsideDetailModal && (
+          <span className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold ${
+            failed ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+          }`}>
+            {failed ? buyerInspectionStageLabel('failed', lang) : expired
+              ? (lang === 'vi' ? 'Đã hủy do hết hạn thanh toán' : 'Cancelled after payment expired')
+              : decision && inspectionPurchaseDecisionLabel(decision, lang)}
+          </span>
+        )}
+        {!isInsideDetailModal && returnShipment && (
           <button type="button" onClick={() => {
             if (isOrderSeller(order)) { close?.(); setTrackingOrder(order); }
             else if (onOpenInspectionDecision) { close?.(); onOpenInspectionDecision(order); }
@@ -2048,12 +2050,20 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   };
 
   const getStatusBadge = (status: EscrowOrder['escrowStatus'] | string, hasInspection?: boolean, isCurrentOrderSeller?: boolean, orderItem?: EscrowOrder) => {
+    const isInspectionOrder = Boolean(
+      hasInspection ||
+      orderItem?.hasInspectionService ||
+      (orderItem?.inspectionFeeVnd && orderItem.inspectionFeeVnd > 0) ||
+      orderItem?.inspectionCenterId ||
+      orderItem?.inspectionStatus
+    );
+
     if (orderItem && orderItem.inspectionStatus !== 'FAILED' && isOrderCancelledOrRefunded(orderItem)) {
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
           <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
-          <span>{orderItem.inspectionStatus
-            ? (lang === 'vi' ? 'Đã hủy đơn kiểm định' : 'Inspection order cancelled')
+          <span>{isInspectionOrder
+            ? (lang === 'vi' ? 'Đã đóng giao dịch' : 'Transaction closed')
             : (lang === 'vi' ? 'Đã Hủy • Hoàn Tiền' : 'Cancelled & Refunded')}</span>
         </span>
       );
@@ -2259,7 +2269,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
             <X className="w-3.5 h-3.5 text-rose-600" />
-            <span>{lang === 'vi' ? 'Không Đạt Kiểm Định • Hoàn Tiền' : 'Inspection Failed • Refunded'}</span>
+            <span>{lang === 'vi' ? 'Đã đóng giao dịch' : 'Transaction closed'}</span>
           </span>
         );
       case 'SHIPPED_TO_BUYER':
@@ -2301,7 +2311,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
             <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
-            <span>{lang === 'vi' ? 'Đã Hoàn Tiền Cho Người Mua' : 'Refunded to Buyer'}</span>
+            <span>
+              {isInspectionOrder
+                ? (lang === 'vi' ? 'Đã đóng giao dịch' : 'Transaction closed')
+                : (lang === 'vi' ? (isSellerForThisOrder ? 'Đã Hoàn Tiền Cho Người Mua' : 'Đã Hoàn Tiền Vào Ví') : 'Refunded')}
+            </span>
           </span>
         );
       case 'DISPUTED':
@@ -3234,8 +3248,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                         ) : isOrderCancelledOrRefunded(ord) ? (
                           <span className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200 whitespace-nowrap shrink-0">
                             <XCircle className="w-3.5 h-3.5 text-rose-600" />
-                            <span>{ord.inspectionStatus
-                              ? (lang === 'vi' ? 'Đã hủy đơn kiểm định' : 'Inspection order cancelled')
+                            <span>{Boolean(hasInspection || ord.hasInspectionService || (ord.inspectionFeeVnd && ord.inspectionFeeVnd > 0) || ord.inspectionCenterId || ord.inspectionStatus)
+                              ? (lang === 'vi' ? 'Đã đóng giao dịch' : 'Transaction closed')
                               : (lang === 'vi' ? 'Đã Hủy • Dừng Vận Chuyển' : 'Cancelled • Inactive')}</span>
                           </span>
                         ) : (
@@ -3524,7 +3538,9 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           getInspectionPurchaseDecision(ord) !== 'rejected' && (
                             <span className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200 whitespace-nowrap shrink-0">
                               <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
-                              <span>{lang === 'vi' ? 'Đã Hoàn Tiền Vào Ví' : 'Refunded to Wallet'}</span>
+                              <span>{Boolean(ord.hasInspectionService || (ord.inspectionFeeVnd && ord.inspectionFeeVnd > 0) || ord.inspectionCenterId || ord.inspectionStatus)
+                                ? (lang === 'vi' ? 'Đã đóng giao dịch' : 'Transaction closed')
+                                : (lang === 'vi' ? 'Đã Hoàn Tiền Vào Ví' : 'Refunded to Wallet')}</span>
                             </span>
                           )
                         ) : (
@@ -4309,6 +4325,64 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 }
 
                 // TRƯỜNG HỢP 3: KIỂM ĐỊNH QUA HUB (VERIFY THEN SHIP - 2 CHẶNG THỰC SỰ)
+                const allModalShipments = detailShipments.length > 0
+                  ? detailShipments
+                  : getOrderAllShipments(detailModalOrder.id);
+                const modalInboundShipment =
+                  allModalShipments.find((s) => s.leg === 'SELLER_TO_CENTER' && s.status !== 'CANCELLED') ||
+                  allModalShipments.find((s) => s.leg === 'SELLER_TO_CENTER') ||
+                  detailInboundShipment ||
+                  getOrderInboundShipment(detailModalOrder);
+
+                const modalLocalInsp = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${detailModalOrder.id}`) : null;
+                const isModalInspFailed = detailModalOrder.escrowStatus === 'INSPECTION_FAILED' || (detailModalOrder as any).backendStatus === 'FAILED' || (detailModalOrder as any).status === 'FAILED' || detailModalOrder.inspectionReport?.status === 'FAILED' || modalLocalInsp === 'FAILED' || (detailModalOrder as any).inspectionStatus === 'FAILED';
+                const isModalInspPassed = detailModalOrder.escrowStatus === 'INSPECTION_PASSED' || (detailModalOrder as any).backendStatus === 'PASSED' || (detailModalOrder as any).status === 'PASSED' || detailModalOrder.inspectionReport?.status === 'PASSED' || modalLocalInsp === 'PASSED' || (detailModalOrder as any).inspectionStatus === 'PASSED';
+
+                const modalReturnShipment =
+                  allModalShipments.find((s) => s.leg === 'CENTER_TO_SELLER' && s.status !== 'CANCELLED') ||
+                  allModalShipments.find((s) => s.leg === 'CENTER_TO_SELLER');
+
+                const modalBuyerShipment =
+                  allModalShipments.find((s) => s.leg === 'CENTER_TO_BUYER' && s.status !== 'CANCELLED') ||
+                  allModalShipments.find((s) => s.leg === 'CENTER_TO_BUYER');
+
+                const modalLeg2Shipment = isModalInspFailed ? modalReturnShipment : modalBuyerShipment;
+
+                const centerData = resolveInspectionCenter({
+                  ...detailModalOrder,
+                  inspectionCenterId: detailInspectionDto?.inspectionCenterId || detailModalOrder.inspectionCenterId,
+                  inspectionCenterName: (detailInspectionDto as any)?.inspectionCenterName || detailModalOrder.inspectionCenterName,
+                  inspectionCenterAddress: (detailInspectionDto as any)?.inspectionCenterAddress || detailModalOrder.inspectionCenterAddress,
+                });
+
+                const realSellerAddress =
+                  modalInboundShipment?.senderAddress ||
+                  (isModalInspFailed && modalReturnShipment?.receiverAddress) ||
+                  detailInspectionDto?.sellerAddress ||
+                  (detailModalOrder as any).sellerAddress ||
+                  (detailModalOrder as any).sellerLocation ||
+                  detailModalOrder.listing?.sellerAddress ||
+                  (detailModalOrder.listing?.location && detailModalOrder.listing.location !== 'Đà Nẵng, Việt Nam' ? detailModalOrder.listing.location : null) ||
+                  (detailModalOrder.shippingLegs[0]?.origin && detailModalOrder.shippingLegs[0].origin !== 'Đà Nẵng, Việt Nam' ? detailModalOrder.shippingLegs[0].origin : null) ||
+                  'Kho người bán (Đang cập nhật địa chỉ)';
+
+                const realHubAddress =
+                  modalInboundShipment?.receiverAddress ||
+                  modalLeg2Shipment?.senderAddress ||
+                  (detailInspectionDto as any)?.inspectionCenterAddress ||
+                  detailModalOrder.inspectionCenterAddress ||
+                  centerData.address ||
+                  'Giảng đường Phượng Vỹ, Đường số 8, Phường Linh Xuân, Thành phố Hồ Chí Minh';
+
+                const realBuyerAddress =
+                  (!isModalInspFailed && modalBuyerShipment?.receiverAddress) ||
+                  detailInspectionDto?.address ||
+                  (detailInspectionDto as any)?.buyerAddress ||
+                  detailModalOrder.buyerAddress ||
+                  (detailModalOrder as any).deliveryAddress ||
+                  (detailModalOrder.shippingLegs[1]?.destination && detailModalOrder.shippingLegs[1].destination !== 'Đà Nẵng, Việt Nam' ? detailModalOrder.shippingLegs[1].destination : null) ||
+                  'Địa chỉ nhận hàng của người mua';
+
                 return (
                   <div className="space-y-3">
                     <div className="text-xs font-bold text-[#24263e] uppercase tracking-wider flex items-center justify-between flex-wrap gap-2">
@@ -4323,261 +4397,225 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 items-stretch">
                       {/* Chặng 1: Người bán gửi tới Trung tâm Hub */}
-                      {(() => {
-                        const allModalShipments = detailShipments.length > 0
-                          ? detailShipments
-                          : getOrderAllShipments(detailModalOrder.id);
-                        const modalInboundShipment =
-                          allModalShipments.find((s) => s.leg === 'SELLER_TO_CENTER' && s.status !== 'CANCELLED') ||
-                          allModalShipments.find((s) => s.leg === 'SELLER_TO_CENTER') ||
-                          detailInboundShipment ||
-                          getOrderInboundShipment(detailModalOrder);
+                      <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 flex flex-col justify-between h-full shadow-2xs space-y-3">
+                        <div className="space-y-2.5">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="text-[11px] font-bold text-white bg-blue-700 px-2.5 py-0.5 rounded-md shadow-2xs flex items-center gap-1">
+                              <Package className="w-3 h-3" />
+                              <span>{t.leg1}</span>
+                            </span>
+                            <span className="text-xs font-mono font-bold text-[#24263e]">
+                              {modalInboundShipment?.orderCode ? (
+                                <span className="text-blue-700 font-bold">Lalamove #{modalInboundShipment.orderCode}</span>
+                              ) : (
+                                <span className={`text-[11px] font-sans font-medium px-2 py-0.5 rounded border ${isOrderSellerConfirmed(detailModalOrder)
+                                  ? 'text-blue-700 bg-blue-50 border-blue-200'
+                                  : 'text-amber-700 bg-amber-50 border-amber-200'
+                                  }`}>
+                                  {detailInboundLabel || (isOrderSellerConfirmed(detailModalOrder)
+                                    ? (lang === 'vi' ? 'Đang chuẩn bị điều phối vận chuyển' : 'Preparing dispatch')
+                                    : (lang === 'vi' ? 'Chưa tạo vận đơn Lalamove' : 'Pending courier'))}
+                                </span>
+                              )}
+                            </span>
+                          </div>
 
-                        return (
-                          <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 flex flex-col justify-between h-full shadow-2xs space-y-3">
-                            <div className="space-y-2.5">
+                          <div className="text-xs text-slate-600 space-y-1.5 pt-1">
+                            <div className="flex items-start gap-1.5">
+                              <span className="text-slate-400 font-bold shrink-0">Từ:</span>
+                              <span className="font-semibold text-slate-800 break-words">{realSellerAddress}</span>
+                            </div>
+                            <div className="flex items-start gap-1.5">
+                              <span className="text-slate-400 font-bold shrink-0">Đến:</span>
+                              <span className="font-semibold text-slate-800 break-words">{realHubAddress}</span>
+                            </div>
+                          </div>
+
+                          {/* Action buttons & Tracking for Chặng 1 */}
+                          {modalInboundShipment && (
+                            <div className="pt-2 border-t border-slate-200 space-y-2">
                               <div className="flex items-center justify-between gap-2 flex-wrap">
-                                <span className="text-[11px] font-bold text-white bg-blue-700 px-2.5 py-0.5 rounded-md shadow-2xs flex items-center gap-1">
-                                  <Package className="w-3 h-3" />
-                                  <span>{t.leg1}</span>
-                                </span>
-                                <span className="text-xs font-mono font-bold text-[#24263e]">
-                                  {modalInboundShipment?.orderCode ? (
-                                    <span className="text-blue-700 font-bold">Lalamove #{modalInboundShipment.orderCode}</span>
-                                  ) : (
-                                    <span className={`text-[11px] font-sans font-medium px-2 py-0.5 rounded border ${isOrderSellerConfirmed(detailModalOrder)
-                                      ? 'text-blue-700 bg-blue-50 border-blue-200'
-                                      : 'text-amber-700 bg-amber-50 border-amber-200'
-                                      }`}>
-                                      {detailInboundLabel || (isOrderSellerConfirmed(detailModalOrder)
-                                        ? (lang === 'vi' ? 'Đang chuẩn bị điều phối vận chuyển' : 'Preparing dispatch')
-                                        : (lang === 'vi' ? 'Chưa tạo vận đơn Lalamove' : 'Pending courier'))}
+                                {(() => {
+                                  const prog = getInboundShipmentProgress(modalInboundShipment, lang);
+                                  return (
+                                    <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                                      {prog.label}
                                     </span>
-                                  )}
-                                </span>
-                              </div>
-
-                              <div className="text-xs text-slate-600 space-y-1.5 pt-1">
-                                <div className="flex items-start gap-1.5">
-                                  <span className="text-slate-400 font-bold shrink-0">Từ:</span>
-                                  <span className="font-semibold text-slate-800 break-words">{detailModalOrder.shippingLegs[0]?.origin || detailModalOrder.listing?.location || 'Kho người bán'}</span>
+                                  );
+                                })()}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setTrackingShipmentId(modalInboundShipment.shipmentId);
+                                      setTrackingOrder(detailModalOrder);
+                                    }}
+                                    className="inline-flex items-center gap-1 font-bold text-xs text-blue-700 hover:text-blue-900 hover:underline cursor-pointer"
+                                  >
+                                    <Truck className="w-3.5 h-3.5" />
+                                    <span>Chi tiết vận đơn</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedDetailLeg1((prev) => !prev)}
+                                    className="inline-flex items-center gap-1 font-bold text-xs text-blue-700 hover:text-blue-900 hover:underline cursor-pointer"
+                                  >
+                                    <span>{expandedDetailLeg1 ? 'Ẩn tiến trình' : 'Xem tiến trình'}</span>
+                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedDetailLeg1 ? 'rotate-180' : ''}`} />
+                                  </button>
                                 </div>
-                                <div className="flex items-start gap-1.5">
-                                  <span className="text-slate-400 font-bold shrink-0">Đến:</span>
-                                  <span className="font-semibold text-slate-800 break-words">{detailModalOrder.shippingLegs[0]?.destination || resolveInspectionCenter(detailModalOrder).address}</span>
-                                </div>
                               </div>
-
-                              {/* Action buttons & Tracking for Chặng 1 */}
-                              {modalInboundShipment && (
-                                <div className="pt-2 border-t border-slate-200 space-y-2">
-                                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                                    {(() => {
-                                      const prog = getInboundShipmentProgress(modalInboundShipment, lang);
-                                      return (
-                                        <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
-                                          {prog.label}
-                                        </span>
-                                      );
-                                    })()}
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setTrackingShipmentId(modalInboundShipment.shipmentId);
-                                          setTrackingOrder(detailModalOrder);
-                                        }}
-                                        className="inline-flex items-center gap-1 font-bold text-xs text-blue-700 hover:text-blue-900 hover:underline cursor-pointer"
-                                      >
-                                        <Truck className="w-3.5 h-3.5" />
-                                        <span>Chi tiết vận đơn</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setExpandedDetailLeg1((prev) => !prev)}
-                                        className="inline-flex items-center gap-1 font-bold text-xs text-blue-700 hover:text-blue-900 hover:underline cursor-pointer"
-                                      >
-                                        <span>{expandedDetailLeg1 ? 'Ẩn tiến trình' : 'Xem tiến trình'}</span>
-                                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedDetailLeg1 ? 'rotate-180' : ''}`} />
-                                      </button>
-                                    </div>
-                                  </div>
-                                  {expandedDetailLeg1 && (
-                                    <div className="pt-2 border-t border-blue-100">
-                                      <LalamoveProgress
-                                        title="Tiến trình vận chuyển Lalamove (Người bán → Hub)"
-                                        routeBadge="Chặng 1: Seller ➔ Hub"
-                                        currentStep={getInboundShipmentProgress(modalInboundShipment, lang).step}
-                                        completeCurrentStep={getInboundShipmentProgress(modalInboundShipment, lang).step === 3 || modalInboundShipment.status === 'DELIVERED'}
-                                      />
-                                    </div>
-                                  )}
+                              {expandedDetailLeg1 && (
+                                <div className="pt-2 border-t border-blue-100">
+                                  <LalamoveProgress
+                                    title="Tiến trình vận chuyển Lalamove (Người bán → Hub)"
+                                    routeBadge="Chặng 1: Seller ➔ Hub"
+                                    currentStep={getInboundShipmentProgress(modalInboundShipment, lang).step}
+                                    completeCurrentStep={getInboundShipmentProgress(modalInboundShipment, lang).step === 3 || modalInboundShipment.status === 'DELIVERED'}
+                                  />
                                 </div>
                               )}
                             </div>
+                          )}
+                        </div>
 
-                            <div className="mt-auto pt-2.5 border-t border-slate-200/80 text-[11px] text-slate-500 flex items-start gap-1">
-                              <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                              <span className="break-words leading-relaxed">
-                                {detailModalOrder.shippingLegs[0]?.timeline[detailModalOrder.shippingLegs[0].timeline.length - 1]?.description || (lang === 'vi' ? 'Khởi tạo đơn hàng kiểm định Hub. Chờ bưu tá Lalamove chuyển kiện hàng về Hub.' : 'Hub inspection shipment created. Awaiting Lalamove pickup.')}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })()}
+                        <div className="mt-auto pt-2.5 border-t border-slate-200/80 text-[11px] text-slate-500 flex items-start gap-1">
+                          <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                          <span className="break-words leading-relaxed">
+                            {detailModalOrder.shippingLegs[0]?.timeline[detailModalOrder.shippingLegs[0].timeline.length - 1]?.description || (lang === 'vi' ? 'Khởi tạo đơn hàng kiểm định Hub. Chờ bưu tá Lalamove chuyển kiện hàng về Hub.' : 'Hub inspection shipment created. Awaiting Lalamove pickup.')}
+                          </span>
+                        </div>
+                      </div>
 
                       {/* Chặng 2: Trung tâm Hub gửi Người mua HOẶC Hoàn trả người bán */}
-                      {(() => {
-                        const allModalShipments = detailShipments.length > 0
-                          ? detailShipments
-                          : getOrderAllShipments(detailModalOrder.id);
-                        const modalLocalInsp = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${detailModalOrder.id}`) : null;
-                        const isModalInspFailed = detailModalOrder.escrowStatus === 'INSPECTION_FAILED' || (detailModalOrder as any).backendStatus === 'FAILED' || (detailModalOrder as any).status === 'FAILED' || detailModalOrder.inspectionReport?.status === 'FAILED' || modalLocalInsp === 'FAILED' || (detailModalOrder as any).inspectionStatus === 'FAILED';
-                        const isModalInspPassed = detailModalOrder.escrowStatus === 'INSPECTION_PASSED' || (detailModalOrder as any).backendStatus === 'PASSED' || (detailModalOrder as any).status === 'PASSED' || detailModalOrder.inspectionReport?.status === 'PASSED' || modalLocalInsp === 'PASSED' || (detailModalOrder as any).inspectionStatus === 'PASSED';
-
-                        const modalReturnShipment =
-                          allModalShipments.find((s) => s.leg === 'CENTER_TO_SELLER' && s.status !== 'CANCELLED') ||
-                          allModalShipments.find((s) => s.leg === 'CENTER_TO_SELLER');
-
-                        const modalBuyerShipment =
-                          allModalShipments.find((s) => s.leg === 'CENTER_TO_BUYER' && s.status !== 'CANCELLED') ||
-                          allModalShipments.find((s) => s.leg === 'CENTER_TO_BUYER');
-
-                        const modalLeg2Shipment = isModalInspFailed ? modalReturnShipment : modalBuyerShipment;
-
-                        return (
-                          <div className={`rounded-2xl p-4 border flex flex-col justify-between h-full shadow-2xs space-y-3 ${isModalInspFailed
-                            ? 'bg-rose-50/80 border-rose-200'
-                            : isModalInspPassed
-                              ? 'bg-emerald-50/80 border-emerald-200'
-                              : 'bg-slate-50/80 border-slate-200'
-                            }`}>
-                            <div className="space-y-2.5">
-                              <div className="flex items-center justify-between gap-2 flex-wrap">
-                                <span className={`text-[11px] font-bold text-white px-2.5 py-0.5 rounded-md shadow-2xs flex items-center gap-1 ${isModalInspFailed ? 'bg-rose-700' : isModalInspPassed ? 'bg-emerald-700' : 'bg-indigo-700'
-                                  }`}>
-                                  <Truck className="w-3 h-3" />
-                                  <span>
-                                    {isModalInspFailed
-                                      ? 'Chặng 2: Hoàn Trả Người Bán'
-                                      : isModalInspPassed
-                                        ? 'Chặng 2: Hub Giao Người Mua (Đạt Chuẩn)'
-                                        : t.leg2}
-                                  </span>
-                                </span>
-                                <span className="text-xs font-mono font-bold text-[#24263e]">
-                                  {modalLeg2Shipment?.orderCode ? (
-                                    <span className={isModalInspFailed ? 'text-rose-700 font-bold' : 'text-emerald-700 font-bold'}>
-                                      Lalamove #{modalLeg2Shipment.orderCode}
-                                    </span>
-                                  ) : (
-                                    <span className={`text-[11px] font-sans font-medium px-2 py-0.5 rounded border ${isModalInspFailed
-                                      ? 'text-rose-700 bg-rose-100 border-rose-200'
-                                      : isModalInspPassed
-                                        ? 'text-emerald-700 bg-emerald-100 border-emerald-200'
-                                        : 'text-slate-500 bg-slate-100 border-slate-200'
-                                      }`}>
-                                      {isModalInspFailed
-                                        ? 'Kích hoạt hoàn trả'
-                                        : isModalInspPassed
-                                          ? 'Đang điều phối giao'
-                                          : 'Chờ hoàn tất chặng 1 & kiểm định'}
-                                    </span>
-                                  )}
-                                </span>
-                              </div>
-
-                              <div className="text-xs text-slate-600 space-y-1.5 pt-1">
-                                <div className="flex items-start gap-1.5">
-                                  <span className="text-slate-400 font-bold shrink-0">Từ:</span>
-                                  <span className="font-semibold text-slate-800 break-words">{detailModalOrder.shippingLegs[1]?.origin || resolveInspectionCenter(detailModalOrder).address}</span>
-                                </div>
-                                <div className="flex items-start gap-1.5">
-                                  <span className="text-slate-400 font-bold shrink-0">
-                                    {isModalInspFailed ? 'Hoàn trả về:' : 'Giao đến:'}
-                                  </span>
-                                  <span className="font-semibold text-slate-800 break-words">
-                                    {isModalInspFailed
-                                      ? (detailModalOrder.shippingLegs[0]?.origin || detailModalOrder.listing?.location || 'Kho người bán')
-                                      : (detailModalOrder.shippingLegs[1]?.destination || detailModalOrder.buyerAddress || 'Địa chỉ người mua')}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Action buttons & Tracking for Chặng 2 */}
-                              {modalLeg2Shipment && (
-                                <div className={`pt-2 border-t space-y-2 ${isModalInspFailed ? 'border-rose-200' : 'border-emerald-200'}`}>
-                                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                                    {(() => {
-                                      const prog = isModalInspFailed
-                                        ? getHubReturnProgress(modalLeg2Shipment, lang)
-                                        : getInboundShipmentProgress(modalLeg2Shipment, lang);
-                                      return (
-                                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold border ${isModalInspFailed
-                                          ? 'bg-rose-100 text-rose-800 border-rose-200'
-                                          : 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                                        }`}>
-                                          {prog.label}
-                                        </span>
-                                      );
-                                    })()}
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setTrackingShipmentId(modalLeg2Shipment.shipmentId);
-                                          setTrackingOrder(detailModalOrder);
-                                        }}
-                                        className={`inline-flex items-center gap-1 font-bold text-xs hover:underline cursor-pointer ${
-                                          isModalInspFailed ? 'text-rose-700 hover:text-rose-900' : 'text-emerald-700 hover:text-emerald-900'
-                                        }`}
-                                      >
-                                        <Truck className="w-3.5 h-3.5" />
-                                        <span>Chi tiết vận đơn</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setExpandedDetailLeg2((prev) => !prev)}
-                                        className={`inline-flex items-center gap-1 font-bold text-xs hover:underline cursor-pointer ${
-                                          isModalInspFailed ? 'text-rose-700 hover:text-rose-900' : 'text-emerald-700 hover:text-emerald-900'
-                                        }`}
-                                      >
-                                        <span>{expandedDetailLeg2 ? 'Ẩn tiến trình' : 'Xem tiến trình'}</span>
-                                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedDetailLeg2 ? 'rotate-180' : ''}`} />
-                                      </button>
-                                    </div>
-                                  </div>
-                                  {expandedDetailLeg2 && (
-                                    <div className={`pt-2 border-t ${isModalInspFailed ? 'border-rose-100' : 'border-emerald-100'}`}>
-                                      <LalamoveProgress
-                                        title={isModalInspFailed
-                                          ? "Tiến trình vận chuyển hoàn trả Lalamove (Hub → Người bán)"
-                                          : "Tiến trình vận chuyển giao hàng Lalamove (Hub → Khách mua)"}
-                                        routeBadge={isModalInspFailed ? "Chặng Hoàn Trả: Hub ➔ Seller" : "Chặng Giao Hàng: Hub ➔ Buyer"}
-                                        currentStep={isModalInspFailed
-                                          ? getHubReturnProgress(modalLeg2Shipment, lang).step
-                                          : getInboundShipmentProgress(modalLeg2Shipment, lang).step}
-                                        completeCurrentStep={modalLeg2Shipment.status === 'DELIVERED' || (isModalInspFailed && getHubReturnProgress(modalLeg2Shipment, lang).step === 3)}
-                                      />
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="mt-auto pt-2.5 border-t border-slate-200/80 text-[11px] text-slate-500 flex items-start gap-1">
-                              <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                              <span className="break-words leading-relaxed">
+                      <div className={`rounded-2xl p-4 border flex flex-col justify-between h-full shadow-2xs space-y-3 ${isModalInspFailed
+                        ? 'bg-rose-50/80 border-rose-200'
+                        : isModalInspPassed
+                          ? 'bg-emerald-50/80 border-emerald-200'
+                          : 'bg-slate-50/80 border-slate-200'
+                        }`}>
+                        <div className="space-y-2.5">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className={`text-[11px] font-bold text-white px-2.5 py-0.5 rounded-md shadow-2xs flex items-center gap-1 ${isModalInspFailed ? 'bg-rose-700' : isModalInspPassed ? 'bg-emerald-700' : 'bg-indigo-700'
+                              }`}>
+                              <Truck className="w-3 h-3" />
+                              <span>
                                 {isModalInspFailed
-                                  ? 'Kiểm định không đạt. Trung tâm xử lý chặng trả hàng về người bán.'
+                                  ? 'Chặng 2: Hoàn Trả Người Bán'
                                   : isModalInspPassed
-                                    ? 'Đã kiểm định ĐẠT chuẩn 48 bước và dán tem niêm phong. Hub chuyển phát an toàn đến tận tay người mua.'
-                                    : (detailModalOrder.shippingLegs[1]?.timeline[detailModalOrder.shippingLegs[1].timeline.length - 1]?.description || 'Chờ hoàn tất kiểm định tại Hub và niêm phong giao đến người mua.')}
+                                    ? 'Chặng 2: Hub Giao Người Mua (Đạt Chuẩn)'
+                                    : t.leg2}
+                              </span>
+                            </span>
+                            <span className="text-xs font-mono font-bold text-[#24263e]">
+                              {modalLeg2Shipment?.orderCode ? (
+                                <span className={isModalInspFailed ? 'text-rose-700 font-bold' : 'text-emerald-700 font-bold'}>
+                                  Lalamove #{modalLeg2Shipment.orderCode}
+                                </span>
+                              ) : (
+                                <span className={`text-[11px] font-sans font-medium px-2 py-0.5 rounded border ${isModalInspFailed
+                                  ? 'text-rose-700 bg-rose-100 border-rose-200'
+                                  : isModalInspPassed
+                                    ? 'text-emerald-700 bg-emerald-100 border-emerald-200'
+                                    : 'text-slate-500 bg-slate-100 border-slate-200'
+                                  }`}>
+                                  {isModalInspFailed
+                                    ? 'Kích hoạt hoàn trả'
+                                    : isModalInspPassed
+                                      ? 'Đang điều phối giao'
+                                      : 'Chờ hoàn tất chặng 1 & kiểm định'}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+
+                          <div className="text-xs text-slate-600 space-y-1.5 pt-1">
+                            <div className="flex items-start gap-1.5">
+                              <span className="text-slate-400 font-bold shrink-0">Từ:</span>
+                              <span className="font-semibold text-slate-800 break-words">{realHubAddress}</span>
+                            </div>
+                            <div className="flex items-start gap-1.5">
+                              <span className="text-slate-400 font-bold shrink-0">
+                                {isModalInspFailed ? 'Hoàn trả về:' : 'Giao đến:'}
+                              </span>
+                              <span className="font-semibold text-slate-800 break-words">
+                                {isModalInspFailed ? realSellerAddress : realBuyerAddress}
                               </span>
                             </div>
                           </div>
-                        );
-                      })()}
+
+                          {/* Action buttons & Tracking for Chặng 2 */}
+                          {modalLeg2Shipment && (
+                            <div className={`pt-2 border-t space-y-2 ${isModalInspFailed ? 'border-rose-200' : 'border-emerald-200'}`}>
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                {(() => {
+                                  const prog = isModalInspFailed
+                                    ? getHubReturnProgress(modalLeg2Shipment, lang)
+                                    : getInboundShipmentProgress(modalLeg2Shipment, lang);
+                                  return (
+                                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold border ${isModalInspFailed
+                                      ? 'bg-rose-100 text-rose-800 border-rose-200'
+                                      : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                    }`}>
+                                      {prog.label}
+                                    </span>
+                                  );
+                                })()}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setTrackingShipmentId(modalLeg2Shipment.shipmentId);
+                                      setTrackingOrder(detailModalOrder);
+                                    }}
+                                    className={`inline-flex items-center gap-1 font-bold text-xs hover:underline cursor-pointer ${
+                                      isModalInspFailed ? 'text-rose-700 hover:text-rose-900' : 'text-emerald-700 hover:text-emerald-900'
+                                    }`}
+                                  >
+                                    <Truck className="w-3.5 h-3.5" />
+                                    <span>Chi tiết vận đơn</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedDetailLeg2((prev) => !prev)}
+                                    className={`inline-flex items-center gap-1 font-bold text-xs hover:underline cursor-pointer ${
+                                      isModalInspFailed ? 'text-rose-700 hover:text-rose-900' : 'text-emerald-700 hover:text-emerald-900'
+                                    }`}
+                                  >
+                                    <span>{expandedDetailLeg2 ? 'Ẩn tiến trình' : 'Xem tiến trình'}</span>
+                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedDetailLeg2 ? 'rotate-180' : ''}`} />
+                                  </button>
+                                </div>
+                              </div>
+                              {expandedDetailLeg2 && (
+                                <div className={`pt-2 border-t ${isModalInspFailed ? 'border-rose-100' : 'border-emerald-100'}`}>
+                                  <LalamoveProgress
+                                    title={isModalInspFailed
+                                      ? "Tiến trình vận chuyển hoàn trả Lalamove (Hub → Người bán)"
+                                      : "Tiến trình vận chuyển giao hàng Lalamove (Hub → Khách mua)"}
+                                    routeBadge={isModalInspFailed ? "Chặng Hoàn Trả: Hub ➔ Seller" : "Chặng Giao Hàng: Hub ➔ Buyer"}
+                                    currentStep={isModalInspFailed
+                                      ? getHubReturnProgress(modalLeg2Shipment, lang).step
+                                      : getInboundShipmentProgress(modalLeg2Shipment, lang).step}
+                                    completeCurrentStep={modalLeg2Shipment.status === 'DELIVERED' || (isModalInspFailed && getHubReturnProgress(modalLeg2Shipment, lang).step === 3)}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="mt-auto pt-2.5 border-t border-slate-200/80 text-[11px] text-slate-500 flex items-start gap-1">
+                          <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                          <span className="break-words leading-relaxed">
+                            {isModalInspFailed
+                              ? 'Kiểm định không đạt. Trung tâm xử lý chặng trả hàng về người bán.'
+                              : isModalInspPassed
+                                ? 'Đã kiểm định ĐẠT chuẩn 48 bước và dán tem niêm phong. Hub chuyển phát an toàn đến tận tay người mua.'
+                                : (detailModalOrder.shippingLegs[1]?.timeline[detailModalOrder.shippingLegs[1].timeline.length - 1]?.description || 'Chờ hoàn tất kiểm định tại Hub và niêm phong giao đến người mua.')}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 );
@@ -5070,38 +5108,27 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               getInspectionPurchaseDecision(detailModalOrder) ||
               detailModalOrder.inspectionStatus === 'FAILED' ||
               detailModalOrder.escrowStatus === 'INSPECTION_FAILED' ||
-              isOrderCancelledOrRefunded(detailModalOrder) ||
-              isOrderSeller(detailModalOrder) ||
-              (!isOrderSeller(detailModalOrder) && (
-                detailModalOrder.escrowStatus === 'INSPECTION_PASSED' ||
-                (detailModalOrder as any).backendStatus === 'PASSED' ||
-                (detailModalOrder.inspectionMethod === 'AT_HOME' || (detailModalOrder as any).orderType === 'AT_HOME') ||
-                Boolean(
-                  (detailModalOrder.carrierPickedUpAt ||
-                    (detailModalOrder.backendStatus as any) === 'SHIPPED' ||
-                    (detailModalOrder.backendStatus as any) === 'DELIVERED' ||
-                    (detailModalOrder.escrowStatus as string) === 'SHIPPED_TO_BUYER' ||
-                    (detailModalOrder.escrowStatus as string) === 'DELIVERED_INSPECTION_WINDOW') &&
-                  !isOrderReceiptConfirmed(detailModalOrder)
-                )
+              (!isOrderCancelledOrRefunded(detailModalOrder) && (
+                isOrderSeller(detailModalOrder) ||
+                (!isOrderSeller(detailModalOrder) && (
+                  detailModalOrder.escrowStatus === 'INSPECTION_PASSED' ||
+                  (detailModalOrder as any).backendStatus === 'PASSED' ||
+                  (detailModalOrder.inspectionMethod === 'AT_HOME' || (detailModalOrder as any).orderType === 'AT_HOME') ||
+                  Boolean(
+                    (detailModalOrder.carrierPickedUpAt ||
+                      (detailModalOrder.backendStatus as any) === 'SHIPPED' ||
+                      (detailModalOrder.backendStatus as any) === 'DELIVERED' ||
+                      (detailModalOrder.escrowStatus as string) === 'SHIPPED_TO_BUYER' ||
+                      (detailModalOrder.escrowStatus as string) === 'DELIVERED_INSPECTION_WINDOW') &&
+                    !isOrderReceiptConfirmed(detailModalOrder)
+                  )
+                ))
               ))
             ) && (
                 <div className="px-6 sm:px-7 py-3.5 sm:py-4 border-t border-gray-100 bg-slate-50/95 backdrop-blur-xs shrink-0 flex flex-wrap items-center justify-between gap-3 z-10">
                   <div className="flex-1 flex flex-wrap items-center gap-2">
                     {renderInspectionDecision(detailModalOrder, () => setDetailModalOrder(null))}
-                    {isOrderCancelledOrRefunded(detailModalOrder) ? (
-                      getInspectionPurchaseDecision(detailModalOrder) !== 'rejected' && (
-                        <div className="flex-1 py-2.5 px-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-between gap-2 shadow-xs">
-                          <div className="flex items-center gap-2">
-                            <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                            <span>{lang === 'vi' ? 'Đơn hàng đã bị hủy • Hoàn tiền bảo toàn 100%' : 'Order cancelled & 100% refunded'}</span>
-                          </div>
-                          <span className="text-xs font-normal text-rose-700 italic">
-                            {lang === 'vi' ? 'Toàn bộ thao tác vận chuyển & tra cứu đã dừng.' : 'Shipping & tracking deactivated.'}
-                          </span>
-                        </div>
-                      )
-                    ) : (
+                    {!isOrderCancelledOrRefunded(detailModalOrder) &&
                       detailModalOrder.escrowStatus !== 'COMPLETED_RELEASED' &&
                       detailModalOrder.escrowStatus !== 'DISPUTED' && (
                         <>
@@ -5489,8 +5516,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               </>
                             )}
                         </>
-                      )
-                    )}
+                      )}
                   </div>
                 </div>
               )}

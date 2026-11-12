@@ -2416,7 +2416,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   // Helper: Open Assign Modal
   // Helper to reliably resolve seller address from multiple potential sources
   const getOrderSellerAddress = (ord: any): string => {
-    if (!ord) return 'Địa chỉ nhà người bán';
+    if (!ord) return '123 Nguyễn Văn Cừ, Phường An Khánh, Quận Ninh Kiều, TP. Cần Thơ';
     if (ord.sellerAddress && ord.sellerAddress !== 'Địa chỉ nhà người bán' && ord.sellerAddress !== 'Địa chỉ kho người bán') return ord.sellerAddress;
     if (ord.address && ord.address !== 'Địa chỉ nhà người bán' && ord.address !== 'Địa chỉ kho người bán') return ord.address;
     if (ord.listing?.sellerAddress) return ord.listing.sellerAddress;
@@ -2463,11 +2463,12 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       }
     } catch {}
 
-    return (
-      ord.sellerAddress ||
-      ord.listing?.location ||
-      'Ngã tư Công Lý – Einstein, Công Lý, Phường Thủ Đức, Thành phố Hồ Chí Minh'
-    );
+    if (ord.sellerAddress && ord.sellerAddress !== 'Địa chỉ nhà người bán' && ord.sellerAddress !== 'Địa chỉ kho người bán') {
+      return ord.sellerAddress;
+    }
+    if (ord.listing?.sellerAddress) return ord.listing.sellerAddress;
+    if (ord.listing?.location) return ord.listing.location;
+    return '123 Nguyễn Văn Cừ, Phường An Khánh, Quận Ninh Kiều, TP. Cần Thơ';
   };
 
   const getOrderSellerPhone = (ord: any): string => {

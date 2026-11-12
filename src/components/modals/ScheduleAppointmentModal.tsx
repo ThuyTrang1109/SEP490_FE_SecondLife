@@ -198,6 +198,9 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                 ...o,
                 appointmentScheduledAt: scheduledDate.toISOString(),
                 appointmentNote: noteText,
+                sellerAddress: o.sellerAddress || o.listing?.sellerAddress || o.listing?.location,
+                sellerPhone: o.sellerPhone || o.seller?.phone,
+                sellerName: o.sellerName || o.seller?.fullName,
               };
             }
             return o;
@@ -391,7 +394,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
   const currentSlots = selectedShift === 'MORNING' ? MORNING_SLOTS : AFTERNOON_SLOTS;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-xs animate-fadeIn">
       <div className="relative w-full max-w-xl sm:max-w-xl lg:max-w-2xl rounded-2xl sm:rounded-3xl bg-white shadow-2xl border border-gray-100 flex flex-col max-h-[92vh] overflow-hidden">
         {/* Fixed Header */}
         <div className="px-4 sm:px-5 py-3 border-b border-gray-100 flex items-center justify-between shrink-0 bg-white">

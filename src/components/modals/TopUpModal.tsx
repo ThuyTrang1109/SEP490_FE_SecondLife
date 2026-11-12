@@ -43,6 +43,7 @@ import {
   sellerCreditService,
   adminCreditPricingService,
 } from '../../services';
+import { notificationWsClient } from '../../services/notificationWsClient';
 import logoImg from '../../assets/logo.png';
 import { formatVND } from '../../utils/translations';
 import { WalletHistoryPanel } from './WalletHistoryPanel';
@@ -335,177 +336,224 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     };
   }, [depositRequest]);
 
-  // Polling wallet balance when a deposit request is pending
+  // Xử lý khi số dư ví tăng thành công (được gọi từ WebSocket Push hoặc Fallback Polling)
+  const processSuccessfulBalanceIncrease = React.useCallback(async (freshWallet: UserWallet) => {
+    setWallet(freshWallet);
+    preDepositBalanceRef.current = freshWallet.balance;
+    if (onWalletUpdated) onWalletUpdated(freshWallet.balance);
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+
+    // Nếu người bán đang mua lẻ credit bị thiếu tiền, tự động hoàn tất mua lẻ ngay khi tiền nạp vào ví
+    if (pendingRetailOrder) {
+      const retailOrder = pendingRetailOrder;
+      if (freshWallet.balance >= retailOrder.totalFee) {
+        setAutoActivating(true);
+        try {
+          const res = await sellerCreditService.createPurchase({
+            listingQuantity: retailOrder.listingQuantity,
+            valuationQuantity: retailOrder.valuationQuantity,
+            aiChatQuantity: retailOrder.aiChatQuantity,
+          });
+
+          const receiptObj: TopupPackagePurchaseResponse = {
+            id: res?.id || `retail-${Date.now()}`,
+            packageId: 'retail',
+            packageVersion: 1,
+            packageName: 'Mua Lẻ Tự Chọn Lượt Dịch Vụ',
+            price: retailOrder.totalFee,
+            currency: 'VND',
+            postCredits: retailOrder.listingQuantity,
+            chatCredits: retailOrder.aiChatQuantity,
+            valuationCredits: retailOrder.valuationQuantity,
+            walletBalanceBefore: freshWallet.balance,
+            walletBalanceAfter: Math.max(0, freshWallet.balance - retailOrder.totalFee),
+            postBalanceAfter: (userCredit.postCredits || 0) + retailOrder.listingQuantity,
+            chatBalanceAfter: (userCredit.chatCredits || 0) + retailOrder.aiChatQuantity,
+            valuationBalanceAfter: (userCredit.valuationCredits || 0) + retailOrder.valuationQuantity,
+            createdAt: new Date().toISOString(),
+            requestId: res?.id || `req-${Date.now()}`,
+          };
+
+          setLatestReceipt(receiptObj);
+          setPackageSuccess(true);
+          setPendingRetailOrder(null);
+          setDepositRequest(null);
+          setActiveTab('packages');
+
+          const [updatedCredit, finalWallet] = await Promise.all([
+            topupService.getMyCredit().catch(() => null),
+            walletService.getMyWallet().catch(() => null),
+          ]);
+
+          if (updatedCredit) {
+            setUserCredit(updatedCredit);
+            if (onUserCreditUpdated) onUserCreditUpdated(updatedCredit);
+            if (onCreditUpdated && typeof updatedCredit.postCredits === 'number') {
+              onCreditUpdated(updatedCredit.postCredits);
+            }
+          }
+          if (finalWallet) {
+            setWallet(finalWallet);
+            preDepositBalanceRef.current = finalWallet.balance;
+            if (onWalletUpdated) onWalletUpdated(finalWallet.balance);
+          }
+          return;
+        } catch (autoErr: any) {
+          console.error('Lỗi tự động mua lẻ sau khi nạp tiền ví:', autoErr);
+          setPurchaseError(autoErr?.message || 'Đã nạp tiền ví nhưng mua lẻ tự động thất bại. Vui lòng bấm Xác nhận mua lẻ để thử lại.');
+          setActiveTab('packages');
+        } finally {
+          setAutoActivating(false);
+        }
+      }
+    } else if (pendingPackage) {
+      const targetPkg = pendingPackage;
+      const pkgPrice = getPkgPrice(targetPkg);
+      if (freshWallet.balance >= pkgPrice) {
+        setAutoActivating(true);
+        let intent = getPendingIntent(currentUser?.id);
+        if (
+          !intent ||
+          intent.packageId !== targetPkg.id ||
+          intent.packageVersion !== (targetPkg.packageVersion ?? 0) ||
+          intent.expectedPrice !== pkgPrice
+        ) {
+          intent = {
+            userId: currentUser?.id || '',
+            packageId: targetPkg.id,
+            packageVersion: targetPkg.packageVersion ?? 0,
+            expectedPrice: pkgPrice,
+            requestId: crypto.randomUUID(),
+            timestamp: Date.now(),
+          };
+          setPendingIntent(currentUser?.id, intent);
+        }
+
+        try {
+          const res = await topupService.purchasePackage(targetPkg.id, {
+            requestId: intent.requestId,
+            packageVersion: intent.packageVersion,
+            expectedPrice: intent.expectedPrice,
+          });
+
+          const purchaseData: TopupPackagePurchaseResponse = (res as any)?.data || res;
+          if (purchaseData && purchaseData.id) {
+            clearPendingIntent(currentUser?.id);
+            setLatestReceipt(purchaseData);
+            setPurchasedPackage(targetPkg);
+            setSelectedPkg(targetPkg);
+            setPackageSuccess(true);
+            setPendingPackage(null);
+            setDepositRequest(null);
+            setActiveTab('packages');
+
+            const [updatedCredit, finalWallet] = await Promise.all([
+              topupService.getMyCredit().catch(() => null),
+              walletService.getMyWallet().catch(() => null),
+            ]);
+
+            if (updatedCredit) {
+              setUserCredit(updatedCredit);
+              if (onUserCreditUpdated) onUserCreditUpdated(updatedCredit);
+              if (onCreditUpdated && typeof updatedCredit.postCredits === 'number') {
+                onCreditUpdated(updatedCredit.postCredits);
+              }
+            }
+            if (finalWallet) {
+              setWallet(finalWallet);
+              preDepositBalanceRef.current = finalWallet.balance;
+              if (onWalletUpdated) onWalletUpdated(finalWallet.balance);
+            }
+            return;
+          } else {
+            throw new Error((res as any)?.message || 'Không hoàn tất được giao dịch mua gói sau khi nạp tiền.');
+          }
+        } catch (autoErr: any) {
+          console.error('Lỗi tự động mua gói sau khi nạp tiền ví:', autoErr);
+          setPurchaseError(autoErr?.message || 'Đã nạp tiền vào ví nhưng mua gói tự động thất bại. Vui lòng nhấn Xác nhận mua gói để thử lại.');
+          setActiveTab('packages');
+        } finally {
+          setAutoActivating(false);
+        }
+      }
+    }
+
+    setDepositRequest((prev) => (prev ? { ...prev, status: 'SUCCESS' } : null));
+  }, [currentUser?.id, onCreditUpdated, onUserCreditUpdated, onWalletUpdated, pendingPackage, pendingRetailOrder, userCredit]);
+
+  // Phương án 1: Lắng nghe WebSocket Push Event khi tiền nạp vào ví (Thay cho Polling liên tục)
   useEffect(() => {
-    if (depositRequest && depositRequest.status === 'PENDING') {
-      const baselineBalance = preDepositBalanceRef.current;
-      pollingRef.current = setInterval(async () => {
+    if (!depositRequest || depositRequest.status !== 'PENDING') return;
+
+    const baselineBalance = preDepositBalanceRef.current;
+
+    // 1. Lắng nghe trực tiếp từ WebSocket Push (/user/queue/wallet, /user/queue/wallet-updates)
+    const unsubWs = notificationWsClient.subscribeWalletListener(async (event) => {
+      try {
+        const freshWallet = await walletService.getMyWallet();
+        if (
+          freshWallet &&
+          (freshWallet.balance > baselineBalance ||
+            (baselineBalance === 0 && freshWallet.balance >= depositRequest.amount))
+        ) {
+          await processSuccessfulBalanceIncrease(freshWallet);
+        }
+      } catch {}
+    });
+
+    // 2. Lắng nghe sự kiện đồng bộ toàn hệ thống 'secondlife_wallet_updated'
+    const handleWalletUpdated = async (e: any) => {
+      const pushedBal = e?.detail?.balance;
+      if (typeof pushedBal === 'number' && (pushedBal > baselineBalance || (baselineBalance === 0 && pushedBal >= depositRequest.amount))) {
         try {
           const freshWallet = await walletService.getMyWallet();
-          const hasBalanceIncreased = freshWallet && (
-            freshWallet.balance > baselineBalance ||
-            (baselineBalance === 0 && freshWallet.balance >= depositRequest.amount)
-          );
-          if (hasBalanceIncreased) {
-            setWallet(freshWallet);
-            preDepositBalanceRef.current = freshWallet.balance;
-            if (onWalletUpdated) onWalletUpdated(freshWallet.balance);
-            if (pollingRef.current) {
-              clearInterval(pollingRef.current);
-              pollingRef.current = null;
-            }
+          if (freshWallet) await processSuccessfulBalanceIncrease(freshWallet);
+        } catch {}
+      }
+    };
+    window.addEventListener('secondlife_wallet_updated', handleWalletUpdated);
 
-            // Nếu người bán đang mua lẻ credit bị thiếu tiền, tự động hoàn tất mua lẻ ngay khi tiền nạp vào ví
-            if (pendingRetailOrder) {
-              const retailOrder = pendingRetailOrder;
-              if (freshWallet.balance >= retailOrder.totalFee) {
-                setAutoActivating(true);
-                try {
-                  const res = await sellerCreditService.createPurchase({
-                    listingQuantity: retailOrder.listingQuantity,
-                    valuationQuantity: retailOrder.valuationQuantity,
-                    aiChatQuantity: retailOrder.aiChatQuantity,
-                  });
-
-                  const receiptObj: TopupPackagePurchaseResponse = {
-                    id: res?.id || `retail-${Date.now()}`,
-                    packageId: 'retail',
-                    packageVersion: 1,
-                    packageName: 'Mua Lẻ Tự Chọn Lượt Dịch Vụ',
-                    price: retailOrder.totalFee,
-                    currency: 'VND',
-                    postCredits: retailOrder.listingQuantity,
-                    chatCredits: retailOrder.aiChatQuantity,
-                    valuationCredits: retailOrder.valuationQuantity,
-                    walletBalanceBefore: freshWallet.balance,
-                    walletBalanceAfter: Math.max(0, freshWallet.balance - retailOrder.totalFee),
-                    postBalanceAfter: (userCredit.postCredits || 0) + retailOrder.listingQuantity,
-                    chatBalanceAfter: (userCredit.chatCredits || 0) + retailOrder.aiChatQuantity,
-                    valuationBalanceAfter: (userCredit.valuationCredits || 0) + retailOrder.valuationQuantity,
-                    createdAt: new Date().toISOString(),
-                    requestId: res?.id || `req-${Date.now()}`,
-                  };
-
-                  setLatestReceipt(receiptObj);
-                  setPackageSuccess(true);
-                  setPendingRetailOrder(null);
-                  setDepositRequest(null);
-                  setActiveTab('packages');
-
-                  const [updatedCredit, finalWallet] = await Promise.all([
-                    topupService.getMyCredit().catch(() => null),
-                    walletService.getMyWallet().catch(() => null),
-                  ]);
-
-                  if (updatedCredit) {
-                    setUserCredit(updatedCredit);
-                    if (onUserCreditUpdated) onUserCreditUpdated(updatedCredit);
-                    if (onCreditUpdated && typeof updatedCredit.postCredits === 'number') {
-                      onCreditUpdated(updatedCredit.postCredits);
-                    }
-                  }
-                  if (finalWallet) {
-                    setWallet(finalWallet);
-                    preDepositBalanceRef.current = finalWallet.balance;
-                    if (onWalletUpdated) onWalletUpdated(finalWallet.balance);
-                  }
-                  return;
-                } catch (autoErr: any) {
-                  console.error('Lỗi tự động mua lẻ sau khi nạp tiền ví:', autoErr);
-                  setPurchaseError(autoErr?.message || 'Đã nạp tiền ví nhưng mua lẻ tự động thất bại. Vui lòng bấm Xác nhận mua lẻ để thử lại.');
-                  setActiveTab('packages');
-                } finally {
-                  setAutoActivating(false);
-                }
-              }
-            } else if (pendingPackage) {
-              const targetPkg = pendingPackage;
-              const pkgPrice = getPkgPrice(targetPkg);
-              if (freshWallet.balance >= pkgPrice) {
-                setAutoActivating(true);
-                let intent = getPendingIntent(currentUser?.id);
-                if (
-                  !intent ||
-                  intent.packageId !== targetPkg.id ||
-                  intent.packageVersion !== (targetPkg.packageVersion ?? 0) ||
-                  intent.expectedPrice !== pkgPrice
-                ) {
-                  intent = {
-                    userId: currentUser?.id || '',
-                    packageId: targetPkg.id,
-                    packageVersion: targetPkg.packageVersion ?? 0,
-                    expectedPrice: pkgPrice,
-                    requestId: crypto.randomUUID(),
-                    timestamp: Date.now(),
-                  };
-                  setPendingIntent(currentUser?.id, intent);
-                }
-
-                try {
-                  const res = await topupService.purchasePackage(targetPkg.id, {
-                    requestId: intent.requestId,
-                    packageVersion: intent.packageVersion,
-                    expectedPrice: intent.expectedPrice,
-                  });
-
-                  const purchaseData: TopupPackagePurchaseResponse = (res as any)?.data || res;
-                  if (purchaseData && purchaseData.id) {
-                    clearPendingIntent(currentUser?.id);
-                    setLatestReceipt(purchaseData);
-                    setPurchasedPackage(targetPkg);
-                    setSelectedPkg(targetPkg);
-                    setPackageSuccess(true);
-                    setPendingPackage(null);
-                    setDepositRequest(null);
-                    setActiveTab('packages');
-
-                    // Lấy số dư thực tế từ BE, không cộng suy đoán ở client
-                    const [updatedCredit, finalWallet] = await Promise.all([
-                      topupService.getMyCredit().catch(() => null),
-                      walletService.getMyWallet().catch(() => null),
-                    ]);
-
-                    if (updatedCredit) {
-                      setUserCredit(updatedCredit);
-                      if (onUserCreditUpdated) onUserCreditUpdated(updatedCredit);
-                      if (onCreditUpdated && typeof updatedCredit.postCredits === 'number') {
-                        onCreditUpdated(updatedCredit.postCredits);
-                      }
-                    }
-                    if (finalWallet) {
-                      setWallet(finalWallet);
-                      preDepositBalanceRef.current = finalWallet.balance;
-                      if (onWalletUpdated) onWalletUpdated(finalWallet.balance);
-                    }
-                    return;
-                  } else {
-                    throw new Error((res as any)?.message || 'Không hoàn tất được giao dịch mua gói sau khi nạp tiền.');
-                  }
-                } catch (autoErr: any) {
-                  console.error('Lỗi tự động mua gói sau khi nạp tiền ví:', autoErr);
-                  setPurchaseError(autoErr?.message || 'Đã nạp tiền vào ví nhưng mua gói tự động thất bại. Vui lòng nhấn Xác nhận mua gói để thử lại.');
-                  setActiveTab('packages');
-                } finally {
-                  setAutoActivating(false);
-                }
-              }
-            }
-
-            setDepositRequest((prev) => (prev ? { ...prev, status: 'SUCCESS' } : null));
-          }
-        } catch {
-          // ignore transient polling errors
-        }
-      }, 4000);
-
-      return () => {
+    // 3. Fallback nhẹ nhàng: Chỉ poll khi tab đang hiển thị (không poll khi ẩn), giãn cách 12s và tối đa 10 lần
+    let pollCount = 0;
+    pollingRef.current = setInterval(async () => {
+      // Bỏ qua nếu tab đang bị ẩn / background
+      if (typeof document !== 'undefined' && document.hidden) return;
+      pollCount++;
+      if (pollCount > 10) {
+        // Sau 2 phút không có giao dịch, tự động dừng polling để tránh spam BE
         if (pollingRef.current) {
           clearInterval(pollingRef.current);
           pollingRef.current = null;
         }
-      };
-    }
-  }, [depositRequest, pendingPackage, pendingRetailOrder, userCredit]);
+        return;
+      }
+
+      try {
+        const freshWallet = await walletService.getMyWallet();
+        const hasBalanceIncreased =
+          freshWallet &&
+          (freshWallet.balance > baselineBalance ||
+            (baselineBalance === 0 && freshWallet.balance >= depositRequest.amount));
+        if (hasBalanceIncreased) {
+          await processSuccessfulBalanceIncrease(freshWallet);
+        }
+      } catch {
+        // ignore transient errors
+      }
+    }, 12000);
+
+    return () => {
+      unsubWs();
+      window.removeEventListener('secondlife_wallet_updated', handleWalletUpdated);
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [depositRequest, processSuccessfulBalanceIncrease]);
 
   const loadWallet = async () => {
     setWalletLoading(true);

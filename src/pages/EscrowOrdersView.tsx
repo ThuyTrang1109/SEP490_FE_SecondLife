@@ -458,9 +458,18 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     };
     window.addEventListener('secondlife_inspector_arrived', handler);
     window.addEventListener('storage', handler);
+
+    const handleApptSignal = () => {
+      onRefreshOrders?.();
+    };
+    window.addEventListener('secondlife_appointment_rejected', handleApptSignal);
+    window.addEventListener('secondlife_order_assigned_signal', handleApptSignal);
+
     return () => {
       window.removeEventListener('secondlife_inspector_arrived', handler);
       window.removeEventListener('storage', handler);
+      window.removeEventListener('secondlife_appointment_rejected', handleApptSignal);
+      window.removeEventListener('secondlife_order_assigned_signal', handleApptSignal);
     };
   }, []);
 
@@ -2160,6 +2169,24 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     }
     return null;
   };
+
+  const getOrderAppointmentRejection = (ord: EscrowOrder) => {
+    if (!ord?.id) return null;
+    if ((ord as any).appointmentRejectionReason) {
+      return {
+        reason: (ord as any).appointmentRejectionReason,
+        rejectedAt: (ord as any).appointmentRejectedAt || '',
+      };
+    }
+    try {
+      const raw = localStorage.getItem(`order_appointment_rejection_${ord.id}`);
+      if (raw && raw !== 'undefined' && raw !== 'null') {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.reason) return parsed;
+      }
+    } catch { }
+    return null;
+  };
   const [sellerReviewsModalData, setSellerReviewsModalData] = useState<{ sellerId: string; sellerName: string } | null>(null);
   const [reviewedOrderIds, setReviewedOrderIds] = useState<string[]>(() => {
     try {
@@ -3441,6 +3468,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                     {ord.inspectionMethod === 'AT_HOME' ? (
                       /* TRƯỜNG HỢP 1: KIỂM ĐỊNH TẬN NHÀ (KTV ĐẾN NHÀ) */
                       (() => {
+                        const rejectionInfo = getOrderAppointmentRejection(ord);
                         const assignedInspector = (() => {
                           try {
                             const raw = localStorage.getItem(`order_assigned_inspector_${ord.id}`);
@@ -3461,20 +3489,22 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           <div className="bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-amber-50/90 p-3.5 rounded-xl border border-amber-200 text-amber-950 space-y-2">
                             <div className="flex items-center justify-between flex-wrap gap-2">
                               <div className="flex items-center gap-2">
-                                <span className="px-2.5 py-0.5 rounded-md bg-amber-600 text-white text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs">
-                                  <Calendar className="w-3.5 h-3.5" />
+                                <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs ${rejectionInfo && !savedAppointment?.scheduledAt ? 'bg-rose-600 text-white' : 'bg-amber-600 text-white'}`}>
+                                  {rejectionInfo && !savedAppointment?.scheduledAt ? <AlertCircle className="w-3.5 h-3.5" /> : <Calendar className="w-3.5 h-3.5" />}
                                   <span>{lang === 'vi' ? 'Kiểm Định Tận Nhà (KTV Đến Nhà)' : 'At-Home Inspection (Technician Visit)'}</span>
                                 </span>
-                                <span className="text-xs font-bold text-amber-900">
-                                  {isInspectorArrivedForOrder(ord.id, ord)
-                                    ? (lang === 'vi' ? 'Kỹ thuật viên đã đến và đang kiểm tra' : 'Technician has arrived and is inspecting')
-                                    : String((ord as any).backendStatus || (ord as any).inspectionStatus || (ord as any).inspectionOrder?.status || ((ord as any).status !== 'AWAITING_INSPECTION' ? (ord as any).status : '') || '').toUpperCase() === 'WAITING_BUYER_APPROVAL'
-                                      ? (lang === 'vi' ? 'Đã gửi đề xuất lại • Chờ người mua phản hồi' : 'Counter-proposal sent • Awaiting buyer response')
-                                      : assignedInspector?.inspectorName
-                                        ? (lang === 'vi' ? `Đã phân công KTV ${assignedInspector.inspectorName}` : `KTV ${assignedInspector.inspectorName} Assigned`)
-                                        : savedAppointment?.scheduledAt
-                                          ? (lang === 'vi' ? 'Đã hẹn lịch • Chờ Admin điều phối KTV' : 'Appointment Scheduled • Awaiting Dispatch')
-                                          : (lang === 'vi' ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting Appointment Schedule')}
+                                <span className={`text-xs font-bold ${rejectionInfo && !savedAppointment?.scheduledAt ? 'text-rose-700' : 'text-amber-900'}`}>
+                                  {rejectionInfo && !savedAppointment?.scheduledAt
+                                    ? (lang === 'vi' ? 'Lịch hẹn bị từ chối • Vui lòng hẹn lại' : 'Appointment Rejected • Please Reschedule')
+                                    : isInspectorArrivedForOrder(ord.id, ord)
+                                      ? (lang === 'vi' ? 'Kỹ thuật viên đã đến và đang kiểm tra' : 'Technician has arrived and is inspecting')
+                                      : String((ord as any).backendStatus || (ord as any).inspectionStatus || (ord as any).inspectionOrder?.status || ((ord as any).status !== 'AWAITING_INSPECTION' ? (ord as any).status : '') || '').toUpperCase() === 'WAITING_BUYER_APPROVAL'
+                                        ? (lang === 'vi' ? 'Đã gửi đề xuất lại • Chờ người mua phản hồi' : 'Counter-proposal sent • Awaiting buyer response')
+                                        : assignedInspector?.inspectorName
+                                          ? (lang === 'vi' ? `Đã phân công KTV ${assignedInspector.inspectorName}` : `KTV ${assignedInspector.inspectorName} Assigned`)
+                                          : savedAppointment?.scheduledAt
+                                            ? (lang === 'vi' ? 'Đã hẹn lịch • Chờ Admin điều phối KTV' : 'Appointment Scheduled • Awaiting Dispatch')
+                                            : (lang === 'vi' ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting Appointment Schedule')}
                                 </span>
                               </div>
                               {savedAppointment?.scheduledAt && (
@@ -3491,6 +3521,22 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                 </button>
                               )}
                             </div>
+
+                            {/* Alert if appointment was rejected by Hub */}
+                            {rejectionInfo && !savedAppointment?.scheduledAt && (
+                              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900 space-y-1.5 animate-fadeIn">
+                                <div className="font-extrabold flex items-center gap-1.5 text-rose-800">
+                                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                                  <span>Lịch hẹn trước đó đã bị Trung tâm kiểm định từ chối</span>
+                                </div>
+                                <div className="p-2 bg-white/90 rounded-lg border border-rose-200 text-[11px] leading-relaxed">
+                                  <strong>Lý do từ chối:</strong> "{rejectionInfo.reason}"
+                                </div>
+                                <p className="text-[11px] text-rose-700">
+                                  Vui lòng bấm nút <strong>"Đặt Lại Lịch Hẹn KTV"</strong> bên dưới để chọn lại ngày giờ hẹn khác phù hợp hơn.
+                                </p>
+                              </div>
+                            )}
 
                             {/* Assigned Technician Banner */}
                             {assignedInspector ? (
@@ -4990,6 +5036,26 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             </div>
 
                             <div className="text-xs text-slate-600 space-y-1.5 pt-1">
+                              {(() => {
+                                const detailRej = getOrderAppointmentRejection(detailModalOrder);
+                                if (detailRej && !modalAppointmentScheduledAt) {
+                                  return (
+                                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900 space-y-1">
+                                      <div className="font-extrabold flex items-center gap-1.5 text-rose-800">
+                                        <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                        <span>Lịch hẹn bị Trung tâm từ chối</span>
+                                      </div>
+                                      <p className="text-[11px] leading-relaxed bg-white/90 p-1.5 rounded border border-rose-200">
+                                        <strong>Lý do:</strong> "{detailRej.reason}"
+                                      </p>
+                                      <p className="text-[10px] text-rose-700">
+                                        Vui lòng đặt lại lịch hẹn khác phù hợp hơn.
+                                      </p>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
                               <div className="flex items-start gap-1.5">
                                 <span className="text-slate-400 font-bold shrink-0">Địa điểm:</span>
                                 <span className="font-semibold text-slate-800 break-words">{realSellerAddress}</span>
@@ -6603,9 +6669,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                               >
                                                 <Calendar className="w-4 h-4" />
                                                 <span>
-                                                  {savedAppointment?.scheduledAt
-                                                    ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Visit')
-                                                    : (lang === 'vi' ? 'Xác Nhận & Hẹn Lịch Đón KTV' : 'Confirm & Schedule Visit')}
+                                                  {(() => {
+                                                    const rej = getOrderAppointmentRejection(detailModalOrder);
+                                                    if (rej && !savedAppointment?.scheduledAt) {
+                                                      return lang === 'vi' ? 'Đặt Lại Lịch Hẹn KTV' : 'Reschedule Visit';
+                                                    }
+                                                    return savedAppointment?.scheduledAt
+                                                      ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Visit')
+                                                      : (lang === 'vi' ? 'Xác Nhận & Hẹn Lịch Đón KTV' : 'Confirm & Schedule Visit');
+                                                  })()}
                                                 </span>
                                               </button>
                                             ) : (
@@ -6794,9 +6866,16 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                         >
                                           <Calendar className="w-4 h-4" />
                                           <span>
-                                            {getOrderAppointment(detailModalOrder)?.scheduledAt
-                                              ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Hẹn Lịch Đón KTV')
-                                              : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit')}
+                                            {(() => {
+                                              const rej = getOrderAppointmentRejection(detailModalOrder);
+                                              const appt = getOrderAppointment(detailModalOrder);
+                                              if (rej && !appt?.scheduledAt) {
+                                                return lang === 'vi' ? 'Đặt Lại Lịch Hẹn KTV' : 'Reschedule Visit';
+                                              }
+                                              return appt?.scheduledAt
+                                                ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Hẹn Lịch Đón KTV')
+                                                : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit');
+                                            })()}
                                           </span>
                                         </button>
                                       )}

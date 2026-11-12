@@ -160,6 +160,11 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
     const shiftLabel = shift === 'MORNING' ? 'Ca Sáng (08:00 - 12:00)' : 'Ca Chiều (13:00 - 17:00)';
     let buyerId: string | undefined;
 
+    // Clear previous rejection if rescheduling
+    try {
+      localStorage.removeItem(`order_appointment_rejection_${orderId}`);
+    } catch {}
+
     // 1. Cập nhật recent_placed_orders
     try {
       const raw = localStorage.getItem('recent_placed_orders');
@@ -173,6 +178,8 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                 ...o,
                 appointmentScheduledAt: scheduledDate.toISOString(),
                 appointmentNote: noteText,
+                appointmentStatus: 'PENDING_CONFIRMATION',
+                appointmentRejectionReason: undefined,
                 sellerConfirmedAt: o.sellerConfirmedAt || new Date().toISOString(),
                 confirmationStatus: 'CONFIRMED',
                 escrowStatus: 'AWAITING_INSPECTION',
@@ -198,6 +205,8 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                 ...o,
                 appointmentScheduledAt: scheduledDate.toISOString(),
                 appointmentNote: noteText,
+                appointmentStatus: 'PENDING_CONFIRMATION',
+                appointmentRejectionReason: undefined,
                 sellerAddress: o.sellerAddress || o.listing?.sellerAddress || o.listing?.location,
                 sellerPhone: o.sellerPhone || o.seller?.phone,
                 sellerName: o.sellerName || o.seller?.fullName,

@@ -618,6 +618,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
   // --- Assign Modal State ---
   const [assignModalOrder, setAssignModalOrder] = useState<InspectionOrderDto | null>(null);
+  const [rejectApptModalOrder, setRejectApptModalOrder] = useState<InspectionOrderDto | null>(null);
+  const [rejectApptReason, setRejectApptReason] = useState<string>('');
+  const [rejectApptError, setRejectApptError] = useState<string | null>(null);
+  const [isRejectingAppt, setIsRejectingAppt] = useState(false);
   const [certificateOrder, setCertificateOrder] = useState<InspectionOrderDto | null>(null);
   const [loadingCertificateId, setLoadingCertificateId] = useState<string | null>(null);
   const [reviewingAppealOrder, setReviewingAppealOrder] = useState<InspectionOrderDto | null>(null);
@@ -2515,6 +2519,138 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     setSelectedInspectorId(order.inspectorId || staffList[0]?.id || '');
     const savedDispatchNote = localStorage.getItem(`order_dispatch_note_${order.id}`) || '';
     setAssignNote(savedDispatchNote);
+  };
+
+  // Action: Reject Appointment for AT_HOME Order
+  const handleRejectAppointment = async () => {
+    if (!rejectApptModalOrder) return;
+    const reason = rejectApptReason.trim();
+    if (!reason) {
+      setRejectApptError('Vui lòng nhập lý do từ chối lịch hẹn để người bán nắm rõ thông tin.');
+      return;
+    }
+
+    setIsRejectingAppt(true);
+    setRejectApptError(null);
+    try {
+      const orderId = rejectApptModalOrder.id;
+
+      // 1. Lưu thông tin từ chối vào localStorage
+      const rejectionRecord = {
+        orderId,
+        rejectedAt: new Date().toISOString(),
+        reason,
+        previousScheduledAt: rejectApptModalOrder.appointmentScheduledAt,
+      };
+      localStorage.setItem(`order_appointment_rejection_${orderId}`, JSON.stringify(rejectionRecord));
+      localStorage.removeItem(`order_appointment_${orderId}`);
+      localStorage.removeItem(`order_assigned_inspector_${orderId}`);
+
+      // 2. Cập nhật recent_placed_orders
+      try {
+        const raw = localStorage.getItem('recent_placed_orders');
+        if (raw) {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            const updated = list.map((o: any) => {
+              if (o.id === orderId) {
+                return {
+                  ...o,
+                  appointmentScheduledAt: null,
+                  appointmentStatus: 'REJECTED',
+                  appointmentRejectionReason: reason,
+                  inspectorId: null,
+                  inspectorName: null,
+                };
+              }
+              return o;
+            });
+            localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
+          }
+        }
+      } catch { }
+
+      // 3. Cập nhật center_inspection_orders
+      try {
+        const rawCenter = localStorage.getItem('center_inspection_orders');
+        if (rawCenter) {
+          const listCenter = JSON.parse(rawCenter);
+          if (Array.isArray(listCenter)) {
+            const updatedCenter = listCenter.map((o: any) => {
+              if (o.id === orderId) {
+                return {
+                  ...o,
+                  appointmentScheduledAt: null,
+                  appointmentStatus: 'REJECTED',
+                  appointmentRejectionReason: reason,
+                  inspectorId: null,
+                  inspectorName: null,
+                };
+              }
+              return o;
+            });
+            localStorage.setItem('center_inspection_orders', JSON.stringify(updatedCenter));
+          }
+        }
+      } catch { }
+
+      // 4. Gửi thông báo cho Seller
+      try {
+        const sellerId = (rejectApptModalOrder as any).sellerId || (rejectApptModalOrder as any).listing?.sellerId;
+        const codeDisplay = (rejectApptModalOrder.id || '').slice(0, 8);
+        const sellerNotif = {
+          id: `notif-seller-reject-appt-${orderId}-${Date.now()}`,
+          recipientId: sellerId,
+          recipientRole: 'seller',
+          title: `Lịch hẹn kiểm định tại nhà #${codeDisplay} đã bị từ chối`,
+          message: `Trung tâm SecondLife đã từ chối lịch hẹn của bạn. Lý do: "${reason}". Vui lòng vào trang Đơn Hàng để đặt lại lịch hẹn phù hợp hơn!`,
+          type: 'INSPECTION' as const,
+          referenceId: orderId,
+          referenceType: 'INSPECTION_ORDER',
+          actionUrl: `/orders/seller?search=${encodeURIComponent(orderId)}`,
+          isRead: false,
+          readAt: null,
+          createdAt: new Date().toISOString(),
+        };
+        saveScopedLocalNotification(sellerNotif, sellerId, 'seller');
+      } catch { }
+
+      // 5. Cập nhật state danh sách đơn trong Hub
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId
+            ? {
+              ...o,
+              appointmentScheduledAt: undefined,
+              appointmentStatus: 'REJECTED',
+              appointmentRejectionReason: reason,
+              inspectorId: undefined,
+              inspectorName: undefined,
+            }
+            : o
+        )
+      );
+
+      // 6. Phát tín hiệu realtime
+      window.dispatchEvent(
+        new CustomEvent('secondlife_appointment_rejected', {
+          detail: { orderId, reason },
+        })
+      );
+      window.dispatchEvent(
+        new CustomEvent('secondlife_order_assigned_signal', {
+          detail: { orderId },
+        })
+      );
+
+      setRejectApptModalOrder(null);
+      setRejectApptReason('');
+      setAssignModalOrder(null);
+    } catch (err: any) {
+      setRejectApptError(err?.message || 'Có lỗi xảy ra khi từ chối lịch hẹn.');
+    } finally {
+      setIsRejectingAppt(false);
+    }
   };
 
   // Action: Submit Assign Inspector
@@ -6996,7 +7132,23 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     )}
                   </div>
 
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex items-center justify-end gap-2 flex-wrap">
+                    {assignModalOrder.orderType === 'AT_HOME' && modalApptTime && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRejectApptModalOrder(assignModalOrder);
+                          setRejectApptReason('');
+                          setRejectApptError(null);
+                        }}
+                        className="px-3.5 py-2 rounded-xl text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer flex items-center gap-1.5"
+                        title="Từ chối lịch hẹn của người bán nếu KTV không thể đến ca này"
+                      >
+                        <XCircle className="w-4 h-4 text-rose-500" />
+                        <span>Từ Chối Lịch Hẹn</span>
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => {
@@ -7055,6 +7207,118 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 </div>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL TỪ CHỐI LỊCH HẸN KIỂM ĐỊNH TẬN NƠI (REJECT APPOINTMENT MODAL)       */}
+      {/* ========================================================================= */}
+      {rejectApptModalOrder && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-3 sm:p-4 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-2xl sm:rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-rose-100">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center font-bold">
+                  <XCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-slate-900">Từ Chối Lịch Hẹn Đón KTV</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Đơn hàng #{rejectApptModalOrder.id.slice(0, 8)} • Người bán: {getOrderSellerName(rejectApptModalOrder)}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectApptModalOrder(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Thông tin lịch hẹn người bán đề xuất */}
+            <div className="p-3 bg-amber-50/80 rounded-xl border border-amber-200 text-xs space-y-1">
+              <div className="font-bold text-amber-900 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                <span>Thời gian người bán yêu cầu đón KTV:</span>
+              </div>
+              <p className="font-extrabold text-slate-800">
+                🕒 {rejectApptModalOrder.appointmentScheduledAt ? new Date(rejectApptModalOrder.appointmentScheduledAt).toLocaleString('vi-VN') : 'Chưa rõ'}
+              </p>
+              <p className="text-[11px] text-slate-600">
+                📍 Địa chỉ: {getOrderSellerAddress(rejectApptModalOrder)}
+              </p>
+            </div>
+
+            {/* Input lý do từ chối */}
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-800 flex items-center justify-between">
+                <span>Lý do từ chối lịch hẹn: <strong className="text-rose-500">*</strong></span>
+                <span className="text-[10px] text-slate-400 font-normal">Gửi trực tiếp đến người bán</span>
+              </label>
+              <textarea
+                rows={3}
+                value={rejectApptReason}
+                onChange={(e) => {
+                  setRejectApptReason(e.target.value);
+                  setRejectApptError(null);
+                }}
+                placeholder="Nhập lý do cụ thể để người bán chọn lại lịch hẹn phù hợp..."
+                className="w-full p-2.5 rounded-xl border border-gray-200 text-xs font-medium focus:ring-2 focus:ring-rose-500 outline-none"
+              />
+
+              {/* Gợi ý nhanh */}
+              <div className="space-y-1 pt-1">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Gợi ý lý do nhanh:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'KTV đã kín lịch trong khung giờ này, vui lòng chọn ca khác.',
+                    'Địa chỉ ngoài phạm vi phục vụ trong khung giờ yêu cầu.',
+                    'Trùng lịch bảo trì định kỳ thiết bị đo kiểm lưu động.',
+                    'Vui lòng hẹn trước tối thiểu 1 ngày trong giờ hành chính.',
+                  ].map((quickReason, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setRejectApptReason(quickReason)}
+                      className="text-[10px] font-medium px-2 py-1 rounded-lg bg-gray-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 transition border border-gray-200 cursor-pointer"
+                    >
+                      {quickReason}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {rejectApptError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{rejectApptError}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setRejectApptModalOrder(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-gray-100 transition cursor-pointer"
+              >
+                Quay Lại
+              </button>
+              <button
+                type="button"
+                onClick={handleRejectAppointment}
+                disabled={isRejectingAppt || !rejectApptReason.trim()}
+                className="px-4.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition disabled:opacity-50 cursor-pointer"
+              >
+                {isRejectingAppt ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+                <span>Xác Nhận Từ Chối</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

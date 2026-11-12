@@ -501,7 +501,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         ) {
           await processSuccessfulBalanceIncrease(freshWallet);
         }
-      } catch {}
+      } catch { }
     });
 
     // 2. Lắng nghe sự kiện đồng bộ toàn hệ thống 'secondlife_wallet_updated'
@@ -511,7 +511,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         try {
           const freshWallet = await walletService.getMyWallet();
           if (freshWallet) await processSuccessfulBalanceIncrease(freshWallet);
-        } catch {}
+        } catch { }
       }
     };
     window.addEventListener('secondlife_wallet_updated', handleWalletUpdated);

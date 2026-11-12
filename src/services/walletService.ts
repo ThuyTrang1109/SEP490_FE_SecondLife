@@ -39,9 +39,6 @@ export const walletService = {
     const wallet = ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
       : response) as UserWallet;
-    if (wallet && typeof wallet.balance === 'number') {
-      notifyWalletBalanceUpdated(wallet.balance);
-    }
     return wallet;
   },
 

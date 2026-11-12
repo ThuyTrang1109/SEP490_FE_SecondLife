@@ -420,6 +420,7 @@ export default function App() {
           if (prev.walletBalance === detail.balance && prev.walletBalanceVnd === detail.balance) return prev;
           return { ...prev, walletBalance: detail.balance, walletBalanceVnd: detail.balance };
         });
+        return;
       } else if (typeof detail?.deductAmount === 'number' && detail.deductAmount > 0) {
         setWalletBalance((prev) => Math.max(0, prev - detail.deductAmount));
         setCurrentUser((prev) => {
@@ -428,6 +429,7 @@ export default function App() {
           const newBal = Math.max(0, currentBal - detail.deductAmount);
           return { ...prev, walletBalance: newBal, walletBalanceVnd: newBal };
         });
+        return;
       }
       void loadUserWallet();
     };

@@ -1123,8 +1123,8 @@ export default function App() {
       sellerId: post.sellerId || post.user?.id || post.userId || (isOwner && currentUser ? currentUser.id : ''),
       sellerName: isOwner && currentUser?.name ? currentUser.name : (post.sellerName || post.user?.profile?.fullName || post.user?.fullName || post.user?.email || 'Người bán SecondLife'),
       sellerAvatar: post.sellerAvatar || post.user?.profile?.avatarUrl || post.user?.avatarUrl || undefined,
-      sellerRating: 5.0,
-      sellerCompletedOrders: 3,
+      sellerRating: post.sellerRating ?? 0,
+      sellerCompletedOrders: post.sellerCompletedOrders ?? (post.user?.completedOrdersCount ?? 0),
       sellerVerified: true,
       status: (
         localStorage.getItem(`listing_available_${post.postId || post.id}`) === 'true'

@@ -29,7 +29,7 @@ import { reviewService } from '../../data/mockReviews';
 import { reputationService, postService, SellerReputationDto, getStoredUser, getAssessmentStatusMeta } from '../../services';
 import { UserReportModal } from './UserReportModal';
 import { isListingInspectionPassed } from '../../utils/listingInspection';
-import { resolveCategoryAndItem, extractSellerOriginalPrice } from '../../utils/catalogCache';
+import { resolveCategoryAndItem, extractSellerOriginalPrice, getPostMetadata } from '../../utils/catalogCache';
 import { MarkdownContent } from '../common/MarkdownDescription';
 
 interface ListingDetailModalProps {
@@ -81,6 +81,14 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const effectiveRejectionReason = sellerDetail?.rejectionReason ?? listing.rejectionReason;
   const effectiveCreditCharged = sellerDetail?.listingCreditCharged ?? listing.listingCreditCharged;
   const effectiveSellerAddress = cleanFullAddress(sellerDetail?.user?.address || listing.sellerAddress || listing.location);
+
+  const canDisassemble = React.useMemo(() => {
+    if ((listing as any)?.canDisassemble !== undefined) return Boolean((listing as any).canDisassemble);
+    const meta = listing?.id ? getPostMetadata(listing.id) : null;
+    if (meta?.canDisassemble !== undefined) return meta.canDisassemble;
+    const local = listing?.id ? localStorage.getItem(`post_can_disassemble_${listing.id}`) : null;
+    return local !== null ? local === 'true' : null;
+  }, [listing]);
 
   const resolved = React.useMemo(() => {
     return resolveCategoryAndItem({
@@ -229,7 +237,17 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const displayReviews = reviewsTab === 'product' ? productReviews : sellerReviews;
   const avgProductRating = productReviews.length > 0
     ? (productReviews.reduce((sum, r) => sum + r.rating, 0) / productReviews.length).toFixed(1)
-    : '5.0';
+    : null;
+
+  const totalSellerEvaluated = sellerReviews.length > 0
+    ? sellerReviews.length
+    : (realReputation?.evaluatedOrders ?? 0);
+
+  const realSellerRating = realReputation?.score !== null && realReputation?.score !== undefined
+    ? (realReputation.score / 20).toFixed(1)
+    : (sellerReviews.length > 0
+        ? (sellerReviews.reduce((sum, r) => sum + r.rating, 0) / sellerReviews.length).toFixed(1)
+        : (listing.sellerRating ? String(listing.sellerRating) : null));
 
   const isInspected = React.useMemo(() => {
     return isListingInspectionPassed(listing);
@@ -447,10 +465,10 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                           <div className="text-[10px] text-slate-500 flex items-center gap-1.5 mt-0.2 flex-wrap">
                             <span className="flex items-center text-amber-500 font-bold">
                               <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400 mr-0.5" />
-                              {listing.sellerRating}
+                              {realSellerRating ? `${realSellerRating} ⭐` : (listing.sellerRating || (lang === 'vi' ? 'Người bán mới' : 'New'))}
                             </span>
                             <span>•</span>
-                            <span>{sellerTrust.reviewCount} {lang === 'vi' ? 'đánh giá' : 'reviews'}</span>
+                            <span>{totalSellerEvaluated} {lang === 'vi' ? 'đánh giá' : 'reviews'}</span>
                             {(listing.sellerAddress || listing.location) && (
                               <>
                                 <span>•</span>
@@ -730,6 +748,15 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
               </div>
             </div>
 
+            {canDisassemble !== null && (
+              <div className="text-[11px] text-slate-600 bg-white p-2 rounded-lg border border-gray-200 flex items-center justify-between">
+                <span className="text-slate-500">{lang === 'vi' ? 'Khả năng tháo rời linh kiện:' : 'Disassembly capability:'}</span>
+                <span className={`font-bold px-2 py-0.5 rounded text-[10.5px] ${canDisassemble ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-slate-100 text-slate-700'}`}>
+                  {canDisassemble ? (lang === 'vi' ? '✓ Có thể tháo rời' : 'Disassemblable') : (lang === 'vi' ? 'Nguyên khối' : 'Non-disassemblable')}
+                </span>
+              </div>
+            )}
+
             {effectiveSellerAddress && isOwnListing && (
               <div className="text-[11px] text-slate-600 bg-white p-2 rounded-lg border border-gray-200 flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-[#c34c36] shrink-0" />
@@ -782,13 +809,15 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   }`}
                 >
                   <UserCheck className="w-3.5 h-3.5 text-[#c34c36]" />
-                  <span>{lang === 'vi' ? `Đánh Giá Người Bán (${sellerReviews.length})` : `Seller Reviews (${sellerReviews.length})`}</span>
+                  <span>{lang === 'vi' ? `Đánh Giá Người Bán (${totalSellerEvaluated})` : `Seller Reviews (${totalSellerEvaluated})`}</span>
                 </button>
               </div>
 
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-bold text-slate-700">
-                  {reviewsTab === 'product' ? `${avgProductRating} ⭐` : `${sellerTrust.rating} ⭐`}
+                  {reviewsTab === 'product'
+                    ? (avgProductRating ? `${avgProductRating} ⭐` : (lang === 'vi' ? 'Chưa có điểm' : 'No rating'))
+                    : (realSellerRating ? `${realSellerRating} ⭐` : (lang === 'vi' ? 'Người bán mới' : 'New Seller'))}
                 </span>
                 <button
                   type="button"
@@ -804,7 +833,11 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
             {displayReviews.length === 0 ? (
               <div className="text-center py-5 bg-[#faf8f5] rounded-xl border border-gray-200 text-slate-400 text-xs">
                 <Star className="w-5 h-5 mx-auto mb-1 text-gray-300" />
-                <p>{lang === 'vi' ? 'Chưa có đánh giá nào cho sản phẩm này.' : 'No reviews yet for this listing.'}</p>
+                <p>
+                  {reviewsTab === 'product'
+                    ? (lang === 'vi' ? 'Chưa có đánh giá nào cho sản phẩm này từ người mua đã kiểm định.' : 'No reviews yet for this listing.')
+                    : (lang === 'vi' ? `Người bán chưa có nhận xét văn bản nào (${totalSellerEvaluated} đơn hàng đã hoàn tất).` : `No text reviews yet for this seller (${totalSellerEvaluated} orders completed).`)}
+                </p>
               </div>
             ) : (
               <div className="space-y-2">

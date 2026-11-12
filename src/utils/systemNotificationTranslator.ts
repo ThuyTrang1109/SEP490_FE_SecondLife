@@ -34,8 +34,8 @@ export function translateSystemNotification(rawMsg: string | null | undefined): 
   }
   if (lower.includes('no active ai session to regenerate')) return 'Chưa có phiên hội thoại AI để viết lại.';
   if (lower.includes('failed to regenerate with ai')) return 'Không thể viết lại bản nháp bằng AI.';
-  if (lower.includes('video must not exceed 100mb')) return 'Video tải lên không được vượt quá 100MB.';
-  if (lower.includes('operation video uploaded')) return 'Tải video vận hành thiết bị thành công!';
+  if (lower.includes('video must not exceed')) return 'Dung lượng video tải lên vượt quá giới hạn cho phép.';
+  if (lower.includes('product video uploaded') || lower.includes('operation video uploaded')) return 'Tải video thực tế sản phẩm thành công!';
   if (lower.includes('failed to upload video')) return 'Không thể tải video lên máy chủ.';
   if (lower.includes('price cannot exceed 1 billion')) return 'Giá sản phẩm không được vượt quá 1.000.000.000đ (1 tỷ VNĐ).';
   if (lower.includes('please select a category')) return 'Vui lòng chọn Danh mục sản phẩm.';

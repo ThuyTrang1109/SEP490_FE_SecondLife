@@ -2440,14 +2440,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           try {
             const raw = localStorage.getItem(`order_appointment_${orderItem.id}`);
             if (raw && JSON.parse(raw).scheduledAt) hasAppt = true;
-          } catch {}
+          } catch { }
         }
         let hasInsp = Boolean(orderItem?.inspectorId || (orderItem as any)?.inspectorName);
         if (!hasInsp && orderItem?.id && typeof window !== 'undefined') {
           try {
             const raw = localStorage.getItem(`order_assigned_inspector_${orderItem.id}`);
             if (raw && JSON.parse(raw).inspectorName) hasInsp = true;
-          } catch {}
+          } catch { }
         }
         if (hasInsp) {
           return (
@@ -2569,14 +2569,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             try {
               const raw = localStorage.getItem(`order_appointment_${orderItem.id}`);
               if (raw && JSON.parse(raw).scheduledAt) hasAppt = true;
-            } catch {}
+            } catch { }
           }
           let hasInsp = Boolean(orderItem?.inspectorId || (orderItem as any)?.inspectorName);
           if (!hasInsp && orderItem?.id && typeof window !== 'undefined') {
             try {
               const raw = localStorage.getItem(`order_assigned_inspector_${orderItem.id}`);
               if (raw && JSON.parse(raw).inspectorName) hasInsp = true;
-            } catch {}
+            } catch { }
           }
           if (hasInsp) {
             return (
@@ -6805,7 +6805,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                             <XCircle className="w-4 h-4 text-rose-600" />
                                             <span>{lang === 'vi' ? 'Hủy Yêu Cầu Kiểm Định' : 'Cancel Inspection Request'}</span>
                                           </button>
-                                      )}
+                                        )}
 
                                       {/* Nút Xem / In Mã QR Dán Sản Phẩm trong Modal Chi Tiết */}
 
@@ -6825,15 +6825,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                 {/* GIAI ĐOẠN 3: Đã đóng gói • Chờ Shipper đến lấy */}
                                 {(!detailHasInspection || (detailModalOrder.inspectionMethod !== 'AT_HOME' && (detailModalOrder as any).orderType !== 'AT_HOME')) &&
                                   (detailHasInboundTracking || (isOrderPacked(detailModalOrder) &&
-                                  !isOrderReceiptConfirmed(detailModalOrder) &&
-                                  detailModalOrder.backendStatus !== 'COMPLETED' &&
-                                  !detailModalOrder.shippingDeliveredAt &&
-                                  !detailModalOrder.carrierPickedUpAt &&
-                                  detailModalOrder.backendStatus !== 'SHIPPED' &&
-                                  detailModalOrder.backendStatus !== 'DELIVERED' &&
-                                  (detailModalOrder.escrowStatus as string) !== 'SHIPPED_TO_BUYER' &&
-                                  (detailModalOrder.escrowStatus as string) !== 'DELIVERED_INSPECTION_WINDOW' &&
-                                  (detailModalOrder.escrowStatus as string) !== 'COMPLETED_RELEASED')) && (
+                                    !isOrderReceiptConfirmed(detailModalOrder) &&
+                                    detailModalOrder.backendStatus !== 'COMPLETED' &&
+                                    !detailModalOrder.shippingDeliveredAt &&
+                                    !detailModalOrder.carrierPickedUpAt &&
+                                    detailModalOrder.backendStatus !== 'SHIPPED' &&
+                                    detailModalOrder.backendStatus !== 'DELIVERED' &&
+                                    (detailModalOrder.escrowStatus as string) !== 'SHIPPED_TO_BUYER' &&
+                                    (detailModalOrder.escrowStatus as string) !== 'DELIVERED_INSPECTION_WINDOW' &&
+                                    (detailModalOrder.escrowStatus as string) !== 'COMPLETED_RELEASED')) && (
                                     <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">
                                       {/* Nhãn Tĩnh (Không phải nút bấm, không click được) */}
                                       {detailInboundProgress?.step === 3 ? (

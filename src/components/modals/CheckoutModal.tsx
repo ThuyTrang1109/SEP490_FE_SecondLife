@@ -3010,8 +3010,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             )}
                           </div>
 
-                          <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9px] text-blue-700 font-bold">
-                            <span className="flex items-center gap-1">
+                          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                            <span className="flex items-center gap-1 text-[10px] text-blue-700 font-bold">
                               <span>🏷️ {lang === 'vi' ? 'Đã bao gồm cước 2 chiều Lalamove' : 'Includes 2-way shipping'}</span>
                               {atCenterShippingQuote?.expiresAt && !isAtCenterQuoteExpired && (
                                 <span className="text-[9px] font-normal text-slate-400">
@@ -3019,7 +3019,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 </span>
                               )}
                             </span>
-                            {inspectionMethod === 'AT_CENTER' && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                            {inspectionMethod === 'AT_CENTER' && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-black text-blue-700 bg-blue-100/90 px-2 py-0.5 rounded-full border border-blue-300">
+                                <Check className="w-3 h-3 text-blue-600" />
+                                <span>{lang === 'vi' ? 'Đang chọn' : 'Selected'}</span>
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -3085,46 +3090,128 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                               </div>
                             )}
                           </div>
-                          <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9px] text-purple-700 font-bold">
+                          <div className="mt-2.5 pt-2 border-t border-purple-100/70 flex items-center justify-between text-[10px]">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setShowTierBreakdown(!showTierBreakdown);
                               }}
-                              className="hover:underline flex items-center gap-1 text-purple-800 cursor-pointer"
+                              className="inline-flex items-center gap-1 font-bold text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-2.5 py-1 rounded-lg border border-purple-200 transition cursor-pointer"
                             >
-                              <span>📊 {showTierBreakdown ? 'Ẩn chi tiết cước' : 'Xem chi tiết 6 bậc cước'}</span>
+                              <span>{showTierBreakdown ? 'Ẩn chi tiết cước khứ hồi' : 'Xem cước khứ hồi (x2)'}</span>
+                              {showTierBreakdown ? <ChevronUp className="w-3 h-3 text-purple-600" /> : <ChevronDown className="w-3 h-3 text-purple-600" />}
                             </button>
-                            {inspectionMethod === 'AT_HOME' && <Check className="w-3.5 h-3.5 text-purple-600" />}
+                            {inspectionMethod === 'AT_HOME' && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-black text-purple-700 bg-purple-100/90 px-2 py-0.5 rounded-full border border-purple-300">
+                                <Check className="w-3 h-3 text-purple-600" />
+                                <span>{lang === 'vi' ? 'Đang chọn' : 'Selected'}</span>
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
 
-                      {/* BẢNG CHI TIẾT 6 BẬC THANG CƯỚC DI CHUYỂN */}
-                      {showTierBreakdown && (
-                        <div className="mt-2 p-3 bg-purple-50/60 rounded-xl border border-purple-200 text-[10px] space-y-1.5 animate-fadeIn">
-                          <div className="font-bold text-purple-900 flex items-center justify-between">
-                            <span>Biểu Phí Cước Di Chuyển KTV (6 Bậc Thang Căn Cước Tuyến Tính):</span>
-                            <span className="text-[9px] bg-purple-200 px-2 py-0.5 rounded-full font-bold">2 Chiều (Khứ hồi)</span>
-                          </div>
-                          <div className="space-y-1 pt-1">
-                            {(inspectionQuote?.atHomePackage?.tiersBreakdown || inspectionQuote?.appliedTiers || [
-                              { tierNumber: 1, name: '0 - 5 km đầu', pricePerKm: 2000 },
-                              { tierNumber: 2, name: 'Trên 5 - 10 km', pricePerKm: 2500 },
-                              { tierNumber: 3, name: 'Trên 10 - 15 km', pricePerKm: 3000 },
-                              { tierNumber: 4, name: 'Trên 15 - 20 km', pricePerKm: 3500 },
-                              { tierNumber: 5, name: 'Trên 20 - 30 km', pricePerKm: 4000 },
-                              { tierNumber: 6, name: 'Trên 30 km', pricePerKm: 4500 }
-                            ]).map((tier: any) => (
-                              <div key={tier.tierNumber} className="flex justify-between items-center text-slate-700 py-0.5 border-b border-purple-100/60 last:border-0">
-                                <span className="font-semibold">Bậc {tier.tierNumber} ({tier.name}):</span>
-                                <span className="font-bold text-purple-900">{formatVND(tier.pricePerKm)} / km</span>
+                      {/* BẢNG CHI TIẾT 6 BẬC THANG CƯỚC DI CHUYỂN KHỨ HỒI (X2) */}
+                      {showTierBreakdown && (() => {
+                        const distanceKm = Number((inspectionQuote?.atHomePackage?.distanceKm || inspectionQuote?.travelDistanceKm || 10).toFixed(1));
+                        const rawTiers = inspectionQuote?.atHomePackage?.tiersBreakdown || inspectionQuote?.appliedTiers || [
+                          { tierNumber: 1, name: '0 - 5 km đầu', fromKm: 0, toKm: 5, pricePerKm: 2000 },
+                          { tierNumber: 2, name: 'Trên 5 - 10 km', fromKm: 5, toKm: 10, pricePerKm: 2500 },
+                          { tierNumber: 3, name: 'Trên 10 - 15 km', fromKm: 10, toKm: 15, pricePerKm: 3000 },
+                          { tierNumber: 4, name: 'Trên 15 - 20 km', fromKm: 15, toKm: 20, pricePerKm: 3500 },
+                          { tierNumber: 5, name: 'Trên 20 - 30 km', fromKm: 20, toKm: 30, pricePerKm: 4000 },
+                          { tierNumber: 6, name: 'Trên 30 km', fromKm: 30, toKm: null, pricePerKm: 4500 }
+                        ];
+
+                        return (
+                          <div className="mt-3 p-3.5 sm:p-4 bg-gradient-to-br from-purple-50/90 via-white to-purple-50/60 rounded-2xl border border-purple-200/90 shadow-2xs text-xs space-y-3 animate-fadeIn">
+                            {/* Header */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-purple-100">
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                                  <Home className="w-3.5 h-3.5" />
+                                </div>
+                                <div>
+                                  <div className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5 flex-wrap">
+                                    <span>Biểu Phí Cước Di Chuyển KTV Tận Nhà</span>
+                                    <span className="text-[10px] text-purple-700 font-bold bg-purple-100/90 px-2 py-0.5 rounded-full border border-purple-300">
+                                      Khoảng cách: {distanceKm} km
+                                    </span>
+                                  </div>
+                                  <div className="text-[10.5px] text-slate-500">
+                                    Tính cước lũy tiến theo từng khoảng cách km thực tế
+                                  </div>
+                                </div>
                               </div>
-                            ))}
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-700 text-white font-black text-[10px] shadow-2xs self-start sm:self-auto">
+                                <span>2 Chiều Khứ Hồi (Giá x2)</span>
+                              </span>
+                            </div>
+
+                            {/* Bảng giá 6 bậc khứ hồi */}
+                            <div className="overflow-hidden rounded-xl border border-purple-200/80 bg-white shadow-2xs">
+                              <table className="w-full text-left text-[11px]">
+                                <thead className="bg-purple-100/60 text-purple-950 font-bold uppercase text-[9.5px] tracking-wider border-b border-purple-200/80">
+                                  <tr>
+                                    <th className="py-2 px-3">Bậc Thang Cự Ly</th>
+                                    <th className="py-2 px-3 text-right text-slate-500">Đơn giá 1 chiều</th>
+                                    <th className="py-2 px-3 text-right text-purple-900 font-black">Cước khứ hồi 2 chiều (x2)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-purple-100/80">
+                                  {rawTiers.map((tier: any) => {
+                                    const basePrice = Number(tier.pricePerKm || 0);
+                                    const roundTripPrice = basePrice * 2;
+                                    const fromKm = tier.fromKm ?? (tier.tierNumber === 1 ? 0 : tier.tierNumber === 2 ? 5 : tier.tierNumber === 3 ? 10 : tier.tierNumber === 4 ? 15 : tier.tierNumber === 5 ? 20 : 30);
+                                    const toKm = tier.toKm ?? (tier.tierNumber === 1 ? 5 : tier.tierNumber === 2 ? 10 : tier.tierNumber === 3 ? 15 : tier.tierNumber === 4 ? 20 : tier.tierNumber === 5 ? 30 : null);
+                                    const isCurrentTier = distanceKm > fromKm && (toKm === null || distanceKm <= toKm);
+
+                                    return (
+                                      <tr
+                                        key={tier.tierNumber}
+                                        className={`transition-colors ${isCurrentTier ? 'bg-purple-50/90 font-semibold' : 'hover:bg-purple-50/30'}`}
+                                      >
+                                        <td className="py-2.5 px-3">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="font-extrabold text-slate-900">
+                                              Bậc {tier.tierNumber}:
+                                            </span>
+                                            <span className="text-slate-700">
+                                              {tier.name}
+                                            </span>
+                                            {isCurrentTier && (
+                                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-purple-600 text-white shadow-2xs">
+                                                Cự ly đơn này
+                                              </span>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="py-2.5 px-3 text-right text-slate-500 font-mono text-[10.5px]">
+                                          {formatVND(basePrice)} / km
+                                        </td>
+                                        <td className="py-2.5 px-3 text-right font-black font-mono text-purple-900 text-xs">
+                                          <span className="inline-block bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200">
+                                            {formatVND(roundTripPrice)} / km
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {/* Ghi chú chân bảng */}
+                            <div className="p-2.5 rounded-xl bg-purple-100/60 border border-purple-200/80 flex items-start gap-2 text-[10.5px] text-purple-950 leading-relaxed">
+                              <Info className="w-3.5 h-3.5 text-purple-700 shrink-0 mt-0.5" />
+                              <span>
+                                <strong>Cước khứ hồi trọn gói (x2):</strong> Kỹ thuật viên di chuyển 2 chiều (từ Trạm Kiểm Định tới nhà người bán và quay về). Cước tự động nhân đôi (x2) theo khoảng cách thực tế, không phát sinh thêm chi phí.
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
 
                     {/* 3. Chia Tiền Kiểm Định */}

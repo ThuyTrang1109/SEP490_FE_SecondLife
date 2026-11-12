@@ -392,7 +392,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-      <div className="relative w-full max-w-lg rounded-2xl sm:rounded-3xl bg-white shadow-2xl border border-gray-100 flex flex-col max-h-[92vh] overflow-hidden">
+      <div className="relative w-full max-w-xl sm:max-w-xl lg:max-w-2xl rounded-2xl sm:rounded-3xl bg-white shadow-2xl border border-gray-100 flex flex-col max-h-[92vh] overflow-hidden">
         {/* Fixed Header */}
         <div className="px-4 sm:px-5 py-3 border-b border-gray-100 flex items-center justify-between shrink-0 bg-white">
           <div className="flex items-center gap-2.5">

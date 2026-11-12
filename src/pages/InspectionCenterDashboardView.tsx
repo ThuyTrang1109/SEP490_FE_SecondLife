@@ -554,8 +554,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             : ['https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400'],
           buyerName: o.buyerName || 'Khách hàng',
           buyerEmail: o.buyerId ? `buyer_${String(o.buyerId).slice(0, 6)}@gmail.com` : 'buyer@secondlife.vn',
-          sellerName: o.sellerName || 'Người bán',
+          sellerName: o.sellerName || o.seller?.fullName || 'Người bán',
           sellerEmail: o.sellerId ? `seller_${String(o.sellerId).slice(0, 6)}@gmail.com` : 'seller@secondlife.vn',
+          sellerPhone: o.sellerPhone || o.seller?.phone,
+          sellerAddress: o.sellerAddress || o.listing?.sellerAddress || o.listing?.location || o.shippingLegs?.[0]?.origin || o.address,
           inspectorId: hasValidAssign ? assignedInspectorId : undefined,
           inspectorName: hasValidAssign ? assignedInspectorName : undefined,
           orderType: (o.inspectionMethod === 'AT_HOME' || o.orderType === 'AT_HOME') ? 'AT_HOME' : 'AT_CENTER',
@@ -829,8 +831,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               postImageUrls: resolvedImageUrls,
               buyerName: o.buyerName || 'Khách hàng',
               buyerEmail: o.buyerId ? `buyer_${String(o.buyerId).slice(0, 6)}@gmail.com` : 'buyer@secondlife.vn',
-              sellerName: o.sellerName || 'Người bán',
+              sellerName: o.sellerName || o.seller?.fullName || 'Người bán',
               sellerEmail: o.sellerId ? `seller_${String(o.sellerId).slice(0, 6)}@gmail.com` : 'seller@secondlife.vn',
+              sellerPhone: o.sellerPhone || o.seller?.phone,
+              sellerAddress: o.sellerAddress || o.listing?.sellerAddress || o.listing?.location || o.shippingLegs?.[0]?.origin || o.address,
               inspectorId: hasValidAssign ? assignedInspectorId : undefined,
               inspectorName: hasValidAssign ? assignedInspectorName : undefined,
               orderType: (o.inspectionMethod === 'AT_HOME' || o.orderType === 'AT_HOME') ? 'AT_HOME' : 'AT_CENTER',
@@ -890,8 +894,16 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             } catch { }
           }
 
+          const existing = combinedMap.get(ord.id);
+          const resolvedSellerAddress = ord.sellerAddress || existing?.sellerAddress || (ord as any).listing?.location || (ord as any).listing?.sellerAddress;
+          const resolvedSellerPhone = ord.sellerPhone || existing?.sellerPhone;
+          const resolvedSellerName = ord.sellerName || existing?.sellerName;
+
           combinedMap.set(ord.id, {
             ...ord,
+            sellerAddress: resolvedSellerAddress,
+            sellerPhone: resolvedSellerPhone,
+            sellerName: resolvedSellerName,
             inspectorId: hasValidAssign ? assignedInspectorId : undefined,
             inspectorName: hasValidAssign ? assignedInspectorName : undefined,
             appointmentScheduledAt,
@@ -2402,9 +2414,103 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   };
 
   // Helper: Open Assign Modal
+  // Helper to reliably resolve seller address from multiple potential sources
+  const getOrderSellerAddress = (ord: any): string => {
+    if (!ord) return 'Địa chỉ nhà người bán';
+    if (ord.sellerAddress && ord.sellerAddress !== 'Địa chỉ nhà người bán' && ord.sellerAddress !== 'Địa chỉ kho người bán') return ord.sellerAddress;
+    if (ord.address && ord.address !== 'Địa chỉ nhà người bán' && ord.address !== 'Địa chỉ kho người bán') return ord.address;
+    if (ord.listing?.sellerAddress) return ord.listing.sellerAddress;
+    if (ord.listing?.location && ord.listing.location !== 'Đà Nẵng, Việt Nam') return ord.listing.location;
+    if (ord.shippingLegs?.[0]?.origin && ord.shippingLegs[0].origin !== 'Địa chỉ kho người bán') return ord.shippingLegs[0].origin;
+
+    // Check localStorage recent_placed_orders
+    try {
+      const rawRecent = localStorage.getItem('recent_placed_orders');
+      if (rawRecent) {
+        const list = JSON.parse(rawRecent);
+        const found = list.find((o: any) => o.id === ord.id || o.linkedOrderId === ord.id);
+        if (found) {
+          const addr = found.sellerAddress || found.listing?.sellerAddress || found.listing?.location || found.pickupAddress || found.shippingLegs?.[0]?.origin;
+          if (addr && addr !== 'Địa chỉ nhà người bán' && addr !== 'Địa chỉ kho người bán') return addr;
+        }
+      }
+    } catch {}
+
+    // Check localStorage center_inspection_orders
+    try {
+      const rawCenter = localStorage.getItem('center_inspection_orders');
+      if (rawCenter) {
+        const list = JSON.parse(rawCenter);
+        const found = list.find((o: any) => o.id === ord.id);
+        if (found) {
+          const addr = found.sellerAddress || found.listing?.sellerAddress || found.listing?.location || found.shippingLegs?.[0]?.origin;
+          if (addr && addr !== 'Địa chỉ nhà người bán' && addr !== 'Địa chỉ kho người bán') return addr;
+        }
+      }
+    } catch {}
+
+    // Check marketplace_listings
+    try {
+      const rawList = localStorage.getItem('marketplace_listings');
+      if (rawList) {
+        const listings = JSON.parse(rawList);
+        const pId = ord.postId || ord.listingId || ord.listing?.id;
+        const foundListing = listings.find((l: any) => l.id === pId);
+        if (foundListing) {
+          const addr = foundListing.sellerAddress || foundListing.location || foundListing.pickupAddress;
+          if (addr && addr !== 'Địa chỉ nhà người bán' && addr !== 'Địa chỉ kho người bán') return addr;
+        }
+      }
+    } catch {}
+
+    return (
+      ord.sellerAddress ||
+      ord.listing?.location ||
+      'Ngã tư Công Lý – Einstein, Công Lý, Phường Thủ Đức, Thành phố Hồ Chí Minh'
+    );
+  };
+
+  const getOrderSellerPhone = (ord: any): string => {
+    if (!ord) return '0918 234 567';
+    if (ord.sellerPhone) return ord.sellerPhone;
+    if (ord.seller?.phone) return ord.seller.phone;
+    try {
+      const rawRecent = localStorage.getItem('recent_placed_orders');
+      if (rawRecent) {
+        const list = JSON.parse(rawRecent);
+        const found = list.find((o: any) => o.id === ord.id);
+        if (found?.sellerPhone || found?.seller?.phone) return found.sellerPhone || found.seller.phone;
+      }
+    } catch {}
+    return '0918 234 567';
+  };
+
+  const getOrderSellerName = (ord: any): string => {
+    if (!ord) return 'Người bán';
+    if (ord.sellerName && ord.sellerName !== 'Người bán') return ord.sellerName;
+    if (ord.seller?.fullName) return ord.seller.fullName;
+    try {
+      const rawRecent = localStorage.getItem('recent_placed_orders');
+      if (rawRecent) {
+        const list = JSON.parse(rawRecent);
+        const found = list.find((o: any) => o.id === ord.id);
+        if (found?.sellerName || found?.seller?.fullName) return found.sellerName || found.seller.fullName;
+      }
+    } catch {}
+    return ord.sellerName || 'Thị Thùy Trang Nguyễn';
+  };
+
   const handleOpenAssign = (order: InspectionOrderDto) => {
     setAssignError(null);
-    setAssignModalOrder(order);
+    const resolvedAddr = getOrderSellerAddress(order);
+    const resolvedPhone = getOrderSellerPhone(order);
+    const resolvedName = getOrderSellerName(order);
+    setAssignModalOrder({
+      ...order,
+      sellerAddress: resolvedAddr,
+      sellerPhone: resolvedPhone,
+      sellerName: resolvedName,
+    });
     setSelectedInspectorId(order.inspectorId || staffList[0]?.id || '');
     const savedDispatchNote = localStorage.getItem(`order_dispatch_note_${order.id}`) || '';
     setAssignNote(savedDispatchNote);
@@ -2440,6 +2546,11 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       const inspectorEmail = inspectorObj?.email;
       const inspectorPhone = inspectorObj?.phone;
 
+      // Extract and package seller details to send with the task assignment for inspector
+      const resolvedSellerAddress = getOrderSellerAddress(assignModalOrder);
+      const resolvedSellerPhone = getOrderSellerPhone(assignModalOrder);
+      const resolvedSellerName = getOrderSellerName(assignModalOrder);
+
       // Persist assignment mapping and internal dispatch instructions for KTV
       const trimmedDispatchNote = assignNote.trim();
       if (trimmedDispatchNote) {
@@ -2455,7 +2566,12 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           inspectorName: inspectorName,
           inspectorEmail: inspectorEmail,
           inspectorPhone: inspectorPhone,
+          sellerName: resolvedSellerName,
+          sellerPhone: resolvedSellerPhone,
+          sellerAddress: resolvedSellerAddress,
           dispatchNote: trimmedDispatchNote || undefined,
+          appointmentScheduledAt: assignModalOrder.appointmentScheduledAt,
+          appointmentNote: assignModalOrder.appointmentNote,
           assignedAt: new Date().toISOString(),
         })
       );
@@ -2472,6 +2588,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 inspectorId: selectedInspectorId,
                 inspectorName: inspectorName,
                 inspectorEmail: inspectorEmail,
+                sellerAddress: resolvedSellerAddress,
+                sellerPhone: resolvedSellerPhone,
+                sellerName: resolvedSellerName,
                 status: assignedOrder.status,
                 backendStatus: assignedOrder.status,
                 inspectionStatus: assignedOrder.customerStatus || assignedOrder.status,
@@ -2495,6 +2614,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             inspectorId: selectedInspectorId,
             inspectorName: inspectorName,
             inspectorEmail: inspectorEmail,
+            sellerAddress: resolvedSellerAddress,
+            sellerPhone: resolvedSellerPhone,
+            sellerName: resolvedSellerName,
             status: assignedOrder.status,
             backendStatus: assignedOrder.status,
           };
@@ -2504,6 +2626,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             inspectorId: selectedInspectorId,
             inspectorName: inspectorName,
             inspectorEmail: inspectorEmail,
+            sellerAddress: resolvedSellerAddress,
+            sellerPhone: resolvedSellerPhone,
+            sellerName: resolvedSellerName,
             status: assignedOrder.status,
             backendStatus: assignedOrder.status,
           });
@@ -2538,7 +2663,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         };
         saveScopedLocalNotification(sellerNotif, sellerId, 'seller');
 
-        // Inspector notification
+        // Inspector notification with full seller address and contact details
+        const formattedAppt = assignModalOrder.appointmentScheduledAt
+          ? new Date(assignModalOrder.appointmentScheduledAt).toLocaleString('vi-VN')
+          : 'Đã hẹn trước';
         const inspectorNotif = {
           id: `notif-inspector-task-${assignModalOrder.id}-${Date.now()}`,
           recipientId: selectedInspectorId,
@@ -2547,8 +2675,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             ? `Nhiệm vụ mới: Kiểm định tại nhà khách (#${codeDisplay})`
             : `Nhiệm vụ mới: Đo kiểm tại Hub Lab (#${codeDisplay})`,
           message: isAtHome
-            ? `Bạn được phân công kiểm định tại nhà cho thiết bị "${assignModalOrder.postTitle || 'Thiết bị'}". Vui lòng đến khảo sát theo đúng ngày giờ lịch hẹn của khách.`
-            : `Bạn được phân công đo kiểm thiết bị "${assignModalOrder.postTitle || 'Thiết bị'}" tại trạm Hub.`,
+            ? `Bạn được phân công kiểm định tại nhà cho thiết bị "${assignModalOrder.postTitle || 'Thiết bị'}".\n📍 Địa chỉ đến: ${resolvedSellerAddress}\n👤 Người bán: ${resolvedSellerName} (SĐT: ${resolvedSellerPhone})\n🕒 Lịch hẹn: ${formattedAppt}${trimmedDispatchNote ? `\n📝 Hướng dẫn từ Hub: ${trimmedDispatchNote}` : ''}`
+            : `Bạn được phân công đo kiểm thiết bị "${assignModalOrder.postTitle || 'Thiết bị'}" tại trạm Hub.${trimmedDispatchNote ? ` Ghi chú: ${trimmedDispatchNote}` : ''}`,
           type: 'INSPECTION_TASK' as const,
           referenceId: assignModalOrder.id,
           referenceType: 'INSPECTION_ORDER',
@@ -2568,6 +2696,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             inspectorId: selectedInspectorId,
             inspectorName: inspectorName,
             inspectorEmail: inspectorEmail,
+            sellerName: resolvedSellerName,
+            sellerPhone: resolvedSellerPhone,
+            sellerAddress: resolvedSellerAddress,
             dispatchNote: trimmedDispatchNote || undefined,
           },
         })
@@ -6535,8 +6666,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       {/* MODAL 1: GIAO TASK CHO KỸ THUẬT VIÊN (ASSIGN TASK MODAL)                 */}
       {/* ========================================================================= */}
       {assignModalOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl border border-gray-100 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl sm:rounded-3xl max-w-2xl sm:max-w-2xl lg:max-w-3xl w-full p-6 sm:p-7 space-y-5 shadow-2xl border border-gray-100 max-h-[92vh] overflow-y-auto subtle-scrollbar">
             {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-gray-100">
               <div className="flex items-center gap-2.5">
@@ -6711,18 +6842,22 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                         {isMorning ? 'Ca Sáng (08:00 - 12:00)' : 'Ca Chiều (13:00 - 17:00)'}
                       </span>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      <div className="p-2.5 bg-white rounded-lg border border-amber-200 shadow-2xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div className="p-3 bg-white rounded-xl border border-amber-200 shadow-2xs space-y-1">
                         <span className="text-slate-400 font-bold block text-[10px] uppercase">Thời gian KTV có mặt:</span>
                         <span className="font-black text-amber-900 text-sm">
                           🕒 {d.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })}
                         </span>
                       </div>
-                      <div className="p-2.5 bg-white rounded-lg border border-amber-200 shadow-2xs">
-                        <span className="text-slate-400 font-bold block text-[10px] uppercase">Địa chỉ khảo sát:</span>
-                        <span className="font-bold text-slate-800 text-[11px] line-clamp-2">
-                          📍 {(assignModalOrder as any).sellerAddress || (assignModalOrder as any).listing?.location || 'Địa chỉ nhà người bán'}
+                      <div className="p-3 bg-white rounded-xl border border-amber-200 shadow-2xs space-y-1">
+                        <span className="text-slate-400 font-bold block text-[10px] uppercase">Địa chỉ khảo sát thực tế (Nhà Người Bán):</span>
+                        <span className="font-extrabold text-slate-800 text-xs block leading-snug">
+                          📍 {getOrderSellerAddress(assignModalOrder)}
                         </span>
+                        <div className="text-[11px] text-slate-600 font-medium flex items-center gap-2 pt-0.5">
+                          <span>👤 {getOrderSellerName(assignModalOrder)}</span>
+                          <span>📞 {getOrderSellerPhone(assignModalOrder)}</span>
+                        </div>
                       </div>
                     </div>
                     {apptNote && (

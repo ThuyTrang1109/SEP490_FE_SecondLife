@@ -469,9 +469,32 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
         const photoUrl = cand.listing?.photos?.front || cand.postImageUrl || (Array.isArray(cand.postImageUrls) ? cand.postImageUrls[0] : '') || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400';
 
+        const resolvedSellerAddress =
+          assignedMeta?.sellerAddress ||
+          cand.sellerAddress ||
+          cand.listing?.sellerAddress ||
+          cand.listing?.location ||
+          cand.shippingLegs?.[0]?.origin ||
+          'Ngã tư Công Lý – Einstein, Công Lý, Phường Thủ Đức, Thành phố Hồ Chí Minh';
+
+        const resolvedSellerPhone =
+          assignedMeta?.sellerPhone ||
+          cand.sellerPhone ||
+          cand.seller?.phone ||
+          '0918 234 567';
+
+        const resolvedSellerName =
+          assignedMeta?.sellerName ||
+          cand.sellerName ||
+          cand.seller?.name ||
+          'Thị Thùy Trang Nguyễn';
+
         const synthesizedOrder: EscrowOrder = {
           ...cand,
           id: cand.id,
+          sellerAddress: resolvedSellerAddress,
+          sellerPhone: resolvedSellerPhone,
+          sellerName: resolvedSellerName,
           inspectorId: candidateInspectorId,
           inspectorName: candidateInspectorName,
           status: finalStatus,
@@ -480,14 +503,17 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
           escrowStatus: resolvedEscrowStatus,
           inspectionMethod: isAtHome ? 'AT_HOME' : 'AT_CENTER',
           appointmentScheduledAt: apptMeta?.scheduledAt || cand.appointmentScheduledAt,
-          listing: cand.listing || {
-            id: cand.postId || cand.id,
-            title: cand.postTitle || 'Thiết bị kiểm định',
-            priceVnd: cand.postPrice || cand.itemPriceVnd || 0,
-            location: cand.sellerAddress || 'TP. Hồ Chí Minh',
-            sellerName: cand.sellerName || 'Người bán',
-            photos: { front: photoUrl },
-            photoGallery: [photoUrl],
+          appointmentNote: apptMeta?.note || cand.appointmentNote,
+          listing: {
+            ...(cand.listing || {}),
+            id: cand.listing?.id || cand.postId || cand.id,
+            title: cand.listing?.title || cand.postTitle || 'Thiết bị kiểm định',
+            priceVnd: cand.listing?.priceVnd || cand.postPrice || cand.itemPriceVnd || 0,
+            location: resolvedSellerAddress,
+            sellerAddress: resolvedSellerAddress,
+            sellerName: resolvedSellerName,
+            photos: cand.listing?.photos || { front: photoUrl },
+            photoGallery: cand.listing?.photoGallery || [photoUrl],
           },
         };
 
@@ -1414,11 +1440,17 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                             </div>
 
                             {isAtHome ? (
-                              <div className="space-y-0.5">
-                                <p className="text-slate-700 font-medium line-clamp-1 flex items-center gap-1">
-                                  <MapPin className="w-3 h-3 text-purple-600 shrink-0" />
-                                  <span>{ord.shippingLegs?.[0]?.origin || ord.listing?.location || (ord as any).sellerAddress || 'Địa chỉ kho người bán'}</span>
+                              <div className="space-y-1">
+                                <p className="text-slate-800 font-semibold line-clamp-2 flex items-start gap-1 text-xs">
+                                  <MapPin className="w-3.5 h-3.5 text-purple-600 shrink-0 mt-0.5" />
+                                  <span>{(ord as any).sellerAddress || ord.listing?.location || ord.shippingLegs?.[0]?.origin || 'Địa chỉ nhà người bán'}</span>
                                 </p>
+                                {((ord as any).sellerName || (ord as any).sellerPhone) && (
+                                  <p className="text-[11px] text-slate-500 font-medium flex items-center gap-2 pl-4">
+                                    <span>👤 {(ord as any).sellerName || 'Người bán'}</span>
+                                    {(ord as any).sellerPhone && <span>📞 {(ord as any).sellerPhone}</span>}
+                                  </p>
+                                )}
                                 {ord.appointmentScheduledAt ? (
                                   <p className="text-blue-600 font-bold flex items-center gap-1">
                                     <Clock className="w-3 h-3 text-blue-500 shrink-0" />

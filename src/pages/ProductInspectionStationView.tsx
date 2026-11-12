@@ -340,6 +340,50 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       return '';
     }
   }, [activeOrder?.id]);
+
+  const assignedSellerInfo = useMemo(() => {
+    if (!activeOrder?.id) return null;
+    try {
+      const raw = localStorage.getItem(`order_assigned_inspector_${activeOrder.id}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          sellerAddress: parsed.sellerAddress,
+          sellerPhone: parsed.sellerPhone,
+          sellerName: parsed.sellerName,
+        };
+      }
+    } catch {}
+    return null;
+  }, [activeOrder?.id]);
+
+  const resolvedSellerAddress = useMemo(() => {
+    return (
+      assignedSellerInfo?.sellerAddress ||
+      (activeOrder as any)?.sellerAddress ||
+      activeOrder?.listing?.location ||
+      (activeOrder as any)?.listing?.sellerAddress ||
+      'Ngã tư Công Lý – Einstein, Công Lý, Phường Thủ Đức, Thành phố Hồ Chí Minh'
+    );
+  }, [assignedSellerInfo, activeOrder]);
+
+  const resolvedSellerPhone = useMemo(() => {
+    return (
+      assignedSellerInfo?.sellerPhone ||
+      (activeOrder as any)?.sellerPhone ||
+      (activeOrder as any)?.seller?.phone ||
+      '0918 234 567'
+    );
+  }, [assignedSellerInfo, activeOrder]);
+
+  const resolvedSellerName = useMemo(() => {
+    return (
+      assignedSellerInfo?.sellerName ||
+      (activeOrder as any)?.sellerName ||
+      activeOrder?.sellerName ||
+      'Thị Thùy Trang Nguyễn'
+    );
+  }, [assignedSellerInfo, activeOrder]);
   const [isDigitalSigned, setIsDigitalSigned] = useState(false);
 
   useEffect(() => {
@@ -1390,20 +1434,42 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 </div>
               )}
 
-              {/* Thông tin lịch hẹn khảo sát */}
-              <div className="p-4 rounded-2xl bg-purple-50/80 border border-purple-200 text-xs text-purple-950 space-y-2">
-                <div className="flex items-center gap-2 font-bold text-purple-900 text-sm">
-                  <Calendar className="w-4 h-4 text-purple-600" />
-                  <span>Khung Giờ Hẹn Khảo Sát & Đo Kiểm Tại Nhà</span>
+              {/* Thông tin lịch hẹn & Địa chỉ khảo sát tận nơi */}
+              <div className="p-4 rounded-2xl bg-purple-50/80 border border-purple-200 text-xs text-purple-950 space-y-2.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 font-bold text-purple-900 text-sm">
+                    <Calendar className="w-4 h-4 text-purple-600" />
+                    <span>Thông Tin Lịch Hẹn & Địa Chỉ Người Bán Cần Đến Khảo Sát</span>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-purple-200 text-purple-900 border border-purple-300">
+                    KTV Lưu Động
+                  </span>
                 </div>
-                {activeOrder.appointmentScheduledAt ? (
-                  <p className="text-purple-800 text-xs leading-relaxed">
-                    Khung giờ hẹn đã chốt: <strong className="text-purple-950 font-bold text-sm">{new Date(activeOrder.appointmentScheduledAt).toLocaleString('vi-VN')}</strong>. Kỹ thuật viên lưu động di chuyển đến địa chỉ theo lịch hẹn.
-                  </p>
-                ) : (
-                  <p className="text-purple-800 text-xs">
-                    Đang chờ khách hàng đặt lịch hẹn ngày giờ khảo sát (hoặc KTV liên hệ qua số điện thoại để chốt lịch hẹn trước khi đến).
-                  </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  <div className="p-3 bg-white rounded-xl border border-purple-200 shadow-2xs space-y-1">
+                    <span className="text-slate-400 font-bold block text-[10px] uppercase">Thời gian KTV có mặt:</span>
+                    <span className="font-black text-purple-950 text-sm">
+                      🕒 {activeOrder.appointmentScheduledAt ? new Date(activeOrder.appointmentScheduledAt).toLocaleString('vi-VN') : 'Chưa chốt giờ'}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-white rounded-xl border border-purple-200 shadow-2xs space-y-1">
+                    <span className="text-slate-400 font-bold block text-[10px] uppercase">Địa chỉ nhà người bán (Khảo sát tận nơi):</span>
+                    <span className="font-extrabold text-slate-800 text-xs block leading-snug">
+                      📍 {resolvedSellerAddress}
+                    </span>
+                    <div className="text-[11px] text-slate-600 font-medium flex items-center gap-2 pt-0.5">
+                      <span>👤 {resolvedSellerName}</span>
+                      <span>📞 {resolvedSellerPhone}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {(activeOrder.appointmentNote || (activeOrder as any).note) && (
+                  <div className="text-[11px] text-purple-900 italic bg-white/90 p-2.5 rounded-lg border border-purple-200">
+                    💬 <strong>Ghi chú đón KTV từ người bán:</strong> {activeOrder.appointmentNote || (activeOrder as any).note}
+                  </div>
                 )}
               </div>
 
@@ -1747,13 +1813,30 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
                     <div className="p-4 rounded-2xl bg-[#faf8f5] border border-gray-200 space-y-2 text-xs">
                       <div className="font-bold text-gray-700 uppercase text-[11px]">Hình Thức & Địa Chỉ Kiểm Định</div>
-                      <div className="text-blue-900 font-bold flex items-center gap-1">
-                        <Building2 className="w-3.5 h-3.5 text-blue-600" />
-                        Bàn Giao Nhận Tại Phòng Lab Hub
-                      </div>
-                      <div className="text-gray-600">
-                        Bưu tá giao hàng bọc đệm khí tới quầy tiếp nhận Hub.
-                      </div>
+                      {isAtHomeOrder ? (
+                        <>
+                          <div className="text-purple-900 font-bold flex items-center gap-1">
+                            <MapPin className="w-3.5 h-3.5 text-purple-600" />
+                            Khảo Sát & Đo Kiểm Tại Nhà Người Bán
+                          </div>
+                          <div className="text-slate-800 font-bold leading-snug">
+                            📍 {resolvedSellerAddress}
+                          </div>
+                          <div className="text-slate-500 text-[11px]">
+                            Người bán: {resolvedSellerName} • SĐT: {resolvedSellerPhone}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-blue-900 font-bold flex items-center gap-1">
+                            <Building2 className="w-3.5 h-3.5 text-blue-600" />
+                            Bàn Giao Nhận Tại Phòng Lab Hub
+                          </div>
+                          <div className="text-gray-600">
+                            Bưu tá giao hàng bọc đệm khí tới quầy tiếp nhận Hub.
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
 

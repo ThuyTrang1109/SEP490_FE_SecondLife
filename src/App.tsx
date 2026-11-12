@@ -411,14 +411,41 @@ export default function App() {
   }, [currentUserId]);
 
   React.useEffect(() => {
-    const refreshWallet = () => { void loadUserWallet(); };
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === inspectionCashConfirmedEvent) refreshWallet();
+    const refreshWallet = (e?: any) => {
+      const detail = e?.detail;
+      if (typeof detail?.balance === 'number') {
+        setWalletBalance(detail.balance);
+        setCurrentUser((prev) => {
+          if (!prev) return prev;
+          if (prev.walletBalance === detail.balance && prev.walletBalanceVnd === detail.balance) return prev;
+          return { ...prev, walletBalance: detail.balance, walletBalanceVnd: detail.balance };
+        });
+      } else if (typeof detail?.deductAmount === 'number' && detail.deductAmount > 0) {
+        setWalletBalance((prev) => Math.max(0, prev - detail.deductAmount));
+        setCurrentUser((prev) => {
+          if (!prev) return prev;
+          const currentBal = prev.walletBalanceVnd ?? prev.walletBalance ?? 0;
+          const newBal = Math.max(0, currentBal - detail.deductAmount);
+          return { ...prev, walletBalance: newBal, walletBalanceVnd: newBal };
+        });
+      }
+      void loadUserWallet();
     };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === inspectionCashConfirmedEvent || event.key === 'sl_wallet_last_updated') {
+        refreshWallet();
+      }
+    };
+
     window.addEventListener(inspectionCashConfirmedEvent, refreshWallet);
+    window.addEventListener('secondlife_wallet_updated', refreshWallet);
+    window.addEventListener('wallet_balance_updated', refreshWallet);
     window.addEventListener('storage', handleStorage);
     return () => {
       window.removeEventListener(inspectionCashConfirmedEvent, refreshWallet);
+      window.removeEventListener('secondlife_wallet_updated', refreshWallet);
+      window.removeEventListener('wallet_balance_updated', refreshWallet);
       window.removeEventListener('storage', handleStorage);
     };
   }, [loadUserWallet]);

@@ -38,7 +38,7 @@ import { DigitalInspectionCertificateModal, buildInspectionReportFromDto } from 
 import { inspectorService, InspectionOrderDto } from '../services/inspectorService';
 import { shippingService } from '../services/shippingService';
 import { ShipmentBackend, ShippingQuoteResponseDto } from '../types';
-import { walletService, WalletBackend } from '../services/walletService';
+import { walletService, WalletBackend, notifyWalletBalanceUpdated } from '../services/walletService';
 import { saveScopedLocalNotification } from '../utils/notificationStorage';
 import { getCustomerInspectionStatus, getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel, isExpiredInspectionPurchase } from '../utils/inspectionPurchase';
 import { notificationWsClient } from '../services/notificationWsClient';
@@ -526,6 +526,12 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         type: 'success',
         message: 'Xác nhận mua hàng và thanh toán tiền hàng thành công! Đơn hàng được chuyển sang khâu giao tận tay cho bạn.',
       });
+      if (finalPriceToPay > 0) {
+        notifyWalletBalanceUpdated(undefined, finalPriceToPay);
+      }
+      try {
+        await walletService.getMyWallet();
+      } catch { }
       setShowConfirmModal(false);
       setTimeout(() => {
         onSuccess?.();
@@ -680,6 +686,9 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
         type: 'success',
         message: 'Thanh toán phí kiểm định thành công! Đơn hàng đã được nạp phí vào Quỹ Escrow.',
       });
+      if (buyerFeeShare > 0) {
+        notifyWalletBalanceUpdated(undefined, buyerFeeShare);
+      }
       walletService.getMyWallet().then((w) => setWallet(w)).catch(() => { });
     } catch (err: any) {
       setAlertNotice({

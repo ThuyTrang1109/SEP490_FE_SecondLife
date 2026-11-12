@@ -15,6 +15,17 @@ import {
 
 export type WalletBackend = UserWallet;
 
+export const notifyWalletBalanceUpdated = (balance?: number, deductAmount?: number) => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('secondlife_wallet_updated', {
+      detail: { balance, deductAmount, timestamp: Date.now() }
+    }));
+    try {
+      localStorage.setItem('sl_wallet_last_updated', String(Date.now()));
+    } catch { }
+  }
+};
+
 export const walletService = {
   /**
    * Lấy số dư và thông tin ví hiện tại của người dùng đang đăng nhập
@@ -25,9 +36,13 @@ export const walletService = {
       requiresAuth: true,
       ...options,
     });
-    return ((response as any)?.data !== undefined && (response as any)?.data !== null
+    const wallet = ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
       : response) as UserWallet;
+    if (wallet && typeof wallet.balance === 'number') {
+      notifyWalletBalanceUpdated(wallet.balance);
+    }
+    return wallet;
   },
 
   /**

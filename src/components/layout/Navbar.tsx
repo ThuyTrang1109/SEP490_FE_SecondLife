@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ShieldCheck, Sparkles, ShoppingBag, PlusCircle, Clock, Globe, Building2, ShieldAlert, MessageSquare, Home, LogIn, UserPlus, LogOut, Phone, Coins, FileCheck, Wallet, Wrench, Bell, Store, Scale } from 'lucide-react';
 import { UserRole, Language, UserCredit } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
@@ -51,6 +51,39 @@ export const Navbar: React.FC<NavbarProps> = ({
   token,
 }) => {
   const t = translations[lang];
+
+  // Hỗ trợ hiển thị số dư trừ trực tiếp Realtime khi thanh toán
+  const [localBalance, setLocalBalance] = useState<number | null>(null);
+  const [isPulsing, setIsPulsing] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      const detail = e?.detail;
+      if (typeof detail?.balance === 'number') {
+        setLocalBalance(detail.balance);
+      } else if (typeof detail?.deductAmount === 'number' && detail.deductAmount > 0) {
+        setLocalBalance((prev) => Math.max(0, (prev ?? walletBalance) - detail.deductAmount));
+      }
+    };
+    window.addEventListener('secondlife_wallet_updated', handler);
+    return () => window.removeEventListener('secondlife_wallet_updated', handler);
+  }, [walletBalance]);
+
+  useEffect(() => {
+    setLocalBalance(null);
+  }, [walletBalance]);
+
+  const effectiveWalletBalance = localBalance ?? walletBalance;
+  const prevBalanceRef = useRef(effectiveWalletBalance);
+
+  useEffect(() => {
+    if (prevBalanceRef.current !== effectiveWalletBalance) {
+      setIsPulsing(true);
+      const timer = setTimeout(() => setIsPulsing(false), 1500);
+      prevBalanceRef.current = effectiveWalletBalance;
+      return () => clearTimeout(timer);
+    }
+  }, [effectiveWalletBalance]);
 
   return (
     <header className="sticky top-0 z-50 bg-[#24263e] text-white shadow-xl border-b border-black/20 transition-all shrink-0">
@@ -268,7 +301,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Wallet className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <div className="flex items-center gap-1 text-[11px]">
-                <span className="text-emerald-300 font-extrabold font-mono">{formatVND(walletBalance)}</span>
+                <span className={`font-extrabold font-mono transition-all duration-300 ${isPulsing ? 'text-amber-300 scale-105 animate-pulse' : 'text-emerald-300'}`}>
+                  {formatVND(effectiveWalletBalance)}
+                </span>
                 {(currentRole === 'seller' || currentRole === 'staff') && (
                   <>
                     <span className="text-white/40">•</span>

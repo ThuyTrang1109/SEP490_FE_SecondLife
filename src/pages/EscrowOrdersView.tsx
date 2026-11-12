@@ -58,6 +58,7 @@ import { saveScopedLocalNotification } from '../utils/notificationStorage';
 import { PrintTamperSealModal } from '../components/modals/PrintTamperSealModal';
 import { ScheduleAppointmentModal } from '../components/modals/ScheduleAppointmentModal';
 import { AtHomeIntakeBarcode } from '../components/inspection/AtHomeIntakeBarcode';
+import { walletService, notifyWalletBalanceUpdated } from '../services/walletService';
 import { ShipmentBackend, OrderSettlementDTO, OrderCommissionDTO } from '../types';
 import { orderService } from '../services/orderService';
 import { inspectorService, InspectionOrderDto } from '../services/inspectorService';
@@ -1506,6 +1507,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       const isSellerUser = targetOrder ? isOrderSeller(targetOrder) : isSeller;
       const isBothPaid = res?.status !== 'WAITING_FEE_PAYMENT';
       const nowIso = new Date().toISOString();
+
+      // Cập nhật giảm ngay số dư trên Header để thấy realtime
+      const feeToDeduct = targetOrder ? (isSellerUser ? getPartyInspectionFee(targetOrder, true) : getPartyInspectionFee(targetOrder, false)) : 0;
+      if (feeToDeduct > 0) {
+        notifyWalletBalanceUpdated(undefined, feeToDeduct);
+      }
+      try {
+        await walletService.getMyWallet();
+      } catch { }
 
       if (isBothPaid) {
         setInspectionActionNotice(

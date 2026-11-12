@@ -20,7 +20,7 @@ import {
   inspectorService,
   InspectionOrderDto
 } from '../../services/inspectorService';
-import { walletService } from '../../services/walletService';
+import { walletService, notifyWalletBalanceUpdated } from '../../services/walletService';
 import { shippingService } from '../../services/shippingService';
 import { Listing, Language, UserRole, EscrowOrder } from '../../types';
 import { formatVND } from '../../utils/translations';
@@ -332,6 +332,11 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
       const fresh = await inspectorService.payInspectionFee(order.id);
       setShowPayConfirmModal(false);
       onOrderUpdated(fresh);
+
+      // Cập nhật giảm ngay số dư ví trên Header để thấy hiệu ứng realtime lập tức
+      if (typeof myFeeToPay === 'number' && myFeeToPay > 0) {
+        notifyWalletBalanceUpdated(undefined, myFeeToPay);
+      }
       try {
         await walletService.getMyWallet();
       } catch { }

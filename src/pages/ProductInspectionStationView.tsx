@@ -1378,8 +1378,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     <div>
                       <div className="font-black text-amber-950 text-sm flex items-center gap-2 flex-wrap">
                         <span>Hồ Sơ Đã Hoàn Tất Kiểm Định Tận Nơi (Đã Khóa)</span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase ${overallVerdict === 'PASS' || activeOrder?.inspectionReport?.overallVerdict === 'PASS' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}`}>
-                          {overallVerdict === 'PASS' || activeOrder?.inspectionReport?.overallVerdict === 'PASS' ? 'Đã Đạt Chuẩn' : 'Từ Chối'}
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase ${overallVerdict === 'PASS' || (activeOrder?.inspectionReport as any)?.overallVerdict === 'PASS' || activeOrder?.inspectionReport?.verdict === 'PASS' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}`}>
+                          {overallVerdict === 'PASS' || (activeOrder?.inspectionReport as any)?.overallVerdict === 'PASS' || activeOrder?.inspectionReport?.verdict === 'PASS' ? 'Đã Đạt Chuẩn' : 'Từ Chối'}
                         </span>
                       </div>
                       <p className="text-[11px] text-amber-800 mt-0.5">
@@ -1653,8 +1653,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     <div>
                       <div className="font-black text-amber-950 text-sm flex items-center gap-2 flex-wrap">
                         <span>Hồ Sơ Đã Hoàn Tất Kiểm Định (Chế Độ Khóa Chỉ Đọc)</span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase ${overallVerdict === 'PASS' || activeOrder?.inspectionReport?.overallVerdict === 'PASS' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}`}>
-                          {overallVerdict === 'PASS' || activeOrder?.inspectionReport?.overallVerdict === 'PASS' ? 'Đạt Chuẩn (PASS)' : 'Từ Chối (FAIL)'}
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase ${overallVerdict === 'PASS' || (activeOrder?.inspectionReport as any)?.overallVerdict === 'PASS' || activeOrder?.inspectionReport?.verdict === 'PASS' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}`}>
+                          {overallVerdict === 'PASS' || (activeOrder?.inspectionReport as any)?.overallVerdict === 'PASS' || activeOrder?.inspectionReport?.verdict === 'PASS' ? 'Đạt Chuẩn (PASS)' : 'Từ Chối (FAIL)'}
                         </span>
                       </div>
                       <p className="text-[11px] text-amber-800 mt-0.5">

@@ -391,80 +391,64 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
   const currentSlots = selectedShift === 'MORNING' ? MORNING_SLOTS : AFTERNOON_SLOTS;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-      <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl border border-gray-100 space-y-5 max-h-[92vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+      <div className="relative w-full max-w-lg rounded-2xl sm:rounded-3xl bg-white shadow-2xl border border-gray-100 flex flex-col max-h-[92vh] overflow-hidden">
+        {/* Fixed Header */}
+        <div className="px-4 sm:px-5 py-3 border-b border-gray-100 flex items-center justify-between shrink-0 bg-white">
           <div className="flex items-center gap-2.5">
-            <div className="p-2.5 rounded-2xl bg-amber-50 text-amber-600 font-bold">
+            <div className="p-2 rounded-xl bg-amber-50 text-amber-600 font-bold shrink-0">
               <Calendar className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-black text-slate-900">
+              <h3 className="text-sm sm:text-base font-black text-slate-900 leading-tight">
                 {readOnly
-                  ? (lang === 'vi' ? 'Lịch Hẹn Kiểm Định (Người Bán Đã Đặt)' : 'Inspection Appointment (By Seller)')
+                  ? (lang === 'vi' ? 'Lịch Hẹn Kiểm Định' : 'Inspection Appointment')
                   : (lang === 'vi' ? 'Người Bán Hẹn Lịch Đón KTV' : 'Seller Inspection Appointment')}
               </h3>
-              <p className="text-xs text-slate-500 font-medium">
+              <p className="text-[11px] text-slate-500 font-medium">
                 {lang === 'vi' ? 'Đơn hàng' : 'Order'} #{orderCode || orderId.slice(0, 8)} • {lang === 'vi' ? 'Kiểm định tận nơi' : 'At-Home Inspection'}
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+            aria-label="Close"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Assigned Inspector Card */}
-        {assignedInspector ? (
-          <div className="p-3 bg-purple-50/80 rounded-2xl border border-purple-200/90 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
-              <UserCheck className="w-5 h-5" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-black text-purple-900 flex items-center gap-1.5 flex-wrap">
-                <span>KTV phụ trách:</span>
-                <span className="text-purple-700 font-extrabold underline decoration-purple-300">
-                  {assignedInspector.inspectorName || 'Kỹ thuật viên SecondLife'}
-                </span>
-              </div>
-              <div className="text-[11px] text-purple-700 font-medium flex items-center gap-2 mt-0.5">
-                {assignedInspector.inspectorPhone && <span>📞 {assignedInspector.inspectorPhone}</span>}
-                {assignedInspector.inspectorEmail && <span>✉️ {assignedInspector.inspectorEmail}</span>}
-                {!assignedInspector.inspectorPhone && !assignedInspector.inspectorEmail && (
-                  <span>Được điều phối trực tiếp từ Trung tâm Kiểm định</span>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="p-3 bg-blue-50/80 rounded-2xl border border-blue-200/90 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
-              <UserCheck className="w-5 h-5" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-black text-blue-900">
-                Kỹ thuật viên phụ trách:
-              </div>
-              <div className="text-[11px] text-blue-700 font-medium mt-0.5">
-                Sau khi bạn chốt lịch hẹn, Trung tâm SecondLife sẽ xác nhận và phân công Kỹ thuật viên phù hợp đến tận nơi.
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Read-only view for Buyer */}
         {readOnly ? (
-          <div className="space-y-4">
-            <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-2">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 subtle-scrollbar">
+            {assignedInspector && (
+              <div className="p-2.5 bg-purple-50/80 rounded-xl border border-purple-200/90 flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
+                  <UserCheck className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-black text-purple-900 flex items-center gap-1.5 flex-wrap">
+                    <span>KTV phụ trách:</span>
+                    <span className="text-purple-700 font-extrabold underline decoration-purple-300">
+                      {assignedInspector.inspectorName || 'Kỹ thuật viên SecondLife'}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-purple-700 font-medium flex items-center gap-2 mt-0.5">
+                    {assignedInspector.inspectorPhone && <span>📞 {assignedInspector.inspectorPhone}</span>}
+                    {assignedInspector.inspectorEmail && <span>✉️ {assignedInspector.inspectorEmail}</span>}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200 space-y-1">
               <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
                 <Clock className="w-4 h-4 text-amber-600" />
                 <span>{lang === 'vi' ? 'Thời gian kỹ thuật viên đến kiểm định:' : 'Scheduled Inspection Time:'}</span>
               </div>
-              <div className="text-base font-black text-slate-900">
+              <div className="text-sm font-black text-slate-900">
                 {selectedDate && selectedTime ? (
                   new Date(`${selectedDate}T${selectedTime}`).toLocaleString('vi-VN', {
                     weekday: 'long',
@@ -483,7 +467,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
             </div>
 
             {note && (
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
                 <span className="text-xs font-bold text-slate-600 block">
                   {lang === 'vi' ? 'Ghi chú đón KTV của người bán:' : 'Seller note:'}
                 </span>
@@ -491,20 +475,20 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
               </div>
             )}
 
-            <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-xs flex items-start gap-2">
+            <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-xs flex items-start gap-2">
               <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-              <span>
+              <span className="text-[11px] leading-relaxed">
                 {lang === 'vi'
                   ? 'Kỹ thuật viên chuyên nghiệp của SecondLife sẽ có mặt tại địa chỉ của Người Bán đúng lịch hẹn trong khung giờ hành chính để kiểm tra máy và dán tem niêm phong.'
                   : 'SecondLife certified technician will inspect and seal the item at the seller location during business hours.'}
               </span>
             </div>
 
-            <div className="flex items-center justify-end pt-2">
+            <div className="flex items-center justify-end pt-2 border-t border-gray-100">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition cursor-pointer"
+                className="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition cursor-pointer"
               >
                 {lang === 'vi' ? 'Đã Hiểu & Đóng' : 'Close'}
               </button>
@@ -512,109 +496,120 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
           </div>
         ) : (
           /* Form for Seller */
-          <>
-            {/* Business Hours & Advance Notice Info Banner */}
-            <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-950 text-xs flex items-start gap-2.5">
-              <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div className="space-y-0.5 text-[11px] leading-relaxed">
-                <div className="font-bold text-amber-900">
-                  {lang === 'vi' ? 'Quy Định Đặt Lịch Hẹn Kiểm Định Tận Nơi' : 'Appointment Rules & Business Hours'}
+          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            {/* Scrollable Body - fits comfortably in one screen without overflow */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 subtle-scrollbar">
+              {/* Compact Unified Rules & Inspector Info Banner */}
+              <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200/80 text-[11px] text-amber-950 flex items-start gap-2.5">
+                <div className="p-1 rounded-md bg-amber-500/10 text-amber-700 shrink-0 mt-0.5">
+                  <Clock className="w-3.5 h-3.5" />
                 </div>
-                <p className="text-amber-800">
-                  • <strong>Bắt buộc hẹn trước tối thiểu 1 ngày:</strong> Không nhận lịch trong ngày hôm nay hoặc quá khứ để kịp phân công KTV chuẩn bị thiết bị.
-                  <br />• <strong>Khung giờ hành chính:</strong> Ca Sáng (08:00 - 12:00) hoặc Ca Chiều (13:00 - 17:00).
-                  <br /><em>(Khung giờ nghỉ trưa 12:00 - 13:00 và ngoài 17:00 hệ thống không tiếp nhận).</em>
-                </p>
-              </div>
-            </div>
-
-            {/* Error Alert */}
-            {errorMessage && (
-              <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2 animate-fadeIn">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                <span>{errorMessage}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Step 1: Select Date */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <Calendar className="w-4 h-4 text-amber-500" />
-                    <span>{lang === 'vi' ? '1. Chọn ngày hẹn kiểm định *' : '1. Select Inspection Date *'}</span>
-                  </span>
-                  <span className="text-[11px] font-bold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded">
-                    {lang === 'vi' ? 'Hẹn trước tối thiểu 1 ngày' : 'Min 1 day in advance'}
-                  </span>
-                </label>
-                <input
-                  type="date"
-                  min={tomorrowStr}
-                  value={selectedDate}
-                  onChange={(e) => {
-                    setSelectedDate(e.target.value);
-                    setErrorMessage(null);
-                  }}
-                  required
-                  className="w-full p-2.5 rounded-xl border border-gray-200 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-amber-500 outline-hidden bg-gray-50/50"
-                />
+                <div className="flex-1 min-w-0 leading-snug">
+                  <div className="font-bold text-amber-900 flex items-center justify-between flex-wrap gap-1">
+                    <span>Hẹn trước ≥ 1 ngày • Giờ hành chính</span>
+                    <span className="text-[10px] font-semibold text-amber-800 bg-amber-200/60 px-1.5 py-0.2 rounded">
+                      Nghỉ trưa 12h - 13h
+                    </span>
+                  </div>
+                  <p className="text-amber-800 text-[11px] mt-0.5">
+                    {assignedInspector ? (
+                      <>
+                        KTV phụ trách: <strong className="text-purple-900 font-bold">{assignedInspector.inspectorName || 'KTV SecondLife'}</strong>
+                        {assignedInspector.inspectorPhone && <span className="ml-1 text-slate-600">📞 {assignedInspector.inspectorPhone}</span>}
+                      </>
+                    ) : (
+                      'Sau khi chốt lịch, Trung tâm sẽ điều phối KTV đến tận nơi kiểm tra máy.'
+                    )}
+                  </p>
+                </div>
               </div>
 
-              {/* Step 2: Select Shift */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-amber-500" />
-                  <span>{lang === 'vi' ? '2. Chọn ca hành chính *' : '2. Select Shift *'}</span>
-                </label>
+              {/* Error Alert */}
+              {errorMessage && (
+                <div className="p-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2 animate-fadeIn">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>{errorMessage}</span>
+                </div>
+              )}
 
-                <div className="grid grid-cols-2 gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => handleShiftSelect('MORNING')}
-                    className={`p-3 rounded-2xl border text-left transition cursor-pointer flex items-center gap-2.5 ${selectedShift === 'MORNING'
-                      ? 'bg-amber-50 border-amber-400 ring-2 ring-amber-400/20 shadow-xs'
-                      : 'border-gray-200 hover:border-gray-300 bg-white'
+              {/* Step 1 & 2: Date + Shift side-by-side */}
+              <div className="grid grid-cols-2 gap-2.5">
+                {/* Step 1: Select Date */}
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-amber-500" />
+                      <span>{lang === 'vi' ? '1. Ngày hẹn *' : '1. Date *'}</span>
+                    </span>
+                    <span className="text-[10px] font-semibold text-amber-800 bg-amber-100/80 px-1.5 py-0.2 rounded">
+                      ≥ 1 ngày
+                    </span>
+                  </label>
+                  <input
+                    type="date"
+                    min={tomorrowStr}
+                    value={selectedDate}
+                    onChange={(e) => {
+                      setSelectedDate(e.target.value);
+                      setErrorMessage(null);
+                    }}
+                    required
+                    className="w-full h-9 px-2.5 rounded-xl border border-gray-200 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-amber-500 outline-hidden bg-gray-50/50"
+                  />
+                </div>
+
+                {/* Step 2: Select Shift */}
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-amber-500" />
+                    <span>{lang === 'vi' ? '2. Ca làm việc *' : '2. Shift *'}</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5 h-9">
+                    <button
+                      type="button"
+                      onClick={() => handleShiftSelect('MORNING')}
+                      className={`h-full px-1.5 rounded-xl border text-center transition cursor-pointer flex flex-col justify-center items-center ${
+                        selectedShift === 'MORNING'
+                          ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                          : 'border-gray-200 hover:border-gray-300 bg-white text-slate-700'
                       }`}
-                  >
-                    <div className={`p-2 rounded-xl shrink-0 ${selectedShift === 'MORNING' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                      <Sun className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-black text-slate-900">Ca Sáng</div>
-                      <div className="text-[11px] font-bold text-amber-700">08:00 - 12:00</div>
-                    </div>
-                  </button>
+                    >
+                      <span className="text-[11px] font-black leading-none">Ca Sáng</span>
+                      <span className={`text-[10px] font-medium leading-none mt-1 ${selectedShift === 'MORNING' ? 'text-amber-100' : 'text-slate-400'}`}>
+                        08h - 12h
+                      </span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => handleShiftSelect('AFTERNOON')}
-                    className={`p-3 rounded-2xl border text-left transition cursor-pointer flex items-center gap-2.5 ${selectedShift === 'AFTERNOON'
-                      ? 'bg-orange-50 border-orange-400 ring-2 ring-orange-400/20 shadow-xs'
-                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                    <button
+                      type="button"
+                      onClick={() => handleShiftSelect('AFTERNOON')}
+                      className={`h-full px-1.5 rounded-xl border text-center transition cursor-pointer flex flex-col justify-center items-center ${
+                        selectedShift === 'AFTERNOON'
+                          ? 'bg-orange-500 text-white border-orange-500 shadow-xs'
+                          : 'border-gray-200 hover:border-gray-300 bg-white text-slate-700'
                       }`}
-                  >
-                    <div className={`p-2 rounded-xl shrink-0 ${selectedShift === 'AFTERNOON' ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                      <Sunset className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-black text-slate-900">Ca Chiều</div>
-                      <div className="text-[11px] font-bold text-orange-700">13:00 - 17:00</div>
-                    </div>
-                  </button>
+                    >
+                      <span className="text-[11px] font-black leading-none">Ca Chiều</span>
+                      <span className={`text-[10px] font-medium leading-none mt-1 ${selectedShift === 'AFTERNOON' ? 'text-orange-100' : 'text-slate-400'}`}>
+                        13h - 17h
+                      </span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
               {/* Step 3: Quick time slots & Custom time */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                  <span>{lang === 'vi' ? '3. Khung giờ KTV dự kiến có mặt *' : '3. Estimated Arrival Time *'}</span>
-                  <span className="text-[11px] font-mono font-bold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-700">
+                    {lang === 'vi' ? '3. Khung giờ KTV có mặt *' : '3. Estimated Arrival Time *'}
+                  </span>
+                  <span className="text-[11px] font-mono font-bold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded">
                     Đã chọn: {selectedTime}
                   </span>
-                </label>
+                </div>
 
-                {/* Quick Slots */}
+                {/* Quick Slots - 8 slots in 4 columns */}
                 <div className="grid grid-cols-4 gap-1.5">
                   {currentSlots.map((slot) => {
                     const isSelected = selectedTime === slot;
@@ -626,10 +621,11 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                           setSelectedTime(slot);
                           setErrorMessage(null);
                         }}
-                        className={`py-1.5 px-2 rounded-xl text-xs font-bold border transition cursor-pointer text-center ${isSelected
-                          ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                          : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                          }`}
+                        className={`py-1 px-1.5 rounded-lg text-xs font-bold border transition cursor-pointer text-center ${
+                          isSelected
+                            ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
                       >
                         {slot}
                       </button>
@@ -638,58 +634,61 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                 </div>
 
                 {/* Fine-tune custom time */}
-                <div className="pt-1.5 flex items-center gap-2">
-                  <span className="text-[11px] text-slate-500 font-medium shrink-0">Hoặc chỉnh giờ chi tiết:</span>
-                  <input
-                    type="time"
-                    min={selectedShift === 'MORNING' ? '08:00' : '13:00'}
-                    max={selectedShift === 'MORNING' ? '12:00' : '17:00'}
-                    value={selectedTime}
-                    onChange={(e) => {
-                      setSelectedTime(e.target.value);
-                      setErrorMessage(null);
-                    }}
-                    className="px-2.5 py-1 rounded-lg border border-gray-200 text-xs font-mono font-bold text-slate-800 focus:ring-2 focus:ring-amber-500 outline-hidden bg-white"
-                  />
+                <div className="pt-0.5 flex items-center justify-between text-[11px]">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-500 font-medium">Hoặc chỉnh giờ chi tiết:</span>
+                    <input
+                      type="time"
+                      min={selectedShift === 'MORNING' ? '08:00' : '13:00'}
+                      max={selectedShift === 'MORNING' ? '12:00' : '17:00'}
+                      value={selectedTime}
+                      onChange={(e) => {
+                        setSelectedTime(e.target.value);
+                        setErrorMessage(null);
+                      }}
+                      className="px-2 py-0.5 rounded-lg border border-gray-200 text-xs font-mono font-bold text-slate-800 focus:ring-1 focus:ring-amber-500 outline-hidden bg-white"
+                    />
+                  </div>
                   <span className="text-[10px] text-slate-400">
                     ({selectedShift === 'MORNING' ? '08:00 - 12:00' : '13:00 - 17:00'})
                   </span>
                 </div>
               </div>
 
-              {/* Note / Directions */}
-              <div className="space-y-1.5">
+              {/* Step 4: Note / Directions */}
+              <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-700">
                   {lang === 'vi' ? '4. Ghi chú địa điểm / Chỉ dẫn đường đi (tùy chọn):' : '4. Location notes / directions (optional):'}
                 </label>
                 <textarea
-                  rows={2}
+                  rows={1}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  placeholder={lang === 'vi' ? 'Ví dụ: Chung cư phòng 402 lầu 4, vui lòng gọi trước khi đến 15 phút...' : 'E.g. Room 402, 4th floor, please call 15 mins before arrival...'}
-                  className="w-full p-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
+                  placeholder={lang === 'vi' ? 'Ví dụ: Căn hộ 402 lầu 4, vui lòng gọi trước khi đến 15 phút...' : 'E.g. Room 402, 4th floor, please call 15 mins before arrival...'}
+                  className="w-full px-2.5 py-1.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden min-h-[38px] max-h-[70px] resize-y"
                 />
               </div>
+            </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-bold text-slate-600 hover:bg-gray-50 transition cursor-pointer"
-                >
-                  {lang === 'vi' ? 'Hủy Bỏ' : 'Cancel'}
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md hover:shadow-lg transition disabled:opacity-50 cursor-pointer active:scale-95"
-                >
-                  {isSubmitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                  <span>{lang === 'vi' ? 'Xác Nhận Đặt Lịch Hẹn' : 'Confirm Appointment'}</span>
-                </button>
-              </div>
-            </form>
-          </>
+            {/* Fixed Footer Buttons */}
+            <div className="px-4 sm:px-5 py-2.5 bg-slate-50/80 border-t border-gray-100 flex items-center justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-1.5 rounded-xl border border-gray-200 text-xs font-bold text-slate-600 hover:bg-gray-100 bg-white transition cursor-pointer"
+              >
+                {lang === 'vi' ? 'Hủy Bỏ' : 'Cancel'}
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="px-4.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm hover:shadow transition disabled:opacity-50 cursor-pointer active:scale-95"
+              >
+                {isSubmitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                <span>{lang === 'vi' ? 'Xác Nhận Đặt Lịch Hẹn' : 'Confirm Appointment'}</span>
+              </button>
+            </div>
+          </form>
         )}
       </div>
     </div>

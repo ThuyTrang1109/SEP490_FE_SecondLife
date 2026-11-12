@@ -1,10 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { ShieldCheck, Sparkles, MapPin, Star, CheckCircle2 } from 'lucide-react';
 import { Listing, Language } from '../../types';
 import { formatVND } from '../../utils/translations';
 import { soundFx } from '../../utils/soundEffects';
 import { extractWardAndCity } from '../../utils/addressUtils';
 import { extractSellerOriginalPrice } from '../../utils/catalogCache';
+import { reviewService } from '../../data/mockReviews';
 
 interface ProductCard3DProps {
   item: Listing;
@@ -64,6 +65,31 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
     if (item.conditionGrade === 'Good') return lang === 'vi' ? 'Tốt (95%)' : 'Good (95%)';
     return lang === 'vi' ? 'Khá (90%)' : 'Fair (90%)';
   };
+
+  // Lấy dữ liệu đánh giá thực tế từ kho lưu trữ review thật
+  const { realRating, reviewCount } = useMemo(() => {
+    const sellerReviews = item.sellerId ? reviewService.getReviewsBySeller(item.sellerId) : [];
+    const listingReviews = item.id ? reviewService.getReviewsByListing(item.id) : [];
+    const effectiveReviews = sellerReviews.length > 0 ? sellerReviews : listingReviews;
+    if (effectiveReviews.length > 0) {
+      const avg = effectiveReviews.reduce((sum, r) => sum + r.rating, 0) / effectiveReviews.length;
+      return {
+        realRating: avg % 1 === 0 ? avg.toFixed(1) : avg.toFixed(1),
+        reviewCount: effectiveReviews.length
+      };
+    }
+    return {
+      realRating: null,
+      reviewCount: 0
+    };
+  }, [item.sellerId, item.id]);
+
+  const effectiveTrustScore = useMemo(() => {
+    if (item.sellerTrustScore !== undefined && item.sellerTrustScore !== null && item.sellerTrustScore > 0) {
+      return item.sellerTrustScore;
+    }
+    return 100; // Điểm uy tín khởi đầu chuẩn sàn SecondLife
+  }, [item.sellerTrustScore]);
 
   return (
     <div
@@ -179,16 +205,30 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
             </div>
 
             <div className="flex items-center gap-1 shrink-0 text-[10px]">
-              <span className="inline-flex items-center gap-0.5 font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
-                <span>{item.sellerRating}</span>
-              </span>
+              {realRating !== null ? (
+                <span
+                  className="inline-flex items-center gap-0.5 font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200"
+                  title={`${reviewCount} ${lang === 'vi' ? 'lượt đánh giá thực tế' : 'reviews'}`}
+                >
+                  <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
+                  <span>{realRating}</span>
+                  {reviewCount > 1 && <span className="text-[9px] text-amber-700/80">({reviewCount})</span>}
+                </span>
+              ) : (
+                <span
+                  className="inline-flex items-center gap-0.5 font-semibold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200"
+                  title={lang === 'vi' ? 'Người bán mới, chưa có lượt đánh giá nào' : 'New seller, no reviews yet'}
+                >
+                  <Star className="w-2.5 h-2.5 text-slate-300" />
+                  <span className="text-[9.5px]">{lang === 'vi' ? 'Mới' : 'New'}</span>
+                </span>
+              )}
               <span
                 className="inline-flex items-center gap-0.5 font-bold text-[#24263e] bg-slate-100 px-1.5 py-0.5 rounded"
                 title={lang === 'vi' ? 'Điểm uy tín người bán' : 'Seller trust score'}
               >
                 <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
-                <span>{item.sellerTrustScore || 98}đ</span>
+                <span>{effectiveTrustScore}đ</span>
               </span>
             </div>
           </div>

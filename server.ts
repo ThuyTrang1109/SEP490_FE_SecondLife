@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import os from 'os';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
@@ -28,6 +29,39 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     hasGeminiKey: !!process.env.GEMINI_API_KEY,
     timestamp: new Date().toISOString()
+  });
+});
+
+// Endpoint trả về cấu hình giới hạn dung lượng upload đồng bộ từ BE .env / môi trường
+app.get('/api/system-config/media-limits', (req, res) => {
+  let maxVideoMb = 10;
+  try {
+    const beEnvPath = path.resolve(__dirname, '../BE_SecondLife/secondLife/.env');
+    if (fs.existsSync(beEnvPath)) {
+      const content = fs.readFileSync(beEnvPath, 'utf8');
+      const match = content.match(/SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE\s*=\s*(\d+)\s*MB/i);
+      if (match && Number(match[1]) > 0) {
+        maxVideoMb = Number(match[1]);
+      } else {
+        const bytesMatch = content.match(/MEDIA_MAX_FILE_SIZE_BYTES\s*=\s*(\d+)/i);
+        if (bytesMatch && Number(bytesMatch[1]) > 0) {
+          maxVideoMb = Math.round(Number(bytesMatch[1]) / (1024 * 1024));
+        }
+      }
+    }
+  } catch {}
+
+  if (process.env.VITE_MAX_VIDEO_SIZE_MB) {
+    const envVal = Number(process.env.VITE_MAX_VIDEO_SIZE_MB);
+    if (envVal > 0) maxVideoMb = envVal;
+  }
+
+  res.json({
+    success: true,
+    data: {
+      maxVideoSizeMb: maxVideoMb,
+      maxVideoSizeBytes: maxVideoMb * 1024 * 1024,
+    }
   });
 });
 
@@ -369,8 +403,8 @@ const BACKEND_TARGET = process.env.VITE_API_TARGET || 'http://127.0.0.1:8080';
 const parsedBackendUrl = new URL(BACKEND_TARGET);
 
 app.use(['/api', '/oauth2', '/ws'], (req, res, next) => {
-  // Pass through Express-handled AI and Health endpoints
-  if (req.originalUrl.startsWith('/api/ai') || req.originalUrl.startsWith('/api/health')) {
+  // Pass through Express-handled AI, Health, and System Config endpoints
+  if (req.originalUrl.startsWith('/api/ai') || req.originalUrl.startsWith('/api/health') || req.originalUrl.startsWith('/api/system-config')) {
     return next();
   }
 

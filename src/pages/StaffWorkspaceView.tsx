@@ -157,7 +157,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
         title: it.title || 'Bài đăng cần duyệt',
         category: it.category || 'Sản phẩm',
         sellerName: it.sellerName || 'Người bán ' + (it.sellerId ? it.sellerId.slice(0, 8) : ''),
-        sellerRating: 5.0,
+        sellerRating: it.sellerRating ?? 0,
         priceVnd: it.price || 0,
         aiEstimatedPrice: it.aiSuggestedPrice || it.price || 0,
         aiConfidence: 85,
@@ -1035,7 +1035,9 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                             </td>
                             <td className="py-3 px-3 text-slate-800 whitespace-nowrap">
                               <span className="font-bold">{item.sellerName}</span>
-                              <span className="text-[10px] text-amber-600 font-bold block">★ {item.sellerRating} / 5.0</span>
+                              <span className="text-[10px] text-amber-600 font-bold block">
+                                {item.sellerRating > 0 ? `★ ${item.sellerRating.toFixed(1)} / 5.0` : 'Chưa có đánh giá'}
+                              </span>
                             </td>
                             <td className="py-3 px-3 font-black text-[#c34c36] whitespace-nowrap">
                               {formatVND(item.priceVnd)}
@@ -1755,7 +1757,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
                   <span className="text-[11px] text-slate-500 font-bold block">Người bán:</span>
                   <span className="font-bold text-slate-900 text-xs">
-                    {selectedListingModal.sellerName} (Đánh giá: ★ {selectedListingModal.sellerRating})
+                    {selectedListingModal.sellerName} {selectedListingModal.sellerRating > 0 ? `(Đánh giá: ★ ${selectedListingModal.sellerRating.toFixed(1)})` : '(Chưa có đánh giá)'}
                   </span>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">

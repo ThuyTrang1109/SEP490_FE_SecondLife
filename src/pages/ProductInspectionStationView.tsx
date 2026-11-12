@@ -1258,6 +1258,17 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {isCompletedOrder && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCertificateModal(true)}
+                      className="px-3.5 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-xs font-bold text-white flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                      title="Xem biên bản giám định & chứng thư số"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-purple-200" />
+                      <span>Xem Biên Bản</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -1272,6 +1283,28 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   </button>
                 </div>
               </div>
+
+              {/* Banner khóa hồ sơ khi kiểm định đã hoàn tất */}
+              {isCompletedOrder && (
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50/90 border border-amber-300 flex items-center justify-between gap-3 text-xs text-amber-950 shadow-xs animate-fadeIn">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-black text-amber-950 text-sm flex items-center gap-2 flex-wrap">
+                        <span>Hồ Sơ Đã Hoàn Tất Kiểm Định Tận Nơi (Đã Khóa)</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase ${overallVerdict === 'PASS' || activeOrder?.inspectionReport?.overallVerdict === 'PASS' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}`}>
+                          {overallVerdict === 'PASS' || activeOrder?.inspectionReport?.overallVerdict === 'PASS' ? 'Đã Đạt Chuẩn' : 'Từ Chối'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 mt-0.5">
+                        Kỹ thuật viên đã hoàn thành biên bản kiểm tra và ký số phát hành. Hồ sơ hiện ở chế độ chỉ đọc.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Thông tin lịch hẹn khảo sát */}
               <div className="p-4 rounded-2xl bg-purple-50/80 border border-purple-200 text-xs text-purple-950 space-y-2">
@@ -1420,6 +1453,17 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {isCompletedOrder && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCertificateModal(true)}
+                      className="px-3.5 py-2 rounded-xl bg-[#24263e] hover:bg-black text-xs font-bold text-white flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                      title="Xem biên bản giám định & chứng thư số"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-[#fce5da]" />
+                      <span>Xem Biên Bản</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -1434,6 +1478,36 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   </button>
                 </div>
               </div>
+
+              {/* Banner khóa hồ sơ khi kiểm định đã hoàn tất */}
+              {isCompletedOrder && (
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50/90 border border-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-950 shadow-xs animate-fadeIn">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-black text-amber-950 text-sm flex items-center gap-2 flex-wrap">
+                        <span>Hồ Sơ Đã Hoàn Tất Kiểm Định (Chế Độ Khóa Chỉ Đọc)</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase ${overallVerdict === 'PASS' || activeOrder?.inspectionReport?.overallVerdict === 'PASS' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}`}>
+                          {overallVerdict === 'PASS' || activeOrder?.inspectionReport?.overallVerdict === 'PASS' ? 'Đạt Chuẩn (PASS)' : 'Từ Chối (FAIL)'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 mt-0.5">
+                        Biên bản nghiệm thu và chữ ký số đã được phát hành chính thức. Tất cả các nút thao tác và biểu mẫu đã bị khóa để bảo toàn tính toàn vẹn của hồ sơ.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCertificateModal(true)}
+                    className="px-4 py-2 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl shrink-0 flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-[#fce5da]" />
+                    <span>Xem Biên Bản</span>
+                  </button>
+                </div>
+              )}
 
               {/* Stepper Navigation */}
               <div className="grid grid-cols-5 gap-1 p-1.5 bg-[#faf8f5] rounded-2xl border border-gray-200">
@@ -1624,7 +1698,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                             else if (gr.id === 'Good') setExteriorScore(90);
                             else setExteriorScore(80);
                           }}
-                          className={`p-3.5 rounded-2xl border transition text-center space-y-1 ${isCompletedOrder ? 'cursor-default opacity-85' : 'cursor-pointer'
+                          className={`p-3.5 rounded-2xl border transition text-center space-y-1 ${isCompletedOrder ? 'cursor-not-allowed opacity-70 pointer-events-none' : 'cursor-pointer'
                             } ${selectedGrade === gr.id
                               ? 'bg-[#24263e] text-white border-[#24263e] shadow-md ring-2 ring-emerald-400'
                               : 'bg-[#faf8f5] border-gray-200 hover:border-[#c34c36] text-gray-800'
@@ -1650,6 +1724,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     <textarea
                       value={exteriorNotes}
                       readOnly={isCompletedOrder}
+                      disabled={isCompletedOrder}
                       onChange={(e) => setExteriorNotes(e.target.value)}
                       rows={3}
                       className={`w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed text-gray-700' : ''}`}
@@ -1784,7 +1859,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                               type="button"
                               disabled={isCompletedOrder}
                               onClick={() => handleToggleChecklist(item.id, 'pass')}
-                              className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1 ${isCompletedOrder ? 'cursor-default opacity-85' : 'cursor-pointer'
+                              className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1 ${isCompletedOrder ? 'cursor-not-allowed opacity-60 pointer-events-none' : 'cursor-pointer'
                                 } ${item.status === 'pass'
                                   ? 'bg-emerald-600 text-white shadow-xs'
                                   : 'bg-white border border-gray-200 text-gray-600 hover:bg-emerald-50'
@@ -1798,7 +1873,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                               type="button"
                               disabled={isCompletedOrder}
                               onClick={() => handleToggleChecklist(item.id, 'fail')}
-                              className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1 ${isCompletedOrder ? 'cursor-default opacity-85' : 'cursor-pointer'
+                              className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1 ${isCompletedOrder ? 'cursor-not-allowed opacity-60 pointer-events-none' : 'cursor-pointer'
                                 } ${item.status === 'fail'
                                   ? 'bg-red-600 text-white shadow-xs'
                                   : 'bg-white border border-gray-200 text-gray-600 hover:bg-red-50'
@@ -1815,6 +1890,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                           <input
                             type="text"
                             readOnly={isCompletedOrder}
+                            disabled={isCompletedOrder}
                             value={item.testedValue || ''}
                             onChange={(e) => handleUpdateTestedValue(item.id, e.target.value)}
                             placeholder="VD: Nhiệt độ -19.2°C, độ ồn 38dB, cách điện an toàn..."
@@ -1877,8 +1953,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                         <button
                           type="button"
                           onClick={handleGenerateBackendSeal}
-                          disabled={isGeneratingSeal}
-                          className="text-xs text-[#c34c36] font-bold hover:underline cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                          disabled={isGeneratingSeal || isCompletedOrder}
+                          className={`text-xs text-[#c34c36] font-bold hover:underline flex items-center gap-1 ${isCompletedOrder ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                         >
                           {isGeneratingSeal && <Loader2 className="w-3 h-3 animate-spin" />}
                           <span>Sinh mã tem từ hệ thống</span>
@@ -1890,8 +1966,9 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                           type="text"
                           value={tamperSealInput}
                           readOnly={isCompletedOrder}
+                          disabled={isCompletedOrder}
                           onChange={(e) => setTamperSealInput(e.target.value)}
-                          className={`flex-1 min-w-[200px] px-3.5 py-2.5 bg-white border border-orange-200 rounded-xl font-mono font-bold text-slate-800 text-sm outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                          className={`flex-1 min-w-[200px] px-3.5 py-2.5 bg-white border border-orange-200 rounded-xl font-mono font-bold text-slate-800 text-sm outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed text-gray-700' : ''}`}
                         />
                         <button
                           type="button"
@@ -2000,23 +2077,25 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                               <span className="text-[9px] font-bold text-rose-100 line-clamp-2 mb-1.5">
                                 {item.errorMessage || 'Tải ảnh thất bại'}
                               </span>
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleRetryUpload(item.id)}
-                                  className="px-2 py-0.5 rounded bg-white text-rose-900 font-bold text-[10px] hover:bg-rose-50 flex items-center gap-1 cursor-pointer"
-                                >
-                                  <RefreshCw className="w-2.5 h-2.5" />
-                                  <span>Thử lại</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemovePhoto(item.id)}
-                                  className="p-1 rounded bg-black/50 hover:bg-black text-white cursor-pointer"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              </div>
+                              {!isCompletedOrder && (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRetryUpload(item.id)}
+                                    className="px-2 py-0.5 rounded bg-white text-rose-900 font-bold text-[10px] hover:bg-rose-50 flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <RefreshCw className="w-2.5 h-2.5" />
+                                    <span>Thử lại</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemovePhoto(item.id)}
+                                    className="p-1 rounded bg-black/50 hover:bg-black text-white cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           )}
 
@@ -2086,9 +2165,11 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                           <input
                             type="url"
                             value={videoProofUrl}
+                            readOnly={isCompletedOrder}
+                            disabled={isCompletedOrder}
                             onChange={(e) => setVideoProofUrl(e.target.value)}
                             placeholder="https://res.cloudinary.com/.../inspection_test.mp4"
-                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36]"
+                            className={`w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed text-gray-700' : ''}`}
                           />
                         </div>
 
@@ -2099,9 +2180,11 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                           <input
                             type="url"
                             value={unboxingVideoUrl}
+                            readOnly={isCompletedOrder}
+                            disabled={isCompletedOrder}
                             onChange={(e) => setUnboxingVideoUrl(e.target.value)}
                             placeholder="https://res.cloudinary.com/.../unboxing.mp4"
-                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36]"
+                            className={`w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed text-gray-700' : ''}`}
                           />
                         </div>
                       </div>
@@ -2174,7 +2257,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                         type="button"
                         disabled={isCompletedOrder}
                         onClick={() => setOverallVerdict('PASS')}
-                        className={`py-3.5 px-4 rounded-2xl border text-sm font-black transition flex items-center justify-center gap-2 ${isCompletedOrder ? 'cursor-default' : 'cursor-pointer'
+                        className={`py-3.5 px-4 rounded-2xl border text-sm font-black transition flex items-center justify-center gap-2 ${isCompletedOrder ? 'cursor-not-allowed opacity-60 pointer-events-none' : 'cursor-pointer'
                           } ${overallVerdict === 'PASS'
                             ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-300'
                             : 'bg-[#faf8f5] text-gray-700 border-gray-200 hover:bg-emerald-50'
@@ -2188,7 +2271,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                         type="button"
                         disabled={isCompletedOrder}
                         onClick={() => setOverallVerdict('FAIL')}
-                        className={`py-3.5 px-4 rounded-2xl border text-sm font-black transition flex items-center justify-center gap-2 ${isCompletedOrder ? 'cursor-default' : 'cursor-pointer'
+                        className={`py-3.5 px-4 rounded-2xl border text-sm font-black transition flex items-center justify-center gap-2 ${isCompletedOrder ? 'cursor-not-allowed opacity-60 pointer-events-none' : 'cursor-pointer'
                           } ${overallVerdict === 'FAIL'
                             ? 'bg-red-600 text-white border-red-600 shadow-md ring-2 ring-red-300'
                             : 'bg-[#faf8f5] text-gray-700 border-gray-200 hover:bg-red-50'
@@ -2223,6 +2306,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     <textarea
                       value={inspectorNotes}
                       readOnly={isCompletedOrder}
+                      disabled={isCompletedOrder}
                       onChange={(e) => setInspectorNotes(e.target.value)}
                       rows={3}
                       className={`w-full px-3.5 py-2.5 bg-[#faf8f5] border border-gray-200 rounded-xl outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed text-gray-700' : ''}`}

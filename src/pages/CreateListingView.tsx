@@ -32,7 +32,8 @@ import {
   Trash2,
   RotateCcw,
   PlayCircle,
-  Lock
+  Lock,
+  Wrench
 } from 'lucide-react';
 import {
   ItemCategory,
@@ -577,6 +578,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [rawWidthInput, setRawWidthInput] = useState<string>('');
   const [rawHeightInput, setRawHeightInput] = useState<string>('');
 
+  // Lựa chọn Hàng có tháo được
+  const [canDisassemble, setCanDisassemble] = useState<boolean>(false);
+
+  const handleCanDisassembleChange = (value: boolean) => {
+    setCanDisassemble(value);
+    if (postId) {
+      try {
+        localStorage.setItem(`post_can_disassemble_${postId}`, String(value));
+      } catch {}
+    }
+  };
+
   const handleWeightChange = (valStr: string) => {
     setRawWeightInput(valStr);
     const base = toBaseInteger(valStr, weightUnit === 'kg' ? 3 : 0);
@@ -707,6 +720,29 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
   const [isUploadingVideo, setIsUploadingVideo] = useState(false);
   const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
+
+  // Dung lượng video tối đa theo cấu hình từ BE (mặc định 10MB theo SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE từ BE .env)
+  const [maxVideoSizeMb, setMaxVideoSizeMb] = useState<number>(() => {
+    const envMb = Number((import.meta as any).env?.VITE_MAX_VIDEO_SIZE_MB);
+    if (Number.isFinite(envMb) && envMb > 0) return envMb;
+    const cached = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('secondlife_max_video_size_mb') : null;
+    if (cached) {
+      const parsed = Number(cached);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+    return 10;
+  });
+
+  useEffect(() => {
+    mediaService.getMediaLimits().then((limits) => {
+      if (limits?.maxVideoSizeMb && limits.maxVideoSizeMb > 0) {
+        setMaxVideoSizeMb(limits.maxVideoSizeMb);
+        try {
+          sessionStorage.setItem('secondlife_max_video_size_mb', String(limits.maxVideoSizeMb));
+        } catch {}
+      }
+    }).catch(() => {});
+  }, []);
 
   // Post & AI Session IDs from Backend
   const [postId, setPostId] = useState<string | null>(null);
@@ -866,6 +902,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         if (savedWu) setWeightUnit(savedWu);
         if (savedDu) setDimensionUnit(savedDu);
 
+        const savedCanDisassemble = localStorage.getItem(`post_can_disassemble_${initialDraft.id}`);
+        if (savedCanDisassemble !== null) {
+          setCanDisassemble(savedCanDisassemble === 'true');
+        } else if ((initialDraft as any).canDisassemble !== undefined) {
+          setCanDisassemble(Boolean((initialDraft as any).canDisassemble));
+        }
+
         if (initialDraft.shippingWeight) {
           const w = Number(initialDraft.shippingWeight);
           if (Number.isSafeInteger(w) && w >= 1) {
@@ -1001,6 +1044,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               const savedDu = localStorage.getItem(`post_dimension_unit_${freshDraft.id || initialDraft.id}`) as 'cm' | 'm' | null;
               if (savedWu) setWeightUnit(savedWu);
               if (savedDu) setDimensionUnit(savedDu);
+
+              const savedCanDisassemble = localStorage.getItem(`post_can_disassemble_${freshDraft.id || initialDraft.id}`);
+              if (savedCanDisassemble !== null) {
+                setCanDisassemble(savedCanDisassemble === 'true');
+              } else if ((freshDraft as any).canDisassemble !== undefined) {
+                setCanDisassemble(Boolean((freshDraft as any).canDisassemble));
+              }
 
               if (freshDraft.shippingWeight) {
                 const w = Number(freshDraft.shippingWeight);
@@ -1930,8 +1980,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const handleVideoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 100 * 1024 * 1024) {
-      showToast(lang === 'vi' ? 'Video không được vượt quá 100MB' : 'Video must not exceed 100MB');
+    if (file.size > maxVideoSizeMb * 1024 * 1024) {
+      showToast(lang === 'vi' ? `Video không được vượt quá ${maxVideoSizeMb}MB theo cấu hình hệ thống` : `Video must not exceed ${maxVideoSizeMb}MB`);
       return;
     }
     setVideoFile(file);
@@ -1943,11 +1993,25 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       const res = await mediaService.uploadVideo(file, 'listings/videos');
       if (res?.url) {
         setUploadedVideoUrl(res.url);
-        showToast(lang === 'vi' ? 'Tải video vận hành thiết bị thành công!' : 'Operation video uploaded!');
+        showToast(lang === 'vi' ? 'Tải video thực tế sản phẩm thành công!' : 'Product video uploaded!');
       }
     } catch (err: any) {
       console.warn('Video upload error:', err);
-      showToast(err?.message || (lang === 'vi' ? 'Không thể tải video lên máy chủ' : 'Failed to upload video'));
+      const errMsg = err?.message || '';
+      // Tự động đồng bộ nếu BE trả về lỗi dung lượng cụ thể (ví dụ: "Dung lượng video vượt quá giới hạn tối đa cho phép (X MB)")
+      const match = errMsg.match(/(\d+)\s*(?:MB|byte|bytes)/i);
+      if (match) {
+        const detectedMb = match[0].toLowerCase().includes('byte')
+          ? Math.round(Number(match[1]) / (1024 * 1024))
+          : Number(match[1]);
+        if (detectedMb > 0 && detectedMb !== maxVideoSizeMb) {
+          setMaxVideoSizeMb(detectedMb);
+          try {
+            sessionStorage.setItem('secondlife_max_video_size_mb', String(detectedMb));
+          } catch {}
+        }
+      }
+      showToast(errMsg || (lang === 'vi' ? 'Không thể tải video lên máy chủ' : 'Failed to upload video'));
     } finally {
       setIsUploadingVideo(false);
     }
@@ -2192,6 +2256,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             localStorage.setItem(`post_purchase_time_note_${initRes.postId}`, purchaseTimeNote.trim());
           } catch {}
         }
+        try {
+          localStorage.setItem(`post_can_disassemble_${initRes.postId}`, String(canDisassemble));
+        } catch {}
         savePostMetadata({
           postId: initRes.postId,
           categoryId: selectedCategoryId,
@@ -2203,7 +2270,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           model: model?.trim() || '',
           purchaseYear,
           purchaseTimeNote: purchaseTimeNote.trim() || undefined,
-          originalPriceVnd: numOrig > 0 ? numOrig : undefined
+          originalPriceVnd: numOrig > 0 ? numOrig : undefined,
+          canDisassemble
         });
 
         // Reset chat tracking
@@ -2519,6 +2587,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           localStorage.setItem(`post_original_price_${postId}`, String(numOrig));
         } catch {}
       }
+      if (postId) {
+        try {
+          localStorage.setItem(`post_can_disassemble_${postId}`, String(canDisassemble));
+        } catch {}
+      }
       const cleanDesc = description.trim().replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '').trim();
       const descToSend = numOrig > 0 ? `${cleanDesc}\n\n<!--sl_orig_price:${numOrig}-->` : cleanDesc;
 
@@ -2718,6 +2791,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         localStorage.setItem(`post_purchase_time_note_${postId}`, purchaseTimeNote.trim());
       } catch {}
     }
+    try {
+      localStorage.setItem(`post_can_disassemble_${postId}`, String(canDisassemble));
+    } catch {}
     savePostMetadata({
       postId,
       categoryId: selectedCategoryId,
@@ -2729,7 +2805,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       model: model?.trim() || '',
       purchaseYear,
       purchaseTimeNote: purchaseTimeNote.trim() || undefined,
-      originalPriceVnd: numericOrigPrice
+      originalPriceVnd: numericOrigPrice,
+      canDisassemble
     });
 
     // Địa chỉ của sản phẩm được cập nhật theo địa chỉ người bán (chỉ lấy phường và thành phố)
@@ -2929,6 +3006,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           localStorage.setItem(`post_purchase_time_note_${postId}`, purchaseTimeNote.trim());
         } catch {}
       }
+      try {
+        localStorage.setItem(`post_can_disassemble_${postId}`, String(canDisassemble));
+      } catch {}
       savePostMetadata({
         postId,
         categoryId: selectedCategoryId,
@@ -2940,7 +3020,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         model: model?.trim() || '',
         purchaseYear,
         purchaseTimeNote: purchaseTimeNote.trim() || undefined,
-        originalPriceVnd: finalOrigPrice
+        originalPriceVnd: finalOrigPrice,
+        canDisassemble
       });
 
       if (finalOrigPrice) {
@@ -3460,10 +3541,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <div>
                   <h4 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
                     <PlayCircle className="w-4 h-4 text-orange-600" />
-                    <span>Video quay vận hành thiết bị thực tế (Khuyến nghị)</span>
+                    <span>Video quay thực tế sản phẩm (Khuyến nghị)</span>
                   </h4>
                   <p className="text-[11px] text-slate-500">
-                    Tải video kiểm tra chức năng (bật nguồn, cắm điện, thử máy) tối đa 100MB (MP4, MOV, WEBM)
+                    Tải video quay cận cảnh tình trạng, chi tiết hoặc hoạt động thực tế của sản phẩm, tối đa {maxVideoSizeMb}MB (MP4, MOV, WEBM)
                   </p>
                 </div>
                 {isUploadingVideo && (
@@ -3498,8 +3579,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     <PlayCircle className="w-5 h-5" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <span className="text-xs font-bold text-slate-800 block">+ Tải Video Vận Hành Máy</span>
-                    <span className="text-[10px] text-slate-400">Định dạng MP4, WEBM, MOV (Tối đa 100MB)</span>
+                    <span className="text-xs font-bold text-slate-800 block">+ Tải Video Thực Tế Sản Phẩm</span>
+                    <span className="text-[10px] text-slate-400">Định dạng MP4, WEBM, MOV (Tối đa {maxVideoSizeMb}MB)</span>
                   </div>
                   <input
                     type="file"
@@ -4215,6 +4296,66 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     </div>
                   );
                 })()}
+              </div>
+
+              {/* Lựa chọn Hàng có tháo được */}
+              <div className="pt-2.5 border-t border-slate-200/80">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/90 p-3.5 rounded-xl border border-slate-200/90 shadow-2xs">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-[#24263e]">
+                      <Wrench className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span>Hàng có tháo được không? *</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Chọn <strong>"Có"</strong> nếu sản phẩm có thể tháo rời linh kiện (chân đế, khớp nối, tay cầm...) để đóng gói gọn hơn khi vận chuyển Lalamove.
+                    </p>
+                  </div>
+
+                  {/* Bộ lựa chọn tick Có / Không */}
+                  <div className="flex items-center gap-2.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleCanDisassembleChange(true)}
+                      className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer select-none ${
+                        canDisassemble
+                          ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-xs ring-2 ring-blue-400/20'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                      }`}
+                    >
+                      <div
+                        className={`w-4 h-4 rounded flex items-center justify-center border transition ${
+                          canDisassemble
+                            ? 'bg-blue-600 border-blue-600 text-white'
+                            : 'border-slate-300 bg-white'
+                        }`}
+                      >
+                        {canDisassemble && <Check className="w-3 h-3 stroke-[3]" />}
+                      </div>
+                      <span>Có (Tháo rời được)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCanDisassembleChange(false)}
+                      className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer select-none ${
+                        !canDisassemble
+                          ? 'bg-slate-100 border-slate-600 text-slate-900 shadow-xs ring-2 ring-slate-400/20'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                      }`}
+                    >
+                      <div
+                        className={`w-4 h-4 rounded flex items-center justify-center border transition ${
+                          !canDisassemble
+                            ? 'bg-slate-700 border-slate-700 text-white'
+                            : 'border-slate-300 bg-white'
+                        }`}
+                      >
+                        {!canDisassemble && <Check className="w-3 h-3 stroke-[3]" />}
+                      </div>
+                      <span>Không (Nguyên khối)</span>
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {isLengthLessThanWidth && (
@@ -5110,6 +5251,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 </div>
               </div>
 
+              <div className="flex items-center justify-between px-3 py-2 bg-slate-50/80 rounded-lg border border-slate-200/70 text-xs">
+                <span className="text-slate-500 font-medium">Khả năng tháo rời:</span>
+                <span className={`font-bold px-2 py-0.5 rounded-md text-[11px] ${
+                  canDisassemble
+                    ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                    : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {canDisassemble ? '✓ Có (Tháo rời được)' : 'Không (Nguyên khối)'}
+                </span>
+              </div>
+
               {/* Tóm tắt phương tiện phù hợp theo catalog */}
               {isLengthLessThanWidth ? (
                 <div className="mt-2.5 p-2.5 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-950 flex items-center justify-between gap-2">
@@ -5954,7 +6106,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
               <div className="flex justify-between items-center gap-2">
                 <span className="text-slate-500">Kiện hàng vận chuyển:</span>
-                <span className="font-semibold text-slate-700">{displayWeight} • {displayLength} × {displayWidth} × {displayHeight}</span>
+                <span className="font-semibold text-slate-700">
+                  {displayWeight} • {displayLength} × {displayWidth} × {displayHeight} ({canDisassemble ? 'Tháo rời được' : 'Nguyên khối'})
+                </span>
               </div>
               <div className="flex justify-between items-center gap-2 pt-2 border-t border-slate-200">
                 <span className="text-slate-500">Phí đăng bài:</span>

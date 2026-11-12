@@ -287,8 +287,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           location: 'Hà Nội',
           sellerId: finalOrd.sellerId || '',
           sellerName: finalOrd.sellerName || 'Người bán SecondLife',
-          sellerRating: 5.0,
-          sellerCompletedOrders: 3,
+          sellerRating: 0,
+          sellerCompletedOrders: 0,
           sellerVerified: true,
           status: 'reserved',
           createdAt: finalOrd.createdAt,
@@ -1893,18 +1893,19 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     if (!reviewModalOrder) return;
     reviewService.addReview({
       orderId: reviewModalOrder.id,
-      listingId: reviewModalOrder.listingId,
-      productName: reviewModalOrder.listing.title,
+      listingId: reviewModalOrder.listingId || (reviewModalOrder.listing as any)?.id || reviewModalOrder.id,
+      productName: reviewModalOrder.listing?.title || 'Sản phẩm',
       sellerId: reviewModalOrder.sellerId,
       sellerName: reviewModalOrder.sellerName,
-      buyerId: reviewModalOrder.buyerId,
-      buyerName: reviewModalOrder.buyerName,
+      buyerId: reviewModalOrder.buyerId || currentUser?.id,
+      buyerName: reviewModalOrder.buyerName || currentUser?.name || 'Người mua',
+      buyerAvatar: (reviewModalOrder as any).buyerAvatar || (currentUser as any)?.avatarUrl || (currentUser as any)?.avatar || '',
       rating: reviewData.rating,
       comment: reviewData.comment,
       tags: reviewData.tags,
       photos: reviewData.photos,
       isVerifiedPurchase: true,
-      conditionGrade: reviewModalOrder.listing.conditionGrade
+      conditionGrade: reviewModalOrder.listing?.conditionGrade || 'Like New'
     });
 
     const nextReviewed = Array.from(new Set([...reviewedOrderIds, reviewModalOrder.id]));

@@ -127,7 +127,30 @@ export const mediaService = {
   },
 
   /**
-   * Upload single video file (MP4, MOV, WEBM <= 100MB) to Cloudinary
+   * Lấy cấu hình giới hạn dung lượng upload đồng bộ từ BE / hệ thống
+   */
+  async getMediaLimits(): Promise<{ maxVideoSizeMb: number; maxVideoSizeBytes: number }> {
+    try {
+      const res = await fetch('/api/system-config/media-limits');
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.data?.maxVideoSizeMb) {
+          return json.data;
+        }
+      }
+    } catch {}
+
+    // Fallback: đọc từ VITE_MAX_VIDEO_SIZE_MB hoặc mặc định 10MB theo SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE từ BE
+    const envMb = Number((import.meta as any).env?.VITE_MAX_VIDEO_SIZE_MB);
+    const fallbackMb = Number.isFinite(envMb) && envMb > 0 ? envMb : 10;
+    return {
+      maxVideoSizeMb: fallbackMb,
+      maxVideoSizeBytes: fallbackMb * 1024 * 1024
+    };
+  },
+
+  /**
+   * Upload single video file (MP4, MOV, WEBM) to Cloudinary
    * Swagger: POST /api/v1/media/upload-video
    */
   async uploadVideo(file: File, folder?: string): Promise<CloudinaryUploadResponseDto> {
@@ -171,7 +194,7 @@ export const mediaService = {
       return resData?.data ?? resData;
     } catch (err: any) {
       console.error('Backend video upload error:', err);
-      throw new Error(err.message || 'Không thể tải video lên máy chủ. Vui lòng kiểm tra kết nối mạng và kích thước file <= 100MB.');
+      throw new Error(err.message || 'Không thể tải video lên máy chủ. Vui lòng kiểm tra kết nối mạng và dung lượng video.');
     }
   },
 };

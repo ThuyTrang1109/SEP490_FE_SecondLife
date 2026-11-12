@@ -217,6 +217,7 @@ export interface EscrowOrder {
   buyerPaidAt?: string | null;
   sellerFeeShare?: number;
   buyerFeeShare?: number;
+  cashShippingSimulation?: boolean;
   buyerCommitmentDeposit?: number;
   paymentDeadline?: string | null;
   returnShippingReserveFee?: number;
@@ -374,6 +375,7 @@ export interface SystemInspectionProposalPayload {
   totalAtCenterFee?: number;
   buyerFeeShare?: number;
   sellerFeeShare?: number;
+  cashShippingSimulation?: boolean;
   orderStatus?: string;
   counterFeePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
   rejectionReason?: string;
@@ -457,6 +459,7 @@ export interface UserProfile {
   email: string;
   role: UserRole;
   roles?: string[];
+  permissions?: string[];
   phone?: string;
   address?: string;
   avatar?: string;
@@ -648,7 +651,8 @@ export type WalletTransactionType =
   | 'PAYMENT'
   | 'EARNING'
   | 'REFUND'
-  | 'RETURN_SHIPPING_FEE';
+  | 'RETURN_SHIPPING_FEE'
+  | 'SHIPPING_REIMBURSE';
 
 export type WalletTransactionReferenceType =
   | 'ORDER'
@@ -846,6 +850,10 @@ export interface CreateShipmentRequestDto {
 
 export interface ShipmentBackend {
   shipmentId: string;
+  cashPayerId?: string | null;
+  cashConfirmedAt?: string | null;
+  cashPaidAmount?: number | null;
+  cashReimbursedAmount?: number | null;
   orderId: string;
   inspectionOrderId?: string;
   leg: string;

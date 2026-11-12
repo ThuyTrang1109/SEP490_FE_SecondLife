@@ -49,6 +49,8 @@ import { dialogService } from '../utils/dialogService';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { ListingComparisonModal } from '../components/staff/ListingComparisonModal';
 import { StaffDisputeManagement } from '../components/staff/StaffDisputeManagement';
+import { InspectionCashReviewPanel } from '../components/inspection/InspectionCashReviewPanel';
+import { canReviewInspectionCash } from '../utils/inspectionCashShipping';
 import { MarkdownContent } from '../components/common/MarkdownDescription';
 import logoImg from '../assets/logo.png';
 import { User, LogOut } from 'lucide-react';
@@ -1499,6 +1501,7 @@ export const StaffWorkspaceView: React.FC<StaffWorkspaceViewProps> = ({
           {/* ======================================================== */}
           {activeTab === 'monitor-transactions' && (
             <div className="space-y-4">
+              {canReviewInspectionCash(currentUser) && <InspectionCashReviewPanel />}
               <div className="bg-white rounded-xl p-4 shadow-xs border border-slate-200 border-t-4 border-t-sky-600 space-y-4">
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-900 uppercase">

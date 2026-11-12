@@ -5,7 +5,7 @@ export const translations = {
     brandName: 'SecondLife',
     tagline: 'Sàn đồ cũ tích hợp AI định giá & Dịch vụ kiểm định xác thực',
     knowFairPrice: 'Biết giá chuẩn - Kiểm định trước khi thanh toán - Giao dịch an tâm tuyệt đối',
-    
+
     // Roles
     roleBuyer: 'Người Mua (Buyer)',
     roleSeller: 'Người Bán (Seller)',
@@ -20,7 +20,7 @@ export const translations = {
     navInspectionHub: 'Trung Tâm Kiểm Định',
     navAdminDashboard: 'Admin Control Center',
     navChat: 'Đàm Phán & Tin Nhắn',
-    
+
     // Marketplace & Filters
     searchPlaceholder: 'Tìm iPhone 15 Pro, MacBook M2, máy ảnh Sony, túi hiệu...',
     filterCategory: 'Danh mục',
@@ -39,7 +39,7 @@ export const translations = {
     quickBuy: 'Mua bảo đảm Escrow',
     makeOffer: 'Trả giá & Đàm phán',
     contactSeller: 'Nhắn tin',
-    
+
     // Listing Creation
     createListingTitle: 'Đăng Bán Có AI Trợ Lực',
     createListingSubtitle: 'Hệ thống AI tự động phân tích ảnh, ước tính giá thị trường chuẩn và kiểm tra gian lận',
@@ -94,7 +94,7 @@ export const translations = {
     confirmReceipt: 'Xác nhận nhận hàng & Giải ngân cho Người bán',
     openDispute: 'Khiếu nại / Trả hàng nếu có sai khác',
     inspectionWindowNotice: 'Bạn có 48 giờ để dùng thử trước khi tiền tự động giải ngân cho người bán.',
-    
+
     // Multi-stage photo history
     multiStageTitle: 'Lịch sử ảnh 3 giai đoạn đối chiếu (Chống tráo hàng)',
     multiStageTitle2Stage: 'Lịch sử ảnh 2 giai đoạn đối chiếu (Chống tráo hàng)',

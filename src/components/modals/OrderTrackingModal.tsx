@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { EscrowOrder, Language, ShipmentBackend, ShipmentEventBackend, LalamoveTrackingResponse, CreateShipmentRequestDto } from '../../types';
 import { formatVND } from '../../utils/translations';
+import { InspectionCashShipmentStatus } from '../inspection/InspectionCashShipmentStatus';
 import {
   Truck,
   CheckCircle2,
@@ -1155,6 +1156,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                   </div>
                 </div>
 
+                <InspectionCashShipmentStatus shipment={activeShipment} />
                 {isReturnShipment && (
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-700">
                     <span>Cước trả hàng thực tế {activeShipment.actualFee == null ? 'đang chờ đối soát' : formatVND(activeShipment.actualFee)}</span>

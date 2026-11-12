@@ -105,6 +105,12 @@ import { WithdrawalsTab } from '../components/admin/WithdrawalsTab';
 import { PermissionsTab } from '../components/admin/PermissionsTab';
 import { PackageFormModal, PackageFormData } from '../components/admin/PackageFormModal';
 
+import { InspectionCashReviewPanel } from '../components/inspection/InspectionCashReviewPanel';
+import { canReviewInspectionCash } from '../utils/inspectionCashShipping';
+import { AdminInspectionFundsModal } from '../components/admin/AdminInspectionFundsModal';
+import { resolveInspectionOrderId } from '../utils/adminInspectionFunds';
+import { canManageInspectionFee } from '../services/inspectorService';
+
 interface AdminDashboardViewProps {
   orders: EscrowOrder[];
   disputes?: DisputeCase[];
@@ -330,6 +336,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   // Modal dialog states
   const [selectedOrderModal, setSelectedOrderModal] = useState<EscrowOrder | null>(null);
+  const [auditFundsOrderId, setAuditFundsOrderId] = useState<string | null>(null);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const userDropdownRef = React.useRef<HTMLDivElement>(null);
 
@@ -1959,6 +1966,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* ======================================================== */}
           {/* TAB: ORDERS (QUẢN LÝ BÁN HÀNG & KÝ QUỸ ESCROW)           */}
           {/* ======================================================== */}
+          {activeTab === 'orders' && canReviewInspectionCash(currentUser) && (
+            <InspectionCashReviewPanel onOpenFundsAudit={(id) => setAuditFundsOrderId(id)} />
+          )}
           {activeTab === 'orders' && (
             <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] p-5 space-y-4">
               {/* Unlinked Backend Notice */}
@@ -2055,18 +2065,42 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             </span>
                           </td>
                           <td className="py-3 text-center">
-                            {ord.escrowStatus !== 'COMPLETED_RELEASED' &&
-                              ord.escrowStatus !== 'REFUNDED_TO_BUYER' ? (
+                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
                               <button
-                                onClick={() => handleForceReleaseEscrow(ord.id)}
-                                className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold transition cursor-pointer shadow-xs"
-                                title="Can thiệp giải ngân ngay cho người bán"
+                                type="button"
+                                onClick={() => setSelectedOrderModal(ord)}
+                                className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold transition cursor-pointer"
+                                title="Xem chi tiết đơn hàng"
                               >
-                                Giải Ngân Escrow
+                                Chi tiết
                               </button>
-                            ) : (
-                              <span className="text-[11px] text-slate-400 font-medium">Đã xong</span>
-                            )}
+                              {canManageInspectionFee(currentUser) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const inspId = resolveInspectionOrderId(ord);
+                                    setAuditFundsOrderId(inspId);
+                                  }}
+                                  className="px-2 py-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold transition cursor-pointer flex items-center gap-1"
+                                  title="Đối soát tiền kiểm định"
+                                >
+                                  <ShieldCheck className="w-3 h-3 text-amber-700" />
+                                  Đối soát
+                                </button>
+                              )}
+                              {ord.escrowStatus !== 'COMPLETED_RELEASED' &&
+                                ord.escrowStatus !== 'REFUNDED_TO_BUYER' ? (
+                                <button
+                                  onClick={() => handleForceReleaseEscrow(ord.id)}
+                                  className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold transition cursor-pointer shadow-xs"
+                                  title="Can thiệp giải ngân ngay cho người bán"
+                                >
+                                  Giải Ngân Escrow
+                                </button>
+                              ) : (
+                                <span className="text-[11px] text-slate-400 font-medium">Đã xong</span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -3601,7 +3635,20 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </div>
             </div>
 
-            <div className="pt-2 flex justify-end gap-2">
+            <div className="pt-2 flex justify-end gap-2 flex-wrap">
+              {canManageInspectionFee(currentUser) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const inspId = resolveInspectionOrderId(selectedOrderModal);
+                    setAuditFundsOrderId(inspId);
+                  }}
+                  className="px-3.5 py-1.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Đối soát tiền kiểm định
+                </button>
+              )}
               <button
                 onClick={() => setSelectedOrderModal(null)}
                 className="px-4 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
@@ -3621,6 +3668,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* ======================================================== */}
+      {/* MODAL: ADMIN INSPECTION FUNDS AUDIT                      */}
+      {/* ======================================================== */}
+      <AdminInspectionFundsModal
+        inspectionOrderId={auditFundsOrderId}
+        isOpen={Boolean(auditFundsOrderId)}
+        onClose={() => setAuditFundsOrderId(null)}
+      />
 
 
 

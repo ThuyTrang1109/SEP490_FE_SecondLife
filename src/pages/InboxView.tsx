@@ -623,14 +623,13 @@ export const InboxView: React.FC<InboxViewProps> = ({
                             : 'hover:bg-slate-100/60'
                         }`}
                     >
-                      {/* Avatar with Online Dot */}
+                      {/* Partner avatar */}
                       <div className="relative shrink-0">
                         <img
                           src={partnerAvatar}
                           alt={partnerName}
                           className="w-12 h-12 rounded-xl object-cover border border-slate-200"
                         />
-                        <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full ring-2 ring-white" />
                       </div>
 
                       {/* Content info */}

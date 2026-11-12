@@ -7,11 +7,12 @@ interface InspectionReturnQuoteModalProps {
   orderId: string;
   title?: string;
   booking: boolean;
+  cashShipping?: boolean;
   onClose: () => void;
   onBook: (maxReturnFee: number) => Promise<string | null>;
 }
 
-export function InspectionReturnQuoteModal({ orderId, title, booking, onClose, onBook }: InspectionReturnQuoteModalProps) {
+export function InspectionReturnQuoteModal({ orderId, title, booking, cashShipping, onClose, onBook }: InspectionReturnQuoteModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [quote, setQuote] = useState<InspectionReturnQuote | null>(null);
   const [error, setError] = useState('');
@@ -82,6 +83,7 @@ export function InspectionReturnQuoteModal({ orderId, title, booking, onClose, o
       </header>
 
       <div className="space-y-4 p-5">
+        {cashShipping && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900"><strong>Mô phỏng Sandbox</strong> · Hub ứng cước tiền mặt và chờ Staff/Admin xác nhận hoàn ứng.</p>}
         {loading && (
           <div role="status" className="flex items-center justify-center gap-2 py-8 text-sm text-slate-600">
             <Loader2 aria-hidden="true" className="size-5 animate-spin text-orange-700" /> Đang lấy cước từ Lalamove…

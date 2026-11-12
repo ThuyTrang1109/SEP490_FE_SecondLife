@@ -93,6 +93,7 @@ export function getHubReturnProgress(shipment: ShipmentBackend, lang: Language =
 
 export function getReturnReserveMessage(reserve: number | null | undefined, shipment: ShipmentBackend) {
   if (shipment.status !== 'DELIVERED') return 'Phần dự phòng còn dư sẽ được đối soát sau khi giao hàng.';
+  if (shipment.cashPayerId && !shipment.cashConfirmedAt) return 'Phần dự phòng còn dư được hoàn sau khi xác nhận chi cước mô phỏng.';
   if (reserve == null || shipment.actualFee == null || shipment.actualFee > reserve) return 'Đang chờ đối soát cước trả hàng.';
   if (shipment.actualFee === reserve) return 'Cước thực tế bằng khoản dự phòng. Không có phần dư.';
   return 'Xem lịch sử ví để xác nhận khoản dự phòng được hoàn.';

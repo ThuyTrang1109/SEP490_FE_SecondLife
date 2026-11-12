@@ -705,6 +705,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const inFlightQuotePromiseRef = useRef<Promise<ShippingQuoteResponseDto | null> | null>(null);
   const inFlightQuoteKeyRef = useRef<string>('');
   const cachedQuoteKeyRef = useRef<string>('');
+  const cachedQuoteRef = useRef<ShippingQuoteResponseDto | null>(null);
   const isInitialListingNegotiationMount = useRef<boolean>(true);
 
   const inspectionQuoteRequestIdRef = useRef<number>(0);
@@ -757,6 +758,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setQuoteErrorDetails(null);
     setInspectionQuote(null);
     cachedQuoteKeyRef.current = '';
+    cachedQuoteRef.current = null;
     inFlightQuotePromiseRef.current = null;
   }, [listing.id, negotiationId]);
 
@@ -926,11 +928,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     // 4. Nếu không yêu cầu ép tải lại (forceRefresh: false)
     if (!opts?.forceRefresh) {
       // 4a. Nếu đã có báo giá hợp lệ trong state cho đúng targetKey và chưa hết hạn: dùng lại ngay
-      if (ghnQuote && ghnQuote.quoteId && cachedQuoteKeyRef.current === targetKey) {
-        const isExpired = ghnQuote.expiresAt ? new Date(ghnQuote.expiresAt).getTime() <= Date.now() : false;
+      const currentCachedQuote = cachedQuoteRef.current || ghnQuote;
+      if (currentCachedQuote && currentCachedQuote.quoteId && cachedQuoteKeyRef.current === targetKey) {
+        const isExpired = currentCachedQuote.expiresAt ? new Date(currentCachedQuote.expiresAt).getTime() <= Date.now() : false;
         if (!isExpired) {
           setQuoteLoading(false);
-          return ghnQuote;
+          return currentCachedQuote;
         }
       }
 
@@ -950,6 +953,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     inFlightQuoteKeyRef.current = targetKey;
 
     setGhnQuote(null);
+    cachedQuoteRef.current = null;
     setQuoteLoading(true);
     setQuoteError(null);
     setQuoteErrorCode(null);
@@ -980,6 +984,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         }
 
         setGhnQuote(quote);
+        cachedQuoteRef.current = quote;
         cachedQuoteKeyRef.current = targetKey;
         setQuoteError(null);
         setQuoteErrorCode(null);
@@ -994,13 +999,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             err?.name === 'TimeoutError' ||
             (typeof err === 'string' && err.includes('TIMEOUT')));
 
-        if (!isTimeout && (err?.name === 'AbortError' || requestId !== quoteRequestIdRef.current)) {
+        if (!isTimeout && (err?.name === 'AbortError' || controller.signal.aborted || requestId !== quoteRequestIdRef.current)) {
           return null;
         }
 
         console.warn('Failed to calculate Lalamove quote:', err);
         if (requestId === quoteRequestIdRef.current) {
           setGhnQuote(null);
+          cachedQuoteRef.current = null;
           cachedQuoteKeyRef.current = '';
 
           if (isTimeout) {
@@ -1081,7 +1087,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     activeAddress,
     selectedProvinceName,
     lang,
-    ghnQuote,
   ]);
 
   // Public quote calculation interface (Manual retry buttons force fresh quote)
@@ -1124,18 +1129,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     if (!stableDeliveryLat || !stableDeliveryLng) {
       setGhnQuote(null);
+      cachedQuoteRef.current = null;
       setQuoteLoading(false);
       return;
     }
 
-    getOrFetchQuote({
-      lat: stableDeliveryLat,
-      lng: stableDeliveryLng,
-      addr: streetAddress,
-      name: buyerName,
-      phone: buyerPhone,
-      forceRefresh: false,
-    });
+    const timer = setTimeout(() => {
+      getOrFetchQuote({
+        lat: stableDeliveryLat,
+        lng: stableDeliveryLng,
+        addr: streetAddress,
+        name: buyerName,
+        phone: buyerPhone,
+        forceRefresh: false,
+      });
+    }, 150);
+
+    return () => clearTimeout(timer);
   }, [
     listing.id,
     stableDeliveryLat,
@@ -1145,6 +1155,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     negotiationValidation.valid,
     validNegotiationId,
     deliveryOption,
+    streetAddress,
+    buyerName,
+    buyerPhone,
     getOrFetchQuote,
   ]);
 
@@ -2934,7 +2947,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         )}
                         <div className="flex flex-wrap items-center gap-1.5 pl-4.5 pt-0.5 text-[9px] text-slate-500">
                           <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
-                            🔬 Trạm thẩm định tiêu chuẩn 
+                            🔬 Trạm thẩm định tiêu chuẩn
                           </span>
                           {Boolean(selectedCenter.activeInspectors) && (
                             <span className="bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-700">

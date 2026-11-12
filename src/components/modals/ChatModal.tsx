@@ -106,12 +106,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const isSeller = isExplicitBuyer
     ? false
     : isExplicitSeller
-    ? true
-    : isListingSeller
-    ? true
-    : isListingBuyer
-    ? false
-    : currentRole === 'seller';
+      ? true
+      : isListingSeller
+        ? true
+        : isListingBuyer
+          ? false
+          : currentRole === 'seller';
 
   const isBuyer = !isSeller;
   const chatRole: 'seller' | 'buyer' = isSeller ? 'seller' : 'buyer';
@@ -253,7 +253,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           },
         })
       );
-    } catch {}
+    } catch { }
   }, [roomId, activeRoom?.id, listing?.id]);
 
   // Convert ChatMessageDto from backend to ChatMessage for UI
@@ -266,20 +266,20 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       const senderRole: 'buyer' | 'seller' | 'system' = isSystem
         ? 'system'
         : isSenderMe
-        ? chatRole
-        : (activeRoom?.sellerId && String(dto.senderId) === String(activeRoom.sellerId))
-        ? 'seller'
-        : (activeRoom?.buyerId && String(dto.senderId) === String(activeRoom.buyerId))
-        ? 'buyer'
-        : isBuyer
-        ? 'seller'
-        : 'buyer';
+          ? chatRole
+          : (activeRoom?.sellerId && String(dto.senderId) === String(activeRoom.sellerId))
+            ? 'seller'
+            : (activeRoom?.buyerId && String(dto.senderId) === String(activeRoom.buyerId))
+              ? 'buyer'
+              : isBuyer
+                ? 'seller'
+                : 'buyer';
 
       const senderName = isSystem
         ? 'SecondLife System'
         : isSenderMe
-        ? (lang === 'vi' ? 'Bạn' : 'You')
-        : resolvedPartnerName;
+          ? (lang === 'vi' ? 'Bạn' : 'You')
+          : resolvedPartnerName;
 
       const timeStr = dto.sentAt
         ? new Date(dto.sentAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
@@ -300,8 +300,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           parsedSys.offer.status === 'ACCEPTED'
             ? 'accepted'
             : parsedSys.offer.status === 'REJECTED' || parsedSys.offer.status === 'CANCELLED'
-            ? 'declined'
-            : 'pending';
+              ? 'declined'
+              : 'pending';
       }
 
       let isInspectionProposal = false;
@@ -354,7 +354,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         }
 
         console.log('[ChatModal] initRoom - predefinedRoomId:', predefinedRoomId, 'finalRoomId:', finalRoomId);
-        
+
         // 2. Network Path: Only call API if room is not yet resolved
         if (!finalRoomId) {
           // API: POST /api/v1/chats/rooms?postId={postId}
@@ -375,7 +375,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 postRoomCache.set(listing.id, room);
               }
             })
-            .catch(() => {});
+            .catch(() => { });
         }
 
         console.log('[ChatModal] initRoom - resolved finalRoomId:', finalRoomId);
@@ -401,7 +401,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           try {
             const parsed = JSON.parse(stored) as ChatMessage[];
             if (Array.isArray(parsed)) setMessages(parsed);
-          } catch {}
+          } catch { }
         }
       } finally {
         if (isMounted) setLoadingRoom(false);
@@ -595,8 +595,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     warningMessage: string | null;
   }>({
     counterOfferVnd: Math.round((listing.priceVnd * (isBuyer ? 0.95 : 0.98)) / 100000) * 100000,
-    adviceText: isBuyer 
-      ? 'Mức giá đề xuất của người mua (-5% đến -8%) nằm trong biên độ thanh khoản cao của thị trường đồ cũ tại Việt Nam.' 
+    adviceText: isBuyer
+      ? 'Mức giá đề xuất của người mua (-5% đến -8%) nằm trong biên độ thanh khoản cao của thị trường đồ cũ tại Việt Nam.'
       : 'Khách hàng này có lịch sử chốt đơn nhanh. Chủ động đề xuất giảm nhẹ (2%) để tăng khả năng chốt đơn ngay!',
     warningMessage: null
   });
@@ -674,11 +674,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         prev.map((m) =>
           m.id === tempId
             ? {
-                ...m,
-                isSending: false,
-                isFailed: true,
-                errorReason: err?.message || 'Không thể gửi tin nhắn'
-              }
+              ...m,
+              isSending: false,
+              isFailed: true,
+              errorReason: err?.message || 'Không thể gửi tin nhắn'
+            }
             : m
         )
       );
@@ -730,11 +730,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         prev.map((m) =>
           m.id === failedMsg.id
             ? {
-                ...m,
-                isSending: false,
-                isFailed: true,
-                errorReason: err?.message || 'Không thể gửi lại tin nhắn'
-              }
+              ...m,
+              isSending: false,
+              isFailed: true,
+              errorReason: err?.message || 'Không thể gửi lại tin nhắn'
+            }
             : m
         )
       );
@@ -763,8 +763,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       setOfferError(
         lang === 'vi'
           ? (isSeller
-              ? 'Mức giá đề xuất bán ưu đãi phải thấp hơn giá niêm yết ban đầu.'
-              : `Mức giá đề xuất phải thấp hơn giá gốc (${formatVND(listing.priceVnd)})`)
+            ? 'Mức giá đề xuất bán ưu đãi phải thấp hơn giá niêm yết ban đầu.'
+            : `Mức giá đề xuất phải thấp hơn giá gốc (${formatVND(listing.priceVnd)})`)
           : `Offer price must be lower than original price (${formatVND(listing.priceVnd)})`
       );
       return;
@@ -1173,11 +1173,10 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fadeIn">
       <div className="bg-[#FFFFFF] rounded-3xl max-w-2xl w-full h-[88vh] shadow-2xl border border-gray-200 flex flex-col overflow-hidden text-[#24263e]">
         {/* Header with Seller Trust Score & Buy Now button */}
-        <div className={`px-5 py-3.5 border-b flex items-center justify-between shrink-0 ${
-          isSeller 
-            ? 'bg-gradient-to-r from-[#24263e] to-slate-800 text-white border-slate-700' 
-            : 'bg-gradient-to-r from-[#fce5da] to-white border-[#24263e]/15 text-[#24263e]'
-        }`}>
+        <div className={`px-5 py-3.5 border-b flex items-center justify-between shrink-0 ${isSeller
+          ? 'bg-gradient-to-r from-[#24263e] to-slate-800 text-white border-slate-700'
+          : 'bg-gradient-to-r from-[#fce5da] to-white border-[#24263e]/15 text-[#24263e]'
+          }`}>
           <div className="flex items-center gap-3 overflow-hidden">
             <img
               src={resolvedPartnerAvatar}
@@ -1189,7 +1188,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 <span className={`font-extrabold text-xs truncate ${isSeller ? 'text-white' : 'text-[#24263e]'}`}>
                   {resolvedPartnerName}
                 </span>
-                
+
                 {isSeller ? (
                   <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-200 rounded text-[9px] font-bold border border-blue-400/30">
                     {lang === 'vi' ? 'Đối tác: Người mua' : 'Partner: Buyer'}
@@ -1213,8 +1212,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                       {sellerReputation?.assessmentStatus === 'NO_TRANSACTIONS'
                         ? 'Người bán mới'
                         : sellerReputation?.score !== undefined && sellerReputation?.score !== null
-                        ? `${sellerReputation.score}/100 uy tín`
-                        : 'Chưa có điểm uy tín'}
+                          ? `${sellerReputation.score}/100 uy tín`
+                          : 'Chưa có điểm uy tín'}
                     </span>
                     {sellerTrust.rating > 0 && (
                       <>
@@ -1257,11 +1256,10 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
             <button
               onClick={onClose}
-              className={`p-2 rounded-xl text-xs font-bold cursor-pointer transition ${
-                isSeller 
-                  ? 'text-slate-300 hover:text-white hover:bg-white/10' 
-                  : 'text-slate-500 hover:text-slate-900 hover:bg-white/60'
-              }`}
+              className={`p-2 rounded-xl text-xs font-bold cursor-pointer transition ${isSeller
+                ? 'text-slate-300 hover:text-white hover:bg-white/10'
+                : 'text-slate-500 hover:text-slate-900 hover:bg-white/60'
+                }`}
             >
               <X className="w-4 h-4" />
             </button>
@@ -1329,9 +1327,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               <ShoppingBag className={`w-10 h-10 ${isSeller ? 'text-blue-200' : 'text-slate-300'}`} />
               <p className="text-xs font-semibold text-slate-500">
                 {lang === 'vi'
-                  ? (isSeller 
-                      ? 'Người mua đang quan tâm đến sản phẩm của bạn. Hãy gửi tin nhắn chào hỏi!' 
-                      : 'Chưa có tin nhắn nào. Hãy gửi tin nhắn hoặc đề xuất giá đầu tiên!')
+                  ? (isSeller
+                    ? 'Người mua đang quan tâm đến sản phẩm của bạn. Hãy gửi tin nhắn chào hỏi!'
+                    : 'Chưa có tin nhắn nào. Hãy gửi tin nhắn hoặc đề xuất giá đầu tiên!')
                   : 'No messages yet. Send a message or make an offer!'}
               </p>
             </div>
@@ -1357,7 +1355,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   const hasLaterStatusMessage = messages.slice(msgIndex + 1).some((laterMsg) => {
                     const p = parseSystemMessage(laterMsg.text);
                     return (p.offer?.negotiationId && p.offer.negotiationId === offer.negotiationId) ||
-                           (laterMsg.isOffer && laterMsg.negotiationId === offer.negotiationId);
+                      (laterMsg.isOffer && laterMsg.negotiationId === offer.negotiationId);
                   });
                   if (hasLaterStatusMessage) {
                     return null;
@@ -1369,7 +1367,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   const isCancelled = latestStatus === 'CANCELLED';
                   const isExpired = false; // Note: EXPIRED is not in SystemOfferPayload
                   const isPending = latestStatus === 'PENDING';
-                  
+
                   const isSellerOffer = offer.senderRole === 'seller' || (Boolean(offer.negotiationId) && offer.negotiationId.startsWith('seller-offer-'));
                   const isProposerMe = isSellerOffer ? isSeller : isBuyer;
                   const isRecipientMe = isSellerOffer ? isBuyer : isSeller;
@@ -1377,15 +1375,14 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   return (
                     <div key={msg.id} className="flex justify-center my-3 animate-fadeIn">
                       <div
-                        className={`max-w-md w-full rounded-2xl border p-3.5 shadow-sm text-center transition-all ${
-                          isAccepted
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                            : isRejected || isCancelled
+                        className={`max-w-md w-full rounded-2xl border p-3.5 shadow-sm text-center transition-all ${isAccepted
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                          : isRejected || isCancelled
                             ? 'bg-rose-50 border-rose-200 text-rose-900'
                             : isExpired
-                            ? 'bg-slate-50 border-slate-300 text-slate-500'
-                            : 'bg-gradient-to-b from-amber-50 to-orange-50/50 border-amber-300 text-amber-950'
-                        }`}
+                              ? 'bg-slate-50 border-slate-300 text-slate-500'
+                              : 'bg-gradient-to-b from-amber-50 to-orange-50/50 border-amber-300 text-amber-950'
+                          }`}
                       >
                         <div className="flex items-center justify-center gap-1.5 mb-1.5">
                           {isAccepted ? (
@@ -1401,14 +1398,14 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                             {isAccepted
                               ? '🎉 Thỏa Thuận Chốt Giá Thành Công'
                               : isRejected
-                              ? '❌ Đề Xuất Giá Đã Bị Từ Chối'
-                              : isCancelled
-                              ? 'Đề Xuất Giá Đã Được Hủy'
-                              : isExpired
-                              ? '⏳ Phiên Thương Lượng Đã Hết Hạn'
-                              : isSellerOffer
-                              ? '🏷️ Người Bán Đề Xuất Giá Mới'
-                              : '🤝 Đề Xuất Thương Lượng Giá Mới'}
+                                ? '❌ Đề Xuất Giá Đã Bị Từ Chối'
+                                : isCancelled
+                                  ? 'Đề Xuất Giá Đã Được Hủy'
+                                  : isExpired
+                                    ? '⏳ Phiên Thương Lượng Đã Hết Hạn'
+                                    : isSellerOffer
+                                      ? '🏷️ Người Bán Đề Xuất Giá Mới'
+                                      : '🤝 Đề Xuất Thương Lượng Giá Mới'}
                           </span>
                         </div>
 
@@ -1427,25 +1424,25 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                         <p className="text-[11px] text-slate-600 mb-2">
                           {isAccepted
                             ? (isBuyer
-                                ? (lang === 'vi' ? 'Người bán đã chấp nhận mức giá này. Bạn có thể tiến hành đặt cọc qua Escrow ngay bây giờ!' : 'Seller accepted this offer. You can checkout now!')
-                                : (lang === 'vi' ? 'Mức giá đã được chốt thành công. Đang chờ người mua tiến hành thanh toán qua Escrow.' : 'You accepted this offer. Waiting for buyer to checkout.'))
+                              ? (lang === 'vi' ? 'Người bán đã chấp nhận mức giá này. Bạn có thể tiến hành đặt cọc qua Escrow ngay bây giờ!' : 'Seller accepted this offer. You can checkout now!')
+                              : (lang === 'vi' ? 'Mức giá đã được chốt thành công. Đang chờ người mua tiến hành thanh toán qua Escrow.' : 'You accepted this offer. Waiting for buyer to checkout.'))
                             : isRejected
-                            ? (isProposerMe
+                              ? (isProposerMe
                                 ? (lang === 'vi' ? 'Mức giá đề xuất chưa phù hợp với đối phương. Bạn có thể gửi lại mức giá khác hợp lý hơn.' : 'Offer was declined.')
                                 : (lang === 'vi' ? 'Bạn đã từ chối mức giá đề xuất này.' : 'You declined this offer.'))
-                            : isCancelled
-                            ? (isProposerMe
-                                ? (lang === 'vi' ? 'Bạn đã hủy yêu cầu thương lượng giá này.' : 'You cancelled this offer.')
-                                : (lang === 'vi' ? 'Đối phương đã hủy yêu cầu thương lượng giá này.' : 'Buyer cancelled this offer.'))
-                            : isPending
-                            ? (isRecipientMe
-                                ? (lang === 'vi'
-                                    ? (isSellerOffer
+                              : isCancelled
+                                ? (isProposerMe
+                                  ? (lang === 'vi' ? 'Bạn đã hủy yêu cầu thương lượng giá này.' : 'You cancelled this offer.')
+                                  : (lang === 'vi' ? 'Đối phương đã hủy yêu cầu thương lượng giá này.' : 'Buyer cancelled this offer.'))
+                                : isPending
+                                  ? (isRecipientMe
+                                    ? (lang === 'vi'
+                                      ? (isSellerOffer
                                         ? 'Người bán chủ động đề xuất mức giá bán ưu đãi cho bạn. Bạn có muốn đồng ý mua với giá này không?'
                                         : 'Người mua gửi đề xuất giá cho sản phẩm của bạn. Vui lòng phản hồi:')
-                                    : 'You received a price offer. Please respond:')
-                                : (lang === 'vi' ? 'Đề xuất giá đã được gửi tới đối phương, đang chờ phản hồi...' : 'Offer sent, waiting for response...'))
-                            : ''}
+                                      : 'You received a price offer. Please respond:')
+                                    : (lang === 'vi' ? 'Đề xuất giá đã được gửi tới đối phương, đang chờ phản hồi...' : 'Offer sent, waiting for response...'))
+                                  : ''}
                         </p>
 
                         {/* Action buttons inside System Offer Banner for recipient */}
@@ -1550,27 +1547,25 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
                   return (
                     <div key={msg.id} className="flex justify-center my-3 animate-fadeIn">
-                      <div className={`p-4 rounded-2xl border text-xs shadow-md max-w-md w-full transition-all ${
-                        isAccepted
-                          ? 'bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-300 text-emerald-900'
-                          : isRejected || isCancelled
+                      <div className={`p-4 rounded-2xl border text-xs shadow-md max-w-md w-full transition-all ${isAccepted
+                        ? 'bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-300 text-emerald-900'
+                        : isRejected || isCancelled
                           ? 'bg-slate-50 border-slate-300 text-slate-500'
                           : 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 text-slate-900'
-                      }`}>
+                        }`}>
                         <div className="flex items-center justify-between pb-2 border-b border-blue-200/50">
                           <div className="flex items-center gap-1.5 font-black text-xs uppercase tracking-tight text-blue-900">
                             <ShieldCheck className="w-4 h-4 text-blue-600" />
                             <span>Đề Xuất Phương Án Kiểm Định</span>
                           </div>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                            isAccepted
-                              ? 'bg-emerald-600 text-white'
-                              : isRejected
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${isAccepted
+                            ? 'bg-emerald-600 text-white'
+                            : isRejected
                               ? 'bg-rose-600 text-white'
                               : isCancelled
-                              ? 'bg-slate-400 text-white'
-                              : 'bg-blue-600 text-white animate-pulse'
-                          }`}>
+                                ? 'bg-slate-400 text-white'
+                                : 'bg-blue-600 text-white animate-pulse'
+                            }`}>
                             {isAccepted ? 'Đã Đồng Ý' : isRejected ? 'Đã Từ Chối' : isCancelled ? 'Đã Hủy' : 'Chờ Phản Hồi'}
                           </span>
                         </div>
@@ -1590,8 +1585,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                               {prop.feeSplit === 'SPLIT_50_50'
                                 ? `Chia đôi 50/50 (Mỗi bên ${formatVND(Math.round(prop.estimatedFeeVnd / 2))})`
                                 : prop.feeSplit === 'SELLER_100'
-                                ? `Người bán tài trợ 100% (${formatVND(prop.estimatedFeeVnd)})`
-                                : `Người mua thanh toán 100% (${formatVND(prop.estimatedFeeVnd)})`}
+                                  ? `Người bán tài trợ 100% (${formatVND(prop.estimatedFeeVnd)})`
+                                  : `Người mua thanh toán 100% (${formatVND(prop.estimatedFeeVnd)})`}
                             </strong>
                           </div>
 
@@ -1611,7 +1606,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                               className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer shadow-xs transition"
                             >
                               <Check className="w-3.5 h-3.5" />
-                              <span>Đồng Ý Kiểm Định</span>
+                              <span>Đồng ý kiểm định</span>
                             </button>
                             <button
                               onClick={() => handleRespondInspectionProposal(prop.proposalId || msg.id, 'REJECTED')}
@@ -1699,164 +1694,162 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     )}
 
                     <div
-                      className={`rounded-2xl p-3 text-xs leading-relaxed transition-all ${
-                        msg.isUnsent
-                          ? 'bg-[#FFFFFF] text-gray-400 italic border border-gray-200 shadow-none'
-                          : msg.isFailed
+                      className={`rounded-2xl p-3 text-xs leading-relaxed transition-all ${msg.isUnsent
+                        ? 'bg-[#FFFFFF] text-gray-400 italic border border-gray-200 shadow-none'
+                        : msg.isFailed
                           ? 'bg-[#24263e]/90 text-white rounded-br-xs font-medium border-2 border-rose-500 shadow-xs'
                           : isMe
-                          ? 'bg-[#24263e] text-white rounded-br-xs font-medium shadow-2xs'
-                          : 'bg-[#FFFFFF] text-[#24263e] border border-gray-200 shadow-2xs rounded-bl-xs'
-                      }`}
+                            ? 'bg-[#24263e] text-white rounded-br-xs font-medium shadow-2xs'
+                            : 'bg-[#FFFFFF] text-[#24263e] border border-gray-200 shadow-2xs rounded-bl-xs'
+                        }`}
                     >
-                    {msg.isUnsent ? (
-                      <p className="flex items-center gap-1.5 text-gray-400 font-normal not-italic">
-                        <RotateCcw className="w-3 h-3 text-gray-400 shrink-0" />
-                        <span className="italic">
-                          {lang === 'vi' ? 'Tin nhắn đã được thu hồi' : 'Message was unsent'}
-                        </span>
-                      </p>
-                    ) : (
-                      <>
-                        <p>{msg.text}</p>
+                      {msg.isUnsent ? (
+                        <p className="flex items-center gap-1.5 text-gray-400 font-normal not-italic">
+                          <RotateCcw className="w-3 h-3 text-gray-400 shrink-0" />
+                          <span className="italic">
+                            {lang === 'vi' ? 'Tin nhắn đã được thu hồi' : 'Message was unsent'}
+                          </span>
+                        </p>
+                      ) : (
+                        <>
+                          <p>{msg.text}</p>
 
-                        {/* Interactive Legacy Offer Card if present */}
-                        {msg.isOffer && msg.offerAmountVnd && (
-                          <div
-                            className={`mt-2.5 p-3 rounded-xl border ${
-                              isMe
+                          {/* Interactive Legacy Offer Card if present */}
+                          {msg.isOffer && msg.offerAmountVnd && (
+                            <div
+                              className={`mt-2.5 p-3 rounded-xl border ${isMe
                                 ? 'bg-white/10 border-white/20 text-white'
                                 : 'bg-[#faf8f5] border-gray-200 text-[#24263e]'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between text-[10px] uppercase font-bold tracking-wider opacity-85">
-                              <span>{lang === 'vi' ? 'Đề xuất giá thỏa thuận:' : 'Official Counter Offer:'}</span>
-                              <span className="text-emerald-400 font-black">
-                                Giảm {formatVND(listing.priceVnd - msg.offerAmountVnd)}
-                              </span>
-                            </div>
+                                }`}
+                            >
+                              <div className="flex items-center justify-between text-[10px] uppercase font-bold tracking-wider opacity-85">
+                                <span>{lang === 'vi' ? 'Đề xuất giá thỏa thuận:' : 'Official Counter Offer:'}</span>
+                                <span className="text-emerald-400 font-black">
+                                  Giảm {formatVND(listing.priceVnd - msg.offerAmountVnd)}
+                                </span>
+                              </div>
 
-                            <div className="text-lg font-black mt-1 flex items-baseline gap-2">
-                              <span className={isMe ? 'text-white' : 'text-[#c34c36]'}>
-                                {formatVND(msg.offerAmountVnd)}
-                              </span>
-                              <span className="text-xs line-through opacity-60">
-                                {formatVND(listing.priceVnd)}
-                              </span>
-                            </div>
+                              <div className="text-lg font-black mt-1 flex items-baseline gap-2">
+                                <span className={isMe ? 'text-white' : 'text-[#c34c36]'}>
+                                  {formatVND(msg.offerAmountVnd)}
+                                </span>
+                                <span className="text-xs line-through opacity-60">
+                                  {formatVND(listing.priceVnd)}
+                                </span>
+                              </div>
 
-                            <div className="mt-3 pt-2 border-t border-white/10 flex flex-col gap-2">
-                              {msg.offerStatus === 'pending' ? (
-                                isSeller ? (
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      onClick={() => msg.negotiationId && handleRespondOffer(msg.negotiationId, 'accepted')}
-                                      className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition shadow-xs"
-                                    >
-                                      <Check className="w-3.5 h-3.5" />
-                                      <span>{lang === 'vi' ? 'Chấp nhận giá' : 'Accept Offer'}</span>
-                                    </button>
-                                    <button
-                                      onClick={() => msg.negotiationId && handleRespondOffer(msg.negotiationId, 'declined')}
-                                      className="flex-1 py-1.5 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition shadow-xs"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                      <span>{lang === 'vi' ? 'Từ chối' : 'Decline'}</span>
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="space-y-1.5">
-                                    <div className="text-[10px] opacity-80 flex items-center gap-1">
-                                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                              <div className="mt-3 pt-2 border-t border-white/10 flex flex-col gap-2">
+                                {msg.offerStatus === 'pending' ? (
+                                  isSeller ? (
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={() => msg.negotiationId && handleRespondOffer(msg.negotiationId, 'accepted')}
+                                        className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition shadow-xs"
+                                      >
+                                        <Check className="w-3.5 h-3.5" />
+                                        <span>{lang === 'vi' ? 'Chấp nhận giá' : 'Accept Offer'}</span>
+                                      </button>
+                                      <button
+                                        onClick={() => msg.negotiationId && handleRespondOffer(msg.negotiationId, 'declined')}
+                                        className="flex-1 py-1.5 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition shadow-xs"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                        <span>{lang === 'vi' ? 'Từ chối' : 'Decline'}</span>
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-1.5">
+                                      <div className="text-[10px] opacity-80 flex items-center gap-1">
+                                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                                        <span>
+                                          {lang === 'vi'
+                                            ? 'Đang chờ người bán phản hồi...'
+                                            : 'Waiting for seller response...'}
+                                        </span>
+                                      </div>
+                                      {isBuyer && msg.negotiationId && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCancelOffer(msg.negotiationId!)}
+                                          className="w-full py-1 px-2 bg-rose-600/80 hover:bg-rose-700 text-white rounded-lg text-[10px] font-bold cursor-pointer transition flex items-center justify-center gap-1"
+                                        >
+                                          <X className="w-3 h-3" />
+                                          <span>{lang === 'vi' ? 'Hủy yêu cầu thương lượng' : 'Cancel Offer'}</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  )
+                                ) : msg.offerStatus === 'accepted' ? (
+                                  <div className="space-y-2">
+                                    <div className="text-xs font-bold text-emerald-400 flex items-center gap-1">
+                                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                                       <span>
-                                        {lang === 'vi'
-                                          ? 'Đang chờ người bán phản hồi...'
-                                          : 'Waiting for seller response...'}
+                                        {isMe
+                                          ? (lang === 'vi' ? '✓ Bạn đã chấp thuận mức giá này!' : '✓ You accepted this offer!')
+                                          : (lang === 'vi' ? (isBuyer ? '✓ Người bán đã chấp thuận mức giá này!' : '✓ Người mua đã chấp thuận!') : '✓ Accepted!')}
                                       </span>
                                     </div>
-                                    {isBuyer && msg.negotiationId && (
+
+                                    {isBuyer && (
                                       <button
                                         type="button"
-                                        onClick={() => handleCancelOffer(msg.negotiationId!)}
-                                        className="w-full py-1 px-2 bg-rose-600/80 hover:bg-rose-700 text-white rounded-lg text-[10px] font-bold cursor-pointer transition flex items-center justify-center gap-1"
+                                        onClick={() => handleBuyNow(msg.offerAmountVnd, msg.negotiationId)}
+                                        className="w-full py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:opacity-95 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-transform hover:scale-102"
                                       >
-                                        <X className="w-3 h-3" />
-                                        <span>{lang === 'vi' ? 'Hủy yêu cầu thương lượng' : 'Cancel Offer'}</span>
+                                        <ShoppingBag className="w-4 h-4" />
+                                        <span>
+                                          {lang === 'vi'
+                                            ? `Mua Hàng Ngay Với Giá ${formatVND(msg.offerAmountVnd)}`
+                                            : `Buy Now at ${formatVND(msg.offerAmountVnd)}`}
+                                        </span>
                                       </button>
                                     )}
                                   </div>
-                                )
-                              ) : msg.offerStatus === 'accepted' ? (
-                                <div className="space-y-2">
-                                  <div className="text-xs font-bold text-emerald-400 flex items-center gap-1">
-                                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                                    <span>
-                                      {isMe
-                                        ? (lang === 'vi' ? '✓ Bạn đã chấp thuận mức giá này!' : '✓ You accepted this offer!')
-                                        : (lang === 'vi' ? (isBuyer ? '✓ Người bán đã chấp thuận mức giá này!' : '✓ Người mua đã chấp thuận!') : '✓ Accepted!')}
-                                    </span>
+                                ) : (
+                                  <div className="text-xs font-bold text-rose-400 flex items-center gap-1">
+                                    <X className="w-4 h-4" />
+                                    <span>{lang === 'vi' ? '✕ Đã từ chối mức giá này' : '✕ Offer declined'}</span>
                                   </div>
-
-                                  {isBuyer && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleBuyNow(msg.offerAmountVnd, msg.negotiationId)}
-                                      className="w-full py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:opacity-95 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-transform hover:scale-102"
-                                    >
-                                      <ShoppingBag className="w-4 h-4" />
-                                      <span>
-                                        {lang === 'vi'
-                                          ? `Mua Hàng Ngay Với Giá ${formatVND(msg.offerAmountVnd)}`
-                                          : `Buy Now at ${formatVND(msg.offerAmountVnd)}`}
-                                      </span>
-                                    </button>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="text-xs font-bold text-rose-400 flex items-center gap-1">
-                                  <X className="w-4 h-4" />
-                                  <span>{lang === 'vi' ? '✕ Đã từ chối mức giá này' : '✕ Offer declined'}</span>
-                                </div>
-                              )}
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          )}
 
-                        {msg.safetyWarning && (
-                          <div className="mt-1.5 text-[10px] text-rose-700 bg-rose-50 p-2 rounded-xl flex items-center gap-1.5 border border-rose-200">
-                            <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                            <span>{msg.safetyWarning}</span>
-                          </div>
-                        )}
-                      </>
-                    )}
+                          {msg.safetyWarning && (
+                            <div className="mt-1.5 text-[10px] text-rose-700 bg-rose-50 p-2 rounded-xl flex items-center gap-1.5 border border-rose-200">
+                              <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                              <span>{msg.safetyWarning}</span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Thông báo chi tiết ngay dưới tin nhắn không gửi được */}
+                  {msg.isFailed && (
+                    <div className="flex items-center gap-1.5 mt-1 px-1 text-[11px] text-rose-600 font-medium animate-fadeIn">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                      <span>{lang === 'vi' ? 'Tin nhắn chưa được gửi' : 'Not delivered'}</span>
+                      <span>•</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRetrySendMessage(msg)}
+                        className="underline hover:text-rose-700 font-bold cursor-pointer"
+                      >
+                        {lang === 'vi' ? 'Thử lại' : 'Retry'}
+                      </button>
+                      <span>•</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFailedMessage(msg.id)}
+                        className="text-slate-400 hover:text-slate-600 cursor-pointer text-[10px]"
+                      >
+                        {lang === 'vi' ? 'Xóa' : 'Delete'}
+                      </button>
+                    </div>
+                  )}
                 </div>
-
-                {/* Thông báo chi tiết ngay dưới tin nhắn không gửi được */}
-                {msg.isFailed && (
-                  <div className="flex items-center gap-1.5 mt-1 px-1 text-[11px] text-rose-600 font-medium animate-fadeIn">
-                    <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                    <span>{lang === 'vi' ? 'Tin nhắn chưa được gửi' : 'Not delivered'}</span>
-                    <span>•</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRetrySendMessage(msg)}
-                      className="underline hover:text-rose-700 font-bold cursor-pointer"
-                    >
-                      {lang === 'vi' ? 'Thử lại' : 'Retry'}
-                    </button>
-                    <span>•</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveFailedMessage(msg.id)}
-                      className="text-slate-400 hover:text-slate-600 cursor-pointer text-[10px]"
-                    >
-                      {lang === 'vi' ? 'Xóa' : 'Delete'}
-                    </button>
-                  </div>
-                )}
-              </div>
               );
             })
           )}
@@ -1865,9 +1858,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
         {/* Quick Offer Popup */}
         {showOfferForm && canShowOfferButton && (
-          <div className={`p-3.5 border-t flex items-center gap-3 animate-fadeIn shrink-0 ${
-            isSeller ? 'bg-blue-50/30 border-blue-100' : 'bg-[#FFFFFF] border-gray-200'
-          }`}>
+          <div className={`p-3.5 border-t flex items-center gap-3 animate-fadeIn shrink-0 ${isSeller ? 'bg-blue-50/30 border-blue-100' : 'bg-[#FFFFFF] border-gray-200'
+            }`}>
             <div className="flex-1">
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-bold text-slate-700">
@@ -1908,11 +1900,10 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                       handleSendOffer();
                     }
                   }}
-                  className={`w-full px-3 py-1.5 pr-8 border rounded-xl text-xs font-black text-[#24263e] focus:outline-none ${
-                    isSeller
-                      ? 'bg-white border-blue-200 focus:border-blue-500'
-                      : 'bg-[#faf8f5] border-gray-200 focus:border-[#c34c36]'
-                  }`}
+                  className={`w-full px-3 py-1.5 pr-8 border rounded-xl text-xs font-black text-[#24263e] focus:outline-none ${isSeller
+                    ? 'bg-white border-blue-200 focus:border-blue-500'
+                    : 'bg-[#faf8f5] border-gray-200 focus:border-[#c34c36]'
+                    }`}
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">
                   đ
@@ -1928,11 +1919,10 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             <button
               onClick={handleSendOffer}
               disabled={negotiationLoading}
-              className={`px-4 py-2 text-white rounded-xl text-xs font-bold mt-4 cursor-pointer transition shadow-xs flex items-center gap-1 ${
-                isSeller
-                  ? 'bg-gradient-to-r from-blue-600 to-indigo-700 hover:opacity-95'
-                  : 'bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95'
-              }`}
+              className={`px-4 py-2 text-white rounded-xl text-xs font-bold mt-4 cursor-pointer transition shadow-xs flex items-center gap-1 ${isSeller
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-700 hover:opacity-95'
+                : 'bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95'
+                }`}
             >
               {negotiationLoading ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1971,208 +1961,199 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             {/* Quick Inspection Proposal Popup */}
             {showInspectionForm && (
               <div className="p-4 border-t space-y-3 animate-fadeIn shrink-0 bg-white border-blue-200 shadow-sm text-xs">
-            <div className="flex items-center justify-between">
-              <span className="font-black text-blue-900 uppercase tracking-tight flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-blue-600" />
-                <span>Thỏa Thuận Phương Án Kiểm Định</span>
-              </span>
-              <button
-                onClick={() => setShowInspectionForm(false)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-black text-blue-900 uppercase tracking-tight flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-blue-600" />
+                    <span>Thỏa Thuận Phương Án Kiểm Định</span>
+                  </span>
+                  <button
+                    onClick={() => setShowInspectionForm(false)}
+                    className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
 
-            {/* Step 1: Inspection Location Method */}
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
-                1. Chọn hình thức kiểm định:
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInspectionMethod('AT_CENTER');
-                    setInspectionFeeAmount(150000);
-                  }}
-                  className={`p-2.5 rounded-xl border text-left cursor-pointer transition ${
-                    inspectionMethod === 'AT_CENTER'
-                      ? 'bg-blue-50 border-blue-600 text-blue-900 font-bold ring-1 ring-blue-600/30'
-                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <Building2 className="w-4 h-4 text-blue-600" />
-                    <span>Tại Hub SecondLife</span>
+                {/* Step 1: Inspection Location Method */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                    1. Chọn hình thức kiểm định:
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInspectionMethod('AT_CENTER');
+                        setInspectionFeeAmount(150000);
+                      }}
+                      className={`p-2.5 rounded-xl border text-left cursor-pointer transition ${inspectionMethod === 'AT_CENTER'
+                        ? 'bg-blue-50 border-blue-600 text-blue-900 font-bold ring-1 ring-blue-600/30'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Building2 className="w-4 h-4 text-blue-600" />
+                        <span>Tại Hub SecondLife</span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 mt-1">Phí chuẩn: 150.000 ₫</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInspectionMethod('AT_HOME');
+                        setInspectionFeeAmount(250000);
+                      }}
+                      className={`p-2.5 rounded-xl border text-left cursor-pointer transition ${inspectionMethod === 'AT_HOME'
+                        ? 'bg-blue-50 border-blue-600 text-blue-900 font-bold ring-1 ring-blue-600/30'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Home className="w-4 h-4 text-orange-600" />
+                        <span>KTV Đến Tận Nhà</span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 mt-1">Phí chuẩn: 250.000 ₫</div>
+                    </button>
                   </div>
-                  <div className="text-[10px] text-slate-500 mt-1">Phí chuẩn: 150.000 ₫</div>
-                </button>
+                </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInspectionMethod('AT_HOME');
-                    setInspectionFeeAmount(250000);
-                  }}
-                  className={`p-2.5 rounded-xl border text-left cursor-pointer transition ${
-                    inspectionMethod === 'AT_HOME'
-                      ? 'bg-blue-50 border-blue-600 text-blue-900 font-bold ring-1 ring-blue-600/30'
-                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <Home className="w-4 h-4 text-orange-600" />
-                    <span>KTV Đến Tận Nhà</span>
+                {/* Step 2: Fee Split */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                    2. Đề xuất phương án chia phí:
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setInspectionFeeSplit('SPLIT_50_50')}
+                      className={`py-2 px-1 rounded-xl border cursor-pointer text-[11px] transition ${inspectionFeeSplit === 'SPLIT_50_50'
+                        ? 'bg-amber-50 border-amber-500 text-amber-900 font-bold ring-1 ring-amber-500/30'
+                        : 'bg-slate-50 border-slate-200 text-slate-700'
+                        }`}
+                    >
+                      <div>Chia đôi 50/50</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">Mỗi bên {formatVND(Math.round(inspectionFeeAmount / 2))}</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setInspectionFeeSplit('BUYER_100')}
+                      className={`py-2 px-1 rounded-xl border cursor-pointer text-[11px] transition ${inspectionFeeSplit === 'BUYER_100'
+                        ? 'bg-amber-50 border-amber-500 text-amber-900 font-bold ring-1 ring-amber-500/30'
+                        : 'bg-slate-50 border-slate-200 text-slate-700'
+                        }`}
+                    >
+                      <div>Người mua 100%</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">{formatVND(inspectionFeeAmount)}</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setInspectionFeeSplit('SELLER_100')}
+                      className={`py-2 px-1 rounded-xl border cursor-pointer text-[11px] transition ${inspectionFeeSplit === 'SELLER_100'
+                        ? 'bg-amber-50 border-amber-500 text-amber-900 font-bold ring-1 ring-amber-500/30'
+                        : 'bg-slate-50 border-slate-200 text-slate-700'
+                        }`}
+                    >
+                      <div>Người bán 100%</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">{formatVND(inspectionFeeAmount)}</div>
+                    </button>
                   </div>
-                  <div className="text-[10px] text-slate-500 mt-1">Phí chuẩn: 250.000 ₫</div>
-                </button>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowInspectionForm(false)}
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer font-bold"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSendInspectionProposal}
+                    disabled={inspectionLoading}
+                    className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold cursor-pointer shadow-xs flex items-center gap-1.5 disabled:opacity-60"
+                  >
+                    {inspectionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>Gửi Đề Xuất Kiểm Định</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Step 2: Fee Split */}
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
-                2. Đề xuất phương án chia phí:
-              </label>
-              <div className="grid grid-cols-3 gap-1.5 text-center">
+            <div className={`p-3 border-t flex items-center gap-2 shrink-0 ${isSeller ? 'bg-slate-50 border-slate-200' : 'bg-[#FFFFFF] border-gray-200'
+              }`}>
+              {canShowOfferButton && (
                 <button
-                  type="button"
-                  onClick={() => setInspectionFeeSplit('SPLIT_50_50')}
-                  className={`py-2 px-1 rounded-xl border cursor-pointer text-[11px] transition ${
-                    inspectionFeeSplit === 'SPLIT_50_50'
-                      ? 'bg-amber-50 border-amber-500 text-amber-900 font-bold ring-1 ring-amber-500/30'
-                      : 'bg-slate-50 border-slate-200 text-slate-700'
-                  }`}
+                  onClick={() => {
+                    if (!isSeller && maxRejectedPrice > 0 && offerInput <= maxRejectedPrice) {
+                      setOfferInput(Math.min(listing.priceVnd - 50000, maxRejectedPrice + 50000));
+                    }
+                    setShowOfferForm(!showOfferForm);
+                    setShowInspectionForm(false);
+                    setOfferError(null);
+                  }}
+                  className={`px-3 py-2 text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1 ${isSeller
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95'
+                    : 'bg-gradient-to-r from-[#c34c36] to-[#e36a54] hover:opacity-95'
+                    }`}
                 >
-                  <div>Chia đôi 50/50</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Mỗi bên {formatVND(Math.round(inspectionFeeAmount / 2))}</div>
+                  <span>💰</span>
+                  <span>
+                    {lang === 'vi'
+                      ? isSeller
+                        ? 'Đề xuất giá'
+                        : maxRejectedPrice > 0
+                          ? 'Trả giá lại'
+                          : 'Trả giá'
+                      : isSeller
+                        ? 'Propose Price'
+                        : 'Offer'}
+                  </span>
                 </button>
+              )}
 
-                <button
-                  type="button"
-                  onClick={() => setInspectionFeeSplit('BUYER_100')}
-                  className={`py-2 px-1 rounded-xl border cursor-pointer text-[11px] transition ${
-                    inspectionFeeSplit === 'BUYER_100'
-                      ? 'bg-amber-50 border-amber-500 text-amber-900 font-bold ring-1 ring-amber-500/30'
-                      : 'bg-slate-50 border-slate-200 text-slate-700'
-                  }`}
-                >
-                  <div>Người mua 100%</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">{formatVND(inspectionFeeAmount)}</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setInspectionFeeSplit('SELLER_100')}
-                  className={`py-2 px-1 rounded-xl border cursor-pointer text-[11px] transition ${
-                    inspectionFeeSplit === 'SELLER_100'
-                      ? 'bg-amber-50 border-amber-500 text-amber-900 font-bold ring-1 ring-amber-500/30'
-                      : 'bg-slate-50 border-slate-200 text-slate-700'
-                  }`}
-                >
-                  <div>Người bán 100%</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">{formatVND(inspectionFeeAmount)}</div>
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              {/* Inspection Proposal Button */}
               <button
-                type="button"
-                onClick={() => setShowInspectionForm(false)}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer font-bold"
+                onClick={() => {
+                  setShowInspectionForm(!showInspectionForm);
+                  setShowOfferForm(false);
+                }}
+                className="px-3 py-2 text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:opacity-95"
+                title="Thương lượng hình thức kiểm định & chia phí"
               >
-                Hủy
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{lang === 'vi' ? 'Đề Xuất Kiểm Định' : 'Inspection'}</span>
+                <span className="sm:hidden">Kiểm Định</span>
               </button>
-              <button
-                type="button"
-                onClick={handleSendInspectionProposal}
-                disabled={inspectionLoading}
-                className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold cursor-pointer shadow-xs flex items-center gap-1.5 disabled:opacity-60"
-              >
-                {inspectionLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Gửi Đề Xuất Kiểm Định</span>
-              </button>
-            </div>
-          </div>
-        )}
 
-        <div className={`p-3 border-t flex items-center gap-2 shrink-0 ${
-          isSeller ? 'bg-slate-50 border-slate-200' : 'bg-[#FFFFFF] border-gray-200'
-        }`}>
-          {canShowOfferButton && (
-            <button
-              onClick={() => {
-                if (!isSeller && maxRejectedPrice > 0 && offerInput <= maxRejectedPrice) {
-                  setOfferInput(Math.min(listing.priceVnd - 50000, maxRejectedPrice + 50000));
+              <input
+                type="text"
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                placeholder={
+                  lang === 'vi'
+                    ? (isSeller ? 'Tư vấn cho người mua...' : 'Nhắn tin thương lượng (an toàn 100% qua Escrow)...')
+                    : 'Chat & negotiate safely via Escrow...'
                 }
-                setShowOfferForm(!showOfferForm);
-                setShowInspectionForm(false);
-                setOfferError(null);
-              }}
-              className={`px-3 py-2 text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1 ${
-                isSeller
-                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95'
-                  : 'bg-gradient-to-r from-[#c34c36] to-[#e36a54] hover:opacity-95'
-              }`}
-            >
-              <span>💰</span>
-              <span>
-                {lang === 'vi'
-                  ? isSeller
-                    ? 'Đề xuất giá'
-                    : maxRejectedPrice > 0
-                    ? 'Trả giá lại'
-                    : 'Trả giá'
-                  : isSeller
-                  ? 'Propose Price'
-                  : 'Offer'}
-              </span>
-            </button>
-          )}
+                className={`flex-1 px-3.5 py-2 border rounded-xl text-xs text-[#24263e] focus:outline-none ${isSeller
+                  ? 'bg-white border-slate-200 focus:border-blue-500'
+                  : 'bg-[#faf8f5] border-gray-200 focus:border-[#c34c36]'
+                  }`}
+              />
 
-          {/* Inspection Proposal Button */}
-          <button
-            onClick={() => {
-              setShowInspectionForm(!showInspectionForm);
-              setShowOfferForm(false);
-            }}
-            className="px-3 py-2 text-white rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:opacity-95"
-            title="Thương lượng hình thức kiểm định & chia phí"
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{lang === 'vi' ? 'Đề Xuất Kiểm Định' : 'Inspection'}</span>
-            <span className="sm:hidden">Kiểm Định</span>
-          </button>
-
-          <input
-            type="text"
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-            placeholder={
-              lang === 'vi'
-                ? (isSeller ? 'Tư vấn cho người mua...' : 'Nhắn tin thương lượng (an toàn 100% qua Escrow)...')
-                : 'Chat & negotiate safely via Escrow...'
-            }
-            className={`flex-1 px-3.5 py-2 border rounded-xl text-xs text-[#24263e] focus:outline-none ${
-              isSeller 
-                ? 'bg-white border-slate-200 focus:border-blue-500' 
-                : 'bg-[#faf8f5] border-gray-200 focus:border-[#c34c36]'
-            }`}
-          />
-
-          <button
-            onClick={() => handleSendMessage()}
-            disabled={isSending}
-            className={`p-2.5 text-white rounded-xl cursor-pointer transition shadow-xs flex items-center justify-center ${
-              isSeller ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#24263e] hover:bg-black'
-            }`}
-          >
-            {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          </button>
-        </div>
+              <button
+                onClick={() => handleSendMessage()}
+                disabled={isSending}
+                className={`p-2.5 text-white rounded-xl cursor-pointer transition shadow-xs flex items-center justify-center ${isSeller ? 'bg-blue-600 hover:bg-blue-700' : 'bg-[#24263e] hover:bg-black'
+                  }`}
+              >
+                {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              </button>
+            </div>
           </>
         )}
       </div>

@@ -262,6 +262,12 @@ export interface EscrowOrder {
   handoverDeadline?: string | null;
   appointmentScheduledAt?: string | null;
   appointmentNote?: string | null;
+  counterScheduledAt?: string | null;
+  counterShift?: 'MORNING' | 'AFTERNOON' | string | null;
+  counterNote?: string | null;
+  appointmentStatus?: string | null;
+  appointmentRejectionReason?: string | null;
+  inspectionOrderId?: string | null;
   paymentMethod?: 'WALLET' | 'BANK_TRANSFER' | string;
   paymentExpiresAt?: string | null;
   bankPaymentDetails?: any;

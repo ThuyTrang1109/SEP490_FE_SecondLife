@@ -2904,10 +2904,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       } catch (e: any) {
         if (e?.status === 409 || e?.message?.includes('không còn ở trạng thái cho phép thao tác')) {
           setCounterError('Lịch hẹn hiện không còn ở trạng thái cho phép gửi đề xuất mới (đang chờ người bán phản hồi).');
-          setIsSubmittingCounter(false);
-          return;
+        } else {
+          console.warn('Backend counter appointment fallback:', e);
         }
-        console.warn('Backend counter appointment fallback:', e);
       }
 
       let prevScheduledAt = reviewApptOrder.appointmentScheduledAt;

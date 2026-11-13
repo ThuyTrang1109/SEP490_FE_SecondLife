@@ -672,7 +672,28 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     if (detailIsInspection) {
       inspectorService.getOrder(detailOrderId)
         .then((dto) => {
-          if (active && dto) setDetailInspectionDto(dto);
+          if (active && dto) {
+            setDetailInspectionDto(dto);
+            if (dto.counterScheduledAt || dto.appointmentScheduledAt) {
+              const isCounter = Boolean(dto.counterScheduledAt || dto.appointmentStatus === 'COUNTERED_BY_CENTER' || dto.status === 'WAITING_SELLER_APPROVAL');
+              const apptRecord = {
+                scheduledAt: dto.appointmentScheduledAt,
+                note: dto.appointmentNote || '',
+                shift: dto.counterShift || 'MORNING',
+                status: isCounter ? 'COUNTERED_BY_CENTER' : (dto.appointmentStatus || (dto.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
+                counterScheduledAt: dto.counterScheduledAt,
+                counterShift: dto.counterShift,
+                counterNote: dto.counterNote,
+              };
+              const ids = [dto.id, dto.linkedOrderId, detailOrderId].filter(Boolean) as string[];
+              ids.forEach(id => {
+                try {
+                  localStorage.setItem(`order_appointment_${id}`, JSON.stringify(apptRecord));
+                } catch {}
+              });
+              setApptTick(t => t + 1);
+            }
+          }
         })
         .catch(() => {
           if (active) setDetailInspectionDto(null);
@@ -2259,8 +2280,26 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       };
     }
 
+    if (detailInspectionDto && (detailInspectionDto.id === ord.id || detailInspectionDto.linkedOrderId === ord.id)) {
+      if (detailInspectionDto.counterScheduledAt || detailInspectionDto.appointmentScheduledAt) {
+        const isCounter = Boolean(
+          detailInspectionDto.counterScheduledAt ||
+          detailInspectionDto.appointmentStatus === 'COUNTERED_BY_CENTER' ||
+          detailInspectionDto.status === 'WAITING_SELLER_APPROVAL'
+        );
+        return {
+          scheduledAt: detailInspectionDto.appointmentScheduledAt || apptData?.scheduledAt,
+          note: detailInspectionDto.appointmentNote || apptData?.note || '',
+          status: isCounter ? 'COUNTERED_BY_CENTER' : (detailInspectionDto.appointmentStatus || (detailInspectionDto.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
+          counterScheduledAt: detailInspectionDto.counterScheduledAt || apptData?.counterScheduledAt,
+          counterShift: detailInspectionDto.counterShift || apptData?.counterShift,
+          counterNote: detailInspectionDto.counterNote || apptData?.counterNote,
+        };
+      }
+    }
+
     if (apptData) {
-      if (isOrderWaitingSeller || (ord as any).counterScheduledAt) {
+      if (isOrderWaitingSeller || (ord as any).counterScheduledAt || apptData.counterScheduledAt) {
         apptData.status = 'COUNTERED_BY_CENTER';
         if (!apptData.counterScheduledAt && (ord as any).counterScheduledAt) {
           apptData.counterScheduledAt = (ord as any).counterScheduledAt;
@@ -3818,7 +3857,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                               : (lang === 'vi' ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting Appointment Schedule')}
                                 </span>
                               </div>
-                              {savedAppointment?.scheduledAt && (
+                              {savedAppointment?.scheduledAt && !isOrderCountered && (
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -3859,7 +3898,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                   {assignedInspector.inspectorPhone ? ` • 📞 ${assignedInspector.inspectorPhone}` : ''}
                                 </span>
                               </div>
-                            ) : savedAppointment?.scheduledAt ? (
+                            ) : savedAppointment?.scheduledAt && !isOrderCountered ? (
                               <div className="flex items-center gap-2 text-xs font-bold text-blue-900 bg-blue-50/90 px-3 py-1.5 rounded-xl border border-blue-200">
                                 <Clock className="w-4 h-4 text-blue-600 shrink-0 animate-spin" />
                                 <span>
@@ -3958,12 +3997,17 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                     <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                                     <span>Đã gửi đề xuất lịch hẹn. Đang chờ Trung tâm kiểm định duyệt. Mã tiếp nhận KTV sẽ được tạo ngay khi KTV được phân công.</span>
                                   </div>
-                                ) : (
-                                  <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-900 flex items-center gap-2 mt-1">
-                                    <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                    <span>Lịch hẹn đã được xác nhận! Trung tâm SecondLife đang phân công Kỹ thuật viên phụ trách.</span>
-                                  </div>
-                                )}
+                                ) : savedAppointment.status === 'CONFIRMED' && (savedAppointment.confirmedBy === 'CENTER' || assignedInspector) ? (
+                                   <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-900 flex items-center gap-2 mt-1">
+                                     <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                     <span>Lịch hẹn đã được xác nhận! Trung tâm SecondLife đang phân công Kỹ thuật viên phụ trách.</span>
+                                   </div>
+                                 ) : (
+                                   <div className="p-2 rounded-lg bg-blue-50 border border-blue-200 text-[11px] text-blue-900 flex items-center gap-2 mt-1">
+                                     <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                     <span>Đã gửi đề xuất lịch hẹn. Đang chờ Trung tâm kiểm định duyệt. Mã tiếp nhận KTV sẽ được tạo ngay khi KTV được phân công.</span>
+                                   </div>
+                                 )}
                               </div>
                             ) : (
                               <div className="p-2.5 rounded-lg bg-amber-100/60 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">

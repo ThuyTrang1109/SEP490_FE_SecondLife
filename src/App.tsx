@@ -1448,13 +1448,100 @@ export default function App() {
         }
       });
 
-      // Deduplicate by order id
+      // Index all inspection orders by id and linkedOrderId to merge with escrow orders
+      const allInspDtos = [...rawInspBuyerItems, ...rawInspSellerItems, ...rawInspMyItems];
+      const inspByLinkedId = new Map<string, any>();
+      const inspById = new Map<string, any>();
+
+      allInspDtos.forEach((insp: any) => {
+        if (!insp) return;
+        if (insp.id) inspById.set(insp.id, insp);
+        if (insp.linkedOrderId) inspByLinkedId.set(insp.linkedOrderId, insp);
+
+        // Đồng bộ realtime appointment từ BE vào localStorage
+        if (insp.counterScheduledAt || insp.appointmentScheduledAt) {
+          const isCounter = Boolean(insp.counterScheduledAt || insp.appointmentStatus === 'COUNTERED_BY_CENTER' || insp.status === 'WAITING_SELLER_APPROVAL');
+          const apptStatus = isCounter
+            ? 'COUNTERED_BY_CENTER'
+            : (insp.appointmentStatus || (insp.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION'));
+          const apptRecord = {
+            scheduledAt: insp.appointmentScheduledAt,
+            note: insp.appointmentNote || '',
+            shift: insp.counterShift || 'MORNING',
+            status: apptStatus,
+            counterScheduledAt: insp.counterScheduledAt,
+            counterShift: insp.counterShift,
+            counterNote: insp.counterNote,
+          };
+          const targetIds = [insp.id, insp.linkedOrderId].filter(Boolean);
+          targetIds.forEach((tid) => {
+            try {
+              localStorage.setItem(`order_appointment_${tid}`, JSON.stringify(apptRecord));
+            } catch {}
+          });
+        }
+      });
+
+      // Deduplicate and merge by order id
       const orderMap = new Map<string, any>();
-      rawBuyerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: false }); });
-      rawSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: false }); });
-      rawInspBuyerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
-      rawInspSellerItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
-      rawInspMyItems.forEach((item: any) => { if (item?.id) orderMap.set(item.id, { ...item, __isInspection: true }); });
+      rawBuyerItems.forEach((item: any) => {
+        if (!item?.id) return;
+        const matchedInsp = inspByLinkedId.get(item.id) || inspById.get(item.id);
+        const merged = matchedInsp ? {
+          ...item,
+          ...matchedInsp,
+          id: item.id,
+          inspectionOrderId: matchedInsp.id,
+          orderType: matchedInsp.orderType || item.orderType,
+          inspectionMethod: matchedInsp.orderType || item.inspectionMethod || 'AT_HOME',
+          appointmentScheduledAt: matchedInsp.appointmentScheduledAt || item.appointmentScheduledAt,
+          appointmentNote: matchedInsp.appointmentNote || item.appointmentNote,
+          appointmentStatus: matchedInsp.appointmentStatus || item.appointmentStatus,
+          counterScheduledAt: matchedInsp.counterScheduledAt || item.counterScheduledAt,
+          counterShift: matchedInsp.counterShift || item.counterShift,
+          counterNote: matchedInsp.counterNote || item.counterNote,
+          appointmentRejectionReason: matchedInsp.appointmentRejectionReason || item.appointmentRejectionReason,
+          inspectorId: matchedInsp.inspectorId || item.inspectorId,
+          inspectorName: matchedInsp.inspectorName || item.inspectorName,
+          status: matchedInsp.status === 'WAITING_SELLER_APPROVAL' ? 'WAITING_SELLER_APPROVAL' : item.status,
+          __isInspection: true,
+        } : { ...item, __isInspection: Boolean(item.hasInspectionService || item.inspectionFeeVnd) };
+        orderMap.set(item.id, merged);
+      });
+
+      rawSellerItems.forEach((item: any) => {
+        if (!item?.id) return;
+        const matchedInsp = inspByLinkedId.get(item.id) || inspById.get(item.id);
+        const merged = matchedInsp ? {
+          ...item,
+          ...matchedInsp,
+          id: item.id,
+          inspectionOrderId: matchedInsp.id,
+          orderType: matchedInsp.orderType || item.orderType,
+          inspectionMethod: matchedInsp.orderType || item.inspectionMethod || 'AT_HOME',
+          appointmentScheduledAt: matchedInsp.appointmentScheduledAt || item.appointmentScheduledAt,
+          appointmentNote: matchedInsp.appointmentNote || item.appointmentNote,
+          appointmentStatus: matchedInsp.appointmentStatus || item.appointmentStatus,
+          counterScheduledAt: matchedInsp.counterScheduledAt || item.counterScheduledAt,
+          counterShift: matchedInsp.counterShift || item.counterShift,
+          counterNote: matchedInsp.counterNote || item.counterNote,
+          appointmentRejectionReason: matchedInsp.appointmentRejectionReason || item.appointmentRejectionReason,
+          inspectorId: matchedInsp.inspectorId || item.inspectorId,
+          inspectorName: matchedInsp.inspectorName || item.inspectorName,
+          status: matchedInsp.status === 'WAITING_SELLER_APPROVAL' ? 'WAITING_SELLER_APPROVAL' : item.status,
+          __isInspection: true,
+        } : { ...item, __isInspection: Boolean(item.hasInspectionService || item.inspectionFeeVnd) };
+        orderMap.set(item.id, merged);
+      });
+
+      // Thêm các đơn kiểm định độc lập chưa có trong orderMap
+      allInspDtos.forEach((insp: any) => {
+        if (!insp?.id) return;
+        if (insp.linkedOrderId && orderMap.has(insp.linkedOrderId)) return;
+        if (!orderMap.has(insp.id)) {
+          orderMap.set(insp.id, { ...insp, __isInspection: true });
+        }
+      });
 
       // Nạp thêm các đơn kiểm định cục bộ từ my_seller_inspection_orders và recent_placed_orders
       try {
@@ -1878,6 +1965,12 @@ export default function App() {
             handoverDeadline: (bOrd as any).handoverDeadline || null,
             appointmentScheduledAt: bOrd.appointmentScheduledAt || bOrd.scheduledAt || null,
             appointmentNote: bOrd.appointmentNote || bOrd.note || null,
+            counterScheduledAt: bOrd.counterScheduledAt || (bOrd as any).counter_scheduled_at || rawInspOrder.counterScheduledAt || null,
+            counterShift: bOrd.counterShift || (bOrd as any).counter_shift || rawInspOrder.counterShift || null,
+            counterNote: bOrd.counterNote || (bOrd as any).counter_note || rawInspOrder.counterNote || null,
+            appointmentStatus: bOrd.appointmentStatus || (bOrd as any).appointment_status || rawInspOrder.appointmentStatus || null,
+            appointmentRejectionReason: bOrd.appointmentRejectionReason || rawInspOrder.appointmentRejectionReason || null,
+            inspectionOrderId: bOrd.inspectionOrderId || (bOrd as any).inspectionOrderId || rawInspOrder.id || (bOrd.__isInspection ? bOrd.id : null),
             cancellationReasonCode: isCompletedOrReleased ? null : (bOrd.cancellationReasonCode || (bOrd as any).cancelReasonCode || (() => {
               try {
                 const rawCancel = localStorage.getItem(`order_cancellation_info_${bOrd.id}`);

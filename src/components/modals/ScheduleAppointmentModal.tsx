@@ -659,14 +659,14 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                     {lang === 'vi' ? '3. Khung giờ KTV có mặt *' : '3. Estimated Arrival Time *'}
                   </span>
                   <span className="text-[11px] font-mono font-bold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded">
-                    Đã chọn: {selectedTime}
+                    Đã chọn: {selectedTime?.slice(0, 5) || selectedTime}
                   </span>
                 </div>
 
                 {/* Quick Slots - 8 slots in 4 columns */}
                 <div className="grid grid-cols-4 gap-1.5">
                   {currentSlots.map((slot) => {
-                    const isSelected = selectedTime === slot;
+                    const isSelected = selectedTime?.slice(0, 5) === slot;
                     return (
                       <button
                         key={slot}

@@ -2715,9 +2715,17 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       setReviewMode('COUNTER');
     }
 
+    // Đảm bảo initialTime luôn đúng định dạng HH:mm và nằm trong khung giờ của Ca làm việc
+    const parsedInitialHour = parseInt(initialTime.slice(0, 2), 10);
+    if (initialShift === 'MORNING' && (isNaN(parsedInitialHour) || parsedInitialHour < 8 || parsedInitialHour >= 12)) {
+      initialTime = '09:00';
+    } else if (initialShift === 'AFTERNOON' && (isNaN(parsedInitialHour) || parsedInitialHour < 13 || parsedInitialHour > 17)) {
+      initialTime = '14:00';
+    }
+
     setCounterDate(initialDate);
     setCounterShift(initialShift);
-    setCounterTime(initialTime);
+    setCounterTime(initialTime.slice(0, 5));
     setCounterNote(initialNote || 'KTV khu vực đã kín lịch ca sáng, Trung tâm xin phép đề xuất dời sang ca chiều cùng ngày.');
   };
 
@@ -2880,7 +2888,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       return;
     }
 
-    const scheduledDate = new Date(`${counterDate}T${counterTime}:00`);
+    const timePart = counterTime?.includes(':') ? counterTime.slice(0, 5) : '14:00';
+    const scheduledDate = new Date(`${counterDate}T${timePart}:00`);
     if (isNaN(scheduledDate.getTime())) {
       setCounterError('Ngày giờ đề xuất không hợp lệ');
       return;
@@ -8180,7 +8189,11 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                 type="button"
                                 onClick={() => {
                                   setCounterShift('MORNING');
-                                  setCounterTime('09:00');
+                                  const h = parseInt(counterTime?.slice(0, 2) || '', 10);
+                                  if (isNaN(h) || h < 8 || h >= 12) {
+                                    setCounterTime('09:00');
+                                  }
+                                  setCounterError(null);
                                 }}
                                 className={`p-2 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                                   counterShift === 'MORNING'
@@ -8194,7 +8207,11 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                 type="button"
                                 onClick={() => {
                                   setCounterShift('AFTERNOON');
-                                  setCounterTime('14:00');
+                                  const h = parseInt(counterTime?.slice(0, 2) || '', 10);
+                                  if (isNaN(h) || h < 13 || h > 17) {
+                                    setCounterTime('14:00');
+                                  }
+                                  setCounterError(null);
                                 }}
                                 className={`p-2 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                                   counterShift === 'AFTERNOON'
@@ -8208,26 +8225,57 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                           </div>
 
                           {/* 3. Khung giờ KTV có mặt */}
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-slate-700">3. Khung giờ KTV có mặt: *</label>
-                            <div className="flex flex-wrap gap-1.5">
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <label className="font-bold text-slate-700">3. Khung giờ KTV có mặt: *</label>
+                              <span className="font-mono font-bold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded text-[11px]">
+                                Đã chọn: {counterTime?.slice(0, 5) || (counterShift === 'MORNING' ? '09:00' : '14:00')}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-4 gap-1.5">
                               {(counterShift === 'MORNING'
-                                ? ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00']
-                                : ['13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00']
-                              ).map((slot) => (
-                                <button
-                                  key={slot}
-                                  type="button"
-                                  onClick={() => setCounterTime(slot)}
-                                  className={`py-1 px-2.5 rounded-lg text-xs font-bold transition border cursor-pointer ${
-                                    counterTime === slot
-                                      ? 'bg-amber-600 text-white border-amber-700 shadow-2xs'
-                                      : 'bg-white text-slate-700 border-slate-200 hover:bg-amber-50'
-                                  }`}
-                                >
-                                  {slot}
-                                </button>
-                              ))}
+                                ? ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30']
+                                : ['13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30']
+                              ).map((slot) => {
+                                const isSelected = (counterTime?.slice(0, 5) || '') === slot;
+                                return (
+                                  <button
+                                    key={slot}
+                                    type="button"
+                                    onClick={() => {
+                                      setCounterTime(slot);
+                                      setCounterError(null);
+                                    }}
+                                    className={`py-1.5 px-2 rounded-lg text-xs font-bold transition border cursor-pointer text-center ${
+                                      isSelected
+                                        ? 'bg-amber-600 text-white border-amber-700 shadow-2xs'
+                                        : 'bg-white text-slate-700 border-slate-200 hover:bg-amber-50'
+                                    }`}
+                                  >
+                                    {slot}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {/* Fine-tune custom time picker */}
+                            <div className="pt-0.5 flex items-center justify-between text-[11px]">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-slate-500 font-medium">Hoặc chỉnh giờ chi tiết:</span>
+                                <input
+                                  type="time"
+                                  min={counterShift === 'MORNING' ? '08:00' : '13:00'}
+                                  max={counterShift === 'MORNING' ? '12:00' : '17:00'}
+                                  value={counterTime?.slice(0, 5) || (counterShift === 'MORNING' ? '09:00' : '14:00')}
+                                  onChange={(e) => {
+                                    setCounterTime(e.target.value);
+                                    setCounterError(null);
+                                  }}
+                                  className="px-2 py-0.5 rounded-lg border border-amber-300 text-xs font-mono font-bold text-slate-800 focus:ring-1 focus:ring-amber-500 outline-hidden bg-white cursor-pointer"
+                                />
+                              </div>
+                              <span className="text-[10px] text-slate-400">
+                                ({counterShift === 'MORNING' ? '08:00 - 12:00' : '13:00 - 17:00'})
+                              </span>
                             </div>
                           </div>
 

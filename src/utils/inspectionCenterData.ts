@@ -47,9 +47,13 @@ export function getCenterDispatchStage(
         const raw = localStorage.getItem(`order_appointment_${id}`);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (parsed.scheduledAt && !apptTime) apptTime = parsed.scheduledAt;
+          if (parsed.scheduledAt) apptTime = parsed.scheduledAt;
           if (parsed.status) apptStatus = parsed.status;
-          if (parsed.counterScheduledAt) counterTime = parsed.counterScheduledAt;
+          if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
+            counterTime = undefined;
+          } else if (parsed.counterScheduledAt) {
+            counterTime = parsed.counterScheduledAt;
+          }
           break;
         }
       } catch {}
@@ -58,10 +62,13 @@ export function getCenterDispatchStage(
 
   // Khi lịch hẹn tại nhà đang trong giai đoạn thương lượng (Hub đã gửi đề xuất mới, chờ Seller duyệt):
   const isCountered = order.orderType === 'AT_HOME' && Boolean(
-    apptStatus === 'COUNTERED_BY_CENTER' ||
-    counterTime ||
-    (order.status === 'WAITING_SELLER_APPROVAL' && (apptTime || counterTime)) ||
-    ((order as any).customerStatus === 'WAITING_SELLER_APPROVAL' && (apptTime || counterTime))
+    apptStatus !== 'PENDING_CENTER_CONFIRMATION' &&
+    (
+      apptStatus === 'COUNTERED_BY_CENTER' ||
+      counterTime ||
+      (order.status === 'WAITING_SELLER_APPROVAL' && (apptTime || counterTime)) ||
+      ((order as any).customerStatus === 'WAITING_SELLER_APPROVAL' && (apptTime || counterTime))
+    )
   );
 
   if (isCountered) {

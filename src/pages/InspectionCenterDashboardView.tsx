@@ -2674,7 +2674,13 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
   // Action: Open Review Appointment Modal (Giai đoạn thương lượng lịch hẹn 2 bên)
   const handleOpenReviewAppointment = (order: InspectionOrderDto) => {
-    setReviewApptOrder(order);
+    let resolvedApptTime = order.appointmentScheduledAt;
+    let resolvedApptNote = order.appointmentNote;
+    let resolvedApptStatus = order.appointmentStatus;
+    let resolvedCounterTime = order.counterScheduledAt;
+    let resolvedCounterShift = order.counterShift;
+    let resolvedCounterNote = order.counterNote;
+
     setReviewMode('VIEW');
     setCounterError(null);
 
@@ -2694,7 +2700,13 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         const raw = localStorage.getItem(`order_appointment_${pid}`);
         if (raw) {
           const parsed = JSON.parse(raw);
+          if (parsed.scheduledAt) resolvedApptTime = parsed.scheduledAt;
+          if (parsed.note) resolvedApptNote = parsed.note;
+          if (parsed.status) resolvedApptStatus = parsed.status;
           if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
+            resolvedCounterTime = undefined;
+            resolvedCounterShift = undefined;
+            resolvedCounterNote = undefined;
             setReviewMode('VIEW');
             if (parsed.scheduledAt) {
               const sd = new Date(parsed.scheduledAt);
@@ -2706,6 +2718,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             }
             break;
           } else if (parsed.counterScheduledAt) {
+            resolvedCounterTime = parsed.counterScheduledAt;
+            resolvedCounterShift = parsed.counterShift;
+            resolvedCounterNote = parsed.counterNote;
             const cd = new Date(parsed.counterScheduledAt);
             if (!isNaN(cd.getTime())) {
               initialDate = `${cd.getFullYear()}-${pad(cd.getMonth() + 1)}-${pad(cd.getDate())}`;
@@ -2727,7 +2742,12 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       } catch { }
     }
 
-    if (!initialNote && (order as any).counterScheduledAt) {
+    if (resolvedApptStatus === 'PENDING_CENTER_CONFIRMATION') {
+      resolvedCounterTime = undefined;
+      resolvedCounterShift = undefined;
+      resolvedCounterNote = undefined;
+      setReviewMode('VIEW');
+    } else if (!initialNote && (order as any).counterScheduledAt) {
       const cd = new Date((order as any).counterScheduledAt);
       if (!isNaN(cd.getTime())) {
         initialDate = `${cd.getFullYear()}-${pad(cd.getMonth() + 1)}-${pad(cd.getDate())}`;
@@ -2737,6 +2757,17 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       if ((order as any).counterNote) initialNote = (order as any).counterNote;
       setReviewMode('COUNTER');
     }
+
+    const resolvedOrder: InspectionOrderDto = {
+      ...order,
+      appointmentScheduledAt: resolvedApptTime,
+      appointmentNote: resolvedApptNote,
+      appointmentStatus: resolvedApptStatus,
+      counterScheduledAt: resolvedCounterTime,
+      counterShift: resolvedCounterShift,
+      counterNote: resolvedCounterNote,
+    };
+    setReviewApptOrder(resolvedOrder);
 
     // Đảm bảo initialTime luôn đúng định dạng HH:mm và nằm trong khung giờ của Ca làm việc
     const parsedInitialHour = parseInt(initialTime.slice(0, 2), 10);
@@ -2823,6 +2854,25 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               return o;
             });
             localStorage.setItem('center_inspection_orders', JSON.stringify(updatedCenter));
+          }
+        }
+      } catch { }
+
+      try {
+        const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+        if (rawSeller) {
+          const listSeller = JSON.parse(rawSeller);
+          if (Array.isArray(listSeller)) {
+            const updatedSeller = listSeller.map((o: any) => {
+              if (o.id === orderId || o.linkedOrderId === orderId || o.orderId === orderId) {
+                return {
+                  ...o,
+                  appointmentStatus: 'CONFIRMED',
+                };
+              }
+              return o;
+            });
+            localStorage.setItem('my_seller_inspection_orders', JSON.stringify(updatedSeller));
           }
         }
       } catch { }
@@ -3645,10 +3695,15 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             const raw = localStorage.getItem(`order_appointment_${id}`);
             if (raw) {
               const parsed = JSON.parse(raw);
-              if (parsed.scheduledAt && !apptTime) apptTime = parsed.scheduledAt;
+              if (parsed.scheduledAt) apptTime = parsed.scheduledAt;
               if (parsed.status) apptStatus = parsed.status;
-              if (parsed.counterScheduledAt) counterTime = parsed.counterScheduledAt;
-              if (parsed.counterNote) counterNote = parsed.counterNote;
+              if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
+                counterTime = undefined;
+                counterNote = undefined;
+              } else {
+                if (parsed.counterScheduledAt) counterTime = parsed.counterScheduledAt;
+                if (parsed.counterNote) counterNote = parsed.counterNote;
+              }
               break;
             }
           } catch {}
@@ -3656,11 +3711,14 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       }
 
       if (
-        (counterTime && !hasInspector) ||
-        ord?.status === 'WAITING_SELLER_APPROVAL' ||
-        (ord as any)?.customerStatus === 'WAITING_SELLER_APPROVAL' ||
-        String((ord as any)?.backendStatus || '').toUpperCase() === 'WAITING_SELLER_APPROVAL' ||
-        apptStatus === 'COUNTERED_BY_CENTER'
+        apptStatus !== 'PENDING_CENTER_CONFIRMATION' &&
+        (
+          (counterTime && !hasInspector) ||
+          ord?.status === 'WAITING_SELLER_APPROVAL' ||
+          (ord as any)?.customerStatus === 'WAITING_SELLER_APPROVAL' ||
+          String((ord as any)?.backendStatus || '').toUpperCase() === 'WAITING_SELLER_APPROVAL' ||
+          apptStatus === 'COUNTERED_BY_CENTER'
+        )
       ) {
         apptStatus = 'COUNTERED_BY_CENTER';
       }
@@ -4590,19 +4648,38 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                           <td role="cell" className="min-w-0 @[56rem]:px-4 @[56rem]:py-3">
                             <div className="mb-0.5 text-[10px] font-bold uppercase text-slate-500 @[56rem]:hidden">Hình thức &amp; phí</div>
                             <div className="font-semibold text-slate-800">{order.orderType === 'AT_HOME' ? 'Tại nhà' : 'Tại Hub'}</div>
-                            {order.orderType === 'AT_HOME' && order.appointmentScheduledAt && (
-                              <div className="mt-1 flex items-center gap-1 text-[10px] font-bold text-amber-900 bg-amber-100/90 px-1.5 py-0.5 rounded border border-amber-300 w-fit">
-                                <Calendar className="size-3 text-amber-700 shrink-0" />
-                                <span className="truncate">
-                                  {new Date(order.appointmentScheduledAt).toLocaleString('vi-VN', {
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                  })}
-                                </span>
-                              </div>
-                            )}
+                            {order.orderType === 'AT_HOME' && (() => {
+                              let apptTime = order.appointmentScheduledAt;
+                              if (typeof window !== 'undefined') {
+                                const possibleIds = [order.id, (order as any).linkedOrderId, (order as any).orderId, (order as any).inspectionOrderId].filter(Boolean) as string[];
+                                for (const pid of possibleIds) {
+                                  try {
+                                    const raw = localStorage.getItem(`order_appointment_${pid}`);
+                                    if (raw) {
+                                      const parsed = JSON.parse(raw);
+                                      if (parsed.scheduledAt) {
+                                        apptTime = parsed.scheduledAt;
+                                        break;
+                                      }
+                                    }
+                                  } catch {}
+                                }
+                              }
+                              if (!apptTime) return null;
+                              return (
+                                <div className="mt-1 flex items-center gap-1 text-[10px] font-bold text-amber-900 bg-amber-100/90 px-1.5 py-0.5 rounded border border-amber-300 w-fit">
+                                  <Calendar className="size-3 text-amber-700 shrink-0" />
+                                  <span className="truncate">
+                                    {new Date(apptTime).toLocaleString('vi-VN', {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      day: '2-digit',
+                                      month: '2-digit',
+                                    })}
+                                  </span>
+                                </div>
+                              );
+                            })()}
                             <div className="mt-0.5 text-[11px] tabular-nums text-slate-600">
                               {order.inspectionFee == null ? 'Chưa có phí' : formatVND(order.inspectionFee)}
                             </div>

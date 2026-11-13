@@ -616,23 +616,13 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   </div>
                 ) : (
                   <div className="space-y-1.5 pt-1">
-                    {listing.requiresInspection ? (
-                      <button
-                        onClick={() => onChatClick(listing)}
-                        className="w-full py-2.5 px-3 bg-gradient-to-r from-blue-600 to-indigo-700 hover:opacity-95 text-white rounded-xl font-black text-xs shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <ShieldCheck className="w-3.5 h-3.5 text-white" />
-                        <span>{lang === 'vi' ? 'Đề Xuất Mua Kiểm Định (Qua Chat)' : 'Propose Inspection (Via Chat)'}</span>
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => onBuyClick(listing)}
-                        className="w-full py-2.5 px-3 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white rounded-xl font-black text-xs shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <ShieldCheck className="w-3.5 h-3.5 text-white" />
-                        <span>{lang === 'vi' ? 'Mua Hàng' : 'Buy Now'}</span>
-                      </button>
-                    )}
+                    <button
+                      onClick={() => onBuyClick(listing)}
+                      className="w-full py-2.5 px-3 bg-gradient-to-r from-[#c34c36] to-[#24263e] hover:opacity-95 text-white rounded-xl font-black text-xs shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-white" />
+                      <span>{lang === 'vi' ? (listing.requiresInspection ? 'Mua Hàng (Có Kiểm Định)' : 'Mua Hàng') : (listing.requiresInspection ? 'Buy with Inspection' : 'Buy Now')}</span>
+                    </button>
 
                     <button
                       onClick={() => onChatClick(listing)}

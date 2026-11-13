@@ -470,7 +470,24 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     window.addEventListener('secondlife_inspector_arrived', handler);
     window.addEventListener('storage', handler);
 
-    const handleApptSignal = () => {
+    const handleApptSignal = (e?: any) => {
+      if (e?.detail?.orderId && e?.detail?.counterScheduledAt) {
+        const d = e.detail;
+        const targetIds = [d.orderId, d.linkedOrderId].filter(Boolean);
+        targetIds.forEach((tid) => {
+          try {
+            const raw = localStorage.getItem(`order_appointment_${tid}`);
+            const prev = raw ? JSON.parse(raw) : {};
+            localStorage.setItem(`order_appointment_${tid}`, JSON.stringify({
+              ...prev,
+              status: 'COUNTERED_BY_CENTER',
+              counterScheduledAt: d.counterScheduledAt,
+              counterShift: d.counterShift,
+              counterNote: d.counterNote,
+            }));
+          } catch {}
+        });
+      }
       setApptTick((t) => t + 1);
       onRefreshOrders?.();
     };
@@ -2299,13 +2316,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     }
 
     if (apptData) {
+      if (apptData.status === 'PENDING_CENTER_CONFIRMATION' && !apptData.counterScheduledAt) {
+        return apptData;
+      }
       if (isOrderWaitingSeller || (ord as any).counterScheduledAt || apptData.counterScheduledAt) {
         apptData.status = 'COUNTERED_BY_CENTER';
         if (!apptData.counterScheduledAt && (ord as any).counterScheduledAt) {
           apptData.counterScheduledAt = (ord as any).counterScheduledAt;
-        }
-        if (!apptData.counterScheduledAt && apptData.scheduledAt) {
-          apptData.counterScheduledAt = apptData.scheduledAt;
         }
         if (!apptData.counterNote && (ord as any).counterNote) {
           apptData.counterNote = (ord as any).counterNote;

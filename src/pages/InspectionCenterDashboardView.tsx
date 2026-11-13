@@ -862,9 +862,15 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   appointmentScheduledAt = apptData.scheduledAt || appointmentScheduledAt;
                   appointmentNote = apptData.note || appointmentNote;
                   appointmentStatus = apptData.status || appointmentStatus;
-                  counterScheduledAt = apptData.counterScheduledAt || counterScheduledAt;
-                  counterShift = apptData.counterShift || counterShift;
-                  counterNote = apptData.counterNote || counterNote;
+                  if (apptData.status === 'PENDING_CENTER_CONFIRMATION' && !apptData.counterScheduledAt) {
+                    counterScheduledAt = undefined;
+                    counterShift = undefined;
+                    counterNote = undefined;
+                  } else {
+                    counterScheduledAt = apptData.counterScheduledAt || counterScheduledAt;
+                    counterShift = apptData.counterShift || counterShift;
+                    counterNote = apptData.counterNote || counterNote;
+                  }
                   break;
                 }
               } catch { }
@@ -997,9 +1003,15 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 appointmentScheduledAt = apptData.scheduledAt || appointmentScheduledAt;
                 appointmentNote = apptData.note || appointmentNote;
                 appointmentStatus = apptData.status || appointmentStatus;
-                counterScheduledAt = apptData.counterScheduledAt || counterScheduledAt;
-                counterShift = apptData.counterShift || counterShift;
-                counterNote = apptData.counterNote || counterNote;
+                if (apptData.status === 'PENDING_CENTER_CONFIRMATION' && !apptData.counterScheduledAt) {
+                  counterScheduledAt = undefined;
+                  counterShift = undefined;
+                  counterNote = undefined;
+                } else {
+                  counterScheduledAt = apptData.counterScheduledAt || counterScheduledAt;
+                  counterShift = apptData.counterShift || counterShift;
+                  counterNote = apptData.counterNote || counterNote;
+                }
                 break;
               }
             } catch { }
@@ -2682,7 +2694,18 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         const raw = localStorage.getItem(`order_appointment_${pid}`);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (parsed.counterScheduledAt) {
+          if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
+            setReviewMode('VIEW');
+            if (parsed.scheduledAt) {
+              const sd = new Date(parsed.scheduledAt);
+              if (!isNaN(sd.getTime())) {
+                initialDate = `${sd.getFullYear()}-${pad(sd.getMonth() + 1)}-${pad(sd.getDate())}`;
+                initialShift = parsed.shift === 'MORNING' ? 'AFTERNOON' : 'MORNING';
+                initialTime = initialShift === 'AFTERNOON' ? '14:00' : '09:00';
+              }
+            }
+            break;
+          } else if (parsed.counterScheduledAt) {
             const cd = new Date(parsed.counterScheduledAt);
             if (!isNaN(cd.getTime())) {
               initialDate = `${cd.getFullYear()}-${pad(cd.getMonth() + 1)}-${pad(cd.getDate())}`;
@@ -2995,6 +3018,29 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               return o;
             });
             localStorage.setItem('center_inspection_orders', JSON.stringify(updatedCenter));
+          }
+        }
+      } catch { }
+
+      try {
+        const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+        if (rawSeller) {
+          const listSeller = JSON.parse(rawSeller);
+          if (Array.isArray(listSeller)) {
+            const updatedSeller = listSeller.map((o: any) => {
+              if (targetIds.has(o.id) || targetIds.has(o.linkedOrderId) || targetIds.has(o.orderId)) {
+                return {
+                  ...o,
+                  appointmentStatus: 'COUNTERED_BY_CENTER',
+                  counterScheduledAt: scheduledDate.toISOString(),
+                  counterShift,
+                  counterNote: counterNote.trim(),
+                  appointmentRejectionReason: counterNote.trim(),
+                };
+              }
+              return o;
+            });
+            localStorage.setItem('my_seller_inspection_orders', JSON.stringify(updatedSeller));
           }
         }
       } catch { }
@@ -7936,7 +7982,12 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     if (p.scheduledAt) apptTime = p.scheduledAt;
                     if (p.note) apptNote = p.note;
                     if (p.shift) apptShift = p.shift;
-                    if (p.counterScheduledAt) existingCounterTime = p.counterScheduledAt;
+                    if (p.counterScheduledAt) {
+                      existingCounterTime = p.counterScheduledAt;
+                    } else if (p.status === 'PENDING_CENTER_CONFIRMATION') {
+                      existingCounterTime = undefined;
+                      counterReason = undefined;
+                    }
                     if (p.counterNote) counterReason = p.counterNote;
                     if (p.status) apptStatus = p.status;
                     break;
@@ -7945,9 +7996,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               }
 
               const isWaitingSellerCounter = Boolean(
-                existingCounterTime ||
-                apptStatus === 'COUNTERED_BY_CENTER' ||
-                reviewApptOrder.status === 'WAITING_SELLER_APPROVAL'
+                existingCounterTime &&
+                apptStatus === 'COUNTERED_BY_CENTER' &&
+                reviewApptOrder.status !== 'CONFIRMED'
               );
 
               const isMorning = apptShift === 'MORNING' || (apptTime && new Date(apptTime).getHours() < 12);

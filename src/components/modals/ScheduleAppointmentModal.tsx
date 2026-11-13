@@ -173,9 +173,22 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
     let buyerId: string | undefined;
 
     // Clear previous rejection if rescheduling
-    try {
-      localStorage.removeItem(`order_appointment_rejection_${orderId}`);
-    } catch {}
+    const allTargetIds = [orderId, linkedOrderId, inspectionOrderId].filter(Boolean) as string[];
+    allTargetIds.forEach((tid) => {
+      try {
+        localStorage.removeItem(`order_appointment_rejection_${tid}`);
+      } catch {}
+    });
+
+    const isMatch = (o: any) => {
+      if (!o) return false;
+      return allTargetIds.some((tid) =>
+        o.id === tid ||
+        o.linkedOrderId === tid ||
+        o.inspectionOrderId === tid ||
+        o.orderId === tid
+      );
+    };
 
     // 1. Cập nhật recent_placed_orders
     try {
@@ -184,12 +197,13 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
         const list = JSON.parse(raw);
         if (Array.isArray(list)) {
           const updated = list.map((o: any) => {
-            if (o.id === orderId) {
+            if (isMatch(o)) {
               buyerId = o.buyerId;
               return {
                 ...o,
                 appointmentScheduledAt: scheduledDate.toISOString(),
                 appointmentNote: noteText,
+                appointmentShift: shift,
                 appointmentStatus: 'PENDING_CENTER_CONFIRMATION',
                 appointmentRejectionReason: undefined,
                 counterScheduledAt: undefined,
@@ -215,11 +229,12 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
         const listCenter = JSON.parse(rawCenter);
         if (Array.isArray(listCenter)) {
           const updatedCenter = listCenter.map((o: any) => {
-            if (o.id === orderId) {
+            if (isMatch(o)) {
               return {
                 ...o,
                 appointmentScheduledAt: scheduledDate.toISOString(),
                 appointmentNote: noteText,
+                appointmentShift: shift,
                 appointmentStatus: 'PENDING_CENTER_CONFIRMATION',
                 appointmentRejectionReason: undefined,
                 counterScheduledAt: undefined,
@@ -233,6 +248,33 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
             return o;
           });
           localStorage.setItem('center_inspection_orders', JSON.stringify(updatedCenter));
+        }
+      }
+    } catch {}
+
+    // 2.1. Cập nhật my_seller_inspection_orders
+    try {
+      const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+      if (rawSeller) {
+        const listSeller = JSON.parse(rawSeller);
+        if (Array.isArray(listSeller)) {
+          const updatedSeller = listSeller.map((o: any) => {
+            if (isMatch(o)) {
+              return {
+                ...o,
+                appointmentScheduledAt: scheduledDate.toISOString(),
+                appointmentNote: noteText,
+                appointmentShift: shift,
+                appointmentStatus: 'PENDING_CENTER_CONFIRMATION',
+                appointmentRejectionReason: undefined,
+                counterScheduledAt: undefined,
+                counterShift: undefined,
+                counterNote: undefined,
+              };
+            }
+            return o;
+          });
+          localStorage.setItem('my_seller_inspection_orders', JSON.stringify(updatedSeller));
         }
       }
     } catch {}

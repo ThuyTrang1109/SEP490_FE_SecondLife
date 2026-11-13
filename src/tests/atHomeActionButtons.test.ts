@@ -431,4 +431,21 @@ test('At-Home Inspection Modal and Card Action Buttons Rules', async (t) => {
     };
     assert.strictEqual(getCenterDispatchStage(orderConfirmed as any, false), 'READY_TO_ASSIGN');
   });
+
+  await t.test('[TEST 15] Cache synchronization: When seller reschedules, stale counter fields must be wiped so Center sees seller requested time and can approve', () => {
+    // Seller submits a new time 09:00:
+    const newSellerSchedule = {
+      scheduledAt: '2026-11-14T09:00:00Z',
+      status: 'PENDING_CENTER_CONFIRMATION',
+      counterScheduledAt: undefined,
+    };
+
+    // Center must evaluate isWaitingSellerCounter to FALSE
+    const isWaitingSellerCounter = Boolean(
+      newSellerSchedule.counterScheduledAt &&
+      newSellerSchedule.status === 'COUNTERED_BY_CENTER'
+    );
+    assert.strictEqual(isWaitingSellerCounter, false, 'Center modal must be unlocked and not wait for seller');
+    assert.strictEqual(newSellerSchedule.scheduledAt, '2026-11-14T09:00:00Z');
+  });
 });

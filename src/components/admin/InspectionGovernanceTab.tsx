@@ -513,7 +513,15 @@ export const InspectionGovernanceTab: React.FC<InspectionGovernanceTabProps> = (
     setIsLoadingTiers(true);
     try {
       const data = await inspectorService.getAdminTravelTiers();
-      const tiers = Array.isArray(data) ? data : [];
+      const fallbackTiers: InspectionTravelTierDto[] = [
+        { tierNumber: 1, name: 'Bậc 1: Cự ly gần (0 - 5 km)', fromKm: 0, toKm: 5, pricePerKm: 20000, status: 'ACTIVE' },
+        { tierNumber: 2, name: 'Bậc 2: Cự ly trung bình (5 - 15 km)', fromKm: 5, toKm: 15, pricePerKm: 30000, status: 'ACTIVE' },
+        { tierNumber: 3, name: 'Bậc 3: Ngoại thành gần (15 - 25 km)', fromKm: 15, toKm: 25, pricePerKm: 40000, status: 'ACTIVE' },
+        { tierNumber: 4, name: 'Bậc 4: Ngoại thành xa (25 - 40 km)', fromKm: 25, toKm: 40, pricePerKm: 50000, status: 'ACTIVE' },
+        { tierNumber: 5, name: 'Bậc 5: Tỉnh lân cận (40 - 60 km)', fromKm: 40, toKm: 60, pricePerKm: 60000, status: 'ACTIVE' },
+        { tierNumber: 6, name: 'Bậc 6: Cự ly đặc biệt (> 60 km)', fromKm: 60, toKm: null, pricePerKm: 70000, status: 'ACTIVE' },
+      ];
+      const tiers = Array.isArray(data) && data.length > 0 ? data : fallbackTiers;
       setTravelTiers(tiers);
       setEditedTiers(JSON.parse(JSON.stringify(tiers)));
     } catch (err: any) {

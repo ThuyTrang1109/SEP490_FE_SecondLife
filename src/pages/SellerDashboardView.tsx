@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ShieldCheck,
   PlusCircle,
@@ -35,6 +35,7 @@ import { mediaService } from '../services/mediaService';
 import { postService } from '../services/postService';
 import { walletService } from '../services/walletService';
 import { reputationService, SellerReputationDto, ReputationHistoryDto, getAssessmentStatusMeta, getReputationWarningMeta, getReputationEventMeta } from '../services/reputationService';
+import { reviewService } from '../data/mockReviews';
 import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
 import { translateSystemNotification } from '../utils/systemNotificationTranslator';
 import { WithdrawalModal } from '../components/modals/WithdrawalModal';
@@ -342,6 +343,28 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   // Seller Reputation State (GET /api/v1/seller/reputation/me & /history)
   const [myReputation, setMyReputation] = useState<SellerReputationDto | null>(null);
+  const sellerReviewCount = useMemo(() => {
+    const sellerId = currentUser?.id;
+    if (!sellerId) return myReputation?.evaluatedOrders ?? 0;
+    const directReviews = reviewService.getReviewsBySeller(sellerId).length;
+    return directReviews > 0 ? directReviews : (myReputation?.evaluatedOrders ?? 0);
+  }, [currentUser?.id, myReputation?.evaluatedOrders]);
+
+  const sellerAverageRatingText = useMemo(() => {
+    const sellerId = currentUser?.id;
+    const directReviews = sellerId ? reviewService.getReviewsBySeller(sellerId) : [];
+    if (directReviews.length > 0) {
+      const avg = directReviews.reduce((sum, r) => sum + r.rating, 0) / directReviews.length;
+      return `${avg.toFixed(1)} / 5.0`;
+    }
+    if (currentUser?.sellerRating && currentUser.sellerRating > 0) {
+      return `${currentUser.sellerRating.toFixed(1)} / 5.0`;
+    }
+    if (myReputation?.score !== undefined && myReputation?.score !== null && (myReputation.evaluatedOrders ?? 0) > 0) {
+      return `${(myReputation.score / 20).toFixed(1)} / 5.0`;
+    }
+    return lang === 'vi' ? 'Chưa có đánh giá' : 'No ratings yet';
+  }, [currentUser?.id, currentUser?.sellerRating, myReputation, lang]);
   const [isReputationHistoryOpen, setIsReputationHistoryOpen] = useState(false);
   const [reputationHistoryItems, setReputationHistoryItems] = useState<ReputationHistoryDto[]>([]);
   const [isLoadingReputationHistory, setIsLoadingReputationHistory] = useState(false);
@@ -582,7 +605,11 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             sellerAddress: sellerAddr,
             sellerId: p.user?.id || p.userId || currentUser?.id || 'me',
             sellerName: currentUser?.name || p.user?.fullName || p.user?.name || 'Tôi',
-            sellerRating: 5.0,
+            sellerRating: (() => {
+              const sId = p.user?.id || p.userId || currentUser?.id;
+              const revs = sId ? reviewService.getReviewsBySeller(sId) : [];
+              return revs.length > 0 ? (revs.reduce((sum, r) => sum + r.rating, 0) / revs.length) : 0;
+            })(),
             sellerCompletedOrders: 0,
             sellerVerified: true,
             status: (
@@ -965,7 +992,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               <p className="text-xs text-[#24263e]/80 mt-1 flex items-center gap-3 font-semibold flex-wrap">
                 <span className="flex items-center gap-1 text-[#24263e] font-bold">
                   <Star className="w-3.5 h-3.5 fill-[#c34c36] text-[#c34c36]" />
-                  {currentUser?.sellerRating ? `${currentUser.sellerRating.toFixed(1)} / 5.0` : '5.0 / 5.0'}
+                  {sellerAverageRatingText}
                 </span>
                 <span>•</span>
                 <span>{filteredListings.filter((l) => l.status === 'sold').length} {lang === 'vi' ? 'đơn hoàn thành' : 'completed orders'}</span>
@@ -988,7 +1015,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/80 hover:bg-white text-[#24263e] border border-[#24263e]/15 font-bold text-xs transition cursor-pointer shadow-xs"
             >
               <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
-              <span>{lang === 'vi' ? 'Xem Đánh Giá Của Khách Hàng (48)' : 'Customer Reviews (48)'}</span>
+              <span>{lang === 'vi' ? `Xem Đánh Giá Của Khách Hàng (${sellerReviewCount})` : `Customer Reviews (${sellerReviewCount})`}</span>
             </button>
             {onViewOrders && (
               <button
@@ -1678,8 +1705,8 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       {/* Seller Reviews Modal */}
       {isSellerReviewsOpen && (
         <SellerReviewsModal
-          sellerId="user-tuan-hcm"
-          sellerName="Nguyễn Minh Tuấn"
+          sellerId={currentUser?.id || ''}
+          sellerName={currentUser?.name || 'Người bán'}
           isOpen={isSellerReviewsOpen}
           onClose={() => setIsSellerReviewsOpen(false)}
           lang={lang}

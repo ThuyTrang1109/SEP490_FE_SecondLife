@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Star, X, CheckCircle2, ShieldCheck, Sparkles, Upload, ThumbsUp } from 'lucide-react';
 import { EscrowOrder, Language, ProductReview } from '../../types';
 import { formatVND } from '../../utils/translations';
@@ -44,6 +44,7 @@ export const ProductReviewModal: React.FC<ProductReviewModalProps> = ({
   ]);
   const [photos, setPhotos] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   if (!isOpen) return null;
 
@@ -53,19 +54,23 @@ export const ProductReviewModal: React.FC<ProductReviewModalProps> = ({
     );
   };
 
-  const handleSimulateAddPhoto = () => {
-    // Add sample photos from front/back if available or sample appliances
-    const samplePool = [
-      order.listing.photos.front,
-      order.listing.photos.back,
-      order.listing.photos.screenOrDetails,
-      'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=400&q=80'
-    ].filter(Boolean);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const remainingSlots = 4 - photos.length;
+    const filesToProcess = Array.from(files).slice(0, remainingSlots);
 
-    const nextPhoto = samplePool[photos.length % samplePool.length];
-    if (photos.length < 4 && nextPhoto) {
-      setPhotos((prev) => [...prev, nextPhoto]);
-    }
+    filesToProcess.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (uploadEvent) => {
+        const result = uploadEvent.target?.result as string;
+        if (result) {
+          setPhotos((prev) => (prev.length < 4 ? [...prev, result] : prev));
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
   };
 
   const handleRemovePhoto = (index: number) => {
@@ -118,8 +123,9 @@ export const ProductReviewModal: React.FC<ProductReviewModalProps> = ({
                 <h3 className="font-extrabold text-base text-[#24263e]">
                   {lang === 'vi' ? 'Đánh Giá Sản Phẩm & Người Bán' : 'Review Product & Seller'}
                 </h3>
-                <span className="text-[10px] text-rose-600 font-extrabold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
-                  ❌ [Lưu cục bộ / Chưa có BE Review]
+                <span className="text-[10px] text-emerald-700 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                  <span>{lang === 'vi' ? 'Đã kiểm định Escrow' : 'Verified Escrow'}</span>
                 </span>
               </div>
               <p className="text-[11px] text-[#24263e]/70 font-medium">
@@ -270,15 +276,25 @@ export const ProductReviewModal: React.FC<ProductReviewModalProps> = ({
               ))}
 
               {photos.length < 4 && (
-                <button
-                  type="button"
-                  onClick={handleSimulateAddPhoto}
-                  className="w-16 h-16 rounded-xl border-2 border-dashed border-gray-300 hover:border-[#c34c36] flex flex-col items-center justify-center text-slate-400 hover:text-[#c34c36] bg-[#faf8f5] transition cursor-pointer"
-                  title="Thêm ảnh chụp thực tế"
-                >
-                  <Upload className="w-4 h-4 mb-0.5" />
-                  <span className="text-[9px] font-bold">{lang === 'vi' ? 'Thêm ảnh' : 'Add photo'}</span>
-                </button>
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-16 h-16 rounded-xl border-2 border-dashed border-gray-300 hover:border-[#c34c36] flex flex-col items-center justify-center text-slate-400 hover:text-[#c34c36] bg-[#faf8f5] transition cursor-pointer"
+                    title="Thêm ảnh chụp thực tế từ thiết bị"
+                  >
+                    <Upload className="w-4 h-4 mb-0.5" />
+                    <span className="text-[9px] font-bold">{lang === 'vi' ? 'Tải ảnh' : 'Upload'}</span>
+                  </button>
+                </>
               )}
             </div>
           </div>

@@ -14,6 +14,7 @@ export interface PostMetadata {
   purchaseTimeNote?: string;
   category?: string;
   originalPriceVnd?: number;
+  canDisassemble?: boolean;
 }
 
 export interface ResolvedProductMeta {

@@ -23,13 +23,17 @@ export const reviewService = {
   },
 
   getReviewsByListing(listingId: string): ProductReview[] {
+    if (!listingId) return [];
     const all = this.getAllReviews();
-    return all.filter(r => r.listingId === listingId);
+    const target = String(listingId).trim();
+    return all.filter(r => r.listingId && String(r.listingId).trim() === target);
   },
 
   getReviewsBySeller(sellerId: string): ProductReview[] {
+    if (!sellerId) return [];
     const all = this.getAllReviews();
-    return all.filter(r => r.sellerId === sellerId);
+    const target = String(sellerId).trim();
+    return all.filter(r => r.sellerId && String(r.sellerId).trim() === target);
   },
 
   getSellerTrustProfile(sellerId: string, sellerName?: string): SellerTrustProfile {

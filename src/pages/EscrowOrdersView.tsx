@@ -2352,14 +2352,17 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     const finalScheduledAt = appointment?.counterScheduledAt || appointment?.scheduledAt;
     const finalShift = appointment?.counterShift || appointment?.shift || 'MORNING';
 
-    // 1. Đồng bộ lên Backend
+    // 1. Đồng bộ lên Backend bằng endpoint acceptAppointmentCounter
+    const targetInspectionId = appointment?.inspectionOrderId || orderId;
     try {
-      if (finalScheduledAt) {
-        await inspectorService.scheduleAppointment(orderId, finalScheduledAt, 'Người bán đã đồng ý lịch hẹn đề xuất từ Trung tâm');
-      }
+      await inspectorService.acceptAppointmentCounter(targetInspectionId);
     } catch {
       try {
-        await inspectorService.confirmAppointment(orderId);
+        if (targetInspectionId !== orderId) {
+          await inspectorService.acceptAppointmentCounter(orderId);
+        } else if (finalScheduledAt) {
+          await inspectorService.scheduleAppointment(orderId, finalScheduledAt, 'Người bán đã đồng ý lịch hẹn đề xuất từ Trung tâm');
+        }
       } catch (e) {
         console.warn('Backend accept counter fallback:', e);
       }
@@ -7829,8 +7832,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       {/* Schedule Inspection Appointment Modal */}
       {schedulingOrder && (
         <ScheduleAppointmentModal
-          orderId={schedulingOrder.id}
+          orderId={schedulingOrder.inspectionOrderId || schedulingOrder.id}
           orderCode={schedulingOrder.id}
+          linkedOrderId={schedulingOrder.linkedOrderId || schedulingOrder.id}
+          inspectionOrderId={schedulingOrder.inspectionOrderId}
           isOpen={!!schedulingOrder}
           onClose={() => setSchedulingOrder(null)}
           onSuccess={() => {

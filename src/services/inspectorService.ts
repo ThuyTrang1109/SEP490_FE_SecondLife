@@ -864,6 +864,18 @@ export const inspectorService = {
   },
 
   /**
+   * Người bán chấp nhận lịch kiểm định mới do Trung tâm đề xuất
+   * POST /api/v1/inspector/orders/{orderId}/appointment/accept-counter
+   */
+  async acceptAppointmentCounter(orderId: string): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/appointment/accept-counter`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
    * Trung tâm kiểm định đề xuất lịch hẹn mới cho người bán
    */
   async counterAppointment(

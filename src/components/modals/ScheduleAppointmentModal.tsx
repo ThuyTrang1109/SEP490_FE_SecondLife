@@ -8,6 +8,8 @@ import { saveScopedLocalNotification } from '../../utils/notificationStorage';
 interface ScheduleAppointmentModalProps {
   orderId: string;
   orderCode?: string;
+  linkedOrderId?: string;
+  inspectionOrderId?: string;
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
@@ -25,6 +27,8 @@ export const AFTERNOON_SLOTS = ['13:00', '13:30', '14:00', '14:30', '15:00', '15
 export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> = ({
   orderId,
   orderCode,
+  linkedOrderId,
+  inspectionOrderId,
   isOpen,
   onClose,
   onSuccess,
@@ -360,14 +364,35 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
 
     setIsSubmitting(true);
 
+    const targetInspectionId = inspectionOrderId || orderId;
+    const targetIds = new Set<string>([orderId]);
+    if (linkedOrderId) targetIds.add(linkedOrderId);
+    if (inspectionOrderId) targetIds.add(inspectionOrderId);
+
     try {
-      await inspectorService.scheduleAppointment(
-        orderId,
-        scheduledDate.toISOString(),
-        note.trim() || undefined
-      );
+      try {
+        await inspectorService.scheduleAppointment(
+          targetInspectionId,
+          scheduledDate.toISOString(),
+          note.trim() || undefined
+        );
+      } catch (err: any) {
+        if (targetInspectionId !== orderId) {
+          try {
+            await inspectorService.scheduleAppointment(
+              orderId,
+              scheduledDate.toISOString(),
+              note.trim() || undefined
+            );
+          } catch (e2) {
+            console.warn('Backend schedule appointment error, fallback to local cache:', e2);
+          }
+        } else {
+          console.warn('Backend schedule appointment error, fallback to local cache:', err);
+        }
+      }
 
-      localStorage.setItem(`order_appointment_${orderId}`, JSON.stringify({
+      const appointmentRecord = {
         scheduledAt: scheduledDate.toISOString(),
         note: note.trim() || '',
         shift: detectedShift,
@@ -376,40 +401,21 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
         counterScheduledAt: undefined,
         counterShift: undefined,
         counterNote: undefined,
-      }));
+      };
+
+      targetIds.forEach((tid) => {
+        try {
+          localStorage.setItem(`order_appointment_${tid}`, JSON.stringify(appointmentRecord));
+          localStorage.removeItem(`order_appointment_rejection_${tid}`);
+        } catch {}
+      });
 
       syncAppointmentToOrdersAndNotify(scheduledDate, note.trim(), detectedShift);
       window.dispatchEvent(
         new CustomEvent('secondlife_appointment_scheduled', {
           detail: {
             orderId,
-            scheduledAt: scheduledDate.toISOString(),
-            note: note.trim(),
-            shift: detectedShift,
-            status: 'PENDING_CENTER_CONFIRMATION',
-          },
-        })
-      );
-      if (onSuccess) onSuccess();
-      onClose();
-    } catch (err: any) {
-      console.warn('Backend schedule appointment error, fallback to local cache:', err);
-      localStorage.setItem(`order_appointment_${orderId}`, JSON.stringify({
-        scheduledAt: scheduledDate.toISOString(),
-        note: note.trim() || '',
-        shift: detectedShift,
-        status: 'PENDING_CENTER_CONFIRMATION',
-        assignedInspector: assignedInspector || undefined,
-        counterScheduledAt: undefined,
-        counterShift: undefined,
-        counterNote: undefined,
-      }));
-
-      syncAppointmentToOrdersAndNotify(scheduledDate, note.trim(), detectedShift);
-      window.dispatchEvent(
-        new CustomEvent('secondlife_appointment_scheduled', {
-          detail: {
-            orderId,
+            inspectionOrderId: targetInspectionId,
             scheduledAt: scheduledDate.toISOString(),
             note: note.trim(),
             shift: detectedShift,

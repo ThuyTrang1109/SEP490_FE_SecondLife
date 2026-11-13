@@ -7923,7 +7923,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               let apptTime = reviewApptOrder.appointmentScheduledAt;
               let apptNote = reviewApptOrder.appointmentNote;
               let apptShift = 'MORNING';
-              let counterTime = reviewApptOrder.counterScheduledAt;
+              let existingCounterTime = reviewApptOrder.counterScheduledAt;
               let counterReason = reviewApptOrder.counterNote;
               let apptStatus = reviewApptOrder.appointmentStatus;
 
@@ -7936,7 +7936,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     if (p.scheduledAt) apptTime = p.scheduledAt;
                     if (p.note) apptNote = p.note;
                     if (p.shift) apptShift = p.shift;
-                    if (p.counterScheduledAt) counterTime = p.counterScheduledAt;
+                    if (p.counterScheduledAt) existingCounterTime = p.counterScheduledAt;
                     if (p.counterNote) counterReason = p.counterNote;
                     if (p.status) apptStatus = p.status;
                     break;
@@ -7945,7 +7945,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               }
 
               const isWaitingSellerCounter = Boolean(
-                counterTime ||
+                existingCounterTime ||
                 apptStatus === 'COUNTERED_BY_CENTER' ||
                 reviewApptOrder.status === 'WAITING_SELLER_APPROVAL'
               );
@@ -7997,14 +7997,14 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       </div>
                     )}
 
-                    {counterTime && (
+                    {existingCounterTime && (
                       <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-300 text-[11px] text-sky-950 space-y-1">
                         <div className="font-bold text-sky-950 flex items-center gap-1.5">
                           <CalendarSync className="w-3.5 h-3.5 text-sky-600" />
                           <span>Trung tâm đã gửi đề xuất mới trước đó:</span>
                         </div>
                         <div className="bg-white/80 p-2 rounded-lg border border-sky-200">
-                          <div>📅 <strong>Giờ đề xuất:</strong> {new Date(counterTime).toLocaleString('vi-VN')}</div>
+                          <div>📅 <strong>Giờ đề xuất:</strong> {new Date(existingCounterTime).toLocaleString('vi-VN')}</div>
                           {counterReason && (
                             <div className="italic text-sky-800 mt-0.5">
                               💬 <strong>Lý do:</strong> "{counterReason}"
@@ -8062,7 +8062,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                             <span>Lịch hẹn gốc đã bị hủy để chờ thương lượng lịch mới</span>
                           </div>
                           <p className="text-[11px] text-amber-800 leading-relaxed">
-                            Trung tâm đã gửi đề xuất dời lịch sang <strong>{new Date(counterTime!).toLocaleString('vi-VN')}</strong>. Lịch hẹn ban đầu của người bán không còn hiệu lực. Vui lòng chờ người bán xác nhận lịch mới hoặc gửi lại yêu cầu khác.
+                            Trung tâm đã gửi đề xuất dời lịch sang <strong>{new Date(existingCounterTime!).toLocaleString('vi-VN')}</strong>. Lịch hẹn ban đầu của người bán không còn hiệu lực. Vui lòng chờ người bán xác nhận lịch mới hoặc gửi lại yêu cầu khác.
                           </p>
                         </div>
                       ) : (
@@ -8105,7 +8105,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                           <p className="text-amber-900 leading-relaxed">
                             Trung tâm đã gửi đề xuất dời lịch hẹn sang{' '}
                             <strong className="text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded">
-                              {new Date(counterTime!).toLocaleString('vi-VN')}
+                              {new Date(existingCounterTime!).toLocaleString('vi-VN')}
                             </strong>
                             . Hệ thống đang chờ Người bán phản hồi (Đồng ý hoặc Hẹn lại). <strong>Phần gửi đề xuất đã được khóa tạm thời</strong> để tránh gửi trùng lặp cho đến khi Người bán phản hồi.
                           </p>

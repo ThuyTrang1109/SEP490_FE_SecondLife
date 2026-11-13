@@ -889,7 +889,49 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               } catch { }
             }
 
-            if (counterScheduledAt) {
+            if (appointmentStatus !== 'PENDING_CENTER_CONFIRMATION') {
+              const idSet = new Set(apptPossibleIds);
+              try {
+                const rawCenter = localStorage.getItem('center_inspection_orders');
+                if (rawCenter) {
+                  const listCenter = JSON.parse(rawCenter);
+                  if (Array.isArray(listCenter)) {
+                    const m = listCenter.find((co: any) => idSet.has(co.id) || idSet.has(co.linkedOrderId) || idSet.has(co.orderId) || idSet.has(co.inspectionOrderId));
+                    if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+                      appointmentScheduledAt = m.appointmentScheduledAt || appointmentScheduledAt;
+                      appointmentNote = m.appointmentNote || appointmentNote;
+                      appointmentStatus = 'PENDING_CENTER_CONFIRMATION';
+                      counterScheduledAt = undefined;
+                      counterShift = undefined;
+                      counterNote = undefined;
+                    }
+                  }
+                }
+              } catch {}
+              try {
+                const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+                if (rawSeller && appointmentStatus !== 'PENDING_CENTER_CONFIRMATION') {
+                  const listSeller = JSON.parse(rawSeller);
+                  if (Array.isArray(listSeller)) {
+                    const m = listSeller.find((so: any) => idSet.has(so.id) || idSet.has(so.linkedOrderId) || idSet.has(so.orderId) || idSet.has(so.inspectionOrderId));
+                    if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+                      appointmentScheduledAt = m.appointmentScheduledAt || appointmentScheduledAt;
+                      appointmentNote = m.appointmentNote || appointmentNote;
+                      appointmentStatus = 'PENDING_CENTER_CONFIRMATION';
+                      counterScheduledAt = undefined;
+                      counterShift = undefined;
+                      counterNote = undefined;
+                    }
+                  }
+                }
+              } catch {}
+            }
+
+            if (appointmentStatus === 'PENDING_CENTER_CONFIRMATION') {
+              counterScheduledAt = undefined;
+              counterShift = undefined;
+              counterNote = undefined;
+            } else if (counterScheduledAt) {
               appointmentStatus = 'COUNTERED_BY_CENTER';
             }
 
@@ -1030,7 +1072,52 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             } catch { }
           }
 
-          if (counterScheduledAt) {
+          if (appointmentStatus !== 'PENDING_CENTER_CONFIRMATION') {
+            const idSet = new Set(apptPossibleIds);
+            try {
+              const rawCenter = localStorage.getItem('center_inspection_orders');
+              if (rawCenter) {
+                const listCenter = JSON.parse(rawCenter);
+                if (Array.isArray(listCenter)) {
+                  const m = listCenter.find((co: any) => idSet.has(co.id) || idSet.has(co.linkedOrderId) || idSet.has(co.orderId) || idSet.has(co.inspectionOrderId));
+                  if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+                    appointmentScheduledAt = m.appointmentScheduledAt || appointmentScheduledAt;
+                    appointmentNote = m.appointmentNote || appointmentNote;
+                    appointmentStatus = 'PENDING_CENTER_CONFIRMATION';
+                    counterScheduledAt = undefined;
+                    counterShift = undefined;
+                    counterNote = undefined;
+                  }
+                }
+              }
+            } catch {}
+            try {
+              const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+              if (rawSeller && appointmentStatus !== 'PENDING_CENTER_CONFIRMATION') {
+                const listSeller = JSON.parse(rawSeller);
+                if (Array.isArray(listSeller)) {
+                  const m = listSeller.find((so: any) => idSet.has(so.id) || idSet.has(so.linkedOrderId) || idSet.has(so.orderId) || idSet.has(so.inspectionOrderId));
+                  if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+                    appointmentScheduledAt = m.appointmentScheduledAt || appointmentScheduledAt;
+                    appointmentNote = m.appointmentNote || appointmentNote;
+                    appointmentStatus = 'PENDING_CENTER_CONFIRMATION';
+                    counterScheduledAt = undefined;
+                    counterShift = undefined;
+                    counterNote = undefined;
+                  }
+                }
+              }
+            } catch {}
+          }
+
+          if (appointmentStatus === 'PENDING_CENTER_CONFIRMATION') {
+            counterScheduledAt = undefined;
+            counterShift = undefined;
+            counterNote = undefined;
+            if (resolvedStatus === 'WAITING_SELLER_APPROVAL') {
+              resolvedStatus = 'CONFIRMED_PENDING_DISPATCH';
+            }
+          } else if (counterScheduledAt) {
             appointmentStatus = 'COUNTERED_BY_CENTER';
           }
 
@@ -2694,7 +2781,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     let initialTime = '14:00';
     let initialNote = '';
 
-    const possibleIds = [order.id, order.linkedOrderId, (order as any).orderId].filter(Boolean);
+    const possibleIds = [order.id, order.linkedOrderId, (order as any).orderId, (order as any).inspectionOrderId].filter(Boolean) as string[];
+    const idSet = new Set(possibleIds);
+
     for (const pid of possibleIds) {
       try {
         const raw = localStorage.getItem(`order_appointment_${pid}`);
@@ -2742,11 +2831,64 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       } catch { }
     }
 
+    // Nếu bộ nhớ cache order_appointment_${pid} bị ghi đè, kiểm tra tiếp center_inspection_orders và my_seller_inspection_orders
+    if (resolvedApptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+      try {
+        const rawCenter = localStorage.getItem('center_inspection_orders');
+        if (rawCenter) {
+          const list = JSON.parse(rawCenter);
+          if (Array.isArray(list)) {
+            const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
+            if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+              resolvedApptTime = m.appointmentScheduledAt || resolvedApptTime;
+              resolvedApptNote = m.appointmentNote || resolvedApptNote;
+              resolvedApptStatus = 'PENDING_CENTER_CONFIRMATION';
+              resolvedCounterTime = undefined;
+              resolvedCounterShift = undefined;
+              resolvedCounterNote = undefined;
+            }
+          }
+        }
+      } catch {}
+      try {
+        const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+        if (rawSeller && resolvedApptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+          const list = JSON.parse(rawSeller);
+          if (Array.isArray(list)) {
+            const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
+            if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+              resolvedApptTime = m.appointmentScheduledAt || resolvedApptTime;
+              resolvedApptNote = m.appointmentNote || resolvedApptNote;
+              resolvedApptStatus = 'PENDING_CENTER_CONFIRMATION';
+              resolvedCounterTime = undefined;
+              resolvedCounterShift = undefined;
+              resolvedCounterNote = undefined;
+            }
+          }
+        }
+      } catch {}
+    }
+
     if (resolvedApptStatus === 'PENDING_CENTER_CONFIRMATION') {
       resolvedCounterTime = undefined;
       resolvedCounterShift = undefined;
       resolvedCounterNote = undefined;
       setReviewMode('VIEW');
+
+      // Tự động chữa lành order_appointment_${pid} để modal render đồng bộ hoàn toàn
+      possibleIds.forEach((pid) => {
+        try {
+          localStorage.setItem(`order_appointment_${pid}`, JSON.stringify({
+            scheduledAt: resolvedApptTime,
+            note: resolvedApptNote || '',
+            shift: initialShift,
+            status: 'PENDING_CENTER_CONFIRMATION',
+            counterScheduledAt: undefined,
+            counterShift: undefined,
+            counterNote: undefined,
+          }));
+        } catch {}
+      });
     } else if (!initialNote && (order as any).counterScheduledAt) {
       const cd = new Date((order as any).counterScheduledAt);
       if (!isNaN(cd.getTime())) {
@@ -3708,6 +3850,38 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             }
           } catch {}
         }
+
+        if (apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+          const idSet = new Set(possibleIds);
+          try {
+            const rawCenter = localStorage.getItem('center_inspection_orders');
+            if (rawCenter) {
+              const listCenter = JSON.parse(rawCenter);
+              if (Array.isArray(listCenter)) {
+                const m = listCenter.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
+                if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+                  if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
+                  apptStatus = 'PENDING_CENTER_CONFIRMATION';
+                  counterTime = undefined;
+                }
+              }
+            }
+          } catch {}
+          try {
+            const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+            if (rawSeller && apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+              const listSeller = JSON.parse(rawSeller);
+              if (Array.isArray(listSeller)) {
+                const m = listSeller.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
+                if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+                  if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
+                  apptStatus = 'PENDING_CENTER_CONFIRMATION';
+                  counterTime = undefined;
+                }
+              }
+            }
+          } catch {}
+        }
       }
 
       if (
@@ -4652,18 +4826,45 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                               let apptTime = order.appointmentScheduledAt;
                               if (typeof window !== 'undefined') {
                                 const possibleIds = [order.id, (order as any).linkedOrderId, (order as any).orderId, (order as any).inspectionOrderId].filter(Boolean) as string[];
+                                const idSet = new Set(possibleIds);
                                 for (const pid of possibleIds) {
                                   try {
                                     const raw = localStorage.getItem(`order_appointment_${pid}`);
                                     if (raw) {
                                       const parsed = JSON.parse(raw);
-                                      if (parsed.scheduledAt) {
+                                      if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && parsed.scheduledAt) {
                                         apptTime = parsed.scheduledAt;
                                         break;
+                                      } else if (parsed.scheduledAt && !apptTime) {
+                                        apptTime = parsed.scheduledAt;
                                       }
                                     }
                                   } catch {}
                                 }
+                                try {
+                                  const rawCenter = localStorage.getItem('center_inspection_orders');
+                                  if (rawCenter) {
+                                    const list = JSON.parse(rawCenter);
+                                    if (Array.isArray(list)) {
+                                      const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
+                                      if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && m.appointmentScheduledAt) {
+                                        apptTime = m.appointmentScheduledAt;
+                                      }
+                                    }
+                                  }
+                                } catch {}
+                                try {
+                                  const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+                                  if (rawSeller) {
+                                    const list = JSON.parse(rawSeller);
+                                    if (Array.isArray(list)) {
+                                      const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
+                                      if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && m.appointmentScheduledAt) {
+                                        apptTime = m.appointmentScheduledAt;
+                                      }
+                                    }
+                                  }
+                                } catch {}
                               }
                               if (!apptTime) return null;
                               return (
@@ -8050,7 +8251,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               let counterReason = reviewApptOrder.counterNote;
               let apptStatus = reviewApptOrder.appointmentStatus;
 
-              const possibleIds = [reviewApptOrder.id, reviewApptOrder.linkedOrderId, (reviewApptOrder as any).orderId].filter(Boolean);
+              const possibleIds = [reviewApptOrder.id, reviewApptOrder.linkedOrderId, (reviewApptOrder as any).orderId, (reviewApptOrder as any).inspectionOrderId].filter(Boolean) as string[];
+              const idSet = new Set(possibleIds);
+
               for (const pid of possibleIds) {
                 try {
                   const raw = localStorage.getItem(`order_appointment_${pid}`);
@@ -8059,17 +8262,57 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     if (p.scheduledAt) apptTime = p.scheduledAt;
                     if (p.note) apptNote = p.note;
                     if (p.shift) apptShift = p.shift;
-                    if (p.counterScheduledAt) {
-                      existingCounterTime = p.counterScheduledAt;
-                    } else if (p.status === 'PENDING_CENTER_CONFIRMATION') {
+                    if (p.status === 'PENDING_CENTER_CONFIRMATION' && !p.counterScheduledAt) {
                       existingCounterTime = undefined;
                       counterReason = undefined;
+                      apptStatus = 'PENDING_CENTER_CONFIRMATION';
+                      break;
+                    } else if (p.counterScheduledAt) {
+                      existingCounterTime = p.counterScheduledAt;
+                      if (p.counterNote) counterReason = p.counterNote;
+                      if (p.status) apptStatus = p.status;
+                      break;
                     }
-                    if (p.counterNote) counterReason = p.counterNote;
-                    if (p.status) apptStatus = p.status;
-                    break;
                   }
                 } catch { }
+              }
+
+              if (apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+                try {
+                  const rawCenter = localStorage.getItem('center_inspection_orders');
+                  if (rawCenter) {
+                    const list = JSON.parse(rawCenter);
+                    if (Array.isArray(list)) {
+                      const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
+                      if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+                        apptTime = m.appointmentScheduledAt || apptTime;
+                        apptNote = m.appointmentNote || apptNote;
+                        apptStatus = 'PENDING_CENTER_CONFIRMATION';
+                        existingCounterTime = undefined;
+                        counterReason = undefined;
+                      }
+                    }
+                  }
+                } catch {}
+              }
+
+              if (apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+                try {
+                  const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+                  if (rawSeller) {
+                    const list = JSON.parse(rawSeller);
+                    if (Array.isArray(list)) {
+                      const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
+                      if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+                        apptTime = m.appointmentScheduledAt || apptTime;
+                        apptNote = m.appointmentNote || apptNote;
+                        apptStatus = 'PENDING_CENTER_CONFIRMATION';
+                        existingCounterTime = undefined;
+                        counterReason = undefined;
+                      }
+                    }
+                  }
+                } catch {}
               }
 
               const isWaitingSellerCounter = Boolean(

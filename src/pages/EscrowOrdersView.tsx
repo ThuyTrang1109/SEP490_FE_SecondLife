@@ -692,23 +692,38 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           if (active && dto) {
             setDetailInspectionDto(dto);
             if (dto.counterScheduledAt || dto.appointmentScheduledAt) {
-              const isCounter = Boolean(dto.counterScheduledAt || dto.appointmentStatus === 'COUNTERED_BY_CENTER' || dto.status === 'WAITING_SELLER_APPROVAL');
-              const apptRecord = {
-                scheduledAt: dto.appointmentScheduledAt,
-                note: dto.appointmentNote || '',
-                shift: dto.counterShift || 'MORNING',
-                status: isCounter ? 'COUNTERED_BY_CENTER' : (dto.appointmentStatus || (dto.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
-                counterScheduledAt: dto.counterScheduledAt,
-                counterShift: dto.counterShift,
-                counterNote: dto.counterNote,
-              };
               const ids = [dto.id, dto.linkedOrderId, detailOrderId].filter(Boolean) as string[];
-              ids.forEach(id => {
+              const isLocallyRescheduled = ids.some((id) => {
                 try {
-                  localStorage.setItem(`order_appointment_${id}`, JSON.stringify(apptRecord));
+                  const raw = localStorage.getItem(`order_appointment_${id}`);
+                  if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
+                      return true;
+                    }
+                  }
                 } catch {}
+                return false;
               });
-              setApptTick(t => t + 1);
+
+              if (!isLocallyRescheduled) {
+                const isCounter = Boolean(dto.counterScheduledAt || dto.appointmentStatus === 'COUNTERED_BY_CENTER' || dto.status === 'WAITING_SELLER_APPROVAL');
+                const apptRecord = {
+                  scheduledAt: dto.appointmentScheduledAt,
+                  note: dto.appointmentNote || '',
+                  shift: dto.counterShift || 'MORNING',
+                  status: isCounter ? 'COUNTERED_BY_CENTER' : (dto.appointmentStatus || (dto.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
+                  counterScheduledAt: dto.counterScheduledAt,
+                  counterShift: dto.counterShift,
+                  counterNote: dto.counterNote,
+                };
+                ids.forEach(id => {
+                  try {
+                    localStorage.setItem(`order_appointment_${id}`, JSON.stringify(apptRecord));
+                  } catch {}
+                });
+                setApptTick(t => t + 1);
+              }
             }
           }
         })
@@ -2295,6 +2310,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         counterShift: (ord as any).counterShift,
         counterNote: (ord as any).counterNote,
       };
+    }
+
+    if (apptData?.status === 'PENDING_CENTER_CONFIRMATION' && !apptData?.counterScheduledAt) {
+      return apptData;
     }
 
     if (detailInspectionDto && (detailInspectionDto.id === ord.id || detailInspectionDto.linkedOrderId === ord.id)) {

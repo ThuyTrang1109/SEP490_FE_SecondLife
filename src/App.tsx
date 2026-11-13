@@ -1460,25 +1460,41 @@ export default function App() {
 
         // Đồng bộ realtime appointment từ BE vào localStorage
         if (insp.counterScheduledAt || insp.appointmentScheduledAt) {
-          const isCounter = Boolean(insp.counterScheduledAt || insp.appointmentStatus === 'COUNTERED_BY_CENTER' || insp.status === 'WAITING_SELLER_APPROVAL');
-          const apptStatus = isCounter
-            ? 'COUNTERED_BY_CENTER'
-            : (insp.appointmentStatus || (insp.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION'));
-          const apptRecord = {
-            scheduledAt: insp.appointmentScheduledAt,
-            note: insp.appointmentNote || '',
-            shift: insp.counterShift || 'MORNING',
-            status: apptStatus,
-            counterScheduledAt: insp.counterScheduledAt,
-            counterShift: insp.counterShift,
-            counterNote: insp.counterNote,
-          };
           const targetIds = [insp.id, insp.linkedOrderId].filter(Boolean);
-          targetIds.forEach((tid) => {
+          // Không ghi đè nếu ở local Seller đã đề xuất lịch mới đang chờ trung tâm duyệt
+          const isLocallyRescheduled = targetIds.some((tid) => {
             try {
-              localStorage.setItem(`order_appointment_${tid}`, JSON.stringify(apptRecord));
+              const raw = localStorage.getItem(`order_appointment_${tid}`);
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
+                  return true;
+                }
+              }
             } catch {}
+            return false;
           });
+
+          if (!isLocallyRescheduled) {
+            const isCounter = Boolean(insp.counterScheduledAt || insp.appointmentStatus === 'COUNTERED_BY_CENTER' || insp.status === 'WAITING_SELLER_APPROVAL');
+            const apptStatus = isCounter
+              ? 'COUNTERED_BY_CENTER'
+              : (insp.appointmentStatus || (insp.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION'));
+            const apptRecord = {
+              scheduledAt: insp.appointmentScheduledAt,
+              note: insp.appointmentNote || '',
+              shift: insp.counterShift || 'MORNING',
+              status: apptStatus,
+              counterScheduledAt: insp.counterScheduledAt,
+              counterShift: insp.counterShift,
+              counterNote: insp.counterNote,
+            };
+            targetIds.forEach((tid) => {
+              try {
+                localStorage.setItem(`order_appointment_${tid}`, JSON.stringify(apptRecord));
+              } catch {}
+            });
+          }
         }
       });
 

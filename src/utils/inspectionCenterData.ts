@@ -58,6 +58,38 @@ export function getCenterDispatchStage(
         }
       } catch {}
     }
+
+    if (apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+      const idSet = new Set(possibleIds);
+      try {
+        const rawCenter = localStorage.getItem('center_inspection_orders');
+        if (rawCenter) {
+          const list = JSON.parse(rawCenter);
+          if (Array.isArray(list)) {
+            const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
+            if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+              if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
+              apptStatus = 'PENDING_CENTER_CONFIRMATION';
+              counterTime = undefined;
+            }
+          }
+        }
+      } catch {}
+      try {
+        const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+        if (rawSeller && apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+          const list = JSON.parse(rawSeller);
+          if (Array.isArray(list)) {
+            const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
+            if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+              if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
+              apptStatus = 'PENDING_CENTER_CONFIRMATION';
+              counterTime = undefined;
+            }
+          }
+        }
+      } catch {}
+    }
   }
 
   // Khi lịch hẹn tại nhà đang trong giai đoạn thương lượng (Hub đã gửi đề xuất mới, chờ Seller duyệt):

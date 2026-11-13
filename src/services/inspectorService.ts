@@ -843,10 +843,10 @@ export const inspectorService = {
   /**
    * Lên lịch hẹn kiểm tra tại nhà (Gói AT_HOME)
    */
-  async scheduleAppointment(orderId: string, scheduledAt: string, note?: string): Promise<InspectionOrderDto> {
+  async scheduleAppointment(orderId: string, scheduledAt: string, note?: string, shift?: string): Promise<InspectionOrderDto> {
     const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/schedule`, {
       method: 'POST',
-      body: JSON.stringify({ scheduledAt, note }),
+      body: JSON.stringify({ scheduledAt, note, shift }),
       requiresAuth: true,
     });
     return (res as any)?.data || res;

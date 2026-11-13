@@ -416,7 +416,8 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
         await inspectorService.scheduleAppointment(
           targetInspectionId,
           scheduledDate.toISOString(),
-          note.trim() || undefined
+          note.trim() || undefined,
+          detectedShift
         );
       } catch (err: any) {
         if (targetInspectionId !== orderId) {
@@ -424,7 +425,8 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
             await inspectorService.scheduleAppointment(
               orderId,
               scheduledDate.toISOString(),
-              note.trim() || undefined
+              note.trim() || undefined,
+              detectedShift
             );
           } catch (e2) {
             console.warn('Backend schedule appointment error, fallback to local cache:', e2);

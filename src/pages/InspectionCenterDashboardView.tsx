@@ -530,26 +530,39 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         let counterNote = (o as any).counterNote;
         let appointmentRejectionReason = (o as any).appointmentRejectionReason;
 
-        try {
-          const rawAppt = localStorage.getItem(`order_appointment_${o.id}`);
-          if (rawAppt) {
-            const apptData = JSON.parse(rawAppt);
-            appointmentScheduledAt = apptData.scheduledAt || appointmentScheduledAt;
-            appointmentNote = apptData.note || appointmentNote;
-            appointmentStatus = apptData.status || appointmentStatus;
-            counterScheduledAt = apptData.counterScheduledAt || counterScheduledAt;
-            counterShift = apptData.counterShift || counterShift;
-            counterNote = apptData.counterNote || counterNote;
-          }
-        } catch { }
+        const apptPossibleIds = [o.id, (o as any).linkedOrderId, (o as any).orderId, (o as any).inspectionOrderId].filter(Boolean) as string[];
+        for (const pid of apptPossibleIds) {
+          try {
+            const rawAppt = localStorage.getItem(`order_appointment_${pid}`);
+            if (rawAppt) {
+              const apptData = JSON.parse(rawAppt);
+              appointmentScheduledAt = apptData.scheduledAt || appointmentScheduledAt;
+              appointmentNote = apptData.note || appointmentNote;
+              appointmentStatus = apptData.status || appointmentStatus;
+              counterScheduledAt = apptData.counterScheduledAt || counterScheduledAt;
+              counterShift = apptData.counterShift || counterShift;
+              counterNote = apptData.counterNote || counterNote;
+              break;
+            }
+          } catch { }
+        }
 
-        try {
-          const rawRej = localStorage.getItem(`order_appointment_rejection_${o.id}`);
-          if (rawRej) {
-            const rejData = JSON.parse(rawRej);
-            if (rejData.reason) appointmentRejectionReason = rejData.reason;
-          }
-        } catch { }
+        for (const pid of apptPossibleIds) {
+          try {
+            const rawRej = localStorage.getItem(`order_appointment_rejection_${pid}`);
+            if (rawRej) {
+              const rejData = JSON.parse(rawRej);
+              if (rejData.reason) {
+                appointmentRejectionReason = rejData.reason;
+                break;
+              }
+            }
+          } catch { }
+        }
+
+        if (counterScheduledAt) {
+          appointmentStatus = 'COUNTERED_BY_CENTER';
+        }
 
         const hasValidAssign = Boolean(assignedInspectorId && assignedInspectorName && assignedInspectorName !== 'Chưa phân công');
         if (hasValidAssign && !appointmentStatus) {
@@ -840,26 +853,39 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             let counterNote = (o as any).counterNote;
             let appointmentRejectionReason = (o as any).appointmentRejectionReason;
 
-            try {
-              const rawAppt = localStorage.getItem(`order_appointment_${o.id}`);
-              if (rawAppt) {
-                const apptData = JSON.parse(rawAppt);
-                appointmentScheduledAt = apptData.scheduledAt || appointmentScheduledAt;
-                appointmentNote = apptData.note || appointmentNote;
-                appointmentStatus = apptData.status || appointmentStatus;
-                counterScheduledAt = apptData.counterScheduledAt || counterScheduledAt;
-                counterShift = apptData.counterShift || counterShift;
-                counterNote = apptData.counterNote || counterNote;
-              }
-            } catch { }
+            const apptPossibleIds = [o.id, (o as any).linkedOrderId, (o as any).orderId, (o as any).inspectionOrderId].filter(Boolean) as string[];
+            for (const pid of apptPossibleIds) {
+              try {
+                const rawAppt = localStorage.getItem(`order_appointment_${pid}`);
+                if (rawAppt) {
+                  const apptData = JSON.parse(rawAppt);
+                  appointmentScheduledAt = apptData.scheduledAt || appointmentScheduledAt;
+                  appointmentNote = apptData.note || appointmentNote;
+                  appointmentStatus = apptData.status || appointmentStatus;
+                  counterScheduledAt = apptData.counterScheduledAt || counterScheduledAt;
+                  counterShift = apptData.counterShift || counterShift;
+                  counterNote = apptData.counterNote || counterNote;
+                  break;
+                }
+              } catch { }
+            }
 
-            try {
-              const rawRej = localStorage.getItem(`order_appointment_rejection_${o.id}`);
-              if (rawRej) {
-                const rejData = JSON.parse(rawRej);
-                if (rejData.reason) appointmentRejectionReason = rejData.reason;
-              }
-            } catch { }
+            for (const pid of apptPossibleIds) {
+              try {
+                const rawRej = localStorage.getItem(`order_appointment_rejection_${pid}`);
+                if (rawRej) {
+                  const rejData = JSON.parse(rawRej);
+                  if (rejData.reason) {
+                    appointmentRejectionReason = rejData.reason;
+                    break;
+                  }
+                }
+              } catch { }
+            }
+
+            if (counterScheduledAt) {
+              appointmentStatus = 'COUNTERED_BY_CENTER';
+            }
 
             const hasValidAssign = Boolean(assignedInspectorId && assignedInspectorName && assignedInspectorName !== 'Chưa phân công');
             if (hasValidAssign && !appointmentStatus) {
@@ -962,26 +988,39 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           let counterNote = (ord as any).counterNote;
           let appointmentRejectionReason = (ord as any).appointmentRejectionReason;
 
-          try {
-            const rawAppt = localStorage.getItem(`order_appointment_${ord.id}`);
-            if (rawAppt) {
-              const apptData = JSON.parse(rawAppt);
-              appointmentScheduledAt = apptData.scheduledAt || appointmentScheduledAt;
-              appointmentNote = apptData.note || appointmentNote;
-              appointmentStatus = apptData.status || appointmentStatus;
-              counterScheduledAt = apptData.counterScheduledAt || counterScheduledAt;
-              counterShift = apptData.counterShift || counterShift;
-              counterNote = apptData.counterNote || counterNote;
-            }
-          } catch { }
+          const apptPossibleIds = [ord.id, (ord as any).linkedOrderId, (ord as any).orderId, (ord as any).inspectionOrderId].filter(Boolean) as string[];
+          for (const pid of apptPossibleIds) {
+            try {
+              const rawAppt = localStorage.getItem(`order_appointment_${pid}`);
+              if (rawAppt) {
+                const apptData = JSON.parse(rawAppt);
+                appointmentScheduledAt = apptData.scheduledAt || appointmentScheduledAt;
+                appointmentNote = apptData.note || appointmentNote;
+                appointmentStatus = apptData.status || appointmentStatus;
+                counterScheduledAt = apptData.counterScheduledAt || counterScheduledAt;
+                counterShift = apptData.counterShift || counterShift;
+                counterNote = apptData.counterNote || counterNote;
+                break;
+              }
+            } catch { }
+          }
 
-          try {
-            const rawRej = localStorage.getItem(`order_appointment_rejection_${ord.id}`);
-            if (rawRej) {
-              const rejData = JSON.parse(rawRej);
-              if (rejData.reason) appointmentRejectionReason = rejData.reason;
-            }
-          } catch { }
+          for (const pid of apptPossibleIds) {
+            try {
+              const rawRej = localStorage.getItem(`order_appointment_rejection_${pid}`);
+              if (rawRej) {
+                const rejData = JSON.parse(rawRej);
+                if (rejData.reason) {
+                  appointmentRejectionReason = rejData.reason;
+                  break;
+                }
+              }
+            } catch { }
+          }
+
+          if (counterScheduledAt) {
+            appointmentStatus = 'COUNTERED_BY_CENTER';
+          }
 
           if (hasValidAssign && !appointmentStatus) {
             appointmentStatus = 'CONFIRMED';
@@ -3498,17 +3537,31 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       let counterTime = (ord as any)?.counterScheduledAt;
       let counterNote = (ord as any)?.counterNote;
 
-      if (typeof window !== 'undefined' && ord?.id) {
-        try {
-          const raw = localStorage.getItem(`order_appointment_${ord.id}`);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed.scheduledAt && !apptTime) apptTime = parsed.scheduledAt;
-            if (parsed.status && !apptStatus) apptStatus = parsed.status;
-            if (parsed.counterScheduledAt) counterTime = parsed.counterScheduledAt;
-            if (parsed.counterNote) counterNote = parsed.counterNote;
-          }
-        } catch {}
+      if (typeof window !== 'undefined') {
+        const possibleIds = [
+          ord?.id,
+          (ord as any)?.linkedOrderId,
+          (ord as any)?.orderId,
+          (ord as any)?.inspectionOrderId,
+        ].filter(Boolean) as string[];
+
+        for (const id of possibleIds) {
+          try {
+            const raw = localStorage.getItem(`order_appointment_${id}`);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed.scheduledAt && !apptTime) apptTime = parsed.scheduledAt;
+              if (parsed.status) apptStatus = parsed.status;
+              if (parsed.counterScheduledAt) counterTime = parsed.counterScheduledAt;
+              if (parsed.counterNote) counterNote = parsed.counterNote;
+              break;
+            }
+          } catch {}
+        }
+      }
+
+      if (counterTime && (!apptStatus || apptStatus !== 'CONFIRMED')) {
+        apptStatus = 'COUNTERED_BY_CENTER';
       }
 
       if (!apptTime || apptStatus === 'REJECTED') {
@@ -3538,7 +3591,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       }
 
       // 2. Trung tâm đã gửi lại đề xuất mới, chờ Seller phản hồi
-      if (apptStatus === 'COUNTERED_BY_CENTER') {
+      if (apptStatus === 'COUNTERED_BY_CENTER' || Boolean(counterTime)) {
         const formattedCounter = counterTime ? new Date(counterTime).toLocaleString('vi-VN', {
           hour: '2-digit',
           minute: '2-digit',

@@ -514,7 +514,6 @@ export default function App() {
               key === 'create_listing_active_draft' ||
               key.startsWith('order_listing_') ||
               key.startsWith('order_buyer_info_') ||
-              key.startsWith('order_appointment_') ||
               key.startsWith('buyer_info_'))
           ) {
             localStorage.removeItem(key);

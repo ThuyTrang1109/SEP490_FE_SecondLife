@@ -23,6 +23,10 @@ export function getCenterDispatchStage(
     appointmentScheduledAt?: string;
     appointmentStatus?: string;
     id?: string;
+    linkedOrderId?: string;
+    orderId?: string;
+    inspectionOrderId?: string;
+    counterScheduledAt?: string;
   },
   receivedAtHub: boolean,
 ) {
@@ -32,24 +36,38 @@ export function getCenterDispatchStage(
   if (order.orderType === 'AT_HOME') {
     let apptTime = order.appointmentScheduledAt;
     let apptStatus = (order as any).appointmentStatus;
-    if (typeof window !== 'undefined' && order.id) {
-      try {
-        const raw = localStorage.getItem(`order_appointment_${order.id}`);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed.scheduledAt && !apptTime) apptTime = parsed.scheduledAt;
-          if (parsed.status && !apptStatus) apptStatus = parsed.status;
-        }
-      } catch {}
+    let counterTime = (order as any).counterScheduledAt;
+
+    if (typeof window !== 'undefined') {
+      const possibleIds = [
+        order.id,
+        (order as any).linkedOrderId,
+        (order as any).orderId,
+        (order as any).inspectionOrderId,
+      ].filter(Boolean) as string[];
+
+      for (const id of possibleIds) {
+        try {
+          const raw = localStorage.getItem(`order_appointment_${id}`);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.scheduledAt && !apptTime) apptTime = parsed.scheduledAt;
+            if (parsed.status) apptStatus = parsed.status;
+            if (parsed.counterScheduledAt) counterTime = parsed.counterScheduledAt;
+            break;
+          }
+        } catch {}
+      }
     }
+
     if (!apptTime || apptStatus === 'REJECTED') {
       return 'WAITING_SELLER_APPOINTMENT';
     }
+    if (apptStatus === 'COUNTERED_BY_CENTER' || Boolean(counterTime)) {
+      return 'WAITING_SELLER_APPROVAL';
+    }
     if (apptStatus === 'PENDING_CENTER_CONFIRMATION' || apptStatus === 'PENDING_CONFIRMATION') {
       return 'WAITING_CENTER_APPROVAL';
-    }
-    if (apptStatus === 'COUNTERED_BY_CENTER') {
-      return 'WAITING_SELLER_APPROVAL';
     }
   }
 

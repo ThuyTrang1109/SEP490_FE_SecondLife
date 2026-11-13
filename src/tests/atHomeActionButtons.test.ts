@@ -386,4 +386,16 @@ test('At-Home Inspection Modal and Card Action Buttons Rules', async (t) => {
     const stage = getCenterDispatchStage(orderRejected as any, false);
     assert.strictEqual(stage, 'WAITING_SELLER_APPOINTMENT', 'Center rejection sends order back to seller to reschedule');
   });
+
+  await t.test('[TEST 13] Countered appointment priority: counterScheduledAt always yields WAITING_SELLER_APPROVAL', () => {
+    const orderWithCounter = {
+      id: 'ord-test-counter-priority',
+      status: 'CONFIRMED_PENDING_DISPATCH',
+      orderType: 'AT_HOME',
+      appointmentScheduledAt: '2026-11-14T08:00:00Z',
+      counterScheduledAt: '2026-11-14T14:00:00Z',
+    };
+    const stage = getCenterDispatchStage(orderWithCounter as any, false);
+    assert.strictEqual(stage, 'WAITING_SELLER_APPROVAL', 'Must be in WAITING_SELLER_APPROVAL when counter appointment exists, NEVER READY_TO_ASSIGN');
+  });
 });

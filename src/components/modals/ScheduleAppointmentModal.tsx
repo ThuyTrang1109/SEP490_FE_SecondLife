@@ -1,5 +1,5 @@
 import { paths } from '../../app/router/paths';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Calendar, Clock, MapPin, X, Check, RefreshCw, AlertCircle, ShieldCheck, UserCheck, Sun, Sunset, Info } from 'lucide-react';
 import { Language } from '../../types';
 import { inspectorService } from '../../services/inspectorService';
@@ -40,6 +40,14 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+
+  const formatDateDisplayVN = (isoDate: string) => {
+    if (!isoDate) return '';
+    const [y, m, d] = isoDate.split('-');
+    if (!y || !m || !d) return isoDate;
+    return `${d}/${m}/${y}`;
+  };
 
   // Assigned inspector info
   const [assignedInspector, setAssignedInspector] = useState<{
@@ -557,17 +565,35 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                       ≥ 1 ngày
                     </span>
                   </label>
-                  <input
-                    type="date"
-                    min={tomorrowStr}
-                    value={selectedDate}
-                    onChange={(e) => {
-                      setSelectedDate(e.target.value);
-                      setErrorMessage(null);
-                    }}
-                    required
-                    className="w-full h-9 px-2.5 rounded-xl border border-gray-200 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-amber-500 outline-hidden bg-gray-50/50"
-                  />
+                  <div className="relative w-full h-9 group">
+                    <div className="absolute inset-0 px-2.5 rounded-xl border border-gray-200 text-xs font-bold text-slate-800 bg-gray-50/50 flex items-center justify-between pointer-events-none group-focus-within:ring-2 group-focus-within:ring-amber-500 group-focus-within:border-amber-500 transition">
+                      <span className="font-mono">
+                        {selectedDate ? (
+                          formatDateDisplayVN(selectedDate)
+                        ) : (
+                          <span className="text-slate-400 font-normal font-sans">dd/mm/yyyy</span>
+                        )}
+                      </span>
+                      <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                    </div>
+                    <input
+                      ref={dateInputRef}
+                      type="date"
+                      min={tomorrowStr}
+                      value={selectedDate}
+                      onChange={(e) => {
+                        setSelectedDate(e.target.value);
+                        setErrorMessage(null);
+                      }}
+                      onClick={(e) => {
+                        try {
+                          (e.target as HTMLInputElement).showPicker?.();
+                        } catch {}
+                      }}
+                      required
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    />
+                  </div>
                 </div>
 
                 {/* Step 2: Select Shift */}

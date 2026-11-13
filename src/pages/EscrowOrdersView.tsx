@@ -1136,7 +1136,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     // Nếu backend chưa có hoặc đơn mock/offline (không phải UUID hoặc backend lỗi):
     // Tự tạo fallback thông tin thanh toán VietQR SePay chuẩn xác
     if (!paymentInfo) {
-      const remainingAmount = ord.totalPaidVnd || ord.itemPriceVnd || (ord.listing?.priceVnd ?? 0) + (ord.shippingFeeVnd ?? 0) || 600000;
+      const remainingAmount = ord.totalPaidVnd || ord.itemPriceVnd || ((ord.listing?.priceVnd ?? 0) + (ord.shippingFeeVnd ?? 0)) || 0;
       paymentInfo = ord.bankPaymentDetails || {
         orderId: ord.id,
         bankName: 'MB',

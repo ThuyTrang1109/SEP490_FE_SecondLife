@@ -1,5 +1,5 @@
 import { request, PageResponse } from './apiClient';
-import { CreditPricingRuleResponseDto, CreditDiscountTierResponseDto } from './adminCreditPricingService';
+import { CreditPricingRuleResponseDto } from './adminCreditPricingService';
 
 export interface CreditBalanceResponseDto {
   postCredits: number;
@@ -12,9 +12,6 @@ export interface CreditQuoteResponseDto {
   valuationQuantity: number;
   listingUnitPrice: number;
   valuationUnitPrice: number;
-  discountTierId?: string | null;
-  discountMinQuantity?: number;
-  discountMaxQuantity?: number | null;
   discountRate: number;
   subtotal: number;
   discountAmount: number;
@@ -24,7 +21,6 @@ export interface CreditQuoteResponseDto {
 
 export interface CreditPricingResponseDto {
   prices: CreditPricingRuleResponseDto[];
-  discountTiers: CreditDiscountTierResponseDto[];
   quote?: CreditQuoteResponseDto;
 }
 
@@ -38,10 +34,6 @@ export interface CreditPurchaseResponseDto {
   id: string;
   status: 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED' | string;
   snapshot: CreditQuoteResponseDto;
-  paymentIntentId?: string;
-  paymentProvider?: string;
-  providerIntentId?: string;
-  paymentStatus?: string;
   createdAt: string;
   paidAt?: string | null;
 }

@@ -8142,19 +8142,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                               <span className="text-[10px] text-amber-700 font-semibold">≥ 1 ngày</span>
                             </label>
                             <div
-                              onClick={() => {
-                                const dateInput = document.getElementById('reviewCounterDateInput') as HTMLInputElement;
-                                if (dateInput) {
-                                  if (typeof (dateInput as any).showPicker === 'function') {
-                                    (dateInput as any).showPicker();
-                                  } else {
-                                    dateInput.focus();
-                                  }
-                                }
-                              }}
-                              className="relative flex items-center justify-between p-2.5 bg-white border border-amber-300 rounded-xl cursor-pointer hover:border-amber-500 transition shadow-2xs"
+                              className="relative flex items-center justify-between p-2.5 bg-white border border-amber-300 rounded-xl cursor-pointer hover:border-amber-500 transition shadow-2xs group"
                             >
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 pointer-events-none">
                                 <Calendar className="w-4 h-4 text-amber-600 shrink-0" />
                                 <span className="font-bold text-slate-800 text-xs">
                                   {(() => {
@@ -8164,7 +8154,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                   })()}
                                 </span>
                               </div>
-                              <span className="text-[10px] text-slate-400 font-medium">Bấm để đổi ngày 📅</span>
+                              <span className="text-[10px] text-slate-400 font-medium pointer-events-none">Bấm để đổi ngày 📅</span>
                               <input
                                 id="reviewCounterDateInput"
                                 type="date"
@@ -8176,7 +8166,12 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                 })()}
                                 value={counterDate}
                                 onChange={(e) => setCounterDate(e.target.value)}
-                                className="absolute inset-0 opacity-0 pointer-events-none w-full h-full"
+                                onClick={(e) => {
+                                  try {
+                                    (e.target as HTMLInputElement).showPicker?.();
+                                  } catch {}
+                                }}
+                                className="absolute inset-0 opacity-0 cursor-pointer z-10 w-full h-full"
                               />
                             </div>
                           </div>

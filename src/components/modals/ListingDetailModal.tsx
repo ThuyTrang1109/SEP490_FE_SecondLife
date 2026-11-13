@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { Listing, Language, ProductReview, UserProfile, SellerPostDetailDto } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
-import { cleanFullAddress } from '../../utils/addressUtils';
+import { cleanFullAddress, extractWardAndCity } from '../../utils/addressUtils';
 import { getBoughtListingIds } from '../../utils/orderUtils';
 import { soundFx } from '../../utils/soundEffects';
 import { reviewService } from '../../data/mockReviews';
@@ -92,6 +92,16 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const effectiveRejectionReason = sellerDetail?.rejectionReason ?? listing.rejectionReason;
   const effectiveCreditCharged = sellerDetail?.listingCreditCharged ?? listing.listingCreditCharged;
   const effectiveSellerAddress = cleanFullAddress(activeDetail?.sellerAddress || activeDetail?.user?.address || listing.sellerAddress || listing.location);
+
+  const displaySellerLocation = React.useMemo(() => {
+    const raw = effectiveSellerAddress || listing.sellerAddress || listing.location;
+    if (!raw) return '';
+    const wardAndCity = extractWardAndCity(raw);
+    if (wardAndCity) {
+      return wardAndCity.replace(/Thành phố Hồ Chí Minh/gi, 'TP. HCM').replace(/Thành phố Hà Nội/gi, 'Hà Nội');
+    }
+    return cleanFullAddress(raw);
+  }, [effectiveSellerAddress, listing.sellerAddress, listing.location]);
 
   const canDisassemble = React.useMemo(() => {
     if (activeDetail?.canDisassemble !== undefined) return Boolean(activeDetail.canDisassemble);
@@ -515,7 +525,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                               <span>•</span>
                               <span className="flex items-center gap-0.5 text-slate-600 font-medium">
                                 <MapPin className="w-2.5 h-2.5 text-[#c34c36]" />
-                                <span>{effectiveSellerAddress || cleanFullAddress(listing.sellerAddress || listing.location) || (lang === 'vi' ? 'Chưa cập nhật địa chỉ' : 'Address not updated')}</span>
+                                <span>{displaySellerLocation || (lang === 'vi' ? 'Chưa cập nhật địa chỉ' : 'Address not updated')}</span>
                               </span>
                             </>
                           )}

@@ -330,4 +330,60 @@ test('At-Home Inspection Modal and Card Action Buttons Rules', async (t) => {
       'Cannot cancel inspection request once inspection report is created'
     );
   });
+
+  await t.test('[TEST 11] Multi-turn Appointment Negotiation: PENDING_CENTER_CONFIRMATION -> COUNTERED_BY_CENTER -> CONFIRMED -> ASSIGNED', () => {
+    // 1. Seller selects date/time and submits appointment -> Status is PENDING_CENTER_CONFIRMATION
+    const orderRequested = {
+      status: 'CONFIRMED_PENDING_DISPATCH',
+      orderType: 'AT_HOME',
+      appointmentScheduledAt: '2026-11-14T09:00:00Z',
+      appointmentStatus: 'PENDING_CENTER_CONFIRMATION',
+    };
+    const stage1 = getCenterDispatchStage(orderRequested as any, false);
+    assert.strictEqual(stage1, 'WAITING_CENTER_APPROVAL', 'Center must review appointment first (button: Duyệt lịch hẹn)');
+
+    // 2. Center counters with new schedule -> Status becomes COUNTERED_BY_CENTER
+    const orderCountered = {
+      status: 'CONFIRMED_PENDING_DISPATCH',
+      orderType: 'AT_HOME',
+      appointmentScheduledAt: '2026-11-14T09:00:00Z',
+      appointmentStatus: 'COUNTERED_BY_CENTER',
+      counterScheduledAt: '2026-11-15T14:00:00Z',
+      counterShift: 'AFTERNOON',
+      counterNote: 'KTV bận ca sáng, dời sang chiều 14h ngày 15/11',
+    };
+    const stage2 = getCenterDispatchStage(orderCountered as any, false);
+    assert.strictEqual(stage2, 'WAITING_SELLER_APPROVAL', 'Center waits for seller to accept or reschedule');
+
+    // 3. Seller accepts or Center confirms -> Status becomes CONFIRMED (ready for inspector assignment)
+    const orderConfirmed = {
+      status: 'CONFIRMED_PENDING_DISPATCH',
+      orderType: 'AT_HOME',
+      appointmentScheduledAt: '2026-11-15T14:00:00Z',
+      appointmentStatus: 'CONFIRMED',
+      inspectorId: undefined,
+    };
+    const stage3 = getCenterDispatchStage(orderConfirmed as any, false);
+    assert.strictEqual(stage3, 'READY_TO_ASSIGN', 'Appointment is locked in, center can now assign inspector (button: Giao task)');
+
+    // 4. Center assigns inspector -> Status becomes ASSIGNED
+    const orderAssigned = {
+      ...orderConfirmed,
+      inspectorId: 'ins-tran-van-ktv',
+    };
+    const stage4 = getCenterDispatchStage(orderAssigned as any, false);
+    assert.strictEqual(stage4, 'ASSIGNED', 'Task assigned to inspector');
+  });
+
+  await t.test('[TEST 12] Center rejection returns order to WAITING_SELLER_APPOINTMENT with reason', () => {
+    const orderRejected = {
+      status: 'CONFIRMED_PENDING_DISPATCH',
+      orderType: 'AT_HOME',
+      appointmentScheduledAt: '2026-11-14T09:00:00Z',
+      appointmentStatus: 'REJECTED',
+      appointmentRejectionReason: 'KTV đã kín lịch toàn bộ khung giờ yêu cầu.',
+    };
+    const stage = getCenterDispatchStage(orderRejected as any, false);
+    assert.strictEqual(stage, 'WAITING_SELLER_APPOINTMENT', 'Center rejection sends order back to seller to reschedule');
+  });
 });

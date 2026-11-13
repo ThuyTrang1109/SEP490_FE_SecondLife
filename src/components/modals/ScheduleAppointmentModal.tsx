@@ -186,8 +186,11 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                 ...o,
                 appointmentScheduledAt: scheduledDate.toISOString(),
                 appointmentNote: noteText,
-                appointmentStatus: 'PENDING_CONFIRMATION',
+                appointmentStatus: 'PENDING_CENTER_CONFIRMATION',
                 appointmentRejectionReason: undefined,
+                counterScheduledAt: undefined,
+                counterShift: undefined,
+                counterNote: undefined,
                 sellerConfirmedAt: o.sellerConfirmedAt || new Date().toISOString(),
                 confirmationStatus: 'CONFIRMED',
                 escrowStatus: 'AWAITING_INSPECTION',
@@ -213,8 +216,11 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                 ...o,
                 appointmentScheduledAt: scheduledDate.toISOString(),
                 appointmentNote: noteText,
-                appointmentStatus: 'PENDING_CONFIRMATION',
+                appointmentStatus: 'PENDING_CENTER_CONFIRMATION',
                 appointmentRejectionReason: undefined,
+                counterScheduledAt: undefined,
+                counterShift: undefined,
+                counterNote: undefined,
                 sellerAddress: o.sellerAddress || o.listing?.sellerAddress || o.listing?.location,
                 sellerPhone: o.sellerPhone || o.seller?.phone,
                 sellerName: o.sellerName || o.seller?.fullName,
@@ -365,7 +371,11 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
         scheduledAt: scheduledDate.toISOString(),
         note: note.trim() || '',
         shift: detectedShift,
+        status: 'PENDING_CENTER_CONFIRMATION',
         assignedInspector: assignedInspector || undefined,
+        counterScheduledAt: undefined,
+        counterShift: undefined,
+        counterNote: undefined,
       }));
 
       syncAppointmentToOrdersAndNotify(scheduledDate, note.trim(), detectedShift);
@@ -376,6 +386,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
             scheduledAt: scheduledDate.toISOString(),
             note: note.trim(),
             shift: detectedShift,
+            status: 'PENDING_CENTER_CONFIRMATION',
           },
         })
       );
@@ -387,7 +398,11 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
         scheduledAt: scheduledDate.toISOString(),
         note: note.trim() || '',
         shift: detectedShift,
+        status: 'PENDING_CENTER_CONFIRMATION',
         assignedInspector: assignedInspector || undefined,
+        counterScheduledAt: undefined,
+        counterShift: undefined,
+        counterNote: undefined,
       }));
 
       syncAppointmentToOrdersAndNotify(scheduledDate, note.trim(), detectedShift);
@@ -398,6 +413,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
             scheduledAt: scheduledDate.toISOString(),
             note: note.trim(),
             shift: detectedShift,
+            status: 'PENDING_CENTER_CONFIRMATION',
           },
         })
       );

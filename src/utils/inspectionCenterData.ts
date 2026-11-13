@@ -21,6 +21,7 @@ const dispatchStatuses = new Set([
 export function getCenterDispatchStage(
   order: Pick<InspectionOrderDto, 'orderType' | 'status' | 'inspectorId'> & {
     appointmentScheduledAt?: string;
+    appointmentStatus?: string;
     id?: string;
   },
   receivedAtHub: boolean,
@@ -30,17 +31,25 @@ export function getCenterDispatchStage(
 
   if (order.orderType === 'AT_HOME') {
     let apptTime = order.appointmentScheduledAt;
-    if (!apptTime && typeof window !== 'undefined' && order.id) {
+    let apptStatus = (order as any).appointmentStatus;
+    if (typeof window !== 'undefined' && order.id) {
       try {
         const raw = localStorage.getItem(`order_appointment_${order.id}`);
         if (raw) {
           const parsed = JSON.parse(raw);
-          apptTime = parsed.scheduledAt;
+          if (parsed.scheduledAt && !apptTime) apptTime = parsed.scheduledAt;
+          if (parsed.status && !apptStatus) apptStatus = parsed.status;
         }
       } catch {}
     }
-    if (!apptTime) {
+    if (!apptTime || apptStatus === 'REJECTED') {
       return 'WAITING_SELLER_APPOINTMENT';
+    }
+    if (apptStatus === 'PENDING_CENTER_CONFIRMATION' || apptStatus === 'PENDING_CONFIRMATION') {
+      return 'WAITING_CENTER_APPROVAL';
+    }
+    if (apptStatus === 'COUNTERED_BY_CENTER') {
+      return 'WAITING_SELLER_APPROVAL';
     }
   }
 

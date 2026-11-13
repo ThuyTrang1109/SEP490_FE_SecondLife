@@ -23,6 +23,8 @@ import {
   Search,
   RotateCcw,
   Calendar,
+  CalendarCheck,
+  CalendarSync,
   MapPin,
   QrCode,
   Shield,
@@ -464,12 +466,18 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     };
     window.addEventListener('secondlife_appointment_rejected', handleApptSignal);
     window.addEventListener('secondlife_order_assigned_signal', handleApptSignal);
+    window.addEventListener('secondlife_appointment_scheduled', handleApptSignal);
+    window.addEventListener('secondlife_appointment_confirmed', handleApptSignal);
+    window.addEventListener('secondlife_appointment_countered', handleApptSignal);
 
     return () => {
       window.removeEventListener('secondlife_inspector_arrived', handler);
       window.removeEventListener('storage', handler);
       window.removeEventListener('secondlife_appointment_rejected', handleApptSignal);
       window.removeEventListener('secondlife_order_assigned_signal', handleApptSignal);
+      window.removeEventListener('secondlife_appointment_scheduled', handleApptSignal);
+      window.removeEventListener('secondlife_appointment_confirmed', handleApptSignal);
+      window.removeEventListener('secondlife_appointment_countered', handleApptSignal);
     };
   }, []);
 
@@ -2158,13 +2166,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       const raw = localStorage.getItem(`order_appointment_${ord.id}`);
       if (raw && raw !== 'undefined' && raw !== 'null') {
         const parsed = JSON.parse(raw);
-        if (parsed && parsed.scheduledAt) return parsed;
+        if (parsed && (parsed.scheduledAt || parsed.counterScheduledAt)) return parsed;
       }
     } catch { }
     if (ord.appointmentScheduledAt) {
       return {
         scheduledAt: ord.appointmentScheduledAt,
         note: ord.appointmentNote || '',
+        status: (ord as any).appointmentStatus || 'CONFIRMED',
       };
     }
     return null;
@@ -2186,6 +2195,104 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       }
     } catch { }
     return null;
+  };
+
+  const handleSellerAcceptCounterAppointment = (orderId: string, appointment: any) => {
+    const finalScheduledAt = appointment.counterScheduledAt || appointment.scheduledAt;
+    const finalShift = appointment.counterShift || appointment.shift || 'MORNING';
+    const updatedAppointment = {
+      ...appointment,
+      scheduledAt: finalScheduledAt,
+      shift: finalShift,
+      status: 'CONFIRMED',
+      confirmedAt: new Date().toISOString(),
+      confirmedBy: 'SELLER',
+      counterScheduledAt: undefined,
+      counterShift: undefined,
+      counterNote: undefined,
+    };
+    localStorage.setItem(`order_appointment_${orderId}`, JSON.stringify(updatedAppointment));
+
+    try {
+      const raw = localStorage.getItem('recent_placed_orders');
+      if (raw) {
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          const updated = list.map((o: any) => {
+            if (o.id === orderId) {
+              return {
+                ...o,
+                appointmentScheduledAt: finalScheduledAt,
+                appointmentStatus: 'CONFIRMED',
+                counterScheduledAt: undefined,
+                counterShift: undefined,
+                counterNote: undefined,
+              };
+            }
+            return o;
+          });
+          localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
+        }
+      }
+    } catch { }
+
+    try {
+      const rawCenter = localStorage.getItem('center_inspection_orders');
+      if (rawCenter) {
+        const listCenter = JSON.parse(rawCenter);
+        if (Array.isArray(listCenter)) {
+          const updatedCenter = listCenter.map((o: any) => {
+            if (o.id === orderId) {
+              return {
+                ...o,
+                appointmentScheduledAt: finalScheduledAt,
+                appointmentStatus: 'CONFIRMED',
+                counterScheduledAt: undefined,
+                counterShift: undefined,
+                counterNote: undefined,
+              };
+            }
+            return o;
+          });
+          localStorage.setItem('center_inspection_orders', JSON.stringify(updatedCenter));
+        }
+      }
+    } catch { }
+
+    const formattedTime = new Date(finalScheduledAt).toLocaleString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+    const centerNotif = {
+      id: `notif-center-accept-appt-${orderId}-${Date.now()}`,
+      recipientRole: 'inspection_center',
+      title: `Người bán đã đồng ý lịch hẹn đề xuất: #${orderId.slice(0, 8)}`,
+      message: `Người bán đã đồng ý lịch hẹn mới vào ${formattedTime}. Lịch hẹn đã được chốt, sẵn sàng giao task cho KTV!`,
+      type: 'INSPECTION_TASK' as const,
+      referenceId: orderId,
+      referenceType: 'INSPECTION_ORDER',
+      actionUrl: '/inspection-center/dispatch',
+      isRead: false,
+      readAt: null,
+      createdAt: new Date().toISOString(),
+    };
+    saveScopedLocalNotification(centerNotif, undefined, 'inspection_center');
+
+    window.dispatchEvent(new CustomEvent('secondlife_appointment_confirmed', {
+      detail: {
+        orderId,
+        scheduledAt: finalScheduledAt,
+        status: 'CONFIRMED',
+      }
+    }));
+    window.dispatchEvent(new CustomEvent('secondlife_order_assigned_signal', { detail: { orderId } }));
+
+    setInspectionActionNotice(`Bạn đã đồng ý lịch hẹn mới (${formattedTime}) thành công! Trung tâm sẽ điều phối KTV đến kiểm tra đúng giờ.`);
+    setTimeout(() => setInspectionActionNotice(null), 5000);
+    onRefreshOrders?.();
   };
   const [sellerReviewsModalData, setSellerReviewsModalData] = useState<{ sellerId: string; sellerName: string } | null>(null);
   const [reviewedOrderIds, setReviewedOrderIds] = useState<string[]>(() => {
@@ -2471,14 +2578,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         );
       }
       if (isAtHome) {
-        let hasAppt = false;
-        if (orderItem?.appointmentScheduledAt) hasAppt = true;
-        if (!hasAppt && orderItem?.id && typeof window !== 'undefined') {
-          try {
-            const raw = localStorage.getItem(`order_appointment_${orderItem.id}`);
-            if (raw && JSON.parse(raw).scheduledAt) hasAppt = true;
-          } catch { }
-        }
+        const appt = orderItem ? getOrderAppointment(orderItem) : null;
+        const hasAppt = Boolean(appt?.scheduledAt || orderItem?.appointmentScheduledAt);
+        const isCountered = appt?.status === 'COUNTERED_BY_CENTER' || Boolean(appt?.counterScheduledAt);
+        const isPendingApproval = appt?.status === 'PENDING_CENTER_CONFIRMATION' || appt?.status === 'PENDING_CONFIRMATION';
+
         let hasInsp = Boolean(orderItem?.inspectorId || (orderItem as any)?.inspectorName);
         if (!hasInsp && orderItem?.id && typeof window !== 'undefined') {
           try {
@@ -2494,11 +2598,27 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             </span>
           );
         }
-        if (hasAppt) {
+        if (isCountered) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+              <CalendarSync className="w-3.5 h-3.5 text-amber-700" />
+              <span>{lang === 'vi' ? 'Hub Đề Xuất Lịch Mới • Cần Phản Hồi' : 'Hub Proposed New Time • Response Needed'}</span>
+            </span>
+          );
+        }
+        if (isPendingApproval) {
           return (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
               <Clock className="w-3.5 h-3.5 text-blue-600" />
-              <span>{lang === 'vi' ? 'Đã Hẹn Lịch • Chờ Điều Phối KTV' : 'Visit Scheduled • Awaiting Dispatch'}</span>
+              <span>{lang === 'vi' ? 'Đã Đề Xuất Lịch • Chờ Hub Duyệt' : 'Visit Proposed • Awaiting Hub Approval'}</span>
+            </span>
+          );
+        }
+        if (hasAppt) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <CalendarCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <span>{lang === 'vi' ? 'Đã Chốt Lịch • Chờ Giao KTV' : 'Visit Confirmed • Awaiting Dispatch'}</span>
             </span>
           );
         }
@@ -2600,14 +2720,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           );
         }
         if (isAtHome) {
-          let hasAppt = false;
-          if (orderItem?.appointmentScheduledAt) hasAppt = true;
-          if (!hasAppt && orderItem?.id && typeof window !== 'undefined') {
-            try {
-              const raw = localStorage.getItem(`order_appointment_${orderItem.id}`);
-              if (raw && JSON.parse(raw).scheduledAt) hasAppt = true;
-            } catch { }
-          }
+          const appt = orderItem ? getOrderAppointment(orderItem) : null;
+          const hasAppt = Boolean(appt?.scheduledAt || orderItem?.appointmentScheduledAt);
+          const isCountered = appt?.status === 'COUNTERED_BY_CENTER' || Boolean(appt?.counterScheduledAt);
+          const isPendingApproval = appt?.status === 'PENDING_CENTER_CONFIRMATION' || appt?.status === 'PENDING_CONFIRMATION';
+
           let hasInsp = Boolean(orderItem?.inspectorId || (orderItem as any)?.inspectorName);
           if (!hasInsp && orderItem?.id && typeof window !== 'undefined') {
             try {
@@ -2623,11 +2740,27 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
               </span>
             );
           }
-          if (hasAppt) {
+          if (isCountered) {
+            return (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+                <CalendarSync className="w-3.5 h-3.5 text-amber-700" />
+                <span>{lang === 'vi' ? 'Hub Đề Xuất Lịch Mới • Cần Phản Hồi' : 'Hub Proposed New Time • Response Needed'}</span>
+              </span>
+            );
+          }
+          if (isPendingApproval) {
             return (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
                 <Clock className="w-3.5 h-3.5 text-blue-600" />
-                <span>{lang === 'vi' ? 'Đã Hẹn Lịch • Chờ Điều Phối KTV' : 'Visit Scheduled • Awaiting Dispatch'}</span>
+                <span>{lang === 'vi' ? 'Đã Đề Xuất Lịch • Chờ Hub Duyệt' : 'Visit Proposed • Awaiting Hub Approval'}</span>
+              </span>
+            );
+          }
+          if (hasAppt) {
+            return (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <CalendarCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span>{lang === 'vi' ? 'Đã Chốt Lịch • Chờ Giao KTV' : 'Visit Confirmed • Awaiting Dispatch'}</span>
               </span>
             );
           }
@@ -3557,7 +3690,55 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               </div>
                             ) : null}
 
-                            {savedAppointment?.scheduledAt ? (
+                            {savedAppointment?.status === 'COUNTERED_BY_CENTER' || savedAppointment?.counterScheduledAt ? (
+                              <div className="p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 text-xs text-amber-950 space-y-2.5 shadow-xs">
+                                <div className="flex items-center gap-2 text-amber-900 font-extrabold">
+                                  <CalendarSync className="w-4 h-4 text-orange-600 animate-pulse" />
+                                  <span>Trung tâm kiểm định đề xuất lịch hẹn mới:</span>
+                                </div>
+                                <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200 space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-amber-900">📅 Thời gian đề xuất:</span>
+                                    <span className="font-extrabold text-orange-700 bg-orange-100 px-2 py-0.5 rounded">
+                                      {new Date(savedAppointment.counterScheduledAt || savedAppointment.scheduledAt).toLocaleString('vi-VN', {
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                        day: '2-digit',
+                                        month: '2-digit',
+                                        year: 'numeric'
+                                      })}
+                                      {savedAppointment.counterShift ? ` (${savedAppointment.counterShift === 'MORNING' ? 'Ca Sáng: 08:00 - 12:00' : 'Ca Chiều: 13:00 - 17:00'})` : ''}
+                                    </span>
+                                  </div>
+                                  {savedAppointment.counterNote && (
+                                    <div className="text-[11px] text-amber-900 italic">
+                                      💬 <strong>Lý do từ Hub:</strong> "{savedAppointment.counterNote}"
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSellerAcceptCounterAppointment(ord.id, savedAppointment)}
+                                    className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                                  >
+                                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                    <span>Đồng Ý Lịch Này</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSchedulingOrder(ord);
+                                      setSchedulingReadOnly(false);
+                                    }}
+                                    className="py-2 px-3 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                                  >
+                                    <Calendar className="w-3.5 h-3.5" />
+                                    <span>Hẹn Lại Lịch Khác</span>
+                                  </button>
+                                </div>
+                              </div>
+                            ) : savedAppointment?.scheduledAt ? (
                               <div className="p-2.5 rounded-lg bg-white/90 border border-amber-200/80 text-[11px] text-amber-900 space-y-1">
                                 <div className="flex items-center gap-2">
                                   <span className="font-bold text-amber-950">
@@ -3583,7 +3764,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                   </div>
                                 )}
 
-                                {/* Mã Vạch Tiếp Nhận & Mã Code tương ứng cho KTV quét khi đến */}
+                                {/* Mã Vạch Tiếp Nhận & Mã Code tương ứng cho KTV quét khi đến (CHỈ HIỂN THỊ KHI ĐÃ ĐƯỢC CHỐT VÀ ĐÃ CÓ KTV) */}
                                 {assignedInspector ? (
                                   <div className="pt-1">
                                     <AtHomeIntakeBarcode
@@ -3594,10 +3775,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                       inspectorName={assignedInspector?.inspectorName}
                                     />
                                   </div>
-                                ) : (
+                                ) : (savedAppointment.status === 'PENDING_CENTER_CONFIRMATION' || savedAppointment.status === 'PENDING_CONFIRMATION') ? (
                                   <div className="p-2 rounded-lg bg-blue-50 border border-blue-200 text-[11px] text-blue-900 flex items-center gap-2 mt-1">
                                     <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                    <span>Trung tâm SecondLife đang xác nhận lịch hẹn và phân công Kỹ thuật viên. Mã tiếp nhận KTV sẽ hiển thị ngay khi KTV được phân công.</span>
+                                    <span>Đã gửi đề xuất lịch hẹn. Đang chờ Trung tâm kiểm định duyệt. Mã tiếp nhận KTV sẽ được tạo ngay khi KTV được phân công.</span>
+                                  </div>
+                                ) : (
+                                  <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-900 flex items-center gap-2 mt-1">
+                                    <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                    <span>Lịch hẹn đã được xác nhận! Trung tâm SecondLife đang phân công Kỹ thuật viên phụ trách.</span>
                                   </div>
                                 )}
                               </div>
@@ -5051,6 +5237,56 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                       <p className="text-[10px] text-rose-700">
                                         Vui lòng đặt lại lịch hẹn khác phù hợp hơn.
                                       </p>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
+
+                              {(() => {
+                                const detailAppt = getOrderAppointment(detailModalOrder);
+                                if (detailAppt?.status === 'COUNTERED_BY_CENTER' || detailAppt?.counterScheduledAt) {
+                                  return (
+                                    <div className="p-2.5 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 text-xs text-amber-950 space-y-2">
+                                      <div className="flex items-center gap-1.5 text-amber-900 font-extrabold">
+                                        <CalendarSync className="w-4 h-4 text-orange-600 animate-pulse" />
+                                        <span>Trung tâm đề xuất lịch hẹn mới:</span>
+                                      </div>
+                                      <div className="bg-white/90 p-2 rounded-lg border border-amber-200 space-y-1">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="font-bold text-amber-900">📅 Giờ mới:</span>
+                                          <span className="font-extrabold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded text-[11px]">
+                                            {new Date(detailAppt.counterScheduledAt || detailAppt.scheduledAt).toLocaleString('vi-VN')}
+                                            {detailAppt.counterShift ? ` (${detailAppt.counterShift === 'MORNING' ? 'Ca Sáng' : 'Ca Chiều'})` : ''}
+                                          </span>
+                                        </div>
+                                        {detailAppt.counterNote && (
+                                          <div className="text-[11px] text-amber-900 italic">
+                                            💬 Lý do: "{detailAppt.counterNote}"
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-1.5 pt-0.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSellerAcceptCounterAppointment(detailModalOrder.id, detailAppt)}
+                                          className="flex-1 py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] transition flex items-center justify-center gap-1 cursor-pointer"
+                                        >
+                                          <Check className="w-3 h-3 stroke-[2.5]" />
+                                          <span>Đồng Ý Lịch Này</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSchedulingOrder(detailModalOrder);
+                                            setSchedulingReadOnly(false);
+                                          }}
+                                          className="py-1.5 px-2 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 rounded-lg font-bold text-[11px] transition flex items-center justify-center gap-1 cursor-pointer"
+                                        >
+                                          <Calendar className="w-3 h-3" />
+                                          <span>Hẹn Lại</span>
+                                        </button>
+                                      </div>
                                     </div>
                                   );
                                 }
@@ -6657,29 +6893,55 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                         return (
                                           <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">
                                             {(detailModalOrder.inspectionMethod === 'AT_HOME' || (detailModalOrder as any).orderType === 'AT_HOME') ? (
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  setSchedulingOrder(detailModalOrder);
-                                                  setSchedulingReadOnly(false);
-                                                }}
-                                                disabled={orderActionLoading === detailModalOrder.id}
-                                                className="flex-1 py-2.5 px-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                                                title="Chọn ngày giờ kỹ thuật viên SecondLife đến nhà kiểm tra thiết bị"
-                                              >
-                                                <Calendar className="w-4 h-4" />
-                                                <span>
-                                                  {(() => {
-                                                    const rej = getOrderAppointmentRejection(detailModalOrder);
-                                                    if (rej && !savedAppointment?.scheduledAt) {
-                                                      return lang === 'vi' ? 'Đặt Lại Lịch Hẹn KTV' : 'Reschedule Visit';
-                                                    }
-                                                    return savedAppointment?.scheduledAt
-                                                      ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Visit')
-                                                      : (lang === 'vi' ? 'Xác Nhận & Hẹn Lịch Đón KTV' : 'Confirm & Schedule Visit');
-                                                  })()}
-                                                </span>
-                                              </button>
+                                              savedAppointment?.status === 'COUNTERED_BY_CENTER' || savedAppointment?.counterScheduledAt ? (
+                                                <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleSellerAcceptCounterAppointment(detailModalOrder.id, savedAppointment)}
+                                                    disabled={orderActionLoading === detailModalOrder.id}
+                                                    className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                                                    title="Đồng ý với ngày giờ mới mà Trung tâm kiểm định đề xuất"
+                                                  >
+                                                    <Check className="w-4 h-4 stroke-[2.5]" />
+                                                    <span>Đồng Ý Lịch Mới Của Hub</span>
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      setSchedulingOrder(detailModalOrder);
+                                                      setSchedulingReadOnly(false);
+                                                    }}
+                                                    className="py-2.5 px-4 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+                                                  >
+                                                    <Calendar className="w-4 h-4" />
+                                                    <span>Hẹn Lại Lịch Khác</span>
+                                                  </button>
+                                                </div>
+                                              ) : (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setSchedulingOrder(detailModalOrder);
+                                                    setSchedulingReadOnly(false);
+                                                  }}
+                                                  disabled={orderActionLoading === detailModalOrder.id}
+                                                  className="flex-1 py-2.5 px-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                                                  title="Chọn ngày giờ kỹ thuật viên SecondLife đến nhà kiểm tra thiết bị"
+                                                >
+                                                  <Calendar className="w-4 h-4" />
+                                                  <span>
+                                                    {(() => {
+                                                      const rej = getOrderAppointmentRejection(detailModalOrder);
+                                                      if (rej && !savedAppointment?.scheduledAt) {
+                                                        return lang === 'vi' ? 'Đặt Lại Lịch Hẹn KTV' : 'Reschedule Visit';
+                                                      }
+                                                      return savedAppointment?.scheduledAt
+                                                        ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Visit')
+                                                        : (lang === 'vi' ? 'Xác Nhận & Hẹn Lịch Đón KTV' : 'Confirm & Schedule Visit');
+                                                    })()}
+                                                  </span>
+                                                </button>
+                                              )
                                             ) : (
                                               <button
                                                 type="button"
@@ -6855,30 +7117,59 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                       )}
 
                                       {/* Nút Hẹn Lịch Đón KTV trong Modal Chi Tiết (CHỈ HIỆN KHI ĐƠN HÀNG LÀ KIỂM ĐỊNH TẬN NHÀ - AT_HOME) */}
-                                      {detailHasInspection && (detailModalOrder.inspectionMethod === 'AT_HOME' || (detailModalOrder as any).orderType === 'AT_HOME') && (
-                                        <button
-                                          onClick={() => {
-                                            setSchedulingOrder(detailModalOrder);
-                                            setSchedulingReadOnly(false);
-                                          }}
-                                          className="flex-1 py-2.5 px-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-                                          title={lang === 'vi' ? 'Chọn ngày giờ kỹ thuật viên SecondLife đến nhà kiểm tra thiết bị' : 'Schedule technician visit'}
-                                        >
-                                          <Calendar className="w-4 h-4" />
-                                          <span>
-                                            {(() => {
-                                              const rej = getOrderAppointmentRejection(detailModalOrder);
-                                              const appt = getOrderAppointment(detailModalOrder);
-                                              if (rej && !appt?.scheduledAt) {
-                                                return lang === 'vi' ? 'Đặt Lại Lịch Hẹn KTV' : 'Reschedule Visit';
-                                              }
-                                              return appt?.scheduledAt
-                                                ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Hẹn Lịch Đón KTV')
-                                                : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit');
-                                            })()}
-                                          </span>
-                                        </button>
-                                      )}
+                                      {detailHasInspection && (detailModalOrder.inspectionMethod === 'AT_HOME' || (detailModalOrder as any).orderType === 'AT_HOME') && (() => {
+                                        const rej = getOrderAppointmentRejection(detailModalOrder);
+                                        const appt = getOrderAppointment(detailModalOrder);
+                                        const isCountered = appt?.status === 'COUNTERED_BY_CENTER' || !!appt?.counterScheduledAt;
+
+                                        if (isCountered) {
+                                          return (
+                                            <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">
+                                              <button
+                                                type="button"
+                                                onClick={() => handleSellerAcceptCounterAppointment(detailModalOrder.id, appt)}
+                                                disabled={orderActionLoading === detailModalOrder.id}
+                                                className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                                                title={lang === 'vi' ? 'Đồng ý với ngày giờ mới mà Trung tâm kiểm định đề xuất' : 'Accept Hub suggested appointment'}
+                                              >
+                                                <Check className="w-4 h-4 stroke-[2.5]" />
+                                                <span>{lang === 'vi' ? 'Đồng Ý Lịch Mới Của Hub' : 'Accept Center Schedule'}</span>
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setSchedulingOrder(detailModalOrder);
+                                                  setSchedulingReadOnly(false);
+                                                }}
+                                                className="py-2.5 px-4 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+                                              >
+                                                <Calendar className="w-4 h-4" />
+                                                <span>{lang === 'vi' ? 'Hẹn Lại Lịch Khác' : 'Reschedule'}</span>
+                                              </button>
+                                            </div>
+                                          );
+                                        }
+
+                                        return (
+                                          <button
+                                            onClick={() => {
+                                              setSchedulingOrder(detailModalOrder);
+                                              setSchedulingReadOnly(false);
+                                            }}
+                                            className="flex-1 py-2.5 px-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                                            title={lang === 'vi' ? 'Chọn ngày giờ kỹ thuật viên SecondLife đến nhà kiểm tra thiết bị' : 'Schedule technician visit'}
+                                          >
+                                            <Calendar className="w-4 h-4" />
+                                            <span>
+                                              {rej && !appt?.scheduledAt
+                                                ? (lang === 'vi' ? 'Đặt Lại Lịch Hẹn KTV' : 'Reschedule Visit')
+                                                : appt?.scheduledAt
+                                                  ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Hẹn Lịch Đón KTV')
+                                                  : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit')}
+                                            </span>
+                                          </button>
+                                        );
+                                      })()}
 
                                       {/* Nút Hủy Yêu Cầu Kiểm Định Cho Seller (Khi KTV chưa đến nhà) */}
                                       {detailHasInspection &&

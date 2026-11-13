@@ -370,6 +370,11 @@ export interface InspectionOrderDto {
 
   appointmentScheduledAt?: string;
   appointmentNote?: string;
+  appointmentStatus?: 'PENDING_CENTER_CONFIRMATION' | 'COUNTERED_BY_CENTER' | 'CONFIRMED' | 'REJECTED' | string;
+  counterScheduledAt?: string;
+  counterShift?: 'MORNING' | 'AFTERNOON';
+  counterNote?: string;
+  appointmentRejectionReason?: string;
   checklistResultJson?: string;
   videoProofUrl?: string;
   unboxingVideoUrl?: string;
@@ -842,6 +847,34 @@ export const inspectorService = {
     const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/schedule`, {
       method: 'POST',
       body: JSON.stringify({ scheduledAt, note }),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Trung tâm kiểm định chấp nhận lịch hẹn người bán đề xuất
+   */
+  async confirmAppointment(orderId: string): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/appointment/confirm`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Trung tâm kiểm định đề xuất lịch hẹn mới cho người bán
+   */
+  async counterAppointment(
+    orderId: string,
+    counterScheduledAt: string,
+    counterNote?: string,
+    counterShift?: string
+  ): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/appointment/counter`, {
+      method: 'POST',
+      body: JSON.stringify({ counterScheduledAt, counterNote, counterShift }),
       requiresAuth: true,
     });
     return (res as any)?.data || res;

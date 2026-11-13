@@ -2592,7 +2592,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           localStorage.setItem(`post_can_disassemble_${postId}`, String(canDisassemble));
         } catch {}
       }
-      const cleanDesc = description.trim().replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '').trim();
+      const sanitizedDesc = sanitizeDescriptionForAiScan(description.trim(), currentYear);
+      if (sanitizedDesc !== description.trim()) {
+        setDescription(sanitizedDesc);
+      }
+      const cleanDesc = sanitizedDesc.replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '').trim();
       const descToSend = numOrig > 0 ? `${cleanDesc}\n\n<!--sl_orig_price:${numOrig}-->` : cleanDesc;
 
       // Cập nhật draft trước, sau đó mới xác nhận mô tả để tránh race condition làm descriptionAccepted bị ghi đè về false
@@ -2979,7 +2983,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       const cleanDesc = sanitizedDesc.replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '').trim();
       const descToSend = numericOrigPrice > 0 ? `${cleanDesc}\n\n<!--sl_orig_price:${numericOrigPrice}-->` : cleanDesc;
 
-      const submitRes = await postService.submitPost(postId, {
+      const submitPayload = {
         title: title.trim(),
         description: descToSend,
         price: finalPriceVnd,
@@ -2987,7 +2991,33 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         shippingLength: parcel.length,
         shippingWidth: parcel.width,
         shippingHeight: parcel.height
-      });
+      };
+
+      // Đồng bộ và xác nhận nội dung mô tả lên backend trước khi submit để tránh lỗi 409 Conflict
+      try {
+        await postService.acceptDescription(postId, descToSend);
+        setDescriptionAccepted(true);
+      } catch (acceptErr) {
+        console.warn('Đồng bộ xác nhận mô tả trước submit:', acceptErr);
+      }
+
+      let submitRes: PostSubmitResponse;
+      try {
+        submitRes = await postService.submitPost(postId, submitPayload);
+      } catch (firstErr: any) {
+        if (
+          firstErr?.status === 409 ||
+          firstErr?.message?.toLowerCase().includes('accept') ||
+          firstErr?.message?.toLowerCase().includes('description') ||
+          firstErr?.message?.toLowerCase().includes('mô tả')
+        ) {
+          await postService.acceptDescription(postId, descToSend);
+          setDescriptionAccepted(true);
+          submitRes = await postService.submitPost(postId, submitPayload);
+        } else {
+          throw firstErr;
+        }
+      }
 
       setSubmitResult(submitRes);
       try {
@@ -5550,9 +5580,19 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           )}
 
           {submitError && (
-            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-              <span>{submitError}</span>
+            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{submitError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleSubmitPostFinal}
+                disabled={isSubmittingPost}
+                className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shrink-0 transition cursor-pointer shadow-xs disabled:opacity-50"
+              >
+                {isSubmittingPost ? (lang === 'vi' ? 'Đang gửi...' : 'Submitting...') : (lang === 'vi' ? 'Thử lại' : 'Retry')}
+              </button>
             </div>
           )}
 

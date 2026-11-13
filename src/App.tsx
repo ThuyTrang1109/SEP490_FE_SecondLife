@@ -1543,36 +1543,51 @@ export default function App() {
             photoGallery: ((bOrd as any).postImageUrls && (bOrd as any).postImageUrls.length > 0)
               ? (bOrd as any).postImageUrls
               : ((baseListing.photoGallery && baseListing.photoGallery.length > 0) ? baseListing.photoGallery : [resolvedImage]),
-          } : {
-            id: bOrd.postId,
-            title: resolvedPostTitle,
-            category: 'Nội thất & Gia dụng',
-            brand: 'SecondLife',
-            model: 'Verified Model',
-            purchaseYear: 2024,
-            priceVnd: Number(bOrd.itemPriceVnd || bOrd.finalItemPrice || bOrd.postPrice || bOrd.finalPrice || bOrd.price || 0),
-            conditionGrade: 'Good',
-            declaredConditionText: 'Sản phẩm đã qua kiểm định cơ bản',
-            description: 'Giao dịch bảo lãnh qua Quỹ Escrow SecondLife.',
-            location: 'Đà Nẵng, Việt Nam',
-            sellerId: bOrd.sellerId,
-            sellerName: 'Người Bán SecondLife',
-            sellerRating: 4.9,
-            sellerCompletedOrders: 10,
-            sellerVerified: true,
-            status: 'sold',
-            createdAt: bOrd.createdAt,
-            isInspectionGuaranteed: true,
-            requiresInspection: true,
-            photos: {
-              front: resolvedImage,
-              back: resolvedImage,
-              screenOrDetails: resolvedImage,
-              accessoriesOrBox: resolvedImage,
-              serialOrReceipt: resolvedImage
-            },
-            photoGallery: [resolvedImage],
-          };
+          } : (() => {
+            const fallbackOrderParcel = getResolvedPostParcel(
+              bOrd.postId,
+              bOrd,
+              bOrd.description || (bOrd as any).postDescription,
+              'Nội thất & Gia dụng'
+            );
+            const resolvedSellerAddr = (bOrd as any).sellerAddress || (bOrd as any).pickupAddress || '';
+            const resolvedLoc = resolvedSellerAddr ? extractWardAndCity(resolvedSellerAddr) : 'Hà Nội';
+            return {
+              id: bOrd.postId,
+              title: resolvedPostTitle,
+              category: 'Nội thất & Gia dụng',
+              brand: 'SecondLife',
+              model: 'Verified Model',
+              purchaseYear: 2024,
+              priceVnd: Number(bOrd.itemPriceVnd || bOrd.finalItemPrice || bOrd.postPrice || bOrd.finalPrice || bOrd.price || 0),
+              conditionGrade: 'Good',
+              declaredConditionText: 'Sản phẩm đã qua kiểm định cơ bản',
+              description: 'Giao dịch bảo lãnh qua Quỹ Escrow SecondLife.',
+              location: resolvedLoc,
+              sellerAddress: resolvedSellerAddr,
+              sellerId: bOrd.sellerId,
+              sellerName: (bOrd as any).sellerName || 'Người Bán SecondLife',
+              sellerRating: 4.9,
+              sellerCompletedOrders: 10,
+              sellerVerified: true,
+              status: 'sold',
+              createdAt: bOrd.createdAt,
+              isInspectionGuaranteed: true,
+              requiresInspection: true,
+              photos: {
+                front: resolvedImage,
+                back: resolvedImage,
+                screenOrDetails: resolvedImage,
+                accessoriesOrBox: resolvedImage,
+                serialOrReceipt: resolvedImage
+              },
+              photoGallery: [resolvedImage],
+              shippingWeight: (bOrd as any).shippingWeight ?? fallbackOrderParcel.weight,
+              shippingLength: (bOrd as any).shippingLength ?? fallbackOrderParcel.length,
+              shippingWidth: (bOrd as any).shippingWidth ?? fallbackOrderParcel.width,
+              shippingHeight: (bOrd as any).shippingHeight ?? fallbackOrderParcel.height,
+            };
+          })();
 
           const matchedListing = resolveOrderListing(rawMatchedListing);
 

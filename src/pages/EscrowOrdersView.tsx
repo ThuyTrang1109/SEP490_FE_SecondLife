@@ -191,6 +191,9 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   const t = translations[lang];
 
   const isOrderSeller = (ord: EscrowOrder) => {
+    if (orderPerspective === 'seller') return true;
+    if (orderPerspective === 'buyer') return false;
+
     if (currentUser?.id) {
       if (ord.sellerId && String(ord.sellerId) === String(currentUser.id)) return true;
       if (ord.listing?.sellerId && String(ord.listing.sellerId) === String(currentUser.id)) return true;
@@ -2178,59 +2181,75 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       (ord as any).inspectionOrder?.id,
     ].filter(Boolean) as string[];
 
+    const isOrderWaitingSeller =
+      ord.status === 'WAITING_SELLER_APPROVAL' ||
+      (ord as any).customerStatus === 'WAITING_SELLER_APPROVAL' ||
+      String((ord as any).backendStatus || '').toUpperCase() === 'WAITING_SELLER_APPROVAL' ||
+      (ord as any).appointmentStatus === 'COUNTERED_BY_CENTER';
+
+    let apptData: any = null;
+
     for (const id of possibleIds) {
       try {
         const raw = localStorage.getItem(`order_appointment_${id}`);
         if (raw && raw !== 'undefined' && raw !== 'null') {
           const parsed = JSON.parse(raw);
-          if (parsed && (parsed.scheduledAt || parsed.counterScheduledAt)) return parsed;
+          if (parsed && (parsed.scheduledAt || parsed.counterScheduledAt)) {
+            apptData = parsed;
+            break;
+          }
         }
       } catch { }
     }
 
-    const idSet = new Set(possibleIds);
-    try {
-      const rawCenter = localStorage.getItem('center_inspection_orders');
-      if (rawCenter) {
-        const centerList = JSON.parse(rawCenter);
-        if (Array.isArray(centerList)) {
-          const matched = centerList.find((co: any) => idSet.has(co.id) || idSet.has(co.linkedOrderId) || idSet.has(co.orderId));
-          if (matched && (matched.appointmentScheduledAt || matched.counterScheduledAt)) {
-            return {
-              scheduledAt: matched.appointmentScheduledAt,
-              note: matched.appointmentNote || '',
-              status: matched.appointmentStatus || (matched.counterScheduledAt ? 'COUNTERED_BY_CENTER' : (matched.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
-              counterScheduledAt: matched.counterScheduledAt,
-              counterShift: matched.counterShift,
-              counterNote: matched.counterNote,
-            };
+    if (!apptData) {
+      const idSet = new Set(possibleIds);
+      try {
+        const rawCenter = localStorage.getItem('center_inspection_orders');
+        if (rawCenter) {
+          const centerList = JSON.parse(rawCenter);
+          if (Array.isArray(centerList)) {
+            const matched = centerList.find((co: any) => idSet.has(co.id) || idSet.has(co.linkedOrderId) || idSet.has(co.orderId));
+            if (matched && (matched.appointmentScheduledAt || matched.counterScheduledAt)) {
+              apptData = {
+                scheduledAt: matched.appointmentScheduledAt,
+                note: matched.appointmentNote || '',
+                status: matched.appointmentStatus || (matched.counterScheduledAt ? 'COUNTERED_BY_CENTER' : (matched.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
+                counterScheduledAt: matched.counterScheduledAt,
+                counterShift: matched.counterShift,
+                counterNote: matched.counterNote,
+              };
+            }
           }
         }
-      }
-    } catch { }
+      } catch { }
+    }
 
-    try {
-      const rawRecent = localStorage.getItem('recent_placed_orders');
-      if (rawRecent) {
-        const recentList = JSON.parse(rawRecent);
-        if (Array.isArray(recentList)) {
-          const matched = recentList.find((ro: any) => idSet.has(ro.id) || idSet.has(ro.inspectionOrderId) || idSet.has(ro.linkedOrderId));
-          if (matched && (matched.appointmentScheduledAt || matched.counterScheduledAt)) {
-            return {
-              scheduledAt: matched.appointmentScheduledAt,
-              note: matched.appointmentNote || '',
-              status: matched.appointmentStatus || (matched.counterScheduledAt ? 'COUNTERED_BY_CENTER' : (matched.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
-              counterScheduledAt: matched.counterScheduledAt,
-              counterShift: matched.counterShift,
-              counterNote: matched.counterNote,
-            };
+    if (!apptData) {
+      const idSet = new Set(possibleIds);
+      try {
+        const rawRecent = localStorage.getItem('recent_placed_orders');
+        if (rawRecent) {
+          const recentList = JSON.parse(rawRecent);
+          if (Array.isArray(recentList)) {
+            const matched = recentList.find((ro: any) => idSet.has(ro.id) || idSet.has(ro.inspectionOrderId) || idSet.has(ro.linkedOrderId));
+            if (matched && (matched.appointmentScheduledAt || matched.counterScheduledAt)) {
+              apptData = {
+                scheduledAt: matched.appointmentScheduledAt,
+                note: matched.appointmentNote || '',
+                status: matched.appointmentStatus || (matched.counterScheduledAt ? 'COUNTERED_BY_CENTER' : (matched.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
+                counterScheduledAt: matched.counterScheduledAt,
+                counterShift: matched.counterShift,
+                counterNote: matched.counterNote,
+              };
+            }
           }
         }
-      }
-    } catch { }
+      } catch { }
+    }
 
-    if (ord.appointmentScheduledAt || (ord as any).counterScheduledAt) {
-      return {
+    if (!apptData && (ord.appointmentScheduledAt || (ord as any).counterScheduledAt)) {
+      apptData = {
         scheduledAt: ord.appointmentScheduledAt,
         note: ord.appointmentNote || '',
         status: (ord as any).appointmentStatus || ((ord as any).counterScheduledAt ? 'COUNTERED_BY_CENTER' : (ord.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
@@ -2239,6 +2258,26 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         counterNote: (ord as any).counterNote,
       };
     }
+
+    if (apptData) {
+      if (isOrderWaitingSeller || (ord as any).counterScheduledAt) {
+        apptData.status = 'COUNTERED_BY_CENTER';
+        if (!apptData.counterScheduledAt && (ord as any).counterScheduledAt) {
+          apptData.counterScheduledAt = (ord as any).counterScheduledAt;
+        }
+        if (!apptData.counterScheduledAt && apptData.scheduledAt) {
+          apptData.counterScheduledAt = apptData.scheduledAt;
+        }
+        if (!apptData.counterNote && (ord as any).counterNote) {
+          apptData.counterNote = (ord as any).counterNote;
+        }
+        if (!apptData.counterShift && (ord as any).counterShift) {
+          apptData.counterShift = (ord as any).counterShift;
+        }
+      }
+      return apptData;
+    }
+
     return null;
   };
 
@@ -2270,9 +2309,23 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     return null;
   };
 
-  const handleSellerAcceptCounterAppointment = (orderId: string, appointment: any) => {
-    const finalScheduledAt = appointment.counterScheduledAt || appointment.scheduledAt;
-    const finalShift = appointment.counterShift || appointment.shift || 'MORNING';
+  const handleSellerAcceptCounterAppointment = async (orderId: string, appointment: any) => {
+    const finalScheduledAt = appointment?.counterScheduledAt || appointment?.scheduledAt;
+    const finalShift = appointment?.counterShift || appointment?.shift || 'MORNING';
+
+    // 1. Đồng bộ lên Backend
+    try {
+      if (finalScheduledAt) {
+        await inspectorService.scheduleAppointment(orderId, finalScheduledAt, 'Người bán đã đồng ý lịch hẹn đề xuất từ Trung tâm');
+      }
+    } catch {
+      try {
+        await inspectorService.confirmAppointment(orderId);
+      } catch (e) {
+        console.warn('Backend accept counter fallback:', e);
+      }
+    }
+
     const updatedAppointment = {
       ...appointment,
       scheduledAt: finalScheduledAt,
@@ -2666,7 +2719,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       if (isAtHome) {
         const appt = orderItem ? getOrderAppointment(orderItem) : null;
         const hasAppt = Boolean(appt?.scheduledAt || orderItem?.appointmentScheduledAt);
-        const isCountered = appt?.status === 'COUNTERED_BY_CENTER' || Boolean(appt?.counterScheduledAt);
+        const isCountered =
+          appt?.status === 'COUNTERED_BY_CENTER' ||
+          Boolean(appt?.counterScheduledAt) ||
+          bStatus === 'WAITING_SELLER_APPROVAL' ||
+          orderItem?.status === 'WAITING_SELLER_APPROVAL' ||
+          (orderItem as any)?.customerStatus === 'WAITING_SELLER_APPROVAL' ||
+          (orderItem as any)?.appointmentStatus === 'COUNTERED_BY_CENTER';
         const isPendingApproval = appt?.status === 'PENDING_CENTER_CONFIRMATION' || appt?.status === 'PENDING_CONFIRMATION';
 
         let hasInsp = Boolean(orderItem?.inspectorId || (orderItem as any)?.inspectorName);
@@ -2816,7 +2875,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         if (isAtHome) {
           const appt = orderItem ? getOrderAppointment(orderItem) : null;
           const hasAppt = Boolean(appt?.scheduledAt || orderItem?.appointmentScheduledAt);
-          const isCountered = appt?.status === 'COUNTERED_BY_CENTER' || Boolean(appt?.counterScheduledAt);
+          const isCountered =
+          appt?.status === 'COUNTERED_BY_CENTER' ||
+          Boolean(appt?.counterScheduledAt) ||
+          bStatus === 'WAITING_SELLER_APPROVAL' ||
+          orderItem?.status === 'WAITING_SELLER_APPROVAL' ||
+          (orderItem as any)?.customerStatus === 'WAITING_SELLER_APPROVAL' ||
+          (orderItem as any)?.appointmentStatus === 'COUNTERED_BY_CENTER';
           const isPendingApproval = appt?.status === 'PENDING_CENTER_CONFIRMATION' || appt?.status === 'PENDING_CONFIRMATION';
 
           let hasInsp = Boolean(orderItem?.inspectorId || (orderItem as any)?.inspectorName);
@@ -3704,6 +3769,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                       /* TRƯỜNG HỢP 1: KIỂM ĐỊNH TẬN NHÀ (KTV ĐẾN NHÀ) */
                       (() => {
                         const rejectionInfo = getOrderAppointmentRejection(ord);
+                        const isOrderCountered = Boolean(
+                          savedAppointment?.status === 'COUNTERED_BY_CENTER' ||
+                          savedAppointment?.counterScheduledAt ||
+                          (ord as any).appointmentStatus === 'COUNTERED_BY_CENTER' ||
+                          (ord as any).counterScheduledAt ||
+                          (ord as any).status === 'WAITING_SELLER_APPROVAL' ||
+                          (ord as any).customerStatus === 'WAITING_SELLER_APPROVAL' ||
+                          String((ord as any).backendStatus || '').toUpperCase() === 'WAITING_SELLER_APPROVAL'
+                        );
                         const assignedInspector = (() => {
                           try {
                             const raw = localStorage.getItem(`order_assigned_inspector_${ord.id}`);
@@ -3724,11 +3798,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           <div className="bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-amber-50/90 p-3.5 rounded-xl border border-amber-200 text-amber-950 space-y-2">
                             <div className="flex items-center justify-between flex-wrap gap-2">
                               <div className="flex items-center gap-2">
-                                <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs ${rejectionInfo && !savedAppointment?.scheduledAt ? 'bg-rose-600 text-white' : (savedAppointment?.status === 'COUNTERED_BY_CENTER' || savedAppointment?.counterScheduledAt) ? 'bg-orange-600 text-white' : 'bg-amber-600 text-white'}`}>
-                                  {rejectionInfo && !savedAppointment?.scheduledAt ? <AlertCircle className="w-3.5 h-3.5" /> : (savedAppointment?.status === 'COUNTERED_BY_CENTER' || savedAppointment?.counterScheduledAt) ? <CalendarSync className="w-3.5 h-3.5" /> : <Calendar className="w-3.5 h-3.5" />}
+                                <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs ${rejectionInfo && !savedAppointment?.scheduledAt ? 'bg-rose-600 text-white' : isOrderCountered ? 'bg-orange-600 text-white' : 'bg-amber-600 text-white'}`}>
+                                  {rejectionInfo && !savedAppointment?.scheduledAt ? <AlertCircle className="w-3.5 h-3.5" /> : isOrderCountered ? <CalendarSync className="w-3.5 h-3.5" /> : <Calendar className="w-3.5 h-3.5" />}
                                   <span>{lang === 'vi' ? 'Kiểm Định Tận Nhà (KTV Đến Nhà)' : 'At-Home Inspection (Technician Visit)'}</span>
                                 </span>
-                                <span className={`text-xs font-bold ${rejectionInfo && !savedAppointment?.scheduledAt ? 'text-rose-700' : (savedAppointment?.status === 'COUNTERED_BY_CENTER' || savedAppointment?.counterScheduledAt) ? 'text-orange-800' : 'text-amber-900'}`}>
+                                <span className={`text-xs font-bold ${rejectionInfo && !savedAppointment?.scheduledAt ? 'text-rose-700' : isOrderCountered ? 'text-orange-800' : 'text-amber-900'}`}>
                                   {rejectionInfo && !savedAppointment?.scheduledAt
                                     ? (lang === 'vi' ? 'Lịch hẹn bị từ chối • Vui lòng hẹn lại' : 'Appointment Rejected • Please Reschedule')
                                     : isInspectorArrivedForOrder(ord.id, ord)
@@ -3737,7 +3811,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                         ? (lang === 'vi' ? 'Đã gửi đề xuất lại • Chờ người mua phản hồi' : 'Counter-proposal sent • Awaiting buyer response')
                                         : assignedInspector?.inspectorName
                                           ? (lang === 'vi' ? `Đã phân công KTV ${assignedInspector.inspectorName}` : `KTV ${assignedInspector.inspectorName} Assigned`)
-                                          : (savedAppointment?.status === 'COUNTERED_BY_CENTER' || savedAppointment?.counterScheduledAt)
+                                          : isOrderCountered
                                             ? (lang === 'vi' ? 'Hub từ chối lịch cũ & đề xuất lịch mới • Cần phản hồi' : 'Center Proposed New Schedule • Action Needed')
                                             : savedAppointment?.scheduledAt
                                               ? (lang === 'vi' ? 'Đã hẹn lịch • Chờ Admin điều phối KTV' : 'Appointment Scheduled • Awaiting Dispatch')
@@ -3794,7 +3868,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               </div>
                             ) : null}
 
-                            {savedAppointment?.status === 'COUNTERED_BY_CENTER' || savedAppointment?.counterScheduledAt ? (
+                            {isOrderCountered ? (
                               <div className="p-3.5 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-orange-300 text-xs text-amber-950 space-y-2.5 shadow-xs animate-fadeIn">
                                 <div className="flex items-center gap-2 text-orange-950 font-black">
                                   <CalendarSync className="w-4 h-4 text-orange-600 animate-pulse shrink-0" />
@@ -4575,7 +4649,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                       {(() => {
                                         if (ord.inspectionMethod === 'AT_HOME') {
                                           const atHomeAppt = getOrderAppointment(ord);
-                                          const isAtHomeCountered = atHomeAppt?.status === 'COUNTERED_BY_CENTER' || Boolean(atHomeAppt?.counterScheduledAt);
+                                          const isAtHomeCountered =
+                                            atHomeAppt?.status === 'COUNTERED_BY_CENTER' ||
+                                            Boolean(atHomeAppt?.counterScheduledAt) ||
+                                            ord.status === 'WAITING_SELLER_APPROVAL' ||
+                                            (ord as any).customerStatus === 'WAITING_SELLER_APPROVAL' ||
+                                            String((ord as any).backendStatus || '').toUpperCase() === 'WAITING_SELLER_APPROVAL' ||
+                                            (ord as any).appointmentStatus === 'COUNTERED_BY_CENTER';
                                           const isAtHomePendingAppr = atHomeAppt?.status === 'PENDING_CENTER_CONFIRMATION' || atHomeAppt?.status === 'PENDING_CONFIRMATION';
                                           const hasAtHomeInsp = Boolean(ord.inspectorId || (ord as any).inspectorName);
 
@@ -4624,20 +4704,61 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               </span>
                             )}
 
-                            {/* Buyer View Inspection Appointment (ONLY if order is AT_HOME and seller scheduled) */}
-                            {hasInspection && ord.inspectionMethod === 'AT_HOME' && savedAppointment?.scheduledAt && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSchedulingOrder(ord);
-                                  setSchedulingReadOnly(true);
-                                }}
-                                className="px-3 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-900 border border-orange-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                                title={lang === 'vi' ? 'Xem lịch hẹn kiểm định do người bán đã đặt' : 'View inspection appointment scheduled by seller'}
-                              >
-                                <Calendar className="w-3.5 h-3.5 text-orange-600" />
-                                <span>{lang === 'vi' ? 'Xem Lịch Hẹn KTV' : 'View Appointment'}</span>
-                              </button>
+                            {/* Inspection Appointment Action for Seller and Buyer */}
+                            {hasInspection && (ord.inspectionMethod === 'AT_HOME' || (ord as any).orderType === 'AT_HOME') && (savedAppointment?.scheduledAt || savedAppointment?.counterScheduledAt) && (
+                              orderIsSeller ? (
+                                (savedAppointment?.status === 'COUNTERED_BY_CENTER' || Boolean(savedAppointment?.counterScheduledAt)) ? (
+                                  <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSellerAcceptCounterAppointment(ord.id, savedAppointment)}
+                                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap"
+                                      title={lang === 'vi' ? 'Đồng ý với lịch hẹn đề xuất mới từ Trung tâm kiểm định' : 'Accept proposed appointment time'}
+                                    >
+                                      <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                      <span>{lang === 'vi' ? 'Đồng Ý Lịch Mới' : 'Accept New Time'}</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSchedulingOrder(ord);
+                                        setSchedulingReadOnly(false);
+                                      }}
+                                      className="px-3 py-1.5 rounded-xl bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap"
+                                      title={lang === 'vi' ? 'Chọn lại khung giờ hoặc ngày khác gửi lại cho Hub' : 'Reschedule to another time'}
+                                    >
+                                      <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                                      <span>{lang === 'vi' ? 'Hẹn Lại Lịch Khác' : 'Reschedule'}</span>
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSchedulingOrder(ord);
+                                      setSchedulingReadOnly(false);
+                                    }}
+                                    className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                                    title={lang === 'vi' ? 'Xem hoặc đổi lịch hẹn đón KTV' : 'View or change appointment'}
+                                  >
+                                    <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                                    <span>{lang === 'vi' ? 'Xem / Đổi Lịch Hẹn KTV' : 'View / Change Appointment'}</span>
+                                  </button>
+                                )
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSchedulingOrder(ord);
+                                    setSchedulingReadOnly(true);
+                                  }}
+                                  className="px-3 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-900 border border-orange-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                                  title={lang === 'vi' ? 'Xem lịch hẹn kiểm định do người bán đã đặt' : 'View inspection appointment scheduled by seller'}
+                                >
+                                  <Calendar className="w-3.5 h-3.5 text-orange-600" />
+                                  <span>{lang === 'vi' ? 'Xem Lịch Hẹn KTV' : 'View Appointment'}</span>
+                                </button>
+                              )
                             )}
 
                             {/* Buyer Pay Inspection Fee or Bank Transfer Escrow Deposit (CHỈ HIỆN KHI ĐƠN HÀNG CHƯA THANH TOÁN) */}

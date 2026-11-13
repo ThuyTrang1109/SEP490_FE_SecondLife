@@ -23,7 +23,7 @@ import {
 import { Listing, Language, ProductReview, UserProfile, SellerPostDetailDto } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
 import { cleanFullAddress, extractWardAndCity } from '../../utils/addressUtils';
-import { getBoughtListingIds } from '../../utils/orderUtils';
+import { getBoughtListingIds, getResolvedPostParcel } from '../../utils/orderUtils';
 import { soundFx } from '../../utils/soundEffects';
 import { reviewService } from '../../data/mockReviews';
 import { reputationService, postService, SellerReputationDto, getStoredUser, getAssessmentStatusMeta } from '../../services';
@@ -76,18 +76,39 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
 
   const activeDetail = sellerDetail || publicDetail;
 
-  const effectiveWeight = activeDetail?.shippingWeight != null
+  const fallbackParcel = React.useMemo(() => {
+    return getResolvedPostParcel(
+      listing.id,
+      activeDetail || listing,
+      activeDetail?.description || listing.description,
+      activeDetail?.category || listing.category
+    );
+  }, [listing, activeDetail]);
+
+  const effectiveWeight = activeDetail?.shippingWeight != null && Number(activeDetail.shippingWeight) > 0
     ? Number(activeDetail.shippingWeight)
-    : (activeDetail?.weight != null ? Number(activeDetail.weight) : listing.shippingWeight);
-  const effectiveLength = activeDetail?.shippingLength != null
+    : (activeDetail?.weight != null && Number(activeDetail.weight) > 0
+      ? Number(activeDetail.weight)
+      : (listing.shippingWeight != null && listing.shippingWeight > 0 ? listing.shippingWeight : fallbackParcel.weight));
+
+  const effectiveLength = activeDetail?.shippingLength != null && Number(activeDetail.shippingLength) > 0
     ? Number(activeDetail.shippingLength)
-    : (activeDetail?.length != null ? Number(activeDetail.length) : listing.shippingLength);
-  const effectiveWidth = activeDetail?.shippingWidth != null
+    : (activeDetail?.length != null && Number(activeDetail.length) > 0
+      ? Number(activeDetail.length)
+      : (listing.shippingLength != null && listing.shippingLength > 0 ? listing.shippingLength : fallbackParcel.length));
+
+  const effectiveWidth = activeDetail?.shippingWidth != null && Number(activeDetail.shippingWidth) > 0
     ? Number(activeDetail.shippingWidth)
-    : (activeDetail?.width != null ? Number(activeDetail.width) : listing.shippingWidth);
-  const effectiveHeight = activeDetail?.shippingHeight != null
+    : (activeDetail?.width != null && Number(activeDetail.width) > 0
+      ? Number(activeDetail.width)
+      : (listing.shippingWidth != null && listing.shippingWidth > 0 ? listing.shippingWidth : fallbackParcel.width));
+
+  const effectiveHeight = activeDetail?.shippingHeight != null && Number(activeDetail.shippingHeight) > 0
     ? Number(activeDetail.shippingHeight)
-    : (activeDetail?.height != null ? Number(activeDetail.height) : listing.shippingHeight);
+    : (activeDetail?.height != null && Number(activeDetail.height) > 0
+      ? Number(activeDetail.height)
+      : (listing.shippingHeight != null && listing.shippingHeight > 0 ? listing.shippingHeight : fallbackParcel.height));
+
   const effectiveStatus = (sellerDetail?.status || activeDetail?.status || listing.backendStatus || listing.status || 'ACTIVE').toUpperCase();
   const effectiveRejectionReason = sellerDetail?.rejectionReason ?? listing.rejectionReason;
   const effectiveCreditCharged = sellerDetail?.listingCreditCharged ?? listing.listingCreditCharged;
@@ -212,8 +233,25 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
 
   useEffect(() => {
     if (listing.id) {
+      // 1. Luôn tải chi tiết bài đăng công khai để lấy đầy đủ hình ảnh, thông số kiện hàng vận chuyển & địa chỉ chuẩn
+      postService.getListingDetail(listing.id).then((detail) => {
+        if (detail) {
+          setPublicDetail(detail);
+          if (detail.aiSuggestedPrice) {
+            setAiEstimate({
+              suggestedPriceMin: Math.round(Number(detail.aiSuggestedPrice) * 0.9),
+              suggestedPriceMax: Math.round(Number(detail.aiSuggestedPrice) * 1.1),
+              confidenceScore: 0.95,
+              reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
+            });
+          }
+        }
+      }).catch((err) => {
+        console.warn('[ListingDetailModal] Lỗi lấy chi tiết bài đăng công khai:', err);
+      });
+
+      // 2. Nếu là chính chủ người bán xem, tải thêm thông tin quản trị riêng của bài đăng
       if (isOwnListing) {
-        // GỌI API SELLER: GET /api/v1/posts/my-posts/{postId}
         setIsLoadingSellerDetail(true);
         setSellerDetailError(null);
         postService.getMyPostDetail(listing.id)
@@ -248,23 +286,6 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
           if (est) setAiEstimate(est);
         }).catch(() => { });
       } else {
-        // Gọi API công khai GET /api/v1/posts/{postId}
-        postService.getListingDetail(listing.id).then((detail) => {
-          if (detail) {
-            setPublicDetail(detail);
-            if (detail.aiSuggestedPrice) {
-              setAiEstimate({
-                suggestedPriceMin: Math.round(Number(detail.aiSuggestedPrice) * 0.9),
-                suggestedPriceMax: Math.round(Number(detail.aiSuggestedPrice) * 1.1),
-                confidenceScore: 0.95,
-                reasoningNotes: 'Giá gợi ý tham khảo theo định giá hệ thống AI'
-              });
-            }
-          }
-        }).catch((err) => {
-          console.warn('[ListingDetailModal] Lỗi lấy chi tiết bài đăng công khai:', err);
-        });
-
         if (listing.aiPriceEstimation) {
           setAiEstimate({
             suggestedPriceMin: listing.aiPriceEstimation.minVnd,
@@ -503,11 +524,11 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-lg bg-[#24263e] text-white font-black flex items-center justify-center text-xs shadow-xs shrink-0">
-                        {listing.sellerName.charAt(0)}
+                        {(activeDetail?.sellerName || listing.sellerName || 'N').charAt(0)}
                       </div>
                       <div>
                         <div className="text-xs font-bold text-[#24263e] flex items-center gap-1">
-                          <span className="truncate max-w-[110px]">{listing.sellerName}</span>
+                          <span className="truncate max-w-[110px]">{activeDetail?.sellerName || listing.sellerName}</span>
                           {listing.sellerVerified && (
                             <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
                           )}

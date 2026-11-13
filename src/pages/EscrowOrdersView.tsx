@@ -435,6 +435,9 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   // Global platform commission rate initialized from cache / standard 5%
   const [platformCommissionRate, setPlatformCommissionRate] = useState<number>(getInitialCommissionRate);
 
+  // Force update when appointment status changes realtime
+  const [, setApptTick] = useState<number>(0);
+
   // Theo dõi KTV đã quét mã tiếp nhận đến nhà kiểm tra hay chưa
   const [arrivedOrderIds, setArrivedOrderIds] = useState<Set<string>>(() => {
     const set = new Set<string>();
@@ -457,11 +460,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       if (orderId) {
         setArrivedOrderIds((prev) => new Set(prev).add(orderId));
       }
+      if (e?.key?.startsWith('order_appointment_') || e?.key?.startsWith('recent_placed_orders')) {
+        setApptTick((t) => t + 1);
+      }
     };
     window.addEventListener('secondlife_inspector_arrived', handler);
     window.addEventListener('storage', handler);
 
     const handleApptSignal = () => {
+      setApptTick((t) => t + 1);
       onRefreshOrders?.();
     };
     window.addEventListener('secondlife_appointment_rejected', handleApptSignal);
@@ -2162,18 +2169,32 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   const [schedulingReadOnly, setSchedulingReadOnly] = useState<boolean>(false);
 
   const getOrderAppointment = (ord: EscrowOrder) => {
-    try {
-      const raw = localStorage.getItem(`order_appointment_${ord.id}`);
-      if (raw && raw !== 'undefined' && raw !== 'null') {
-        const parsed = JSON.parse(raw);
-        if (parsed && (parsed.scheduledAt || parsed.counterScheduledAt)) return parsed;
-      }
-    } catch { }
+    if (!ord) return null;
+    const possibleIds = [
+      ord.id,
+      (ord as any).inspectionOrderId,
+      (ord as any).linkedOrderId,
+      (ord as any).orderId,
+      (ord as any).inspectionOrder?.id,
+    ].filter(Boolean) as string[];
+
+    for (const id of possibleIds) {
+      try {
+        const raw = localStorage.getItem(`order_appointment_${id}`);
+        if (raw && raw !== 'undefined' && raw !== 'null') {
+          const parsed = JSON.parse(raw);
+          if (parsed && (parsed.scheduledAt || parsed.counterScheduledAt)) return parsed;
+        }
+      } catch { }
+    }
     if (ord.appointmentScheduledAt) {
       return {
         scheduledAt: ord.appointmentScheduledAt,
         note: ord.appointmentNote || '',
         status: (ord as any).appointmentStatus || 'CONFIRMED',
+        counterScheduledAt: (ord as any).counterScheduledAt,
+        counterShift: (ord as any).counterShift,
+        counterNote: (ord as any).counterNote,
       };
     }
     return null;
@@ -2187,13 +2208,23 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         rejectedAt: (ord as any).appointmentRejectedAt || '',
       };
     }
-    try {
-      const raw = localStorage.getItem(`order_appointment_rejection_${ord.id}`);
-      if (raw && raw !== 'undefined' && raw !== 'null') {
-        const parsed = JSON.parse(raw);
-        if (parsed && parsed.reason) return parsed;
-      }
-    } catch { }
+    const possibleIds = [
+      ord.id,
+      (ord as any).inspectionOrderId,
+      (ord as any).linkedOrderId,
+      (ord as any).orderId,
+      (ord as any).inspectionOrder?.id,
+    ].filter(Boolean) as string[];
+
+    for (const id of possibleIds) {
+      try {
+        const raw = localStorage.getItem(`order_appointment_rejection_${id}`);
+        if (raw && raw !== 'undefined' && raw !== 'null') {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.reason) return parsed;
+        }
+      } catch { }
+    }
     return null;
   };
 
@@ -2211,7 +2242,16 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       counterShift: undefined,
       counterNote: undefined,
     };
-    localStorage.setItem(`order_appointment_${orderId}`, JSON.stringify(updatedAppointment));
+
+    const targetIds = new Set<string>([orderId]);
+    if (appointment?.linkedOrderId) targetIds.add(appointment.linkedOrderId);
+
+    targetIds.forEach((id) => {
+      try {
+        localStorage.setItem(`order_appointment_${id}`, JSON.stringify(updatedAppointment));
+        localStorage.removeItem(`order_appointment_rejection_${id}`);
+      } catch { }
+    });
 
     try {
       const raw = localStorage.getItem('recent_placed_orders');
@@ -2219,7 +2259,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         const list = JSON.parse(raw);
         if (Array.isArray(list)) {
           const updated = list.map((o: any) => {
-            if (o.id === orderId) {
+            if (targetIds.has(o.id) || targetIds.has(o.inspectionOrderId) || targetIds.has(o.linkedOrderId)) {
               return {
                 ...o,
                 appointmentScheduledAt: finalScheduledAt,
@@ -2227,6 +2267,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 counterScheduledAt: undefined,
                 counterShift: undefined,
                 counterNote: undefined,
+                appointmentRejectionReason: undefined,
               };
             }
             return o;
@@ -2242,7 +2283,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         const listCenter = JSON.parse(rawCenter);
         if (Array.isArray(listCenter)) {
           const updatedCenter = listCenter.map((o: any) => {
-            if (o.id === orderId) {
+            if (targetIds.has(o.id) || targetIds.has(o.linkedOrderId) || targetIds.has(o.orderId)) {
               return {
                 ...o,
                 appointmentScheduledAt: finalScheduledAt,
@@ -2250,6 +2291,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 counterScheduledAt: undefined,
                 counterShift: undefined,
                 counterNote: undefined,
+                appointmentRejectionReason: undefined,
               };
             }
             return o;
@@ -2258,6 +2300,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         }
       }
     } catch { }
+
+    setApptTick((t) => t + 1);
 
     const formattedTime = new Date(finalScheduledAt).toLocaleString('vi-VN', {
       hour: '2-digit',
@@ -3598,7 +3642,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 {/* Seller Inspection Request Alert Banner */}
                 {orderIsSeller && hasInspection && !isOrderCancelledOrRefunded(ord) && !isOrderReceiptConfirmed(ord) && (
                   <div className="mx-4 sm:mx-6 mb-3 p-3.5 rounded-2xl border text-xs shadow-2xs transition-all animate-fadeIn">
-                    {ord.inspectionMethod === 'AT_HOME' ? (
+                    {(ord.inspectionMethod === 'AT_HOME' || (ord as any).orderType === 'AT_HOME' || String(ord.inspectionMethod).toUpperCase() === 'AT_HOME' || String((ord as any).orderType).toUpperCase() === 'AT_HOME') ? (
                       /* TRƯỜNG HỢP 1: KIỂM ĐỊNH TẬN NHÀ (KTV ĐẾN NHÀ) */
                       (() => {
                         const rejectionInfo = getOrderAppointmentRejection(ord);
@@ -3622,11 +3666,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           <div className="bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-amber-50/90 p-3.5 rounded-xl border border-amber-200 text-amber-950 space-y-2">
                             <div className="flex items-center justify-between flex-wrap gap-2">
                               <div className="flex items-center gap-2">
-                                <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs ${rejectionInfo && !savedAppointment?.scheduledAt ? 'bg-rose-600 text-white' : 'bg-amber-600 text-white'}`}>
-                                  {rejectionInfo && !savedAppointment?.scheduledAt ? <AlertCircle className="w-3.5 h-3.5" /> : <Calendar className="w-3.5 h-3.5" />}
+                                <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs ${rejectionInfo && !savedAppointment?.scheduledAt ? 'bg-rose-600 text-white' : (savedAppointment?.status === 'COUNTERED_BY_CENTER' || savedAppointment?.counterScheduledAt) ? 'bg-orange-600 text-white' : 'bg-amber-600 text-white'}`}>
+                                  {rejectionInfo && !savedAppointment?.scheduledAt ? <AlertCircle className="w-3.5 h-3.5" /> : (savedAppointment?.status === 'COUNTERED_BY_CENTER' || savedAppointment?.counterScheduledAt) ? <CalendarSync className="w-3.5 h-3.5" /> : <Calendar className="w-3.5 h-3.5" />}
                                   <span>{lang === 'vi' ? 'Kiểm Định Tận Nhà (KTV Đến Nhà)' : 'At-Home Inspection (Technician Visit)'}</span>
                                 </span>
-                                <span className={`text-xs font-bold ${rejectionInfo && !savedAppointment?.scheduledAt ? 'text-rose-700' : 'text-amber-900'}`}>
+                                <span className={`text-xs font-bold ${rejectionInfo && !savedAppointment?.scheduledAt ? 'text-rose-700' : (savedAppointment?.status === 'COUNTERED_BY_CENTER' || savedAppointment?.counterScheduledAt) ? 'text-orange-800' : 'text-amber-900'}`}>
                                   {rejectionInfo && !savedAppointment?.scheduledAt
                                     ? (lang === 'vi' ? 'Lịch hẹn bị từ chối • Vui lòng hẹn lại' : 'Appointment Rejected • Please Reschedule')
                                     : isInspectorArrivedForOrder(ord.id, ord)
@@ -3635,9 +3679,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                         ? (lang === 'vi' ? 'Đã gửi đề xuất lại • Chờ người mua phản hồi' : 'Counter-proposal sent • Awaiting buyer response')
                                         : assignedInspector?.inspectorName
                                           ? (lang === 'vi' ? `Đã phân công KTV ${assignedInspector.inspectorName}` : `KTV ${assignedInspector.inspectorName} Assigned`)
-                                          : savedAppointment?.scheduledAt
-                                            ? (lang === 'vi' ? 'Đã hẹn lịch • Chờ Admin điều phối KTV' : 'Appointment Scheduled • Awaiting Dispatch')
-                                            : (lang === 'vi' ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting Appointment Schedule')}
+                                          : (savedAppointment?.status === 'COUNTERED_BY_CENTER' || savedAppointment?.counterScheduledAt)
+                                            ? (lang === 'vi' ? 'Hub từ chối lịch cũ & đề xuất lịch mới • Cần phản hồi' : 'Center Proposed New Schedule • Action Needed')
+                                            : savedAppointment?.scheduledAt
+                                              ? (lang === 'vi' ? 'Đã hẹn lịch • Chờ Admin điều phối KTV' : 'Appointment Scheduled • Awaiting Dispatch')
+                                              : (lang === 'vi' ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting Appointment Schedule')}
                                 </span>
                               </div>
                               {savedAppointment?.scheduledAt && (
@@ -3691,10 +3737,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             ) : null}
 
                             {savedAppointment?.status === 'COUNTERED_BY_CENTER' || savedAppointment?.counterScheduledAt ? (
-                              <div className="p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 text-xs text-amber-950 space-y-2.5 shadow-xs">
-                                <div className="flex items-center gap-2 text-amber-900 font-extrabold">
-                                  <CalendarSync className="w-4 h-4 text-orange-600 animate-pulse" />
-                                  <span>Trung tâm kiểm định đề xuất lịch hẹn mới:</span>
+                              <div className="p-3.5 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-orange-300 text-xs text-amber-950 space-y-2.5 shadow-xs animate-fadeIn">
+                                <div className="flex items-center gap-2 text-orange-950 font-black">
+                                  <CalendarSync className="w-4 h-4 text-orange-600 animate-pulse shrink-0" />
+                                  <span>Trung tâm kiểm định đã từ chối lịch hẹn cũ &amp; đề xuất lịch mới:</span>
                                 </div>
                                 <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200 space-y-1">
                                   <div className="flex items-center gap-2">

@@ -2815,6 +2815,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     setCounterError(null);
     try {
       const orderId = reviewApptOrder.id;
+      const linkedId = reviewApptOrder.linkedOrderId || (reviewApptOrder as any).orderId;
+      const targetIds = new Set<string>([orderId]);
+      if (linkedId) targetIds.add(linkedId);
 
       try {
         await inspectorService.counterAppointment(
@@ -2830,7 +2833,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       let prevScheduledAt = reviewApptOrder.appointmentScheduledAt;
       let prevNote = reviewApptOrder.appointmentNote;
       try {
-        const raw = localStorage.getItem(`order_appointment_${orderId}`);
+        const raw = localStorage.getItem(`order_appointment_${orderId}`) || (linkedId ? localStorage.getItem(`order_appointment_${linkedId}`) : null);
         if (raw) {
           const parsed = JSON.parse(raw);
           if (parsed.scheduledAt) prevScheduledAt = parsed.scheduledAt;
@@ -2846,8 +2849,21 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         counterShift,
         counterNote: counterNote.trim(),
         counteredAt: new Date().toISOString(),
+        linkedOrderId: linkedId,
       };
-      localStorage.setItem(`order_appointment_${orderId}`, JSON.stringify(counterRecord));
+
+      const rejectionRecord = {
+        reason: counterNote.trim(),
+        rejectedAt: new Date().toISOString(),
+        replacedByCounter: true,
+      };
+
+      targetIds.forEach((id) => {
+        try {
+          localStorage.setItem(`order_appointment_${id}`, JSON.stringify(counterRecord));
+          localStorage.setItem(`order_appointment_rejection_${id}`, JSON.stringify(rejectionRecord));
+        } catch { }
+      });
 
       try {
         const raw = localStorage.getItem('recent_placed_orders');
@@ -2855,13 +2871,14 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           const list = JSON.parse(raw);
           if (Array.isArray(list)) {
             const updated = list.map((o: any) => {
-              if (o.id === orderId) {
+              if (targetIds.has(o.id) || targetIds.has(o.inspectionOrderId) || targetIds.has(o.linkedOrderId)) {
                 return {
                   ...o,
                   appointmentStatus: 'COUNTERED_BY_CENTER',
                   counterScheduledAt: scheduledDate.toISOString(),
                   counterShift,
                   counterNote: counterNote.trim(),
+                  appointmentRejectionReason: counterNote.trim(),
                 };
               }
               return o;
@@ -2877,13 +2894,14 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           const listCenter = JSON.parse(rawCenter);
           if (Array.isArray(listCenter)) {
             const updatedCenter = listCenter.map((o: any) => {
-              if (o.id === orderId) {
+              if (targetIds.has(o.id) || targetIds.has(o.linkedOrderId) || targetIds.has(o.orderId)) {
                 return {
                   ...o,
                   appointmentStatus: 'COUNTERED_BY_CENTER',
                   counterScheduledAt: scheduledDate.toISOString(),
                   counterShift,
                   counterNote: counterNote.trim(),
+                  appointmentRejectionReason: counterNote.trim(),
                 };
               }
               return o;
@@ -2932,12 +2950,21 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       window.dispatchEvent(new CustomEvent('secondlife_appointment_countered', {
         detail: {
           orderId,
+          linkedOrderId: linkedId,
           counterScheduledAt: scheduledDate.toISOString(),
           counterShift,
           counterNote: counterNote.trim(),
         }
       }));
-      window.dispatchEvent(new CustomEvent('secondlife_order_assigned_signal', { detail: { orderId } }));
+      window.dispatchEvent(new CustomEvent('secondlife_appointment_rejected', {
+        detail: {
+          orderId,
+          linkedOrderId: linkedId,
+          reason: counterNote.trim(),
+          replacedByCounter: true,
+        }
+      }));
+      window.dispatchEvent(new CustomEvent('secondlife_order_assigned_signal', { detail: { orderId, linkedOrderId: linkedId } }));
 
       showNotice(`Đã gửi đề xuất lịch mới cho người bán đơn #${(orderId || '').slice(0, 8)} thành công!`);
       setReviewApptOrder(null);
@@ -7721,8 +7748,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       {/* MODAL DUYỆT & THƯƠNG LƯỢNG LỊCH HẸN KIỂM ĐỊNH TẠI NHÀ                     */}
       {/* ========================================================================= */}
       {reviewApptOrder && (
-        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/70 p-3 sm:p-4 backdrop-blur-xs animate-fadeIn overflow-y-auto">
-          <div className="bg-white rounded-2xl sm:rounded-3xl max-w-xl w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-amber-100 max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[75] overflow-y-auto bg-black/70 backdrop-blur-sm p-3 sm:p-4 flex min-h-full items-center justify-center animate-fadeIn">
+          <div className="bg-white rounded-2xl sm:rounded-3xl max-w-2xl w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-amber-100 max-h-[90vh] overflow-y-auto my-auto relative subtle-scrollbar">
             {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-gray-100">
               <div className="flex items-center gap-2.5">
@@ -7774,10 +7801,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               </div>
 
               <div className="pt-2 border-t border-slate-200/80 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] text-slate-700">
-                <div>
+                <div className="min-w-0 break-words">
                   👤 <strong>Người bán:</strong> {getOrderSellerName(reviewApptOrder)} ({getOrderSellerPhone(reviewApptOrder)})
                 </div>
-                <div>
+                <div className="min-w-0 break-words">
                   📍 <strong>Địa chỉ đến:</strong> {getOrderSellerAddress(reviewApptOrder)}
                 </div>
               </div>
@@ -7831,6 +7858,19 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                     </div>
                   )}
 
+                  {/* Khi chọn Tab Đề Xuất Lịch Mới: Hiển thị cảnh báo tự động từ chối lịch cũ kèm lý do */}
+                  {reviewMode === 'COUNTER' && (
+                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-[11px] text-rose-900 space-y-1 animate-fadeIn">
+                      <div className="flex items-center gap-1.5 font-bold text-rose-800">
+                        <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>Yêu cầu lịch hẹn cũ này sẽ tự động bị từ chối khi gửi đề xuất mới:</span>
+                      </div>
+                      <div className="text-rose-700 bg-white/90 p-2 rounded-lg border border-rose-200/80 leading-relaxed italic">
+                        💬 <strong>Lý do từ chối gửi cho Người bán:</strong> {counterNote.trim() ? `"${counterNote.trim()}"` : <span className="text-rose-400 not-italic">(Chưa có lý do - vui lòng nhập tại ô "4. Lý do đề xuất lại cho Người bán: *" bên dưới)</span>}
+                      </div>
+                    </div>
+                  )}
+
                   {reviewApptOrder.counterScheduledAt && (
                     <div className="p-2 rounded-lg bg-sky-50 border border-sky-200 text-[11px] text-sky-900 space-y-0.5">
                       <div className="font-bold text-sky-950 flex items-center gap-1">
@@ -7874,6 +7914,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   onClick={() => {
                     setReviewMode('COUNTER');
                     setCounterError(null);
+                    if (!counterNote.trim()) {
+                      setCounterNote('KTV khu vực đã kín lịch ca sáng, Trung tâm xin phép đề xuất dời sang ca chiều cùng ngày.');
+                    }
                   }}
                   className={`flex-1 py-2 px-3 rounded-lg text-xs font-extrabold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                     reviewMode === 'COUNTER'
@@ -7918,6 +7961,15 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               {/* MODE 2: ĐỀ XUẤT LỊCH MỚI (GỬI LẠI CHO SELLER) */}
               {reviewMode === 'COUNTER' && (
                 <div className="p-3.5 bg-amber-50/70 rounded-2xl border border-amber-200 text-xs space-y-3">
+                  <div className="p-2.5 rounded-xl bg-amber-100/70 border border-amber-300 text-[11px] text-amber-950 space-y-1">
+                    <div className="font-bold flex items-center gap-1 text-amber-900">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                      <span>Quy trình đề xuất lịch hẹn mới:</span>
+                    </div>
+                    <p className="text-amber-900 leading-relaxed">
+                      Khi gửi đề xuất mới, yêu cầu lịch hẹn cũ của người bán sẽ được hệ thống <strong>tự động chuyển thành từ chối</strong> kèm lý do tại mục <strong>4. Lý do đề xuất lại cho Người bán: *</strong> bên dưới. Người bán sẽ nhận được thông báo đề xuất lịch mới để bấm Xác nhận hoặc Hẹn lại.
+                    </p>
+                  </div>
                   <div className="font-bold text-amber-950 flex items-center gap-1.5">
                     <CalendarSync className="w-4 h-4 text-amber-700" />
                     <span>Đề xuất ngày giờ mới gửi lại cho Người bán:</span>

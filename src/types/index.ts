@@ -84,6 +84,10 @@ export interface Listing {
   createdAt: string;
   isInspectionGuaranteed: boolean;
   requiresInspection: boolean;
+  isInspected?: boolean;
+  inspectionPassed?: boolean;
+  inspectionStatus?: string;
+  inspectionSeal?: string;
   photos: PhotoChecklist;
   photoGallery: string[];
   shippingWeight?: number;
@@ -217,10 +221,12 @@ export interface EscrowOrder {
   buyerPaidAt?: string | null;
   sellerFeeShare?: number;
   buyerFeeShare?: number;
+  cashShippingSimulation?: boolean;
   buyerCommitmentDeposit?: number;
   paymentDeadline?: string | null;
   returnShippingReserveFee?: number;
   feeSettledAt?: string | null;
+  returnReserveStatus?: string | null;
   linkedOrderId?: string | null;
   inspectionStatus?: string;
   inspectionNote?: string;
@@ -369,11 +375,14 @@ export interface SystemInspectionProposalPayload {
   centerName?: string;
   feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
   baseInspectionFee?: number;
+  travelFeeRoundTrip?: number;
+  travelDistanceKm?: number;
   shippingToCenterFee?: number;
   returnShippingReserveFee?: number;
   totalAtCenterFee?: number;
   buyerFeeShare?: number;
   sellerFeeShare?: number;
+  cashShippingSimulation?: boolean;
   orderStatus?: string;
   counterFeePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
   rejectionReason?: string;
@@ -397,6 +406,8 @@ export interface InspectionProposalPrefillData {
   isZinLossAcknowledged?: boolean;
   quote?: any;
   baseInspectionFee?: number;
+  travelFeeRoundTrip?: number;
+  travelDistanceKm?: number;
   shippingToCenterFee?: number;
   returnShippingReserveFee?: number;
   totalAtCenterFee?: number;
@@ -457,6 +468,7 @@ export interface UserProfile {
   email: string;
   role: UserRole;
   roles?: string[];
+  permissions?: string[];
   phone?: string;
   address?: string;
   avatar?: string;
@@ -648,7 +660,8 @@ export type WalletTransactionType =
   | 'PAYMENT'
   | 'EARNING'
   | 'REFUND'
-  | 'RETURN_SHIPPING_FEE';
+  | 'RETURN_SHIPPING_FEE'
+  | 'SHIPPING_REIMBURSE';
 
 export type WalletTransactionReferenceType =
   | 'ORDER'
@@ -846,6 +859,10 @@ export interface CreateShipmentRequestDto {
 
 export interface ShipmentBackend {
   shipmentId: string;
+  cashPayerId?: string | null;
+  cashConfirmedAt?: string | null;
+  cashPaidAmount?: number | null;
+  cashReimbursedAmount?: number | null;
   orderId: string;
   inspectionOrderId?: string;
   leg: string;

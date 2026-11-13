@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { inspectionCashConfirmedEvent } from '../../utils/inspectionCashShipping';
 import {
   Wallet,
   Coins,
@@ -149,6 +150,19 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
   useEffect(() => {
     loadTransactions(0);
   }, [appliedQuery, refreshKey]);
+
+  useEffect(() => {
+    const refresh = () => { void loadTransactions(page); };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === inspectionCashConfirmedEvent) refresh();
+    };
+    window.addEventListener(inspectionCashConfirmedEvent, refresh);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener(inspectionCashConfirmedEvent, refresh);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [loadTransactions, page]);
 
   // Auto search when user changes type or enters/changes dates
   useEffect(() => {
@@ -366,6 +380,10 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
         title = 'Rút Tiền Về Ngân Hàng';
         rightsBadge = 'Rút tiền tài khoản';
         purpose = 'Khấu trừ tiền ví để thực hiện lệnh chuyển khoản rút tiền về tài khoản ngân hàng của bạn.';
+      } else if (tx.type === 'SHIPPING_REIMBURSE') {
+        title = 'Hoàn ứng cước kiểm định (Sandbox)';
+        rightsBadge = tx.referenceId ? `Vận đơn #${tx.referenceId.slice(0, 8).toUpperCase()}` : 'Mô phỏng Sandbox';
+        purpose = 'Cộng hoàn ứng cước mô phỏng vào ví SecondLife.';
       } else if (tx.type === 'RETURN_SHIPPING_FEE') {
         title = 'Phí Vận Chuyển Hoàn Hàng';
         rightsBadge = tx.referenceId ? `Đơn #${tx.referenceId.slice(0, 8).toUpperCase()}` : 'Phí ship hoàn';
@@ -409,6 +427,8 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
         return <RefreshCw className="w-5 h-5 text-blue-600" />;
       case 'RETURN_SHIPPING_FEE':
         return <Truck className="w-5 h-5 text-orange-600" />;
+      case 'SHIPPING_REIMBURSE':
+        return <Truck className="w-5 h-5 text-emerald-600" />;
       default:
         return <Wallet className="w-5 h-5 text-slate-600" />;
     }
@@ -429,6 +449,8 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
         return 'bg-blue-100';
       case 'RETURN_SHIPPING_FEE':
         return 'bg-orange-100';
+      case 'SHIPPING_REIMBURSE':
+        return 'bg-emerald-100';
       default:
         return 'bg-slate-100';
     }
@@ -459,6 +481,7 @@ export const WalletHistoryPanel: React.FC<WalletHistoryPanelProps> = ({
               <option value="REFUND">Hoàn tiền (REFUND)</option>
               <option value="WITHDRAW">Rút tiền (WITHDRAW)</option>
               <option value="RETURN_SHIPPING_FEE">Phí ship hoàn hàng</option>
+              <option value="SHIPPING_REIMBURSE">Hoàn ứng cước (Sandbox)</option>
             </select>
           </div>
 

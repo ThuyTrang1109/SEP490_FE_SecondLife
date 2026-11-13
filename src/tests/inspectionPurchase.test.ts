@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getBuyerInspectionStage, getCustomerInspectionStatus, getInspectionPurchaseDecision } from '../utils/inspectionPurchase';
+import { getBuyerInspectionStage, getCustomerInspectionStatus, getInspectionPurchaseDecision, shouldReadSellerHubReturn } from '../utils/inspectionPurchase';
 
 test('the buyer only sees inspection status while the item is on its way to the hub or being inspected', () => {
   const order = { inspectionStatus: 'SHIPPING_TO_CENTER', shippingDeliveredAt: '2026-11-09T08:00:00Z' };
@@ -43,4 +43,18 @@ test('the inspection response distinguishes a buyer rejection from other cancell
 
 test('a direct purchase keeps the regular delivery flow', () => {
   assert.equal(getBuyerInspectionStage({ backendStatus: 'DELIVERED', hasInspectionService: false }), null);
+});
+
+test('a seller can load the return shipment after the buyer payment expires on a Hub inspection', () => {
+  const order = {
+    sellerId: 'seller', inspectionMethod: 'AT_CENTER' as const, inspectionStatus: 'CANCELLED',
+    inspectionNote: 'Người mua không thanh toán tiền hàng trong vòng 6 giờ sau khi kiểm định đạt chuẩn.',
+  };
+  assert.equal(shouldReadSellerHubReturn(order, 'seller'), true);
+  assert.equal(shouldReadSellerHubReturn({ ...order, inspectionNote: '', feeSettledAt: 'settled' }, 'seller'), true);
+  assert.equal(shouldReadSellerHubReturn({ ...order, inspectionStatus: 'FAILED' }, 'seller'), true);
+  assert.equal(shouldReadSellerHubReturn(order, 'buyer'), false);
+  assert.equal(shouldReadSellerHubReturn({ ...order, inspectionMethod: 'AT_HOME' }, 'seller'), false);
+  assert.equal(shouldReadSellerHubReturn({ ...order, inspectionStatus: 'PASSED' }, 'seller'), false);
+  assert.equal(shouldReadSellerHubReturn({ ...order, linkedOrderId: 'purchase' }, 'seller'), false);
 });

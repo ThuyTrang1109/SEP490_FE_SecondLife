@@ -11,6 +11,7 @@ export * from './postService';
 export * from './adminPostService';
 export * from './aiChatService';
 export * from './inspectorService';
+export * from './adminInspectionFundsService';
 export * from './staffService';
 export * from './adminRbacService';
 export * from './adminCreditPricingService';

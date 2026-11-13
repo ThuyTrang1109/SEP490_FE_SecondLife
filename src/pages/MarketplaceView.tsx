@@ -5,6 +5,7 @@ import { translations } from '../utils/translations';
 import { ShowroomLobby3D } from '../components/3d/ShowroomLobby3D';
 import { ProductCard3D } from '../components/3d/ProductCard3D';
 import { getBoughtListingIds } from '../utils/orderUtils';
+import { isListingInspectionPassed } from '../utils/listingInspection';
 
 interface MarketplaceViewProps {
   listings: Listing[];
@@ -72,10 +73,12 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
     window.addEventListener('storage', handleRefresh);
     window.addEventListener('secondlife_order_placed_signal', handleRefresh);
     window.addEventListener('secondlife_listing_status_changed', handleRefresh);
+    window.addEventListener('secondlife_inspection_completed', handleRefresh);
     return () => {
       window.removeEventListener('storage', handleRefresh);
       window.removeEventListener('secondlife_order_placed_signal', handleRefresh);
       window.removeEventListener('secondlife_listing_status_changed', handleRefresh);
+      window.removeEventListener('secondlife_inspection_completed', handleRefresh);
     };
   }, []);
 
@@ -131,7 +134,7 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
         (selectedCategory === 'Phòng khách' && (item.categoryName === 'Phòng khách' || ['Sofa / Ghế dài', 'Kệ Tivi', 'Bàn trà / Bàn sofa', 'Giá sách / Kệ sách', 'Ghế bành'].includes(String(item.itemName || item.category)))) ||
         (selectedCategory === 'Phòng tắm & Vệ sinh' && (item.categoryName === 'Phòng tắm & Vệ sinh' || ['Máy nước nóng', 'Tủ / Kệ phòng tắm', 'Bồn rửa mặt', 'Bồn cầu', 'Vòi hoa sen', 'Gương'].includes(String(item.itemName || item.category))));
       const matchesGrade = selectedGrade === 'ALL' || item.conditionGrade === selectedGrade;
-      const matchesVerified = !verifiedOnly || item.isInspectionGuaranteed;
+      const matchesVerified = !verifiedOnly || item.isInspectionGuaranteed || isListingInspectionPassed(item);
 
       return matchesSearch && matchesCat && matchesGrade && matchesVerified;
     }).sort((a, b) => {
@@ -197,11 +200,10 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
                   aria-selected={isSelected}
                   onClick={() => setSelectedCategory(cat.id)}
                   onKeyDown={handleCategoryKeyDown}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap transition text-xs font-bold cursor-pointer border shrink-0 ${
-                    isSelected
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap transition text-xs font-bold cursor-pointer border shrink-0 ${isSelected
                       ? 'bg-[#24263e] text-white border-[#24263e] shadow-xs ring-2 ring-[#24263e]/20'
                       : 'bg-[#faf8f5] text-[#24263e]/75 border-slate-200 hover:bg-[#FFFFFF] hover:text-[#24263e]'
-                  }`}
+                    }`}
                 >
                   <span>{cat.icon}</span>
                   <span>{lang === 'vi' ? cat.nameVi : cat.nameEn}</span>
@@ -226,7 +228,7 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
         <div>
           <h2 className="text-base sm:text-lg font-bold text-[#24263e] tracking-tight">
-            {lang === 'vi' ? 'Danh Sách Sản Phẩm Niêm Yết' : 'Active Listings'}
+            {lang === 'vi' ? 'Danh sách sản phẩm' : 'Active Listings'}
           </h2>
           <p className="text-[11px] text-[#24263e]/70 font-normal">
             {lang === 'vi'
@@ -241,30 +243,28 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
               <button
                 key={grade}
                 onClick={() => setSelectedGrade(grade)}
-                className={`px-2.5 py-1 rounded-md text-[11px] transition-all cursor-pointer ${
-                  selectedGrade === grade
+                className={`px-2.5 py-1 rounded-md text-[11px] transition-all cursor-pointer ${selectedGrade === grade
                     ? 'bg-[#24263e] text-white font-black'
                     : 'text-[#24263e]/75 hover:text-[#24263e] font-medium'
-                }`}
+                  }`}
               >
                 {grade === 'ALL'
                   ? (lang === 'vi' ? 'Tất cả' : 'All')
                   : grade === 'Like New'
-                  ? (lang === 'vi' ? 'Như mới' : 'Like New')
-                  : grade === 'Good'
-                  ? (lang === 'vi' ? 'Tốt' : 'Good')
-                  : (lang === 'vi' ? 'Khá' : 'Fair')}
+                    ? (lang === 'vi' ? 'Như mới' : 'Like New')
+                    : grade === 'Good'
+                      ? (lang === 'vi' ? 'Tốt' : 'Good')
+                      : (lang === 'vi' ? 'Khá' : 'Fair')}
               </button>
             ))}
           </div>
 
           <button
             onClick={() => setVerifiedOnly(!verifiedOnly)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition border cursor-pointer ${
-              verifiedOnly
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition border cursor-pointer ${verifiedOnly
                 ? 'bg-[#24263e] text-white border-[#24263e]'
                 : 'bg-[#FFFFFF] text-[#24263e]/75 border-slate-200 hover:bg-[#faf8f5]'
-            }`}
+              }`}
           >
             <Sparkles className={`w-3.5 h-3.5 ${verifiedOnly ? 'text-amber-300' : 'text-[#24263e]'}`} />
             <span>{lang === 'vi' ? 'Đã Kiểm Duyệt AI' : 'AI Verified'}</span>

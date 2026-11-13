@@ -6,7 +6,7 @@ import { LalamoveProgress } from '../components/common/LalamoveProgress';
 import type { ShipmentBackend } from '../types';
 import { canReadCenterInspectionShipments, getCenterDispatchStage, getInboundShipmentProgress, getLatestInboundShipment, shouldTrackCenterInspectionShipments, shouldTrackInboundShipment } from '../utils/inspectionCenterData';
 import { canBookHubBuyerDelivery, getHubBuyerShipmentLabel, getLatestInspectionShipment, isPaidHubBuyerDelivery } from '../utils/inspectionCenterData';
-import { canAppealInspection, getHubReturnProgress, getHubReturnState, getReturnReserveMessage, isCenterReturnEligible } from '../utils/inspectionCenterData';
+import { canAppealInspection, getHubReturnProgress, getHubReturnState, getReturnReserveMessage, isCenterReturnEligible, shouldSyncHubReturnOnOpen } from '../utils/inspectionCenterData';
 import { isExpiredInspectionPurchase } from '../utils/inspectionPurchase';
 
 test('dispatch only includes orders in the operational queue', () => {
@@ -23,8 +23,9 @@ test('dispatch distinguishes Hub intake, ready assignments and assigned orders',
   assert.equal(getCenterDispatchStage(order, false), 'WAITING_FOR_HUB');
   assert.equal(getCenterDispatchStage(order, true), 'READY_TO_ASSIGN');
   assert.equal(getCenterDispatchStage({ ...order, status: 'INSPECTING', inspectorId: 'ktv' }, true), 'ASSIGNED');
-  assert.equal(getCenterDispatchStage({ status: 'CONFIRMED_PENDING_DISPATCH', orderType: 'AT_HOME' }, false), 'READY_TO_ASSIGN');
-  assert.equal(getCenterDispatchStage({ status: 'SCHEDULED', orderType: 'AT_HOME', inspectorId: 'ktv' }, false), 'ASSIGNED');
+  assert.equal(getCenterDispatchStage({ status: 'CONFIRMED_PENDING_DISPATCH', orderType: 'AT_HOME' }, false), 'WAITING_SELLER_APPOINTMENT');
+  assert.equal(getCenterDispatchStage({ status: 'CONFIRMED_PENDING_DISPATCH', orderType: 'AT_HOME', appointmentScheduledAt: '2026-11-13T09:00:00Z' }, false), 'READY_TO_ASSIGN');
+  assert.equal(getCenterDispatchStage({ status: 'SCHEDULED', orderType: 'AT_HOME', appointmentScheduledAt: '2026-11-13T09:00:00Z', inspectorId: 'ktv' }, false), 'ASSIGNED');
 });
 
 function shipment(id: string, leg: string, status: string, providerStatus: string | null = null): ShipmentBackend {
@@ -70,7 +71,7 @@ test('a delivered return shows the wallet check without changing failed inspecti
   const now = Date.parse('2026-11-10T14:00:00Z');
   assert.match(getHubReturnProgress(delivered).label, /Đã trả về người bán/);
   assert.equal(getHubReturnProgress({ ...delivered, status: 'ASSIGNED', providerStatus: 'COMPLETED' }).step, 1);
-  assert.match(getReturnReserveMessage(36000, delivered), /lịch sử ví/);
+  assert.match(getReturnReserveMessage(36000, delivered), /ví của bên đã nộp/);
   assert.match(getReturnReserveMessage(32000, delivered), /Không có phần dư/);
   assert.match(getReturnReserveMessage(31000, delivered), /chờ đối soát/);
   assert.match(getReturnReserveMessage(36000, { ...delivered, actualFee: undefined }), /chờ đối soát/);
@@ -79,6 +80,20 @@ test('a delivered return shows the wallet check without changing failed inspecti
   assert.equal(canAppealInspection(order, 'another-seller', now), false);
   assert.equal(canAppealInspection({ ...order, appealStatus: 'PENDING_REVIEW' }, 'seller', now), false);
   assert.equal(canAppealInspection(order, 'seller', Date.parse(order.appealDeadline)), false);
+});
+
+test('opening a return checks the carrier for active returns and delivered Sandbox returns awaiting reimbursement', () => {
+  const active = shipment('return', 'CENTER_TO_SELLER', 'READY_TO_PICK', 'ASSIGNING_DRIVER');
+  assert.equal(shouldSyncHubReturnOnOpen(active), true);
+  assert.equal(shouldSyncHubReturnOnOpen({ ...active, orderCode: null }), false);
+  assert.equal(shouldSyncHubReturnOnOpen({ ...active, leg: 'SELLER_TO_CENTER' }), false);
+  assert.equal(shouldSyncHubReturnOnOpen(null), false);
+  for (const status of ['CREATION_UNCERTAIN', 'DELIVERED', 'COMPLETED', 'CANCELLED', 'FAILED', 'RETURNED']) {
+    assert.equal(shouldSyncHubReturnOnOpen({ ...active, status }), false, status);
+  }
+  const deliveredCashReturn = { ...active, status: 'DELIVERED', providerStatus: 'COMPLETED', cashPayerId: 'hub-a' };
+  assert.equal(shouldSyncHubReturnOnOpen(deliveredCashReturn), true);
+  assert.equal(shouldSyncHubReturnOnOpen({ ...deliveredCashReturn, cashConfirmedAt: '2026-11-12T03:00:00Z' }), false);
 });
 
 test('the payment expiry label waits for the cancellation recorded by BE', () => {

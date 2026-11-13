@@ -40,7 +40,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const [requestId, setRequestId] = useState<string>(() => crypto.randomUUID());
+  const [requestId] = useState<string>(() => crypto.randomUUID());
 
   const isAtHome = Boolean(
     order.inspectionMethod === 'AT_HOME' ||
@@ -58,6 +58,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
   // Load Trung tâm kiểm định thực tế từ API và chi tiết đơn kiểm định
   const [apiCenters, setApiCenters] = useState<any[]>([]);
   const [inspectionOrderInfo, setInspectionOrderInfo] = useState<any | null>(null);
+  const cashShipping = isHubInspection && (inspectionOrderInfo?.cashShippingSimulation ?? order.cashShippingSimulation) === true;
 
   React.useEffect(() => {
     let isMounted = true;
@@ -164,7 +165,9 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
         };
       }
 
-      if (isHubInspection) {
+      if (cashShipping) {
+        shipment = await shippingService.createInspectionShipment(order.id, { requestId, leg: 'SELLER_TO_CENTER' });
+      } else if (isHubInspection) {
         // Gọi API tạo vận đơn kiểm định Chặng 1 chuyển hàng từ Người bán đến Hub
         try {
           shipment = await shippingService.createInspectionShipment(order.id, shipmentPayload as any);
@@ -268,7 +271,8 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
                 Mã đơn hàng: <strong className="font-mono text-slate-700">#{order.id.slice(0, 12).toUpperCase()}</strong> •{' '}
-                {isHubInspection ? 'Lộ trình chuyển kiện hàng đến Trạm Kiểm Định SecondLife Hub' : 'Vận chuyển trực tiếp từ Người Bán đến Người Mua'}
+                {cashShipping ? 'Mô phỏng Sandbox · Seller ứng cước tiền mặt khi giao vận'
+                  : isHubInspection ? 'Lộ trình chuyển kiện hàng đến Trạm Kiểm Định SecondLife Hub' : 'Vận chuyển trực tiếp từ Người Bán đến Người Mua'}
               </p>
             </div>
           </div>
@@ -383,8 +387,8 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
                       : `Người nhận: ${order.buyerName} (${order.buyerPhone})`}
                   </span>
                   <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold border ${isHubInspection
-                      ? 'bg-blue-100 text-blue-800 border-blue-200'
-                      : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                    ? 'bg-blue-100 text-blue-800 border-blue-200'
+                    : 'bg-emerald-100 text-emerald-800 border-emerald-200'
                     }`}>
                     {isHubInspection ? 'Trạm ISO/IEC 17025' : 'GPS Sẵn Sàng'}
                   </span>
@@ -472,8 +476,8 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               type="submit"
               disabled={isSubmitting || order.escrowStatus === 'AWAITING_PAYMENT'}
               className={`px-5 py-2 rounded-xl font-bold text-xs transition shadow-md flex items-center gap-2 ${order.escrowStatus === 'AWAITING_PAYMENT'
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-[#c34c36] hover:bg-[#dc4729] text-white cursor-pointer disabled:opacity-50'
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-[#c34c36] hover:bg-[#dc4729] text-white cursor-pointer disabled:opacity-50'
                 }`}
             >
               {isSubmitting ? (
@@ -489,7 +493,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               ) : (
                 <>
                   <Truck className="w-3.5 h-3.5 text-white" />
-                  <span>{isHubInspection ? 'Xác Nhận Tạo Vận Đơn Gửi Hub (Chặng 1)' : 'Xác Nhận Tạo Vận Đơn Lalamove'}</span>
+                  <span>{isHubInspection ? 'Xác nhận tạo vận đơn gửi đến Hub (Chặng 1)' : 'Xác nhận tạo đơn vận chuyển'}</span>
                 </>
               )}
             </button>

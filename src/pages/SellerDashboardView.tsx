@@ -43,6 +43,7 @@ import { dialogService } from '../utils/dialogService';
 import { resolveCategoryAndItem } from '../utils/catalogCache';
 import { returnShippingFeeService, SellerReturnShippingDebtResponse } from '../services';
 import { SellerReturnShippingFeesSection } from '../components/seller/SellerReturnShippingFeesSection';
+import { isListingInspectionPassed } from '../utils/listingInspection';
 import { SellerDisputeResponseModal } from '../components/seller/SellerDisputeResponseModal';
 
 interface SellerDashboardViewProps {
@@ -1308,6 +1309,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                       ? (lang === 'vi' ? '● Đang Niêm Yết' : '● Active')
                       : (lang === 'vi' ? '● Đã Cọc Ký Quỹ' : '● Escrow Deposited')}
                   </span>
+                  {isListingInspectionPassed(item) && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs ml-1.5">
+                      <ShieldCheck className="w-2.5 h-2.5 text-emerald-100" />
+                      <span>{lang === 'vi' ? 'Đã Kiểm Định' : 'Inspected'}</span>
+                    </span>
+                  )}
                   {item.backendStatus === 'REJECTED' && item.rejectionReason && (
                     <div className="text-[10px] text-rose-700 bg-rose-50 p-1.5 rounded-lg border border-rose-200 mt-1 leading-snug">
                       <span className="font-bold">{lang === 'vi' ? 'Lý do: ' : 'Reason: '}</span>

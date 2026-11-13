@@ -5,7 +5,7 @@ export const translations = {
     brandName: 'SecondLife',
     tagline: 'Sàn đồ cũ tích hợp AI định giá & Dịch vụ kiểm định xác thực',
     knowFairPrice: 'Biết giá chuẩn - Kiểm định trước khi thanh toán - Giao dịch an tâm tuyệt đối',
-    
+
     // Roles
     roleBuyer: 'Người Mua (Buyer)',
     roleSeller: 'Người Bán (Seller)',
@@ -20,7 +20,7 @@ export const translations = {
     navInspectionHub: 'Trung Tâm Kiểm Định',
     navAdminDashboard: 'Admin Control Center',
     navChat: 'Đàm Phán & Tin Nhắn',
-    
+
     // Marketplace & Filters
     searchPlaceholder: 'Tìm iPhone 15 Pro, MacBook M2, máy ảnh Sony, túi hiệu...',
     filterCategory: 'Danh mục',
@@ -39,7 +39,7 @@ export const translations = {
     quickBuy: 'Mua bảo đảm Escrow',
     makeOffer: 'Trả giá & Đàm phán',
     contactSeller: 'Nhắn tin',
-    
+
     // Listing Creation
     createListingTitle: 'Đăng Bán Có AI Trợ Lực',
     createListingSubtitle: 'Hệ thống AI tự động phân tích ảnh, ước tính giá thị trường chuẩn và kiểm tra gian lận',
@@ -79,7 +79,7 @@ export const translations = {
     itemAmount: 'Tiền hàng (Giữ trong Escrow)',
     inspectionFee: 'Phí kiểm định chứng nhận',
     shippingFee: 'Phí vận chuyển giao nhận',
-    platformFee: 'Phí dịch vụ nền tảng (2.5%)',
+    platformFee: 'Phí dịch vụ nền tảng',
     totalEscrow: 'Tổng tiền phong tỏa Escrow',
     verifyThenShip: 'Quy trình "Kiểm định trước khi thanh toán"',
     whyInspection: 'Hàng gửi tới Trung tâm giám định SecondLife để chuyên gia mở máy, test linh kiện, dán tem niêm phong trước khi giao cho bạn (quá trình kiểm định tháo máy sẽ làm mất trạng thái zin nguyên bản).',
@@ -94,7 +94,7 @@ export const translations = {
     confirmReceipt: 'Xác nhận nhận hàng & Giải ngân cho Người bán',
     openDispute: 'Khiếu nại / Trả hàng nếu có sai khác',
     inspectionWindowNotice: 'Bạn có 48 giờ để dùng thử trước khi tiền tự động giải ngân cho người bán.',
-    
+
     // Multi-stage photo history
     multiStageTitle: 'Lịch sử ảnh 3 giai đoạn đối chiếu (Chống tráo hàng)',
     multiStageTitle2Stage: 'Lịch sử ảnh 2 giai đoạn đối chiếu (Chống tráo hàng)',
@@ -199,7 +199,7 @@ export const translations = {
     itemAmount: 'Item Price (Held in Escrow)',
     inspectionFee: 'Certification & Inspection Fee',
     shippingFee: 'Logistics & Insurance Fee',
-    platformFee: 'Platform Service Fee (2.5%)',
+    platformFee: 'Platform Service Fee',
     totalEscrow: 'Total Escrow Held Amount',
     verifyThenShip: '"Verify Then Ship" Workflow',
     whyInspection: 'Items are routed to a certified SecondLife Inspection Hub for physical diagnostics, seal application, and authentication prior to final delivery (disassembly inspection voids original factory "zin" condition).',

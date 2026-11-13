@@ -829,6 +829,15 @@ export const shippingService = {
     return shipment as ShipmentBackend;
   },
 
+  async confirmInspectionCashShipping(shipmentId: string, body: { paidAmount: number; receiptReference: string }): Promise<ShipmentBackend> {
+    const res = await request<ShipmentBackend>(`/shipments/${shipmentId}/cash-confirmation`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      requiresAuth: true,
+    });
+    return res.data;
+  },
+
   /**
    * Hủy vận đơn Lalamove trước khi tài xế lấy hàng
    * POST /api/v1/shipments/{shipmentId}/cancel

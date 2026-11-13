@@ -112,6 +112,12 @@ export const CommissionRulesTab: React.FC = () => {
     try {
       const data = await adminCommissionService.getCommissionRules(page, pageSize);
       setRules(data.items);
+      const active = data.items.find((r) => r.active) || data.items[0];
+      if (active && active.rate !== undefined) {
+        try {
+          localStorage.setItem('platform_commission_rate', String(Math.round(Number(active.rate) * 1000) / 10));
+        } catch {}
+      }
       setCurrentPage(data.page);
       setTotalPages(data.totalPages || 1);
       setTotalElements(data.totalElements || data.items.length);
@@ -190,6 +196,12 @@ export const CommissionRulesTab: React.FC = () => {
       } else {
         await adminCommissionService.createCommissionRule(payload);
         setSuccessMessage(`Đã khởi tạo chính sách "${formName}" thành công.`);
+      }
+
+      if (formActive) {
+        try {
+          localStorage.setItem('platform_commission_rate', String(Math.round(rateVal * 1000) / 10));
+        } catch {}
       }
 
       setIsFormModalOpen(false);

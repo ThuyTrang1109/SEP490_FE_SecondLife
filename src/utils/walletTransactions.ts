@@ -99,6 +99,8 @@ export function walletTransactionLabel(type?: string | null): string {
       return 'Hoàn tiền';
     case 'RETURN_SHIPPING_FEE':
       return 'Phí ship hoàn hàng';
+    case 'SHIPPING_REIMBURSE':
+      return 'Hoàn ứng cước (Sandbox)';
     default:
       return type || 'Giao dịch ví';
   }

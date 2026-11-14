@@ -20,7 +20,7 @@ import {
   CreateWithdrawalRequestDto
 } from '../../services/walletService';
 import { formatVND } from '../../utils/translations';
-import { formatVndInput, cleanVndInput } from '../../utils/numberToWords';
+import { formatVndInput, cleanVndInput, handleVndInputChange, handleVndInputKeyDown } from '../../utils/numberToWords';
 
 interface WithdrawalModalProps {
   isOpen: boolean;
@@ -332,7 +332,8 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
                   inputMode="numeric"
                   required
                   value={amountStr ? formatVndInput(amountStr) : ''}
-                  onChange={(e) => setAmountStr(cleanVndInput(e.target.value))}
+                  onChange={(e) => handleVndInputChange(e, (_num, raw) => setAmountStr(raw))}
+                  onKeyDown={(e) => handleVndInputKeyDown(e, (_num, raw) => setAmountStr(raw))}
                   placeholder="Nhập số tiền (VND)..."
                   className="w-full text-xs px-3 py-2.5 pr-8 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#24263e] font-black text-base text-[#c34c36]"
                 />

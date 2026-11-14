@@ -35,7 +35,7 @@ import { InspectionProposalModal } from '../modals/InspectionProposalModal';
 import { InspectionProposalCard } from './InspectionProposalCard';
 import { paths } from '../../app/router/paths';
 import { navigatePath, useBrowserLocation } from '../../app/router/browser';
-import { formatVndInput, cleanVndInput } from '../../utils/numberToWords';
+import { formatVndInput, cleanVndInput, handleVndInputChange, handleVndInputKeyDown } from '../../utils/numberToWords';
 import { clearInspectionChatIntent, inspectionChatDraftFromUrl, isInspectionProposalForPost, matchesInspectionChatDraft } from '../../utils/inspectionChatDraft';
 import { createChatInspectionReader, getChatInspectionOrderId, getCurrentChatInspection, isActiveChatInspection, matchesChatInspection } from '../../utils/chatInspection';
 import { getChatPostStatusBadge } from '../../utils/chatProduct';
@@ -1658,15 +1658,21 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                 inputMode="numeric"
                 value={offerInput > 0 ? formatVndInput(offerInput) : ''}
                 onChange={(e) => {
-                  const cleaned = cleanVndInput(e.target.value);
-                  setOfferInput(cleaned ? Number(cleaned) : 0);
-                  setOfferError(null);
+                  handleVndInputChange(e, (num) => {
+                    setOfferInput(num);
+                    setOfferError(null);
+                  });
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
                     handleSendOffer();
+                    return;
                   }
+                  handleVndInputKeyDown(e, (num) => {
+                    setOfferInput(num);
+                    setOfferError(null);
+                  });
                 }}
                 placeholder="VD: 1.500.000"
                 className={`w-full px-3.5 py-2 pr-9 border rounded-xl text-xs font-bold text-[#24263e] bg-white focus:outline-none ${isSeller ? 'focus:border-blue-600' : 'focus:border-[#c34c36]'

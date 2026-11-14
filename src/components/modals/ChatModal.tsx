@@ -38,7 +38,7 @@ import {
   getAssessmentStatusMeta,
 } from '../../services';
 import { SystemInspectionProposalPayload } from '../../types';
-import { formatVndInput, cleanVndInput } from '../../utils/numberToWords';
+import { formatVndInput, cleanVndInput, handleVndInputChange, handleVndInputKeyDown } from '../../utils/numberToWords';
 
 // In-memory cache to instantly retrieve known ChatRoom per PostId without duplicate API calls
 const postRoomCache = new Map<string, ChatRoomDto>();
@@ -1890,15 +1890,21 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   placeholder="Ví dụ: 1.200.000"
                   value={offerInput > 0 ? formatVndInput(offerInput) : ''}
                   onChange={(e) => {
-                    const cleaned = cleanVndInput(e.target.value);
-                    setOfferInput(cleaned ? Number(cleaned) : 0);
-                    if (offerError) setOfferError(null);
+                    handleVndInputChange(e, (num) => {
+                      setOfferInput(num);
+                      if (offerError) setOfferError(null);
+                    });
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       handleSendOffer();
+                      return;
                     }
+                    handleVndInputKeyDown(e, (num) => {
+                      setOfferInput(num);
+                      if (offerError) setOfferError(null);
+                    });
                   }}
                   className={`w-full px-3 py-1.5 pr-8 border rounded-xl text-xs font-black text-[#24263e] focus:outline-none ${isSeller
                     ? 'bg-white border-blue-200 focus:border-blue-500'

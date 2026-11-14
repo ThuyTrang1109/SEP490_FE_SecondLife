@@ -48,7 +48,7 @@ import {
   UserCredit
 } from '../types';
 import { translations, formatVND } from '../utils/translations';
-import { numberToVietnameseWords, formatVndInput, cleanVndInput } from '../utils/numberToWords';
+import { numberToVietnameseWords, formatVndInput, cleanVndInput, handleVndInputChange, handleVndInputKeyDown } from '../utils/numberToWords';
 import {
   mediaService,
   postService,
@@ -1015,13 +1015,13 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             if (parsed && typeof parsed === 'object') setQuestionAnswers(parsed);
           }
           const savedDate = (draft as any).purchaseDate || localStorage.getItem(`post_purchase_date_${cleanId}`);
+          const draftYear = (draft as any).purchaseYear;
           if (savedDate) {
             handleDatePick(savedDate);
-          } else if (draft.purchaseYear) {
-            setPurchaseYear(draft.purchaseYear);
-            const y = draft.purchaseYear;
-            if (y < currentYear) {
-              handleDatePick(`${y}-06-15`);
+          } else if (draftYear) {
+            setPurchaseYear(draftYear);
+            if (draftYear < currentYear) {
+              handleDatePick(`${draftYear}-06-15`);
             } else {
               handleDatePick(maxAllowedPurchaseDate);
             }
@@ -3910,20 +3910,27 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 maxLength={14}
                 value={originalPriceVnd ? formatVndInput(originalPriceVnd.toString()) : ''}
                 onChange={(e) => {
-                  const raw = cleanVndInput(e.target.value, 10);
-                  const numVal = raw ? Number(raw) : '';
-                  setOriginalPriceVnd(numVal);
-                  if (typeof numVal === 'number' && numVal > 0) {
-                    try {
-                      localStorage.setItem('temp_creating_original_price', String(numVal));
-                      if (postId) {
-                        localStorage.setItem(`post_original_price_${postId}`, String(numVal));
-                      }
-                    } catch { }
-                  }
-                  if (initialDraft && typeof numVal === 'number') {
-                    setFinalPriceVnd(numVal);
-                  }
+                  handleVndInputChange(e, (numVal) => {
+                    const finalVal = numVal > 0 ? numVal : '';
+                    setOriginalPriceVnd(finalVal);
+                    if (typeof finalVal === 'number' && finalVal > 0) {
+                      try {
+                        localStorage.setItem('temp_creating_original_price', String(finalVal));
+                        if (postId) {
+                          localStorage.setItem(`post_original_price_${postId}`, String(finalVal));
+                        }
+                      } catch { }
+                    }
+                    if (initialDraft && typeof finalVal === 'number') {
+                      setFinalPriceVnd(finalVal);
+                    }
+                  }, 10);
+                }}
+                onKeyDown={(e) => {
+                  handleVndInputKeyDown(e, (numVal) => {
+                    const finalVal = numVal > 0 ? numVal : '';
+                    setOriginalPriceVnd(finalVal);
+                  });
                 }}
                 placeholder={initialDraft ? (lang === 'vi' ? 'VD: 600.000' : 'E.g. 600,000') : (lang === 'vi' ? 'VD: 5.000.000' : 'E.g. 5,000,000')}
                 className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs font-medium text-[#24263e] focus:outline-none tabular-nums transition ${originalPriceError
@@ -5220,8 +5227,14 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     maxLength={15}
                     value={finalPriceVnd > 0 ? formatVndInput(finalPriceVnd.toString()) : ''}
                     onChange={(e) => {
-                      const numericValue = cleanVndInput(e.target.value, 11);
-                      setFinalPriceVnd(numericValue ? Number(numericValue) : 0);
+                      handleVndInputChange(e, (numVal) => {
+                        setFinalPriceVnd(numVal);
+                      }, 11);
+                    }}
+                    onKeyDown={(e) => {
+                      handleVndInputKeyDown(e, (numVal) => {
+                        setFinalPriceVnd(numVal);
+                      });
                     }}
                     placeholder="VD: 500.000"
                     className={`w-full pl-4 pr-12 py-3 rounded-xl border ${hasSubmittedStep3 && (!finalPriceVnd || finalPriceVnd < 1000 || finalPriceVnd > 1000000000)
@@ -5527,8 +5540,14 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 maxLength={15}
                 value={finalPriceVnd > 0 ? formatVndInput(finalPriceVnd.toString()) : ''}
                 onChange={(e) => {
-                  const numericValue = cleanVndInput(e.target.value, 11);
-                  setFinalPriceVnd(numericValue ? Number(numericValue) : 0);
+                  handleVndInputChange(e, (numVal) => {
+                    setFinalPriceVnd(numVal);
+                  }, 11);
+                }}
+                onKeyDown={(e) => {
+                  handleVndInputKeyDown(e, (numVal) => {
+                    setFinalPriceVnd(numVal);
+                  });
                 }}
                 className={`w-full px-4 py-3 bg-white border ${!finalPriceVnd || finalPriceVnd < 1000 || finalPriceVnd > 1000000000
                   ? 'border-rose-400 focus:border-rose-500 ring-2 ring-rose-200'

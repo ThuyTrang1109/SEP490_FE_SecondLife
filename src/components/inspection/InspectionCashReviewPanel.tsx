@@ -179,9 +179,7 @@ export function InspectionCashReviewPanel({ allowManualConfirmation = true }: { 
         </span>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <h2 className="text-base font-extrabold text-slate-900">Hoàn ứng cước kiểm định</h2>
-          <span className="rounded-md bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
-            Mô phỏng Sandbox
-          </span>
+
         </div>
       </div>
       <form

@@ -2,6 +2,9 @@ import { useBrowserLocation, navigatePath } from '../app/router/browser';
 import { resolveAppRoute, paths } from '../app/router/paths';
 import React, { useState, useEffect, useMemo } from 'react';
 import { EscrowOrder, Language, UserRole, UserProfile } from '../types';
+import { EscrowOrderFilters, EscrowOrderPagination } from '../components/orders/EscrowOrderFilters';
+import { ORDER_FILTER_TABS, orderFeedSearch, readOrderFeedQuery, type OrderFeedQuery, type OrderFilterTab, type OrderPerspective } from '../utils/escrowOrderFilters';
+import type { OrderFeed } from '../services/orderFeedService';
 import { translations, formatVND } from '../utils/translations';
 import {
   ShieldCheck,
@@ -13,14 +16,12 @@ import {
   FileCheck,
   Layers,
   ChevronRight,
-  ChevronLeft,
   ChevronDown,
   Package,
   PackageCheck,
   Store,
   Eye,
   X,
-  Search,
   RotateCcw,
   Calendar,
   CalendarCheck,
@@ -115,6 +116,12 @@ const getInitialCommissionRate = (): number => {
 
 interface EscrowOrdersViewProps {
   orders: EscrowOrder[];
+  overviewOrders: EscrowOrder[];
+  routeOrder: EscrowOrder | null;
+  filterQuery: OrderFeedQuery;
+  filterResult?: OrderFeed;
+  filterCounts?: OrderFeed['counts'];
+  filterFailed: boolean;
   currentUser?: UserProfile | null;
   onConfirmReceipt: (orderId: string) => void;
   onOpenDispute: (order: EscrowOrder) => void;
@@ -124,6 +131,7 @@ interface EscrowOrdersViewProps {
     cancelData?: { reasonCode: 'BUYER_REQUESTED' | 'SELLER_OUT_OF_STOCK' | 'SELLER_CANNOT_FULFILL'; reason: string }
   ) => void;
   onRefreshOrders?: () => void;
+  onRefreshFilter: () => void;
   lang: Language;
   userRole?: UserRole;
   onOpenChat?: (listing: any, roomId?: string) => void;
@@ -132,17 +140,6 @@ interface EscrowOrdersViewProps {
   isLoading?: boolean;
 }
 
-type OrderFilterTab =
-  | 'all'
-  | 'awaiting_pickup'
-  | 'inspecting'
-  | 'shipping'
-  | 'delivered'
-  | 'completed'
-  | 'cancelled'
-  | 'disputed'
-  | 'with_inspection';
-
 function isHubInboundInProgress(order: EscrowOrder) {
   return shouldTrackInboundShipment({
     orderType: order.inspectionMethod,
@@ -150,37 +147,29 @@ function isHubInboundInProgress(order: EscrowOrder) {
   });
 }
 
-export const VALID_ORDER_FILTER_TABS: OrderFilterTab[] = [
-  'all',
-  'awaiting_pickup',
-  'inspecting',
-  'shipping',
-  'delivered',
-  'completed',
-  'cancelled',
-  'disputed',
-  'with_inspection'
-];
-
+export const VALID_ORDER_FILTER_TABS = ORDER_FILTER_TABS;
 export const ORDER_TAB_STORAGE_KEY = 'secondlife_orders_filter_tab';
-
 export function getInitialOrderFilterTab(): OrderFilterTab {
-  if (typeof window === 'undefined') return 'all';
-  const params = new URLSearchParams(window.location.search);
-  const filter = (params.get('filter') || params.get('order_tab') || params.get('tab')) as OrderFilterTab;
-  return VALID_ORDER_FILTER_TABS.includes(filter) ? filter : 'all';
+  return typeof window === 'undefined' ? 'all' : readOrderFeedQuery(window.location.href).filter;
 }
 
 export { getSortableOrderTimestamp };
 
 export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   orders,
+  overviewOrders,
+  routeOrder,
+  filterQuery,
+  filterResult,
+  filterCounts,
+  filterFailed,
   currentUser,
   onConfirmReceipt,
   onOpenDispute,
   onMarkShipped,
   onCancelOrder,
   onRefreshOrders,
+  onRefreshFilter,
   lang,
   userRole = 'buyer',
   onOpenChat,
@@ -221,7 +210,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   };
 
   const resolvedOrders = useMemo(() => {
-    return (orders || []).map((ord) => {
+    return (overviewOrders || []).map((ord) => {
       if (!ord) return ord;
       let finalOrd = ord;
 
@@ -332,7 +321,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         listing: resolveOrderListing(resolvedListing),
       };
     });
-  }, [orders]);
+  }, [overviewOrders]);
 
   const userOrders = useMemo(() => {
     if (!currentUser?.id) return resolvedOrders;
@@ -362,36 +351,58 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     });
   }, [resolvedOrders, currentUser, userRole]);
 
-  const [orderPerspective, setOrderPerspective] = useState<'all' | 'buyer' | 'seller'>('all');
-
-  const buyerOrdersCount = useMemo(() => userOrders.filter(o => !isOrderSeller(o)).length, [userOrders]);
-  const sellerOrdersCount = useMemo(() => userOrders.filter(o => isOrderSeller(o)).length, [userOrders]);
-
+  const orderPerspective = filterQuery.perspective;
+  const authoritativeOrders = useMemo(() => new Set([
+    ...orders.map(({ id }) => id),
+    ...(routeOrder ? [routeOrder.id] : []),
+  ]), [orders, routeOrder]);
+  const buyerOrdersCount = userOrders.filter(o => !isOrderSeller(o)).length;
+  const sellerOrdersCount = userOrders.filter(o => isOrderSeller(o)).length;
   const isSellerView = orderPerspective === 'seller' || (orderPerspective === 'all' && (userRole === 'seller' || sellerOrdersCount > 0));
   const isSeller = isSellerView;
 
   const routeLocation = useBrowserLocation();
   const orderRoute = resolveAppRoute(routeLocation, currentUser?.role || userRole);
-  const activeTab = getInitialOrderFilterTab();
-  const setActiveTab = (tab: OrderFilterTab) => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('filter', tab);
-    url.searchParams.delete('tab'); url.searchParams.delete('order_tab');
-    navigatePath(`${url.pathname}${url.search}`);
+  const activeTab = filterQuery.filter;
+  const updateQuery = (changes: Partial<OrderFeedQuery>) => {
+    const { pathname, search } = window.location;
+    navigatePath(pathname + orderFeedSearch(search, { ...filterQuery, ...changes }));
   };
+  const setActiveTab = (filter: OrderFilterTab) => updateQuery({ filter, page: 0, q: searchQuery.trim() });
+  const setOrderPerspective = (perspective: OrderPerspective) => updateQuery({ perspective, page: 0, q: searchQuery.trim() });
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(filterQuery.q);
+  useEffect(() => setSearchQuery(filterQuery.q), [filterQuery.q]);
+  const searching = searchQuery.trim() !== filterQuery.q;
+  useEffect(() => {
+    if (!searching) return;
+    const timer = window.setTimeout(() => {
+      const { pathname, search } = window.location;
+      navigatePath(pathname + orderFeedSearch(search, {
+        ...readOrderFeedQuery(window.location.href), q: searchQuery.trim(), page: 0,
+      }), { replace: true });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery, searching, filterQuery.q, routeLocation]);
+
   const [detailModalOrder, setDetailModalOrderState] = useState<EscrowOrder | null>(null);
+  const findOrderForAction = (id: string) =>
+    orders.find((order) => order.id === id) ??
+    (detailModalOrder?.id === id ? detailModalOrder : userOrders.find((order) => order.id === id));
   const setDetailModalOrder = (value: React.SetStateAction<EscrowOrder | null>) => {
     setDetailModalOrderState(value);
     if (typeof value === 'function') return;
     navigatePath(paths.orders(orderRoute.role || userRole, value?.id) + window.location.search);
   };
-  React.useEffect(() => {
+  useEffect(() => {
     const id = orderRoute.params.orderId;
-    const found = id ? userOrders.find((order) => order.id === id) : null;
-    setDetailModalOrderState(found || null);
-  }, [routeLocation, userOrders]);
+    if (!id) {
+      setDetailModalOrderState(null);
+      return;
+    }
+    const found = routeOrder ?? orders.find((order) => order.id === id);
+    setDetailModalOrderState((previous) => found ?? (isLoading && previous?.id === id ? previous : null));
+  }, [orderRoute.params.orderId, routeOrder, orders, isLoading]);
   const autoPaidOrderIdsRef = React.useRef<Set<string>>(new Set());
 
   // Tự động nộp phí kiểm định vào Escrow cho Người mua nếu đơn ở trạng thái WAITING_FEE_PAYMENT
@@ -450,6 +461,17 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           const key = localStorage.key(i);
           if (key?.startsWith('at_home_inspector_arrived_')) {
             set.add(key.replace('at_home_inspector_arrived_', ''));
+          } else if (key?.startsWith('order_inspecting_') && localStorage.getItem(key) === 'true') {
+            set.add(key.replace('order_inspecting_', ''));
+          } else if (key?.startsWith('inspection_status_') && localStorage.getItem(key) === 'INSPECTING') {
+            set.add(key.replace('inspection_status_', ''));
+          }
+        }
+        const rawSync = localStorage.getItem('secondlife_inspector_arrived_sync');
+        if (rawSync) {
+          const data = JSON.parse(rawSync);
+          if (data?.targetIds && Array.isArray(data.targetIds)) {
+            data.targetIds.forEach((id: string) => set.add(id));
           }
         }
       }
@@ -462,6 +484,30 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       const orderId = e?.detail?.orderId || (e?.key?.startsWith('at_home_inspector_arrived_') ? e.key.replace('at_home_inspector_arrived_', '') : null);
       if (orderId) {
         setArrivedOrderIds((prev) => new Set(prev).add(orderId));
+      }
+      if (e?.detail?.targetIds && Array.isArray(e.detail.targetIds)) {
+        setArrivedOrderIds((prev) => {
+          const next = new Set(prev);
+          e.detail.targetIds.forEach((id: string) => next.add(id));
+          return next;
+        });
+      }
+      if (e?.key === 'secondlife_inspector_arrived_sync' || e?.key?.startsWith('at_home_inspector_arrived_') || e?.key?.startsWith('order_inspecting_') || e?.key?.startsWith('inspection_status_')) {
+        try {
+          const raw = localStorage.getItem('secondlife_inspector_arrived_sync');
+          if (raw) {
+            const data = JSON.parse(raw);
+            if (data?.targetIds && Array.isArray(data.targetIds)) {
+              setArrivedOrderIds((prev) => {
+                const next = new Set(prev);
+                data.targetIds.forEach((id: string) => next.add(id));
+                return next;
+              });
+            }
+          }
+        } catch {}
+        setApptTick((t) => t + 1);
+        onRefreshOrders?.();
       }
       if (e?.key?.startsWith('order_appointment_') || e?.key?.startsWith('recent_placed_orders')) {
         setApptTick((t) => t + 1);
@@ -509,13 +555,34 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   }, []);
 
   const isInspectorArrivedForOrder = (orderId: string, ord?: any): boolean => {
-    if (!orderId) return false;
-    return arrivedOrderIds.has(orderId) || Boolean(
-      (typeof window !== 'undefined' && localStorage.getItem(`at_home_inspector_arrived_${orderId}`)) ||
+    const ids = [
+      orderId,
+      ord?.id,
+      ord?.linkedOrderId,
+      ord?.inspectionOrderId,
+      ord?.orderId,
+      (ord as any)?.inspectionOrder?.id,
+      (ord as any)?.inspectionOrder?.linkedOrderId,
+      (ord as any)?.inspectionOrder?.orderId,
+    ].filter(Boolean) as string[];
+
+    for (const id of ids) {
+      if (arrivedOrderIds.has(id)) return true;
+      if (typeof window !== 'undefined') {
+        if (localStorage.getItem(`at_home_inspector_arrived_${id}`)) return true;
+        if (localStorage.getItem(`order_inspecting_${id}`) === 'true') return true;
+        if (localStorage.getItem(`inspection_status_${id}`) === 'INSPECTING') return true;
+      }
+    }
+
+    return Boolean(
       ord?.inspectionStatus === 'INSPECTING' ||
       ord?.status === 'INSPECTING' ||
       ord?.backendStatus === 'INSPECTING' ||
-      ord?.escrowStatus === 'INSPECTION_IN_PROGRESS'
+      ord?.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
+      (ord as any)?.inspectionOrder?.status === 'INSPECTING' ||
+      ord?.homeCheckedInAt ||
+      (ord as any)?.inspectionOrder?.homeCheckedInAt
     );
   };
 
@@ -998,70 +1065,6 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   const [bankPaymentInfo, setBankPaymentInfo] = useState<any | null>(null);
   const [loadingBankPaymentId, setLoadingBankPaymentId] = useState<string | null>(null);
 
-  // Tab Bar Horizontal Scroll Controls & Dragging
-  const tabsContainerRef = React.useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-  const isDraggingTabs = React.useRef(false);
-  const startX = React.useRef(0);
-  const scrollLeftStart = React.useRef(0);
-
-  const checkTabsScroll = () => {
-    const el = tabsContainerRef.current;
-    if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 2);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
-  };
-
-  React.useEffect(() => {
-    const timer = setTimeout(checkTabsScroll, 50);
-    window.addEventListener('resize', checkTabsScroll);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('resize', checkTabsScroll);
-    };
-  }, [userOrders]);
-
-  const scrollTabs = (direction: 'left' | 'right') => {
-    const el = tabsContainerRef.current;
-    if (!el) return;
-    const scrollAmount = direction === 'left' ? -220 : 220;
-    el.scrollBy({ left: scrollAmount, behavior: 'smooth' });
-    setTimeout(checkTabsScroll, 300);
-  };
-
-  const handleTabsWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    const el = tabsContainerRef.current;
-    if (!el) return;
-    if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth) {
-      el.scrollLeft += e.deltaY;
-      checkTabsScroll();
-    }
-  };
-
-  const handleMouseDownTabs = (e: React.MouseEvent<HTMLDivElement>) => {
-    const el = tabsContainerRef.current;
-    if (!el) return;
-    isDraggingTabs.current = true;
-    startX.current = e.pageX - el.offsetLeft;
-    scrollLeftStart.current = el.scrollLeft;
-  };
-
-  const handleMouseMoveTabs = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isDraggingTabs.current) return;
-    const el = tabsContainerRef.current;
-    if (!el) return;
-    e.preventDefault();
-    const x = e.pageX - el.offsetLeft;
-    const walk = (x - startX.current) * 1.5;
-    el.scrollLeft = scrollLeftStart.current - walk;
-    checkTabsScroll();
-  };
-
-  const handleMouseUpTabs = () => {
-    isDraggingTabs.current = false;
-  };
-
   const isOrderUnpaid = (ord: EscrowOrder): boolean => {
     if (!ord) return false;
     const escrow = String(ord.escrowStatus || '').toUpperCase();
@@ -1135,7 +1138,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       return true;
     }
 
-    if (typeof window !== 'undefined' && ord.id) {
+    if (!authoritativeOrders.has(ord.id) && typeof window !== 'undefined' && ord.id) {
       try {
         if (localStorage.getItem(`order_receipt_confirmed_${ord.id}`) === 'true') {
           return true;
@@ -1302,6 +1305,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     const escrow = String(ord.escrowStatus || '').toUpperCase();
     const backend = String((ord as any).backendStatus || '').toUpperCase();
     const status = String((ord as any).status || '').toUpperCase();
+    if (authoritativeOrders.has(ord.id)) return escrow === 'REFUNDED_TO_BUYER';
 
     // Các trạng thái đang được xử lý thực tế tuyệt đối không coi là đơn hủy
     const activeInspectionStatuses = [
@@ -1583,7 +1587,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       }
       const res = await inspectorService.payInspectionFee(orderId);
 
-      const targetOrder = userOrders.find((o) => o.id === orderId) || detailModalOrder;
+      const targetOrder = findOrderForAction(orderId);
       const isSellerUser = targetOrder ? isOrderSeller(targetOrder) : isSeller;
       const isBothPaid = res?.status !== 'WAITING_FEE_PAYMENT';
       const nowIso = new Date().toISOString();
@@ -1807,7 +1811,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   };
 
   const handleSellerConfirmOrder = (orderId: string) => {
-    const targetOrder = userOrders.find((o) => o.id === orderId) || (detailModalOrder?.id === orderId ? detailModalOrder : null);
+    const targetOrder = findOrderForAction(orderId);
     const orderHasInspection = targetOrder ? Boolean(
       targetOrder.hasInspectionService ||
       (targetOrder.inspectionFeeVnd && targetOrder.inspectionFeeVnd > 0) ||
@@ -2039,7 +2043,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       onConfirm: async () => {
         try {
           setOrderActionLoading(orderId);
-          const targetOrder = userOrders.find((o) => o.id === orderId) || (detailModalOrder?.id === orderId ? detailModalOrder : null);
+          const targetOrder = findOrderForAction(orderId);
           const orderHasInspection = targetOrder ? Boolean(
             targetOrder.hasInspectionService ||
             (targetOrder.inspectionFeeVnd && targetOrder.inspectionFeeVnd > 0) ||
@@ -2301,14 +2305,16 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       } catch { }
     }
 
-    if (!apptData && (ord.appointmentScheduledAt || (ord as any).counterScheduledAt)) {
+    if (!apptData && (ord.appointmentScheduledAt || (ord as any).counterScheduledAt || isOrderWaitingSeller)) {
+      const schAt = ord.appointmentScheduledAt || (ord as any).inspectionOrder?.appointmentScheduledAt;
+      const cntAt = (ord as any).counterScheduledAt || (ord as any).inspectionOrder?.counterScheduledAt;
       apptData = {
-        scheduledAt: ord.appointmentScheduledAt,
+        scheduledAt: schAt,
         note: ord.appointmentNote || '',
-        status: (ord as any).appointmentStatus || ((ord as any).counterScheduledAt ? 'COUNTERED_BY_CENTER' : (ord.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
-        counterScheduledAt: (ord as any).counterScheduledAt,
-        counterShift: (ord as any).counterShift,
-        counterNote: (ord as any).counterNote,
+        status: (ord as any).appointmentStatus || (cntAt || isOrderWaitingSeller ? 'COUNTERED_BY_CENTER' : (ord.inspectorId ? 'CONFIRMED' : 'PENDING_CENTER_CONFIRMATION')),
+        counterScheduledAt: cntAt,
+        counterShift: (ord as any).counterShift || (ord as any).inspectionOrder?.counterShift,
+        counterNote: (ord as any).counterNote || (ord as any).inspectionOrder?.counterNote,
       };
     }
 
@@ -2586,111 +2592,6 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       (o.escrowStatus === 'HELD_IN_ESCROW' && Boolean(o.hasInspectionService || (o.inspectionFeeVnd && o.inspectionFeeVnd > 0)))
   ).length;
   const completedPaidCount = userOrders.filter((o) => o.escrowStatus === 'COMPLETED_RELEASED').length;
-
-  const perspectiveOrders = useMemo(() => {
-    if (orderPerspective === 'buyer') return userOrders.filter(o => !isOrderSeller(o));
-    if (orderPerspective === 'seller') return userOrders.filter(o => isOrderSeller(o));
-    return userOrders;
-  }, [userOrders, orderPerspective]);
-
-  // Filter logic based on status tabs, sorted by newest first (mới nhất trên cùng)
-  const filteredOrders = perspectiveOrders
-    .filter((ord) => {
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchTitle = ord.listing?.title ? ord.listing.title.toLowerCase().includes(q) : false;
-        const matchId = ord.id ? ord.id.toLowerCase().includes(q) : false;
-        const matchSeller = ord.sellerName ? ord.sellerName.toLowerCase().includes(q) : false;
-        const matchBuyer = ord.buyerName ? ord.buyerName.toLowerCase().includes(q) : false;
-        if (!matchTitle && !matchId && !matchSeller && !matchBuyer) return false;
-      }
-
-      switch (activeTab) {
-        case 'awaiting_pickup':
-          return (
-            !isOrderCancelledOrRefunded(ord) && (
-              ord.escrowStatus === 'AWAITING_PAYMENT' ||
-              ord.escrowStatus === 'HELD_IN_ESCROW' ||
-              ord.escrowStatus === 'AWAITING_INSPECTION'
-            )
-          );
-        case 'inspecting':
-          return (
-            !isOrderCancelledOrRefunded(ord) && (
-              ord.escrowStatus === 'AWAITING_INSPECTION' ||
-              ord.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
-              ord.escrowStatus === 'INSPECTION_PASSED' ||
-              (ord.escrowStatus === 'HELD_IN_ESCROW' && Boolean(ord.hasInspectionService || (ord.inspectionFeeVnd && ord.inspectionFeeVnd > 0)))
-            )
-          );
-        case 'shipping':
-          return !isOrderCancelledOrRefunded(ord) && ord.escrowStatus === 'SHIPPED_TO_BUYER';
-        case 'delivered':
-          return !isOrderCancelledOrRefunded(ord) && !isOrderReceiptConfirmed(ord) && ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW';
-        case 'completed':
-          return !isOrderCancelledOrRefunded(ord) && (isOrderReceiptConfirmed(ord) || ord.escrowStatus === 'COMPLETED_RELEASED');
-        case 'cancelled':
-          return isOrderCancelledOrRefunded(ord);
-        case 'disputed':
-          return !isOrderCancelledOrRefunded(ord) && (ord.escrowStatus === 'DISPUTED' || (ord as any).status === 'DISPUTED');
-        case 'with_inspection':
-          return Boolean(ord.hasInspectionService || (ord.inspectionFeeVnd && ord.inspectionFeeVnd > 0) || ord.inspectionReport || ord.inspectionCenterId || (ord as any).inspectionStatus);
-        case 'all':
-        default:
-          return true;
-      }
-    })
-    .sort((a, b) => {
-      const timeA = getSortableOrderTimestamp(a);
-      const timeB = getSortableOrderTimestamp(b);
-
-      // Sắp xếp theo thứ tự thời gian: Đơn mới nhất (thời gian lớn nhất) ở ĐẦU, đơn cũ hơn ở SAU
-      if (timeB !== timeA) {
-        return timeB - timeA;
-      }
-      return String(b.id || '').localeCompare(String(a.id || ''));
-    });
-
-  const getTabCount = (tab: OrderFilterTab) => {
-    switch (tab) {
-      case 'awaiting_pickup':
-        return userOrders.filter(
-          (o) =>
-            !isOrderCancelledOrRefunded(o) &&
-            (o.escrowStatus === 'AWAITING_PAYMENT' ||
-              o.escrowStatus === 'HELD_IN_ESCROW' ||
-              o.escrowStatus === 'AWAITING_INSPECTION')
-        ).length;
-      case 'inspecting':
-        return userOrders.filter(
-          (o) =>
-            !isOrderCancelledOrRefunded(o) &&
-            (o.escrowStatus === 'AWAITING_INSPECTION' ||
-              o.escrowStatus === 'INSPECTION_IN_PROGRESS' ||
-              o.escrowStatus === 'INSPECTION_PASSED' ||
-              (o.escrowStatus === 'HELD_IN_ESCROW' && Boolean(o.hasInspectionService || (o.inspectionFeeVnd && o.inspectionFeeVnd > 0))))
-        ).length;
-      case 'shipping':
-        return userOrders.filter((o) => !isOrderCancelledOrRefunded(o) && o.escrowStatus === 'SHIPPED_TO_BUYER').length;
-      case 'delivered':
-        return userOrders.filter((o) => !isOrderCancelledOrRefunded(o) && !isOrderReceiptConfirmed(o) && o.escrowStatus === 'DELIVERED_INSPECTION_WINDOW').length;
-      case 'completed':
-        return userOrders.filter((o) => !isOrderCancelledOrRefunded(o) && (isOrderReceiptConfirmed(o) || o.escrowStatus === 'COMPLETED_RELEASED')).length;
-      case 'cancelled':
-        return userOrders.filter((o) => isOrderCancelledOrRefunded(o)).length;
-      case 'disputed':
-        return userOrders.filter(
-          (o) => !isOrderCancelledOrRefunded(o) && (o.escrowStatus === 'DISPUTED' || (o as any).status === 'DISPUTED')
-        ).length;
-      case 'with_inspection':
-        return userOrders.filter(
-          (o) => Boolean(o.hasInspectionService || (o.inspectionFeeVnd && o.inspectionFeeVnd > 0) || o.inspectionReport || o.inspectionCenterId || (o as any).inspectionStatus)
-        ).length;
-      case 'all':
-      default:
-        return userOrders.length;
-    }
-  };
 
   const getStatusBadge = (status: EscrowOrder['escrowStatus'] | string, hasInspection?: boolean, isCurrentOrderSeller?: boolean, orderItem?: EscrowOrder) => {
     const isInspectionOrder = Boolean(
@@ -3185,38 +3086,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     }
   };
 
-  const tabs: { key: OrderFilterTab; label: string }[] = isSeller
-    ? [
-      { key: 'all', label: lang === 'vi' ? 'Tất cả' : 'All Orders' },
-      { key: 'awaiting_pickup', label: lang === 'vi' ? 'Chờ lấy hàng' : 'Awaiting Pickup' },
-      { key: 'inspecting', label: lang === 'vi' ? 'Đang kiểm định Hub' : 'Hub Inspection' },
-      { key: 'shipping', label: lang === 'vi' ? 'Đang giao hàng' : 'Delivering' },
-      { key: 'delivered', label: lang === 'vi' ? 'Đã nhận (48h)' : 'Review (48h)' },
-      { key: 'completed', label: lang === 'vi' ? 'Hoàn thành' : 'Completed' },
-      { key: 'cancelled', label: lang === 'vi' ? 'Đã Hủy' : 'Cancelled' },
-      { key: 'disputed', label: lang === 'vi' ? 'Khiếu nại / Trả hàng' : 'Disputes' },
-      { key: 'with_inspection', label: lang === 'vi' ? '🛡️ Có kiểm định Hub' : '🛡️ With Inspection' },
-    ]
-    : [
-      { key: 'all', label: lang === 'vi' ? 'Tất cả' : 'All Orders' },
-      { key: 'awaiting_pickup', label: lang === 'vi' ? 'Chờ lấy hàng' : 'Awaiting Pickup' },
-      { key: 'inspecting', label: lang === 'vi' ? 'Đang kiểm định Hub' : 'Hub Inspection' },
-      { key: 'shipping', label: lang === 'vi' ? 'Đang giao hàng' : 'Delivering' },
-      { key: 'delivered', label: lang === 'vi' ? 'Đã nhận hàng' : 'Delivered' },
-      { key: 'completed', label: lang === 'vi' ? 'Hoàn thành' : 'Completed' },
-      { key: 'cancelled', label: lang === 'vi' ? 'Đã Hủy' : 'Cancelled' },
-      { key: 'disputed', label: lang === 'vi' ? 'Trả hàng / Tranh chấp' : 'Disputes' },
-      { key: 'with_inspection', label: lang === 'vi' ? '🛡️ Có kiểm định Hub' : '🛡️ With Inspection' },
-    ];
-
   return (
     <div className="space-y-6 pb-16 text-[#24263e]">
       {/* Perspective switcher (Tất cả / Đơn Tôi Mua / Đơn Tôi Bán) */}
-      {sellerOrdersCount > 0 && buyerOrdersCount > 0 && (
-        <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-white border border-gray-200 shadow-xs w-fit">
+      {((sellerOrdersCount > 0 && buyerOrdersCount > 0) || orderPerspective !== 'all') && (
+        <div className="flex w-fit max-w-full flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-xs">
           <button
             type="button"
             onClick={() => setOrderPerspective('all')}
+            aria-pressed={orderPerspective === 'all'}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${orderPerspective === 'all'
               ? 'bg-[#24263e] text-white shadow-xs'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -3228,6 +3106,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           <button
             type="button"
             onClick={() => setOrderPerspective('buyer')}
+            aria-pressed={orderPerspective === 'buyer'}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${orderPerspective === 'buyer'
               ? 'bg-blue-600 text-white shadow-xs'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -3240,6 +3119,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           <button
             type="button"
             onClick={() => setOrderPerspective('seller')}
+            aria-pressed={orderPerspective === 'seller'}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${orderPerspective === 'seller'
               ? 'bg-[#c34c36] text-white shadow-xs'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -3363,122 +3243,18 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         </div>
       )}
 
-      {/* Shopee-style Status Tab Bar */}
-      <div className="bg-[#FFFFFF] rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
-        <div className="relative flex items-center border-b border-gray-100 group">
-          {/* Scroll Left Button */}
-          {canScrollLeft && (
-            <button
-              type="button"
-              onClick={() => scrollTabs('left')}
-              className="absolute left-0 z-20 h-full px-2 bg-gradient-to-r from-white via-white/95 to-transparent flex items-center justify-center text-slate-700 hover:text-[#c34c36] transition cursor-pointer"
-              title={lang === 'vi' ? 'Cuộn sang trái' : 'Scroll left'}
-            >
-              <div className="w-7 h-7 rounded-full bg-white border border-gray-300 shadow-md flex items-center justify-center hover:bg-slate-50 transition-transform active:scale-95">
-                <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
-              </div>
-            </button>
-          )}
-
-          {/* Tabs Container */}
-          <div
-            ref={tabsContainerRef}
-            onScroll={checkTabsScroll}
-            onWheel={handleTabsWheel}
-            onMouseDown={handleMouseDownTabs}
-            onMouseMove={handleMouseMoveTabs}
-            onMouseUp={handleMouseUpTabs}
-            onMouseLeave={handleMouseUpTabs}
-            className="flex items-center overflow-x-auto scrollbar-none py-0.5 px-1 scroll-smooth select-none cursor-grab active:cursor-grabbing w-full"
-          >
-            {tabs.map((tab) => {
-              const count = getTabCount(tab.key);
-              const isActive = activeTab === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  onClick={(e) => {
-                    setActiveTab(tab.key);
-                    e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-                  }}
-                  className={`relative px-3.5 sm:px-5 py-3 text-xs sm:text-[13px] font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer shrink-0 ${isActive
-                    ? 'text-[#24263e] font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-xl'
-                    }`}
-                >
-                  <span>{tab.label}</span>
-                  {count > 0 && (
-                    <span
-                      className={`px-1.5 py-0.2 rounded-full text-[11px] font-bold ${isActive
-                        ? 'bg-[#c34c36]/15 text-[#c34c36]'
-                        : 'bg-gray-100 text-gray-600'
-                        }`}
-                    >
-                      {count}
-                    </span>
-                  )}
-                  {/* Active underline indicator */}
-                  {isActive && (
-                    <div className="absolute bottom-0 left-2 right-2 h-[2.5px] bg-gradient-to-r from-[#c34c36] to-[#dc4729] rounded-t-full" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Scroll Right Button */}
-          {canScrollRight && (
-            <button
-              type="button"
-              onClick={() => scrollTabs('right')}
-              className="absolute right-0 z-20 h-full px-2 bg-gradient-to-l from-white via-white/95 to-transparent flex items-center justify-center text-slate-700 hover:text-[#c34c36] transition cursor-pointer"
-              title={lang === 'vi' ? 'Cuộn sang phải' : 'Scroll right'}
-            >
-              <div className="w-7 h-7 rounded-full bg-white border border-gray-300 shadow-md flex items-center justify-center hover:bg-slate-50 transition-transform active:scale-95">
-                <ChevronRight className="w-4 h-4 stroke-[2.5]" />
-              </div>
-            </button>
-          )}
-        </div>
-
-        {/* Quick Search inside Orders */}
-        <div className="p-3 bg-slate-50/60 border-t border-gray-100 flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={
-                lang === 'vi'
-                  ? (isSeller ? 'Tìm mã đơn #ORD, tên sản phẩm hoặc tên người mua...' : 'Tìm kiếm theo mã đơn #ORD, tên sản phẩm hoặc người bán...')
-                  : (isSeller ? 'Search by #ORD, product title or buyer name...' : 'Search by #ORD, product title or seller...')
-              }
-              className="w-full pl-9 pr-3 py-2 text-xs bg-[#FFFFFF] border border-gray-200 rounded-xl focus:outline-none focus:border-[#c34c36] transition-all"
-            />
-          </div>
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="px-3 py-2 text-xs text-slate-500 hover:text-slate-800 bg-gray-200/70 rounded-xl transition cursor-pointer"
-            >
-              {lang === 'vi' ? 'Xóa tìm kiếm' : 'Clear search'}
-            </button>
-          )}
-
-          {onRefreshOrders && (
-            <button
-              onClick={() => onRefreshOrders()}
-              className="px-3 py-2 text-xs font-bold text-slate-700 hover:text-slate-900 bg-white border border-gray-200 rounded-xl hover:bg-slate-50 transition cursor-pointer flex items-center gap-1.5 shrink-0 shadow-xs"
-              title="Làm mới danh sách đơn hàng từ Backend"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-[#c34c36]" />
-              <span className="hidden sm:inline">{lang === 'vi' ? 'Đồng bộ Live' : 'Live Sync'}</span>
-            </button>
-          )}
-        </div>
-      </div>
-
+      <EscrowOrderFilters
+        lang={lang}
+        active={activeTab}
+        counts={filterCounts}
+        search={searchQuery}
+        searching={searching}
+        seller={isSeller}
+        loading={isLoading}
+        onFilter={setActiveTab}
+        onSearch={setSearchQuery}
+        onRefresh={onRefreshFilter}
+      />
 
       {/* Seller Awaiting Fee Payment Banner */}
       {isSeller && userOrders.some((o) => !isOrderCancelledOrRefunded(o) && isOrderSeller(o) && isPartyInspectionFeePending(o, true)) && (
@@ -3569,8 +3345,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         </div>
       )}
 
-      {/* Shopee-style Orders List */}
-      {isLoading ? (
+      {filterFailed && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+          <span>{lang === 'vi' ? 'Không tải được danh sách đơn hàng.' : 'Unable to load orders.'}</span>
+          <button type="button" onClick={onRefreshFilter} className="cursor-pointer rounded-md px-2 py-1 font-semibold underline">
+            {lang === 'vi' ? 'Thử lại' : 'Try again'}
+          </button>
+        </div>
+      )}
+      {(searching || (isLoading && !filterResult)) ? (
         <div className="space-y-4">
           {[1, 2, 3].map((n) => (
             <div key={n} className="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs space-y-4 animate-pulse">
@@ -3596,30 +3379,24 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             </div>
           ))}
         </div>
-      ) : filteredOrders.length === 0 ? (
-        <div className="bg-[#FFFFFF] rounded-3xl p-12 text-center border border-gray-200 text-[#24263e] shadow-xs">
-          <Package className="w-14 h-14 text-gray-300 mx-auto mb-3" />
-          <h3 className="font-bold text-base text-[#24263e]">
-            {lang === 'vi' ? 'Chưa có đơn hàng nào trong mục này' : 'No orders found in this category'}
+      ) : filterFailed && !filterResult ? null : orders.length === 0 ? (
+        <div className="rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center shadow-xs">
+          <Package aria-hidden="true" className="mx-auto mb-3 size-10 text-slate-400" />
+          <h3 className="text-base font-bold text-slate-900">
+            {lang === 'vi' ? 'Không tìm thấy đơn hàng' : 'No orders found'}
           </h3>
-          <p className="text-xs text-[#24263e]/70 mt-1 max-w-md mx-auto">
-            {lang === 'vi'
-              ? `Không tìm thấy đơn hàng nào ở trạng thái này. Bạn có thể chọn tab "${isSeller ? 'Tất cả đơn bán' : 'Tất cả'}" để xem toàn bộ danh sách.`
-              : `No orders currently match this status tab. Select "${isSeller ? 'All Seller Orders' : 'All Orders'}" to view all.`}
-          </p>
-          {onRefreshOrders && (
-            <button
-              onClick={() => onRefreshOrders()}
-              className="mt-4 px-4 py-2 bg-[#24263e] hover:bg-[#1a1c2e] text-white rounded-xl text-xs font-bold transition inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-[#fce5da]" />
-              <span>{lang === 'vi' ? 'Tải Lại Từ Máy Chủ' : 'Reload from Server'}</span>
+          {(filterQuery.q || activeTab !== 'all' || orderPerspective !== 'all') && (
+            <button type="button" onClick={() => {
+              setSearchQuery('');
+              updateQuery({ filter: 'all', perspective: 'all', q: '', page: 0 });
+            }} className="mt-3 cursor-pointer text-sm font-semibold text-[#ad432f] hover:underline">
+              {lang === 'vi' ? 'Xóa bộ lọc' : 'Clear filters'}
             </button>
           )}
         </div>
       ) : (
-        <div className="space-y-4">
-          {filteredOrders.map((ord) => {
+        <div className="space-y-4" aria-busy={isLoading}>
+          {orders.map((ord) => {
             const orderIsSeller = isOrderSeller(ord);
             const payoutData = payoutDataMap[ord.id];
             const orderRatePercent = payoutData?.ratePercent ?? (
@@ -3876,11 +3653,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           <div className="bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-amber-50/90 p-3.5 rounded-xl border border-amber-200 text-amber-950 space-y-2">
                             <div className="flex items-center justify-between flex-wrap gap-2">
                               <div className="flex items-center gap-2">
-                                <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs ${rejectionInfo && !savedAppointment?.scheduledAt ? 'bg-rose-600 text-white' : isOrderCountered ? 'bg-orange-600 text-white' : 'bg-amber-600 text-white'}`}>
+                                <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs ${rejectionInfo && !savedAppointment?.scheduledAt ? 'bg-rose-600 text-white' : isOrderCountered ? 'bg-orange-600 text-white' : isInspectorArrivedForOrder(ord.id, ord) ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'}`}>
                                   {rejectionInfo && !savedAppointment?.scheduledAt ? <AlertCircle className="w-3.5 h-3.5" /> : isOrderCountered ? <CalendarSync className="w-3.5 h-3.5" /> : <Calendar className="w-3.5 h-3.5" />}
                                   <span>{lang === 'vi' ? 'Kiểm Định Tận Nhà (KTV Đến Nhà)' : 'At-Home Inspection (Technician Visit)'}</span>
                                 </span>
-                                <span className={`text-xs font-bold ${rejectionInfo && !savedAppointment?.scheduledAt ? 'text-rose-700' : isOrderCountered ? 'text-orange-800' : 'text-amber-900'}`}>
+                                <span className={`text-xs font-bold ${rejectionInfo && !savedAppointment?.scheduledAt ? 'text-rose-700' : isOrderCountered ? 'text-orange-800' : isInspectorArrivedForOrder(ord.id, ord) ? 'text-emerald-800 font-black' : 'text-amber-900'}`}>
                                   {rejectionInfo && !savedAppointment?.scheduledAt
                                     ? (lang === 'vi' ? 'Lịch hẹn bị từ chối • Vui lòng hẹn lại' : 'Appointment Rejected • Please Reschedule')
                                     : isInspectorArrivedForOrder(ord.id, ord)
@@ -3896,7 +3673,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                               : (lang === 'vi' ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting Appointment Schedule')}
                                 </span>
                               </div>
-                              {savedAppointment?.scheduledAt && !isOrderCountered && (
+                              {savedAppointment?.scheduledAt && !isOrderCountered && !isInspectorArrivedForOrder(ord.id, ord) && (
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -3946,55 +3723,86 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               </div>
                             ) : null}
 
-                            {isOrderCountered ? (
-                              <div className="p-3.5 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-orange-300 text-xs text-amber-950 space-y-2.5 shadow-xs animate-fadeIn">
-                                <div className="flex items-center gap-2 text-orange-950 font-black">
-                                  <CalendarSync className="w-4 h-4 text-orange-600 animate-pulse shrink-0" />
-                                  <span>Trung tâm kiểm định đã từ chối lịch hẹn cũ &amp; đề xuất lịch mới:</span>
-                                </div>
-                                <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200 space-y-1">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-bold text-amber-900">📅 Thời gian đề xuất:</span>
-                                    <span className="font-extrabold text-orange-700 bg-orange-100 px-2 py-0.5 rounded">
-                                      {new Date(savedAppointment.counterScheduledAt || savedAppointment.scheduledAt).toLocaleString('vi-VN', {
-                                        hour: '2-digit',
-                                        minute: '2-digit',
-                                        day: '2-digit',
-                                        month: '2-digit',
-                                        year: 'numeric'
-                                      })}
-                                      {savedAppointment.counterShift ? ` (${savedAppointment.counterShift === 'MORNING' ? 'Ca Sáng: 08:00 - 12:00' : 'Ca Chiều: 13:00 - 17:00'})` : ''}
-                                    </span>
+                            {isOrderCountered ? (() => {
+                              const effectiveCounterTime =
+                                savedAppointment?.counterScheduledAt ||
+                                savedAppointment?.scheduledAt ||
+                                (ord as any).counterScheduledAt ||
+                                ord.appointmentScheduledAt ||
+                                (ord as any).inspectionOrder?.counterScheduledAt ||
+                                (ord as any).inspectionOrder?.appointmentScheduledAt;
+                              const effectiveCounterShift =
+                                savedAppointment?.counterShift ||
+                                (ord as any).counterShift ||
+                                (ord as any).inspectionOrder?.counterShift;
+                              const effectiveCounterNote =
+                                savedAppointment?.counterNote ||
+                                (ord as any).counterNote ||
+                                (ord as any).inspectionOrder?.counterNote;
+
+                              const validCounterDate = effectiveCounterTime ? new Date(effectiveCounterTime) : null;
+                              const isValidDate = Boolean(validCounterDate && !isNaN(validCounterDate.getTime()));
+
+                              const counterApptPayload = savedAppointment || {
+                                scheduledAt: effectiveCounterTime,
+                                counterScheduledAt: effectiveCounterTime,
+                                counterShift: effectiveCounterShift,
+                                counterNote: effectiveCounterNote,
+                                status: 'COUNTERED_BY_CENTER',
+                              };
+
+                              return (
+                                <div className="p-3.5 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-orange-300 text-xs text-amber-950 space-y-2.5 shadow-xs animate-fadeIn">
+                                  <div className="flex items-center gap-2 text-orange-950 font-black">
+                                    <CalendarSync className="w-4 h-4 text-orange-600 animate-pulse shrink-0" />
+                                    <span>Trung tâm kiểm định đã từ chối lịch hẹn cũ &amp; đề xuất lịch mới:</span>
                                   </div>
-                                  {savedAppointment.counterNote && (
-                                    <div className="text-[11px] text-amber-900 italic">
-                                      💬 <strong>Lý do từ Hub:</strong> "{savedAppointment.counterNote}"
+                                  <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200 space-y-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-amber-900">📅 Thời gian đề xuất:</span>
+                                      <span className="font-extrabold text-orange-700 bg-orange-100 px-2 py-0.5 rounded">
+                                        {isValidDate && validCounterDate
+                                          ? validCounterDate.toLocaleString('vi-VN', {
+                                              hour: '2-digit',
+                                              minute: '2-digit',
+                                              day: '2-digit',
+                                              month: '2-digit',
+                                              year: 'numeric',
+                                            })
+                                          : 'Theo đề xuất của Trung tâm'}
+                                        {effectiveCounterShift ? ` (${effectiveCounterShift === 'MORNING' ? 'Ca Sáng: 08:00 - 12:00' : 'Ca Chiều: 13:00 - 17:00'})` : ''}
+                                      </span>
                                     </div>
-                                  )}
+                                    {effectiveCounterNote && (
+                                      <div className="text-[11px] text-amber-900 italic">
+                                        💬 <strong>Lý do từ Hub:</strong> "{effectiveCounterNote}"
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 pt-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSellerAcceptCounterAppointment(ord.id, counterApptPayload)}
+                                      className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                                    >
+                                      <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                      <span>Đồng Ý Lịch Này</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSchedulingOrder(ord);
+                                        setSchedulingReadOnly(false);
+                                      }}
+                                      className="py-2 px-3 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                                    >
+                                      <Calendar className="w-3.5 h-3.5" />
+                                      <span>Hẹn Lại Lịch Khác</span>
+                                    </button>
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-2 pt-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSellerAcceptCounterAppointment(ord.id, savedAppointment)}
-                                    className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
-                                  >
-                                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                                    <span>Đồng Ý Lịch Này</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSchedulingOrder(ord);
-                                      setSchedulingReadOnly(false);
-                                    }}
-                                    className="py-2 px-3 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
-                                  >
-                                    <Calendar className="w-3.5 h-3.5" />
-                                    <span>Hẹn Lại Lịch Khác</span>
-                                  </button>
-                                </div>
-                              </div>
-                            ) : savedAppointment?.scheduledAt ? (
+                              );
+                            })() : savedAppointment?.scheduledAt ? (
                               <div className="p-2.5 rounded-lg bg-white/90 border border-amber-200/80 text-[11px] text-amber-900 space-y-1">
                                 <div className="flex items-center gap-2">
                                   <span className="font-bold text-amber-950">
@@ -4337,24 +4145,31 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                     ) : (
                                       <>
                                         {ord.inspectionMethod === 'AT_HOME' ? (
-                                          /* Nút Hẹn Lịch Tiếp Đón KTV (Kiểm định tại nhà) */
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setSchedulingOrder(ord);
-                                              setSchedulingReadOnly(false);
-                                            }}
-                                            disabled={orderActionLoading === ord.id}
-                                            className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0"
-                                            title="Chọn ngày giờ kỹ thuật viên SecondLife đến nhà kiểm tra thiết bị"
-                                          >
-                                            <Calendar className="w-3.5 h-3.5" />
-                                            <span>
-                                              {savedAppointment?.scheduledAt
-                                                ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Visit')
-                                                : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit')}
+                                          !isInspectorArrivedForOrder(ord.id, ord) ? (
+                                            /* Nút Hẹn Lịch Tiếp Đón KTV (Kiểm định tại nhà) */
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSchedulingOrder(ord);
+                                                setSchedulingReadOnly(false);
+                                              }}
+                                              disabled={orderActionLoading === ord.id}
+                                              className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0"
+                                              title="Chọn ngày giờ kỹ thuật viên SecondLife đến nhà kiểm tra thiết bị"
+                                            >
+                                              <Calendar className="w-3.5 h-3.5" />
+                                              <span>
+                                                {savedAppointment?.scheduledAt
+                                                  ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Visit')
+                                                  : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit')}
+                                              </span>
+                                            </button>
+                                          ) : (
+                                            <span className="px-3.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 shadow-2xs whitespace-nowrap shrink-0">
+                                              <Wrench className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
+                                              <span>{lang === 'vi' ? 'KTV Đang Kiểm Tra Máy' : 'Inspecting Device'}</span>
                                             </span>
-                                          </button>
+                                          )
                                         ) : (
                                           /* Nút Xác Nhận Đồng Ý Kiểm Định & Gửi Hub (Chặng 1) */
                                           <button
@@ -4530,22 +4345,29 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
                                   {/* Nút Hẹn Giờ Kiểm Định (CHỈ HIỆN KHI ĐƠN HÀNG LÀ KIỂM ĐỊNH TẬN NHÀ - AT_HOME) */}
                                   {hasInspection && (ord.inspectionMethod === 'AT_HOME' || (ord as any).orderType === 'AT_HOME') && (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSchedulingOrder(ord);
-                                        setSchedulingReadOnly(false);
-                                      }}
-                                      className="px-3 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-900 border border-orange-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-                                      title={lang === 'vi' ? 'Người bán lên lịch hẹn ngày giờ kỹ thuật viên đến kiểm định tại nhà' : 'Schedule inspection appointment with Hub technician at home'}
-                                    >
-                                      <Calendar className="w-3.5 h-3.5 text-orange-600" />
-                                      <span>
-                                        {savedAppointment?.scheduledAt
-                                          ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Visit')
-                                          : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit')}
+                                    !isInspectorArrivedForOrder(ord.id, ord) ? (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSchedulingOrder(ord);
+                                          setSchedulingReadOnly(false);
+                                        }}
+                                        className="px-3 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-900 border border-orange-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                                        title={lang === 'vi' ? 'Người bán lên lịch hẹn ngày giờ kỹ thuật viên đến kiểm định tại nhà' : 'Schedule inspection appointment with Hub technician at home'}
+                                      >
+                                        <Calendar className="w-3.5 h-3.5 text-orange-600" />
+                                        <span>
+                                          {savedAppointment?.scheduledAt
+                                            ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Visit')
+                                            : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit')}
+                                        </span>
+                                      </button>
+                                    ) : (
+                                      <span className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 shadow-2xs whitespace-nowrap shrink-0">
+                                        <Wrench className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
+                                        <span>{lang === 'vi' ? 'KTV Đang Kiểm Tra Máy' : 'Inspecting Device'}</span>
                                       </span>
-                                    </button>
+                                    )
                                   )}
 
                                   {/* Nút Hủy Yêu Cầu Kiểm Định Cho Seller (Khi KTV chưa đến nơi) */}
@@ -4910,7 +4732,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             )}
 
                             {/* Nút Đã Nhận Hàng (Giải Ngân): Khi người mua đã xác nhận/giải ngân thì ẩn hoàn toàn nút, không cho bấm lại */}
-                            {!buyerInspectionStage && !isOrderReceiptConfirmed(ord) && (ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.backendStatus === 'DELIVERED' || ord.shippingDeliveredAt) ? (
+                            {!buyerInspectionStage && !isOrderReceiptConfirmed(ord) && (
+                              ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
+                              ord.backendStatus === 'DELIVERED' ||
+                              ord.shippingDeliveredAt ||
+                              ord.escrowStatus === 'SHIPPED_TO_BUYER' ||
+                              (ord as any).inspectionStatus === 'DELIVERING_TO_BUYER' ||
+                              (ord as any).inspectionStatus === 'PASSED'
+                            ) ? (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -5007,6 +4836,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
             );
           })}
         </div>
+      )}
+
+      {!searching && filterResult && filterResult.totalPages > 1 && (
+        <EscrowOrderPagination lang={lang} page={filterResult.page} size={filterResult.size}
+          totalPages={filterResult.totalPages} total={filterResult.totalElements}
+          onPage={(page) => updateQuery({ page })}
+        />
       )}
 
       {/* POPUP MODAL: CHI TIẾT ĐƠN HÀNG KHI NGƯỜI DÙNG BẤM VÀO */}
@@ -5581,7 +5417,36 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
                               {(() => {
                                 const detailAppt = getOrderAppointment(detailModalOrder);
-                                if (detailAppt?.status === 'COUNTERED_BY_CENTER' || detailAppt?.counterScheduledAt) {
+                                const isDetailCountered = Boolean(
+                                  detailAppt?.status === 'COUNTERED_BY_CENTER' ||
+                                  detailAppt?.counterScheduledAt ||
+                                  (detailModalOrder as any).counterScheduledAt ||
+                                  (detailModalOrder as any).appointmentStatus === 'COUNTERED_BY_CENTER' ||
+                                  (detailModalOrder as any).status === 'WAITING_SELLER_APPROVAL' ||
+                                  String((detailModalOrder as any).backendStatus || '').toUpperCase() === 'WAITING_SELLER_APPROVAL'
+                                );
+                                if (isDetailCountered) {
+                                  const detailCounterTime =
+                                    detailAppt?.counterScheduledAt ||
+                                    detailAppt?.scheduledAt ||
+                                    (detailModalOrder as any).counterScheduledAt ||
+                                    detailModalOrder.appointmentScheduledAt;
+                                  const detailCounterShift =
+                                    detailAppt?.counterShift ||
+                                    (detailModalOrder as any).counterShift;
+                                  const detailCounterNote =
+                                    detailAppt?.counterNote ||
+                                    (detailModalOrder as any).counterNote;
+                                  const validDate = detailCounterTime ? new Date(detailCounterTime) : null;
+                                  const hasValidDate = Boolean(validDate && !isNaN(validDate.getTime()));
+                                  const detailPayload = detailAppt || {
+                                    scheduledAt: detailCounterTime,
+                                    counterScheduledAt: detailCounterTime,
+                                    counterShift: detailCounterShift,
+                                    counterNote: detailCounterNote,
+                                    status: 'COUNTERED_BY_CENTER',
+                                  };
+
                                   return (
                                     <div className="p-2.5 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 text-xs text-amber-950 space-y-2">
                                       <div className="flex items-center gap-1.5 text-amber-900 font-extrabold">
@@ -5592,13 +5457,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                         <div className="flex items-center gap-1.5">
                                           <span className="font-bold text-amber-900">📅 Giờ mới:</span>
                                           <span className="font-extrabold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded text-[11px]">
-                                            {new Date(detailAppt.counterScheduledAt || detailAppt.scheduledAt).toLocaleString('vi-VN')}
-                                            {detailAppt.counterShift ? ` (${detailAppt.counterShift === 'MORNING' ? 'Ca Sáng' : 'Ca Chiều'})` : ''}
+                                            {hasValidDate && validDate
+                                              ? validDate.toLocaleString('vi-VN')
+                                              : 'Theo đề xuất của Trung tâm'}
+                                            {detailCounterShift ? ` (${detailCounterShift === 'MORNING' ? 'Ca Sáng' : 'Ca Chiều'})` : ''}
                                           </span>
                                         </div>
-                                        {detailAppt.counterNote && (
+                                        {detailCounterNote && (
                                           <div className="text-[11px] text-amber-900 italic">
-                                            💬 Lý do: "{detailAppt.counterNote}"
+                                            💬 Lý do: "{detailCounterNote}"
                                           </div>
                                         )}
                                       </div>
@@ -5606,7 +5473,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                         <div className="flex items-center gap-1.5 pt-0.5">
                                           <button
                                             type="button"
-                                            onClick={() => handleSellerAcceptCounterAppointment(detailModalOrder.id, detailAppt)}
+                                            onClick={() => handleSellerAcceptCounterAppointment(detailModalOrder.id, detailPayload)}
                                             className="flex-1 py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] transition flex items-center justify-center gap-1 cursor-pointer"
                                           >
                                             <Check className="w-3 h-3 stroke-[2.5]" />
@@ -5707,8 +5574,11 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                 if (isInspectorArrivedForOrder(detailModalOrder.id, detailModalOrder)) {
                                   return 'Kỹ thuật viên đã đến và đang kiểm tra thiết bị tại nhà người bán.';
                                 }
-                                if (modalSavedAppointment?.status === 'COUNTERED_BY_CENTER' || modalSavedAppointment?.counterScheduledAt) {
-                                  return `Trung tâm đề xuất dời lịch sang ${new Date(modalSavedAppointment.counterScheduledAt || modalSavedAppointment.scheduledAt).toLocaleString('vi-VN')}. Đang chờ Người bán phản hồi thống nhất lịch mới.`;
+                                if (modalSavedAppointment?.status === 'COUNTERED_BY_CENTER' || modalSavedAppointment?.counterScheduledAt || (detailModalOrder as any).status === 'WAITING_SELLER_APPROVAL') {
+                                  const cTime = modalSavedAppointment?.counterScheduledAt || modalSavedAppointment?.scheduledAt || (detailModalOrder as any).counterScheduledAt || detailModalOrder.appointmentScheduledAt;
+                                  const cDate = cTime ? new Date(cTime) : null;
+                                  const formatted = cDate && !isNaN(cDate.getTime()) ? cDate.toLocaleString('vi-VN') : 'lịch mới';
+                                  return `Trung tâm đề xuất dời lịch sang ${formatted}. Đang chờ Người bán phản hồi thống nhất lịch mới.`;
                                 }
                                 if (modalSavedAppointment?.status === 'PENDING_CENTER_CONFIRMATION' || modalSavedAppointment?.status === 'PENDING_CONFIRMATION') {
                                   return `Lịch hẹn KTV: ${new Date(modalAppointmentScheduledAt).toLocaleString('vi-VN')} tại nhà người bán. Đang chờ Trung tâm kiểm định xem và phê duyệt.`;
@@ -7498,6 +7368,15 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                           );
                                         }
 
+                                        if (isInspectorArrivedForOrder(detailModalOrder.id, detailModalOrder)) {
+                                          return (
+                                            <div className="flex-1 py-2.5 px-4 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-2xs">
+                                              <Wrench className="w-4 h-4 text-emerald-600 animate-spin" />
+                                              <span>{lang === 'vi' ? 'KTV Đã Đến Và Đang Kiểm Tra' : 'Inspector Arrived & Inspecting'}</span>
+                                            </div>
+                                          );
+                                        }
+
                                         return (
                                           <button
                                             onClick={() => {
@@ -7716,7 +7595,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             !isOrderReceiptConfirmed(detailModalOrder) &&
                             (detailModalOrder.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' ||
                               detailModalOrder.backendStatus === 'DELIVERED' ||
-                              detailModalOrder.shippingDeliveredAt) && (
+                              detailModalOrder.shippingDeliveredAt ||
+                              detailModalOrder.escrowStatus === 'SHIPPED_TO_BUYER' ||
+                              (detailModalOrder as any).inspectionStatus === 'DELIVERING_TO_BUYER' ||
+                              (detailModalOrder as any).inspectionStatus === 'PASSED') && (
                               <>
                                 <button
                                   onClick={() => {

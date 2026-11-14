@@ -4297,8 +4297,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <Lock className="w-4 h-4 text-white" />
                       <span>
                         {lang === 'vi'
-                          ? `Xác Nhận Đặt Hàng & Thanh Toán Ví (${formatVND(totalAmount)})`
-                          : `Confirm Order & Pay with Wallet (${formatVND(totalAmount)})`}
+                          ? `Xác nhận đặt hàng & thanh toán`
+                          : `Confirm Order & Pay (${formatVND(totalAmount)})`}
                       </span>
                     </>
                   ) : (

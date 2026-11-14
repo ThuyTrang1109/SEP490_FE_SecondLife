@@ -305,7 +305,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
                     <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-2">
                       <Info className="w-3.5 h-3.5 shrink-0 text-amber-600" />
                       <span>
-                        <strong>Mô phỏng Sandbox:</strong> Cước chặng đi có phần ứng tiền mặt.
+                        Cước chặng đi có phần ứng tiền mặt.
                         {fees.outboundCashPendingAmount != null && fees.outboundCashPendingAmount > 0 && (
                           <span>
                             {' '}Cước đi đã thu đang chờ hoàn ứng hoặc hoàn tiền:{' '}

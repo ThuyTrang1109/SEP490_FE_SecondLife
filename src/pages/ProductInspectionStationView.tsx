@@ -196,6 +196,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   // State: Active Order & Image Gallery
   const [selectedOrderId, setSelectedOrderId] = useState<string>(externalSelectedOrderId || '');
+  const [searchedOrder, setSearchedOrder] = useState<EscrowOrder | null>(null);
+  const [isSearchingOrder, setIsSearchingOrder] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [barcodeScanInput, setBarcodeScanInput] = useState('');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -211,11 +213,11 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     }
   }, [externalSelectedOrderId]);
 
-  // Active Order (chỉ tải khi đã quét mã hoặc chọn đơn cụ thể, không tự ý nạp orders[0])
+  // Active Order (chỉ tải khi đã tìm kiếm / quét mã hoặc chọn đơn cụ thể, không tự ý nạp orders[0])
   const activeOrder = useMemo(() => {
     if (!selectedOrderId) return null;
-    return orders.find((o) => o.id === selectedOrderId) || null;
-  }, [orders, selectedOrderId]);
+    return orders.find((o) => o.id === selectedOrderId) || (searchedOrder?.id === selectedOrderId ? searchedOrder : null);
+  }, [orders, selectedOrderId, searchedOrder]);
 
   // Danh sách hình ảnh bài đăng sản phẩm để KTV trực tiếp đối chiếu
   const productImages = useMemo(() => {
@@ -252,10 +254,20 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
   const isAtHomeOrder = Boolean(activeOrder?.inspectionMethod === 'AT_HOME' || (activeOrder as any)?.orderType === 'AT_HOME');
   const isAtCenterOrder = !isAtHomeOrder;
+  const [atHomeViewMode, setAtHomeViewMode] = useState<'INFO' | 'WORKBENCH'>('INFO');
+  useEffect(() => {
+    setAtHomeViewMode('INFO');
+  }, [activeOrder?.id]);
+
   const [arrivedSignalTime, setArrivedSignalTime] = useState<string | null>(null);
   const isInspectorArrived = activeOrder ? Boolean(
     arrivedSignalTime ||
-    (typeof window !== 'undefined' && localStorage.getItem(`at_home_inspector_arrived_${activeOrder.id}`)) ||
+    (typeof window !== 'undefined' && (
+      localStorage.getItem(`at_home_inspector_arrived_${activeOrder.id}`) ||
+      localStorage.getItem(`order_inspecting_${activeOrder.id}`) === 'true' ||
+      localStorage.getItem(`inspection_status_${activeOrder.id}`) === 'INSPECTING' ||
+      ((activeOrder as any).linkedOrderId && localStorage.getItem(`at_home_inspector_arrived_${(activeOrder as any).linkedOrderId}`))
+    )) ||
     activeOrder.inspectionStatus === 'INSPECTING' ||
     (activeOrder as any).status === 'INSPECTING' ||
     (activeOrder as any).backendStatus === 'INSPECTING'
@@ -389,10 +401,16 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
   useEffect(() => {
     let active = true;
     if (activeOrder?.id && !isCompletedOrder) {
+      const startPayload = {
+        orderCode: activeOrder.id,
+        barcodeInput: barcodeScanInput || activeOrder.id,
+        checkInCode: barcodeScanInput || activeOrder.id,
+      };
+
       if (isAtCenterOrder) {
-        // Luồng tại trung tâm: gọi start với body rỗng.
+        // Luồng tại trung tâm: gọi start với payload.
         // Chỉ tiếp tục từ giao diện khi BE xác nhận trạng thái INSPECTING. Nếu gọi start lỗi, tải lại đơn.
-        inspectorService.startInspection(activeOrder.id)
+        inspectorService.startInspection(activeOrder.id, startPayload)
           .catch(async () => {
             try {
               const reloaded = await inspectorService.getOrder(activeOrder.id);
@@ -401,12 +419,13 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
               }
             } catch { }
           });
-      } else {
-        void inspectorService.startInspection(activeOrder.id).catch(() => { });
+      } else if (isInspectorArrived) {
+        // Luồng tại nhà: chỉ gọi start khi KTV đã quét mã / xác nhận có mặt
+        void inspectorService.startInspection(activeOrder.id, startPayload).catch(() => { });
       }
     }
     return () => { active = false; };
-  }, [activeOrder?.id, isCompletedOrder, isAtCenterOrder]);
+  }, [activeOrder?.id, isCompletedOrder, isAtCenterOrder, isInspectorArrived, barcodeScanInput]);
 
   // Load the saved report or the checklist assigned by the API.
   useEffect(() => {
@@ -588,25 +607,32 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     setTimeout(() => setNoticeMessage(null), 4500);
   };
 
-  // Xử lý nạp đơn tự động khi quét barcode (Camera, máy quét USB, hoặc nhập tay)
-  const handleProcessBarcode = (rawCode: string) => {
-    const code = rawCode.trim();
-    if (!code) return;
-
-    playScanBeep();
+  // Hàm tìm kiếm đơn hàng: Luôn gọi API Backend trước, sau đó đối chiếu làm giàu thông tin
+  const findOrderFromAllSources = async (rawCode: string): Promise<EscrowOrder | null> => {
+    const code = (rawCode || '').trim();
+    if (!code) return null;
 
     const normalized = code.toLowerCase();
     const cleanCode = normalized.replace(/^(sl-insp-|inspection-|order-|sl-athome-|athome-|#)/i, '').trim();
 
-    const match = orders.find((o) => {
-      const oId = o.id.toLowerCase();
+    // 1. LUÔN GỌI API BACKEND TRƯỚC TIÊN ĐỂ TÌM KIẾM TRỰC TIẾP TỪ SERVER
+    let apiFound: any = null;
+    try {
+      apiFound = await inspectorService.searchInspectionOrder(code);
+    } catch (err) {
+      console.warn('API search error:', err);
+    }
+
+    // 2. Tìm trong props orders để làm giàu dữ liệu hoặc fallback
+    let match = orders.find((o) => {
+      const oId = (o.id || '').toLowerCase();
+      if (apiFound && (oId === String(apiFound.id || '').toLowerCase())) return true;
       if (oId === normalized || oId === cleanCode) return true;
       if (cleanCode && (oId.startsWith(cleanCode) || oId.includes(cleanCode) || cleanCode.includes(oId))) return true;
       const intakeCode = getAtHomeIntakeCode(o.id).toLowerCase();
       if (intakeCode === normalized || intakeCode.includes(normalized) || normalized.includes(intakeCode)) return true;
       if (o.listingId && (o.listingId.toLowerCase().includes(cleanCode) || cleanCode.includes(o.listingId.toLowerCase()))) return true;
       if (o.listing?.title && o.listing.title.toLowerCase().includes(cleanCode)) return true;
-      if (o.inspectionReport?.tamperSealId && (o.inspectionReport.tamperSealId.toLowerCase().includes(cleanCode) || cleanCode.includes(o.inspectionReport.tamperSealId.toLowerCase()))) return true;
       if (
         o.shippingLegs?.some(
           (leg) => leg.trackingNumber && (leg.trackingNumber.toLowerCase().includes(cleanCode) || cleanCode.includes(leg.trackingNumber.toLowerCase()))
@@ -618,37 +644,204 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     });
 
     if (match) {
+      if (apiFound) {
+        return {
+          ...match,
+          ...apiFound,
+          status: apiFound.status || match.status,
+          inspectionStatus: apiFound.status || match.inspectionStatus,
+        };
+      }
+      return match;
+    }
+
+    // 3. Nếu chưa có trong props orders, tìm trong localStorage (các đơn vừa đặt)
+    if (typeof window !== 'undefined') {
+      const storageKeys = ['recent_placed_orders', 'my_seller_inspection_orders', 'center_inspection_orders'];
+      for (const k of storageKeys) {
+        try {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              const foundLocal = list.find((o: any) => {
+                const oId = String(o.id || o.orderId || '').toLowerCase();
+                if (apiFound && (oId === String(apiFound.id || '').toLowerCase())) return true;
+                if (oId === normalized || oId === cleanCode) return true;
+                if (cleanCode && (oId.startsWith(cleanCode) || oId.includes(cleanCode) || cleanCode.includes(oId))) return true;
+                const intake = getAtHomeIntakeCode(o.id || o.orderId || '').toLowerCase();
+                if (intake === normalized || intake.includes(normalized) || normalized.includes(intake)) return true;
+                if (o.listing?.title && String(o.listing.title).toLowerCase().includes(cleanCode)) return true;
+                return false;
+              });
+              if (foundLocal) {
+                if (apiFound) {
+                  return {
+                    ...foundLocal,
+                    ...apiFound,
+                    status: apiFound.status || foundLocal.status,
+                  } as EscrowOrder;
+                }
+                return foundLocal as EscrowOrder;
+              }
+            }
+          }
+        } catch {}
+      }
+    }
+
+    if (apiFound) return apiFound as EscrowOrder;
+
+    return null;
+  };
+
+  // Tìm kiếm đơn hàng theo mã vạch / mã đơn (gọi API tìm kiếm trước, thấy đơn mới sang bước xác nhận)
+  const handleSearchOrder = async (rawCode: string) => {
+    const code = (rawCode || '').trim();
+    if (!code) {
+      notify('Vui lòng nhập mã vạch, mã tiếp nhận hoặc mã đơn hàng để tìm kiếm!', true);
+      return;
+    }
+
+    setIsSearchingOrder(true);
+    playScanBeep();
+
+    const match = await findOrderFromAllSources(code);
+    setIsSearchingOrder(false);
+
+    if (match) {
+      setSearchedOrder(match);
       setSelectedOrderId(match.id);
       onSelectOrder?.(match.id);
       setBarcodeScanInput(match.id);
       setCurrentStep('intake');
 
-      const isAtHomeOrder = match.inspectionMethod === 'AT_HOME' || (match as any).orderType === 'AT_HOME';
-      const arrivedAt = new Date().toISOString();
-      setArrivedSignalTime(arrivedAt);
-      try {
-        localStorage.setItem(`at_home_inspector_arrived_${match.id}`, arrivedAt);
-        localStorage.setItem(`order_inspecting_${match.id}`, 'true');
-        localStorage.setItem(`inspection_status_${match.id}`, 'INSPECTING');
-        window.dispatchEvent(new CustomEvent('secondlife_inspector_arrived', {
-          detail: { orderId: match.id, arrivedAt }
-        }));
-        window.dispatchEvent(new StorageEvent('storage', {
-          key: `at_home_inspector_arrived_${match.id}`,
-          newValue: arrivedAt
-        }));
-      } catch (err) {
-        console.warn('Failed to record inspector arrival:', err);
-      }
-
       notify(
-        isAtHomeOrder
-          ? `[Xác Thực Tại Nhà] Đã quét nhận diện mã "${code}" thành công! Kỹ thuật viên đã đến và đang kiểm tra thiết bị #${match.id.slice(0, 8)}.`
-          : `[Auto-Intake] Đã quét nhận diện "${code}" -> Nạp thành công đơn kiểm định #${match.id.slice(0, 8)} (${match.listing?.title || 'Thiết bị'})!`
+        `[Đã Tìm Thấy Đơn Hàng] #${match.id.slice(0, 8)} - "${match.listing?.title || 'Thiết bị'}". Vui lòng kiểm tra và bấm "Xác Nhận Đơn" để tiếp nhận!`
       );
     } else {
       setBarcodeScanInput(code);
-      notify(`Đã quét mã: "${code}" (Không tìm thấy đơn hàng tương ứng trong ca trực)`, true);
+      notify(`Không tìm thấy đơn hàng nào khớp với mã "${code}". Vui lòng kiểm tra lại!`, true);
+    }
+  };
+
+  // Tiếp nhận việc (KTV xác nhận sau khi đã tìm thấy đơn)
+  const handleAcceptTask = (order: EscrowOrder, inputCode?: string) => {
+    playScanBeep();
+    markInspectorArrival(order.id, order);
+
+    const startPayload = {
+      barcodeInput: inputCode || order.id,
+      orderCode: order.id,
+      checkInCode: inputCode || order.id,
+    };
+    inspectorService.startInspection(order.id, startPayload)
+      .then((updatedOrder) => {
+        if (updatedOrder) {
+          onResultSaved?.(updatedOrder);
+        }
+      })
+      .catch((err) => {
+        console.warn('Backend startInspection error:', err);
+      });
+
+    const isAtHome = order.inspectionMethod === 'AT_HOME' || (order as any).orderType === 'AT_HOME';
+    notify(
+      isAtHome
+        ? `[Xác Nhận Thành Công] Kỹ thuật viên đã tiếp nhận đơn #${order.id.slice(0, 8)}. Hệ thống đã đồng bộ trạng thái bên người bán!`
+        : `[Xác Nhận Thành Công] Đã tiếp nhận đơn kiểm định #${order.id.slice(0, 8)} (${order.listing?.title || 'Thiết bị'})!`
+    );
+  };
+
+  // Giữ alias cho tương thích ngược
+  const handleProcessBarcode = (rawCode: string) => {
+    handleSearchOrder(rawCode);
+  };
+
+  // Đồng bộ trạng thái KTV có mặt và đo kiểm cho tất cả các ID liên quan & đa store
+  const markInspectorArrival = (orderId: string, matchedOrder?: any) => {
+    const arrivedAt = new Date().toISOString();
+    setArrivedSignalTime(arrivedAt);
+    const targetIds = Array.from(new Set([
+      orderId,
+      matchedOrder?.id,
+      matchedOrder?.linkedOrderId,
+      matchedOrder?.orderId,
+      matchedOrder?.inspectionOrderId,
+    ].filter(Boolean))) as string[];
+
+    try {
+      targetIds.forEach((id) => {
+        localStorage.setItem(`at_home_inspector_arrived_${id}`, arrivedAt);
+        localStorage.setItem(`order_inspecting_${id}`, 'true');
+        localStorage.setItem(`inspection_status_${id}`, 'INSPECTING');
+      });
+
+      // Cập nhật recent_placed_orders
+      try {
+        const rawRecent = localStorage.getItem('recent_placed_orders');
+        if (rawRecent) {
+          const list = JSON.parse(rawRecent);
+          if (Array.isArray(list)) {
+            const updated = list.map((o: any) => {
+              if (targetIds.includes(o.id) || targetIds.includes(o.linkedOrderId) || targetIds.includes(o.orderId)) {
+                return {
+                  ...o,
+                  status: 'INSPECTING',
+                  inspectionStatus: 'INSPECTING',
+                  backendStatus: 'INSPECTING',
+                  escrowStatus: 'INSPECTION_IN_PROGRESS',
+                  inspectorArrivedAt: arrivedAt,
+                };
+              }
+              return o;
+            });
+            localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
+          }
+        }
+      } catch {}
+
+      // Cập nhật my_seller_inspection_orders
+      try {
+        const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+        if (rawSeller) {
+          const list = JSON.parse(rawSeller);
+          if (Array.isArray(list)) {
+            const updated = list.map((o: any) => {
+              if (targetIds.includes(o.id) || targetIds.includes(o.linkedOrderId) || targetIds.includes(o.orderId)) {
+                return {
+                  ...o,
+                  status: 'INSPECTING',
+                  inspectionStatus: 'INSPECTING',
+                  backendStatus: 'INSPECTING',
+                  escrowStatus: 'INSPECTION_IN_PROGRESS',
+                  inspectorArrivedAt: arrivedAt,
+                };
+              }
+              return o;
+            });
+            localStorage.setItem('my_seller_inspection_orders', JSON.stringify(updated));
+          }
+        }
+      } catch {}
+
+      // Kích hoạt đồng bộ cross-tab realtime qua storage key chuyên dụng
+      localStorage.setItem('secondlife_inspector_arrived_sync', JSON.stringify({
+        orderId,
+        targetIds,
+        arrivedAt,
+        timestamp: Date.now(),
+      }));
+
+      window.dispatchEvent(new CustomEvent('secondlife_inspector_arrived', {
+        detail: { orderId, targetIds, arrivedAt }
+      }));
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: `at_home_inspector_arrived_${orderId}`,
+        newValue: arrivedAt
+      }));
+    } catch (err) {
+      console.warn('Failed to record inspector arrival:', err);
     }
   };
 
@@ -659,24 +852,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     const shortId = order.id.slice(0, 8).toLowerCase();
 
     if (!entered || entered === expectedIntake || entered.includes(shortId) || expectedIntake.includes(entered) || order.id.toLowerCase().includes(entered)) {
-      playScanBeep();
-      const arrivedAt = new Date().toISOString();
-      setArrivedSignalTime(arrivedAt);
-      try {
-        localStorage.setItem(`at_home_inspector_arrived_${order.id}`, arrivedAt);
-        localStorage.setItem(`order_inspecting_${order.id}`, 'true');
-        localStorage.setItem(`inspection_status_${order.id}`, 'INSPECTING');
-        window.dispatchEvent(new CustomEvent('secondlife_inspector_arrived', {
-          detail: { orderId: order.id, arrivedAt }
-        }));
-        window.dispatchEvent(new StorageEvent('storage', {
-          key: `at_home_inspector_arrived_${order.id}`,
-          newValue: arrivedAt
-        }));
-      } catch (err) {
-        console.warn('Failed to record inspector arrival:', err);
-      }
-      notify(`[Xác Thực Tại Nhà] Kỹ thuật viên đã xác nhận có mặt tại nhà và đang kiểm tra thiết bị #${order.id.slice(0, 8)}.`);
+      handleAcceptTask(order, atHomeVerifyInput || order.id);
       setAtHomeVerifyInput('');
     } else {
       notify(`Mã tiếp nhận "${atHomeVerifyInput}" không khớp với đơn hàng #${order.id.slice(0, 8)}. Vui lòng kiểm tra lại.`, true);
@@ -905,7 +1081,11 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     try {
       // 1. Đảm bảo đơn đã chuyển sang trạng thái INSPECTING trên backend trước khi submit
       try {
-        await inspectorService.startInspection(activeOrder.id).catch(() => { });
+        await inspectorService.startInspection(activeOrder.id, {
+          orderCode: activeOrder.id,
+          barcodeInput: activeOrder.id,
+          checkInCode: activeOrder.id,
+        }).catch(() => { });
       } catch { }
 
       // 2. Nộp kết quả thẩm định lên backend API
@@ -1060,8 +1240,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
     { key: 'technical', title: '3. Kỹ Thuật', desc: 'Đo đạc & Test chức năng', icon: Wrench },
     {
       key: 'proofs',
-      title: isAtCenterOrder ? '4. Ảnh Bằng Chứng' : '4. Bằng Chứng & Niêm Phong',
-      desc: isAtCenterOrder ? 'Ảnh chụp hiện trạng máy' : 'Ảnh soi vi mạch & Dán tem',
+      title: '4. Ảnh Bằng Chứng',
+      desc: isAtCenterOrder ? 'Ảnh chụp hiện trạng máy' : 'Ảnh hiện trạng & vi mạch',
       icon: Camera,
     },
     { key: 'verdict', title: '5. Kết Luận', desc: 'Ký số & Xuất chứng thư', icon: ShieldCheck },
@@ -1127,10 +1307,6 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
           notify('Vui lòng thêm ảnh bằng chứng trước khi chuyển bước!', true);
           return;
         }
-        if (!sealConfirmed) {
-          notify('Vui lòng xác nhận đã dán tem niêm phong trước khi chuyển sang Bước 5!', true);
-          return;
-        }
       }
     }
 
@@ -1162,12 +1338,12 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         if (isAtCenterOrder) {
           return maxReachedStepIndex > 3 || (proofPhotos.length >= 1 && proofPhotos.length <= 10);
         }
-        return maxReachedStepIndex > 3 || (proofPhotos.length > 0 && sealConfirmed);
+        return maxReachedStepIndex > 3 || proofPhotos.length > 0;
       case 'verdict':
         if (isAtCenterOrder) {
           return Boolean(overallVerdict && (proofPhotos.length >= 1 || isDigitalSigned));
         }
-        return Boolean(overallVerdict && (sealConfirmed || isDigitalSigned));
+        return Boolean(overallVerdict && isDigitalSigned);
       default:
         return false;
     }
@@ -1256,12 +1432,12 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
           <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-black uppercase tracking-wider text-[#24263e] flex items-center gap-1.5">
-                <QrCode className="w-4 h-4 text-[#c34c36]" />
-                <span>Quét Barcode / Mã Đơn Nhận Máy</span>
+                <Search className="w-4 h-4 text-[#c34c36]" />
+                <span>Tìm Kiếm Đơn Hàng / Quét Barcode</span>
               </span>
               <span className="text-[10px] bg-red-50 text-[#c34c36] border border-red-100 px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#c34c36] animate-pulse"></span>
-                Auto-Intake
+                Tra Cứu &amp; Nhận Việc
               </span>
             </div>
 
@@ -1274,10 +1450,10 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      handleProcessBarcode(barcodeScanInput);
+                      handleSearchOrder(barcodeScanInput);
                     }
                   }}
-                  placeholder="Quét mã vạch hoặc nhập mã đơn..."
+                  placeholder="Nhập mã đơn, mã tiếp nhận (VD: SL-ATHOME-...) hoặc quét barcode..."
                   className="w-full pl-3.5 pr-8 py-2 bg-[#faf8f5] border border-gray-200 rounded-xl text-xs font-mono outline-none focus:border-[#c34c36] focus:bg-white transition"
                 />
                 {barcodeScanInput && (
@@ -1306,13 +1482,20 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 <span className="hidden sm:inline">Quét</span>
               </button>
 
-              {/* Nút Nhận thủ công */}
+              {/* Nút Tìm kiếm */}
               <button
                 type="button"
-                onClick={() => handleProcessBarcode(barcodeScanInput)}
-                className="px-3.5 py-2 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl cursor-pointer transition shrink-0"
+                onClick={() => handleSearchOrder(barcodeScanInput)}
+                disabled={isSearchingOrder}
+                className="px-4 py-2 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl cursor-pointer transition shrink-0 flex items-center gap-1.5 shadow-xs disabled:opacity-60"
+                title="Tìm kiếm đơn hàng trong danh sách hoặc trên máy chủ"
               >
-                Nhận
+                {isSearchingOrder ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Search className="w-3.5 h-3.5" />
+                )}
+                <span>Tìm kiếm</span>
               </button>
             </div>
 
@@ -1363,7 +1546,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 </button>
               </div>
             </div>
-          ) : isAtHomeOrder ? (
+          ) : isAtHomeOrder && atHomeViewMode === 'INFO' ? (
             /* =================================================================== */
             /* KIỂM ĐỊNH TẠI NHÀ: HIỂN THỊ THÔNG TIN SẢN PHẨM & LỊCH HẸN TƯƠNG ỨNG */
             /* =================================================================== */
@@ -1386,6 +1569,32 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {!isInspectorArrived && !isCompletedOrder && (
+                    <button
+                      type="button"
+                      onClick={() => handleAcceptTask(activeOrder, barcodeScanInput)}
+                      className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black rounded-xl flex items-center gap-1.5 shadow-md transition cursor-pointer"
+                      title="Xác nhận tiếp nhận đơn hàng và bắt đầu kiểm định"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Xác Nhận Đơn</span>
+                    </button>
+                  )}
+                  {isInspectorArrived && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAtHomeViewMode('WORKBENCH');
+                        if (currentStep === 'intake') setCurrentStep('exterior');
+                      }}
+                      className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black rounded-xl flex items-center gap-1.5 shadow-md transition cursor-pointer"
+                      title="Mở bàn kiểm tra trực tiếp (Ngoại quan, chức năng, checklist)"
+                    >
+                      <Wrench className="w-3.5 h-3.5" />
+                      <span>Đến Bàn Kiểm Tra</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   {isCompletedOrder && (
                     <button
                       type="button"
@@ -1475,28 +1684,36 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
               {/* Xác thực tiếp nhận thiết bị tại nhà (Nhập hoặc Quét mã vạch Người Bán) */}
               {!isInspectorArrived ? (
-                <div className="p-4 rounded-2xl bg-amber-50 border-2 border-amber-300 text-amber-950 space-y-3 shadow-xs">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 via-orange-50/60 to-amber-50 border-2 border-amber-300 text-amber-950 space-y-3.5 shadow-xs">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                        <Barcode className="w-4 h-4" />
+                      <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <Barcode className="w-5 h-5" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-sm text-amber-950">
-                          Xác Thực Tiếp Nhận Thiết Bị Tại Nhà
+                        <h4 className="font-black text-sm text-amber-950 flex items-center gap-2">
+                          <span>Đã Tìm Thấy Đơn Hàng • Sẵn Sàng Tiếp Nhận</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 border border-amber-300">
+                            Chờ Xác Nhận Đơn
+                          </span>
                         </h4>
-                        <p className="text-[11px] text-amber-800">
-                          Người bán đã được cấp 1 mã vạch và mã tiếp nhận. Vui lòng quét hoặc nhập mã để bắt đầu đo kiểm.
+                        <p className="text-[11px] text-amber-800 mt-0.5">
+                          Kiểm tra thông tin thiết bị và địa chỉ người bán ở trên. Bấm "Xác Nhận Đơn" để tiếp nhận và bắt đầu đo kiểm.
                         </p>
                       </div>
                     </div>
-                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-200/80 text-amber-900 border border-amber-300 flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-amber-700 animate-spin" />
-                      Chờ Quét Mã
-                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => handleAcceptTask(activeOrder, atHomeVerifyInput || barcodeScanInput)}
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-black rounded-xl cursor-pointer shadow-md transition flex items-center justify-center gap-2 shrink-0"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Xác Nhận Đơn &amp; Bắt Đầu Kiểm Tra</span>
+                    </button>
                   </div>
 
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-amber-200/80">
                     <div className="relative flex-1">
                       <input
                         type="text"
@@ -1508,8 +1725,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                             handleVerifyAtHomeIntake(activeOrder);
                           }
                         }}
-                        placeholder={`Nhập mã tiếp nhận từ Người bán (VD: ${getAtHomeIntakeCode(activeOrder.id)})...`}
-                        className="w-full px-3.5 py-2.5 bg-white border border-amber-300 rounded-xl text-xs font-mono font-bold outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
+                        placeholder={`Mã tiếp nhận Người bán (tùy chọn: ${getAtHomeIntakeCode(activeOrder.id)})...`}
+                        className="w-full px-3.5 py-2 bg-white border border-amber-300 rounded-xl text-xs font-mono font-bold outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
                       />
                     </div>
                     <button
@@ -1518,7 +1735,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                         setScannerMode('intake');
                         setIsScannerOpen(true);
                       }}
-                      className="px-3.5 py-2.5 bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition"
+                      className="px-3.5 py-2 bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition shrink-0"
                       title="Mở camera quét mã barcode của người bán"
                     >
                       <Camera className="w-3.5 h-3.5" />
@@ -1527,15 +1744,15 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                     <button
                       type="button"
                       onClick={() => handleVerifyAtHomeIntake(activeOrder)}
-                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer shadow-xs transition flex items-center justify-center gap-1.5"
+                      className="px-4 py-2 bg-[#24263e] hover:bg-black text-white text-xs font-bold rounded-xl cursor-pointer shadow-xs transition flex items-center justify-center gap-1.5 shrink-0"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Xác Nhận Có Mặt</span>
+                      <span>Xác Thực &amp; Nhận Đơn</span>
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex items-center justify-between gap-3 shadow-2xs">
+                <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
                   <div className="flex items-center gap-2.5">
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                     <div>
@@ -1547,9 +1764,23 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                       </span>
                     </div>
                   </div>
-                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                    Đang Đo Kiểm
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      Đang Đo Kiểm
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAtHomeViewMode('WORKBENCH');
+                        if (currentStep === 'intake') setCurrentStep('exterior');
+                      }}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-xs transition flex items-center gap-1 cursor-pointer"
+                    >
+                      <Wrench className="w-3.5 h-3.5" />
+                      <span>Đến Bàn Kiểm Tra</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1662,6 +1893,33 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                   </div>
                 </div>
               </div>
+
+              {/* Card CTA: KTV sẵn sàng đo kiểm */}
+              {isInspectorArrived && (
+                <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 rounded-2xl border-2 border-emerald-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                  <div>
+                    <h4 className="font-black text-emerald-950 text-sm flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>Đã Xác Thực Mã Tiếp Nhận Thành Công</span>
+                    </h4>
+                    <p className="text-xs text-emerald-800 mt-0.5">
+                      Kỹ thuật viên đã có mặt tại nhà người bán. Nhấn "Đến Bàn Kiểm Tra" để bắt đầu quy trình đo kiểm, ngoại quan &amp; checklist kỹ thuật.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAtHomeViewMode('WORKBENCH');
+                      if (currentStep === 'intake') setCurrentStep('exterior');
+                    }}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm rounded-xl flex items-center justify-center gap-2 shadow-md transition cursor-pointer shrink-0"
+                  >
+                    <Wrench className="w-4 h-4" />
+                    <span>Đến Bàn Kiểm Tra</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <>
@@ -1683,6 +1941,17 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {isAtHomeOrder && (
+                    <button
+                      type="button"
+                      onClick={() => setAtHomeViewMode('INFO')}
+                      className="px-3 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-xs font-bold text-purple-700 border border-purple-200 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                      title="Xem lại địa chỉ và số điện thoại người bán"
+                    >
+                      <Navigation className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Xem Lịch &amp; Địa Chỉ Khách</span>
+                    </button>
+                  )}
                   {isCompletedOrder && (
                     <button
                       type="button"
@@ -2194,96 +2463,11 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                         </>
                       ) : (
                         <>
-                          <strong>Bước 4 - Ảnh Bằng Chứng Vi Mạch & Dán Tem Niêm Phong:</strong> Chụp ảnh soi kính hiển vi, số seri bo mạch và dán tem niêm phong chống tráo đổi linh kiện theo tiêu chuẩn SecondLife.
+                          <strong>Bước 4 - Ảnh Bằng Chứng Hiện Trạng & Vi Mạch:</strong> Chụp ảnh hiện trạng máy, chi tiết linh kiện và ảnh chụp thực tế theo tiêu chuẩn SecondLife.
                         </>
                       )}
                     </div>
                   </div>
-
-                  {/* Tamper Seal Serial Box (Chỉ áp dụng cho đơn kiểm định tại nhà AT_HOME) */}
-                  {!isAtCenterOrder && (
-                    <div className="p-4 rounded-2xl bg-orange-50/60 border border-orange-200 space-y-3 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-black text-orange-900 uppercase tracking-wider flex items-center gap-1.5">
-                          <ShieldCheck className="w-4 h-4 text-[#c34c36]" />
-                          Số Seri Tem Niêm Phong Chống Bóc Tách (NFC / Hologram Seal) *
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleGenerateBackendSeal}
-                          disabled={isGeneratingSeal || isCompletedOrder}
-                          className={`text-xs text-[#c34c36] font-bold hover:underline flex items-center gap-1 ${isCompletedOrder ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
-                        >
-                          {isGeneratingSeal && <Loader2 className="w-3 h-3 animate-spin" />}
-                          <span>Sinh mã tem từ hệ thống</span>
-                        </button>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        <input
-                          type="text"
-                          value={tamperSealInput}
-                          readOnly={isCompletedOrder}
-                          disabled={isCompletedOrder}
-                          onChange={(e) => setTamperSealInput(e.target.value)}
-                          className={`flex-1 min-w-[200px] px-3.5 py-2.5 bg-white border border-orange-200 rounded-xl font-mono font-bold text-slate-800 text-sm outline-none focus:border-[#c34c36] ${isCompletedOrder ? 'bg-gray-100 cursor-not-allowed text-gray-700' : ''}`}
-                        />
-                        <button
-                          type="button"
-                          disabled={isCompletedOrder}
-                          onClick={() => {
-                            setScannerMode('tamper');
-                            setIsScannerOpen(true);
-                          }}
-                          className="px-3 py-2 bg-slate-800 hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="Quét Barcode / QR tem niêm phong"
-                        >
-                          <Camera className="w-3.5 h-3.5" />
-                          <span>Quét Tem</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setIsPrintSealModalOpen(true)}
-                          className="px-3.5 py-2 bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
-                          title="Tạo mã in tem niêm phong chuẩn dán máy"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span>In Tem QR</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setVerifySealId(tamperSealInput);
-                            setIsVerifySealModalOpen(true);
-                          }}
-                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
-                          title="Tra cứu trạng thái xác thực tem trên Backend"
-                        >
-                          <ShieldCheck className="w-3.5 h-3.5" />
-                          <span>Xác Thực Tem</span>
-                        </button>
-                      </div>
-
-                      <label className="flex items-center gap-2 cursor-pointer pt-1">
-                        <input
-                          type="checkbox"
-                          disabled={isCompletedOrder}
-                          checked={sealConfirmed}
-                          onChange={(e) => setSealConfirmed(e.target.checked)}
-                          className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer disabled:cursor-not-allowed"
-                        />
-                        <span className="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
-                          <span>Xác nhận: Tôi đã dán tem niêm phong vật lý đè lên ốc vít / khớp nối máy của thiết bị này.</span>
-                          {sealConfirmed && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              ĐÃ DÁN TEM (ĐÃ ỔN)
-                            </span>
-                          )}
-                        </span>
-                      </label>
-                    </div>
-                  )}
 
                   {/* Photo Upload & Gallery */}
                   <div className="space-y-3">
@@ -2583,29 +2767,13 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                           {isAtCenterOrder ? (
                             <span>Chứng thư số: SL-CA-2026-RSA4096 (Còn hiệu lực) • Hình thức: Kiểm định tại Lab Hub</span>
                           ) : (
-                            <span>Chứng thư số: SL-CA-2026-RSA4096 (Còn hiệu lực) • Tem: {tamperSealInput || 'Đã niêm phong'}</span>
+                            <span>Chứng thư số: SL-CA-2026-RSA4096 (Còn hiệu lực) • Hình thức: Kiểm định tận nơi tại nhà</span>
                           )}
                         </div>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-4">
-                      {!isAtCenterOrder && (
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            disabled={isCompletedOrder}
-                            checked={sealConfirmed}
-                            onChange={(e) => setSealConfirmed(e.target.checked)}
-                            className="w-4 h-4 accent-[#c34c36] rounded cursor-pointer disabled:cursor-not-allowed"
-                          />
-                          <span className="font-bold text-gray-800 flex items-center gap-1">
-                            <span>Đã dán tem</span>
-                            {sealConfirmed && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 inline" />}
-                          </span>
-                        </label>
-                      )}
-
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"

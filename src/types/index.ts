@@ -231,6 +231,7 @@ export interface EscrowOrder {
   inspectionStatus?: string;
   inspectionNote?: string;
   finalPaymentPaidAt?: string | null;
+  homeCheckedInAt?: string | null;
   inspectorId?: string;
   inspectorName?: string;
   inspectorEmail?: string;

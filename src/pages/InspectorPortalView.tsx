@@ -417,7 +417,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
 
     const seenIds = new Set(result.map((o) => o.id));
 
-    // Also include orders assigned locally in center_inspection_orders or recent_placed_orders
+    // Also include orders assigned locally in center_inspection_orders, recent_placed_orders or my_seller_inspection_orders
     const localAssignedOrders: any[] = [];
     try {
       const rawCenter = localStorage.getItem('center_inspection_orders');
@@ -428,6 +428,11 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       const rawRecent = localStorage.getItem('recent_placed_orders');
       if (rawRecent) {
         const parsed = JSON.parse(rawRecent);
+        if (Array.isArray(parsed)) localAssignedOrders.push(...parsed);
+      }
+      const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+      if (rawSeller) {
+        const parsed = JSON.parse(rawSeller);
         if (Array.isArray(parsed)) localAssignedOrders.push(...parsed);
       }
     } catch {}
@@ -447,8 +452,17 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       const candidateInspectorEmail = cand.inspectorEmail || assignedMeta?.inspectorEmail;
       const candidateInspectorName = cand.inspectorName || assignedMeta?.inspectorName;
 
-      // Check if this task belongs to the current inspector
+      // Check if this task belongs to the current inspector or is directly requested
+      const isDirectlySelected = Boolean(
+        selectedOrderId && (
+          cand.id === selectedOrderId ||
+          cand.id.toLowerCase().startsWith(selectedOrderId.toLowerCase()) ||
+          selectedOrderId.toLowerCase().startsWith(cand.id.toLowerCase())
+        )
+      );
+
       const matchesCurrentInspector =
+        isDirectlySelected ||
         !currentUser?.id ||
         currentUser.role === 'admin' ||
         currentUser.role === 'inspection_center' ||
@@ -456,7 +470,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         (candidateInspectorEmail && currentUser.email && candidateInspectorEmail.toLowerCase() === currentUser.email.toLowerCase()) ||
         (candidateInspectorName && currentUser.name && candidateInspectorName.toLowerCase().includes(currentUser.name.toLowerCase()));
 
-      if (matchesCurrentInspector && (candidateInspectorId || assignedMeta)) {
+      if (matchesCurrentInspector && (candidateInspectorId || assignedMeta || isDirectlySelected)) {
         let apptMeta: any = null;
         try {
           const rawAppt = localStorage.getItem(`order_appointment_${cand.id}`);

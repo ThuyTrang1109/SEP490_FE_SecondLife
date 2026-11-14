@@ -11,6 +11,7 @@ export interface PostMetadata {
   brand?: string;
   model?: string;
   purchaseYear?: number;
+  purchaseDate?: string;
   purchaseTimeNote?: string;
   category?: string;
   originalPriceVnd?: number;

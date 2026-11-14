@@ -33,7 +33,8 @@ import {
   RotateCcw,
   PlayCircle,
   Lock,
-  Wrench
+  Wrench,
+  Calendar
 } from 'lucide-react';
 import {
   ItemCategory,
@@ -401,11 +402,137 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   }, [pickupKey, refreshVersion]);
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const maxAllowedPurchaseYear = currentYear;
+
+  // Ngày hôm nay (YYYY-MM-DD)
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }, []);
+
+  // Ngày tối đa cho phép chọn: hôm qua (YYYY-MM-DD) - Tuyệt đối không cho chọn hôm nay hoặc tương lai
+  const maxAllowedPurchaseDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }, []);
+
+  const formatDateDisplayVN = (isoDate: string): string => {
+    if (!isoDate) return '';
+    const parts = isoDate.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return isoDate;
+  };
+
+  const parseDateStringToIso = (text: string): string | null => {
+    if (!text) return null;
+    const s = text.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (m) {
+      const dd = m[1].padStart(2, '0');
+      const mm = m[2].padStart(2, '0');
+      const yyyy = m[3];
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    return null;
+  };
+
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
-  const [purchaseYear, setPurchaseYear] = useState<number>(() => {
-    return currentYear;
+
+  // Ngày mua sản phẩm (mặc định: ngày hôm qua - ngày gần nhất trong quá khứ)
+  const [purchaseDate, setPurchaseDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
   });
+
+  // Text hiển thị / cho phép tự nhập ngày dd/mm/yyyy
+  const [purchaseDateInputText, setPurchaseDateInputText] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${dd}/${mm}/${yyyy}`;
+  });
+
+  const [purchaseYear, setPurchaseYear] = useState<number>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.getFullYear();
+  });
+
+  const handleDatePick = (isoVal: string) => {
+    setPurchaseDate(isoVal);
+    setPurchaseDateInputText(formatDateDisplayVN(isoVal));
+    const [y] = isoVal.split('-').map(Number);
+    if (Number.isFinite(y) && y >= 1990) {
+      setPurchaseYear(y);
+    }
+  };
+
+  const handleDateTextChange = (text: string) => {
+    setPurchaseDateInputText(text);
+    const iso = parseDateStringToIso(text);
+    if (iso) {
+      setPurchaseDate(iso);
+      const [y] = iso.split('-').map(Number);
+      if (Number.isFinite(y) && y >= 1990) {
+        setPurchaseYear(y);
+      }
+    } else {
+      if (!text.trim()) {
+        setPurchaseDate('');
+      }
+    }
+  };
+
+  const quickDateShortcuts = useMemo(() => [
+    { label: 'Hôm qua', daysAgo: 1 },
+    { label: '1 tháng trước', monthsAgo: 1 },
+    { label: '3 tháng trước', monthsAgo: 3 },
+    { label: '6 tháng trước', monthsAgo: 6 },
+    { label: '1 năm trước', yearsAgo: 1 },
+    { label: '2 năm trước', yearsAgo: 2 },
+    { label: '3 năm trước', yearsAgo: 3 },
+    { label: 'Đầu năm nay', startOfYear: true },
+  ], []);
+
+  const applyQuickDate = (item: { label: string; daysAgo?: number; monthsAgo?: number; yearsAgo?: number; startOfYear?: boolean }) => {
+    const d = new Date();
+    if (item.daysAgo) {
+      d.setDate(d.getDate() - item.daysAgo);
+    } else if (item.monthsAgo) {
+      d.setMonth(d.getMonth() - item.monthsAgo);
+    } else if (item.yearsAgo) {
+      d.setFullYear(d.getFullYear() - item.yearsAgo);
+    } else if (item.startOfYear) {
+      d.setMonth(0, 1);
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (d >= today) {
+      d.setDate(today.getDate() - 1);
+    }
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const iso = `${yyyy}-${mm}-${dd}`;
+    handleDatePick(iso);
+  };
+
   const [purchaseTimeNote, setPurchaseTimeNote] = useState<string>('');
   const [originalPriceVnd, setOriginalPriceVnd] = useState<number | ''>('');
   const [itemCondition, setItemCondition] = useState<string>('USED_GOOD');
@@ -423,17 +550,34 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
   const [hasSubmittedStep2, setHasSubmittedStep2] = useState(false);
   const [hasSubmittedStep3, setHasSubmittedStep3] = useState(false);
 
-  // Validation lỗi tại chỗ (Inline Validation)
-  const purchaseYearError = useMemo(() => {
-    if (!purchaseYear && purchaseYear !== 0) return 'Vui lòng nhập năm mua sản phẩm.';
-    if (purchaseYear > maxAllowedPurchaseYear) {
-      return `Năm mua không hợp lý (${purchaseYear} là năm tương lai). Sản phẩm đồ cũ đã qua sử dụng phải có năm mua từ năm 1990 đến năm ${maxAllowedPurchaseYear}.`;
+  // Validation lỗi tại chỗ (Inline Validation) - Giới hạn thời gian mua: chỉ được chọn ngày trong quá khứ (< hôm nay)
+  const purchaseDateError = useMemo(() => {
+    if (!purchaseDate || !purchaseDate.trim()) {
+      return 'Vui lòng chọn hoặc nhập ngày mua sản phẩm.';
     }
-    if (purchaseYear < 1990) {
-      return 'Năm mua không hợp lý (tối thiểu từ năm 1990).';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(purchaseDate)) {
+      return 'Định dạng ngày mua không hợp lệ. Vui lòng chọn từ lịch hoặc nhập theo định dạng dd/mm/yyyy.';
+    }
+    const [y, m, d] = purchaseDate.split('-').map(Number);
+    const parsedDate = new Date(y, m - 1, d);
+    if (
+      isNaN(parsedDate.getTime()) ||
+      parsedDate.getFullYear() !== y ||
+      parsedDate.getMonth() !== m - 1 ||
+      parsedDate.getDate() !== d
+    ) {
+      return 'Ngày mua không tồn tại trên lịch.';
+    }
+    if (purchaseDate >= todayStr) {
+      return 'Thời gian mua phải là ngày trong quá khứ (không được chọn hôm nay hoặc ngày tương lai). Bạn có thể chọn ngày đã qua trong năm nay hoặc các năm trước.';
+    }
+    if (purchaseDate < '1990-01-01') {
+      return 'Thời gian mua không hợp lý (tối thiểu từ năm 1990).';
     }
     return null;
-  }, [purchaseYear, maxAllowedPurchaseYear]);
+  }, [purchaseDate, todayStr]);
+
+  const purchaseYearError = purchaseDateError;
 
   const brandError = useMemo(() => {
     if (!brand || !brand.trim()) return 'Vui lòng nhập hoặc chọn thương hiệu sản phẩm.';
@@ -863,6 +1007,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             const parsed = JSON.parse(savedAns);
             if (parsed && typeof parsed === 'object') setQuestionAnswers(parsed);
           }
+          const savedDate = (draft as any).purchaseDate || localStorage.getItem(`post_purchase_date_${cleanId}`);
+          if (savedDate) {
+            handleDatePick(savedDate);
+          } else if ((draft as any).purchaseYear) {
+            setPurchaseYear((draft as any).purchaseYear);
+            const y = Number((draft as any).purchaseYear);
+            if (y < currentYear) {
+              handleDatePick(`${y}-06-15`);
+            } else {
+              handleDatePick(maxAllowedPurchaseDate);
+            }
+          }
         } catch {}
         showToast(lang === 'vi' ? `Đã tải lại bản nháp #${cleanId.slice(0, 8)} thành công!` : 'Draft loaded successfully!');
         setIsLoadDraftModalOpen(false);
@@ -882,7 +1038,18 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       setTitle(initialDraft.title || '');
       setBrand(initialDraft.brand || '');
       setModel(initialDraft.model || '');
-      if (initialDraft.purchaseYear) setPurchaseYear(initialDraft.purchaseYear);
+      const savedDate = (initialDraft as any).purchaseDate || localStorage.getItem(`post_purchase_date_${initialDraft.id}`);
+      if (savedDate) {
+        handleDatePick(savedDate);
+      } else if (initialDraft.purchaseYear) {
+        setPurchaseYear(initialDraft.purchaseYear);
+        const y = initialDraft.purchaseYear;
+        if (y < currentYear) {
+          handleDatePick(`${y}-06-15`);
+        } else {
+          handleDatePick(maxAllowedPurchaseDate);
+        }
+      }
       const savedTimeNote = (initialDraft as any).purchaseTimeNote || localStorage.getItem(`post_purchase_time_note_${initialDraft.id}`);
       if (savedTimeNote) setPurchaseTimeNote(savedTimeNote);
       const existingSellingPrice = initialDraft.priceVnd || (initialDraft as any).price || '';
@@ -2075,9 +2242,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       return false;
     }
 
-    if (purchaseYearError) {
-      showToast(purchaseYearError);
-      const el = document.getElementById('purchase-year-input') || document.querySelector('input[type="number"]');
+    if (purchaseDateError) {
+      showToast(purchaseDateError);
+      const el = document.getElementById('purchase-date-input') || document.getElementById('purchase-date-text-input');
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       (el as HTMLElement)?.focus?.();
       return false;
@@ -2251,6 +2418,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             localStorage.setItem(`post_original_price_${initRes.postId}`, String(numOrig));
           } catch {}
         }
+        if (purchaseDate) {
+          try {
+            localStorage.setItem(`post_purchase_date_${initRes.postId}`, purchaseDate);
+          } catch {}
+        }
         if (purchaseTimeNote && purchaseTimeNote.trim()) {
           try {
             localStorage.setItem(`post_purchase_time_note_${initRes.postId}`, purchaseTimeNote.trim());
@@ -2269,6 +2441,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           brand: brand?.trim() || '',
           model: model?.trim() || '',
           purchaseYear,
+          purchaseDate,
           purchaseTimeNote: purchaseTimeNote.trim() || undefined,
           originalPriceVnd: numOrig > 0 ? numOrig : undefined,
           canDisassemble
@@ -2790,6 +2963,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
     const numericOrigPrice = typeof originalPriceVnd === 'number' && originalPriceVnd > 0 ? originalPriceVnd : undefined;
 
+    if (purchaseDate) {
+      try {
+        localStorage.setItem(`post_purchase_date_${postId}`, purchaseDate);
+      } catch {}
+    }
     if (purchaseTimeNote && purchaseTimeNote.trim()) {
       try {
         localStorage.setItem(`post_purchase_time_note_${postId}`, purchaseTimeNote.trim());
@@ -2808,6 +2986,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       brand: finalBrand,
       model: model?.trim() || '',
       purchaseYear,
+      purchaseDate,
       purchaseTimeNote: purchaseTimeNote.trim() || undefined,
       originalPriceVnd: numericOrigPrice,
       canDisassemble
@@ -3031,6 +3210,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       const submitItmName = submitItm?.name || '';
       const finalOrigPrice = numericOrigPrice > 0 ? numericOrigPrice : undefined;
 
+      if (purchaseDate) {
+        try {
+          localStorage.setItem(`post_purchase_date_${postId}`, purchaseDate);
+        } catch {}
+      }
       if (purchaseTimeNote && purchaseTimeNote.trim()) {
         try {
           localStorage.setItem(`post_purchase_time_note_${postId}`, purchaseTimeNote.trim());
@@ -3049,6 +3233,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         brand: brand?.trim() || '',
         model: model?.trim() || '',
         purchaseYear,
+        purchaseDate,
         purchaseTimeNote: purchaseTimeNote.trim() || undefined,
         originalPriceVnd: finalOrigPrice,
         canDisassemble
@@ -3356,38 +3541,110 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-[#24263e]">Năm mua *</label>
-                <span className="text-[10px] text-slate-400 font-medium">(Tối đa: {maxAllowedPurchaseYear})</span>
+            {/* THỜI GIAN MUA SẢN PHẨM (CHỈ CHỌN NGÀY TRONG QUÁ KHỨ) */}
+            <div className="space-y-2 p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200">
+              <div className="flex items-center justify-between flex-wrap gap-1">
+                <label className="text-xs font-bold text-[#24263e] flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-[#c34c36]" />
+                  <span>Thời gian mua sản phẩm *</span>
+                </label>
+                <span className="text-[10px] text-amber-800 bg-amber-100/80 border border-amber-200 px-2 py-0.5 rounded-full font-semibold">
+                  Chỉ chọn ngày quá khứ (&lt; hôm nay)
+                </span>
               </div>
-              <input
-                id="purchase-year-input"
-                type="number"
-                value={purchaseYear}
-                onChange={(e) => setPurchaseYear(Number(e.target.value))}
-                min={1990}
-                max={maxAllowedPurchaseYear}
-                placeholder={`VD: 2022 (tối đa ${maxAllowedPurchaseYear})`}
-                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs text-[#24263e] focus:outline-none transition ${
-                  purchaseYearError
-                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
-                    : 'border-gray-200 focus:border-[#c34c36]'
-                }`}
-              />
-              {purchaseYearError && (
+
+              {/* Bộ chọn ngày: 1. Cuộn lịch hoặc 2. Tự nhập */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* 1. Bộ cuộn lịch (Calendar Picker) */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                    <span>1. Cuộn lịch chọn ngày:</span>
+                    <span className="text-[10px] text-slate-400">Tối đa: {formatDateDisplayVN(maxAllowedPurchaseDate)}</span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      id="purchase-date-input"
+                      type="date"
+                      value={purchaseDate}
+                      min="1990-01-01"
+                      max={maxAllowedPurchaseDate}
+                      onChange={(e) => handleDatePick(e.target.value)}
+                      className={`w-full px-3.5 py-2.5 bg-white border rounded-xl text-xs text-[#24263e] font-semibold focus:outline-none transition cursor-pointer shadow-2xs ${
+                        purchaseDateError && hasSubmittedStep1
+                          ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                          : 'border-gray-200 focus:border-[#c34c36]'
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Tự nhập bằng bàn phím */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                    <span>2. Hoặc tự nhập ngày (dd/mm/yyyy):</span>
+                  </div>
+                  <input
+                    id="purchase-date-text-input"
+                    type="text"
+                    value={purchaseDateInputText}
+                    onChange={(e) => handleDateTextChange(e.target.value)}
+                    placeholder="VD: 15/10/2023 hoặc 2023-10-15"
+                    className={`w-full px-3.5 py-2.5 bg-white border rounded-xl text-xs text-[#24263e] font-semibold focus:outline-none transition shadow-2xs ${
+                      purchaseDateError && hasSubmittedStep1
+                        ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                        : 'border-gray-200 focus:border-[#c34c36]'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* Thông tin ngày đã chọn & thông báo */}
+              {purchaseDate && !purchaseDateError && (
+                <div className="p-2 px-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 font-medium">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>
+                      Đã chọn: <strong className="font-bold">{formatDateDisplayVN(purchaseDate)}</strong> (Năm {purchaseYear})
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-100/70 px-2 py-0.5 rounded-md">
+                    Hợp lệ (Quá khứ)
+                  </span>
+                </div>
+              )}
+
+              {purchaseDateError && (
                 <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  <span>{purchaseYearError}</span>
+                  <span>{purchaseDateError}</span>
                 </p>
               )}
+
+              {/* Chọn nhanh ngày trong quá khứ */}
+              <div className="pt-1 border-t border-slate-200/70">
+                <span className="text-[11px] text-slate-500 block mb-1.5 font-medium">
+                  Chọn nhanh khoảng thời gian mua trong quá khứ:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {quickDateShortcuts.map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={() => applyQuickDate(item)}
+                      className="px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors cursor-pointer bg-white border border-gray-200 hover:border-[#c34c36] hover:text-[#c34c36] text-slate-700 shadow-2xs"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Ghi chú khoảng thời gian mua */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-[#24263e]">
-                  {lang === 'vi' ? 'Ghi chú khoảng thời gian mua' : 'Purchase Time Note'}
+                  {lang === 'vi' ? 'Ghi chú thêm về thời gian mua' : 'Additional Purchase Note'}
                 </label>
                 <span className="text-[10px] text-slate-400 font-medium">
                   {lang === 'vi' ? '(Không bắt buộc)' : '(Optional)'}
@@ -3400,34 +3657,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 onChange={(e) => setPurchaseTimeNote(e.target.value)}
                 placeholder={
                   lang === 'vi'
-                    ? 'VD: Mua khoảng giữa năm 2023, đã dùng khoảng 6 tháng, mua đợt Tết...'
-                    : 'E.g. Bought around mid-2023, used for ~6 months...'
+                    ? 'VD: Mua khoảng giữa năm, đã dùng khoảng 6 tháng, mua đợt Tết...'
+                    : 'E.g. Bought around mid-year, used for ~6 months...'
                 }
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs text-[#24263e] focus:outline-none focus:border-[#c34c36] transition"
               />
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {[
-                  'Dưới 6 tháng',
-                  'Khoảng 6 - 12 tháng',
-                  'Khoảng 1 - 2 năm',
-                  'Trên 2 năm',
-                  'Mua mới đầu năm nay',
-                  'Mua cuối năm ngoái'
-                ].map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => setPurchaseTimeNote(purchaseTimeNote === tag ? '' : tag)}
-                    className={`px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors cursor-pointer ${
-                      purchaseTimeNote === tag
-                        ? 'bg-[#c34c36] text-white border border-[#c34c36]'
-                        : 'bg-white border border-gray-200 hover:border-[#c34c36] hover:text-[#c34c36] text-slate-700'
-                    }`}
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </div>
             </div>
 
             <div className="space-y-1.5">

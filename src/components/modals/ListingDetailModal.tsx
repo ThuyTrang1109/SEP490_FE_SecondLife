@@ -28,6 +28,7 @@ import { soundFx } from '../../utils/soundEffects';
 import { reviewService } from '../../data/mockReviews';
 import { reputationService, postService, SellerReputationDto, getStoredUser, getAssessmentStatusMeta } from '../../services';
 import { UserReportModal } from './UserReportModal';
+import { isListingInspectionPassed } from '../../utils/listingInspection';
 import { resolveCategoryAndItem, extractSellerOriginalPrice } from '../../utils/catalogCache';
 import { MarkdownContent } from '../common/MarkdownDescription';
 
@@ -230,6 +231,10 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
     ? (productReviews.reduce((sum, r) => sum + r.rating, 0) / productReviews.length).toFixed(1)
     : '5.0';
 
+  const isInspected = React.useMemo(() => {
+    return isListingInspectionPassed(listing);
+  }, [listing]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-md overflow-y-auto animate-fadeIn">
       <div className="bg-[#FFFFFF] rounded-2xl max-w-2xl sm:max-w-[740px] w-full max-h-[88vh] overflow-hidden shadow-2xl border border-gray-200 flex flex-col my-auto text-[#24263e]">
@@ -240,6 +245,12 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
               <ShieldCheck className="w-3 h-3 text-[#24263e]" />
               {listing.conditionGrade === 'Like New' ? 'Grade A+ (99%)' : 'Grade A (95%)'}
             </span>
+            {isInspected && (
+              <span className="bg-emerald-600 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs border border-emerald-400/30">
+                <ShieldCheck className="w-3 h-3 text-emerald-100" />
+                <span>{lang === 'vi' ? 'Đã Kiểm Định Đạt Chuẩn' : 'Inspected & Passed'}</span>
+              </span>
+            )}
             <span className="text-[10px] text-[#24263e]/80 font-bold truncate max-w-[220px]">
               Mã tin: #{listing.id}
             </span>
@@ -372,6 +383,26 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                       <span>{lang === 'vi' ? 'Bảo lãnh Escrow 100%: Kiểm tra 48h mới giải ngân' : '100% Escrow Protection'}</span>
                     </div>
                   </div>
+
+                  {/* Verified Inspected Passed Banner */}
+                  {isInspected && (
+                    <div className="p-3 rounded-xl bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-300 shadow-2xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-xs font-black text-emerald-950">
+                          <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>{lang === 'vi' ? 'Sản Phẩm Đã Được Kiểm Định Đạt Chuẩn' : 'Hub Inspected & Passed Product'}</span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white font-extrabold text-[9px] shadow-2xs">
+                          PASSED
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-emerald-900 leading-snug">
+                        {lang === 'vi'
+                          ? 'Thiết bị đã vượt qua quy trình kiểm tra kỹ thuật phần cứng nghiêm ngặt tại SecondLife Hub và đạt chuẩn chất lượng giao dịch.'
+                          : 'This device passed technical hardware inspection at SecondLife Hub and meets verified transaction standards.'}
+                      </p>
+                    </div>
+                  )}
 
                   {/* AI Suggested Price Range Widget (GET /posts/{postId}/ai-price-estimation) */}
                   {aiEstimate && (aiEstimate.suggestedPriceMin || aiEstimate.suggestedPriceMax) && (

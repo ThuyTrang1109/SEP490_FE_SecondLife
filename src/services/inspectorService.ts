@@ -369,6 +369,7 @@ export interface InspectionOrderDto {
   sellerPaidAt?: string;
 
   appointmentScheduledAt?: string;
+  appointmentNote?: string;
   checklistResultJson?: string;
   videoProofUrl?: string;
   unboxingVideoUrl?: string;

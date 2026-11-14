@@ -16,6 +16,7 @@ export const panelPaths: Partial<Record<UserRole, Record<string, string>>> = {
     hubs: '/admin/hubs', 'seller-kyc': '/admin/seller-kyc', permissions: '/admin/permissions',
     'credit-pricing': '/admin/credit-pricing', 'system-wallet': '/admin/system-wallet',
     'commission-rules': '/admin/commission-rules', 'inspection-governance': '/admin/inspection-governance',
+    'inspection-funds': '/admin/inspection-funds',
   },
   staff: {
     overview: '/staff/dashboard', 'review-listings': '/staff/products', 'proof-possession': '/staff/proof-possession',

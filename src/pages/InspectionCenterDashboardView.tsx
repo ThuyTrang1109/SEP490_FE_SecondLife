@@ -1,6 +1,7 @@
 import { ResizableSidebarControls } from '../components/common/ResizableSidebarControls';
 import { usePanelTab, useBrowserLocation, navigatePath } from '../app/router/browser';
-import { resolveAppRoute, panelPaths } from '../app/router/paths';
+import { resolveAppRoute, panelPaths, paths } from '../app/router/paths';
+import { saveScopedLocalNotification } from '../utils/notificationStorage';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Building2,
@@ -84,10 +85,11 @@ import { translateSystemNotification } from '../utils/systemNotificationTranslat
 import { resolveInspectionCenter } from '../utils/orderUtils';
 import { itemService } from '../services/itemService';
 import { canBookHubBuyerDelivery, canReadCenterInspectionShipments, getCenterDispatchStage, getCenterTabDataNeeds, getHubBuyerShipmentLabel, getInboundShipmentProgress, getLatestInboundShipment, getLatestInspectionShipment, isPaidHubBuyerDelivery, shouldTrackCenterInspectionShipments, shouldTrackInboundShipment } from '../utils/inspectionCenterData';
-import { getHubReturnProgress, getHubReturnState, getReturnReserveMessage, isCenterReturnEligible, isHubReturnCase } from '../utils/inspectionCenterData';
+import { getHubReturnProgress, getHubReturnState, getReturnReserveMessage, isCenterReturnEligible, isHubReturnCase, shouldSyncHubReturnOnOpen } from '../utils/inspectionCenterData';
 import { centerFeeFilters, getCenterFeeCollection, isCenterFeeCollectionClosed, matchesCenterFeeFilter, type CenterFeeFilter } from '../utils/inspectionCenterFees';
 import { loadCenterPricing } from '../services/inspectionCenterPricing';
 import { ApiError, isUserIdle } from '../services/apiClient';
+import { notifyInspectionCashConfirmed } from '../utils/inspectionCashShipping';
 import {
   inspectorService,
   categoryService,
@@ -518,6 +520,17 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           }
         } catch { }
 
+        let appointmentScheduledAt = o.appointmentScheduledAt;
+        let appointmentNote = o.appointmentNote;
+        try {
+          const rawAppt = localStorage.getItem(`order_appointment_${o.id}`);
+          if (rawAppt) {
+            const apptData = JSON.parse(rawAppt);
+            appointmentScheduledAt = apptData.scheduledAt || appointmentScheduledAt;
+            appointmentNote = apptData.note || appointmentNote;
+          }
+        } catch { }
+
         const hasValidAssign = Boolean(assignedInspectorId && assignedInspectorName && assignedInspectorName !== 'Chưa phân công');
 
         let resolvedStatus = o.status || o.escrowStatus || 'CONFIRMED_PENDING_DISPATCH';
@@ -548,6 +561,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           orderType: (o.inspectionMethod === 'AT_HOME' || o.orderType === 'AT_HOME') ? 'AT_HOME' : 'AT_CENTER',
           feePayer: o.inspectionFeeSplit === 'SELLER_100' ? 'SELLER_PAYS' : o.inspectionFeeSplit === 'BUYER_100' ? 'BUYER_PAYS' : 'SPLIT_50_50',
           status: resolvedStatus,
+          appointmentScheduledAt,
+          appointmentNote,
           inspectionFee: o.inspectionFeeVnd || (o.inspectionMethod === 'AT_HOME' ? 200000 : 120000),
           createdAt: o.createdAt || new Date().toISOString(),
         };
@@ -589,7 +604,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     const collectionClosed = isCenterFeeCollectionClosed(order.status) || isReturning;
     return { order, fees: getCenterFeeCollection(order), collectionClosed, isReturning };
   }).filter(({ fees, collectionClosed }) => feeFilter === 'all' || matchesCenterFeeFilter(fees, feeFilter, collectionClosed)),
-  [visibleOrderHistory, hubReturns, feeFilter]);
+    [visibleOrderHistory, hubReturns, feeFilter]);
   const [dispatchFilter, setDispatchFilter] = useState<DispatchFilter>('ALL');
   const [orderMethodFilter, setOrderMethodFilter] = useState<'ALL' | 'AT_CENTER' | 'AT_HOME'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -607,7 +622,6 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   const [appealFilter, setAppealFilter] = useState<'ALL' | 'PENDING_REVIEW' | 'UPHELD' | 'OVERTURNED'>('ALL');
   const [appealSearchTerm, setAppealSearchTerm] = useState('');
   const [selectedInspectorId, setSelectedInspectorId] = useState<string>('');
-  const [assignEstimatedSlot, setAssignEstimatedSlot] = useState<string>('09:00 - 11:30 Sáng');
   const [assignNote, setAssignNote] = useState<string>('');
   const [isAssigning, setIsAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
@@ -771,6 +785,17 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               }
             } catch { }
 
+            let appointmentScheduledAt = o.appointmentScheduledAt;
+            let appointmentNote = o.appointmentNote;
+            try {
+              const rawAppt = localStorage.getItem(`order_appointment_${o.id}`);
+              if (rawAppt) {
+                const apptData = JSON.parse(rawAppt);
+                appointmentScheduledAt = apptData.scheduledAt || appointmentScheduledAt;
+                appointmentNote = apptData.note || appointmentNote;
+              }
+            } catch { }
+
             const hasValidAssign = Boolean(assignedInspectorId && assignedInspectorName && assignedInspectorName !== 'Chưa phân công');
 
             const savedStatus = typeof window !== 'undefined' ? localStorage.getItem(`inspection_status_${o.id}`) : null;
@@ -811,6 +836,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               orderType: (o.inspectionMethod === 'AT_HOME' || o.orderType === 'AT_HOME') ? 'AT_HOME' : 'AT_CENTER',
               feePayer: o.inspectionFeeSplit === 'SELLER_100' ? 'SELLER_PAYS' : o.inspectionFeeSplit === 'BUYER_100' ? 'BUYER_PAYS' : 'SPLIT_50_50',
               status: resolvedStatus,
+              appointmentScheduledAt,
+              appointmentNote,
               inspectionFee: o.inspectionFeeVnd || (o.inspectionMethod === 'AT_HOME' ? 200000 : 120000),
               createdAt: o.createdAt || new Date().toISOString(),
             };
@@ -850,10 +877,25 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             resolvedStatus = 'DISPATCHED';
           }
 
+          let appointmentScheduledAt = ord.appointmentScheduledAt;
+          let appointmentNote = (ord as any).appointmentNote;
+          if (!appointmentScheduledAt) {
+            try {
+              const rawAppt = localStorage.getItem(`order_appointment_${ord.id}`);
+              if (rawAppt) {
+                const apptData = JSON.parse(rawAppt);
+                appointmentScheduledAt = apptData.scheduledAt || appointmentScheduledAt;
+                appointmentNote = apptData.note || appointmentNote;
+              }
+            } catch { }
+          }
+
           combinedMap.set(ord.id, {
             ...ord,
             inspectorId: hasValidAssign ? assignedInspectorId : undefined,
             inspectorName: hasValidAssign ? assignedInspectorName : undefined,
+            appointmentScheduledAt,
+            appointmentNote,
             status: resolvedStatus
           });
         }
@@ -1009,6 +1051,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     window.addEventListener('secondlife_inspection_completed', handleSignal);
     window.addEventListener('secondlife_hub_package_received', handleSignal);
     window.addEventListener('secondlife_seller_shipped_to_hub', handleSignal);
+    window.addEventListener('secondlife_appointment_scheduled', handleSignal);
 
     const handleStorage = (e: StorageEvent) => {
       if (
@@ -1016,6 +1059,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         e.key === 'center_inspection_orders' ||
         e.key === 'center_registered_staff' ||
         e.key?.startsWith('order_assigned_inspector_') ||
+        e.key?.startsWith('order_appointment_') ||
         e.key?.startsWith('inspection_status_') ||
         e.key?.startsWith('hub_package_received_') ||
         e.key?.startsWith('seller_shipped_to_hub_')
@@ -1040,6 +1084,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       window.removeEventListener('secondlife_inspection_completed', handleSignal);
       window.removeEventListener('secondlife_hub_package_received', handleSignal);
       window.removeEventListener('secondlife_seller_shipped_to_hub', handleSignal);
+      window.removeEventListener('secondlife_appointment_scheduled', handleSignal);
       window.removeEventListener('storage', handleStorage);
       window.clearInterval(trackingTimer);
       document.removeEventListener('visibilitychange', refreshOrderTracking);
@@ -1072,6 +1117,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
         if (deniedShipmentOrders.has(orderId)) continue;
         const bookingVersion = buyerBookingVersion.current;
         const returnVersion = returnBookingVersion.current;
+        const modalRequest = shipmentModalRequestRef.current;
         let shipments: ShipmentBackend[];
         try {
           shipments = await shippingService.getInspectionShipments(orderId, {
@@ -1105,6 +1151,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
         if (isHubReturnCase(order) && returnVersion === returnBookingVersion.current) {
           setHubReturns((previous) => new Map(previous).set(orderId, getHubReturnState(shipments)));
+          if (returnModalOrderIdRef.current === orderId && modalRequest === shipmentModalRequestRef.current) {
+            setInspectionShipments(shipments.filter((shipment) => shipment.leg === 'CENTER_TO_SELLER'));
+          }
         }
 
         const shipment = getLatestInboundShipment(shipments);
@@ -1281,7 +1330,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
   // Inspection Shipment Modal State (GET/POST /api/v1/inspection-orders/{inspectionId}/shipments)
   const [shipmentModalOrder, setShipmentModalOrder] = useState<InspectionOrderDto | null>(null);
+  const returnModalOrderIdRef = useRef<string | null>(null);
   const shipmentModalRequestRef = useRef(0);
+  const shipmentSyncRequests = useRef(new Map<string, Promise<ShipmentBackend>>());
+  const [syncingShipments, setSyncingShipments] = useState<ReadonlySet<string>>(new Set());
   const [inspectionShipments, setInspectionShipments] = useState<ShipmentBackend[]>([]);
   const [isLoadingShipments, setIsLoadingShipments] = useState(false);
   const [isCreatingShipment, setIsCreatingShipment] = useState(false);
@@ -1295,8 +1347,6 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
   const [receiverAddress, setReceiverAddress] = useState(initialCenter.address);
   const [shipmentError, setShipmentError] = useState<string | null>(null);
   const [shipmentSuccess, setShipmentSuccess] = useState<string | null>(null);
-  const isBuyerDeliveryModal = shipmentModalOrder !== null && isPaidHubBuyerDelivery(shipmentModalOrder);
-  const isReturnDeliveryModal = isHubReturnCase(shipmentModalOrder);
   const canCreateInboundInModal = shipmentModalOrder && canReadCenterInspectionShipments(shipmentModalOrder, currentUser?.id) &&
     shouldTrackInboundShipment(shipmentModalOrder);
 
@@ -1430,8 +1480,69 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     setReceiverAddress(hubAddress);
   };
 
+  const handleSyncCenterShipment = async (orderId: string, shipment: ShipmentBackend, modalRequest: number) => {
+    const shipmentId = shipment.shipmentId;
+    if (!shipment.orderCode || !shipmentId) return;
+    let pending = shipmentSyncRequests.current.get(shipmentId);
+    if (!pending) {
+      setSyncingShipments((previous) => new Set(previous).add(shipmentId));
+      pending = shippingService.syncShipment(shipmentId).then((synced) => {
+        if (synced?.shipmentId !== shipmentId) throw new Error('Máy chủ chưa trả về vận đơn đã đồng bộ.');
+
+        if (shipment.leg === 'CENTER_TO_SELLER') {
+          if (!shipment.cashConfirmedAt && synced.cashConfirmedAt) notifyInspectionCashConfirmed();
+          returnBookingVersion.current++;
+          setHubReturns((previous) => {
+            const state = previous.get(orderId);
+            return state?.shipment?.shipmentId === shipmentId
+              ? new Map(previous).set(orderId, { ...state, shipment: synced }) : previous;
+          });
+          if (synced.status === 'DELIVERED') void loadOrders(true);
+        } else if (shipment.leg === 'CENTER_TO_BUYER') {
+          buyerBookingVersion.current++;
+          setBuyerShipments((previous) => previous.get(orderId)?.shipmentId === shipmentId
+            ? new Map(previous).set(orderId, synced) : previous);
+        } else if (shipment.leg === 'SELLER_TO_CENTER') {
+          setInboundShipments((previous) => previous.get(orderId)?.shipmentId === shipmentId
+            ? new Map(previous).set(orderId, synced) : previous);
+        }
+        return synced;
+      }).finally(() => {
+        shipmentSyncRequests.current.delete(shipmentId);
+        setSyncingShipments((previous) => {
+          const next = new Set(previous);
+          next.delete(shipmentId);
+          return next;
+        });
+      });
+      shipmentSyncRequests.current.set(shipmentId, pending);
+    }
+
+    setShipmentError(null);
+    setShipmentSuccess(null);
+    try {
+      const synced = await pending;
+      if (modalRequest !== shipmentModalRequestRef.current) return;
+      setInspectionShipments((previous) => previous.map((item) => item.shipmentId === shipmentId ? { ...item, ...synced } : item));
+      setShipmentSuccess(shipment.leg === 'CENTER_TO_SELLER'
+        ? `Đã đồng bộ Lalamove · ${getHubReturnProgress(synced).label}` : 'Đã đồng bộ trạng thái từ Lalamove.');
+    } catch (error) {
+      if (modalRequest !== shipmentModalRequestRef.current) return;
+      const reason = error instanceof Error ? error.message : '';
+      setShipmentError(reason ? `Không đồng bộ được vận đơn Lalamove. ${reason}` : 'Không đồng bộ được vận đơn Lalamove.');
+    }
+  };
+
+  const closeShipmentModal = () => {
+    returnModalOrderIdRef.current = null;
+    shipmentModalRequestRef.current++;
+    setShipmentModalOrder(null);
+  };
+
   const handleOpenShipmentModal = async (ord: InspectionOrderDto) => {
     const request = ++shipmentModalRequestRef.current;
+    const returnDelivery = isHubReturnCase(ord);
+    returnModalOrderIdRef.current = null;
     setShipmentModalOrder(ord);
     setInspectionShipments([]);
     setShipmentTab('tracking');
@@ -1444,7 +1555,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       return;
     }
 
-    const returnDelivery = isHubReturnCase(ord);
+    if (returnDelivery) returnModalOrderIdRef.current = ord.id;
     const buyerDelivery = isPaidHubBuyerDelivery(ord);
     if (!returnDelivery && !buyerDelivery) updateAddressesForLeg(ord);
     setIsLoadingShipments(true);
@@ -1457,6 +1568,13 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
       if (returnDelivery || buyerDelivery) {
         const leg = returnDelivery ? 'CENTER_TO_SELLER' : 'CENTER_TO_BUYER';
         setInspectionShipments(list.filter((shipment) => shipment.leg === leg));
+        if (returnDelivery) {
+          const returnState = getHubReturnState(list);
+          setHubReturns((previous) => new Map(previous).set(ord.id, returnState));
+          if (shouldSyncHubReturnOnOpen(returnState.shipment)) {
+            void handleSyncCenterShipment(ord.id, returnState.shipment, request);
+          }
+        }
       } else {
         if (profile) updateAddressesForLeg(ord, profile);
         const inbound = list.filter((shipment) => shipment.leg === 'SELLER_TO_CENTER');
@@ -2288,11 +2406,6 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
     setAssignError(null);
     setAssignModalOrder(order);
     setSelectedInspectorId(order.inspectorId || staffList[0]?.id || '');
-    setAssignEstimatedSlot(
-      order.appointmentScheduledAt
-        ? new Date(order.appointmentScheduledAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-        : '09:00 - 11:30 Sáng'
-    );
     const savedDispatchNote = localStorage.getItem(`order_dispatch_note_${order.id}`) || '';
     setAssignNote(savedDispatchNote);
   };
@@ -2396,6 +2509,55 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
           });
         }
         localStorage.setItem('center_inspection_orders', JSON.stringify(listCenter));
+      } catch { }
+
+      // Send local scoped notification for the Seller and Inspector
+      try {
+        const isAtHome = assignModalOrder.orderType === 'AT_HOME';
+        const sellerId = (assignModalOrder as any).sellerId || (assignModalOrder as any).listing?.sellerId;
+        const codeDisplay = (assignModalOrder.id || '').slice(0, 8);
+
+        // Seller notification
+        const sellerNotif = {
+          id: `notif-seller-assign-${assignModalOrder.id}-${Date.now()}`,
+          recipientId: sellerId,
+          recipientRole: 'seller',
+          title: isAtHome
+            ? 'Trung tâm đã xác nhận lịch hẹn và phân công KTV kiểm định tận nơi'
+            : 'Hub đã phân công KTV kiểm định đơn hàng',
+          message: isAtHome
+            ? `Trung tâm SecondLife đã xác nhận lịch hẹn và phân công KTV ${inspectorName} phụ trách kiểm định cho đơn #${codeDisplay}. Vui lòng chuẩn bị máy và đưa mã tiếp nhận cho KTV khi đến!`
+            : `Đơn hàng #${codeDisplay} đã được phân công cho KTV ${inspectorName} kiểm định tại trạm Hub.`,
+          type: 'INSPECTION' as const,
+          referenceId: assignModalOrder.id,
+          referenceType: 'INSPECTION_ORDER',
+          actionUrl: paths.orders('seller', assignModalOrder.id) + '?filter=inspecting',
+          isRead: false,
+          readAt: null,
+          createdAt: new Date().toISOString(),
+        };
+        saveScopedLocalNotification(sellerNotif, sellerId, 'seller');
+
+        // Inspector notification
+        const inspectorNotif = {
+          id: `notif-inspector-task-${assignModalOrder.id}-${Date.now()}`,
+          recipientId: selectedInspectorId,
+          recipientRole: 'inspector',
+          title: isAtHome
+            ? `Nhiệm vụ mới: Kiểm định tại nhà khách (#${codeDisplay})`
+            : `Nhiệm vụ mới: Đo kiểm tại Hub Lab (#${codeDisplay})`,
+          message: isAtHome
+            ? `Bạn được phân công kiểm định tại nhà cho thiết bị "${assignModalOrder.postTitle || 'Thiết bị'}". Vui lòng đến khảo sát theo đúng ngày giờ lịch hẹn của khách.`
+            : `Bạn được phân công đo kiểm thiết bị "${assignModalOrder.postTitle || 'Thiết bị'}" tại trạm Hub.`,
+          type: 'INSPECTION_TASK' as const,
+          referenceId: assignModalOrder.id,
+          referenceType: 'INSPECTION_ORDER',
+          actionUrl: `/inspector/inspections/${encodeURIComponent(assignModalOrder.id)}`,
+          isRead: false,
+          readAt: null,
+          createdAt: new Date().toISOString(),
+        };
+        saveScopedLocalNotification(inspectorNotif, selectedInspectorId, 'inspector');
       } catch { }
 
       // Notify other tabs and inspector workstation
@@ -2609,35 +2771,46 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
     if (isAtHome) {
       // 1. Kiểm định tại nhà khách
-      if (!hasInspector) {
+      let apptTime = ord?.appointmentScheduledAt;
+      if (!apptTime && typeof window !== 'undefined' && ord?.id) {
+        try {
+          const raw = localStorage.getItem(`order_appointment_${ord.id}`);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            apptTime = parsed.scheduledAt;
+          }
+        } catch {}
+      }
+
+      if (!apptTime) {
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-orange-100 text-orange-900 border border-orange-300 animate-pulse whitespace-nowrap shadow-2xs">
-            <UserPlus className="w-3.5 h-3.5 text-orange-700 shrink-0" />
-            <span>Sẵn Sàng Giao KTV</span>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300 whitespace-nowrap shadow-2xs">
+            <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+            <span>Chờ Người Bán Hẹn Lịch</span>
           </span>
         );
       }
 
-      const apptTime = ord?.appointmentScheduledAt || (typeof window !== 'undefined' ? localStorage.getItem(`appointment_time_${ord?.id}`) : null);
-      if (apptTime) {
-        const formattedAppt = new Date(apptTime).toLocaleString('vi-VN', {
-          hour: '2-digit',
-          minute: '2-digit',
-          day: '2-digit',
-          month: '2-digit',
-        });
+      const formattedAppt = new Date(apptTime).toLocaleString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+      });
+
+      if (!hasInspector) {
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-900 border border-blue-300 whitespace-nowrap shadow-2xs" title={`Lịch hẹn: ${new Date(apptTime).toLocaleString('vi-VN')}`}>
-            <CalendarCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-            <span>Đến Theo Hẹn ({formattedAppt})</span>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-orange-100 text-orange-950 border border-orange-300 animate-pulse whitespace-nowrap shadow-2xs" title={`Người bán đã hẹn: ${new Date(apptTime).toLocaleString('vi-VN')}`}>
+            <Calendar className="w-3.5 h-3.5 text-orange-700 shrink-0" />
+            <span>Đã Hẹn {formattedAppt} • Cần Giao KTV</span>
           </span>
         );
       }
 
       return (
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-900 border border-purple-200 whitespace-nowrap shadow-2xs">
-          <Calendar className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-          <span>Chờ Khách Đặt Lịch Hẹn</span>
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-900 border border-emerald-300 whitespace-nowrap shadow-2xs" title={`Lịch hẹn đã chốt: ${new Date(apptTime).toLocaleString('vi-VN')}`}>
+          <CalendarCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+          <span>Đã Phân Công KTV ({formattedAppt})</span>
         </span>
       );
     }
@@ -3421,6 +3594,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                   className="h-10 w-full min-w-0 cursor-pointer rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-800 focus-visible:outline-[#c34c36]"
                 >
                   <option value="ALL">Tất cả giai đoạn</option>
+                  <option value="WAITING_SELLER_APPOINTMENT">Chờ người bán hẹn lịch (Tại nhà)</option>
                   <option value="WAITING_FOR_HUB">Chờ nhận hàng tại Hub</option>
                   <option value="READY_TO_ASSIGN">Sẵn sàng giao KTV</option>
                   <option value="ASSIGNED">Đã phân công KTV</option>
@@ -3457,8 +3631,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       const inspectorName = order.inspectorName && order.inspectorName !== 'Chưa phân công'
                         ? order.inspectorName : 'Kỹ thuật viên';
                       const waitingForHub = stage === 'WAITING_FOR_HUB';
-                      const actionLabel = waitingForHub ? 'Nhận tại Hub' : assigned ? 'Đổi KTV' : 'Giao task';
-                      const ActionIcon = waitingForHub ? PackageCheck : assigned ? UserCheck : UserPlus;
+                      const waitingSellerAppt = stage === 'WAITING_SELLER_APPOINTMENT';
+                      const actionLabel = waitingForHub ? 'Nhận tại Hub' : waitingSellerAppt ? 'Chờ hẹn lịch' : assigned ? 'Đổi KTV' : 'Giao task';
+                      const ActionIcon = waitingForHub ? PackageCheck : waitingSellerAppt ? Clock : assigned ? UserCheck : UserPlus;
                       return (
                         <tr key={order.id} role="row" className="grid grid-cols-2 items-center gap-3 px-4 py-3 transition hover:bg-slate-50/70 @[56rem]:table-row @[56rem]:p-0">
                           <td role="cell" className="hidden px-2 py-3 text-center font-mono text-slate-500 @[56rem]:table-cell">{index + 1}</td>
@@ -3480,6 +3655,19 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                           <td role="cell" className="min-w-0 @[56rem]:px-4 @[56rem]:py-3">
                             <div className="mb-0.5 text-[10px] font-bold uppercase text-slate-500 @[56rem]:hidden">Hình thức &amp; phí</div>
                             <div className="font-semibold text-slate-800">{order.orderType === 'AT_HOME' ? 'Tại nhà' : 'Tại Hub'}</div>
+                            {order.orderType === 'AT_HOME' && order.appointmentScheduledAt && (
+                              <div className="mt-1 flex items-center gap-1 text-[10px] font-bold text-amber-900 bg-amber-100/90 px-1.5 py-0.5 rounded border border-amber-300 w-fit">
+                                <Calendar className="size-3 text-amber-700 shrink-0" />
+                                <span className="truncate">
+                                  {new Date(order.appointmentScheduledAt).toLocaleString('vi-VN', {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                  })}
+                                </span>
+                              </div>
+                            )}
                             <div className="mt-0.5 text-[11px] tabular-nums text-slate-600">
                               {order.inspectionFee == null ? 'Chưa có phí' : formatVND(order.inspectionFee)}
                             </div>
@@ -3493,6 +3681,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                 </span>
                                 <span className="line-clamp-2 break-words font-semibold text-slate-800" title={inspectorName}>{inspectorName}</span>
                               </div>
+                            ) : waitingSellerAppt ? (
+                              <span className="font-medium text-amber-700 italic text-[11px]">Chờ người bán hẹn lịch</span>
                             ) : (
                               <span className="font-medium text-slate-600">Chưa phân công</span>
                             )}
@@ -3503,11 +3693,18 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                           <td role="cell" className="min-w-0 text-right @[56rem]:px-4 @[56rem]:py-3 @[56rem]:text-center">
                             <button
                               type="button"
+                              disabled={waitingSellerAppt}
                               onClick={() => waitingForHub ? handleReceivePackageAtHub(order.id, order.postTitle) : handleOpenAssign(order)}
-                              className={`inline-flex min-h-9 w-full max-w-32 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-bold transition ${waitingForHub ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-                                  : assigned ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
-                                    : 'border-[#c34c36] bg-[#c34c36] text-white hover:bg-[#a63f2d]'
-                                }`}
+                              className={`inline-flex min-h-9 w-full max-w-32 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-bold transition ${
+                                waitingSellerAppt
+                                  ? 'border-amber-200 bg-amber-50 text-amber-800 cursor-not-allowed opacity-80'
+                                  : waitingForHub
+                                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 cursor-pointer'
+                                    : assigned
+                                      ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100 cursor-pointer'
+                                      : 'border-[#c34c36] bg-[#c34c36] text-white hover:bg-[#a63f2d] cursor-pointer'
+                              }`}
+                              title={waitingSellerAppt ? 'Người bán chưa chọn lịch hẹn tại nhà. Bạn cần đợi người bán đặt lịch trước khi phân công KTV.' : undefined}
                             >
                               <ActionIcon aria-hidden="true" className="size-3.5 shrink-0" />
                               {actionLabel}
@@ -3790,11 +3987,10 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                           <React.Fragment key={ord.id}>
                             <tr
                               role="row"
-                              className={`grid grid-cols-2 transition md:grid-cols-3 xl:table-row ${
-                                hasAnyExpanded
-                                  ? 'bg-amber-50/30 border-l-4 border-l-[#c34c36] shadow-xs'
-                                  : 'hover:bg-slate-50/60'
-                              }`}
+                              className={`grid grid-cols-2 transition md:grid-cols-3 xl:table-row ${hasAnyExpanded
+                                ? 'bg-amber-50/30 border-l-4 border-l-[#c34c36] shadow-xs'
+                                : 'hover:bg-slate-50/60'
+                                }`}
                             >
                               <td role="cell" className="hidden py-3 px-3 font-mono text-slate-400 text-[11px] text-center xl:table-cell">{idx + 1}</td>
                               <td role="cell" className="min-w-0 py-3 px-4">
@@ -3846,8 +4042,8 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                 {/* 2. CHẶNG 1: VẬN CHUYỂN TỪ NGƯỜI BÁN VỀ HUB (KIỂM ĐỊNH) */}
                                 {hasInboundInfo && (
                                   <div className={`rounded-xl border p-2.5 text-[11px] transition-all shadow-2xs ${isInboundOver15Min
-                                      ? 'border-blue-200/80 bg-blue-50/40 text-slate-700'
-                                      : 'border-blue-200 bg-blue-50/70 text-blue-950'
+                                    ? 'border-blue-200/80 bg-blue-50/40 text-slate-700'
+                                    : 'border-blue-200 bg-blue-50/70 text-blue-950'
                                     }`}>
                                     <div className="flex flex-wrap items-center justify-between gap-1.5 font-bold">
                                       <span className="flex items-center gap-1.5 text-blue-950">
@@ -3952,6 +4148,9 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                     {returnShipment && (
                                       <div className="mt-1.5 space-y-1.5">
                                         <InspectionCashShipmentStatus shipment={returnShipment} />
+                                        {returnShipment.status === 'DELIVERED' && ord.cashShippingSimulation === false && !returnShipment.cashPayerId && (
+                                          <p className="text-[11px] text-amber-900">Cước hoàn đối soát từ khoản dự phòng. Phần dư hoàn cho bên đã nộp.</p>
+                                        )}
                                         <div className="font-mono text-[10px] text-slate-700">
                                           Mã vận đơn: <span className="font-bold">{returnShipment.orderCode ? `#${returnShipment.orderCode}` : `#${returnShipment.shipmentId}`}</span>
                                         </div>
@@ -4073,7 +4272,11 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                                         ✕ Đóng chi tiết
                                       </button>
                                     </div>
-                                    <CenterInspectionFees order={ord} fees={fees} collectionClosed={collectionClosed} />
+                                    <CenterInspectionFees
+                                      order={ord}
+                                      fees={fees}
+                                      collectionClosed={collectionClosed}
+                                    />
                                   </div>
                                 </td>
                               </tr>
@@ -6464,17 +6667,72 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               </div>
             )}
 
-            {/* Hướng dẫn quy trình đối với đơn kiểm định tại nhà */}
+            {/* Chi tiết lịch hẹn đối với đơn kiểm định tại nhà */}
             {assignModalOrder.orderType === 'AT_HOME' && (
-              <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 text-xs text-purple-950 flex items-start gap-2.5">
-                <Calendar className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                <div className="space-y-0.5">
-                  <div className="font-bold text-purple-900">Giao task kiểm định tại nhà khách</div>
-                  <p className="text-[11px] text-purple-800 leading-relaxed">
-                    Đơn này KTV sẽ đến kiểm định tận nơi. Bạn có thể phân công KTV ngay, sau đó KTV sẽ liên hệ hoặc chờ khách đặt lịch hẹn ngày giờ khảo sát để đến theo hẹn.
-                  </p>
-                </div>
-              </div>
+              (() => {
+                let apptTime = assignModalOrder.appointmentScheduledAt;
+                let apptNote = assignModalOrder.appointmentNote;
+                if (!apptTime && typeof window !== 'undefined') {
+                  try {
+                    const raw = localStorage.getItem(`order_appointment_${assignModalOrder.id}`);
+                    if (raw) {
+                      const parsed = JSON.parse(raw);
+                      apptTime = parsed.scheduledAt;
+                      apptNote = parsed.note;
+                    }
+                  } catch { }
+                }
+
+                if (!apptTime) {
+                  return (
+                    <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-300 text-xs text-amber-950 flex items-start gap-2.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <div className="font-bold text-amber-900">Người bán chưa đặt lịch hẹn đón KTV</div>
+                        <p className="text-[11px] text-amber-800 leading-relaxed">
+                          Đơn hàng này người bán chưa chọn ngày giờ tiếp đón Kỹ thuật viên. Bạn cần đợi người bán đặt lịch trước để phân công KTV theo ca làm việc (08:00 - 12:00 hoặc 13:00 - 17:00).
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                const d = new Date(apptTime);
+                const isMorning = d.getHours() < 12;
+
+                return (
+                  <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border-2 border-amber-300 text-xs text-amber-950 space-y-2.5 shadow-xs">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <span className="font-black text-amber-900 flex items-center gap-1.5 uppercase text-[11px] tracking-wide">
+                        <Calendar className="w-4 h-4 text-amber-700" />
+                        Lịch Hẹn Người Bán Yêu Cầu (Đã Xác Nhận):
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-200 text-amber-900 border border-amber-300">
+                        {isMorning ? 'Ca Sáng (08:00 - 12:00)' : 'Ca Chiều (13:00 - 17:00)'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="p-2.5 bg-white rounded-lg border border-amber-200 shadow-2xs">
+                        <span className="text-slate-400 font-bold block text-[10px] uppercase">Thời gian KTV có mặt:</span>
+                        <span className="font-black text-amber-900 text-sm">
+                          🕒 {d.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-white rounded-lg border border-amber-200 shadow-2xs">
+                        <span className="text-slate-400 font-bold block text-[10px] uppercase">Địa chỉ khảo sát:</span>
+                        <span className="font-bold text-slate-800 text-[11px] line-clamp-2">
+                          📍 {(assignModalOrder as any).sellerAddress || (assignModalOrder as any).listing?.location || 'Địa chỉ nhà người bán'}
+                        </span>
+                      </div>
+                    </div>
+                    {apptNote && (
+                      <div className="text-[11px] text-amber-900 italic bg-white/80 p-2.5 rounded-lg border border-amber-200">
+                        💬 <strong>Ghi chú từ người bán:</strong> {apptNote}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
             )}
 
             {/* Assign Fields */}
@@ -6483,7 +6741,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               <div className="space-y-1.5">
                 <label className="text-xs font-black text-[#24263e] flex items-center justify-between">
                   <span>
-                    Chọn Kỹ Thuật Viên Phụ Trách: <strong className="text-rose-500">*</strong>
+                    Chọn kỹ thuật viên phụ trách: <strong className="text-rose-500">*</strong>
                   </span>
                   <span className="text-[11px] font-normal text-gray-500">
                     ({staffList.length} nhân sự trạm)
@@ -6531,23 +6789,6 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                 )}
               </div>
 
-              {/* Time slot - Chỉ hiển thị khi kiểm định tại nhà khách */}
-              {assignModalOrder.orderType === 'AT_HOME' && (
-                <div className="space-y-1.5 animate-fadeIn">
-                  <label className="text-xs font-black text-[#24263e]">Khung Giờ Tiếp Nhận / Hẹn Khảo Sát:</label>
-                  <div className="relative">
-                    <Clock className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={assignEstimatedSlot}
-                      onChange={(e) => setAssignEstimatedSlot(e.target.value)}
-                      placeholder="09:00 - 11:30 Sáng nay"
-                      className="w-full pl-10 pr-3.5 py-2 rounded-xl border border-gray-200 text-xs font-medium focus:outline-none focus:border-[#c34c36]"
-                    />
-                  </div>
-                </div>
-              )}
-
               {/* Dispatch note */}
               <div className="space-y-1.5">
                 <label className="text-xs font-black text-[#24263e]">Ghi Chú Hướng Dẫn Kỹ Thuật Cho KTV:</label>
@@ -6572,84 +6813,112 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             </div>
 
             {/* Footer Buttons */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-gray-100">
-              <div className="text-[11px] text-gray-500 font-medium">
-                {assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED' ? (
-                  <span className="text-rose-600 font-semibold flex items-center gap-1">
-                    <XCircle className="w-3.5 h-3.5" />
-                    Đơn kiểm định đã bị hủy
-                  </span>
-                ) : assignModalOrder.status === 'WAITING_SELLER_APPROVAL' ? (
-                  <span className="text-purple-700 font-semibold flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5" />
-                    Chờ người bán duyệt
-                  </span>
-                ) : assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder) ? (
-                  <span className="text-amber-700 font-semibold flex items-center gap-1">
-                    <Package className="w-3.5 h-3.5" />
-                    Chờ nhận hàng tại Hub
-                  </span>
-                ) : !selectedInspectorId ? (
-                  <span className="text-rose-600 font-semibold">
-                    * Vui lòng chọn KTV trước
-                  </span>
-                ) : (
-                  <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Sẵn sàng phân công
-                  </span>
-                )}
-              </div>
+            {(() => {
+              const modalApptTime = assignModalOrder.appointmentScheduledAt || (() => {
+                if (typeof window !== 'undefined') {
+                  try {
+                    const raw = localStorage.getItem(`order_appointment_${assignModalOrder.id}`);
+                    if (raw) return JSON.parse(raw).scheduledAt;
+                  } catch { }
+                }
+                return null;
+              })();
+              const isAtHomeMissingAppt = assignModalOrder.orderType === 'AT_HOME' && !modalApptTime;
 
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAssignModalOrder(null);
-                    setAssignError(null);
-                  }}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-100 transition cursor-pointer"
-                >
-                  Đóng
-                </button>
+              return (
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-gray-100">
+                  <div className="text-[11px] text-gray-500 font-medium">
+                    {assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED' ? (
+                      <span className="text-rose-600 font-semibold flex items-center gap-1">
+                        <XCircle className="w-3.5 h-3.5" />
+                        Đơn kiểm định đã bị hủy
+                      </span>
+                    ) : assignModalOrder.status === 'WAITING_SELLER_APPROVAL' ? (
+                      <span className="text-purple-700 font-semibold flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5" />
+                        Chờ người bán duyệt
+                      </span>
+                    ) : isAtHomeMissingAppt ? (
+                      <span className="text-amber-700 font-semibold flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                        Chờ người bán hẹn lịch
+                      </span>
+                    ) : assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder) ? (
+                      <span className="text-amber-700 font-semibold flex items-center gap-1">
+                        <Package className="w-3.5 h-3.5" />
+                        Chờ nhận hàng tại Hub
+                      </span>
+                    ) : !selectedInspectorId ? (
+                      <span className="text-rose-600 font-semibold">
+                        * Vui lòng chọn KTV trước
+                      </span>
+                    ) : (
+                      <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        {assignModalOrder.orderType === 'AT_HOME' ? 'Lịch hẹn hợp lệ · Sẵn sàng giao task' : 'Sẵn sàng phân công'}
+                      </span>
+                    )}
+                  </div>
 
-                <button
-                  type="button"
-                  onClick={handleConfirmAssign}
-                  disabled={
-                    isAssigning ||
-                    !selectedInspectorId ||
-                    assignModalOrder.status === 'CANCELLED' ||
-                    assignModalOrder.status === 'CANCELED' ||
-                    (assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder))
-                  }
-                  className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 shadow-md ${isAssigning ||
-                    !selectedInspectorId ||
-                    assignModalOrder.status === 'CANCELLED' ||
-                    assignModalOrder.status === 'CANCELED' ||
-                    (assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder))
-                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
-                    : 'bg-[#c34c36] hover:bg-[#a63f2d] text-white cursor-pointer'
-                    }`}
-                  title={
-                    assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED'
-                      ? 'Đơn hàng đã bị hủy, không thể giao task'
-                      : assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder)
-                        ? 'Hub chưa nhận được hàng thực tế từ người bán, vui lòng bấm "Xác Nhận Đã Nhận Hàng Tại Hub" trước khi giao task'
-                        : 'Xác nhận phân công KTV'
-                  }
-                >
-                  {isAssigning && <Loader2 className="w-4 h-4 animate-spin" />}
-                  <span>
-                    {assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED'
-                      ? 'Đã Hủy - Không Thể Giao'
-                      : assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder)
-                        ? 'Chờ Nhận Hàng Tại Hub Để Giao Task'
-                        : 'Xác Nhận Giao Task Cho KTV'}
-                  </span>
-                </button>
-              </div>
-            </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAssignModalOrder(null);
+                        setAssignError(null);
+                      }}
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-100 transition cursor-pointer"
+                    >
+                      Đóng
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleConfirmAssign}
+                      disabled={
+                        isAssigning ||
+                        !selectedInspectorId ||
+                        assignModalOrder.status === 'CANCELLED' ||
+                        assignModalOrder.status === 'CANCELED' ||
+                        isAtHomeMissingAppt ||
+                        (assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder))
+                      }
+                      className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-2 shadow-md ${isAssigning ||
+                        !selectedInspectorId ||
+                        assignModalOrder.status === 'CANCELLED' ||
+                        assignModalOrder.status === 'CANCELED' ||
+                        isAtHomeMissingAppt ||
+                        (assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder))
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
+                        : 'bg-[#c34c36] hover:bg-[#a63f2d] text-white cursor-pointer'
+                        }`}
+                      title={
+                        assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED'
+                          ? 'Đơn hàng đã bị hủy, không thể giao task'
+                          : isAtHomeMissingAppt
+                            ? 'Người bán chưa chọn lịch hẹn tại nhà. Bạn cần đợi người bán đặt lịch trước khi phân công KTV.'
+                            : assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder)
+                              ? 'Hub chưa nhận được hàng thực tế từ người bán, vui lòng bấm "Xác Nhận Đã Nhận Hàng Tại Hub" trước khi giao task'
+                              : 'Xác nhận phân công KTV'
+                      }
+                    >
+                      {isAssigning && <Loader2 className="w-4 h-4 animate-spin" />}
+                      <span>
+                        {assignModalOrder.status === 'CANCELLED' || assignModalOrder.status === 'CANCELED'
+                          ? 'Đã Hủy - Không Thể Giao'
+                          : isAtHomeMissingAppt
+                            ? 'Chờ Người Bán Hẹn Lịch'
+                            : assignModalOrder.orderType !== 'AT_HOME' && !isOrderReceivedAtHub(assignModalOrder)
+                              ? 'Chờ Nhận Hàng Tại Hub Để Giao Task'
+                              : assignModalOrder.orderType === 'AT_HOME'
+                                ? 'Xác Nhận Lịch & Giao Task'
+                                : 'Xác nhận phân công'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -6859,7 +7128,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
               </div>
               <button
                 type="button"
-                onClick={() => setShipmentModalOrder(null)}
+                onClick={closeShipmentModal}
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
               >
                 ✕
@@ -6868,13 +7137,13 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
 
             {/* Notification messages */}
             {shipmentError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium shrink-0 flex items-center justify-between">
+              <div role="alert" className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium shrink-0 flex items-center justify-between">
                 <span>{shipmentError}</span>
                 <button type="button" onClick={() => setShipmentError(null)} className="text-rose-500 hover:text-rose-700 font-bold ml-2">✕</button>
               </div>
             )}
             {shipmentSuccess && (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl font-medium shrink-0 flex items-center justify-between">
+              <div role="status" className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl font-medium shrink-0 flex items-center justify-between">
                 <span>{shipmentSuccess}</span>
                 <button type="button" onClick={() => setShipmentSuccess(null)} className="text-emerald-500 hover:text-emerald-700 font-bold ml-2">✕</button>
               </div>
@@ -6932,6 +7201,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                       const isSellerToCenter = s.leg === 'SELLER_TO_CENTER';
                       const isCenterToBuyer = s.leg === 'CENTER_TO_BUYER';
                       const isCenterToSeller = s.leg === 'CENTER_TO_SELLER';
+                      const isSyncing = syncingShipments.has(s.shipmentId);
 
                       const legBadgeTitle = isSellerToCenter
                         ? 'Chặng 1: Người Bán ➔ Lab Hub'
@@ -7066,36 +7336,14 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
                               <span className="text-[10px] text-blue-700 bg-blue-100/60 px-2 py-0.5 rounded font-semibold">Theo dõi GPS qua Lalamove API</span>
                               <button
                                 type="button"
-                                disabled={!s.orderCode}
-                                onClick={async () => {
-                                  try {
-                                    const synced = await shippingService.syncShipment(s.shipmentId);
-                                    if (synced) {
-                                      setInspectionShipments((prev) => prev.map((item) => item.shipmentId === s.shipmentId ? { ...item, ...synced } : item));
-                                      if (isBuyerDeliveryModal) {
-                                        buyerBookingVersion.current++;
-                                        setBuyerShipments((previous) => previous.get(shipmentModalOrder.id)?.shipmentId === synced.shipmentId
-                                          ? new Map(previous).set(shipmentModalOrder.id, synced) : previous);
-                                      }
-                                      if (isReturnDeliveryModal) {
-                                        returnBookingVersion.current++;
-                                        setHubReturns((previous) => {
-                                          const state = previous.get(shipmentModalOrder.id);
-                                          return state?.shipment?.shipmentId === synced.shipmentId
-                                            ? new Map(previous).set(shipmentModalOrder.id, { ...state, shipment: synced }) : previous;
-                                        });
-                                        void loadOrders(true);
-                                      }
-                                    }
-                                  } catch (syncErr: any) {
-                                    setShipmentError(syncErr?.message || 'Không đồng bộ được vận đơn.');
-                                  }
-                                }}
-                                className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                                disabled={!s.orderCode || !s.shipmentId || isSyncing}
+                                aria-busy={isSyncing}
+                                onClick={() => void handleSyncCenterShipment(shipmentModalOrder.id, s, shipmentModalRequestRef.current)}
+                                className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition shadow-2xs disabled:opacity-60 disabled:cursor-not-allowed"
                                 title="Đồng bộ trạng thái vận đơn Lalamove mới nhất"
                               >
-                                <RefreshCw className="w-2.5 h-2.5" />
-                                <span>Đồng bộ</span>
+                                <RefreshCw aria-hidden="true" className={`w-2.5 h-2.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                                <span>{isSyncing ? 'Đang đồng bộ…' : 'Đồng bộ'}</span>
                               </button>
                             </div>
                           </div>
@@ -7210,7 +7458,7 @@ export const InspectionCenterDashboardView: React.FC<InspectionCenterDashboardVi
             <div className="pt-3 border-t border-slate-100 flex justify-end shrink-0">
               <button
                 type="button"
-                onClick={() => setShipmentModalOrder(null)}
+                onClick={closeShipmentModal}
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
               >
                 Đóng

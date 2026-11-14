@@ -12,6 +12,10 @@ test('inspection details distinguish proposal review and fee payment from active
   assert.equal(getInspectionApprovalMessage('WAITING_BUYER_APPROVAL', true)?.title, 'Chờ người mua duyệt lại đề xuất kiểm định');
   assert.equal(getInspectionApprovalMessage('WAITING_FEE_PAYMENT', true)?.title, 'Chờ nộp phí kiểm định');
   assert.equal(getInspectionApprovalMessage('INSPECTING', true), null);
+
+  const waitingForBuyer = getInspectionApprovalMessage('WAITING_SELLER_APPROVAL', false);
+  assert.equal(waitingForBuyer?.title, 'Chờ người bán duyệt đề xuất kiểm định');
+  assert.match(waitingForBuyer?.description ?? '', /phản hồi của người bán/);
 });
 
 test('inspection fees preserve API zero amounts and use travel fees for at-home inspections', () => {

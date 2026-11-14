@@ -21,7 +21,7 @@ import {
 } from '../../services/inspectorService';
 import { Listing, Language, UserProfile, InspectionCenter, InspectionProposalPrefillData } from '../../types';
 import { formatVND } from '../../utils/translations';
-import { formatLalamoveVehicle } from './CheckoutModal';
+import { formatLalamoveVehicle } from '../../utils/lalamoveVehicle';
 import { getReusableInspectionQuote, isInspectionQuoteExpired } from '../../utils/inspectionChatDraft';
 import { getCashInspectionFeeShares } from '../../utils/inspectionCashShipping';
 

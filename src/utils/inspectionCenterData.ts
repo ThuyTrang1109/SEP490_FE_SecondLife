@@ -1,5 +1,6 @@
 import type { Language, ShipmentBackend } from '../types';
 import type { InspectionOrderDto } from '../services/inspectorService';
+import { isDeliveredInspectionCashShipment } from './inspectionCashShipping';
 
 export function getCenterTabDataNeeds(tab: string) {
   return {
@@ -18,11 +19,31 @@ const dispatchStatuses = new Set([
 ]);
 
 export function getCenterDispatchStage(
-  order: Pick<InspectionOrderDto, 'orderType' | 'status' | 'inspectorId'>,
+  order: Pick<InspectionOrderDto, 'orderType' | 'status' | 'inspectorId'> & {
+    appointmentScheduledAt?: string;
+    id?: string;
+  },
   receivedAtHub: boolean,
 ) {
   if (!dispatchStatuses.has(order.status)) return null;
   if (order.orderType !== 'AT_HOME' && !receivedAtHub) return 'WAITING_FOR_HUB';
+
+  if (order.orderType === 'AT_HOME') {
+    let apptTime = order.appointmentScheduledAt;
+    if (!apptTime && typeof window !== 'undefined' && order.id) {
+      try {
+        const raw = localStorage.getItem(`order_appointment_${order.id}`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          apptTime = parsed.scheduledAt;
+        }
+      } catch {}
+    }
+    if (!apptTime) {
+      return 'WAITING_SELLER_APPOINTMENT';
+    }
+  }
+
   return order.inspectorId ? 'ASSIGNED' : 'READY_TO_ASSIGN';
 }
 
@@ -83,6 +104,12 @@ export function getHubReturnState(shipments: ShipmentBackend[]) {
   };
 }
 
+export function shouldSyncHubReturnOnOpen(shipment: ShipmentBackend | null): shipment is ShipmentBackend {
+  if (!shipment?.shipmentId || !shipment.orderCode || shipment.leg !== 'CENTER_TO_SELLER') return false;
+  if (isDeliveredInspectionCashShipment(shipment)) return !shipment.cashConfirmedAt;
+  return !['DELIVERED', 'COMPLETED', 'CANCELLED', 'FAILED', 'RETURNED', 'CREATION_UNCERTAIN'].includes(shipment.status);
+}
+
 export function getHubReturnProgress(shipment: ShipmentBackend, lang: Language = 'vi') {
   const progress = getInboundShipmentProgress({ status: shipment.status, providerStatus: null }, lang);
   if (shipment.status === 'CREATION_UNCERTAIN') return { ...progress, label: lang === 'vi' ? 'Chờ đối soát với Lalamove' : 'Awaiting Lalamove reconciliation' };
@@ -93,10 +120,10 @@ export function getHubReturnProgress(shipment: ShipmentBackend, lang: Language =
 
 export function getReturnReserveMessage(reserve: number | null | undefined, shipment: ShipmentBackend) {
   if (shipment.status !== 'DELIVERED') return 'Phần dự phòng còn dư sẽ được đối soát sau khi giao hàng.';
-  if (shipment.cashPayerId && !shipment.cashConfirmedAt) return 'Phần dự phòng còn dư được hoàn sau khi xác nhận chi cước mô phỏng.';
+  if (shipment.cashPayerId && !shipment.cashConfirmedAt) return 'Phần dự phòng còn dư được hoàn sau khi hệ thống đối soát cước tự động.';
   if (reserve == null || shipment.actualFee == null || shipment.actualFee > reserve) return 'Đang chờ đối soát cước trả hàng.';
   if (shipment.actualFee === reserve) return 'Cước thực tế bằng khoản dự phòng. Không có phần dư.';
-  return 'Xem lịch sử ví để xác nhận khoản dự phòng được hoàn.';
+  return 'Phần dự phòng còn dư được hoàn vào ví của bên đã nộp sau đối soát.';
 }
 
 export function canAppealInspection(order: InspectionOrderDto, sellerId?: string, now = Date.now()) {

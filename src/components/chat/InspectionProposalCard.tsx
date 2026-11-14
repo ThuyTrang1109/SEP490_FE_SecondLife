@@ -399,8 +399,8 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                         : 'bg-slate-100 text-slate-800 border-slate-300'
               }`}
           >
-            {isWaitingSellerApproval && (lang === 'vi' ? 'Chờ người bán duyệt' : 'Waiting for seller approval')}
-            {isWaitingBuyerApproval && (lang === 'vi' ? 'Chờ người mua duyệt lại' : 'Waiting for buyer approval')}
+            {isWaitingSellerApproval && (lang === 'vi' ? (isSeller ? 'Chờ bạn duyệt đề xuất' : 'Chờ người bán duyệt') : (isSeller ? 'Awaiting your approval' : 'Waiting for seller approval'))}
+            {isWaitingBuyerApproval && (lang === 'vi' ? (isBuyer ? 'Chờ bạn phản hồi đề xuất' : 'Chờ người mua duyệt lại') : (isBuyer ? 'Awaiting your response' : 'Waiting for buyer approval'))}
             {isWaitingFeePayment && (lang === 'vi' ? 'Chờ nộp phí kiểm định' : 'Waiting for payment')}
             {isConfirmedPendingDispatch && (lang === 'vi' ? 'Đã thu đủ phí' : 'Fees collected')}
             {isInspecting && (lang === 'vi' ? 'Đang kiểm định' : 'Inspection in progress')}
@@ -1155,7 +1155,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                   className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-orange-600 to-[#c34c36] hover:opacity-95 text-white text-xs font-black shadow-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
                 >
                   {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                  <span>{isPaymentDeadlinePassed ? (lang === 'vi' ? 'Đã Hết Hạn' : 'Expired') : (lang === 'vi' ? 'Xác Nhận Thanh Toán' : 'Confirm Payment')}</span>
+                  <span>{isPaymentDeadlinePassed ? (lang === 'vi' ? 'Đã Hết Hạn' : 'Expired') : (lang === 'vi' ? 'Xác nhận thanh toán' : 'Confirm Payment')}</span>
                 </button>
               </div>
             </div>

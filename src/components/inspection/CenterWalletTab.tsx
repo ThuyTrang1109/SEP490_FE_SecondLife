@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Wallet,
   TrendingUp,
@@ -25,6 +25,8 @@ import {
   Receipt,
 } from 'lucide-react';
 import { walletService } from '../../services/walletService';
+import { isUserIdle } from '../../services/apiClient';
+import { inspectionCashConfirmedEvent } from '../../utils/inspectionCashShipping';
 import { formatVND } from '../../utils/translations';
 import type {
   UserWallet,
@@ -95,6 +97,7 @@ const TX_TYPES: Array<WalletTransactionType | ''> = [
   'REFUND',
   'RETURN_SHIPPING_FEE',
 ];
+const WALLET_REFRESH_MS = 45_000;
 
 interface CenterWalletTabProps {
   lang?: 'vi' | 'en';
@@ -118,6 +121,11 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
   const [txTotalElements, setTxTotalElements] = useState(0);
   const [txLoading, setTxLoading] = useState(false);
   const [txError, setTxError] = useState<string | null>(null);
+  const walletRequest = useRef<AbortController | null>(null);
+  const transactionRequest = useRef<AbortController | null>(null);
+  const activeQuery = useRef<{ page: number; type: WalletTransactionType | ''; from: string; to: string }>({
+    page: 0, type: '', from: '', to: '',
+  });
 
   // --- Filters ---
   const [filterType, setFilterType] = useState<WalletTransactionType | ''>('');
@@ -142,24 +150,44 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
   };
 
   // ── Load balance ────────────────────────────────────────────────────────────
-  const loadWallet = useCallback(async () => {
-    setWalletLoading(true);
-    setWalletError(null);
+  const loadWallet = useCallback(async (isBackground = false) => {
+    if (isBackground && walletRequest.current) return;
+    walletRequest.current?.abort();
+    const controller = new AbortController();
+    walletRequest.current = controller;
+    if (!isBackground) {
+      setWalletLoading(true);
+      setWalletError(null);
+    }
     try {
-      const data = await walletService.getMyWallet();
+      const data = await walletService.getMyWallet({ signal: controller.signal, isBackground });
+      if (controller.signal.aborted) return;
       setWallet(data);
+      setWalletError(null);
     } catch (err: any) {
-      setWalletError(err?.message || 'Không tải được số dư ví trung tâm');
+      if (!isBackground && !controller.signal.aborted) {
+        setWalletError(err?.message || 'Không tải được số dư ví trung tâm');
+      }
     } finally {
-      setWalletLoading(false);
+      if (walletRequest.current === controller) {
+        walletRequest.current = null;
+        setWalletLoading(false);
+      }
     }
   }, []);
 
   // ── Load transactions ───────────────────────────────────────────────────────
   const loadTransactions = useCallback(
-    async (page: number, type: WalletTransactionType | '', from: string, to: string) => {
-      setTxLoading(true);
-      setTxError(null);
+    async (page: number, type: WalletTransactionType | '', from: string, to: string, isBackground = false) => {
+      if (isBackground && transactionRequest.current) return;
+      transactionRequest.current?.abort();
+      const controller = new AbortController();
+      transactionRequest.current = controller;
+      activeQuery.current = { page, type, from, to };
+      if (!isBackground) {
+        setTxLoading(true);
+        setTxError(null);
+      }
       try {
         const result = await walletService.getTransactions({
           page,
@@ -167,26 +195,58 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
           type: type || undefined,
           from: from || undefined,
           to: to || undefined,
-        });
+        }, controller.signal, { isBackground });
+        if (controller.signal.aborted) return;
         setTxItems(result.items);
         setTxPage(result.page);
         setTxTotalPages(result.totalPages);
         setTxTotalElements(result.totalElements ?? result.items.length);
+        setTxError(null);
       } catch (err: any) {
-        setTxError(err?.message || 'Không tải được lịch sử giao dịch ví');
+        if (!isBackground && !controller.signal.aborted) {
+          setTxError(err?.message || 'Không tải được lịch sử giao dịch ví');
+        }
       } finally {
-        setTxLoading(false);
+        if (transactionRequest.current === controller) {
+          transactionRequest.current = null;
+          setTxLoading(false);
+        }
       }
     },
     []
   );
 
-  // ── Initial load ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    void loadWallet();
-    void loadTransactions(0, filterType, filterFrom, filterTo);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const refresh = (isBackground = false) => {
+      const { page, type, from, to } = activeQuery.current;
+      void loadWallet(isBackground);
+      void loadTransactions(page, type, from, to, isBackground);
+    };
+    const refreshVisibleWallet = () => {
+      if (!document.hidden && !isUserIdle()) refresh(true);
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === inspectionCashConfirmedEvent) refreshVisibleWallet();
+    };
+
+    refresh();
+    const timer = window.setInterval(refreshVisibleWallet, WALLET_REFRESH_MS);
+    document.addEventListener('visibilitychange', refreshVisibleWallet);
+    window.addEventListener('focus', refreshVisibleWallet);
+    window.addEventListener(inspectionCashConfirmedEvent, refreshVisibleWallet);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshVisibleWallet);
+      window.removeEventListener('focus', refreshVisibleWallet);
+      window.removeEventListener(inspectionCashConfirmedEvent, refreshVisibleWallet);
+      window.removeEventListener('storage', handleStorage);
+      walletRequest.current?.abort();
+      transactionRequest.current?.abort();
+      walletRequest.current = null;
+      transactionRequest.current = null;
+    };
+  }, [loadWallet, loadTransactions]);
 
   // ── Filter Actions ───────────────────────────────────────────────────────────
   const handleApplyFilter = () => {
@@ -250,6 +310,7 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
 
     return { totalEarnings, countEarnings, totalReimburses, countReimburses };
   }, [txItems]);
+  const hasTransactionFilters = Boolean(activeQuery.current.type || activeQuery.current.from || activeQuery.current.to);
 
   // ── Styling helpers ──────────────────────────────────────────────────────────
   function isCredit(tx: WalletTransaction): boolean {
@@ -452,7 +513,7 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between space-y-3 hover:border-slate-300 transition">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Tổng giao dịch ghi nhận
+              {hasTransactionFilters ? 'Giao dịch theo bộ lọc' : 'Tổng giao dịch ghi nhận'}
             </span>
             <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
               <Receipt className="w-4 h-4" />
@@ -478,10 +539,7 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
         <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
         <div className="space-y-1 leading-relaxed">
           <p>
-            <strong>Quy chế vận hành ví Trung tâm kiểm định:</strong> Khoản thu phí kiểm định (
-            <code className="px-1 py-0.5 bg-blue-100 rounded text-blue-950 font-mono text-[11px]">EARNING</code>) và
-            hoàn ứng cước vận chuyển (
-            <code className="px-1 py-0.5 bg-blue-100 rounded text-blue-950 font-mono text-[11px]">SHIPPING_REIMBURSE</code>) được hệ thống SecondLife tự động ghi có trực tiếp vào ví sau khi kết thúc chặng nghiệp vụ tương ứng.
+            Phí kiểm định được ghi có khi hệ thống quyết toán đơn. Cước Sandbox do Hub ứng sẽ xuất hiện trong ví sau khi được hoàn ứng. Cước trả hàng thanh toán từ dự phòng được theo dõi ở chi tiết vận đơn.
           </p>
           <p className="text-[11px] text-blue-800">
             Bạn có thể bấm vào mã tham chiếu đơn kiểm định (<span className="font-semibold">Mã đơn #...</span>) trong bảng để kiểm tra nhanh chi tiết đơn kiểm định gốc.
@@ -505,7 +563,7 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Tất cả ({txTotalElements})
+            Tất cả{hasTransactionFilters ? '' : ` (${txTotalElements})`}
           </button>
           <button
             type="button"
@@ -699,7 +757,11 @@ export function CenterWalletTab({ lang: _lang = 'vi', onNavigateToOrder }: Cente
               <Receipt className="w-8 h-8 text-slate-300" />
             </div>
             <div className="space-y-1 max-w-sm">
-              <h4 className="text-sm font-bold text-slate-800">Chưa ghi nhận giao dịch nào</h4>
+              <h4 className="text-sm font-bold text-slate-800">
+                {activeQuery.current.type === 'SHIPPING_REIMBURSE' && !txTotalElements
+                  ? 'Chưa có giao dịch hoàn ứng trong khoảng đã chọn'
+                  : 'Chưa ghi nhận giao dịch nào'}
+              </h4>
               <p className="text-xs text-slate-500">
                 {searchKeyword || filterType || filterFrom || filterTo
                   ? 'Không có giao dịch nào khớp với bộ lọc tìm kiếm hiện tại.'

@@ -39,6 +39,19 @@ export function getInspectionPurchaseDecision(
   return null;
 }
 
+export function shouldReadSellerHubReturn(
+  order: InspectionOrderState & Pick<EscrowOrder, 'sellerId' | 'feeSettledAt'>,
+  sellerId?: string,
+) {
+  if (!sellerId || sellerId !== order.sellerId || order.inspectionMethod !== 'AT_CENTER' ||
+      order.finalPaymentPaidAt || order.linkedOrderId) return false;
+  const status = inspectionStatus(order);
+  if (status === 'FAILED' || status === 'INSPECTION_FAILED') return true;
+  return ['CANCELLED', 'CANCELED', 'REFUNDED_TO_BUYER'].includes(status) && Boolean(
+    order.feeSettledAt || isExpiredInspectionPurchase(status, order.inspectionNote) || getInspectionPurchaseDecision(order) === 'rejected'
+  );
+}
+
 export function getBuyerInspectionStage(order: InspectionOrderState): BuyerInspectionStage | null {
   const status = getCustomerInspectionStatus(inspectionStatus(order), undefined, order.inspectorId);
   const escrow = order.escrowStatus;

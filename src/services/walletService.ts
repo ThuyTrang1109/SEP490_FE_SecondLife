@@ -1,4 +1,5 @@
 import { request, requestGet } from './apiClient';
+import type { RequestOptions } from './apiClient';
 import {
   UserWallet,
   DepositResponseDTO,
@@ -19,9 +20,10 @@ export const walletService = {
    * Lấy số dư và thông tin ví hiện tại của người dùng đang đăng nhập
    * GET /api/v1/wallets/me
    */
-  async getMyWallet(): Promise<UserWallet> {
+  async getMyWallet(options?: Pick<RequestOptions, 'signal' | 'isBackground'>): Promise<UserWallet> {
     const response = await requestGet<UserWallet>('/v1/wallets/me', {
       requiresAuth: true,
+      ...options,
     });
     return ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
@@ -50,7 +52,8 @@ export const walletService = {
    */
   async getTransactions(
     query: WalletTransactionsQuery = {},
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: Pick<RequestOptions, 'isBackground'>,
   ): Promise<WalletTransactionsPage> {
     const params = new URLSearchParams();
     params.set('page', String(query.page ?? 0));
@@ -71,6 +74,7 @@ export const walletService = {
       method: 'GET',
       requiresAuth: true,
       signal,
+      ...options,
     });
 
     return normalizeWalletTransactionPage(response, query.page ?? 0, query.size ?? 10);

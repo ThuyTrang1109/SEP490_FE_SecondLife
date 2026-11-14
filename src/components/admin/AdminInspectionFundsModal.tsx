@@ -53,7 +53,7 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
           <div>
             <div className="flex items-center gap-2">
               <h3 id="audit-funds-title" className="font-extrabold text-sm text-slate-900">
-                Đối Soát Tiền Kiểm Định
+                Đối soát tiền kiểm định
               </h3>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-700 border border-slate-300">
                 Chỉ đọc
@@ -190,118 +190,136 @@ export const AdminInspectionFundsView: React.FC<AdminInspectionFundsViewProps> =
               <h4 className="font-bold uppercase tracking-wider text-[11px] text-slate-500">
                 Thu Theo Từng Bên (Buyer / Seller)
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Buyer */}
-                <div className="p-3 rounded-xl border border-slate-200 bg-white space-y-2">
-                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
-                    <span className="font-bold text-slate-900">Người mua (Buyer)</span>
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      {funds.buyerPayment?.paidAt
-                        ? `Đã nộp: ${formatAuditDateTime(funds.buyerPayment.paidAt)}`
-                        : 'Chưa nộp'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <span className="text-[10px] text-slate-400 block">Phải nộp</span>
-                      <span className="font-bold font-mono text-slate-700">
-                        {funds.buyerPayment?.amountDue === 0
-                          ? 'Không cần nộp'
-                          : formatVND(funds.buyerPayment?.amountDue ?? 0)}
-                      </span>
+              {(() => {
+                const buyer = funds.buyerPayment ?? (funds as any).buyer;
+                const seller = funds.sellerPayment ?? (funds as any).seller;
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Buyer */}
+                    <div className="p-3 rounded-xl border border-slate-200 bg-white space-y-2">
+                      <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                        <span className="font-bold text-slate-900">Người mua (Buyer)</span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {buyer?.paidAt
+                            ? `Đã nộp: ${formatAuditDateTime(buyer.paidAt)}`
+                            : 'Chưa nộp'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">Phải nộp</span>
+                          <span className="font-bold font-mono text-slate-700">
+                            {buyer?.amountDue === 0
+                              ? 'Không cần nộp'
+                              : formatVND(buyer?.amountDue ?? 0)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">Thực thu</span>
+                          <span className="font-bold font-mono text-emerald-700">
+                            {formatVND(buyer?.amountCollected ?? 0)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 block">Thực thu</span>
-                      <span className="font-bold font-mono text-emerald-700">
-                        {formatVND(funds.buyerPayment?.amountCollected ?? 0)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
 
-                {/* Seller */}
-                <div className="p-3 rounded-xl border border-slate-200 bg-white space-y-2">
-                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
-                    <span className="font-bold text-slate-900">Người bán (Seller)</span>
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      {funds.sellerPayment?.paidAt
-                        ? `Đã nộp: ${formatAuditDateTime(funds.sellerPayment.paidAt)}`
-                        : 'Chưa nộp'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <span className="text-[10px] text-slate-400 block">Phải nộp</span>
-                      <span className="font-bold font-mono text-slate-700">
-                        {funds.sellerPayment?.amountDue === 0
-                          ? 'Không cần nộp'
-                          : formatVND(funds.sellerPayment?.amountDue ?? 0)}
-                      </span>
+                    {/* Seller */}
+                    <div className="p-3 rounded-xl border border-slate-200 bg-white space-y-2">
+                      <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                        <span className="font-bold text-slate-900">Người bán (Seller)</span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {seller?.paidAt
+                            ? `Đã nộp: ${formatAuditDateTime(seller.paidAt)}`
+                            : 'Chưa nộp'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">Phải nộp</span>
+                          <span className="font-bold font-mono text-slate-700">
+                            {seller?.amountDue === 0
+                              ? 'Không cần nộp'
+                              : formatVND(seller?.amountDue ?? 0)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">Thực thu</span>
+                          <span className="font-bold font-mono text-emerald-700">
+                            {formatVND(seller?.amountCollected ?? 0)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 block">Thực thu</span>
-                      <span className="font-bold font-mono text-emerald-700">
-                        {formatVND(funds.sellerPayment?.amountCollected ?? 0)}
-                      </span>
-                    </div>
                   </div>
-                </div>
-              </div>
+                );
+              })()}
             </section>
 
             {/* 3. CHI TIẾT PHÍ (FEE BREAKDOWN) */}
-            <section className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2.5">
-              <h4 className="font-bold uppercase tracking-wider text-[11px] text-slate-500">
-                Chi Tiết Cấu Thành Phí
-              </h4>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                <div className="p-2.5 rounded-lg bg-white border border-slate-100">
-                  <span className="text-[10px] text-slate-400 block">Phí kiểm định cơ sở</span>
-                  <span className="font-bold font-mono text-slate-900">
-                    {formatVND(funds.fees?.inspectionFee ?? 0)}
-                  </span>
-                </div>
-
-                <div className="p-2.5 rounded-lg bg-white border border-slate-100">
-                  <span className="text-[10px] text-slate-400 block">Phụ phí di chuyển KTV</span>
-                  <span className="font-bold font-mono text-slate-900">
-                    {funds.fees?.travelFee != null ? formatVND(funds.fees.travelFee) : '0 ₫'}
-                  </span>
-                </div>
-
-                <div className="p-2.5 rounded-lg bg-white border border-slate-100">
-                  <span className="text-[10px] text-slate-400 block">Cước vận chuyển</span>
-                  <span className="font-bold font-mono text-slate-900">
-                    {formatVND(funds.fees?.shippingFee ?? 0)}
-                  </span>
-                </div>
-
-                <div className="p-2.5 rounded-lg bg-white border border-slate-100">
-                  <span className="text-[10px] text-slate-400 block">Cọc cam kết người mua</span>
-                  <span className="font-bold font-mono text-slate-900">
-                    {formatVND(funds.fees?.buyerCommitmentDeposit ?? 0)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Cash Simulation Notes */}
-              {funds.fees?.cashShippingSimulation && (
-                <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-2">
-                  <Info className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                  <span>
-                    <strong>Mô phỏng Sandbox:</strong> Cước chặng đi có phần ứng tiền mặt.
-                    {funds.fees.outboundCashPendingAmount != null && funds.fees.outboundCashPendingAmount > 0 && (
-                      <span>
-                        {' '}Cước đi đã thu đang chờ hoàn ứng hoặc hoàn tiền:{' '}
-                        <strong className="font-mono text-amber-950">
-                          {formatVND(funds.fees.outboundCashPendingAmount)}
-                        </strong>.
+            {(() => {
+              const fees = funds.fees ?? {
+                inspectionFee: (funds as any).inspectionFee,
+                travelFee: (funds as any).travelFee,
+                shippingFee: (funds as any).shippingFee,
+                buyerCommitmentDeposit: (funds as any).buyerCommitmentDeposit,
+                cashShippingSimulation: (funds as any).cashShippingSimulation,
+                outboundCashPendingAmount: (funds as any).outboundCashPendingAmount,
+              };
+              return (
+                <section className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2.5">
+                  <h4 className="font-bold uppercase tracking-wider text-[11px] text-slate-500">
+                    Chi Tiết Cấu Thành Phí
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div className="p-2.5 rounded-lg bg-white border border-slate-100">
+                      <span className="text-[10px] text-slate-400 block">Phí kiểm định cơ sở</span>
+                      <span className="font-bold font-mono text-slate-900">
+                        {formatVND(fees?.inspectionFee ?? 0)}
                       </span>
-                    )}
-                  </span>
-                </div>
-              )}
-            </section>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-white border border-slate-100">
+                      <span className="text-[10px] text-slate-400 block">Phụ phí di chuyển KTV</span>
+                      <span className="font-bold font-mono text-slate-900">
+                        {fees?.travelFee != null ? formatVND(fees.travelFee) : '0 ₫'}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-white border border-slate-100">
+                      <span className="text-[10px] text-slate-400 block">Cước vận chuyển</span>
+                      <span className="font-bold font-mono text-slate-900">
+                        {formatVND(fees?.shippingFee ?? 0)}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-white border border-slate-100">
+                      <span className="text-[10px] text-slate-400 block">Cọc cam kết người mua</span>
+                      <span className="font-bold font-mono text-slate-900">
+                        {formatVND(fees?.buyerCommitmentDeposit ?? 0)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Cash Simulation Notes */}
+                  {fees?.cashShippingSimulation && (
+                    <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-2">
+                      <Info className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                      <span>
+                        <strong>Mô phỏng Sandbox:</strong> Cước chặng đi có phần ứng tiền mặt.
+                        {fees.outboundCashPendingAmount != null && fees.outboundCashPendingAmount > 0 && (
+                          <span>
+                            {' '}Cước đi đã thu đang chờ hoàn ứng hoặc hoàn tiền:{' '}
+                            <strong className="font-mono text-amber-950">
+                              {formatVND(fees.outboundCashPendingAmount)}
+                            </strong>.
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+                </section>
+              );
+            })()}
 
             {/* 4. DỰ PHÒNG CƯỚC HOÀN (RETURN RESERVE) - HIDE IF NOT_REQUIRED */}
             {funds.returnReserve && funds.returnReserve.status !== 'NOT_REQUIRED' && (

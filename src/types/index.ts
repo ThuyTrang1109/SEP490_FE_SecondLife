@@ -84,6 +84,10 @@ export interface Listing {
   createdAt: string;
   isInspectionGuaranteed: boolean;
   requiresInspection: boolean;
+  isInspected?: boolean;
+  inspectionPassed?: boolean;
+  inspectionStatus?: string;
+  inspectionSeal?: string;
   photos: PhotoChecklist;
   photoGallery: string[];
   shippingWeight?: number;
@@ -222,6 +226,7 @@ export interface EscrowOrder {
   paymentDeadline?: string | null;
   returnShippingReserveFee?: number;
   feeSettledAt?: string | null;
+  returnReserveStatus?: string | null;
   linkedOrderId?: string | null;
   inspectionStatus?: string;
   inspectionNote?: string;
@@ -370,6 +375,8 @@ export interface SystemInspectionProposalPayload {
   centerName?: string;
   feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
   baseInspectionFee?: number;
+  travelFeeRoundTrip?: number;
+  travelDistanceKm?: number;
   shippingToCenterFee?: number;
   returnShippingReserveFee?: number;
   totalAtCenterFee?: number;
@@ -399,6 +406,8 @@ export interface InspectionProposalPrefillData {
   isZinLossAcknowledged?: boolean;
   quote?: any;
   baseInspectionFee?: number;
+  travelFeeRoundTrip?: number;
+  travelDistanceKm?: number;
   shippingToCenterFee?: number;
   returnShippingReserveFee?: number;
   totalAtCenterFee?: number;

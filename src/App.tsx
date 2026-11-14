@@ -29,6 +29,7 @@ import { notificationWsClient } from './services/notificationWsClient';
 import { ShieldCheck, Sparkles, CheckCircle2, Store, AlertTriangle } from 'lucide-react';
 import { authService, userService, topupService, walletService, orderService, inspectorService, negotiationService, postService, adminPostService, shippingService, sellerCreditService, chatService, getAccessToken, getRefreshToken, clearAuthTokens, getStoredUser, setStoredUser, isTokenExpired, isTokenExpiringSoon, recordUserActivity, resetActivityTimer, isUserIdle, refreshAccessToken, checkAndRenewSessionOnReturn, ChatRoomDto } from './services';
 import { inspectionCashConfirmedEvent } from './utils/inspectionCashShipping';
+import { isListingInspectionPassed, markListingInspectionPassed } from './utils/listingInspection';
 
 // Code-split heavy views via lazyWithRetry to prevent dynamic import fetch errors
 const CreateListingView = lazyWithRetry(() => import('./pages/CreateListingView').then(m => ({ default: m.CreateListingView })), 'CreateListingView');
@@ -1139,6 +1140,8 @@ export default function App() {
       createdAt: post.publishedAt || post.createdAt || new Date().toISOString(),
       isInspectionGuaranteed: true,
       requiresInspection: price > 5000000,
+      isInspected: isListingInspectionPassed(post),
+      inspectionPassed: isListingInspectionPassed(post),
       photos: {
         front: photoList[0] || defaultImg,
         back: photoList[1] || '',
@@ -1862,6 +1865,7 @@ export default function App() {
             buyerCommitmentDeposit: bOrd.buyerCommitmentDeposit !== undefined ? Number(bOrd.buyerCommitmentDeposit) : (rawInspOrder.buyerCommitmentDeposit !== undefined ? Number(rawInspOrder.buyerCommitmentDeposit) : 0),
             returnShippingReserveFee: bOrd.returnShippingReserveFee !== undefined ? Number(bOrd.returnShippingReserveFee) : (rawInspOrder.returnShippingReserveFee !== undefined ? Number(rawInspOrder.returnShippingReserveFee) : 0),
             feeSettledAt: bOrd.feeSettledAt || rawInspOrder.feeSettledAt || null,
+            returnReserveStatus: (bOrd as any).returnReserveStatus || (rawInspOrder as any).returnReserveStatus || (bOrd as any).returnReserve?.status || (rawInspOrder as any).returnReserve?.status || null,
             inspectionCenterId: bOrd.inspectionCenterId || (bOrd as any).inspectionCenter?.id || rawInspOrder.inspectionCenterId || undefined,
             inspectionCenterName: bOrd.inspectionCenterName || (bOrd as any).inspectionCenter?.name || rawInspOrder.inspectionCenterName || undefined,
             inspectionCenterAddress: bOrd.inspectionCenterAddress || (bOrd as any).inspectionCenter?.address || rawInspOrder.inspectionCenterAddress || undefined,
@@ -2805,6 +2809,12 @@ export default function App() {
 
     try {
       localStorage.setItem(`inspection_status_${orderId}`, nextBackendStatus);
+      if (isPass) {
+        markListingInspectionPassed(
+          targetOrder?.postId || targetOrder?.listing?.id || (targetOrder as any)?.listingId,
+          targetOrder?.listing?.title || (targetOrder as any)?.postTitle || targetOrder?.title
+        );
+      }
       window.dispatchEvent(new CustomEvent('secondlife_inspection_completed', {
         detail: { orderId, status: nextBackendStatus }
       }));

@@ -50,122 +50,7 @@ import { LalamoveAddressPicker, getCityCoordinates, normalizeCityKey } from '../
 import { saveScopedLocalNotification } from '../../utils/notificationStorage';
 import { resolveListingCategory, resolveOrderListing } from '../../utils/catalogCache';
 import { translateSystemNotification } from '../../utils/systemNotificationTranslator';
-
-export const formatLalamoveVehicle = (serviceType?: string): { name: string; icon: string; desc: string; standard?: string } => {
-  if (!serviceType) {
-    return {
-      name: 'Chưa có thông tin phương tiện',
-      icon: '🚚',
-      desc: 'Vui lòng kiểm tra phương tiện trong báo giá vận chuyển',
-      standard: 'Phương tiện do Lalamove chỉ định',
-    };
-  }
-  const rawCode = serviceType.toUpperCase();
-  const code = rawCode.replace(/^LD_/, '');
-
-  if (code === 'MOTORCYCLE' || code === 'BIKE') {
-    return {
-      name: 'Xe máy',
-      icon: '🏍️',
-      desc: 'Giao nhanh hàng nhỏ gọn nội thành',
-      standard: 'Cân nặng ≤ 30kg • Kích thước ≤ 50x40x50cm',
-    };
-  }
-  if (code === 'VAN_1000' || code === 'VAN1000') {
-    return {
-      name: 'Xe Van 1 tấn',
-      icon: '🚐',
-      desc: 'Chở hàng cồng kềnh, tải trọng lớn che chắn mưa nắng',
-      standard: 'Cân nặng ≤ 1.000kg • Thùng xe Van 1 tấn',
-    };
-  }
-  if (code === 'VAN' || code === 'VAN500' || code === 'VAN_500' || code.includes('VAN')) {
-    return {
-      name: 'Xe bán tải / Van',
-      icon: '🚐',
-      desc: 'Chở hàng cồng kềnh, tải trọng lớn che chắn mưa nắng',
-      standard: 'Cân nặng ≤ 500kg • Kích thước ≤ 170x120x120cm',
-    };
-  }
-  if (code === 'PICK_UP_TRUCK' || code === 'PICKUP_TRUCK' || code.includes('PICK_UP') || code.includes('PICKUP')) {
-    return {
-      name: 'Xe bán tải (Pick-up)',
-      icon: '🛻',
-      desc: 'Chở hàng cồng kềnh, kiện hàng lớn hoặc vận chuyển đường dài',
-      standard: 'Cân nặng ≤ 500kg • Thùng 140x150x50cm',
-    };
-  }
-  if (code === 'TRUCK500' || code === 'TRUCK_500' || code === 'TRUCK_500KG') {
-    return {
-      name: 'Xe tải 500kg',
-      icon: '🚚',
-      desc: 'Chở hàng nặng, kích thước lớn an toàn',
-      standard: 'Cân nặng ≤ 500kg • Thùng 190x140x140cm',
-    };
-  }
-  if (code === 'TRUCK1000' || code === 'TRUCK_1000' || code === 'TRUCK_1000KG' || code === 'TRUCK_1T') {
-    return {
-      name: 'Xe tải 1 tấn',
-      icon: '🚛',
-      desc: 'Xe tải trọng tải lớn',
-      standard: 'Cân nặng ≤ 1.000kg • Thùng 300x160x160cm',
-    };
-  }
-  if (code === 'TRUCK1500' || code === 'TRUCK_1500' || code === 'TRUCK_1500KG') {
-    return {
-      name: 'Xe tải 1.5 tấn',
-      icon: '🚛',
-      desc: 'Xe tải trọng tải lớn',
-      standard: 'Cân nặng ≤ 1.500kg • Thùng 320x160x170cm',
-    };
-  }
-  if (code === 'TRUCK175' || code === 'TRUCK_175') {
-    return {
-      name: 'Xe tải 1.75 tấn',
-      icon: '🚛',
-      desc: 'Xe tải thùng rộng đường dài',
-      standard: 'Cân nặng ≤ 1.750kg • Thùng 190x140x140cm',
-    };
-  }
-  if (code === 'TRUCK2000' || code === 'TRUCK_2000' || code === 'TRUCK_2000KG' || code === 'TRUCK_2T') {
-    return {
-      name: 'Xe tải 2 tấn',
-      icon: '🚛',
-      desc: 'Xe tải hạng nặng',
-      standard: 'Cân nặng ≤ 2.000kg • Thùng 400x170x170cm',
-    };
-  }
-  if (code === 'TRUCK2500' || code === 'TRUCK_2500' || code === 'TRUCK_2500KG') {
-    return {
-      name: 'Xe tải 2.5 tấn',
-      icon: '🚛',
-      desc: 'Xe tải hạng nặng',
-      standard: 'Cân nặng ≤ 2.500kg • Thùng 420x170x180cm',
-    };
-  }
-  if (code === 'TRUCK330' || code === 'TRUCK_330') {
-    return {
-      name: 'Xe tải 3.3 tấn',
-      icon: '🚛',
-      desc: 'Xe tải siêu trường siêu trọng',
-      standard: 'Cân nặng ≤ 3.300kg • Thùng 300x160x160cm',
-    };
-  }
-  if (code === 'TRUCK550' || code === 'TRUCK_550') {
-    return {
-      name: 'Xe tải 5.5 tấn',
-      icon: '🚛',
-      desc: 'Xe tải siêu trường siêu trọng',
-      standard: 'Cân nặng ≤ 5.500kg • Thùng 400x170x170cm',
-    };
-  }
-  return {
-    name: serviceType,
-    icon: '🚚',
-    desc: 'Phương tiện Lalamove do hệ thống tự động báo giá',
-    standard: 'Tiêu chuẩn phương tiện Lalamove',
-  };
-};
+import { formatLalamoveVehicle } from '../../utils/lalamoveVehicle';
 
 export const parseLalamoveVehicleLimits = (text: string) => {
   if (!text) return [];
@@ -1372,6 +1257,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     ? new Date(atCenterShippingQuote.expiresAt).getTime() <= Date.now()
     : false;
 
+  const atHomeBaseFee = Number(
+    inspectionQuote?.baseInspectionFee ||
+    inspectionQuote?.baseFee ||
+    atCenterBaseFee ||
+    200000
+  );
+  const atHomeTravelFee = Number(
+    inspectionQuote?.atHomePackage?.travelFeeRoundTrip
+    ?? inspectionQuote?.travelFeeRoundTrip
+    ?? (inspectionQuote?.atHomePackage?.travelFeeOneWay ? inspectionQuote.atHomePackage.travelFeeOneWay * 2 : undefined)
+    ?? inspectionQuote?.travelFeeOneWay
+    ?? (atHomeFee > atHomeBaseFee ? atHomeFee - atHomeBaseFee : (atHomeFee > 0 ? atHomeFee : 22150))
+  );
+  const atHomeTravelDistance = Number(
+    inspectionQuote?.atHomePackage?.distanceKm
+    ?? inspectionQuote?.travelDistanceKm
+    ?? 5.4
+  );
+
   const baseInspectionFee = isInspected ? (inspectionMethod === 'AT_HOME' ? atHomeFee : atCenterFee) : 0;
   const buyerInspectionFee = isInspected
     ? feeSplit === 'BUYER_100'
@@ -1411,7 +1315,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         savedQuote.method === inspectionMethod && savedQuote.buyerLatitude === deliveryLatitude &&
         savedQuote.buyerLongitude === deliveryLongitude && savedQuote.negotiationId === validNegotiationId
         ? savedQuote.quote : null,
-      baseInspectionFee: atCenterBaseFee,
+      baseInspectionFee: inspectionMethod === 'AT_HOME' ? atHomeBaseFee : atCenterBaseFee,
+      travelFeeRoundTrip: atHomeTravelFee,
+      travelDistanceKm: atHomeTravelDistance,
       shippingToCenterFee: atCenterOutboundFee,
       returnShippingReserveFee: atCenterReturnFee,
       totalAtCenterFee: atCenterFee,
@@ -3125,7 +3031,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             : 'border-slate-200 hover:border-slate-300 bg-white/70'
                             }`}
                         >
-                          <div className="space-y-1.5">
+                          <div className="space-y-2">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1.5">
                                 <Home className="w-4 h-4 text-purple-600 shrink-0" />
@@ -3133,15 +3039,51 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                   {lang === 'vi' ? 'Cử người đến nhà kiểm định' : 'On-site at Home'}
                                 </span>
                               </div>
-                              <span className="text-[10px] font-black text-purple-800 bg-purple-100 px-2 py-0.5 rounded-full border border-purple-200">
-                                {formatVND(atHomeFee)}
-                              </span>
+                              <div className="flex items-center gap-1">
+                                {loadingInspectionQuote && (
+                                  <Loader2 className="w-3 h-3 text-purple-600 animate-spin" />
+                                )}
+                                <span className="text-[10px] font-black text-purple-800 bg-purple-100 px-2 py-0.5 rounded-full border border-purple-200">
+                                  {loadingInspectionQuote ? '...' : formatVND(atHomeFee)}
+                                </span>
+                              </div>
                             </div>
-                            <p className="text-[10px] text-slate-600 leading-relaxed">
-                              {lang === 'vi'
-                                ? `Kỹ thuật viên SecondLife mang thiết bị đến tận nhà người bán (${(inspectionQuote?.atHomePackage?.distanceKm || inspectionQuote?.travelDistanceKm || 10).toFixed(1)} km). Cước di chuyển 6 bậc thang.`
-                                : 'Technicians bring equipment to seller home with 6-tier distance calculation.'}
-                            </p>
+
+                            {/* Chi tiết cước và biểu phí kiểm định tại nhà */}
+                            {loadingInspectionQuote ? (
+                              <div className="py-2.5 flex items-center gap-2 text-[10px] text-slate-500 animate-pulse">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600 shrink-0" />
+                                <span>{lang === 'vi' ? 'Đang tính phụ phí di chuyển theo khoảng cách...' : 'Calculating travel fee...'}</span>
+                              </div>
+                            ) : (
+                              <div className="space-y-1.5 text-[10px] text-slate-600">
+                                <div className="flex justify-between items-center">
+                                  <span>• {lang === 'vi' ? 'Phí kiểm định cơ sở' : 'Base inspection fee'}:</span>
+                                  <span className="font-bold text-slate-800">{formatVND(atHomeBaseFee)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="flex items-center gap-1">
+                                    <span>• {lang === 'vi' ? 'Phụ phí di chuyển KTV đến tận nhà' : 'Technician travel fee'}:</span>
+                                    <span className="text-[9px] bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.2 rounded font-semibold">
+                                      {lang === 'vi' ? `Khứ hồi (${atHomeTravelDistance.toFixed(1)} km)` : `Round-trip (${atHomeTravelDistance.toFixed(1)} km)`}
+                                    </span>
+                                  </span>
+                                  <span className="font-bold text-purple-900">{formatVND(atHomeTravelFee)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span>• {lang === 'vi' ? 'Dự phòng cước hoàn' : 'Return reserve'}:</span>
+                                  <span className="font-bold text-slate-800">0 ₫</span>
+                                </div>
+                                <div className="text-[10px] text-slate-400 italic pl-2">
+                                  ↳ {lang === 'vi' ? '(Kiểm định trực tiếp tại nhà người bán, không phát sinh cước hoàn chuyển Hub)' : '(Direct on-site inspection, no Hub return shipping needed)'}
+                                </div>
+                                <p className="text-[10px] text-slate-600 leading-relaxed pt-0.5">
+                                  {lang === 'vi'
+                                    ? `Kỹ thuật viên SecondLife mang thiết bị đến tận nhà người bán (${atHomeTravelDistance.toFixed(1)} km). Cước di chuyển 6 bậc thang.`
+                                    : `Technicians bring equipment to seller home (${atHomeTravelDistance.toFixed(1)} km) with 6-tier distance calculation.`}
+                                </p>
+                              </div>
+                            )}
                           </div>
                           <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[9px] text-purple-700 font-bold">
                             <button
@@ -3150,7 +3092,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 e.stopPropagation();
                                 setShowTierBreakdown(!showTierBreakdown);
                               }}
-                              className="hover:underline flex items-center gap-1 text-purple-800"
+                              className="hover:underline flex items-center gap-1 text-purple-800 cursor-pointer"
                             >
                               <span>📊 {showTierBreakdown ? 'Ẩn chi tiết cước' : 'Xem chi tiết 6 bậc cước'}</span>
                             </button>
@@ -4080,6 +4022,32 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                               )}
                             </span>
                             <span className="font-bold text-slate-800">{formatVND(atCenterReturnFee)}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {inspectionMethod === 'AT_HOME' && (
+                        <div className="pt-1.5 border-t border-emerald-200/60 space-y-1 text-[10px] text-emerald-950 font-medium">
+                          <div className="flex justify-between">
+                            <span className="text-slate-600">• {lang === 'vi' ? 'Phí kiểm định cơ sở:' : 'Base inspection:'}</span>
+                            <span className="font-bold text-slate-800">{formatVND(atHomeBaseFee)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-600 flex items-center gap-1">
+                              <span>• {lang === 'vi' ? `Phụ phí di chuyển KTV (Khứ hồi · ${atHomeTravelDistance.toFixed(1)} km):` : `Technician travel (${atHomeTravelDistance.toFixed(1)} km round-trip):`}</span>
+                              <span className="text-[9px] bg-purple-100 text-purple-800 px-1 py-0.2 rounded font-semibold">
+                                {lang === 'vi' ? '6 bậc km' : '6 tiers'}
+                              </span>
+                            </span>
+                            <span className="font-bold text-purple-900">{formatVND(atHomeTravelFee)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-600">• {lang === 'vi' ? 'Dự phòng cước hoàn (Kiểm định tại nhà):' : 'Return reserve (On-site):'}</span>
+                            <span className="font-bold text-slate-800">0 ₫</span>
+                          </div>
+                          <div className="flex justify-between pt-1 border-t border-dashed border-emerald-300 font-bold">
+                            <span className="text-emerald-900">• {lang === 'vi' ? 'Tổng chi phí kiểm định tại nhà:' : 'Total on-site fee:'}</span>
+                            <span className="font-black text-purple-700">{formatVND(atHomeFee)}</span>
                           </div>
                         </div>
                       )}

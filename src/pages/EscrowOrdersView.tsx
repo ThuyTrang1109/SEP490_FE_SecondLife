@@ -1,6 +1,6 @@
 import { useBrowserLocation, navigatePath } from '../app/router/browser';
 import { resolveAppRoute, paths } from '../app/router/paths';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { EscrowOrder, Language, UserRole, UserProfile } from '../types';
 import { translations, formatVND } from '../utils/translations';
 import {
@@ -39,6 +39,7 @@ import {
   Award,
   XCircle,
   Scale,
+  Wrench,
 } from 'lucide-react';
 import { ProductReviewModal } from '../components/modals/ProductReviewModal';
 import { SellerReviewsModal } from '../components/modals/SellerReviewsModal';
@@ -56,7 +57,8 @@ import { InspectionSealVerificationModal } from '../components/modals/Inspection
 import { saveScopedLocalNotification } from '../utils/notificationStorage';
 import { PrintTamperSealModal } from '../components/modals/PrintTamperSealModal';
 import { ScheduleAppointmentModal } from '../components/modals/ScheduleAppointmentModal';
-import { ShipmentBackend, OrderSettlementDTO } from '../types';
+import { AtHomeIntakeBarcode } from '../components/inspection/AtHomeIntakeBarcode';
+import { ShipmentBackend, OrderSettlementDTO, OrderCommissionDTO } from '../types';
 import { orderService } from '../services/orderService';
 import { inspectorService, InspectionOrderDto } from '../services/inspectorService';
 import { notificationWsClient } from '../services/notificationWsClient';
@@ -96,6 +98,17 @@ export function getOrderAllShipments(orderId: string): ShipmentBackend[] {
   } catch { }
   return [];
 }
+
+const getInitialCommissionRate = (): number => {
+  try {
+    const saved = localStorage.getItem('platform_commission_rate');
+    if (saved) {
+      const parsed = parseFloat(saved);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+  } catch { }
+  return 5.0;
+};
 
 interface EscrowOrdersViewProps {
   orders: EscrowOrder[];
@@ -404,8 +417,62 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   }, [userOrders]);
   const [activePhotoStage, setActivePhotoStage] = useState<'listing' | 'inspector' | 'handover'>('listing');
   const [orderSettlement, setOrderSettlement] = useState<OrderSettlementDTO | null>(null);
+  const [orderCommission, setOrderCommission] = useState<OrderCommissionDTO | null>(null);
   const [isLoadingSettlement, setIsLoadingSettlement] = useState(false);
   const [settlementNotSettled, setSettlementNotSettled] = useState(false);
+
+  // Map of payout and commission data fetched from backend API per order
+  const [payoutDataMap, setPayoutDataMap] = useState<Record<string, {
+    sellerPayout: number;
+    platformCommission: number;
+    ratePercent?: number;
+    source: 'settlement' | 'commission' | 'order' | 'fallback';
+  }>>({});
+
+  // Global platform commission rate initialized from cache / standard 5%
+  const [platformCommissionRate, setPlatformCommissionRate] = useState<number>(getInitialCommissionRate);
+
+  // Theo dõi KTV đã quét mã tiếp nhận đến nhà kiểm tra hay chưa
+  const [arrivedOrderIds, setArrivedOrderIds] = useState<Set<string>>(() => {
+    const set = new Set<string>();
+    try {
+      if (typeof window !== 'undefined') {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key?.startsWith('at_home_inspector_arrived_')) {
+            set.add(key.replace('at_home_inspector_arrived_', ''));
+          }
+        }
+      }
+    } catch { }
+    return set;
+  });
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      const orderId = e?.detail?.orderId || (e?.key?.startsWith('at_home_inspector_arrived_') ? e.key.replace('at_home_inspector_arrived_', '') : null);
+      if (orderId) {
+        setArrivedOrderIds((prev) => new Set(prev).add(orderId));
+      }
+    };
+    window.addEventListener('secondlife_inspector_arrived', handler);
+    window.addEventListener('storage', handler);
+    return () => {
+      window.removeEventListener('secondlife_inspector_arrived', handler);
+      window.removeEventListener('storage', handler);
+    };
+  }, []);
+
+  const isInspectorArrivedForOrder = (orderId: string, ord?: any): boolean => {
+    if (!orderId) return false;
+    return arrivedOrderIds.has(orderId) || Boolean(
+      (typeof window !== 'undefined' && localStorage.getItem(`at_home_inspector_arrived_${orderId}`)) ||
+      ord?.inspectionStatus === 'INSPECTING' ||
+      ord?.status === 'INSPECTING' ||
+      ord?.backendStatus === 'INSPECTING' ||
+      ord?.escrowStatus === 'INSPECTION_IN_PROGRESS'
+    );
+  };
 
   React.useEffect(() => {
     if (detailModalOrder?.id) {
@@ -434,19 +501,57 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       );
       if (isInsp && !isPhase2Paid) {
         setOrderSettlement(null);
+        setOrderCommission(null);
         setSettlementNotSettled(false);
         setIsLoadingSettlement(false);
       } else {
         setIsLoadingSettlement(true);
         setSettlementNotSettled(false);
-        orderService.getOrderSettlement(detailModalOrder.id)
+        const targetOrderId = detailModalOrder.linkedOrderId || detailModalOrder.id;
+        orderService.getOrderSettlement(targetOrderId)
           .then((data) => {
             setOrderSettlement(data);
             setSettlementNotSettled(false);
+            if (data?.sellerPayout !== undefined) {
+              const rate = data.commissionBase > 0
+                ? Math.round((data.platformCommission / data.commissionBase) * 1000) / 10
+                : undefined;
+              setPayoutDataMap((prev) => ({
+                ...prev,
+                [detailModalOrder.id]: {
+                  sellerPayout: data.sellerPayout,
+                  platformCommission: data.platformCommission,
+                  ratePercent: rate,
+                  source: 'settlement',
+                },
+              }));
+            }
           })
-          .catch(() => {
+          .catch(async () => {
             setOrderSettlement(null);
             setSettlementNotSettled(true);
+            try {
+              const comm = await orderService.getOrderCommission(targetOrderId);
+              if (comm) {
+                setOrderCommission(comm);
+                if (comm.platformCommission !== undefined) {
+                  const base = comm.commissionBase ?? detailModalOrder.itemPriceVnd;
+                  setPayoutDataMap((prev) => ({
+                    ...prev,
+                    [detailModalOrder.id]: {
+                      sellerPayout: base - comm.platformCommission!,
+                      platformCommission: comm.platformCommission!,
+                      ratePercent: comm.ratePercent,
+                      source: 'commission',
+                    },
+                  }));
+                }
+              } else {
+                setOrderCommission(null);
+              }
+            } catch {
+              setOrderCommission(null);
+            }
           })
           .finally(() => {
             setIsLoadingSettlement(false);
@@ -454,9 +559,50 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       }
     } else {
       setOrderSettlement(null);
+      setOrderCommission(null);
       setSettlementNotSettled(false);
     }
   }, [detailModalOrder]);
+
+  // Fetch platform commission rate from backend API exactly ONCE for all orders
+  const hasFetchedCommissionRateRef = React.useRef(false);
+  React.useEffect(() => {
+    if (hasFetchedCommissionRateRef.current || !currentUser) return;
+
+    const firstSellerOrder = userOrders.find((o) => isOrderSeller(o));
+    if (!firstSellerOrder) return;
+
+    hasFetchedCommissionRateRef.current = true;
+
+    const fetchRateOnce = async () => {
+      try {
+        const targetId = firstSellerOrder.linkedOrderId || firstSellerOrder.id;
+        const comm = await orderService.getOrderCommission(targetId).catch(() => null);
+        if (comm?.ratePercent !== undefined && comm.ratePercent > 0) {
+          setPlatformCommissionRate(comm.ratePercent);
+          try {
+            localStorage.setItem('platform_commission_rate', String(comm.ratePercent));
+          } catch { }
+          return;
+        }
+
+        const settlement = await orderService.getOrderSettlement(targetId).catch(() => null);
+        if (settlement && settlement.commissionBase > 0) {
+          const rate = Math.round((settlement.platformCommission / settlement.commissionBase) * 1000) / 10;
+          if (rate > 0) {
+            setPlatformCommissionRate(rate);
+            try {
+              localStorage.setItem('platform_commission_rate', String(rate));
+            } catch { }
+          }
+        }
+      } catch {
+        // keep initial default 5.0%
+      }
+    };
+
+    fetchRateOnce();
+  }, [userOrders, currentUser]);
 
   // Real Backend Shipments for Detail Modal
   const detailOrderId = detailModalOrder?.id;
@@ -921,17 +1067,46 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
   const isOrderSellerConfirmed = (ord: EscrowOrder | null | undefined): boolean => {
     if (!ord) return false;
-    if (ord.sellerConfirmedAt || ord.confirmationStatus === 'CONFIRMED') return true;
     const hasInsp = Boolean(
       ord.hasInspectionService ||
       (ord.inspectionFeeVnd && ord.inspectionFeeVnd > 0) ||
       ord.inspectionCenterId ||
       ord.inspectionMethod ||
-      (ord as any).inspectionStatus
+      (ord as any).orderType ||
+      (ord as any).inspectionStatus ||
+      (ord as any).inspectionOrder
     );
     if (hasInsp) {
-      const rawStatus = String((ord as any).backendStatus || (ord as any).status || '').toUpperCase();
-      if (rawStatus && rawStatus !== 'WAITING_SELLER_APPROVAL' && rawStatus !== 'PENDING') {
+      const rawStatus = String(
+        (ord as any).backendStatus ||
+        (ord as any).inspectionStatus ||
+        (ord as any).inspectionOrder?.status ||
+        ((ord as any).status !== 'AWAITING_INSPECTION' && (ord as any).status !== 'AWAITING_PAYMENT' && (ord as any).status !== 'HELD_IN_ESCROW' ? (ord as any).status : '') ||
+        ''
+      ).toUpperCase();
+      if (
+        rawStatus === 'WAITING_SELLER_APPROVAL' ||
+        rawStatus === 'WAITING_BUYER_APPROVAL' ||
+        rawStatus === 'PENDING'
+      ) {
+        return false;
+      }
+    }
+    if (ord.sellerConfirmedAt || ord.confirmationStatus === 'CONFIRMED') return true;
+    if (hasInsp) {
+      const rawStatus = String(
+        (ord as any).backendStatus ||
+        (ord as any).inspectionStatus ||
+        (ord as any).inspectionOrder?.status ||
+        ((ord as any).status !== 'AWAITING_INSPECTION' && (ord as any).status !== 'AWAITING_PAYMENT' && (ord as any).status !== 'HELD_IN_ESCROW' ? (ord as any).status : '') ||
+        ''
+      ).toUpperCase();
+      if (
+        rawStatus &&
+        rawStatus !== 'WAITING_SELLER_APPROVAL' &&
+        rawStatus !== 'WAITING_BUYER_APPROVAL' &&
+        rawStatus !== 'PENDING'
+      ) {
         return true;
       }
     }
@@ -1904,6 +2079,56 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     });
   };
 
+  const handlePromptCancelInspectionRequest = (ord: EscrowOrder) => {
+    const isSeller = isOrderSeller(ord);
+    setConfirmDialog({
+      isOpen: true,
+      title: lang === 'vi' ? 'Xác Nhận Hủy Yêu Cầu Kiểm Định' : 'Confirm Cancel Inspection Request',
+      message: lang === 'vi'
+        ? (isSeller
+          ? 'Bạn có chắc chắn muốn hủy yêu cầu kiểm định cho đơn hàng này không? Tiền hàng và các chi phí kiểm định tạm giữ sẽ được hoàn lại 100% cho người mua.'
+          : 'Bạn có chắc chắn muốn hủy yêu cầu kiểm định cho đơn hàng này không? Toàn bộ số tiền tạm giữ (tiền hàng và phí kiểm định) sẽ được hoàn trả 100% vào Ví Escrow của bạn ngay lập tức.')
+        : 'Are you sure you want to cancel this inspection request? All escrow funds will be refunded 100% to buyer.',
+      subMessage: lang === 'vi'
+        ? 'Sau khi hủy, KTV sẽ không đến kiểm tra máy nữa và lịch hẹn (nếu có) sẽ bị hủy bỏ.'
+        : 'Technician visit will be cancelled and order status updated.',
+      confirmText: lang === 'vi' ? 'Xác Nhận Hủy Kiểm Định' : 'Cancel Inspection',
+      cancelText: lang === 'vi' ? 'Giữ Yêu Cầu' : 'Keep Request',
+      variant: 'danger',
+      iconType: 'alert',
+      onConfirm: async () => {
+        try {
+          localStorage.removeItem(`order_appointment_${ord.id}`);
+          localStorage.removeItem(`order_assigned_inspector_${ord.id}`);
+          localStorage.removeItem(`order_intake_arrived_${ord.id}`);
+          localStorage.setItem(`order_cancelled_${ord.id}`, 'true');
+        } catch { }
+
+        if (onCancelOrder) {
+          const cancelPayload = isSeller ? {
+            reasonCode: 'SELLER_CANNOT_FULFILL' as const,
+            reason: 'Người bán hủy yêu cầu kiểm định trước khi KTV đến kiểm tra.',
+          } : {
+            reasonCode: 'BUYER_REQUESTED' as const,
+            reason: 'Người mua chủ động hủy yêu cầu kiểm định trước khi KTV thực hiện đo kiểm.',
+          };
+          onCancelOrder(ord.id, cancelPayload);
+        }
+
+        try {
+          window.dispatchEvent(new CustomEvent('secondlife_order_cancelled', { detail: { orderId: ord.id } }));
+          window.dispatchEvent(new CustomEvent('secondlife_appointment_cancelled', { detail: { orderId: ord.id } }));
+        } catch { }
+
+        setConfirmDialog(null);
+        if (detailModalOrder?.id === ord.id) {
+          setDetailModalOrder(null);
+        }
+        setActiveTab('cancelled');
+      }
+    });
+  };
+
   // Review & Seller Trust Modal state
   const [reviewModalOrder, setReviewModalOrder] = useState<EscrowOrder | null>(null);
   const [schedulingOrder, setSchedulingOrder] = useState<EscrowOrder | null>(null);
@@ -1980,8 +2205,16 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
   const pendingEscrowTotal = useMemo(() => {
     return userOrders
       .filter((o) => o.escrowStatus !== 'COMPLETED_RELEASED' && o.escrowStatus !== 'REFUNDED_TO_BUYER')
-      .reduce((sum, o) => sum + Math.round(o.itemPriceVnd * 0.975), 0);
-  }, [userOrders]);
+      .reduce((sum, o) => {
+        const payout = payoutDataMap[o.id]?.sellerPayout ?? (
+          (o as any).sellerPayout ??
+          (o.platformFeeVnd && o.platformFeeVnd > 0
+            ? (o.itemPriceVnd - o.platformFeeVnd)
+            : Math.round(o.itemPriceVnd * (1 - platformCommissionRate / 100)))
+        );
+        return sum + payout;
+      }, 0);
+  }, [userOrders, payoutDataMap, platformCommissionRate]);
 
   const awaitingPickupCount = userOrders.filter((o) => o.escrowStatus === 'AWAITING_PAYMENT').length;
   const inHubInspectionCount = userOrders.filter(
@@ -2119,7 +2352,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
     }
     const isSellerForThisOrder = isCurrentOrderSeller !== undefined ? isCurrentOrderSeller : isSeller;
     const s = String(status || '').toUpperCase();
-    const bStatus = String((orderItem as any)?.backendStatus || (orderItem as any)?.status || '').toUpperCase();
+    const bStatus = String(
+      (orderItem as any)?.backendStatus ||
+      (orderItem as any)?.inspectionStatus ||
+      (orderItem as any)?.inspectionOrder?.status ||
+      ((orderItem as any)?.status !== 'AWAITING_INSPECTION' && (orderItem as any)?.status !== 'AWAITING_PAYMENT' && (orderItem as any)?.status !== 'HELD_IN_ESCROW' ? (orderItem as any)?.status : '') ||
+      ''
+    ).toUpperCase();
     const sellerConfirmed = Boolean(orderItem && isOrderSellerConfirmed(orderItem));
     const inbound = orderItem && getOrderInboundShipment(orderItem);
     const inspectionStatus = orderItem?.inspectionStatus || bStatus;
@@ -2156,7 +2395,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       );
     }
 
-    if (!sellerConfirmed && (bStatus === 'WAITING_SELLER_APPROVAL' || (s === 'AWAITING_INSPECTION' && bStatus === 'WAITING_SELLER_APPROVAL'))) {
+    if (bStatus === 'WAITING_SELLER_APPROVAL' || (s === 'AWAITING_INSPECTION' && bStatus === 'WAITING_SELLER_APPROVAL')) {
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-800 border border-amber-500/30">
           <Clock className="w-3.5 h-3.5 text-amber-600" />
@@ -2168,15 +2407,76 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         </span>
       );
     }
+
+    if (bStatus === 'WAITING_BUYER_APPROVAL' || (s === 'AWAITING_INSPECTION' && bStatus === 'WAITING_BUYER_APPROVAL')) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-500/15 text-purple-800 border border-purple-500/30">
+          <Clock className="w-3.5 h-3.5 text-purple-600" />
+          <span>
+            {lang === 'vi'
+              ? isSellerForThisOrder ? 'Đã Đề Xuất Lại • Chờ Người Mua Phản Hồi' : 'Người Bán Đã Đề Xuất Lại • Chờ Bạn Xác Nhận'
+              : isSellerForThisOrder ? 'Counter-proposal Sent • Awaiting Buyer Approval' : 'Seller Counter-proposed • Awaiting Your Response'}
+          </span>
+        </span>
+      );
+    }
     if (inspectionStatus === 'CONFIRMED_PENDING_DISPATCH') {
-      const isAtHome = orderItem?.inspectionMethod === 'AT_HOME';
+      const isAtHome = orderItem?.inspectionMethod === 'AT_HOME' || (orderItem as any)?.orderType === 'AT_HOME';
+      const isArrived = orderItem?.id ? isInspectorArrivedForOrder(orderItem.id, orderItem) : false;
+      if (isAtHome && isArrived) {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
+            <Wrench className="w-3.5 h-3.5 text-amber-600 animate-bounce" />
+            <span>
+              {lang === 'vi' ? 'Kỹ thuật viên đã đến và đang kiểm tra' : 'Technician has arrived and is inspecting'}
+            </span>
+          </span>
+        );
+      }
+      if (isAtHome) {
+        let hasAppt = false;
+        if (orderItem?.appointmentScheduledAt) hasAppt = true;
+        if (!hasAppt && orderItem?.id && typeof window !== 'undefined') {
+          try {
+            const raw = localStorage.getItem(`order_appointment_${orderItem.id}`);
+            if (raw && JSON.parse(raw).scheduledAt) hasAppt = true;
+          } catch {}
+        }
+        let hasInsp = Boolean(orderItem?.inspectorId || (orderItem as any)?.inspectorName);
+        if (!hasInsp && orderItem?.id && typeof window !== 'undefined') {
+          try {
+            const raw = localStorage.getItem(`order_assigned_inspector_${orderItem.id}`);
+            if (raw && JSON.parse(raw).inspectorName) hasInsp = true;
+          } catch {}
+        }
+        if (hasInsp) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+              <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+              <span>{lang === 'vi' ? 'Đã Phân Công KTV • Chờ Khảo Sát' : 'Inspector Assigned • Pending Survey'}</span>
+            </span>
+          );
+        }
+        if (hasAppt) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+              <Clock className="w-3.5 h-3.5 text-blue-600" />
+              <span>{lang === 'vi' ? 'Đã Hẹn Lịch • Chờ Điều Phối KTV' : 'Visit Scheduled • Awaiting Dispatch'}</span>
+            </span>
+          );
+        }
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
+            <Calendar className="w-3.5 h-3.5 text-amber-600" />
+            <span>{lang === 'vi' ? (isSellerForThisOrder ? 'Chờ Bạn Hẹn Lịch Đón KTV' : 'Chờ Người Bán Hẹn Lịch KTV') : 'Awaiting Schedule Visit'}</span>
+          </span>
+        );
+      }
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
           <Clock className="w-3.5 h-3.5 text-blue-600" />
           <span>
-            {lang === 'vi'
-              ? isAtHome ? 'Chờ điều phối kỹ thuật viên đến kiểm định' : 'Chờ người bán gửi hàng đến Hub'
-              : isAtHome ? 'Awaiting inspector dispatch' : 'Awaiting seller shipment to Hub'}
+            {lang === 'vi' ? 'Chờ người bán gửi hàng đến Hub' : 'Awaiting seller shipment to Hub'}
           </span>
         </span>
       );
@@ -2250,13 +2550,68 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
         );
       }
       if (s === 'AWAITING_INSPECTION' || s === 'HELD_IN_ESCROW') {
+        const isAtHome = orderItem?.inspectionMethod === 'AT_HOME' || (orderItem as any)?.orderType === 'AT_HOME';
+        const isArrived = orderItem?.id ? isInspectorArrivedForOrder(orderItem.id, orderItem) : false;
+        if (isAtHome && isArrived) {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
+              <Wrench className="w-3.5 h-3.5 text-amber-600 animate-bounce" />
+              <span>
+                {lang === 'vi' ? 'Kỹ thuật viên đã đến và đang kiểm tra' : 'Technician has arrived and is inspecting'}
+              </span>
+            </span>
+          );
+        }
+        if (isAtHome) {
+          let hasAppt = false;
+          if (orderItem?.appointmentScheduledAt) hasAppt = true;
+          if (!hasAppt && orderItem?.id && typeof window !== 'undefined') {
+            try {
+              const raw = localStorage.getItem(`order_appointment_${orderItem.id}`);
+              if (raw && JSON.parse(raw).scheduledAt) hasAppt = true;
+            } catch {}
+          }
+          let hasInsp = Boolean(orderItem?.inspectorId || (orderItem as any)?.inspectorName);
+          if (!hasInsp && orderItem?.id && typeof window !== 'undefined') {
+            try {
+              const raw = localStorage.getItem(`order_assigned_inspector_${orderItem.id}`);
+              if (raw && JSON.parse(raw).inspectorName) hasInsp = true;
+            } catch {}
+          }
+          if (hasInsp) {
+            return (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+                <span>{lang === 'vi' ? 'Đã Phân Công KTV • Chờ Khảo Sát' : 'Inspector Assigned • Pending Survey'}</span>
+              </span>
+            );
+          }
+          if (hasAppt) {
+            return (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                <Clock className="w-3.5 h-3.5 text-blue-600" />
+                <span>{lang === 'vi' ? 'Đã Hẹn Lịch • Chờ Điều Phối KTV' : 'Visit Scheduled • Awaiting Dispatch'}</span>
+              </span>
+            );
+          }
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
+              <Calendar className="w-3.5 h-3.5 text-amber-600" />
+              <span>{lang === 'vi' ? (isSellerForThisOrder ? 'Chờ Bạn Hẹn Lịch Đón KTV' : 'Chờ Người Bán Hẹn Lịch KTV') : 'Awaiting Schedule Visit'}</span>
+            </span>
+          );
+        }
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
             <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
             <span>
               {lang === 'vi'
-                ? isSellerForThisOrder ? 'Đã Xác Nhận • Đang Chuẩn Bị Gửi Hub' : 'Người Bán Đã Đồng Ý • Đang Điều Phối Hub'
-                : isSellerForThisOrder ? 'Confirmed • Preparing Hub Dispatch' : 'Seller Confirmed • Dispatching to Hub'}
+                ? isSellerForThisOrder
+                  ? 'Đã Xác Nhận • Đang Chuẩn Bị Gửi Hub'
+                  : 'Người Bán Đã Đồng Ý • Đang Điều Phối Hub'
+                : isSellerForThisOrder
+                  ? 'Confirmed • Preparing Hub Dispatch'
+                  : 'Seller Confirmed • Dispatching to Hub'}
             </span>
           </span>
         );
@@ -2318,12 +2673,19 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
           </span>
         );
       case 'INSPECTION_IN_PROGRESS':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-[#c34c36] to-[#dc4729] text-white shadow-xs">
-            <Clock className="w-3.5 h-3.5 animate-spin" />
-            <span>{lang === 'vi' ? 'Đang Kiểm Định Tại Hub' : 'In Hub Inspection'}</span>
-          </span>
-        );
+        {
+          const isAtHomeProg = orderItem?.inspectionMethod === 'AT_HOME' || (orderItem as any)?.orderType === 'AT_HOME';
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-xs">
+              <Wrench className="w-3.5 h-3.5 animate-bounce" />
+              <span>
+                {isAtHomeProg
+                  ? (lang === 'vi' ? 'Kỹ thuật viên đã đến và đang kiểm tra' : 'Technician has arrived and is inspecting')
+                  : (lang === 'vi' ? 'Đang Kiểm Định Tại Hub' : 'In Hub Inspection')}
+              </span>
+            </span>
+          );
+        }
       case 'INSPECTION_PASSED':
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -2843,8 +3205,21 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
       ) : (
         <div className="space-y-4">
           {filteredOrders.map((ord) => {
-            const sellerNetPayout = Math.round(ord.itemPriceVnd * 0.975);
             const orderIsSeller = isOrderSeller(ord);
+            const payoutData = payoutDataMap[ord.id];
+            const orderRatePercent = payoutData?.ratePercent ?? (
+              ord.platformFeeVnd && ord.platformFeeVnd > 0 && ord.itemPriceVnd > 0
+                ? Math.round((ord.platformFeeVnd / ord.itemPriceVnd) * 1000) / 10
+                : platformCommissionRate
+            );
+            const sellerCommissionFee = payoutData?.platformCommission ?? (
+              ord.platformFeeVnd && ord.platformFeeVnd > 0
+                ? ord.platformFeeVnd
+                : Math.round(ord.itemPriceVnd * (orderRatePercent / 100))
+            );
+            const sellerNetPayout = payoutData?.sellerPayout ?? (
+              (ord as any).sellerPayout ?? (ord.itemPriceVnd - sellerCommissionFee)
+            );
             const hasInspection = Boolean(
               ord.hasInspectionService ||
               (ord.inspectionFeeVnd && ord.inspectionFeeVnd > 0) ||
@@ -3055,69 +3430,136 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   <div className="mx-4 sm:mx-6 mb-3 p-3.5 rounded-2xl border text-xs shadow-2xs transition-all animate-fadeIn">
                     {ord.inspectionMethod === 'AT_HOME' ? (
                       /* TRƯỜNG HỢP 1: KIỂM ĐỊNH TẬN NHÀ (KTV ĐẾN NHÀ) */
-                      <div className="bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-amber-50/90 p-3.5 rounded-xl border border-amber-200 text-amber-950 space-y-2">
-                        <div className="flex items-center justify-between flex-wrap gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-0.5 rounded-md bg-amber-600 text-white text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs">
-                              <Calendar className="w-3.5 h-3.5" />
-                              <span>{lang === 'vi' ? 'Kiểm Định Tận Nhà (KTV Đến Nhà)' : 'At-Home Inspection (Technician Visit)'}</span>
-                            </span>
-                            <span className="text-xs font-bold text-amber-900">
-                              {savedAppointment?.scheduledAt
-                                ? (lang === 'vi' ? 'Đã lên lịch hẹn với KTV' : 'Technician Visit Scheduled')
-                                : (lang === 'vi' ? 'Chờ người bán hẹn lịch đón KTV' : 'Awaiting Appointment Schedule')}
-                            </span>
-                          </div>
-                          {savedAppointment?.scheduledAt && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSchedulingOrder(ord);
-                                setSchedulingReadOnly(false);
-                              }}
-                              className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline cursor-pointer"
-                            >
-                              {lang === 'vi' ? 'Đổi lịch hẹn khác' : 'Reschedule'}
-                            </button>
-                          )}
-                        </div>
+                      (() => {
+                        const assignedInspector = (() => {
+                          try {
+                            const raw = localStorage.getItem(`order_assigned_inspector_${ord.id}`);
+                            if (raw) return JSON.parse(raw);
+                          } catch { }
+                          if ((ord as any).inspectorName || ord.inspectorId) {
+                            return {
+                              inspectorId: ord.inspectorId,
+                              inspectorName: (ord as any).inspectorName,
+                              inspectorEmail: (ord as any).inspectorEmail,
+                              inspectorPhone: (ord as any).inspectorPhone,
+                            };
+                          }
+                          return null;
+                        })();
 
-                        {savedAppointment?.scheduledAt ? (
-                          <div className="p-2.5 rounded-lg bg-white/90 border border-amber-200/80 text-[11px] text-amber-900 space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-amber-950">
-                                📅 {lang === 'vi' ? 'Thời gian KTV đến nhà:' : 'Scheduled Arrival:'}
-                              </span>
-                              <span className="font-extrabold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded">
-                                {new Date(savedAppointment.scheduledAt).toLocaleString('vi-VN', {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                  year: 'numeric',
-                                })}
-                              </span>
+                        return (
+                          <div className="bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-amber-50/90 p-3.5 rounded-xl border border-amber-200 text-amber-950 space-y-2">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="px-2.5 py-0.5 rounded-md bg-amber-600 text-white text-[11px] font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs">
+                                  <Calendar className="w-3.5 h-3.5" />
+                                  <span>{lang === 'vi' ? 'Kiểm Định Tận Nhà (KTV Đến Nhà)' : 'At-Home Inspection (Technician Visit)'}</span>
+                                </span>
+                                <span className="text-xs font-bold text-amber-900">
+                                  {isInspectorArrivedForOrder(ord.id, ord)
+                                    ? (lang === 'vi' ? 'Kỹ thuật viên đã đến và đang kiểm tra' : 'Technician has arrived and is inspecting')
+                                    : String((ord as any).backendStatus || (ord as any).inspectionStatus || (ord as any).inspectionOrder?.status || ((ord as any).status !== 'AWAITING_INSPECTION' ? (ord as any).status : '') || '').toUpperCase() === 'WAITING_BUYER_APPROVAL'
+                                      ? (lang === 'vi' ? 'Đã gửi đề xuất lại • Chờ người mua phản hồi' : 'Counter-proposal sent • Awaiting buyer response')
+                                      : assignedInspector?.inspectorName
+                                        ? (lang === 'vi' ? `Đã phân công KTV ${assignedInspector.inspectorName}` : `KTV ${assignedInspector.inspectorName} Assigned`)
+                                        : savedAppointment?.scheduledAt
+                                          ? (lang === 'vi' ? 'Đã hẹn lịch • Chờ Admin điều phối KTV' : 'Appointment Scheduled • Awaiting Dispatch')
+                                          : (lang === 'vi' ? 'Chờ bạn hẹn lịch đón KTV' : 'Awaiting Appointment Schedule')}
+                                </span>
+                              </div>
+                              {savedAppointment?.scheduledAt && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSchedulingOrder(ord);
+                                    setSchedulingReadOnly(false);
+                                  }}
+                                  className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline cursor-pointer"
+                                >
+                                  {lang === 'vi' ? 'Đổi lịch hẹn khác' : 'Reschedule'}
+                                </button>
+                              )}
                             </div>
-                            <div>
-                              <span className="font-bold">📍 {lang === 'vi' ? 'Địa chỉ đón KTV:' : 'Address:'}</span>{' '}
-                              <span>{ord.shippingLegs?.[0]?.origin || ord.listing?.location || 'Địa chỉ kho người bán'}</span>
-                            </div>
-                            {savedAppointment.note && (
-                              <div className="italic text-amber-800/80">
-                                💬 {lang === 'vi' ? 'Ghi chú đón KTV:' : 'Note:'} {savedAppointment.note}
+
+                            {/* Assigned Technician Banner */}
+                            {assignedInspector ? (
+                              <div className="flex items-center gap-2 text-xs font-bold text-purple-900 bg-purple-50/90 px-3 py-1.5 rounded-xl border border-purple-200">
+                                <UserCheck className="w-4 h-4 text-purple-600 shrink-0" />
+                                <span>
+                                  {lang === 'vi' ? 'Kỹ thuật viên phụ trách:' : 'Assigned Technician:'}{' '}
+                                  <strong className="text-purple-950 font-black">KTV {assignedInspector.inspectorName}</strong>
+                                  {assignedInspector.inspectorPhone ? ` • 📞 ${assignedInspector.inspectorPhone}` : ''}
+                                </span>
+                              </div>
+                            ) : savedAppointment?.scheduledAt ? (
+                              <div className="flex items-center gap-2 text-xs font-bold text-blue-900 bg-blue-50/90 px-3 py-1.5 rounded-xl border border-blue-200">
+                                <Clock className="w-4 h-4 text-blue-600 shrink-0 animate-spin" />
+                                <span>
+                                  {lang === 'vi' ? 'Kỹ thuật viên: Trung tâm SecondLife đang xác nhận lịch và phân công KTV theo ca' : 'Technician: SecondLife Hub is assigning technician'}
+                                </span>
+                              </div>
+                            ) : null}
+
+                            {savedAppointment?.scheduledAt ? (
+                              <div className="p-2.5 rounded-lg bg-white/90 border border-amber-200/80 text-[11px] text-amber-900 space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-amber-950">
+                                    📅 {lang === 'vi' ? 'Thời gian KTV đến nhà:' : 'Scheduled Arrival:'}
+                                  </span>
+                                  <span className="font-extrabold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded">
+                                    {new Date(savedAppointment.scheduledAt).toLocaleString('vi-VN', {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      day: '2-digit',
+                                      month: '2-digit',
+                                      year: 'numeric',
+                                    })}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="font-bold">📍 {lang === 'vi' ? 'Địa chỉ đón KTV:' : 'Address:'}</span>{' '}
+                                  <span>{ord.shippingLegs?.[0]?.origin || ord.listing?.location || 'Địa chỉ kho người bán'}</span>
+                                </div>
+                                {savedAppointment.note && (
+                                  <div className="italic text-amber-800/80">
+                                    💬 {lang === 'vi' ? 'Ghi chú đón KTV:' : 'Note:'} {savedAppointment.note}
+                                  </div>
+                                )}
+
+                                {/* Mã Vạch Tiếp Nhận & Mã Code tương ứng cho KTV quét khi đến */}
+                                {assignedInspector ? (
+                                  <div className="pt-1">
+                                    <AtHomeIntakeBarcode
+                                      orderId={ord.id}
+                                      isArrived={isInspectorArrivedForOrder(ord.id, ord)}
+                                      lang={lang}
+                                      appointmentTime={savedAppointment.scheduledAt}
+                                      inspectorName={assignedInspector?.inspectorName}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="p-2 rounded-lg bg-blue-50 border border-blue-200 text-[11px] text-blue-900 flex items-center gap-2 mt-1">
+                                    <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                    <span>Trung tâm SecondLife đang xác nhận lịch hẹn và phân công Kỹ thuật viên. Mã tiếp nhận KTV sẽ hiển thị ngay khi KTV được phân công.</span>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="p-2.5 rounded-lg bg-amber-100/60 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+                                👉 <strong>{lang === 'vi' ? 'Lưu ý người bán:' : 'Seller note:'}</strong>{' '}
+                                {String((ord as any).backendStatus || (ord as any).inspectionStatus || (ord as any).inspectionOrder?.status || ((ord as any).status !== 'AWAITING_INSPECTION' ? (ord as any).status : '') || '').toUpperCase() === 'WAITING_BUYER_APPROVAL'
+                                  ? (lang === 'vi'
+                                    ? 'Bạn đã gửi lại đề xuất thay đổi phương án chia phí kiểm định. Vui lòng chờ người mua xem và đồng ý trong phòng chat trước khi hẹn lịch đón KTV.'
+                                    : 'You have sent a counter-proposal. Please wait for the buyer to accept in chat before scheduling technician visit.')
+                                  : (lang === 'vi'
+                                    ? 'Khách mua đã đăng ký gói kiểm định tận nơi. Vui lòng bấm nút "Hẹn Lịch Đón KTV" bên dưới để chọn ngày giờ làm việc trong khung giờ hành chính (08:00 - 12:00 hoặc 13:00 - 17:00). Trung tâm SecondLife sẽ nhận thông tin để điều phối Kỹ thuật viên phù hợp.'
+                                    : 'Buyer opted for at-home inspection. Technician will visit your location. Please click "Schedule Visit" below to choose appointment date during business hours (08:00 - 12:00 or 13:00 - 17:00)!')}
                               </div>
                             )}
                           </div>
-                        ) : (
-                          <div className="p-2.5 rounded-lg bg-amber-100/60 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
-                            👉 <strong>{lang === 'vi' ? 'Lưu ý người bán:' : 'Seller note:'}</strong>{' '}
-                            {lang === 'vi'
-                              ? 'Khách mua đã đăng ký gói kiểm định tận nơi. Kỹ thuật viên SecondLife sẽ trực tiếp đến nhà bạn để kiểm tra thiết bị. Vui lòng bấm nút "Xác Nhận & Hẹn Lịch Đón KTV" bên dưới để chọn ngày giờ làm việc thuận tiện!'
-                              : 'Buyer opted for at-home inspection. Technician will visit your location. Please click "Confirm & Schedule Visit" below to choose appointment date and time.'}
-                          </div>
-                        )}
-                      </div>
+                        );
+                      })()
                     ) : (
                       /* TRƯỜNG HỢP 2: ĐƯA QUA TRUNG TÂM KIỂM ĐỊNH (SHIP 2 CHẶNG) */
                       (() => {
@@ -3149,14 +3591,14 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                     ? (lang === 'vi' ? 'Kiểm định không đạt chuẩn • Chờ hoàn trả' : 'Inspection Failed • Pending Return')
                                     : isInspPassed
                                       ? (isPendingDecision
-                                          ? (lang === 'vi' ? 'Đã kiểm định ĐẠT chuẩn • Chờ người mua quyết định' : 'Passed • Awaiting Buyer Decision')
-                                          : isRejected
-                                            ? (lang === 'vi' ? 'Người mua từ chối mua • Chờ hoàn trả' : 'Buyer Declined • Pending Return')
-                                            : isLeg2Delivered
-                                              ? (lang === 'vi' ? 'Chặng 2: Đã giao thành công người mua' : 'Delivered to Buyer')
-                                              : isLeg2InTransit
-                                                ? (lang === 'vi' ? 'Đang thực hiện Chặng 2 đến Người mua' : 'Leg 2 In Progress to Buyer')
-                                                : (lang === 'vi' ? 'Đã kiểm định ĐẠT • Chờ điều phối giao người mua' : 'Passed • Awaiting Dispatch'))
+                                        ? (lang === 'vi' ? 'Đã kiểm định ĐẠT chuẩn • Chờ người mua quyết định' : 'Passed • Awaiting Buyer Decision')
+                                        : isRejected
+                                          ? (lang === 'vi' ? 'Người mua từ chối mua • Chờ hoàn trả' : 'Buyer Declined • Pending Return')
+                                          : isLeg2Delivered
+                                            ? (lang === 'vi' ? 'Chặng 2: Đã giao thành công người mua' : 'Delivered to Buyer')
+                                            : isLeg2InTransit
+                                              ? (lang === 'vi' ? 'Đang thực hiện Chặng 2 đến Người mua' : 'Leg 2 In Progress to Buyer')
+                                              : (lang === 'vi' ? 'Đã kiểm định ĐẠT • Chờ điều phối giao người mua' : 'Passed • Awaiting Dispatch'))
                                       : ord.inspectionStatus === 'INSPECTING'
                                         ? buyerInspectionStageLabel('inspecting', lang)
                                         : ordShipment && getInboundShipmentProgress(ordShipment, lang).step === 3
@@ -3168,120 +3610,118 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               </div>
                             </div>
 
-                        {/* Visual 2-Leg Journey Breakdown */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                          {/* Chặng 1 */}
-                          <div className="p-2.5 rounded-lg bg-white/90 border border-blue-200 text-blue-950 space-y-1">
-                            <div className="flex items-center justify-between font-bold">
-                              <span className="text-blue-700">📦 {lang === 'vi' ? 'Chặng 1: Gửi Hàng Đến Hub' : 'Leg 1: Send to Hub'}</span>
-                              <span className="px-2 py-0.5 rounded text-[10px] bg-blue-100 text-blue-800 font-extrabold">
-                                {(() => {
-                                  if (ordShipment) {
-                                    const p = getInboundShipmentProgress(ordShipment, lang);
-                                    if (p.step === 3) return lang === 'vi' ? 'Đã đến Hub' : 'Delivered to Hub';
-                                    if (p.step === 2) return lang === 'vi' ? 'Đang giao Hub' : 'In Transit';
-                                    return lang === 'vi' ? 'Chờ lấy hàng' : 'Pickup Pending';
-                                  }
-                                  if (ord.inspectionStatus === 'INSPECTING') return lang === 'vi' ? 'Đã phân công KTV' : 'Technician assigned';
-                                  return isOrderSellerConfirmed(ord) ? (lang === 'vi' ? 'Đang chuẩn bị' : 'In Progress') : (lang === 'vi' ? 'Cần xác nhận' : 'Pending');
-                                })()}
-                              </span>
-                            </div>
-                            <div className="text-slate-600">
-                              {lang === 'vi'
-                                ? 'Người bán dán tem QR kiểm định lên kiện hàng và bàn giao cho Lalamove vận chuyển đến Trung tâm kiểm định Hub SecondLife.'
-                                : 'Seller packs item with QR tag and hands over to Lalamove courier to deliver to SecondLife Hub.'}
-                            </div>
-                          </div>
+                            {/* Visual 2-Leg Journey Breakdown */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                              {/* Chặng 1 */}
+                              <div className="p-2.5 rounded-lg bg-white/90 border border-blue-200 text-blue-950 space-y-1">
+                                <div className="flex items-center justify-between font-bold">
+                                  <span className="text-blue-700">📦 {lang === 'vi' ? 'Chặng 1: Gửi Hàng Đến Hub' : 'Leg 1: Send to Hub'}</span>
+                                  <span className="px-2 py-0.5 rounded text-[10px] bg-blue-100 text-blue-800 font-extrabold">
+                                    {(() => {
+                                      if (ordShipment) {
+                                        const p = getInboundShipmentProgress(ordShipment, lang);
+                                        if (p.step === 3) return lang === 'vi' ? 'Đã đến Hub' : 'Delivered to Hub';
+                                        if (p.step === 2) return lang === 'vi' ? 'Đang giao Hub' : 'In Transit';
+                                        return lang === 'vi' ? 'Chờ lấy hàng' : 'Pickup Pending';
+                                      }
+                                      if (ord.inspectionStatus === 'INSPECTING') return lang === 'vi' ? 'Đã phân công KTV' : 'Technician assigned';
+                                      return isOrderSellerConfirmed(ord) ? (lang === 'vi' ? 'Đang chuẩn bị' : 'In Progress') : (lang === 'vi' ? 'Cần xác nhận' : 'Pending');
+                                    })()}
+                                  </span>
+                                </div>
+                                <div className="text-slate-600">
+                                  {lang === 'vi'
+                                    ? 'Người bán dán tem QR kiểm định lên kiện hàng và bàn giao cho Lalamove vận chuyển đến Trung tâm kiểm định Hub SecondLife.'
+                                    : 'Seller packs item with QR tag and hands over to Lalamove courier to deliver to SecondLife Hub.'}
+                                </div>
+                              </div>
 
-                          {/* Chặng 2 */}
-                          <div className={`p-2.5 rounded-lg border space-y-1 ${
-                            isInspFailed || isRejected
-                              ? 'bg-rose-50/90 border-rose-200 text-rose-950'
-                              : isPendingDecision
-                                ? 'bg-amber-50/90 border-amber-200 text-amber-950'
-                                : isInspPassed
-                                  ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
-                                  : 'bg-slate-50/90 border-slate-200 text-slate-700'
-                          }`}>
-                            <div className="flex items-center justify-between font-bold">
-                              <span className={
-                                isInspFailed || isRejected
-                                  ? 'text-rose-700'
-                                  : isPendingDecision
-                                    ? 'text-amber-700'
-                                    : isInspPassed
-                                      ? 'text-emerald-700'
-                                      : 'text-slate-700'
-                              }>
-                                🚚 {isInspFailed || isRejected
-                                  ? (lang === 'vi' ? 'Chặng 2: Hoàn Trả Người Bán' : 'Leg 2: Return to Seller')
-                                  : (lang === 'vi' ? 'Chặng 2: Hub Giao Người Mua' : 'Leg 2: Hub to Buyer')}
-                              </span>
-                              <span className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${
-                                isInspFailed || isRejected
-                                  ? 'bg-rose-100 text-rose-800'
-                                  : isPendingDecision
-                                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                                    : isInspPassed
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : 'bg-slate-200 text-slate-600'
-                              }`}>
-                                {isInspFailed
-                                  ? (lang === 'vi' ? 'Không đạt • Hoàn trả' : 'Failed • Return')
-                                  : isRejected
-                                    ? (lang === 'vi' ? 'Từ chối mua • Hoàn trả' : 'Declined • Return')
-                                    : isPendingDecision
-                                      ? (lang === 'vi' ? 'Đã đạt • Chờ người mua quyết định' : 'Passed • Awaiting Buyer')
-                                      : isLeg2Delivered
-                                        ? (lang === 'vi' ? 'Đã giao thành công' : 'Delivered')
-                                        : isLeg2InTransit
-                                          ? (lang === 'vi' ? 'Đang giao người mua' : 'In Transit')
-                                          : isAccepted
-                                            ? (lang === 'vi' ? 'Đã duyệt • Chờ giao' : 'Accepted • Awaiting Dispatch')
-                                            : isInspPassed
-                                              ? (lang === 'vi' ? 'Đã đạt' : 'Passed')
-                                              : (lang === 'vi' ? 'Kích hoạt sau khi ĐẠT' : 'After Passed')}
-                              </span>
-                            </div>
-                            <div className={
-                              isInspFailed || isRejected
-                                ? 'text-rose-800 text-[11px]'
+                              {/* Chặng 2 */}
+                              <div className={`p-2.5 rounded-lg border space-y-1 ${isInspFailed || isRejected
+                                ? 'bg-rose-50/90 border-rose-200 text-rose-950'
                                 : isPendingDecision
-                                  ? 'text-amber-800 text-[11px]'
+                                  ? 'bg-amber-50/90 border-amber-200 text-amber-950'
                                   : isInspPassed
-                                    ? 'text-emerald-800 text-[11px]'
-                                    : 'text-slate-500 text-[11px]'
-                            }>
-                              {isInspFailed
-                                ? (lang === 'vi'
-                                  ? 'Kiểm định không đạt. Trung tâm xử lý chặng trả hàng về người bán.'
-                                  : 'Inspection failed. The center handles the return to the seller.')
-                                : isRejected
-                                  ? (lang === 'vi'
-                                    ? 'Người mua từ chối mua sau kiểm định. Trung tâm xử lý chuyển hoàn kiện hàng về người bán.'
-                                    : 'Buyer declined purchase. Center handles return to seller.')
-                                  : isPendingDecision
-                                    ? (lang === 'vi'
-                                      ? 'KTV Hub kiểm định ĐẠT chuẩn và dán tem niêm phong. Đang chờ người mua xem kết quả và quyết định tiếp tục mua hàng.'
-                                      : 'Inspection passed. Awaiting buyer review and decision.')
-                                    : isLeg2Delivered
-                                      ? (lang === 'vi'
-                                        ? 'Chặng 2 đã giao kiện hàng thành công đến tận tay người mua.'
-                                        : 'Leg 2 successfully delivered to buyer.')
-                                      : isLeg2InTransit
-                                        ? (lang === 'vi'
-                                          ? 'Hub đang thực hiện chuyển phát trực tiếp kiện hàng đã kiểm định đến tận tay người mua.'
-                                          : 'Hub is delivering inspected item to buyer.')
+                                    ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
+                                    : 'bg-slate-50/90 border-slate-200 text-slate-700'
+                                }`}>
+                                <div className="flex items-center justify-between font-bold">
+                                  <span className={
+                                    isInspFailed || isRejected
+                                      ? 'text-rose-700'
+                                      : isPendingDecision
+                                        ? 'text-amber-700'
                                         : isInspPassed
+                                          ? 'text-emerald-700'
+                                          : 'text-slate-700'
+                                  }>
+                                    🚚 {isInspFailed || isRejected
+                                      ? (lang === 'vi' ? 'Chặng 2: Hoàn Trả Người Bán' : 'Leg 2: Return to Seller')
+                                      : (lang === 'vi' ? 'Chặng 2: Hub Giao Người Mua' : 'Leg 2: Hub to Buyer')}
+                                  </span>
+                                  <span className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${isInspFailed || isRejected
+                                    ? 'bg-rose-100 text-rose-800'
+                                    : isPendingDecision
+                                      ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                      : isInspPassed
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : 'bg-slate-200 text-slate-600'
+                                    }`}>
+                                    {isInspFailed
+                                      ? (lang === 'vi' ? 'Không đạt • Hoàn trả' : 'Failed • Return')
+                                      : isRejected
+                                        ? (lang === 'vi' ? 'Từ chối mua • Hoàn trả' : 'Declined • Return')
+                                        : isPendingDecision
+                                          ? (lang === 'vi' ? 'Đã đạt • Chờ người mua quyết định' : 'Passed • Awaiting Buyer')
+                                          : isLeg2Delivered
+                                            ? (lang === 'vi' ? 'Đã giao thành công' : 'Delivered')
+                                            : isLeg2InTransit
+                                              ? (lang === 'vi' ? 'Đang giao người mua' : 'In Transit')
+                                              : isAccepted
+                                                ? (lang === 'vi' ? 'Đã duyệt • Chờ giao' : 'Accepted • Awaiting Dispatch')
+                                                : isInspPassed
+                                                  ? (lang === 'vi' ? 'Đã đạt' : 'Passed')
+                                                  : (lang === 'vi' ? 'Kích hoạt sau khi ĐẠT' : 'After Passed')}
+                                  </span>
+                                </div>
+                                <div className={
+                                  isInspFailed || isRejected
+                                    ? 'text-rose-800 text-[11px]'
+                                    : isPendingDecision
+                                      ? 'text-amber-800 text-[11px]'
+                                      : isInspPassed
+                                        ? 'text-emerald-800 text-[11px]'
+                                        : 'text-slate-500 text-[11px]'
+                                }>
+                                  {isInspFailed
+                                    ? (lang === 'vi'
+                                      ? 'Kiểm định không đạt. Trung tâm xử lý chặng trả hàng về người bán.'
+                                      : 'Inspection failed. The center handles the return to the seller.')
+                                    : isRejected
+                                      ? (lang === 'vi'
+                                        ? 'Người mua từ chối mua sau kiểm định. Trung tâm xử lý chuyển hoàn kiện hàng về người bán.'
+                                        : 'Buyer declined purchase. Center handles return to seller.')
+                                      : isPendingDecision
+                                        ? (lang === 'vi'
+                                          ? 'KTV Hub kiểm định ĐẠT chuẩn và dán tem niêm phong. Đang chờ người mua xem kết quả và quyết định tiếp tục mua hàng.'
+                                          : 'Inspection passed. Awaiting buyer review and decision.')
+                                        : isLeg2Delivered
                                           ? (lang === 'vi'
-                                            ? 'KTV Hub kiểm định ĐẠT chuẩn và dán tem niêm phong. Hub tiến hành chuyển phát trực tiếp đến người mua.'
-                                            : 'Passed inspection with seal applied. Hub dispatches directly to buyer.')
-                                          : (lang === 'vi'
-                                            ? 'Sau khi KTV Hub kiểm định ĐẠT chuẩn 48 bước và dán tem niêm phong, Hub sẽ tự động chuyển phát tiếp đến tận tay người mua.'
-                                            : 'Once item passes 48-step Hub inspection and seal is applied, Hub dispatches package directly to buyer.')}
-                            </div>
-                          </div>
+                                            ? 'Chặng 2 đã giao kiện hàng thành công đến tận tay người mua.'
+                                            : 'Leg 2 successfully delivered to buyer.')
+                                          : isLeg2InTransit
+                                            ? (lang === 'vi'
+                                              ? 'Hub đang thực hiện chuyển phát trực tiếp kiện hàng đã kiểm định đến tận tay người mua.'
+                                              : 'Hub is delivering inspected item to buyer.')
+                                            : isInspPassed
+                                              ? (lang === 'vi'
+                                                ? 'KTV Hub kiểm định ĐẠT chuẩn và dán tem niêm phong. Hub tiến hành chuyển phát trực tiếp đến người mua.'
+                                                : 'Passed inspection with seal applied. Hub dispatches directly to buyer.')
+                                              : (lang === 'vi'
+                                                ? 'Sau khi KTV Hub kiểm định ĐẠT chuẩn 48 bước và dán tem niêm phong, Hub sẽ tự động chuyển phát tiếp đến tận tay người mua.'
+                                                : 'Once item passes 48-step Hub inspection and seal is applied, Hub dispatches package directly to buyer.')}
+                                </div>
+                              </div>
                             </div>
                           </div>
                         );
@@ -3296,7 +3736,9 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                     <div className="px-4 sm:px-6 py-2.5 flex items-center justify-between">
                       <span className="text-xs font-medium text-slate-500">
                         {orderIsSeller
-                          ? (lang === 'vi' ? 'Thực nhận về ví (Đã trừ 2.5% phí sàn):' : 'Net Payout (after 2.5% platform fee):')
+                          ? (lang === 'vi'
+                            ? `Thực nhận về ví (Đã trừ ${orderRatePercent}% phí sàn):`
+                            : `Net Payout (after ${orderRatePercent}% platform fee):`)
                           : (lang === 'vi' ? 'Thành tiền (đã bao gồm phí kiểm định & bảo lãnh):' : 'Total (incl. inspection & escrow guarantee):')}
                       </span>
                       <span className={`text-base sm:text-lg font-black ${orderIsSeller ? 'text-emerald-600' : 'text-[#24263e]'}`}>
@@ -3371,57 +3813,79 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               <>
                                 {hasInspection ? (
                                   <>
-                                    {ord.inspectionMethod === 'AT_HOME' ? (
-                                      /* Nút Hẹn Lịch Tiếp Đón KTV (Kiểm định tại nhà) */
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setSchedulingOrder(ord);
-                                          setSchedulingReadOnly(false);
-                                        }}
-                                        disabled={orderActionLoading === ord.id}
-                                        className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0"
-                                        title="Chọn ngày giờ kỹ thuật viên SecondLife đến nhà kiểm tra thiết bị"
-                                      >
-                                        <Calendar className="w-3.5 h-3.5" />
-                                        <span>
-                                          {savedAppointment?.scheduledAt
-                                            ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Visit')
-                                            : (lang === 'vi' ? 'Xác Nhận & Hẹn Lịch Đón KTV' : 'Confirm & Schedule Visit')}
+                                    {String((ord as any).backendStatus || (ord as any).inspectionStatus || (ord as any).inspectionOrder?.status || ((ord as any).status !== 'AWAITING_INSPECTION' ? (ord as any).status : '') || '').toUpperCase() === 'WAITING_BUYER_APPROVAL' ? (
+                                      onOpenChat ? (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onOpenChat(ord.listing);
+                                          }}
+                                          className="px-3.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                                          title={lang === 'vi' ? 'Xem trao đổi trong phòng chat' : 'View chat'}
+                                        >
+                                          <MessageSquare className="w-3.5 h-3.5 text-purple-600" />
+                                          <span>{lang === 'vi' ? 'Đang Chờ Người Mua Duyệt' : 'Awaiting Buyer Approval'}</span>
+                                        </button>
+                                      ) : (
+                                        <span className="px-3.5 py-1.5 rounded-xl bg-purple-50 text-purple-800 border border-purple-200 text-xs font-bold whitespace-nowrap shrink-0">
+                                          {lang === 'vi' ? 'Đang Chờ Người Mua Duyệt' : 'Awaiting Buyer Approval'}
                                         </span>
-                                      </button>
+                                      )
                                     ) : (
-                                      /* Nút Xác Nhận Đồng Ý Kiểm Định & Gửi Hub (Chặng 1) */
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleSellerConfirmOrder(ord.id);
-                                        }}
-                                        disabled={orderActionLoading === ord.id}
-                                        className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0"
-                                        title="Xác nhận đồng ý kiểm định và chuẩn bị gửi hàng Chặng 1 đến Trung tâm Hub SecondLife"
-                                      >
-                                        <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
-                                        <span>
-                                          {orderActionLoading === ord.id
-                                            ? (lang === 'vi' ? 'Đang xác nhận...' : 'Confirming...')
-                                            : (lang === 'vi' ? ' Đồng ý kiểm định' : 'Accept Inspection')}
-                                        </span>
-                                      </button>
-                                    )}
+                                      <>
+                                        {ord.inspectionMethod === 'AT_HOME' ? (
+                                          /* Nút Hẹn Lịch Tiếp Đón KTV (Kiểm định tại nhà) */
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setSchedulingOrder(ord);
+                                              setSchedulingReadOnly(false);
+                                            }}
+                                            disabled={orderActionLoading === ord.id}
+                                            className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0"
+                                            title="Chọn ngày giờ kỹ thuật viên SecondLife đến nhà kiểm tra thiết bị"
+                                          >
+                                            <Calendar className="w-3.5 h-3.5" />
+                                            <span>
+                                              {savedAppointment?.scheduledAt
+                                                ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Reschedule Visit')
+                                                : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit')}
+                                            </span>
+                                          </button>
+                                        ) : (
+                                          /* Nút Xác Nhận Đồng Ý Kiểm Định & Gửi Hub (Chặng 1) */
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleSellerConfirmOrder(ord.id);
+                                            }}
+                                            disabled={orderActionLoading === ord.id}
+                                            className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0"
+                                            title="Xác nhận đồng ý kiểm định và chuẩn bị gửi hàng Chặng 1 đến Trung tâm Hub SecondLife"
+                                          >
+                                            <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                                            <span>
+                                              {orderActionLoading === ord.id
+                                                ? (lang === 'vi' ? 'Đang xác nhận...' : 'Confirming...')
+                                                : (lang === 'vi' ? ' Đồng ý kiểm định' : 'Accept Inspection')}
+                                            </span>
+                                          </button>
+                                        )}
 
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handlePromptRejectInspection(ord);
-                                      }}
-                                      disabled={orderActionLoading === ord.id}
-                                      className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0 shadow-2xs"
-                                      title="Từ chối yêu cầu kiểm định"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                      <span>{lang === 'vi' ? 'Từ chối' : 'Reject Inspection'}</span>
-                                    </button>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handlePromptRejectInspection(ord);
+                                          }}
+                                          disabled={orderActionLoading === ord.id}
+                                          className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0 shadow-2xs"
+                                          title="Từ chối yêu cầu kiểm định"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                          <span>{lang === 'vi' ? 'Từ chối' : 'Reject Inspection'}</span>
+                                        </button>
+                                      </>
+                                    )}
                                   </>
                                 ) : (
                                   <>
@@ -3502,7 +3966,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                             ? (lang === 'vi' ? 'Đang nộp...' : 'Processing...')
                                             : isFeeExpired
                                               ? (lang === 'vi' ? 'Đã Hết Hạn Đóng Phí' : 'Fee Payment Expired')
-                                              : (lang === 'vi' ? `Nộp Phí Kiểm Định (${formatVND(sellerFee)})` : `Pay Inspection Fee (${formatVND(sellerFee)})`)}
+                                              : (lang === 'vi' ? `Nộp phí kiểm định (${formatVND(sellerFee)})` : `Pay Inspection Fee (${formatVND(sellerFee)})`)}
                                         </span>
                                       </button>
                                     </div>
@@ -3528,7 +3992,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
                             {/* GIAI ĐOẠN 2: ĐÃ XÁC NHẬN • ĐANG ĐÓNG GÓI */}
                             {isOrderSellerConfirmed(ord) &&
-                              String((ord as any)?.backendStatus || '').toUpperCase() !== 'WAITING_FEE_PAYMENT' &&
+                              !['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'WAITING_FEE_PAYMENT', 'PENDING'].includes(String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || '').toUpperCase()) &&
                               !inboundLabel &&
                               !isOrderReceiptConfirmed(ord) &&
                               ord.backendStatus !== 'COMPLETED' &&
@@ -3538,10 +4002,12 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               ord.backendStatus !== 'DELIVERED' &&
                               ord.escrowStatus !== 'SHIPPED_TO_BUYER' &&
                               ord.escrowStatus !== 'DELIVERED_INSPECTION_WINDOW' &&
-                              ord.escrowStatus !== 'COMPLETED_RELEASED' && (
+                              ord.escrowStatus !== 'COMPLETED_RELEASED' &&
+                              ord.escrowStatus !== 'INSPECTION_PASSED' &&
+                              (ord as any).backendStatus !== 'PASSED' && (
                                 <>
                                   {/* Nút Đã Đóng Gói • Tạo Đơn Lalamove cho Chặng 1 hoặc đơn thông thường */}
-                                  {(!hasInspection || ord.inspectionMethod !== 'AT_HOME') && (
+                                  {(!hasInspection || (ord.inspectionMethod !== 'AT_HOME' && (ord as any).orderType !== 'AT_HOME')) && (
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
@@ -3560,7 +4026,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
 
                                   {/* Nút Hẹn Giờ Kiểm Định (CHỈ HIỆN KHI ĐƠN HÀNG LÀ KIỂM ĐỊNH TẬN NHÀ - AT_HOME) */}
-                                  {hasInspection && ord.inspectionMethod === 'AT_HOME' && (
+                                  {hasInspection && (ord.inspectionMethod === 'AT_HOME' || (ord as any).orderType === 'AT_HOME') && (
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
@@ -3578,11 +4044,26 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                       </span>
                                     </button>
                                   )}
+
+                                  {/* Nút Hủy Yêu Cầu Kiểm Định Cho Seller (Khi KTV chưa đến nơi) */}
+                                  {hasInspection && onCancelOrder && !ord.inspectionReport && !isInspectorArrivedForOrder(ord.id, ord) && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handlePromptCancelInspectionRequest(ord);
+                                      }}
+                                      className="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0 shadow-2xs"
+                                      title={lang === 'vi' ? 'Hủy yêu cầu kiểm định cho đơn hàng này' : 'Cancel inspection request'}
+                                    >
+                                      <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                                      <span>{lang === 'vi' ? 'Hủy Kiểm Định' : 'Cancel'}</span>
+                                    </button>
+                                  )}
                                 </>
                               )}
 
                             {/* GIAI ĐOẠN 3: ĐÃ ĐÓNG GÓI • CHỜ SHIPPER ĐẾN LẤY (Chỉ hiển thị khi đơn chưa có Lalamove Tracking box) */}
-                            {!hasActiveShipment && (hasInboundTracking || (isOrderPacked(ord) &&
+                            {!hasActiveShipment && (!hasInspection || (ord.inspectionMethod !== 'AT_HOME' && (ord as any).orderType !== 'AT_HOME')) && (hasInboundTracking || (isOrderPacked(ord) &&
                               !isOrderReceiptConfirmed(ord) &&
                               ord.backendStatus !== 'COMPLETED' &&
                               !ord.shippingDeliveredAt &&
@@ -3657,19 +4138,35 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           )
                         ) : (
                           <>
-                            {/* Cancel Order Button for Buyer (ONLY when seller has not confirmed order yet) */}
-                            {onCancelOrder && !ord.sellerConfirmedAt && ord.confirmationStatus !== 'CONFIRMED' && ord.backendStatus !== 'CANCELLED' && ord.escrowStatus !== 'REFUNDED_TO_BUYER' && ord.escrowStatus !== 'COMPLETED_RELEASED' && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handlePromptCancelOrder(ord);
-                                }}
-                                className="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0 shadow-2xs"
-                                title={lang === 'vi' ? 'Hủy đơn hàng (Chỉ khả dụng khi người bán chưa xác nhận đơn)' : 'Cancel order (Available while seller has not confirmed)'}
-                              >
-                                <X className="w-3.5 h-3.5" />
-                                <span>{lang === 'vi' ? 'Hủy Đơn' : 'Cancel'}</span>
-                              </button>
+                            {/* Cancel Order / Inspection Request Button for Buyer */}
+                            {onCancelOrder && ord.backendStatus !== 'CANCELLED' && ord.escrowStatus !== 'REFUNDED_TO_BUYER' && ord.escrowStatus !== 'COMPLETED_RELEASED' && (
+                              (!ord.sellerConfirmedAt && ord.confirmationStatus !== 'CONFIRMED') ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePromptCancelOrder(ord);
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0 shadow-2xs"
+                                  title={lang === 'vi' ? 'Hủy đơn hàng (Chỉ khả dụng khi người bán chưa xác nhận đơn)' : 'Cancel order (Available while seller has not confirmed)'}
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  <span>{lang === 'vi' ? 'Hủy Đơn' : 'Cancel'}</span>
+                                </button>
+                              ) : (
+                                Boolean(hasInspection && !ord.inspectionReport && !isInspectorArrivedForOrder(ord.id, ord) && !isOrderReceiptConfirmed(ord)) && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handlePromptCancelInspectionRequest(ord);
+                                    }}
+                                    className="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0 shadow-2xs"
+                                    title={lang === 'vi' ? 'Hủy yêu cầu kiểm định và hoàn trả tiền về ví' : 'Cancel inspection request'}
+                                  >
+                                    <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                                    <span>{lang === 'vi' ? 'Hủy Yêu Cầu Kiểm Định' : 'Cancel Inspection'}</span>
+                                  </button>
+                                )
+                              )
                             )}
 
                             {/* Buyer tracking is available outside the inspection and purchase-decision stages. */}
@@ -3702,45 +4199,55 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                             )}
 
                             {/* Inspection Status Badge for Buyer */}
-                            {hasInspection && ord.escrowStatus === 'AWAITING_INSPECTION' && (
-                              <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl border whitespace-nowrap shrink-0 ${isOrderSellerConfirmed(ord)
-                                ? (String((ord as any)?.backendStatus || '').toUpperCase() === 'WAITING_FEE_PAYMENT'
-                                  ? 'text-orange-800 bg-orange-50 border-orange-200'
-                                  : 'text-blue-800 bg-blue-50 border-blue-200')
-                                : 'text-amber-800 bg-amber-50 border-amber-200'
+                            {hasInspection && ord.escrowStatus === 'AWAITING_INSPECTION' && isOrderSellerConfirmed(ord) && !['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'PENDING'].includes(String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || '').toUpperCase()) && (
+                              <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl border whitespace-nowrap shrink-0 ${String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || '').toUpperCase() === 'WAITING_FEE_PAYMENT'
+                                ? 'text-orange-800 bg-orange-50 border-orange-200'
+                                : 'text-blue-800 bg-blue-50 border-blue-200'
                                 }`}>
-                                {isOrderSellerConfirmed(ord) ? (
-                                  String((ord as any)?.backendStatus || '').toUpperCase() === 'WAITING_FEE_PAYMENT' ? (
-                                    <>
-                                      <Clock className="w-3.5 h-3.5 text-orange-600" />
-                                      <span>
-                                        {isInspectionPaymentExpired(ord.paymentDeadline)
-                                          ? (lang === 'vi' ? 'Quá hạn đóng phí kiểm định' : 'Fee payment expired')
-                                          : isPartyInspectionFeePaid(ord, false)
-                                            ? (lang === 'vi' ? 'Đã nộp phí • Chờ người bán nộp phí' : 'Fee paid • Awaiting seller payment')
-                                            : isPartyInspectionFeePending(ord, false)
-                                              ? (lang === 'vi' ? `Chờ bạn nộp phí (${formatVND(getPartyInspectionFee(ord, false))})` : `Awaiting your fee payment (${formatVND(getPartyInspectionFee(ord, false))})`)
-                                              : (lang === 'vi' ? 'Chờ đóng phí kiểm định' : 'Awaiting inspection fee payment')}
-                                        {ord.paymentDeadline && (
-                                          <span className="font-normal opacity-85 ml-1">
-                                            ({formatInspectionDeadline(ord.paymentDeadline, lang)})
-                                          </span>
-                                        )}
-                                      </span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
-                                      <span>{lang === 'vi' ? 'Người Bán Đã Đồng Ý • Đang Điều Phối Hub' : 'Seller Confirmed • Hub Dispatching'}</span>
-                                    </>
-                                  )
+                                {String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || '').toUpperCase() === 'WAITING_FEE_PAYMENT' ? (
+                                  <>
+                                    <Clock className="w-3.5 h-3.5 text-orange-600" />
+                                    <span>
+                                      {isInspectionPaymentExpired(ord.paymentDeadline)
+                                        ? (lang === 'vi' ? 'Quá hạn đóng phí kiểm định' : 'Fee payment expired')
+                                        : isPartyInspectionFeePaid(ord, false)
+                                          ? (lang === 'vi' ? 'Đã nộp phí • Chờ người bán nộp phí' : 'Fee paid • Awaiting seller payment')
+                                          : isPartyInspectionFeePending(ord, false)
+                                            ? (lang === 'vi' ? `Chờ bạn nộp phí (${formatVND(getPartyInspectionFee(ord, false))})` : `Awaiting your fee payment (${formatVND(getPartyInspectionFee(ord, false))})`)
+                                            : (lang === 'vi' ? 'Chờ đóng phí kiểm định' : 'Awaiting inspection fee payment')}
+                                      {ord.paymentDeadline && (
+                                        <span className="font-normal opacity-85 ml-1">
+                                          ({formatInspectionDeadline(ord.paymentDeadline, lang)})
+                                        </span>
+                                      )}
+                                    </span>
+                                  </>
                                 ) : (
                                   <>
-                                    <Clock className="w-3.5 h-3.5 text-amber-600" />
-                                    <span>{lang === 'vi' ? 'Chờ Người Bán Xác Nhận' : 'Awaiting Seller Confirmation'}</span>
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+                                    <span>
+                                      {lang === 'vi'
+                                        ? (ord.inspectionMethod === 'AT_HOME' ? 'Người bán đã đồng ý • Đang xếp lịch kỹ thuật viên' : 'Người Bán Đã Đồng Ý • Đang Điều Phối Hub')
+                                        : (ord.inspectionMethod === 'AT_HOME' ? 'Seller Confirmed • Scheduling Inspector' : 'Seller Confirmed • Hub Dispatching')}
+                                    </span>
                                   </>
                                 )}
                               </span>
+                            )}
+
+                            {/* Buyer: Người bán đề xuất lại phương án kiểm định */}
+                            {hasInspection && String((ord as any)?.backendStatus || (ord as any)?.inspectionStatus || (ord as any)?.inspectionOrder?.status || ((ord as any)?.status !== 'AWAITING_INSPECTION' ? (ord as any)?.status : '') || '').toUpperCase() === 'WAITING_BUYER_APPROVAL' && onOpenChat && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onOpenChat(ord.listing);
+                                }}
+                                className="px-3.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                                title={lang === 'vi' ? 'Vào phòng chat để xem và phản hồi đề xuất mới của người bán' : 'Open chat to review seller counter-proposal'}
+                              >
+                                <MessageSquare className="w-3.5 h-3.5 text-purple-600" />
+                                <span>{lang === 'vi' ? 'Vào Chat Xem Đề Xuất Mới' : 'Review Proposal in Chat'}</span>
+                              </button>
                             )}
 
                             {/* Inspection In Progress Notice for Buyer */}
@@ -3831,24 +4338,6 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                 )}
                               </div>
                             )}
-
-                            {/* Buyer: Mã QR tiếp nhận KTV kiểm định tại nhà */}
-                            {!orderIsSeller &&
-                              (ord.inspectionMethod === 'AT_HOME' || (ord as any).orderType === 'AT_HOME') &&
-                              !isOrderCancelledOrRefunded(ord) &&
-                              !(ord.escrowStatus === 'INSPECTION_PASSED' || (ord as any).backendStatus === 'PASSED') && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setPrintInspectionQrOrder(ord);
-                                  }}
-                                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:opacity-90 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap shrink-0"
-                                  title={lang === 'vi' ? 'Xem và xuất trình mã QR tiếp nhận khi Kỹ thuật viên SecondLife đến kiểm định tại nhà' : 'Show intake QR code for at-home inspection technician'}
-                                >
-                                  <QrCode className="w-3.5 h-3.5" />
-                                  <span>{lang === 'vi' ? 'Mã QR KTV Tại Nhà' : 'At-Home QR'}</span>
-                                </button>
-                              )}
 
                             {/* Nút Đã Nhận Hàng (Giải Ngân): Khi người mua đã xác nhận/giải ngân thì ẩn hoàn toàn nút, không cho bấm lại */}
                             {!buyerInspectionStage && !isOrderReceiptConfirmed(ord) && (ord.escrowStatus === 'DELIVERED_INSPECTION_WINDOW' || ord.backendStatus === 'DELIVERED' || ord.shippingDeliveredAt) ? (
@@ -4104,18 +4593,20 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 ) : null
               )}
 
-              {/* Lalamove Shipping & Tracking Action in Detail Modal (Ẩn hoàn toàn khi kiểm định tại trung tâm Hub vì đã có khối Hành trình 2 chặng phía dưới) */}
+              {/* Lalamove Shipping & Tracking Action in Detail Modal (Ẩn khi đơn hàng có kiểm định tại nhà hoặc tại Hub vì đã có khối hành trình chuyên biệt phía dưới) */}
               {(() => {
-                const isDetailAtCenter = Boolean(
-                  (detailModalOrder.hasInspectionService ||
-                    (detailModalOrder.inspectionFeeVnd && detailModalOrder.inspectionFeeVnd > 0) ||
-                    detailModalOrder.inspectionCenterId ||
-                    (detailModalOrder as any).inspectionStatus ||
-                    detailModalOrder.inspectionMethod === 'AT_CENTER') &&
-                  detailModalOrder.inspectionMethod !== 'AT_HOME' &&
-                  (detailModalOrder as any).orderType !== 'AT_HOME'
+                const isDetailInspection = Boolean(
+                  detailHasInspection ||
+                  detailModalOrder.hasInspectionService ||
+                  (detailModalOrder.inspectionFeeVnd && detailModalOrder.inspectionFeeVnd > 0) ||
+                  detailModalOrder.inspectionCenterId ||
+                  (detailModalOrder as any).inspectionStatus ||
+                  detailModalOrder.inspectionMethod === 'AT_CENTER' ||
+                  detailModalOrder.inspectionMethod === 'AT_HOME' ||
+                  (detailModalOrder as any).orderType === 'AT_HOME' ||
+                  (detailModalOrder as any).orderType === 'AT_CENTER'
                 );
-                if (isDetailAtCenter) return null;
+                if (isDetailInspection) return null;
 
                 return (
                   <div className="p-4 rounded-2xl bg-gradient-to-r from-orange-50/80 via-amber-50/40 to-slate-50 border border-orange-200/90 shadow-2xs space-y-3">
@@ -4331,112 +4822,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   );
                 }
 
-                if (isAtHome) {
-                  // TRƯỜNG HỢP 2: KIỂM ĐỊNH TẠI NHÀ & GIAO HÀNG (ON-SITE VERIFY)
-                  return (
-                    <div className="space-y-3">
-                      <div className="text-xs font-bold text-[#24263e] uppercase tracking-wider flex items-center justify-between flex-wrap gap-2">
-                        <div className="flex items-center gap-1.5">
-                          <ShieldCheck className="w-4 h-4 text-orange-600" />
-                          <span>Quy trình Kiểm định tại nhà & Giao hàng (On-Site Verify)</span>
-                        </div>
-                        <span className="text-[10px] font-bold text-orange-800 bg-orange-50 px-2 py-0.5 rounded-md border border-orange-200">
-                          Kiểm Định Tận Nhà
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 items-stretch">
-                        {/* Bước 1: Kỹ thuật viên kiểm tra tận nơi */}
-                        <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 flex flex-col justify-between h-full shadow-2xs space-y-3">
-                          <div className="space-y-2.5">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-[11px] font-bold text-white bg-amber-600 px-2.5 py-0.5 rounded-md shadow-2xs flex items-center gap-1">
-                                <Calendar className="w-3 h-3" />
-                                <span>Bước 1: Kiểm Định Tận Nhà</span>
-                              </span>
-                              <span className="text-xs font-mono font-bold text-orange-800">
-                                SecondLife On-site
-                              </span>
-                            </div>
-
-                            <div className="text-xs text-slate-600 space-y-1.5 pt-1">
-                              <div className="flex items-start gap-1.5">
-                                <span className="text-slate-400 font-bold shrink-0">Địa điểm:</span>
-                                <span className="font-semibold text-slate-800">{detailModalOrder.shippingLegs[0]?.origin || detailModalOrder.listing?.location || 'Kho người bán'}</span>
-                              </div>
-                              <div className="flex items-start gap-1.5">
-                                <span className="text-slate-400 font-bold shrink-0">Thực hiện:</span>
-                                <span className="font-semibold text-slate-800">{detailModalOrder.inspectorName ? `KTV ${detailModalOrder.inspectorName}` : 'Chuyên viên kỹ thuật SecondLife'}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="mt-auto pt-2.5 border-t border-slate-200/80 text-[11px] text-slate-500 flex items-start gap-1">
-                            <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                            <span className="break-words leading-relaxed">
-                              {detailModalOrder.inspectionReport
-                                ? 'Đã hoàn tất kiểm tra on-site và dán tem niêm phong đạt chuẩn'
-                                : detailModalOrder.appointmentScheduledAt
-                                  ? `Lịch hẹn KTV: ${new Date(detailModalOrder.appointmentScheduledAt).toLocaleString('vi-VN')}`
-                                  : 'Kỹ sư SecondLife sẽ đến tận nơi theo lịch hẹn để mở máy kiểm tra.'}
-                            </span>
-                          </div>
-                          {!isOrderSeller(detailModalOrder) && !detailModalOrder.inspectionReport && (
-                            <button
-                              onClick={() => setPrintInspectionQrOrder(detailModalOrder)}
-                              className="mt-2.5 w-full py-2 px-3 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:opacity-90 text-white rounded-xl font-bold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
-                              title={lang === 'vi' ? 'Xem và xuất trình mã QR tiếp nhận cho KTV SecondLife' : 'Show intake QR code for technician'}
-                            >
-                              <QrCode className="w-3.5 h-3.5" />
-                              <span>{lang === 'vi' ? 'Mã QR Tiếp Nhận KTV' : 'Technician QR Code'}</span>
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Bước 2: Bưu tá Lalamove giao thẳng tới người mua */}
-                        <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 flex flex-col justify-between h-full shadow-2xs space-y-3">
-                          <div className="space-y-2.5">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-[11px] font-bold text-white bg-emerald-700 px-2.5 py-0.5 rounded-md shadow-2xs flex items-center gap-1">
-                                <Truck className="w-3 h-3" />
-                                <span>Bước 2: Giao Hàng Người Mua</span>
-                              </span>
-                              <span className="text-xs font-mono font-bold text-[#24263e]">
-                                {detailShipments[0]?.orderCode ? (
-                                  <span className="text-emerald-700">Lalamove #{detailShipments[0].orderCode}</span>
-                                ) : (
-                                  <span className="text-[11px] font-sans font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                    Kích hoạt sau khi ĐẠT
-                                  </span>
-                                )}
-                              </span>
-                            </div>
-
-                            <div className="text-xs text-slate-600 space-y-1.5 pt-1">
-                              <div className="flex items-start gap-1.5">
-                                <span className="text-slate-400 font-bold shrink-0">Từ:</span>
-                                <span className="font-semibold text-slate-800 break-words">{detailModalOrder.shippingLegs[0]?.origin || detailModalOrder.listing?.location || 'Kho người bán'}</span>
-                              </div>
-                              <div className="flex items-start gap-1.5">
-                                <span className="text-slate-400 font-bold shrink-0">Giao đến:</span>
-                                <span className="font-semibold text-slate-800 break-words">{detailModalOrder.buyerAddress || 'Địa chỉ người mua'}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="mt-auto pt-2.5 border-t border-slate-200/80 text-[11px] text-slate-500 flex items-start gap-1">
-                            <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                            <span className="break-words leading-relaxed">
-                              Tài xế Lalamove nhận hàng tại nhà người bán và phát thẳng đến người mua sau khi niêm phong tem.
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }
-
-                // TRƯỜNG HỢP 3: KIỂM ĐỊNH QUA HUB (VERIFY THEN SHIP - 2 CHẶNG THỰC SỰ)
+                // CHUẨN HÓA DỮ LIỆU VẬN ĐƠN, ĐỊA CHỈ & KẾT QUẢ KIỂM ĐỊNH (ÁP DỤNG CHUNG CHO CẢ TẬN NHÀ VÀ QUA HUB)
                 const allModalShipments = detailShipments.length > 0
                   ? detailShipments
                   : getOrderAllShipments(detailModalOrder.id);
@@ -4499,6 +4885,266 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                   (detailModalOrder.shippingLegs[1]?.destination && detailModalOrder.shippingLegs[1].destination !== 'Đà Nẵng, Việt Nam' ? detailModalOrder.shippingLegs[1].destination : null) ||
                   'Địa chỉ nhận hàng của người mua';
 
+                const modalInspStatus = String(
+                  (detailModalOrder as any)?.backendStatus ||
+                  (detailModalOrder as any)?.inspectionStatus ||
+                  (detailModalOrder as any)?.inspectionOrder?.status ||
+                  ((detailModalOrder as any)?.status !== 'AWAITING_INSPECTION' && (detailModalOrder as any)?.status !== 'AWAITING_PAYMENT' && (detailModalOrder as any)?.status !== 'HELD_IN_ESCROW' ? (detailModalOrder as any)?.status : '') ||
+                  ''
+                ).toUpperCase();
+
+                const isModalWaitingBuyerApproval = modalInspStatus === 'WAITING_BUYER_APPROVAL';
+                const isModalWaitingSellerApproval = modalInspStatus === 'WAITING_SELLER_APPROVAL';
+                const isModalWaitingFeePayment = modalInspStatus === 'WAITING_FEE_PAYMENT';
+                const modalSavedAppointment = getOrderAppointment(detailModalOrder);
+                const modalAppointmentScheduledAt = modalSavedAppointment?.scheduledAt || detailModalOrder.appointmentScheduledAt || (detailInspectionDto as any)?.appointmentScheduledAt;
+
+                if (isAtHome) {
+                  // TRƯỜNG HỢP 2: KIỂM ĐỊNH TẠI NHÀ & GIAO HÀNG (ON-SITE VERIFY)
+                  return (
+                    <div className="space-y-3">
+                      <div className="text-xs font-bold text-[#24263e] uppercase tracking-wider flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <ShieldCheck className="w-4 h-4 text-orange-600" />
+                          <span>Quy trình Kiểm định tại nhà & Giao hàng (On-Site Verify)</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-orange-800 bg-orange-50 px-2 py-0.5 rounded-md border border-orange-200">
+                          Kiểm Định Tận Nhà
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 items-stretch">
+                        {/* Bước 1: Kỹ thuật viên kiểm tra tận nơi */}
+                        <div className={`rounded-2xl p-4 border flex flex-col justify-between h-full shadow-2xs space-y-3 ${isModalInspPassed
+                          ? 'bg-emerald-50/80 border-emerald-200'
+                          : isModalInspFailed
+                            ? 'bg-rose-50/80 border-rose-200'
+                            : 'bg-slate-50/80 border-slate-200'
+                          }`}>
+                          <div className="space-y-2.5">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <span className={`text-[11px] font-bold text-white px-2.5 py-0.5 rounded-md shadow-2xs flex items-center gap-1 ${isModalInspPassed
+                                ? 'bg-emerald-700'
+                                : isModalInspFailed
+                                  ? 'bg-rose-700'
+                                  : 'bg-amber-600'
+                                }`}>
+                                <Calendar className="w-3 h-3" />
+                                <span>Bước 1: Kiểm Định Tận Nhà</span>
+                              </span>
+                              <span className="text-xs font-mono font-bold">
+                                {isModalInspPassed ? (
+                                  <span className="text-emerald-700 font-bold bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-300">
+                                    ✓ Đã Đạt Chuẩn
+                                  </span>
+                                ) : isModalInspFailed ? (
+                                  <span className="text-rose-700 font-bold bg-rose-100/90 px-2 py-0.5 rounded border border-rose-300">
+                                    ✕ Không Đạt Chuẩn
+                                  </span>
+                                ) : isInspectorArrivedForOrder(detailModalOrder.id, detailModalOrder) ? (
+                                  <span className="text-amber-800 font-bold bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300 animate-pulse">
+                                    KTV Đang Kiểm Tra
+                                  </span>
+                                ) : modalAppointmentScheduledAt ? (
+                                  <span className="text-amber-800 font-bold bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300">
+                                    {(() => {
+                                      const modalAssignedInspector = (() => {
+                                        try {
+                                          const raw = localStorage.getItem(`order_assigned_inspector_${detailModalOrder.id}`);
+                                          if (raw) return JSON.parse(raw);
+                                        } catch { }
+                                        return null;
+                                      })();
+                                      const effectiveInspectorName = detailModalOrder.inspectorName || (detailInspectionDto as any)?.inspectorName || modalAssignedInspector?.inspectorName;
+                                      return effectiveInspectorName ? 'Đã Phân Công KTV' : 'Đã Hẹn Lịch • Chờ Điều Phối';
+                                    })()}
+                                  </span>
+                                ) : isModalWaitingBuyerApproval ? (
+                                  <span className="text-purple-800 font-bold bg-purple-100/90 px-2 py-0.5 rounded border border-purple-300">
+                                    Chờ Duyệt Đề Xuất
+                                  </span>
+                                ) : isModalWaitingSellerApproval ? (
+                                  <span className="text-amber-800 font-bold bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300">
+                                    Chờ Người Bán Duyệt
+                                  </span>
+                                ) : isModalWaitingFeePayment ? (
+                                  <span className="text-orange-800 font-bold bg-orange-100/90 px-2 py-0.5 rounded border border-orange-300">
+                                    Chờ Đóng Phí
+                                  </span>
+                                ) : (
+                                  <span className="text-amber-800 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                    Chờ Người Bán Hẹn Lịch
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+
+                            <div className="text-xs text-slate-600 space-y-1.5 pt-1">
+                              <div className="flex items-start gap-1.5">
+                                <span className="text-slate-400 font-bold shrink-0">Địa điểm:</span>
+                                <span className="font-semibold text-slate-800 break-words">{realSellerAddress}</span>
+                              </div>
+                              {(() => {
+                                const modalAssignedInspector = (() => {
+                                  try {
+                                    const raw = localStorage.getItem(`order_assigned_inspector_${detailModalOrder.id}`);
+                                    if (raw) return JSON.parse(raw);
+                                  } catch { }
+                                  return null;
+                                })();
+                                const effectiveInspectorName = detailModalOrder.inspectorName || (detailInspectionDto as any)?.inspectorName || modalAssignedInspector?.inspectorName;
+                                return (
+                                  <>
+                                    <div className="flex items-start gap-1.5">
+                                      <span className="text-slate-400 font-bold shrink-0">Thực hiện:</span>
+                                      <span className="font-semibold text-slate-800">
+                                        {effectiveInspectorName ? `KTV ${effectiveInspectorName}` : 'Chờ trung tâm điều phối KTV'}
+                                      </span>
+                                    </div>
+                                    {/* Mã Vạch Tiếp Nhận & Mã Code trong Modal Chi Tiết */}
+                                    {isOrderSeller(detailModalOrder) ? (
+                                      modalAppointmentScheduledAt && effectiveInspectorName && !isModalInspPassed && !isModalInspFailed && (
+                                        <div className="pt-2">
+                                          <AtHomeIntakeBarcode
+                                            orderId={detailModalOrder.id}
+                                            isArrived={isInspectorArrivedForOrder(detailModalOrder.id, detailModalOrder)}
+                                            lang={lang}
+                                            compact={true}
+                                            appointmentTime={modalAppointmentScheduledAt}
+                                            inspectorName={effectiveInspectorName}
+                                          />
+                                        </div>
+                                      )
+                                    ) : (
+                                      modalAppointmentScheduledAt && effectiveInspectorName && !isModalInspPassed && !isModalInspFailed && (
+                                        <div className="pt-2 p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 text-xs text-amber-900 flex items-start gap-2">
+                                          <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                          <div>
+                                            <div className="font-bold">Lịch hẹn KTV tận nơi đã được xác nhận</div>
+                                            <div className="text-[11px] text-amber-800">
+                                              Kỹ thuật viên <strong>{effectiveInspectorName}</strong> sẽ đến nhà người bán theo lịch hẹn để mở máy kiểm định 5 bước ISO.
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )
+                                    )}
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          </div>
+
+                          <div className="mt-auto pt-2.5 border-t border-slate-200/80 text-[11px] text-slate-500 flex items-start gap-1">
+                            <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                            <span className="break-words leading-relaxed">
+                              {(() => {
+                                const modalAssignedInspector = (() => {
+                                  try {
+                                    const raw = localStorage.getItem(`order_assigned_inspector_${detailModalOrder.id}`);
+                                    if (raw) return JSON.parse(raw);
+                                  } catch { }
+                                  return null;
+                                })();
+                                const effectiveInspectorName = detailModalOrder.inspectorName || (detailInspectionDto as any)?.inspectorName || modalAssignedInspector?.inspectorName;
+
+                                if (detailModalOrder.inspectionReport) {
+                                  return 'Đã hoàn tất kiểm tra on-site và dán tem niêm phong đạt chuẩn.';
+                                }
+                                if (isInspectorArrivedForOrder(detailModalOrder.id, detailModalOrder)) {
+                                  return 'Kỹ thuật viên đã đến và đang kiểm tra thiết bị tại nhà người bán.';
+                                }
+                                if (modalAppointmentScheduledAt) {
+                                  return `Lịch hẹn KTV: ${new Date(modalAppointmentScheduledAt).toLocaleString('vi-VN')} tại nhà người bán. ${effectiveInspectorName ? `KTV ${effectiveInspectorName} sẽ đến kiểm tra máy. Xuất trình mã tiếp nhận cho KTV khi đến.` : 'Trung tâm SecondLife đang xử lý và phân công KTV theo ca.'}`;
+                                }
+                                if (isModalWaitingBuyerApproval) {
+                                  return 'Người bán đã đề xuất lại phương án chia phí kiểm định. Chờ người mua duyệt trong phòng chat.';
+                                }
+                                if (isModalWaitingSellerApproval) {
+                                  return 'Đã gửi yêu cầu kiểm định tại nhà. Chờ người bán duyệt trong phòng chat.';
+                                }
+                                if (isModalWaitingFeePayment) {
+                                  return 'Hai bên đã thống nhất phương án. Chờ đóng phí kiểm định để KTV đến kiểm tra.';
+                                }
+                                return 'Chờ người bán hẹn lịch đón KTV trong khung giờ hành chính (8h-12h, 13h-17h).';
+                              })()}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Bước 2: Bưu tá Lalamove giao thẳng tới người mua */}
+                        <div className={`rounded-2xl p-4 border flex flex-col justify-between h-full shadow-2xs space-y-3 ${isModalInspFailed || isModalRejected
+                          ? 'bg-rose-50/80 border-rose-200'
+                          : isModalPendingDecision
+                            ? 'bg-amber-50/80 border-amber-200'
+                            : isModalInspPassed
+                              ? 'bg-emerald-50/80 border-emerald-200'
+                              : 'bg-slate-50/80 border-slate-200'
+                          }`}>
+                          <div className="space-y-2.5">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <span className={`text-[11px] font-bold text-white px-2.5 py-0.5 rounded-md shadow-2xs flex items-center gap-1 ${isModalInspFailed || isModalRejected
+                                ? 'bg-rose-700'
+                                : isModalPendingDecision
+                                  ? 'bg-amber-600'
+                                  : isModalInspPassed
+                                    ? 'bg-emerald-700'
+                                    : 'bg-emerald-700'
+                                }`}>
+                                <Truck className="w-3 h-3" />
+                                <span>Bước 2: Giao Hàng Người Mua</span>
+                              </span>
+                              <span className="text-xs font-mono font-bold text-[#24263e]">
+                                {detailShipments[0]?.orderCode ? (
+                                  <span className="text-emerald-700 font-bold">Lalamove #{detailShipments[0].orderCode}</span>
+                                ) : isModalInspFailed || isModalRejected ? (
+                                  <span className="text-[11px] font-sans font-medium text-rose-700 bg-rose-100 px-2 py-0.5 rounded border border-rose-200">
+                                    Không giao hàng
+                                  </span>
+                                ) : isModalInspPassed ? (
+                                  <span className="text-[11px] font-sans font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">
+                                    Sẵn sàng giao hàng
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] font-sans font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                    Kích hoạt sau khi ĐẠT
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+
+                            <div className="text-xs text-slate-600 space-y-1.5 pt-1">
+                              <div className="flex items-start gap-1.5">
+                                <span className="text-slate-400 font-bold shrink-0">Từ:</span>
+                                <span className="font-semibold text-slate-800 break-words">{realSellerAddress}</span>
+                              </div>
+                              <div className="flex items-start gap-1.5">
+                                <span className="text-slate-400 font-bold shrink-0">Giao đến:</span>
+                                <span className="font-semibold text-slate-800 break-words">{realBuyerAddress}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-auto pt-2.5 border-t border-slate-200/80 text-[11px] text-slate-500 flex items-start gap-1">
+                            <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                            <span className="break-words leading-relaxed">
+                              {isModalInspFailed
+                                ? 'Sản phẩm không đạt chuẩn kiểm định. Đơn hàng dừng lại tại nhà người bán, không phát hàng cho người mua.'
+                                : isModalRejected
+                                  ? 'Người mua từ chối mua sản phẩm sau khi kiểm định. Đơn hàng kết thúc.'
+                                  : isModalPendingDecision
+                                    ? 'KTV đã kiểm định ĐẠT chuẩn. Đang chờ người mua xác nhận mua hàng trước khi điều phối bưu tá.'
+                                    : isModalInspPassed
+                                      ? 'Sản phẩm kiểm định ĐẠT chuẩn. Tài xế Lalamove sẽ nhận hàng từ người bán và phát thẳng đến người mua.'
+                                      : 'Tài xế Lalamove nhận hàng tại nhà người bán và phát thẳng đến người mua sau khi niêm phong tem.'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // TRƯỜNG HỢP 3: KIỂM ĐỊNH QUA HUB (VERIFY THEN SHIP - 2 CHẶNG THỰC SỰ)
                 return (
                   <div className="space-y-3">
                     <div className="text-xs font-bold text-[#24263e] uppercase tracking-wider flex items-center justify-between flex-wrap gap-2">
@@ -4605,25 +5251,23 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                       </div>
 
                       {/* Chặng 2: Trung tâm Hub gửi Người mua HOẶC Hoàn trả người bán */}
-                      <div className={`rounded-2xl p-4 border flex flex-col justify-between h-full shadow-2xs space-y-3 ${
-                        isModalInspFailed || isModalRejected
-                          ? 'bg-rose-50/80 border-rose-200'
-                          : isModalPendingDecision
-                            ? 'bg-amber-50/80 border-amber-200'
-                            : isModalInspPassed
-                              ? 'bg-emerald-50/80 border-emerald-200'
-                              : 'bg-slate-50/80 border-slate-200'
+                      <div className={`rounded-2xl p-4 border flex flex-col justify-between h-full shadow-2xs space-y-3 ${isModalInspFailed || isModalRejected
+                        ? 'bg-rose-50/80 border-rose-200'
+                        : isModalPendingDecision
+                          ? 'bg-amber-50/80 border-amber-200'
+                          : isModalInspPassed
+                            ? 'bg-emerald-50/80 border-emerald-200'
+                            : 'bg-slate-50/80 border-slate-200'
                         }`}>
                         <div className="space-y-2.5">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <span className={`text-[11px] font-bold text-white px-2.5 py-0.5 rounded-md shadow-2xs flex items-center gap-1 ${
-                              isModalInspFailed || isModalRejected
-                                ? 'bg-rose-700'
-                                : isModalPendingDecision
-                                  ? 'bg-amber-600'
-                                  : isModalInspPassed
-                                    ? 'bg-emerald-700'
-                                    : 'bg-indigo-700'
+                            <span className={`text-[11px] font-bold text-white px-2.5 py-0.5 rounded-md shadow-2xs flex items-center gap-1 ${isModalInspFailed || isModalRejected
+                              ? 'bg-rose-700'
+                              : isModalPendingDecision
+                                ? 'bg-amber-600'
+                                : isModalInspPassed
+                                  ? 'bg-emerald-700'
+                                  : 'bg-indigo-700'
                               }`}>
                               <Truck className="w-3 h-3" />
                               <span>
@@ -4644,14 +5288,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                   Lalamove #{modalLeg2Shipment.orderCode}
                                 </span>
                               ) : (
-                                <span className={`text-[11px] font-sans font-medium px-2 py-0.5 rounded border ${
-                                  isModalInspFailed || isModalRejected
-                                    ? 'text-rose-700 bg-rose-100 border-rose-200'
-                                    : isModalPendingDecision
-                                      ? 'text-amber-800 bg-amber-100 border-amber-300 font-bold'
-                                      : isModalInspPassed
-                                        ? 'text-emerald-700 bg-emerald-100 border-emerald-200'
-                                        : 'text-slate-500 bg-slate-100 border-slate-200'
+                                <span className={`text-[11px] font-sans font-medium px-2 py-0.5 rounded border ${isModalInspFailed || isModalRejected
+                                  ? 'text-rose-700 bg-rose-100 border-rose-200'
+                                  : isModalPendingDecision
+                                    ? 'text-amber-800 bg-amber-100 border-amber-300 font-bold'
+                                    : isModalInspPassed
+                                      ? 'text-emerald-700 bg-emerald-100 border-emerald-200'
+                                      : 'text-slate-500 bg-slate-100 border-slate-200'
                                   }`}>
                                   {isModalInspFailed
                                     ? 'Kích hoạt hoàn trả'
@@ -5364,11 +6007,12 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               {isInspectionFailed || isInspectionRejected || isInspectionCancelled ? (
                                 (() => {
                                   const isReserveRefunded = Boolean(
-                                    detailModalOrder.feeSettledAt ||
-                                    detailInspectionDto?.feeSettledAt ||
                                     (detailModalOrder as any).returnReserveRefundedAt ||
-                                    (detailModalOrder as any).refundedAt ||
-                                    detailModalOrder.escrowStatus === 'REFUNDED_TO_BUYER'
+                                    (detailInspectionDto as any)?.returnReserveRefundedAt ||
+                                    (detailModalOrder as any).returnReserveStatus === 'REFUNDED_UNUSED' ||
+                                    (detailInspectionDto as any)?.returnReserveStatus === 'REFUNDED_UNUSED' ||
+                                    (detailModalOrder as any).returnReserve?.status === 'REFUNDED_UNUSED' ||
+                                    (detailInspectionDto as any)?.returnReserve?.status === 'REFUNDED_UNUSED'
                                   );
                                   const isReturnShipped = Boolean(
                                     detailShipments.some((s) => s.leg === 'CENTER_TO_SELLER' || s.leg === 'RETURN')
@@ -5388,8 +6032,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                     );
                                   }
                                   return (
-                                    <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium bg-slate-100 text-slate-600">
-                                      {lang === 'vi' ? 'Chờ đối soát từ hệ thống' : 'Pending reconciliation'}
+                                    <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                      {lang === 'vi' ? 'Đang giữ trong quỹ' : 'Held in Escrow'}
                                     </span>
                                   );
                                 })()
@@ -5446,10 +6090,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                         <span className="font-semibold text-slate-800">
                           {formatVND(buyerFeeShare)}
                           <span className={`ml-1 text-[10px] px-1.5 py-0.2 rounded font-bold ${buyerFeeShare <= 0
-                              ? 'bg-slate-100 text-slate-600'
-                              : isBuyerInspectionPaid
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-orange-100 text-orange-800'
+                            ? 'bg-slate-100 text-slate-600'
+                            : isBuyerInspectionPaid
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-orange-100 text-orange-800'
                             }`}>
                             {buyerFeeShare <= 0
                               ? (lang === 'vi' ? 'Không cần nộp' : 'No payment needed')
@@ -5465,10 +6109,10 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                         <span className="font-semibold text-slate-800">
                           {formatVND(sellerFeeShare)}
                           <span className={`ml-1 text-[10px] px-1.5 py-0.2 rounded font-bold ${sellerFeeShare <= 0
-                              ? 'bg-slate-100 text-slate-600'
-                              : isSellerInspectionPaid
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-orange-100 text-orange-800'
+                            ? 'bg-slate-100 text-slate-600'
+                            : isSellerInspectionPaid
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-orange-100 text-orange-800'
                             }`}>
                             {sellerFeeShare <= 0
                               ? (lang === 'vi' ? 'Không cần nộp' : 'No payment needed')
@@ -5597,57 +6241,91 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
 
                     {/* Inspection Failed / Rejected / Cancelled Resolution */}
                     {(isInspectionFailed || isInspectionRejected || isInspectionCancelled) && (
-                      <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl space-y-1.5 text-xs text-rose-950 mt-2">
-                        <div className="font-bold flex items-center justify-between text-rose-900">
-                          <span>{lang === 'vi' ? 'Kết Thúc Luồng Kiểm Định' : 'Inspection Process Ended'}</span>
-                          <span className="text-[10px] font-extrabold bg-rose-100 text-rose-800 px-2 py-0.5 rounded">
-                            {isInspectionFailed
-                              ? (lang === 'vi' ? 'Không Đạt Chuẩn' : 'Inspection Failed')
-                              : isInspectionRejected
-                                ? (lang === 'vi' ? 'Từ Chối Mua' : 'Purchase Declined')
-                                : (lang === 'vi' ? 'Đã Hủy' : 'Cancelled')}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-rose-800/90 leading-relaxed">
-                          {isInspectionFailed
-                            ? (lang === 'vi'
-                              ? 'Thiết bị không đạt yêu cầu kiểm định kỹ thuật của SecondLife. Quy trình mua bán dừng tại đây và thiết bị được chuyển hoàn về cho Người bán.'
-                              : 'Device did not meet technical inspection standards. Purchase cancelled and item is scheduled for return to Seller.')
-                            : isInspectionRejected
-                              ? (lang === 'vi'
-                                ? 'Người mua đã từ chối tiếp tục mua sau khi xem biên bản kiểm định. Thiết bị được chuyển hoàn về cho Người bán.'
-                                : 'Buyer declined purchase after inspection report. Item is scheduled for return to Seller.')
-                              : (lang === 'vi'
-                                ? 'Đơn kiểm định đã kết thúc. Phí và tiền cọc được xử lý đối soát theo quy định.'
-                                : 'Inspection order ended. Fees are handled according to policy.')}
-                        </p>
-                        {isAtCenter && returnReserveFee > 0 && (
-                          <div className="pt-1.5 border-t border-rose-200/80 text-[11px] text-rose-900 flex items-center justify-between">
-                            <span>{lang === 'vi' ? `Khoản dự phòng cước hoàn (${formatVND(returnReserveFee)}):` : `Return shipping reserve (${formatVND(returnReserveFee)}):`}</span>
-                            <div>
-                              {Boolean(
-                                detailModalOrder.feeSettledAt ||
-                                detailInspectionDto?.feeSettledAt ||
-                                (detailModalOrder as any).returnReserveRefundedAt ||
-                                (detailModalOrder as any).refundedAt ||
-                                detailModalOrder.escrowStatus === 'REFUNDED_TO_BUYER'
-                              ) ? (
-                                <span className="font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded text-[10px]">
-                                  {lang === 'vi' ? 'Đã hoàn về ví' : 'Refunded'}
-                                </span>
-                              ) : detailShipments.some((s) => s.leg === 'CENTER_TO_SELLER' || s.leg === 'RETURN') ? (
-                                <span className="font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded text-[10px]">
-                                  {lang === 'vi' ? 'Đã sử dụng cho cước hoàn' : 'Used for return delivery'}
-                                </span>
-                              ) : (
-                                <span className="font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded text-[10px]">
-                                  {lang === 'vi' ? 'Chờ đối soát từ hệ thống' : 'Pending reconciliation'}
-                                </span>
-                              )}
+                      (() => {
+                        const isPurchaseExpired = isExpiredInspectionPurchase(
+                          inspStatus,
+                          detailInspectionDto?.note || detailModalOrder.inspectionNote
+                        );
+                        const cancelReasonInfo = getCancellationReasonDisplay(detailModalOrder, lang);
+                        const orderNote = detailInspectionDto?.note || detailModalOrder.inspectionNote;
+                        const refundPartyLabel =
+                          feePayerSplit === 'SELLER_100'
+                            ? (lang === 'vi' ? 'người bán' : 'seller')
+                            : feePayerSplit === 'BUYER_100'
+                              ? (lang === 'vi' ? 'người mua' : 'buyer')
+                              : (lang === 'vi' ? 'cả hai bên theo tỷ lệ 50/50' : 'both parties (50/50)');
+                        const feePayerDescription =
+                          feePayerSplit === 'SELLER_100'
+                            ? (lang === 'vi' ? 'Người bán nộp 100%' : 'Seller 100%')
+                            : feePayerSplit === 'BUYER_100'
+                              ? (lang === 'vi' ? 'Người mua nộp 100%' : 'Buyer 100%')
+                              : (lang === 'vi' ? 'Chia 50/50' : 'Split 50/50');
+
+                        return (
+                          <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl space-y-1.5 text-xs text-rose-950 mt-2">
+                            <div className="font-bold flex items-center justify-between text-rose-900">
+                              <span>{lang === 'vi' ? 'Kết Thúc Luồng Kiểm Định' : 'Inspection Process Ended'}</span>
+                              <span className="text-[10px] font-extrabold bg-rose-100 text-rose-800 px-2 py-0.5 rounded">
+                                {isInspectionFailed
+                                  ? (lang === 'vi' ? 'Không Đạt Chuẩn' : 'Inspection Failed')
+                                  : isInspectionRejected
+                                    ? (lang === 'vi' ? 'Từ Chối Mua' : 'Purchase Declined')
+                                    : isPurchaseExpired
+                                      ? (lang === 'vi' ? 'Hết Hạn Thanh Toán' : 'Payment Expired')
+                                      : (lang === 'vi' ? 'Đã Hủy' : 'Cancelled')}
+                              </span>
                             </div>
+                            <p className="text-[11px] text-rose-800/90 leading-relaxed">
+                              {isInspectionFailed
+                                ? (lang === 'vi'
+                                  ? 'Thiết bị không đạt yêu cầu kiểm định kỹ thuật của SecondLife. Quy trình mua bán dừng tại đây và thiết bị được chuyển hoàn về cho Người bán.'
+                                  : 'Device did not meet technical inspection standards. Purchase cancelled and item is scheduled for return to Seller.')
+                                : isInspectionRejected
+                                  ? (lang === 'vi'
+                                    ? `Người mua đã từ chối tiếp tục mua sau khi xem biên bản kiểm định.${orderNote ? ` (${orderNote})` : ''} Thiết bị được chuyển hoàn về cho Người bán.`
+                                    : 'Buyer declined purchase after inspection report. Item is scheduled for return to Seller.')
+                                  : isPurchaseExpired
+                                    ? (lang === 'vi'
+                                      ? `Đơn hàng đã tự động hủy do người mua không thanh toán tiền hàng Giai đoạn 2 trong vòng 6 giờ sau khi kiểm định đạt chuẩn. Khoản dự phòng cước hoàn (${formatVND(returnReserveFee)}) đang được giữ trong quỹ và sẽ được hoàn trả về ví cho ${refundPartyLabel} (bên đã nộp) sau khi đối soát quyết toán.`
+                                      : `Order auto-cancelled as buyer did not complete Phase 2 payment within 6 hours of passing inspection. Return reserve (${formatVND(returnReserveFee)}) is held and will be refunded to ${refundPartyLabel} upon settlement reconciliation.`)
+                                    : (cancelReasonInfo.reason
+                                      ? `${lang === 'vi' ? 'Lý do hủy đơn: ' : 'Cancellation reason: '}${cancelReasonInfo.reason}`
+                                      : (orderNote || (lang === 'vi'
+                                        ? 'Đơn kiểm định đã kết thúc. Phí và tiền cọc được xử lý đối soát theo quy định.'
+                                        : 'Inspection order ended. Fees are handled according to policy.')))}
+                            </p>
+                            {isAtCenter && returnReserveFee > 0 && (
+                              <div className="pt-1.5 border-t border-rose-200/80 text-[11px] text-rose-900 flex items-center justify-between">
+                                <span>{lang === 'vi' ? `Khoản dự phòng cước hoàn (${formatVND(returnReserveFee)} · ${feePayerDescription}):` : `Return shipping reserve (${formatVND(returnReserveFee)}):`}</span>
+                                <div>
+                                  {Boolean(
+                                    (detailModalOrder as any).returnReserveRefundedAt ||
+                                    (detailInspectionDto as any)?.returnReserveRefundedAt ||
+                                    (detailModalOrder as any).returnReserveStatus === 'REFUNDED_UNUSED' ||
+                                    (detailInspectionDto as any)?.returnReserveStatus === 'REFUNDED_UNUSED' ||
+                                    (detailModalOrder as any).returnReserve?.status === 'REFUNDED_UNUSED' ||
+                                    (detailInspectionDto as any)?.returnReserve?.status === 'REFUNDED_UNUSED'
+                                  ) ? (
+                                    <span className="font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded text-[10px]">
+                                      {lang === 'vi'
+                                        ? `Đã hoàn về ví ${feePayerSplit === 'SELLER_100' ? 'người bán' : feePayerSplit === 'BUYER_100' ? 'người mua' : '(tỷ lệ 50/50)'}`
+                                        : 'Refunded'}
+                                    </span>
+                                  ) : detailShipments.some((s) => s.leg === 'CENTER_TO_SELLER' || s.leg === 'RETURN') ? (
+                                    <span className="font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded text-[10px]">
+                                      {lang === 'vi' ? 'Đã sử dụng cho cước hoàn' : 'Used for return delivery'}
+                                    </span>
+                                  ) : (
+                                    <span className="font-bold text-amber-900 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded text-[10px]">
+                                      {lang === 'vi' ? 'Đang giữ trong quỹ (Chờ đối soát)' : 'Held in Escrow (Pending reconciliation)'}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        );
+                      })()
                     )}
                   </div>
                 );
@@ -5774,6 +6452,43 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                           <span>Thời điểm giải ngân: <strong>{new Date(orderSettlement.settledAt).toLocaleString('vi-VN')}</strong></span>
                         </div>
                       </div>
+                    ) : orderCommission ? (
+                      <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                            Chưa quyết toán giải ngân
+                          </span>
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-100 text-blue-800">
+                            {orderCommission.ruleCode || 'Biểu phí chuẩn'}
+                          </span>
+                        </div>
+                        <div className="space-y-1.5 pt-1 border-t border-slate-200/80">
+                          <div className="flex justify-between items-center text-slate-700">
+                            <span>Ước tính thực nhận (khi hoàn tất):</span>
+                            <span className="text-sm font-black text-emerald-600">
+                              {formatVND((orderCommission.commissionBase ?? detailModalOrder.itemPriceVnd) - (orderCommission.platformCommission ?? 0))}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center text-slate-600 text-[11px]">
+                            <span>Phí hoa hồng sàn ({orderCommission.ratePercent !== undefined ? `${orderCommission.ratePercent}%` : 'tính theo biểu phí'}):</span>
+                            <span className="font-bold text-[#c34c36]">
+                              -{formatVND(orderCommission.platformCommission ?? 0)}
+                            </span>
+                          </div>
+                          {orderCommission.commissionBase !== undefined && (
+                            <div className="flex justify-between items-center text-slate-600 text-[11px]">
+                              <span>Giá cơ sở tính hoa hồng:</span>
+                              <span className="font-bold text-slate-800">
+                                {formatVND(orderCommission.commissionBase)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 pt-1">
+                          Khoản tiền bán hàng đang được bảo toàn trong Quỹ Escrow. Tiền sẽ được khấu trừ hoa hồng theo biểu phí hệ thống và giải ngân về ví người bán sau khi giao dịch hoàn tất.
+                        </p>
+                      </div>
                     ) : (
                       <div className="p-3 rounded-xl bg-white border border-gray-200 text-xs text-slate-600 space-y-1">
                         <p className="font-semibold text-slate-800">Chưa giải ngân</p>
@@ -5797,6 +6512,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                 (!isOrderSeller(detailModalOrder) && (
                   detailModalOrder.escrowStatus === 'INSPECTION_PASSED' ||
                   (detailModalOrder as any).backendStatus === 'PASSED' ||
+                  detailHasInspection ||
                   (detailModalOrder.inspectionMethod === 'AT_HOME' || (detailModalOrder as any).orderType === 'AT_HOME') ||
                   Boolean(
                     (detailModalOrder.carrierPickedUpAt ||
@@ -5864,7 +6580,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                       if (hasInspection) {
                                         return (
                                           <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">
-                                            {detailModalOrder.inspectionMethod === 'AT_HOME' ? (
+                                            {(detailModalOrder.inspectionMethod === 'AT_HOME' || (detailModalOrder as any).orderType === 'AT_HOME') ? (
                                               <button
                                                 type="button"
                                                 onClick={() => {
@@ -5998,7 +6714,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                                 {orderActionLoading === detailModalOrder.id
                                                   ? (lang === 'vi' ? 'Đang nộp phí kiểm định...' : 'Processing...')
                                                   : (lang === 'vi'
-                                                    ? `Nộp Phí Kiểm Định (${formatVND(sellerFee)}) (Trừ Ví)`
+                                                    ? `Nộp phí kiểm định (${formatVND(sellerFee)}) (Trừ Ví)`
                                                     : `Pay Inspection Fee (${formatVND(sellerFee)})`)}
                                               </span>
                                             </button>
@@ -6036,20 +6752,60 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                   detailModalOrder.backendStatus !== 'DELIVERED' &&
                                   (detailModalOrder.escrowStatus as string) !== 'SHIPPED_TO_BUYER' &&
                                   (detailModalOrder.escrowStatus as string) !== 'DELIVERED_INSPECTION_WINDOW' &&
-                                  (detailModalOrder.escrowStatus as string) !== 'COMPLETED_RELEASED' && (
+                                  (detailModalOrder.escrowStatus as string) !== 'COMPLETED_RELEASED' &&
+                                  (detailModalOrder.escrowStatus as string) !== 'INSPECTION_PASSED' &&
+                                  (detailModalOrder as any).backendStatus !== 'PASSED' && (
                                     <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1">
-                                      <button
-                                        onClick={() => {
-                                          setCreateShipmentOrder(detailModalOrder);
-                                        }}
-                                        className="flex-1 py-2.5 px-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:opacity-90 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-                                        title={lang === 'vi' ? 'Kiện hàng đã đóng gói. Bấm để tạo vận đơn Lalamove điều phối tài xế lấy hàng' : 'Package is packed. Click to create Lalamove shipment'}
-                                      >
-                                        <Truck className="w-4 h-4" />
-                                        <span>
-                                          {lang === 'vi' ? 'Đã gói hàng • Tạo đơn vận chuyển' : 'Packed • Create Lalamove Order'}
-                                        </span>
-                                      </button>
+                                      {/* Nút Đã Đóng Gói • Tạo Đơn Lalamove cho Chặng 1 hoặc đơn thông thường (KHÔNG HIỂN THỊ KHI LÀ AT_HOME) */}
+                                      {(!detailHasInspection || (detailModalOrder.inspectionMethod !== 'AT_HOME' && (detailModalOrder as any).orderType !== 'AT_HOME')) && (
+                                        <button
+                                          onClick={() => {
+                                            setCreateShipmentOrder(detailModalOrder);
+                                          }}
+                                          className="flex-1 py-2.5 px-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:opacity-90 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                                          title={lang === 'vi' ? 'Kiện hàng đã đóng gói. Bấm để tạo vận đơn Lalamove điều phối tài xế lấy hàng' : 'Package is packed. Click to create Lalamove shipment'}
+                                        >
+                                          <Truck className="w-4 h-4" />
+                                          <span>
+                                            {lang === 'vi' ? 'Đã gói hàng • Tạo đơn vận chuyển' : 'Packed • Create Lalamove Order'}
+                                          </span>
+                                        </button>
+                                      )}
+
+                                      {/* Nút Hẹn Lịch Đón KTV trong Modal Chi Tiết (CHỈ HIỆN KHI ĐƠN HÀNG LÀ KIỂM ĐỊNH TẬN NHÀ - AT_HOME) */}
+                                      {detailHasInspection && (detailModalOrder.inspectionMethod === 'AT_HOME' || (detailModalOrder as any).orderType === 'AT_HOME') && (
+                                        <button
+                                          onClick={() => {
+                                            setSchedulingOrder(detailModalOrder);
+                                            setSchedulingReadOnly(false);
+                                          }}
+                                          className="flex-1 py-2.5 px-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                                          title={lang === 'vi' ? 'Chọn ngày giờ kỹ thuật viên SecondLife đến nhà kiểm tra thiết bị' : 'Schedule technician visit'}
+                                        >
+                                          <Calendar className="w-4 h-4" />
+                                          <span>
+                                            {getOrderAppointment(detailModalOrder)?.scheduledAt
+                                              ? (lang === 'vi' ? 'Đổi Lịch Hẹn KTV' : 'Hẹn Lịch Đón KTV')
+                                              : (lang === 'vi' ? 'Hẹn Lịch Đón KTV' : 'Schedule Visit')}
+                                          </span>
+                                        </button>
+                                      )}
+
+                                      {/* Nút Hủy Yêu Cầu Kiểm Định Cho Seller (Khi KTV chưa đến nhà) */}
+                                      {detailHasInspection &&
+                                        onCancelOrder &&
+                                        !detailModalOrder.inspectionReport &&
+                                        !isInspectorArrivedForOrder(detailModalOrder.id, detailModalOrder) && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handlePromptCancelInspectionRequest(detailModalOrder)}
+                                            className="py-2.5 px-4 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-xl font-bold text-xs sm:text-sm transition cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                                            title={lang === 'vi' ? 'Hủy yêu cầu kiểm định cho đơn hàng này' : 'Cancel inspection request'}
+                                          >
+                                            <XCircle className="w-4 h-4 text-rose-600" />
+                                            <span>{lang === 'vi' ? 'Hủy Yêu Cầu Kiểm Định' : 'Cancel Inspection Request'}</span>
+                                          </button>
+                                      )}
 
                                       {/* Nút Xem / In Mã QR Dán Sản Phẩm trong Modal Chi Tiết */}
 
@@ -6067,7 +6823,8 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                   )}
 
                                 {/* GIAI ĐOẠN 3: Đã đóng gói • Chờ Shipper đến lấy */}
-                                {(detailHasInboundTracking || (isOrderPacked(detailModalOrder) &&
+                                {(!detailHasInspection || (detailModalOrder.inspectionMethod !== 'AT_HOME' && (detailModalOrder as any).orderType !== 'AT_HOME')) &&
+                                  (detailHasInboundTracking || (isOrderPacked(detailModalOrder) &&
                                   !isOrderReceiptConfirmed(detailModalOrder) &&
                                   detailModalOrder.backendStatus !== 'COMPLETED' &&
                                   !detailModalOrder.shippingDeliveredAt &&
@@ -6132,13 +6889,13 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                       </span>
 
                                       {!detailHasInspection && (
-                                      <button
-                                        onClick={() => setTrackingOrder(detailModalOrder)}
-                                        className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-                                      >
-                                        <Truck className="w-4 h-4 text-white" />
-                                        <span>{lang === 'vi' ? 'Theo Dõi Vận Đơn Lalamove' : 'Lalamove Tracking'}</span>
-                                      </button>
+                                        <button
+                                          onClick={() => setTrackingOrder(detailModalOrder)}
+                                          className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                                        >
+                                          <Truck className="w-4 h-4 text-white" />
+                                          <span>{lang === 'vi' ? 'Theo Dõi Vận Đơn Lalamove' : 'Lalamove Tracking'}</span>
+                                        </button>
                                       )}
                                     </div>
                                   )}
@@ -6193,7 +6950,7 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                                       {orderActionLoading === detailModalOrder.id
                                         ? (lang === 'vi' ? 'Đang nộp phí kiểm định...' : 'Processing...')
                                         : (lang === 'vi'
-                                          ? `Nộp Phí Kiểm Định (${formatVND(getPartyInspectionFee(detailModalOrder, false))}) (Trừ Ví)`
+                                          ? `Nộp phí kiểm định (${formatVND(getPartyInspectionFee(detailModalOrder, false))}) (Trừ Ví)`
                                           : `Pay Inspection Fee (${formatVND(getPartyInspectionFee(detailModalOrder, false))})`)}
                                     </span>
                                   </button>
@@ -6201,20 +6958,28 @@ export const EscrowOrdersView: React.FC<EscrowOrdersViewProps> = ({
                               </div>
                             )}
 
-                          {/* Người Mua (Buyer): Mã QR tiếp nhận KTV kiểm định tại nhà */}
+                          {/* GIAI ĐOẠN ĐANG KIỂM ĐỊNH / CHỜ KIỂM ĐỊNH CHO BUYER TRONG MODAL */}
                           {!isOrderSeller(detailModalOrder) &&
-                            (detailModalOrder.inspectionMethod === 'AT_HOME' || (detailModalOrder as any).orderType === 'AT_HOME') &&
+                            detailHasInspection &&
+                            !detailModalOrder.shippingDeliveredAt &&
+                            detailModalOrder.backendStatus !== 'DELIVERED' &&
+                            (detailModalOrder.escrowStatus as string) !== 'DELIVERED_INSPECTION_WINDOW' &&
+                            (detailModalOrder.escrowStatus as string) !== 'COMPLETED_RELEASED' &&
                             !detailModalOrder.inspectionReport &&
-                            !isOrderCancelledOrRefunded(detailModalOrder) &&
-                            !(detailModalOrder.escrowStatus === 'INSPECTION_PASSED' || (detailModalOrder as any).backendStatus === 'PASSED') && (
-                              <button
-                                onClick={() => setPrintInspectionQrOrder(detailModalOrder)}
-                                className="py-2.5 px-4 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:opacity-90 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-                                title={lang === 'vi' ? 'Xuất trình mã QR tiếp nhận cho KTV khi đến kiểm định tại nhà' : 'Show intake QR code for at-home technician'}
-                              >
-                                <QrCode className="w-4 h-4" />
-                                <span>{lang === 'vi' ? 'Mã QR KTV Tại Nhà' : 'At-Home Inspection QR'}</span>
-                              </button>
+                            !isInspectorArrivedForOrder(detailModalOrder.id, detailModalOrder) && (
+                              <div className="flex flex-col sm:flex-row items-stretch gap-2 flex-1 justify-end">
+                                {onCancelOrder && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePromptCancelInspectionRequest(detailModalOrder)}
+                                    className="py-2.5 px-4 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-xl font-bold text-xs sm:text-sm transition cursor-pointer flex items-center justify-center gap-1.5"
+                                    title={lang === 'vi' ? 'Hủy yêu cầu kiểm định và hoàn trả 100% tiền tạm giữ về ví Escrow' : 'Cancel inspection request and refund funds'}
+                                  >
+                                    <XCircle className="w-4 h-4 text-rose-600" />
+                                    <span>{lang === 'vi' ? 'Hủy Yêu Cầu Kiểm Định' : 'Cancel Inspection Request'}</span>
+                                  </button>
+                                )}
+                              </div>
                             )}
 
                           {/* Chỉ Người Mua (Buyer) mới có nút Đã Nhận Hàng & Khiếu Nại Trả Hàng khi đơn đã giao và CHƯA xác nhận */}

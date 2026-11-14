@@ -1281,7 +1281,7 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
                       {formatVND(listing.priceVnd)}
                     </span>
                   ) : null}
-                  {postStatusBadge?.isClosed ? (
+                  {!hasActiveInspection && postStatusBadge?.isClosed ? (
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${postStatusBadge.className}`}>
                       {postStatusBadge.label}
                     </span>
@@ -1305,7 +1305,19 @@ export const DedicatedChatRoom: React.FC<DedicatedChatRoomProps> = ({
 
         {/* Right Action for Order Banner */}
         <div className="shrink-0">
-          {isBuyer ? (
+          {hasActiveInspection && currentInspectionOrder ? (
+            <button
+              type="button"
+              onClick={() => navigatePath(paths.decision(currentRole, currentInspectionOrder.id))}
+              className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-blue-600 to-indigo-700 hover:opacity-95 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+              title={lang === 'vi' ? 'Xem chi tiết đơn kiểm định' : 'View inspection details'}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span className="whitespace-nowrap">
+                {lang === 'vi' ? 'Xem đơn kiểm định' : 'View Inspection'}
+              </span>
+            </button>
+          ) : isBuyer ? (
             isListingClosed && !latestAcceptedOffer ? (
               <span className="px-3 py-1.5 sm:px-4 sm:py-2 bg-slate-100 text-slate-400 font-bold text-xs rounded-xl border border-slate-200 cursor-not-allowed">
                 {postStatusBadge?.label || (lang === 'vi' ? 'Không thể mua' : 'Unavailable')}

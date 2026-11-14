@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { Listing, Language, ProductReview, UserProfile, SellerPostDetailDto } from '../../types';
 import { translations, formatVND } from '../../utils/translations';
-import { cleanFullAddress, extractWardAndCity } from '../../utils/addressUtils';
+import { cleanFullAddress, extractWardAndCity, getSavedSellerAddress } from '../../utils/addressUtils';
 import { getBoughtListingIds, getResolvedPostParcel } from '../../utils/orderUtils';
 import { soundFx } from '../../utils/soundEffects';
 import { reviewService } from '../../data/mockReviews';
@@ -65,16 +65,22 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   if (!listing) return null;
   const t = translations[lang];
   const user = propCurrentUser || getStoredUser();
-  const isOwnListing = Boolean(
-    user?.id && listing.sellerId && String(user.id) === String(listing.sellerId)
-  );
-
   const [sellerDetail, setSellerDetail] = useState<SellerPostDetailDto | null>(null);
   const [publicDetail, setPublicDetail] = useState<any | null>(null);
   const [isLoadingSellerDetail, setIsLoadingSellerDetail] = useState(false);
   const [sellerDetailError, setSellerDetailError] = useState<string | null>(null);
 
   const activeDetail = sellerDetail || publicDetail;
+
+  const isOwnListing = Boolean(
+    user?.id && (
+      (listing.sellerId && String(user.id) === String(listing.sellerId)) ||
+      (activeDetail?.sellerId && String(user.id) === String(activeDetail.sellerId)) ||
+      (activeDetail?.user?.id && String(user.id) === String(activeDetail.user.id)) ||
+      (user?.name && listing.sellerName && user.name.trim().toLowerCase() === listing.sellerName.trim().toLowerCase()) ||
+      (user?.name && activeDetail?.user?.name && user.name.trim().toLowerCase() === activeDetail.user.name.trim().toLowerCase())
+    )
+  );
 
   const fallbackParcel = React.useMemo(() => {
     return getResolvedPostParcel(
@@ -112,9 +118,24 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const effectiveStatus = (sellerDetail?.status || activeDetail?.status || listing.backendStatus || listing.status || 'ACTIVE').toUpperCase();
   const effectiveRejectionReason = sellerDetail?.rejectionReason ?? listing.rejectionReason;
   const effectiveCreditCharged = sellerDetail?.listingCreditCharged ?? listing.listingCreditCharged;
-  const effectiveSellerAddress = cleanFullAddress(activeDetail?.sellerAddress || activeDetail?.user?.address || listing.sellerAddress || listing.location);
+  const savedAddr = getSavedSellerAddress();
+  const currentSellerAddr = user?.pickupAddress || user?.address || savedAddr.address;
+  const currentSellerWard = user?.wardName || user?.ward || savedAddr.wardName;
+  const currentSellerProv = user?.provinceName || user?.province || savedAddr.provinceName;
+
+  const effectiveSellerAddress = cleanFullAddress(
+    (isOwnListing && currentSellerAddr)
+      ? currentSellerAddr
+      : (activeDetail?.sellerAddress || activeDetail?.user?.address || listing.sellerAddress || listing.location)
+  );
 
   const displaySellerLocation = React.useMemo(() => {
+    if (isOwnListing && (currentSellerAddr || currentSellerWard || currentSellerProv)) {
+      const loc = extractWardAndCity(currentSellerAddr, currentSellerWard, currentSellerProv);
+      if (loc) {
+        return loc.replace(/Thành phố Hồ Chí Minh/gi, 'TP. HCM').replace(/Thành phố Hà Nội/gi, 'Hà Nội');
+      }
+    }
     const raw = effectiveSellerAddress || listing.sellerAddress || listing.location;
     if (!raw) return '';
     const wardAndCity = extractWardAndCity(raw);
@@ -122,7 +143,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
       return wardAndCity.replace(/Thành phố Hồ Chí Minh/gi, 'TP. HCM').replace(/Thành phố Hà Nội/gi, 'Hà Nội');
     }
     return cleanFullAddress(raw);
-  }, [effectiveSellerAddress, listing.sellerAddress, listing.location]);
+  }, [isOwnListing, currentSellerAddr, currentSellerWard, currentSellerProv, effectiveSellerAddress, listing.sellerAddress, listing.location]);
 
   const canDisassemble = React.useMemo(() => {
     if (activeDetail?.canDisassemble !== undefined) return Boolean(activeDetail.canDisassemble);

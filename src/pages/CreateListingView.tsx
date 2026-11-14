@@ -5332,26 +5332,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
               )}
             </div>
 
-            {/* Địa chỉ kho lấy hàng của người bán */}
-            <div className="pt-2 border-t border-slate-200">
-              <span className="text-xs font-bold text-slate-600 block mb-2">
-                <MapPin className="w-4 h-4 inline mr-1 text-[#c34c36]" />
-                {lang === 'vi' ? 'Địa chỉ lấy hàng người bán (Cập nhật theo thông tin người bán):' : 'Seller Pickup Location (Updated with seller profile):'}
-              </span>
-              <div className="bg-white p-3.5 rounded-xl border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <div className="text-xs font-bold text-[#24263e]">
-                    {currentSellerFullAddress || (lang === 'vi' ? 'Kho hàng SecondLife' : 'SecondLife Warehouse')}
-                  </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
-                    {lang === 'vi' ? 'Khu vực hiển thị trên tin đăng: ' : 'Display region on listing: '}
-                    <span className="font-semibold text-emerald-700">
-                      {effectiveDisplayLocation}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
+
 
           </div>
 

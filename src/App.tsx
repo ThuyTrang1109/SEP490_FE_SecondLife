@@ -1314,6 +1314,7 @@ export default function App() {
           prev.map((item) => {
             const isOwner =
               item.sellerId === updated.id ||
+              item.sellerId === 'me' ||
               (updated.name && item.sellerName?.trim().toLowerCase() === updated.name?.trim().toLowerCase());
             if (isOwner) {
               return {

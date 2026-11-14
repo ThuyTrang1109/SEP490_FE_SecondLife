@@ -7,7 +7,6 @@ import {
   DisputeCase,
   Listing,
   Language,
-  EscrowStatus,
   UserProfile,
   TopupPackage
 } from '../types';
@@ -108,8 +107,7 @@ import { PackageFormModal, PackageFormData } from '../components/admin/PackageFo
 import { InspectionCashReviewPanel } from '../components/inspection/InspectionCashReviewPanel';
 import { canReviewInspectionCash } from '../utils/inspectionCashShipping';
 import { AdminInspectionFundsModal } from '../components/admin/AdminInspectionFundsModal';
-import { resolveInspectionOrderId } from '../utils/adminInspectionFunds';
-import { canManageInspectionFee } from '../services/inspectorService';
+import { AdminInspectionFundsTab } from '../components/admin/AdminInspectionFundsTab';
 
 interface AdminDashboardViewProps {
   orders: EscrowOrder[];
@@ -128,6 +126,7 @@ type AdminTab =
   | 'overview'
   | 'catalog-ai'
   | 'orders'
+  | 'inspection-funds'
   | 'listings'
   | 'withdrawals'
   | 'hubs'
@@ -144,6 +143,7 @@ export const VALID_ADMIN_TABS: AdminTab[] = [
   'overview',
   'catalog-ai',
   'orders',
+  'inspection-funds',
   'listings',
   'withdrawals',
   'hubs',
@@ -196,7 +196,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');
-  const [orderStatusFilter, setOrderStatusFilter] = useState<string>('ALL');
   const [listingCategoryFilter, setListingCategoryFilter] = useState<string>('ALL');
 
   // Local state for listings and orders moderation
@@ -335,8 +334,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   });
 
   // Modal dialog states
-  const [selectedOrderModal, setSelectedOrderModal] = useState<EscrowOrder | null>(null);
   const [auditFundsOrderId, setAuditFundsOrderId] = useState<string | null>(null);
+  const [directAuditInput, setDirectAuditInput] = useState<string>('');
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const userDropdownRef = React.useRef<HTMLDivElement>(null);
 
@@ -1112,32 +1111,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     triggerNotice(`Đã gỡ bỏ / từ chối tin đăng #${id} khỏi sàn giao dịch.`);
   };
 
-  // Order escrow manual release
-  const handleForceReleaseEscrow = (orderId: string) => {
-    setLocalOrders((prev) =>
-      prev.map((ord) => {
-        if (ord.id === orderId) {
-          triggerNotice(`Đã can thiệp giải phóng Escrow thành công cho đơn #${orderId}. Tiền đã chuyển cho người bán.`);
-          return { ...ord, escrowStatus: 'COMPLETED_RELEASED' as EscrowStatus };
-        }
-        return ord;
-      })
-    );
-  };
-
-  // Filtered Orders
-  const filteredOrders = useMemo(() => {
-    return localOrders.filter((ord) => {
-      const matchSearch =
-        ord.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ord.buyerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ord.sellerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ord.listing.title.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchStatus = orderStatusFilter === 'ALL' || ord.escrowStatus === orderStatusFilter;
-      return matchSearch && matchStatus;
-    });
-  }, [localOrders, searchQuery, orderStatusFilter]);
-
   // Danh sách các bài đăng đã thành công / đang hiển thị trên sàn (loại trừ hoàn toàn bản nháp DRAFT của người bán)
   const activeListings = useMemo(() => {
     return localListings.filter((item) => {
@@ -1201,54 +1174,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   ];
 
-  // Helper for Status Badge
-  const getEscrowStatusBadge = (status: EscrowStatus) => {
-    switch (status) {
-      case 'AWAITING_PAYMENT':
-        return {
-          label: lang === 'vi' ? 'Chờ Thanh Toán' : 'Awaiting Payment',
-          bg: 'bg-amber-50 text-amber-700 border-amber-200'
-        };
-      case 'HELD_IN_ESCROW':
-        return {
-          label: lang === 'vi' ? 'Đang Giữ Ký Quỹ' : 'Held in Escrow',
-          bg: 'bg-sky-50 text-sky-700 border-sky-200'
-        };
-      case 'INSPECTION_IN_PROGRESS':
-        return {
-          label: lang === 'vi' ? 'Đang Test Tại Hub' : 'Hub Testing',
-          bg: 'bg-purple-50 text-purple-700 border-purple-200'
-        };
-      case 'INSPECTION_PASSED':
-        return {
-          label: lang === 'vi' ? 'Hub Đạt & Dán NFC' : 'Passed & NFC Sealed',
-          bg: 'bg-emerald-50 text-emerald-700 border-emerald-200'
-        };
-      case 'SHIPPED_TO_BUYER':
-        return {
-          label: lang === 'vi' ? 'Đang Giao Bưu Tá' : 'Courier Delivering',
-          bg: 'bg-indigo-50 text-indigo-700 border-indigo-200'
-        };
-      case 'COMPLETED_RELEASED':
-        return {
-          label: lang === 'vi' ? 'Đã Giải Ngân Xong' : 'Disbursed / Completed',
-          bg: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold'
-        };
-      case 'DISPUTED':
-        return {
-          label: lang === 'vi' ? 'Đang Tranh Chấp' : 'Disputed',
-          bg: 'bg-rose-100 text-rose-800 border-rose-300 font-bold animate-pulse'
-        };
-      case 'REFUNDED_TO_BUYER':
-        return {
-          label: lang === 'vi' ? 'Đã Hoàn Tiền' : 'Refunded',
-          bg: 'bg-gray-100 text-gray-700 border-gray-300'
-        };
-      default:
-        return { label: status, bg: 'bg-gray-100 text-gray-700 border-gray-200' };
-    }
-  };
-
   // Navigation Items matching the screenshot
   const navItems = [
     {
@@ -1271,10 +1196,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     },
     {
       id: 'orders' as AdminTab,
-      label: lang === 'vi' ? 'QUẢN LÝ ĐƠN HÀNG' : 'SALES ORDERS',
+      label: lang === 'vi' ? 'QUẢN LÝ ĐƠN HÀNG' : 'ORDERS',
       icon: Package,
-      badge: localOrders.length || null,
-      badgeColor: 'bg-[#fce5da]'
+      badge: null
+    },
+    {
+      id: 'inspection-funds' as AdminTab,
+      label: lang === 'vi' ? 'ĐỐI SOÁT TIỀN KIỂM ĐỊNH' : 'INSPECTION FUNDS AUDIT',
+      icon: ShieldCheck,
+      badge: 'Mới',
+      badgeColor: 'bg-amber-600 text-white'
     },
     {
       id: 'withdrawals' as AdminTab,
@@ -1576,11 +1507,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   onClick={() => setActiveTab('overview')}
                   className="hover:text-[#24263e] transition cursor-pointer"
                 >
-                  Home
+                  {activeTab === 'orders' && lang === 'vi' ? 'Trang chủ' : 'Home'}
                 </button>
                 <ChevronRight className="w-3 h-3 text-slate-400" />
                 <span className="font-semibold text-slate-800 capitalize">
-                  {activeTab === 'overview' ? 'Dashboard' : activeTab}
+                  {activeTab === 'overview' ? 'Dashboard' : activeTab === 'orders'
+                    ? (lang === 'vi' ? 'Quản lý đơn hàng' : 'Orders')
+                    : activeTab}
                 </span>
               </div>
             </div>
@@ -1964,151 +1897,23 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           )}
 
           {/* ======================================================== */}
-          {/* TAB: ORDERS (QUẢN LÝ BÁN HÀNG & KÝ QUỸ ESCROW)           */}
+          {/* TAB: ORDERS                                               */}
           {/* ======================================================== */}
-          {activeTab === 'orders' && canReviewInspectionCash(currentUser) && (
-            <InspectionCashReviewPanel onOpenFundsAudit={(id) => setAuditFundsOrderId(id)} />
-          )}
           {activeTab === 'orders' && (
-            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#c34c36] p-5 space-y-4">
-              {/* Unlinked Backend Notice */}
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2.5 text-xs font-bold text-rose-800">
-                <span className="w-5 h-5 rounded-full bg-rose-200 text-rose-800 flex items-center justify-center shrink-0 text-[11px]">❌</span>
-                <span>[GIAO DIỆN MOCK / CHƯA LIÊN KẾT BACKEND API] Mục quản lý đơn hàng bán lẻ này hiện đang sử dụng dữ liệu tĩnh cục bộ, Backend chưa cung cấp endpoint quản trị đơn hàng.</span>
-              </div>
-
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 uppercase">
-                    Danh Sách Đơn Hàng Giao Dịch Qua Quỹ Escrow ({filteredOrders.length})
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Toàn bộ đơn hàng được phong tỏa tài chính cho đến khi Kỹ sư Hub nghiệm thu và khách kiểm hàng
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Tìm mã đơn, tên khách..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:border-[#c34c36]"
-                    />
-                  </div>
-
-                  <select
-                    value={orderStatusFilter}
-                    onChange={(e) => setOrderStatusFilter(e.target.value)}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none bg-white cursor-pointer"
-                  >
-                    <option value="ALL">Tất cả trạng thái</option>
-                    <option value="HELD_IN_ESCROW">Đang giữ ký quỹ</option>
-                    <option value="INSPECTION_IN_PROGRESS">Đang kiểm định Hub</option>
-                    <option value="SHIPPED_TO_BUYER">Đang giao bưu tá</option>
-                    <option value="COMPLETED_RELEASED">Đã giải ngân</option>
-                    <option value="DISPUTED">Đang tranh chấp</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Orders Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider">
-                      <th className="pb-3 font-bold">Mã Đơn</th>
-                      <th className="pb-3 font-bold">Sản Phẩm</th>
-                      <th className="pb-3 font-bold">Người Mua</th>
-                      <th className="pb-3 font-bold">Người Bán</th>
-                      <th className="pb-3 font-bold text-right">Giá Trị Đơn</th>
-                      <th className="pb-3 font-bold">Trạng Thái Escrow</th>
-                      <th className="pb-3 font-bold text-center">Hành Động</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredOrders.map((ord) => {
-                      const badge = getEscrowStatusBadge(ord.escrowStatus);
-                      return (
-                        <tr key={ord.id} className="hover:bg-slate-50/80 transition">
-                          <td className="py-3 font-mono font-bold text-slate-900">
-                            #{ord.id}
-                          </td>
-                          <td className="py-3">
-                            <div className="font-bold text-slate-900 max-w-[200px] truncate">
-                              {ord.listing.title}
-                            </div>
-                            <span className="text-[10px] text-slate-500 font-mono">
-                              Mã máy: {ord.listing.modelCode || 'STD-APP'}
-                            </span>
-                          </td>
-                          <td className="py-3">
-                            <div className="font-medium text-slate-800">{ord.buyerName}</div>
-                            <span className="text-[10px] text-slate-400">{ord.buyerPhone}</span>
-                          </td>
-                          <td className="py-3">
-                            <div className="font-medium text-slate-800">{ord.sellerName}</div>
-                          </td>
-                          <td className="py-3 text-right">
-                            <div className="font-bold text-slate-900">
-                              {formatVND(ord.totalPaidVnd || ord.itemPriceVnd)}
-                            </div>
-                            <span className="text-[10px] text-slate-400">Phí sàn: 2.5%</span>
-                          </td>
-                          <td className="py-3">
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${badge.bg}`}
-                            >
-                              {badge.label}
-                            </span>
-                          </td>
-                          <td className="py-3 text-center">
-                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedOrderModal(ord)}
-                                className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold transition cursor-pointer"
-                                title="Xem chi tiết đơn hàng"
-                              >
-                                Chi tiết
-                              </button>
-                              {canManageInspectionFee(currentUser) && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const inspId = resolveInspectionOrderId(ord);
-                                    setAuditFundsOrderId(inspId);
-                                  }}
-                                  className="px-2 py-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold transition cursor-pointer flex items-center gap-1"
-                                  title="Đối soát tiền kiểm định"
-                                >
-                                  <ShieldCheck className="w-3 h-3 text-amber-700" />
-                                  Đối soát
-                                </button>
-                              )}
-                              {ord.escrowStatus !== 'COMPLETED_RELEASED' &&
-                                ord.escrowStatus !== 'REFUNDED_TO_BUYER' ? (
-                                <button
-                                  onClick={() => handleForceReleaseEscrow(ord.id)}
-                                  className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold transition cursor-pointer shadow-xs"
-                                  title="Can thiệp giải ngân ngay cho người bán"
-                                >
-                                  Giải Ngân Escrow
-                                </button>
-                              ) : (
-                                <span className="text-[11px] text-slate-400 font-medium">Đã xong</span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+            <div className="max-w-4xl">
+              <InspectionCashReviewPanel allowManualConfirmation={canReviewInspectionCash(currentUser)} />
             </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB: INSPECTION FUNDS (ĐỐI SOÁT TIỀN KIỂM ĐỊNH)           */}
+          {/* ======================================================== */}
+          {activeTab === 'inspection-funds' && (
+            <AdminInspectionFundsTab
+              lang={lang}
+              onOpenFundsAudit={(id) => setAuditFundsOrderId(id)}
+              onNavigateGovernance={() => setActiveTab('inspection-governance')}
+            />
           )}
 
           {/* ======================================================== */}
@@ -3559,11 +3364,74 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           )}
 
           {/* ======================================================== */}
-          {/* TAB: SYSTEM WALLET & ACCOUNTING RECONCILIATION           */}
+          {/* TAB: SYSTEM WALLET & RECONCILIATION                      */}
           {/* ======================================================== */}
           {activeTab === 'system-wallet' && (
-            <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#24263e] p-5">
-              <SystemWalletTab />
+            <div className="space-y-4">
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-5 shadow-xs space-y-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-amber-600 text-white shadow-xs">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-900 uppercase">
+                      Đối Soát Tiền Kiểm Định (Admin Inspection Funds Audit)
+                    </h3>
+                    <p className="text-xs text-slate-600">
+                      Tra cứu đối soát dòng tiền kiểm định: tổng thu, dự phòng cước hoàn, khoản giữ và quyết toán Trung tâm theo mã đơn
+                    </p>
+                  </div>
+                </div>
+                <form
+                  className="flex flex-wrap items-center gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (directAuditInput.trim()) setAuditFundsOrderId(directAuditInput.trim());
+                  }}
+                >
+                  <div className="relative min-w-[240px] flex-1">
+                    <input
+                      type="text"
+                      value={directAuditInput}
+                      onChange={(event) => setDirectAuditInput(event.target.value)}
+                      placeholder="Nhập mã đơn kiểm định (ví dụ: 17e67687-13fd-411c-8c70-be3e02b69ea9)..."
+                      className="w-full rounded-xl border border-amber-300 bg-white py-2.5 pl-3.5 pr-10 text-xs outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                    {directAuditInput && (
+                      <button
+                        type="button"
+                        onClick={() => setDirectAuditInput('')}
+                        className="absolute right-3 top-2.5 text-xs text-slate-400 hover:text-slate-600"
+                        aria-label="Xóa mã đơn kiểm định"
+                      >✕</button>
+                    )}
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={!directAuditInput.trim()}
+                    className="flex items-center gap-2 rounded-xl bg-amber-700 px-4 py-2.5 text-xs font-bold text-white hover:bg-amber-800 disabled:opacity-50"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    Mở Bảng Đối Soát
+                  </button>
+                </form>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                  <span>Đơn kiểm định mẫu gần đây:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDirectAuditInput('17e67687-13fd-411c-8c70-be3e02b69ea9');
+                      setAuditFundsOrderId('17e67687-13fd-411c-8c70-be3e02b69ea9');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 hover:bg-amber-100 text-amber-900 font-mono text-[10px] font-bold transition cursor-pointer shadow-2xs"
+                  >
+                    #17e67687-13fd-411c-8c70-be3e02b69ea9
+                  </button>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl shadow-xs border border-slate-200 border-t-4 border-t-[#24263e] p-5">
+                <SystemWalletTab />
+              </div>
             </div>
           )}
 
@@ -3586,88 +3454,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           )}
         </div>
       </div>
-
-      {/* ======================================================== */}
-      {/* MODAL: ORDER DETAILS (FROM "Chi tiết" BUTTON)            */}
-      {/* ======================================================== */}
-      {selectedOrderModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Package className="w-5 h-5 text-[#24263e]" />
-                <h3 className="font-bold text-sm text-slate-900">
-                  Chi Tiết Đơn Hàng #{selectedOrderModal.id}
-                </h3>
-              </div>
-              <button
-                onClick={() => setSelectedOrderModal(null)}
-                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
-                <div className="font-bold text-slate-800">{selectedOrderModal.listing.title}</div>
-                <div className="text-slate-500">Mã thiết bị: {selectedOrderModal.listing.modelCode || 'STD-DEVICE'}</div>
-                <div className="text-base font-extrabold text-[#24263e]">
-                  {formatVND(selectedOrderModal.totalPaidVnd || selectedOrderModal.itemPriceVnd)}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 text-slate-700">
-                <div className="p-2.5 rounded-lg border border-slate-100">
-                  <span className="text-[10px] text-slate-400 block">Người Mua</span>
-                  <span className="font-bold text-slate-900">{selectedOrderModal.buyerName}</span>
-                  <span className="text-[11px] text-slate-500 block">{selectedOrderModal.buyerPhone}</span>
-                </div>
-                <div className="p-2.5 rounded-lg border border-slate-100">
-                  <span className="text-[10px] text-slate-400 block">Người Bán</span>
-                  <span className="font-bold text-slate-900">{selectedOrderModal.sellerName}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-sky-50 text-sky-800 text-xs">
-                <span>Trạng thái phong tỏa:</span>
-                <span className="font-bold uppercase">{selectedOrderModal.escrowStatus}</span>
-              </div>
-            </div>
-
-            <div className="pt-2 flex justify-end gap-2 flex-wrap">
-              {canManageInspectionFee(currentUser) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const inspId = resolveInspectionOrderId(selectedOrderModal);
-                    setAuditFundsOrderId(inspId);
-                  }}
-                  className="px-3.5 py-1.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  Đối soát tiền kiểm định
-                </button>
-              )}
-              <button
-                onClick={() => setSelectedOrderModal(null)}
-                className="px-4 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
-              >
-                Đóng
-              </button>
-              <button
-                onClick={() => {
-                  handleForceReleaseEscrow(selectedOrderModal.id);
-                  setSelectedOrderModal(null);
-                }}
-                className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition cursor-pointer"
-              >
-                Giải Ngân Escrow
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ======================================================== */}
       {/* MODAL: ADMIN INSPECTION FUNDS AUDIT                      */}

@@ -112,6 +112,8 @@ interface OrderTrackingModalProps {
   onOpenLabelModal?: (shipment: ShipmentBackend) => void;
   onOrderUpdated?: () => void;
   onInboundShipmentLoaded?: (orderId: string, shipment: ShipmentBackend | null) => void;
+  onReturnShipmentLoaded?: (orderId: string, shipment: ShipmentBackend | null) => void;
+  returnOnly?: boolean;
   initialShipmentId?: string;
 }
 
@@ -144,6 +146,8 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   onOpenLabelModal,
   onOrderUpdated,
   onInboundShipmentLoaded,
+  onReturnShipmentLoaded,
+  returnOnly = false,
   initialShipmentId,
 }) => {
   const [shipments, setShipments] = useState<ShipmentBackend[]>([]);
@@ -286,6 +290,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   const [countdownText, setCountdownText] = useState<string>('');
 
   const loadOrderExtraDetails = useCallback(async () => {
+    if (returnOnly) return;
     // Nhận diện đơn kiểm định (Inspection Order)
     const isInspection = Boolean(
       order.hasInspectionService ||
@@ -326,7 +331,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     } catch (e) {
       console.warn('Failed to load confirmation or fulfillment extra details:', e);
     }
-  }, [order.id, order.hasInspectionService, order.inspectionMethod, order.inspectionCenterId, (order as any).inspectionStatus]);
+  }, [order.id, order.hasInspectionService, order.inspectionMethod, order.inspectionCenterId, (order as any).inspectionStatus, returnOnly]);
 
   useEffect(() => {
     loadOrderExtraDetails();
@@ -394,7 +399,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   const markerRef = useRef<any>(null);
 
   const activeShipment = shipments.find((s) => s.shipmentId === activeShipmentId) || shipments[0] || null;
-  const isInspectionOrder = Boolean(order.hasInspectionService || order.inspectionMethod || order.inspectionStatus);
+  const isInspectionOrder = returnOnly || Boolean(order.hasInspectionService || order.inspectionMethod || order.inspectionStatus);
   const isHubSeller = isSeller && order.inspectionMethod === 'AT_CENTER';
 
   const showNotification = (msg: string, isError = false) => {
@@ -419,7 +424,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
           shipList = await shippingService.getInspectionShipments(order.id, { isBackground });
           loadedFromBackend = true;
         } catch (inspShipErr) {
-          if (isHubSeller) throw inspShipErr;
+          if (isHubSeller || returnOnly) throw inspShipErr;
           console.warn('Could not load inspection shipments:', inspShipErr);
         }
       } else {
@@ -430,9 +435,10 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
         }
       }
       if (request !== shipmentRequest.current) return;
+      if (returnOnly) shipList = shipList.filter((shipment) => shipment.leg === 'CENTER_TO_SELLER');
 
       // Nạp từ localStorage nếu backend chưa đồng bộ hoặc chưa có bản ghi
-      if (shipList.length === 0) {
+      if (shipList.length === 0 && !returnOnly) {
         try {
           const raw = localStorage.getItem(`sl_order_shipments_${order.id}`) ||
             localStorage.getItem(`order_shipments_${order.id}`) ||
@@ -449,6 +455,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
       setShipments(shipList);
       const latestInbound = getLatestInboundShipment(shipList);
       if (loadedFromBackend && (isHubSeller || latestInbound)) onInboundShipmentLoaded?.(order.id, latestInbound);
+      if (loadedFromBackend && returnOnly) onReturnShipmentLoaded?.(order.id, getHubReturnState(shipList).shipment);
 
       if (shipList.length > 0) {
         const selected = selectedShipmentId.current;
@@ -475,6 +482,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
               if (loadedFromBackend && currentShipment.leg === 'SELLER_TO_CENTER') {
                 onInboundShipmentLoaded?.(order.id, getLatestInboundShipment(shipList));
               }
+              if (loadedFromBackend && returnOnly) onReturnShipmentLoaded?.(order.id, getHubReturnState(shipList).shipment);
             }
           } catch (syncErr) {
             console.debug('Initial sync shipment ignored:', syncErr);
@@ -509,7 +517,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     } finally {
       if (request === shipmentRequest.current) setIsLoading(false);
     }
-  }, [order.id, isInspectionOrder, isHubSeller, isSeller, onInboundShipmentLoaded]);
+  }, [order.id, isInspectionOrder, isHubSeller, isSeller, onInboundShipmentLoaded, returnOnly, onReturnShipmentLoaded]);
 
   // Initial load
   useEffect(() => {
@@ -865,7 +873,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-extrabold text-base sm:text-lg text-[#24263e]">
-                  Quá trình giao hàng
+                  {returnOnly ? (lang === 'vi' ? 'Theo dõi hoàn trả về người bán' : 'Track return to seller') : 'Quá trình giao hàng'}
                 </h3>
                 <span className="text-xs font-mono bg-white/80 px-2 py-0.5 rounded-md border border-[#24263e]/15 font-bold">
                   #{order.id.slice(0, 12)}
@@ -947,7 +955,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
           {/* ======================================================== */}
           {/* WIDGET 1: COUNTDOWN CAM KẾT BÀN GIAO HÀNG & FULFILLMENT  */}
           {/* ======================================================== */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          {!returnOnly && <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
             {/* Box 1: Cam kết giao hàng của Seller (GET /orders/{id}/confirmation) */}
             <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/70 to-orange-50/60 border border-amber-200/80 space-y-2">
               <div className="flex items-center justify-between">
@@ -1062,7 +1070,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                 )}
               </div>
             </div>
-          </div>
+          </div>}
 
           {/* Multiple Shipments Tabs (if order has multiple shipments) */}
           {shipments.length > 1 && (
@@ -1096,13 +1104,13 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
           ) : !activeShipment ? (
             <div className="p-8 text-center bg-slate-50 border border-dashed border-gray-300 rounded-3xl space-y-4">
               <Package className="w-12 h-12 text-slate-400 mx-auto" />
-              <h4 className="font-bold text-sm text-slate-800">Chưa có vận đơn nào được tạo</h4>
+              <h4 className="font-bold text-sm text-slate-800">{returnOnly ? 'Chưa có vận đơn hoàn trả' : 'Chưa có vận đơn nào được tạo'}</h4>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
-                {isSeller
+                {returnOnly ? 'Vận đơn hoàn trả sẽ hiện khi trung tâm tạo chuyến.' : isSeller
                   ? 'Đơn hàng chưa có mã vận đơn Lalamove. Bạn có thể bấm nút bên dưới để tạo vận đơn và phát lệnh điều phối tài xế Lalamove ngay lập tức.'
                   : 'Người bán chưa khởi tạo mã vận đơn Lalamove cho đơn hàng này. Vui lòng chờ người bán đóng gói và tạo vận đơn bàn giao cho tài xế.'}
               </p>
-              {isSeller && (
+              {isSeller && !returnOnly && (
                 <div className="pt-2">
                   <button
                     onClick={handleManualCreateShipment}
@@ -1453,6 +1461,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
               </div>
 
               <LalamoveProgress
+                routeBadge={returnOnly ? 'Hub → Người bán' : undefined}
                 currentStep={currentStep}
                 completeCurrentStep={hubProgress ? currentStep === 3 : currentStep === 4}
                 finalStep={hubProgress ? undefined : settlementStep}

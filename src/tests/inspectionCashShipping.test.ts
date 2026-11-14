@@ -38,6 +38,16 @@ test('confirmed cash status renders an explicit zero reimbursement', () => {
   assert.match(markup, /Hoàn ứng 0/);
 });
 
+test('delivered Hub returns show automatic reimbursement while outbound legs wait for review', () => {
+  const returnMarkup = renderToStaticMarkup(createElement(InspectionCashShipmentStatus, {
+    shipment: { ...delivered, leg: 'CENTER_TO_SELLER', cashPayerId: 'hub-id' },
+  }));
+  const outboundMarkup = renderToStaticMarkup(createElement(InspectionCashShipmentStatus, { shipment: delivered }));
+  assert.match(returnMarkup, /Chờ hoàn ứng tự động/);
+  assert.doesNotMatch(returnMarkup, /Staff\/Admin/);
+  assert.match(outboundMarkup, /Staff\/Admin cần xác nhận/);
+});
+
 test('cash review requires the permission for the corresponding role', () => {
   const staff: UserProfile = { id: 'reviewer', name: 'Reviewer', email: 'reviewer@example.test', role: 'staff' };
   assert.equal(canReviewInspectionCash(staff), false);

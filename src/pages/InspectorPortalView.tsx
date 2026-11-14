@@ -38,6 +38,7 @@ import {
   Wrench,
   Sparkles,
   Navigation,
+  QrCode,
   Eye,
   Trash2,
   ListChecks,
@@ -173,6 +174,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     const handleStorage = (e: StorageEvent) => {
       if (
         e.key?.startsWith('order_assigned_inspector_') ||
+        e.key?.startsWith('order_appointment_') ||
         e.key === 'recent_placed_orders' ||
         e.key === 'center_inspection_orders' ||
         e.key === 'secondlife_order_placed_signal'
@@ -181,6 +183,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
       }
     };
     window.addEventListener('secondlife_order_assigned_signal', handleSignal);
+    window.addEventListener('secondlife_appointment_scheduled', handleSignal);
     window.addEventListener('secondlife_order_placed_signal', handleSignal);
     window.addEventListener('secondlife_inspection_task_created', handleSignal);
     window.addEventListener('secondlife_inspection_completed', handleSignal);
@@ -189,6 +192,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
     window.addEventListener('storage', handleStorage);
     return () => {
       window.removeEventListener('secondlife_order_assigned_signal', handleSignal);
+      window.removeEventListener('secondlife_appointment_scheduled', handleSignal);
       window.removeEventListener('secondlife_order_placed_signal', handleSignal);
       window.removeEventListener('secondlife_inspection_task_created', handleSignal);
       window.removeEventListener('secondlife_inspection_completed', handleSignal);
@@ -410,6 +414,127 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
         deliveryOption: 'INSPECTION',
       } as unknown as EscrowOrder;
     });
+
+    const seenIds = new Set(result.map((o) => o.id));
+
+    // Also include orders assigned locally in center_inspection_orders, recent_placed_orders or my_seller_inspection_orders
+    const localAssignedOrders: any[] = [];
+    try {
+      const rawCenter = localStorage.getItem('center_inspection_orders');
+      if (rawCenter) {
+        const parsed = JSON.parse(rawCenter);
+        if (Array.isArray(parsed)) localAssignedOrders.push(...parsed);
+      }
+      const rawRecent = localStorage.getItem('recent_placed_orders');
+      if (rawRecent) {
+        const parsed = JSON.parse(rawRecent);
+        if (Array.isArray(parsed)) localAssignedOrders.push(...parsed);
+      }
+      const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+      if (rawSeller) {
+        const parsed = JSON.parse(rawSeller);
+        if (Array.isArray(parsed)) localAssignedOrders.push(...parsed);
+      }
+    } catch {}
+
+    const allCandidates = [...orders, ...localAssignedOrders];
+
+    for (const cand of allCandidates) {
+      if (!cand?.id || seenIds.has(cand.id)) continue;
+
+      let assignedMeta: any = null;
+      try {
+        const raw = localStorage.getItem(`order_assigned_inspector_${cand.id}`);
+        if (raw) assignedMeta = JSON.parse(raw);
+      } catch {}
+
+      const candidateInspectorId = cand.inspectorId || assignedMeta?.inspectorId;
+      const candidateInspectorEmail = cand.inspectorEmail || assignedMeta?.inspectorEmail;
+      const candidateInspectorName = cand.inspectorName || assignedMeta?.inspectorName;
+
+      // Check if this task belongs to the current inspector or is directly requested
+      const isDirectlySelected = Boolean(
+        selectedOrderId && (
+          cand.id === selectedOrderId ||
+          cand.id.toLowerCase().startsWith(selectedOrderId.toLowerCase()) ||
+          selectedOrderId.toLowerCase().startsWith(cand.id.toLowerCase())
+        )
+      );
+
+      const matchesCurrentInspector =
+        isDirectlySelected ||
+        !currentUser?.id ||
+        currentUser.role === 'admin' ||
+        currentUser.role === 'inspection_center' ||
+        (candidateInspectorId && candidateInspectorId === currentUser.id) ||
+        (candidateInspectorEmail && currentUser.email && candidateInspectorEmail.toLowerCase() === currentUser.email.toLowerCase()) ||
+        (candidateInspectorName && currentUser.name && candidateInspectorName.toLowerCase().includes(currentUser.name.toLowerCase()));
+
+      if (matchesCurrentInspector && (candidateInspectorId || assignedMeta || isDirectlySelected)) {
+        let apptMeta: any = null;
+        try {
+          const rawAppt = localStorage.getItem(`order_appointment_${cand.id}`);
+          if (rawAppt) apptMeta = JSON.parse(rawAppt);
+        } catch {}
+
+        const finalStatus = cand.backendStatus || cand.inspectionStatus || cand.status || 'ASSIGNED';
+        const isAtHome = cand.orderType === 'AT_HOME' || cand.inspectionMethod === 'AT_HOME';
+        const resolvedEscrowStatus = finalStatus === 'PASSED' ? 'INSPECTION_PASSED' : finalStatus === 'FAILED' ? 'INSPECTION_FAILED' : 'AWAITING_INSPECTION';
+
+        const photoUrl = cand.listing?.photos?.front || cand.postImageUrl || (Array.isArray(cand.postImageUrls) ? cand.postImageUrls[0] : '') || 'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=400';
+
+        const resolvedSellerAddress =
+          assignedMeta?.sellerAddress ||
+          cand.sellerAddress ||
+          cand.listing?.sellerAddress ||
+          cand.listing?.location ||
+          cand.shippingLegs?.[0]?.origin ||
+          'Ngã tư Công Lý – Einstein, Công Lý, Phường Thủ Đức, Thành phố Hồ Chí Minh';
+
+        const resolvedSellerPhone =
+          assignedMeta?.sellerPhone ||
+          cand.sellerPhone ||
+          cand.seller?.phone ||
+          '0918 234 567';
+
+        const resolvedSellerName =
+          assignedMeta?.sellerName ||
+          cand.sellerName ||
+          cand.seller?.name ||
+          'Thị Thùy Trang Nguyễn';
+
+        const synthesizedOrder: EscrowOrder = {
+          ...cand,
+          id: cand.id,
+          sellerAddress: resolvedSellerAddress,
+          sellerPhone: resolvedSellerPhone,
+          sellerName: resolvedSellerName,
+          inspectorId: candidateInspectorId,
+          inspectorName: candidateInspectorName,
+          status: finalStatus,
+          backendStatus: finalStatus,
+          inspectionStatus: finalStatus,
+          escrowStatus: resolvedEscrowStatus,
+          inspectionMethod: isAtHome ? 'AT_HOME' : 'AT_CENTER',
+          appointmentScheduledAt: apptMeta?.scheduledAt || cand.appointmentScheduledAt,
+          appointmentNote: apptMeta?.note || cand.appointmentNote,
+          listing: {
+            ...(cand.listing || {}),
+            id: cand.listing?.id || cand.postId || cand.id,
+            title: cand.listing?.title || cand.postTitle || 'Thiết bị kiểm định',
+            priceVnd: cand.listing?.priceVnd || cand.postPrice || cand.itemPriceVnd || 0,
+            location: resolvedSellerAddress,
+            sellerAddress: resolvedSellerAddress,
+            sellerName: resolvedSellerName,
+            photos: cand.listing?.photos || { front: photoUrl },
+            photoGallery: cand.listing?.photoGallery || [photoUrl],
+          },
+        };
+
+        result.push(synthesizedOrder);
+        seenIds.add(cand.id);
+      }
+    }
 
     result.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     return result;
@@ -1176,7 +1301,22 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                   filteredTasks.map((ord) => {
                     const isAtHome = ord.inspectionMethod === 'AT_HOME';
                     const stage = getInspectionTaskStage(ord.inspectionStatus);
-                    const canOpenWorkbench = stage === 'assigned' || stage === 'inspecting';
+                    const apptTime = ord.appointmentScheduledAt || (() => {
+                      try {
+                        const raw = localStorage.getItem(`order_appointment_${ord.id}`);
+                        if (raw) return JSON.parse(raw)?.scheduledAt;
+                      } catch {}
+                      return null;
+                    })();
+                    const isInspectorArrived = typeof window !== 'undefined' ? Boolean(
+                      localStorage.getItem(`at_home_inspector_arrived_${ord.id}`) ||
+                      ord.inspectionStatus === 'INSPECTING' ||
+                      (ord as any).status === 'INSPECTING' ||
+                      (ord as any).backendStatus === 'INSPECTING'
+                    ) : false;
+                    const canOpenWorkbench = isAtHome
+                      ? Boolean(apptTime)
+                      : (stage === 'assigned' || stage === 'inspecting');
                     const photoUrl =
                       (ord as any).postImageUrl ||
                       (ord as any).postImageUrls?.[0] ||
@@ -1272,7 +1412,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                                   if (isAtHome && !apptTime) {
                                     return (
                                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-                                        Chờ Khách Đặt Hẹn
+                                        Chờ Người Bán Hẹn Lịch (8h-12h, 13h-17h)
                                       </span>
                                     );
                                   }
@@ -1314,20 +1454,26 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                             </div>
 
                             {isAtHome ? (
-                              <div className="space-y-0.5">
-                                <p className="text-slate-500 line-clamp-1 flex items-center gap-1">
-                                  <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                                  {ord.buyerAddress || '128 Nguyễn Đình Chiểu, Q.3, TP.HCM'}
+                              <div className="space-y-1">
+                                <p className="text-slate-800 font-semibold line-clamp-2 flex items-start gap-1 text-xs">
+                                  <MapPin className="w-3.5 h-3.5 text-purple-600 shrink-0 mt-0.5" />
+                                  <span>{(ord as any).sellerAddress || ord.listing?.location || ord.shippingLegs?.[0]?.origin || 'Địa chỉ nhà người bán'}</span>
                                 </p>
+                                {((ord as any).sellerName || (ord as any).sellerPhone) && (
+                                  <p className="text-[11px] text-slate-500 font-medium flex items-center gap-2 pl-4">
+                                    <span>👤 {(ord as any).sellerName || 'Người bán'}</span>
+                                    {(ord as any).sellerPhone && <span>📞 {(ord as any).sellerPhone}</span>}
+                                  </p>
+                                )}
                                 {ord.appointmentScheduledAt ? (
                                   <p className="text-blue-600 font-bold flex items-center gap-1">
                                     <Clock className="w-3 h-3 text-blue-500 shrink-0" />
-                                    Hẹn: {new Date(ord.appointmentScheduledAt).toLocaleString('vi-VN')}
+                                    <span>Hẹn đón KTV: {new Date(ord.appointmentScheduledAt).toLocaleString('vi-VN')}</span>
                                   </p>
                                 ) : (
-                                  <p className="text-purple-600 font-medium flex items-center gap-1">
-                                    <Clock className="w-3 h-3 text-purple-400 shrink-0" />
-                                    Chờ khách chốt lịch hẹn khảo sát
+                                  <p className="text-purple-700 font-semibold flex items-center gap-1">
+                                    <Clock className="w-3 h-3 text-purple-500 shrink-0" />
+                                    <span>Chờ người bán hẹn lịch (Khung giờ HC: 8h-12h, 13h-17h)</span>
                                   </p>
                                 )}
                               </div>
@@ -1366,6 +1512,16 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                               <Award className="w-4 h-4 text-emerald-600" />
                               <span>Xem Chứng Thư / Biên Bản Giám Định</span>
                             </button>
+                          ) : isAtHome && !apptTime ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="flex-1 py-2 px-3 rounded-xl bg-slate-100 text-slate-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-not-allowed border border-slate-200"
+                              title="Người bán chưa đặt lịch hẹn đón KTV. KTV chưa thể tiếp nhận đo kiểm."
+                            >
+                              <Clock className="w-3.5 h-3.5 text-slate-400" />
+                              <span>Chờ Người Bán Hẹn Lịch</span>
+                            </button>
                           ) : !canOpenWorkbench ? (
                             <button
                               type="button"
@@ -1381,10 +1537,26 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                               onClick={() => {
                                 setSelectedOrderId(ord.id);
                               }}
-                              className="flex-1 py-2 px-3 rounded-xl bg-[#24263e] hover:bg-[#1a1c2e] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+                              className="flex-1 py-2 px-3 rounded-xl bg-[#24263e] hover:bg-[#1a1c2e] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs active:scale-[0.99]"
                             >
-                              <Wrench className="w-3.5 h-3.5 text-[#fce5da]" />
-                              <span>{isAtHome ? 'Vào Bàn Đo Kiểm (Tại Nhà)' : 'Vào Bàn Đo Kiểm'}</span>
+                              {isAtHome ? (
+                                isInspectorArrived ? (
+                                  <>
+                                    <Wrench className="w-3.5 h-3.5 text-[#fce5da]" />
+                                    <span>Vào Bàn Đo Kiểm (Tại Nhà)</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <QrCode className="w-3.5 h-3.5 text-amber-300" />
+                                    <span>Quét Mã Nhận Máy (Tại Nhà)</span>
+                                  </>
+                                )
+                              ) : (
+                                <>
+                                  <Wrench className="w-3.5 h-3.5 text-[#fce5da]" />
+                                  <span>Vào Bàn Đo Kiểm</span>
+                                </>
+                              )}
                             </button>
                           )}
                         </div>

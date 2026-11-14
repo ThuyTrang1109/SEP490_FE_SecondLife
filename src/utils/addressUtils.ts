@@ -95,10 +95,28 @@ export function cleanFullAddress(rawAddress?: string | null): string {
     );
   };
 
+  const isDistrictLevelCity = (p: string) => {
+    const l = p.toLowerCase();
+    return (
+      l.includes('thủ đức') ||
+      l.includes('thu duc') ||
+      l.includes('dĩ an') ||
+      l.includes('thuận an') ||
+      l.includes('biên hòa') ||
+      l.includes('vũng tàu') ||
+      l.includes('nha trang') ||
+      l.includes('hạ long') ||
+      l.includes('đà lạt')
+    );
+  };
+
   let firstCityIdx = -1;
   for (let i = 0; i < validParts.length; i++) {
     if (isCityPart(validParts[i])) {
       if (firstCityIdx === -1) {
+        firstCityIdx = i;
+      } else if (isDistrictLevelCity(validParts[firstCityIdx])) {
+        // Nếu thành phố trước đó là thành phố cấp huyện/quận (như TP. Thủ Đức), phân đoạn sau mới là Tỉnh/Thành phố trực thuộc TW
         firstCityIdx = i;
       } else {
         // Đã có 1 thành phố trước đó kèm phường -> cắt bỏ phần lặp lại đằng sau

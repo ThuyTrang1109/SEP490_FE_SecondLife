@@ -53,7 +53,7 @@ export const SessionExpiredModal: React.FC<SessionExpiredModalProps> = ({
               className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#c34c36] to-orange-600 hover:from-[#a83c28] hover:to-orange-700 text-white text-sm font-black shadow-md shadow-orange-500/20 transition cursor-pointer flex items-center justify-center gap-2"
             >
               <LogIn className="w-4 h-4" />
-              <span>{lang === 'vi' ? 'Đăng Nhập Lại' : 'Log In Again'}</span>
+              <span>{lang === 'vi' ? 'Đăng nhập lại' : 'Log In Again'}</span>
             </button>
           </div>
         </div>

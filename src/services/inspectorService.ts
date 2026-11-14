@@ -369,6 +369,12 @@ export interface InspectionOrderDto {
   sellerPaidAt?: string;
 
   appointmentScheduledAt?: string;
+  appointmentNote?: string;
+  appointmentStatus?: 'PENDING_CENTER_CONFIRMATION' | 'COUNTERED_BY_CENTER' | 'CONFIRMED' | 'REJECTED' | string;
+  counterScheduledAt?: string;
+  counterShift?: 'MORNING' | 'AFTERNOON';
+  counterNote?: string;
+  appointmentRejectionReason?: string;
   checklistResultJson?: string;
   videoProofUrl?: string;
   unboxingVideoUrl?: string;
@@ -824,10 +830,84 @@ export const inspectorService = {
   },
 
   /**
+   * KTV tìm kiếm đơn kiểm định từ Backend API theo mã vạch / mã đơn / từ khóa
+   */
+  async searchInspectionOrder(keyword: string): Promise<InspectionOrderDto | null> {
+    const raw = (keyword || '').trim();
+    if (!raw) return null;
+    const clean = raw.replace(/^(sl-insp-|inspection-|order-|sl-athome-|athome-|#)/i, '').trim();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean);
+
+    // 1. Nếu là UUID đầy đủ, gọi trực tiếp API chi tiết đơn
+    if (isUuid) {
+      try {
+        const res = await requestGet<InspectionOrderDto>(`/inspector/orders/${clean}`, { requiresAuth: true });
+        const data = (res as any)?.data || res;
+        if (data && (data.id || data.orderId)) return data;
+      } catch (err) {
+        // Fallback to list search
+      }
+    }
+
+    // 2. Gọi API lấy danh sách đơn của KTV (/inspector/orders)
+    try {
+      const res = await requestGet<any>(`/inspector/orders`, { requiresAuth: true });
+      const items = (res as any)?.data || (res as any)?.items || (Array.isArray(res) ? res : []);
+      const match = items.find((o: any) => {
+        const oId = String(o.id || o.orderId || '').toLowerCase();
+        const norm = clean.toLowerCase();
+        return oId === norm || oId.startsWith(norm) || (norm.length >= 6 && oId.includes(norm)) ||
+               (o.postTitle && o.postTitle.toLowerCase().includes(norm));
+      });
+      if (match) return match;
+    } catch (err) {
+      console.warn('GET /inspector/orders search error:', err);
+    }
+
+    // 3. Gọi API lấy toàn bộ danh sách đơn kiểm định (/inspector/orders/all)
+    try {
+      const resAll = await requestGet<any>(`/inspector/orders/all?page=0&size=50`, { requiresAuth: true });
+      const itemsAll = (resAll as any)?.data?.items || (resAll as any)?.data?.content || (resAll as any)?.items || (Array.isArray(resAll) ? resAll : []);
+      const matchAll = itemsAll.find((o: any) => {
+        const oId = String(o.id || o.orderId || '').toLowerCase();
+        const norm = clean.toLowerCase();
+        return oId === norm || oId.startsWith(norm) || (norm.length >= 6 && oId.includes(norm)) ||
+               (o.postTitle && o.postTitle.toLowerCase().includes(norm));
+      });
+      if (matchAll) return matchAll;
+    } catch (err) {
+      console.warn('GET /inspector/orders/all search error:', err);
+    }
+
+    return null;
+  },
+
+  /**
    * KTV bắt đầu tiến hành kiểm định đơn hàng (chuyển trạng thái sang INSPECTING)
    */
-  async startInspection(orderId: string): Promise<InspectionOrderDto> {
+  async startInspection(
+    orderId: string,
+    payload?: { checkInCode?: string; orderCode?: string; barcodeInput?: string }
+  ): Promise<InspectionOrderDto> {
+    const effectivePayload = payload || {
+      orderCode: orderId,
+      barcodeInput: orderId,
+      checkInCode: orderId,
+    };
     const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/start`, {
+      method: 'POST',
+      body: JSON.stringify(effectivePayload),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Người bán lấy mã check-in kiểm định tại nhà để KTV quét
+   * POST /api/v1/inspection/orders/{orderId}/check-in-code
+   */
+  async getHomeCheckInCode(orderId: string): Promise<{ code: string; appointmentScheduledAt?: string }> {
+    const res = await request<any>(`/inspection/orders/${orderId}/check-in-code`, {
       method: 'POST',
       requiresAuth: true,
     });
@@ -837,10 +917,50 @@ export const inspectorService = {
   /**
    * Lên lịch hẹn kiểm tra tại nhà (Gói AT_HOME)
    */
-  async scheduleAppointment(orderId: string, scheduledAt: string, note?: string): Promise<InspectionOrderDto> {
+  async scheduleAppointment(orderId: string, scheduledAt: string, note?: string, shift?: string): Promise<InspectionOrderDto> {
     const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/schedule`, {
       method: 'POST',
-      body: JSON.stringify({ scheduledAt, note }),
+      body: JSON.stringify({ scheduledAt, note, shift }),
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Trung tâm kiểm định chấp nhận lịch hẹn người bán đề xuất
+   */
+  async confirmAppointment(orderId: string): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/appointment/confirm`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Người bán chấp nhận lịch kiểm định mới do Trung tâm đề xuất
+   * POST /api/v1/inspector/orders/{orderId}/appointment/accept-counter
+   */
+  async acceptAppointmentCounter(orderId: string): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/appointment/accept-counter`, {
+      method: 'POST',
+      requiresAuth: true,
+    });
+    return (res as any)?.data || res;
+  },
+
+  /**
+   * Trung tâm kiểm định đề xuất lịch hẹn mới cho người bán
+   */
+  async counterAppointment(
+    orderId: string,
+    counterScheduledAt: string,
+    counterNote?: string,
+    counterShift?: string
+  ): Promise<InspectionOrderDto> {
+    const res = await request<InspectionOrderDto>(`/inspector/orders/${orderId}/appointment/counter`, {
+      method: 'POST',
+      body: JSON.stringify({ counterScheduledAt, counterNote, counterShift }),
       requiresAuth: true,
     });
     return (res as any)?.data || res;

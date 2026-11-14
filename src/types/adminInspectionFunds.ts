@@ -69,7 +69,15 @@ export interface AdminInspectionOrderFundsDTO {
   collectionStatus: AdminCollectionStatus;
   buyerPayment?: AdminPartyPaymentDTO | null;
   sellerPayment?: AdminPartyPaymentDTO | null;
+  buyer?: AdminPartyPaymentDTO | null;
+  seller?: AdminPartyPaymentDTO | null;
   fees?: AdminInspectionFeesDTO | null;
+  inspectionFee?: number | null;
+  travelFee?: number | null;
+  shippingFee?: number | null;
+  buyerCommitmentDeposit?: number | null;
+  cashShippingSimulation?: boolean;
+  outboundCashPendingAmount?: number | null;
   returnReserve?: AdminReturnReserveDTO | null;
   settlement?: AdminSettlementDTO | null;
   shipments?: AdminFundShipmentDTO[];

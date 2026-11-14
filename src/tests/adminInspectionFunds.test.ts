@@ -366,3 +366,19 @@ test('AdminInspectionFundsView renders 403 and 404 error messages properly', () 
   }));
   assert.match(html404, /Không tìm thấy đơn kiểm định/);
 });
+
+test('AdminInspectionFundsTab renders dedicated tab with KPI cards and inspection orders list', async () => {
+  const { AdminInspectionFundsTab } = await import('../components/admin/AdminInspectionFundsTab');
+  let openedOrderId = '';
+  const html = renderToStaticMarkup(createElement(AdminInspectionFundsTab, {
+    lang: 'vi',
+    onOpenFundsAudit: (id: string) => { openedOrderId = id; },
+  }));
+
+  assert.match(html, /ĐỐI SOÁT TIỀN KIỂM ĐỊNH/);
+  assert.match(html, /Đơn Đang Giữ Tiền/);
+  assert.match(html, /Quỹ Cước Hoàn Đang Giữ/);
+  assert.match(html, /Chờ Quyết Toán Hub/);
+  assert.match(html, /Đối Soát Tiền/);
+  assert.match(html, /17e67687/);
+});

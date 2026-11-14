@@ -3,6 +3,15 @@ import type { ShipmentBackend, UserProfile } from '../types';
 export type InspectionFeePayer = 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
 export const inspectionCashConfirmedEvent = 'secondlife_inspection_cash_confirmed';
 
+export function notifyInspectionCashConfirmed() {
+  window.dispatchEvent(new Event(inspectionCashConfirmedEvent));
+  try {
+    localStorage.setItem(inspectionCashConfirmedEvent, String(Date.now()));
+  } catch {
+    // The current tab can still refresh when browser storage is unavailable.
+  }
+}
+
 export function getCashInspectionFeeShares(totalFee: number, outboundFee: number, payer: InspectionFeePayer) {
   const outbound = Math.round(outboundFee * 100);
   const remaining = Math.round(totalFee * 100) - outbound;

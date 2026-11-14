@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Loader2, RefreshCw, Truck, X } from 'lucide-react';
 import { shippingService, type InspectionReturnQuote } from '../../services/shippingService';
 import { formatVND } from '../../utils/translations';
+import { formatLalamoveVehicle } from '../../utils/lalamoveVehicle';
 
 interface InspectionReturnQuoteModalProps {
   orderId: string;
@@ -50,6 +51,8 @@ export function InspectionReturnQuoteModal({ orderId, title, booking, cashShippi
   };
 
   const overReserve = Boolean(quote && quote.shippingFee > quote.reserveFee);
+  const serviceType = quote?.serviceType?.trim();
+  const vehicleName = serviceType ? formatLalamoveVehicle(serviceType).name : null;
   const confirm = async () => {
     if (!quote || overReserve || booking || loading) return;
     if (quote.expiresAt && Date.parse(quote.expiresAt) <= Date.now()) {
@@ -83,7 +86,7 @@ export function InspectionReturnQuoteModal({ orderId, title, booking, cashShippi
       </header>
 
       <div className="space-y-4 p-5">
-        {cashShipping && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900"><strong>Mô phỏng Sandbox</strong> · Hub ứng cước tiền mặt và chờ Staff/Admin xác nhận hoàn ứng.</p>}
+        {cashShipping && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900"><strong>Mô phỏng Sandbox</strong> · Hệ thống hoàn ứng vào ví Hub sau khi Lalamove xác nhận giao hàng và cước thực tế.</p>}
         {loading && (
           <div role="status" className="flex items-center justify-center gap-2 py-8 text-sm text-slate-600">
             <Loader2 aria-hidden="true" className="size-5 animate-spin text-orange-700" /> Đang lấy cước từ Lalamove…
@@ -106,7 +109,12 @@ export function InspectionReturnQuoteModal({ orderId, title, booking, cashShippi
               ))}
             </div>
             <dl className="space-y-2 rounded-xl bg-slate-50 p-4 text-sm">
-              <div className="flex flex-wrap justify-between gap-2"><dt>Đơn vị vận chuyển</dt><dd className="font-semibold">{quote.carrier}{quote.serviceType ? ` · ${quote.serviceType}` : ''}</dd></div>
+              <div className="flex flex-wrap justify-between gap-2">
+                <dt>Đơn vị vận chuyển</dt>
+                <dd className="font-semibold">
+                  {quote.carrier}{vehicleName && vehicleName !== serviceType && ` · ${vehicleName}`}
+                </dd>
+              </div>
               <div className="flex flex-wrap justify-between gap-2"><dt>Cước báo giá hiện tại</dt><dd className="font-extrabold text-orange-700">{formatVND(quote.shippingFee)}</dd></div>
               <div className="flex flex-wrap justify-between gap-2"><dt>Dự phòng đã thu</dt><dd className="font-semibold">{formatVND(quote.reserveFee)}</dd></div>
               {overReserve && (

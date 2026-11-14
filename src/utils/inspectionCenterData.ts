@@ -1,5 +1,6 @@
 import type { Language, ShipmentBackend } from '../types';
 import type { InspectionOrderDto } from '../services/inspectorService';
+import { isDeliveredInspectionCashShipment } from './inspectionCashShipping';
 
 export function getCenterTabDataNeeds(tab: string) {
   return {
@@ -18,11 +19,106 @@ const dispatchStatuses = new Set([
 ]);
 
 export function getCenterDispatchStage(
-  order: Pick<InspectionOrderDto, 'orderType' | 'status' | 'inspectorId'>,
+  order: Pick<InspectionOrderDto, 'orderType' | 'status' | 'inspectorId'> & {
+    appointmentScheduledAt?: string;
+    appointmentStatus?: string;
+    id?: string;
+    linkedOrderId?: string;
+    orderId?: string;
+    inspectionOrderId?: string;
+    counterScheduledAt?: string;
+  },
   receivedAtHub: boolean,
 ) {
+  let apptTime = order.appointmentScheduledAt;
+  let apptStatus = (order as any).appointmentStatus;
+  let counterTime = (order as any).counterScheduledAt;
+
+  if (typeof window !== 'undefined') {
+    const possibleIds = [
+      order.id,
+      (order as any).linkedOrderId,
+      (order as any).orderId,
+      (order as any).inspectionOrderId,
+    ].filter(Boolean) as string[];
+
+    for (const id of possibleIds) {
+      try {
+        const raw = localStorage.getItem(`order_appointment_${id}`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed.scheduledAt) apptTime = parsed.scheduledAt;
+          if (parsed.status) apptStatus = parsed.status;
+          if (parsed.status === 'PENDING_CENTER_CONFIRMATION' && !parsed.counterScheduledAt) {
+            counterTime = undefined;
+          } else if (parsed.counterScheduledAt) {
+            counterTime = parsed.counterScheduledAt;
+          }
+          break;
+        }
+      } catch {}
+    }
+
+    if (apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+      const idSet = new Set(possibleIds);
+      try {
+        const rawCenter = localStorage.getItem('center_inspection_orders');
+        if (rawCenter) {
+          const list = JSON.parse(rawCenter);
+          if (Array.isArray(list)) {
+            const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
+            if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+              if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
+              apptStatus = 'PENDING_CENTER_CONFIRMATION';
+              counterTime = undefined;
+            }
+          }
+        }
+      } catch {}
+      try {
+        const rawSeller = localStorage.getItem('my_seller_inspection_orders');
+        if (rawSeller && apptStatus !== 'PENDING_CENTER_CONFIRMATION') {
+          const list = JSON.parse(rawSeller);
+          if (Array.isArray(list)) {
+            const m = list.find((o: any) => idSet.has(o.id) || idSet.has(o.linkedOrderId) || idSet.has(o.orderId) || idSet.has(o.inspectionOrderId));
+            if (m && m.appointmentStatus === 'PENDING_CENTER_CONFIRMATION' && !m.counterScheduledAt) {
+              if (m.appointmentScheduledAt) apptTime = m.appointmentScheduledAt;
+              apptStatus = 'PENDING_CENTER_CONFIRMATION';
+              counterTime = undefined;
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // Khi lịch hẹn tại nhà đang trong giai đoạn thương lượng (Hub đã gửi đề xuất mới, chờ Seller duyệt):
+  const isCountered = order.orderType === 'AT_HOME' && Boolean(
+    apptStatus !== 'PENDING_CENTER_CONFIRMATION' &&
+    (
+      apptStatus === 'COUNTERED_BY_CENTER' ||
+      counterTime ||
+      (order.status === 'WAITING_SELLER_APPROVAL' && (apptTime || counterTime)) ||
+      ((order as any).customerStatus === 'WAITING_SELLER_APPROVAL' && (apptTime || counterTime))
+    )
+  );
+
+  if (isCountered) {
+    return 'WAITING_SELLER_APPROVAL';
+  }
+
   if (!dispatchStatuses.has(order.status)) return null;
   if (order.orderType !== 'AT_HOME' && !receivedAtHub) return 'WAITING_FOR_HUB';
+
+  if (order.orderType === 'AT_HOME') {
+    if (!apptTime || apptStatus === 'REJECTED') {
+      return 'WAITING_SELLER_APPOINTMENT';
+    }
+    if (apptStatus === 'PENDING_CENTER_CONFIRMATION' || apptStatus === 'PENDING_CONFIRMATION') {
+      return 'WAITING_CENTER_APPROVAL';
+    }
+  }
+
   return order.inspectorId ? 'ASSIGNED' : 'READY_TO_ASSIGN';
 }
 
@@ -83,6 +179,12 @@ export function getHubReturnState(shipments: ShipmentBackend[]) {
   };
 }
 
+export function shouldSyncHubReturnOnOpen(shipment: ShipmentBackend | null): shipment is ShipmentBackend {
+  if (!shipment?.shipmentId || !shipment.orderCode || shipment.leg !== 'CENTER_TO_SELLER') return false;
+  if (isDeliveredInspectionCashShipment(shipment)) return !shipment.cashConfirmedAt;
+  return !['DELIVERED', 'COMPLETED', 'CANCELLED', 'FAILED', 'RETURNED', 'CREATION_UNCERTAIN'].includes(shipment.status);
+}
+
 export function getHubReturnProgress(shipment: ShipmentBackend, lang: Language = 'vi') {
   const progress = getInboundShipmentProgress({ status: shipment.status, providerStatus: null }, lang);
   if (shipment.status === 'CREATION_UNCERTAIN') return { ...progress, label: lang === 'vi' ? 'Chờ đối soát với Lalamove' : 'Awaiting Lalamove reconciliation' };
@@ -93,10 +195,10 @@ export function getHubReturnProgress(shipment: ShipmentBackend, lang: Language =
 
 export function getReturnReserveMessage(reserve: number | null | undefined, shipment: ShipmentBackend) {
   if (shipment.status !== 'DELIVERED') return 'Phần dự phòng còn dư sẽ được đối soát sau khi giao hàng.';
-  if (shipment.cashPayerId && !shipment.cashConfirmedAt) return 'Phần dự phòng còn dư được hoàn sau khi xác nhận chi cước mô phỏng.';
+  if (shipment.cashPayerId && !shipment.cashConfirmedAt) return 'Phần dự phòng còn dư được hoàn sau khi hệ thống đối soát cước tự động.';
   if (reserve == null || shipment.actualFee == null || shipment.actualFee > reserve) return 'Đang chờ đối soát cước trả hàng.';
   if (shipment.actualFee === reserve) return 'Cước thực tế bằng khoản dự phòng. Không có phần dư.';
-  return 'Xem lịch sử ví để xác nhận khoản dự phòng được hoàn.';
+  return 'Phần dự phòng còn dư được hoàn vào ví của bên đã nộp sau đối soát.';
 }
 
 export function canAppealInspection(order: InspectionOrderDto, sellerId?: string, now = Date.now()) {

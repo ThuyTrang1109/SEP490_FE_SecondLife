@@ -1,4 +1,5 @@
 import { request, requestGet } from './apiClient';
+import type { RequestOptions } from './apiClient';
 import {
   UserWallet,
   DepositResponseDTO,
@@ -14,18 +15,31 @@ import {
 
 export type WalletBackend = UserWallet;
 
+export const notifyWalletBalanceUpdated = (balance?: number, deductAmount?: number) => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('secondlife_wallet_updated', {
+      detail: { balance, deductAmount, timestamp: Date.now() }
+    }));
+    try {
+      localStorage.setItem('sl_wallet_last_updated', String(Date.now()));
+    } catch { }
+  }
+};
+
 export const walletService = {
   /**
    * Lấy số dư và thông tin ví hiện tại của người dùng đang đăng nhập
    * GET /api/v1/wallets/me
    */
-  async getMyWallet(): Promise<UserWallet> {
+  async getMyWallet(options?: Pick<RequestOptions, 'signal' | 'isBackground'>): Promise<UserWallet> {
     const response = await requestGet<UserWallet>('/v1/wallets/me', {
       requiresAuth: true,
+      ...options,
     });
-    return ((response as any)?.data !== undefined && (response as any)?.data !== null
+    const wallet = ((response as any)?.data !== undefined && (response as any)?.data !== null
       ? (response as any).data
       : response) as UserWallet;
+    return wallet;
   },
 
   /**
@@ -50,7 +64,8 @@ export const walletService = {
    */
   async getTransactions(
     query: WalletTransactionsQuery = {},
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: Pick<RequestOptions, 'isBackground'>,
   ): Promise<WalletTransactionsPage> {
     const params = new URLSearchParams();
     params.set('page', String(query.page ?? 0));
@@ -71,6 +86,7 @@ export const walletService = {
       method: 'GET',
       requiresAuth: true,
       signal,
+      ...options,
     });
 
     return normalizeWalletTransactionPage(response, query.page ?? 0, query.size ?? 10);

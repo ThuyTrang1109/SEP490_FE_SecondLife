@@ -5,6 +5,7 @@ import { formatVND } from '../../utils/translations';
 import { soundFx } from '../../utils/soundEffects';
 import { extractWardAndCity } from '../../utils/addressUtils';
 import { extractSellerOriginalPrice } from '../../utils/catalogCache';
+import { isListingInspectionPassed } from '../../utils/listingInspection';
 import { reviewService } from '../../data/mockReviews';
 
 interface ProductCard3DProps {
@@ -27,6 +28,10 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
 
   const effectiveOriginalPrice = React.useMemo(() => {
     return extractSellerOriginalPrice(item) || (item.originalPriceVnd && item.originalPriceVnd > 0 ? item.originalPriceVnd : null);
+  }, [item]);
+
+  const isInspected = React.useMemo(() => {
+    return isListingInspectionPassed(item);
   }, [item]);
 
   const displayLocation =
@@ -154,6 +159,14 @@ export const ProductCard3D: React.FC<ProductCard3DProps> = ({
           <h3 className="font-bold text-[#24263e] text-xs sm:text-[13px] line-clamp-2 leading-snug group-hover:text-[#c34c36] transition-colors min-h-[2rem]">
             {item.title}
           </h3>
+
+          {/* Inspected Hub Status Flag */}
+          {isInspected && (
+            <div className="flex items-center gap-1 text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 w-fit mt-1">
+              <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+              <span>{lang === 'vi' ? 'Đã kiểm định đạt chuẩn Hub' : 'Hub Inspected & Passed'}</span>
+            </div>
+          )}
         </div>
 
         {/* AI Fair Price Range */}

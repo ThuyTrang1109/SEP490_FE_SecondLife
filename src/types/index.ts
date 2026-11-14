@@ -84,6 +84,10 @@ export interface Listing {
   createdAt: string;
   isInspectionGuaranteed: boolean;
   requiresInspection: boolean;
+  isInspected?: boolean;
+  inspectionPassed?: boolean;
+  inspectionStatus?: string;
+  inspectionSeal?: string;
   photos: PhotoChecklist;
   photoGallery: string[];
   shippingWeight?: number;
@@ -223,10 +227,12 @@ export interface EscrowOrder {
   paymentDeadline?: string | null;
   returnShippingReserveFee?: number;
   feeSettledAt?: string | null;
+  returnReserveStatus?: string | null;
   linkedOrderId?: string | null;
   inspectionStatus?: string;
   inspectionNote?: string;
   finalPaymentPaidAt?: string | null;
+  homeCheckedInAt?: string | null;
   inspectorId?: string;
   inspectorName?: string;
   inspectorEmail?: string;
@@ -258,6 +264,12 @@ export interface EscrowOrder {
   handoverDeadline?: string | null;
   appointmentScheduledAt?: string | null;
   appointmentNote?: string | null;
+  counterScheduledAt?: string | null;
+  counterShift?: 'MORNING' | 'AFTERNOON' | string | null;
+  counterNote?: string | null;
+  appointmentStatus?: string | null;
+  appointmentRejectionReason?: string | null;
+  inspectionOrderId?: string | null;
   paymentMethod?: 'WALLET' | 'BANK_TRANSFER' | string;
   paymentExpiresAt?: string | null;
   bankPaymentDetails?: any;
@@ -371,6 +383,8 @@ export interface SystemInspectionProposalPayload {
   centerName?: string;
   feePayer?: 'BUYER_PAYS' | 'SELLER_PAYS' | 'SPLIT_50_50';
   baseInspectionFee?: number;
+  travelFeeRoundTrip?: number;
+  travelDistanceKm?: number;
   shippingToCenterFee?: number;
   returnShippingReserveFee?: number;
   totalAtCenterFee?: number;
@@ -400,6 +414,8 @@ export interface InspectionProposalPrefillData {
   isZinLossAcknowledged?: boolean;
   quote?: any;
   baseInspectionFee?: number;
+  travelFeeRoundTrip?: number;
+  travelDistanceKm?: number;
   shippingToCenterFee?: number;
   returnShippingReserveFee?: number;
   totalAtCenterFee?: number;

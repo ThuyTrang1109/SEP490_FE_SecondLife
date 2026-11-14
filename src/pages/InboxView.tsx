@@ -31,6 +31,7 @@ import { formatVND } from '../utils/translations';
 import { DedicatedChatRoom } from '../components/chat/DedicatedChatRoom';
 import { buildChatProductListing, getChatPostStatusBadge } from '../utils/chatProduct';
 import { inspectionChatParams, isInspectionProposalForPost, resolveChatRoomPath } from '../utils/inspectionChatDraft';
+import { UserAvatar } from '../components/common/UserAvatar';
 
 interface InboxViewProps {
   listings: Listing[];
@@ -197,17 +198,13 @@ export const InboxView: React.FC<InboxViewProps> = ({
         partnerName =
           (!isNameOfMe(room.buyerName) && room.buyerName) ||
           (lang === 'vi' ? 'Khách Hàng' : 'Customer');
-        partnerAvatar =
-          room.buyerAvatar ||
-          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200';
+        partnerAvatar = room.buyerAvatar || '';
       } else {
         roleLabel = lang === 'vi' ? 'Đối tác: Người bán' : 'Partner: Seller';
         partnerName =
           (!isNameOfMe(room.sellerName) && room.sellerName) ||
           (lang === 'vi' ? 'Người Bán' : 'Seller');
-        partnerAvatar =
-          room.sellerAvatar ||
-          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200';
+        partnerAvatar = room.sellerAvatar || '';
       }
 
       return { isRoomSeller, partnerName, partnerAvatar, roleLabel };
@@ -624,13 +621,12 @@ export const InboxView: React.FC<InboxViewProps> = ({
                         }`}
                     >
                       {/* Partner avatar */}
-                      <div className="relative shrink-0">
-                        <img
-                          src={partnerAvatar}
-                          alt={partnerName}
-                          className="w-12 h-12 rounded-xl object-cover border border-slate-200"
-                        />
-                      </div>
+                      <UserAvatar
+                        src={partnerAvatar}
+                        name={partnerName}
+                        className="w-12 h-12 rounded-xl border border-slate-200"
+                        role={isRoomSeller ? 'buyer' : 'seller'}
+                      />
 
                       {/* Content info */}
                       <div className="flex-1 min-w-0">

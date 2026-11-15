@@ -12,6 +12,8 @@ import {
   resolveReturnReserveStatusLabel,
   resolveShipmentStatusLabel,
   resolveInspectionOrderId,
+  resolveFeeSplitPlan,
+  resolveReturnReserveDetails,
 } from '../utils/adminInspectionFunds';
 import { AdminInspectionFundsView } from '../components/admin/AdminInspectionFundsModal';
 import { formatVND } from '../utils/translations';
@@ -381,4 +383,174 @@ test('AdminInspectionFundsTab renders dedicated tab with KPI cards and inspectio
   assert.match(html, /Chờ Quyết Toán Hub/);
   assert.match(html, /Đối Soát Tiền/);
   assert.match(html, /17e67687/);
+});
+
+test('resolveFeeSplitPlan correctly handles explicit split and infers ratio from amounts', () => {
+  // Explicit 50/50
+  assert.equal(resolveFeeSplitPlan({ inspectionFeeSplit: 'SPLIT_50_50' } as any).label, 'Chia đôi 50% - 50%');
+  assert.equal(resolveFeeSplitPlan({ feeSplit: 'SPLIT_50_50' } as any).buyerPercent, 50);
+
+  // Explicit Buyer 100%
+  const buyer100 = resolveFeeSplitPlan({ inspectionFeeSplit: 'BUYER_100' } as any);
+  assert.equal(buyer100.label, 'Người mua chịu 100%');
+  assert.equal(buyer100.buyerPercent, 100);
+  assert.equal(buyer100.sellerPercent, 0);
+
+  // Explicit Seller 100%
+  const seller100 = resolveFeeSplitPlan({ feeSplit: 'SELLER_100' } as any);
+  assert.equal(seller100.label, 'Người bán chịu 100%');
+  assert.equal(seller100.sellerPercent, 100);
+
+  // Inferred from amountDue: equal amounts -> 50/50
+  const inferred5050 = resolveFeeSplitPlan({
+    buyerPayment: { amountDue: 7_355_600, amountCollected: 7_355_600 },
+    sellerPayment: { amountDue: 7_355_600, amountCollected: 7_355_600 },
+  } as any);
+  assert.equal(inferred5050.code, 'SPLIT_50_50');
+  assert.equal(inferred5050.label, 'Chia đôi 50% - 50%');
+
+  // Inferred buyer only
+  const inferredBuyer = resolveFeeSplitPlan({
+    buyerPayment: { amountDue: 500_000, amountCollected: 500_000 },
+    sellerPayment: { amountDue: 0, amountCollected: 0 },
+  } as any);
+  assert.equal(inferredBuyer.code, 'BUYER_100');
+});
+
+test('resolveReturnReserveDetails calculates actual return fee, surplus, and proportional distribution', () => {
+  const fundsData: AdminInspectionOrderFundsDTO = {
+    inspectionOrderId: '342d33f7-64d5-4f79-8c6f-dc33673f1212',
+    totalCollected: 14_711_200,
+    unsettledCollectedAmount: 7_915_200,
+    collectionStatus: 'PAID',
+    buyerPayment: { amountDue: 7_355_600, amountCollected: 7_355_600 },
+    sellerPayment: { amountDue: 7_355_600, amountCollected: 7_355_600 },
+    inspectionFeeSplit: 'SPLIT_50_50',
+    returnReserve: {
+      plannedAmount: 7_915_200,
+      heldAmount: 7_915_200,
+      status: 'RETURN_IN_PROGRESS',
+    },
+    shipments: [
+      {
+        leg: 'SELLER_TO_CENTER',
+        actualFee: 6_596_000,
+        orderCode: 'LLM-IN-1',
+        status: 'DELIVERED',
+      },
+      {
+        leg: 'CENTER_TO_SELLER',
+        actualFee: 46_200,
+        orderCode: 'LLM-RET-999',
+        status: 'IN_TRANSIT',
+      },
+    ],
+  };
+
+  const details = resolveReturnReserveDetails(fundsData);
+  assert.equal(details.actualReturnFee, 46_200);
+  assert.equal(details.hasActualReturnFee, true);
+  assert.equal(details.returnShipmentCode, 'LLM-RET-999');
+  assert.equal(details.splitPlan.label, 'Chia đôi 50% - 50%');
+  // Surplus: 7.915.200 - 46.200 = 7.869.000
+  assert.equal(details.surplusAmount, 7_869_000);
+  // 50/50 division: 3.934.500 each
+  assert.equal(details.buyerSurplusShare, 3_934_500);
+  assert.equal(details.sellerSurplusShare, 3_934_500);
+  assert.equal(details.refundStatus, 'PROCESSING');
+  assert.equal(details.refundStatusLabel, 'Đang chuyển hoàn · Chờ quyết toán');
+});
+
+test('resolveReturnReserveDetails handles SETTLED status and generates clear refund audit text', () => {
+  const settledFunds: AdminInspectionOrderFundsDTO = {
+    inspectionOrderId: 'settled-order',
+    totalCollected: 14_711_200,
+    unsettledCollectedAmount: 0,
+    collectionStatus: 'PAID',
+    buyerPayment: { amountDue: 7_355_600, amountCollected: 7_355_600 },
+    sellerPayment: { amountDue: 7_355_600, amountCollected: 7_355_600 },
+    inspectionFeeSplit: 'SPLIT_50_50',
+    returnReserve: {
+      plannedAmount: 400_000,
+      heldAmount: 0,
+      status: 'SETTLED',
+    },
+    settlement: {
+      centerPayoutAmount: 200_000,
+      buyerRefundAmount: 180_000,
+      sellerRefundAmount: 180_000,
+      settledAt: '2026-11-15T10:47:47.000Z',
+    },
+    shipments: [
+      {
+        leg: 'HUB_TO_SELLER',
+        actualFee: 40_000,
+        orderCode: 'LLM-RET-SETTLED',
+        status: 'DELIVERED',
+      },
+    ],
+  };
+
+  const details = resolveReturnReserveDetails(settledFunds);
+  assert.equal(details.actualReturnFee, 40_000);
+  assert.equal(details.surplusAmount, 360_000);
+  assert.equal(details.buyerSurplusShare, 180_000);
+  assert.equal(details.sellerSurplusShare, 180_000);
+  assert.equal(details.refundStatus, 'SETTLED');
+  assert.equal(details.refundStatusLabel, 'Đã hoàn tất quyết toán & hoàn ví');
+  assert.match(details.refundDescription, /Đã đối soát xong cước hoàn/);
+  assert.match(details.refundDescription, /tự động hoàn vào ví/);
+});
+
+test('AdminInspectionFundsView renders full Return Reserve details (actual fee, split ratio, surplus breakdown, refund status)', () => {
+  const funds: AdminInspectionOrderFundsDTO = {
+    inspectionOrderId: '342d33f7-64d5-4f79-8c6f-dc33673f1212',
+    totalCollected: 14_711_200,
+    unsettledCollectedAmount: 7_915_200,
+    collectionStatus: 'PAID',
+    buyerPayment: { amountDue: 7_355_600, amountCollected: 7_355_600 },
+    sellerPayment: { amountDue: 7_355_600, amountCollected: 7_355_600 },
+    fees: { inspectionFee: 200_000, shippingFee: 6_596_000, buyerCommitmentDeposit: 0 },
+    returnReserve: {
+      plannedAmount: 7_915_200,
+      heldAmount: 7_915_200,
+      status: 'RETURN_IN_PROGRESS',
+    },
+    shipments: [
+      {
+        leg: 'CENTER_TO_SELLER',
+        actualFee: 46_200,
+        orderCode: 'LLM-RET-001',
+        status: 'IN_TRANSIT',
+      },
+    ],
+  };
+
+  const html = renderToStaticMarkup(createElement(AdminInspectionFundsView, {
+    inspectionOrderId: funds.inspectionOrderId,
+    funds,
+  }));
+
+  // Verify all 4 requirements are present in HTML output:
+  // 1. Tiền vận chuyển thực tế từ trung tâm về seller
+  assert.match(html, /Cước hoàn thực tế \(Hub → Seller\)/);
+  assert.match(html, /46\.200/);
+  assert.match(html, /LLM-RET-001/);
+
+  // 2. Phương án chia tỉ lệ của đơn
+  assert.match(html, /Phương án chia tỉ lệ đơn/);
+  assert.match(html, /Chia đôi 50% - 50%/);
+  assert.match(html, /Mua: 50% · Bán: 50%/);
+
+  // 3. Tiền dư khi trừ tiền vận đơn thực tế chia đúng theo tỉ lệ
+  assert.match(html, /Tiền dư sau trừ cước thực tế/);
+  assert.match(html, /Phân bổ tiền dư hoàn trả theo tỉ lệ chia của đơn/);
+  assert.match(html, /Hoàn Người mua \(50%\):/);
+  assert.match(html, /Hoàn Người bán \(50%\):/);
+  // Surplus: 7.915.200 - 46.200 = 7.869.000 -> 3.934.500 each
+  assert.match(html, /3\.934\.500/);
+
+  // 4. Trạng thái đã hoàn
+  assert.match(html, /Trạng thái hoàn trả tiền dư:/);
+  assert.match(html, /Đang chuyển hoàn · Chờ quyết toán/);
 });

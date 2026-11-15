@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   ACCESS_TOKEN_KEY, ApiError, clearAuthTokens, request, requestGet,
 } from '../services/apiClient';
+import { inspectorService } from '../services/inspectorService';
 import { createInFlightRequests } from '../utils/inFlightRequests';
 
 function memoryStorage(): Storage {
@@ -86,6 +87,25 @@ test('a completed read is fetched again instead of returning a cached value', as
   assert.equal(calls.length, 2);
   calls[1].result.resolve(response(25));
   assert.equal((await second).data, 25);
+});
+
+test('inspection detail shares reads during mount and reloads after a status notification', async (t) => {
+  const calls = interceptFetch(t);
+  const orderId = 'c40415c2-a72b-47e2-864e-e54762fbe347';
+  const first = inspectorService.getOrder(orderId, { isBackground: false });
+  const remount = inspectorService.getOrder(orderId, { isBackground: false });
+  await tick();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.signal, undefined);
+  calls[0].result.resolve(response({ id: orderId, status: 'WAITING_SELLER_APPROVAL' }));
+  assert.equal((await first).status, 'WAITING_SELLER_APPROVAL');
+  assert.equal((await remount).status, 'WAITING_SELLER_APPROVAL');
+
+  const refresh = inspectorService.getOrder(orderId, { isBackground: true });
+  await tick();
+  assert.equal(calls.length, 2);
+  calls[1].result.resolve(response({ id: orderId, status: 'WAITING_FEE_PAYMENT' }));
+  assert.equal((await refresh).status, 'WAITING_FEE_PAYMENT');
 });
 
 test('a failed shared read releases its key so the user can retry', async (t) => {

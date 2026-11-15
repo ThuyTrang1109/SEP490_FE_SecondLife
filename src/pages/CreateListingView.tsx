@@ -152,7 +152,7 @@ export const generateUUID = (): string => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     try {
       return crypto.randomUUID();
-    } catch {}
+    } catch { }
   }
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
@@ -586,7 +586,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     if (postId) {
       try {
         localStorage.setItem(`post_can_disassemble_${postId}`, String(value));
-      } catch {}
+      } catch { }
     }
   };
 
@@ -602,7 +602,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     if (postId) {
       try {
         localStorage.setItem(`post_weight_unit_${postId}`, newUnit);
-      } catch {}
+      } catch { }
     }
     const targetDec = newUnit === 'kg' ? 3 : 0;
     if (typeof shippingWeight === 'number' && shippingWeight >= 1) {
@@ -630,7 +630,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     if (postId) {
       try {
         localStorage.setItem(`post_dimension_unit_${postId}`, newUnit);
-      } catch {}
+      } catch { }
     }
     const targetDec = newUnit === 'm' ? 2 : 0;
     setRawLengthInput(typeof shippingLength === 'number' && shippingLength >= 1 ? fromBaseInteger(shippingLength, targetDec) : '');
@@ -739,9 +739,9 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         setMaxVideoSizeMb(limits.maxVideoSizeMb);
         try {
           sessionStorage.setItem('secondlife_max_video_size_mb', String(limits.maxVideoSizeMb));
-        } catch {}
+        } catch { }
       }
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   // Post & AI Session IDs from Backend
@@ -806,7 +806,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         }
       }
       sessionStorage.removeItem('create_listing_active_draft');
-    } catch {}
+    } catch { }
 
     // 2. Nếu đang đăng bài dở dang (tạo mới từ đầu, không phải mở sửa bản nháp cũ ở dashboard) và đã có postId trên BE:
     // Xóa bản nháp trên BE để không để lại bài rác
@@ -863,7 +863,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             const parsed = JSON.parse(savedAns);
             if (parsed && typeof parsed === 'object') setQuestionAnswers(parsed);
           }
-        } catch {}
+        } catch { }
         showToast(lang === 'vi' ? `Đã tải lại bản nháp #${cleanId.slice(0, 8)} thành công!` : 'Draft loaded successfully!');
         setIsLoadDraftModalOpen(false);
       }
@@ -1017,7 +1017,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           const parsed = JSON.parse(savedAns);
           if (parsed && typeof parsed === 'object') setQuestionAnswers(parsed);
         }
-      } catch {}
+      } catch { }
 
       // Nếu bản nháp đã có ảnh, tự động chuyển ngay sang Bước 2 để người dùng tiếp tục chỉnh sửa bài
       if ((initialDraft.photoGallery && initialDraft.photoGallery.length > 0) || (initialDraft.photos && initialDraft.photos.front)) {
@@ -1128,7 +1128,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
             localStorage.removeItem(key);
           }
         }
-      } catch {}
+      } catch { }
     }
   }, [initialDraft]);
 
@@ -1249,7 +1249,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     const filtered = uniqueQuestions.filter(q => {
       const lower = q.toLowerCase().trim();
       // Giữ lại các câu hỏi liên quan đến bảo hành (ví dụ: "Bảo hành chính hãng không")
-            if (lower.includes('bảo hành') || lower.includes('bo hnh') || lower.includes('chính hãng')) return true;
+      if (lower.includes('bảo hành') || lower.includes('bo hnh') || lower.includes('chính hãng')) return true;
 
       // Lọc bỏ câu hỏi về thời gian/năm mua/giá mua vì người bán đã điền ở Bước 1
       if (
@@ -1295,7 +1295,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     return getStandardProductQuestions(catName, itmName, brand);
   }, [parsedAiQuestions, aiInitialMessage, postId, initialDraft, selectedCategoryId, selectedItemId, backendCategories, backendItems, brand]);
 
-  
+
   // Questionnaire Answers State
   const [questionAnswers, setQuestionAnswers] = useState<Record<number, string>>({});
 
@@ -1331,7 +1331,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       if (curId) {
         try {
           localStorage.setItem(`post_question_answers_${curId}`, JSON.stringify(next));
-        } catch {}
+        } catch { }
       }
       return next;
     });
@@ -1380,7 +1380,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     handleAnswerChange(idx, nextItems.join(', '));
   };
 
-    // Tự động tạo tiêu đề bài đăng hấp dẫn chuẩn sàn TMĐT từ thông tin & khảo sát
+  // Tự động tạo tiêu đề bài đăng hấp dẫn chuẩn sàn TMĐT từ thông tin & khảo sát
   const buildSmartProductTitle = (): string => {
     const selectedCat = backendCategories.find(c => c.id === selectedCategoryId);
     const selectedItm = backendItems.find(i => i.id === selectedItemId);
@@ -1604,7 +1604,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       // Gửi trực tiếp promptMessage qua finalizeChat để AI biên tập mô tả và tiêu đề, trừ 1 credit chat
       const finalizeRes = isSessionCompleted ? await postService.regenerateChat(sessionId, promptMessage) : await postService.finalizeChat(sessionId, promptMessage).catch((e: any) => (e?.status === 409 || String(e?.message || '').toLowerCase().includes('already completed')) ? postService.regenerateChat(sessionId, promptMessage) : Promise.reject(e));
       const reply = finalizeRes?.description || (finalizeRes as any)?.message || '';
-      
+
       if (reply) {
         let cleanedReply = cleanDescriptionFromQuestionTemplate(reply);
         cleanedReply = trimDanglingAiSentences(cleanedReply);
@@ -2008,7 +2008,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           setMaxVideoSizeMb(detectedMb);
           try {
             sessionStorage.setItem('secondlife_max_video_size_mb', String(detectedMb));
-          } catch {}
+          } catch { }
         }
       }
       showToast(errMsg || (lang === 'vi' ? 'Không thể tải video lên máy chủ' : 'Failed to upload video'));
@@ -2171,7 +2171,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           const parsed = JSON.parse(savedAns);
           if (parsed && typeof parsed === 'object') setQuestionAnswers(prev => ({ ...parsed, ...prev }));
         }
-      } catch {}
+      } catch { }
       setCurrentStep(2);
       return;
     }
@@ -2217,7 +2217,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           if (visualAssessment) {
             localStorage.setItem(`post_ai_visual_report_${initRes.postId}`, visualAssessment);
           }
-        } catch {}
+        } catch { }
 
         // Auto-generate title from selections if empty
         const selectedCat = backendCategories.find(c => c.id === selectedCategoryId);
@@ -2249,16 +2249,16 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         if (numOrig > 0) {
           try {
             localStorage.setItem(`post_original_price_${initRes.postId}`, String(numOrig));
-          } catch {}
+          } catch { }
         }
         if (purchaseTimeNote && purchaseTimeNote.trim()) {
           try {
             localStorage.setItem(`post_purchase_time_note_${initRes.postId}`, purchaseTimeNote.trim());
-          } catch {}
+          } catch { }
         }
         try {
           localStorage.setItem(`post_can_disassemble_${initRes.postId}`, String(canDisassemble));
-        } catch {}
+        } catch { }
         savePostMetadata({
           postId: initRes.postId,
           categoryId: selectedCategoryId,
@@ -2585,12 +2585,12 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       if (numOrig > 0 && postId) {
         try {
           localStorage.setItem(`post_original_price_${postId}`, String(numOrig));
-        } catch {}
+        } catch { }
       }
       if (postId) {
         try {
           localStorage.setItem(`post_can_disassemble_${postId}`, String(canDisassemble));
-        } catch {}
+        } catch { }
       }
       const cleanDesc = description.trim().replace(/<!--(?:sl_orig_price|ORIGINAL_PRICE):\d+-->/gi, '').trim();
       const descToSend = numOrig > 0 ? `${cleanDesc}\n\n<!--sl_orig_price:${numOrig}-->` : cleanDesc;
@@ -2789,11 +2789,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     if (purchaseTimeNote && purchaseTimeNote.trim()) {
       try {
         localStorage.setItem(`post_purchase_time_note_${postId}`, purchaseTimeNote.trim());
-      } catch {}
+      } catch { }
     }
     try {
       localStorage.setItem(`post_can_disassemble_${postId}`, String(canDisassemble));
-    } catch {}
+    } catch { }
     savePostMetadata({
       postId,
       categoryId: selectedCategoryId,
@@ -2888,7 +2888,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           localStorage.removeItem(key);
         }
       }
-    } catch {}
+    } catch { }
     onListingCreated(newListing);
   };
 
@@ -2964,7 +2964,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
     } catch (err: any) {
       setSubmitError(
         (lang === 'vi' ? 'Không lưu được thông tin kiện hàng: ' : 'Failed to save shipping package: ') +
-          (translateSystemNotification(err?.message || '') || '')
+        (translateSystemNotification(err?.message || '') || '')
       );
       setIsSubmittingPost(false);
       return;
@@ -2992,7 +2992,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       setSubmitResult(submitRes);
       try {
         localStorage.setItem(`post_parcel_${postId}`, JSON.stringify(parcel));
-      } catch {}
+      } catch { }
 
       // Đồng bộ metadata bài đăng
       const submitCat = backendCategories.find((c) => c.id === selectedCategoryId);
@@ -3004,11 +3004,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
       if (purchaseTimeNote && purchaseTimeNote.trim()) {
         try {
           localStorage.setItem(`post_purchase_time_note_${postId}`, purchaseTimeNote.trim());
-        } catch {}
+        } catch { }
       }
       try {
         localStorage.setItem(`post_can_disassemble_${postId}`, String(canDisassemble));
-      } catch {}
+      } catch { }
       savePostMetadata({
         postId,
         categoryId: selectedCategoryId,
@@ -3235,11 +3235,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   setSelectedItemId('');
                 }}
                 disabled={isLoadingCategories}
-                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none transition ${
-                  hasSubmittedStep1 && categoryError
-                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
-                    : 'border-gray-200 focus:border-[#c34c36]'
-                }`}
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none transition ${hasSubmittedStep1 && categoryError
+                  ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                  : 'border-gray-200 focus:border-[#c34c36]'
+                  }`}
               >
                 <option value="">-- Chọn danh mục sản phẩm --</option>
                 {backendCategories.map((c) => (
@@ -3265,11 +3264,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 value={selectedItemId}
                 onChange={(e) => setSelectedItemId(e.target.value)}
                 disabled={isLoadingItems || backendItems.length === 0}
-                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none transition ${
-                  hasSubmittedStep1 && itemError
-                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
-                    : 'border-gray-200 focus:border-[#c34c36]'
-                }`}
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none transition ${hasSubmittedStep1 && itemError
+                  ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                  : 'border-gray-200 focus:border-[#c34c36]'
+                  }`}
               >
                 {backendItems.length > 0 ? (
                   <>
@@ -3300,11 +3298,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 value={brand}
                 onChange={(e) => setBrand(e.target.value)}
                 placeholder={brandSuggestionsData.placeholder}
-                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs text-[#24263e] focus:outline-none transition ${
-                  hasSubmittedStep1 && brandError
-                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
-                    : 'border-gray-200 focus:border-[#c34c36]'
-                }`}
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs text-[#24263e] focus:outline-none transition ${hasSubmittedStep1 && brandError
+                  ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                  : 'border-gray-200 focus:border-[#c34c36]'
+                  }`}
               />
               {hasSubmittedStep1 && brandError && (
                 <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
@@ -3339,11 +3336,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 min={1990}
                 max={maxAllowedPurchaseYear}
                 placeholder={`VD: 2022 (tối đa ${maxAllowedPurchaseYear})`}
-                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs text-[#24263e] focus:outline-none transition ${
-                  purchaseYearError
-                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
-                    : 'border-gray-200 focus:border-[#c34c36]'
-                }`}
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs text-[#24263e] focus:outline-none transition ${purchaseYearError
+                  ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                  : 'border-gray-200 focus:border-[#c34c36]'
+                  }`}
               />
               {purchaseYearError && (
                 <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
@@ -3388,11 +3384,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     key={tag}
                     type="button"
                     onClick={() => setPurchaseTimeNote(purchaseTimeNote === tag ? '' : tag)}
-                    className={`px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors cursor-pointer ${
-                      purchaseTimeNote === tag
-                        ? 'bg-[#c34c36] text-white border border-[#c34c36]'
-                        : 'bg-white border border-gray-200 hover:border-[#c34c36] hover:text-[#c34c36] text-slate-700'
-                    }`}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors cursor-pointer ${purchaseTimeNote === tag
+                      ? 'bg-[#c34c36] text-white border border-[#c34c36]'
+                      : 'bg-white border border-gray-200 hover:border-[#c34c36] hover:text-[#c34c36] text-slate-700'
+                      }`}
                   >
                     {tag}
                   </button>
@@ -3422,18 +3417,17 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                       if (postId) {
                         localStorage.setItem(`post_original_price_${postId}`, String(numVal));
                       }
-                    } catch {}
+                    } catch { }
                   }
                   if (initialDraft && typeof numVal === 'number') {
                     setFinalPriceVnd(numVal);
                   }
                 }}
                 placeholder={initialDraft ? (lang === 'vi' ? 'VD: 600.000' : 'E.g. 600,000') : (lang === 'vi' ? 'VD: 5.000.000' : 'E.g. 5,000,000')}
-                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs font-medium text-[#24263e] focus:outline-none tabular-nums transition ${
-                  originalPriceError
-                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
-                    : 'border-gray-200 focus:border-[#c34c36]'
-                }`}
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs font-medium text-[#24263e] focus:outline-none tabular-nums transition ${originalPriceError
+                  ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                  : 'border-gray-200 focus:border-[#c34c36]'
+                  }`}
               />
               {originalPriceVnd !== '' && !originalPriceError && (
                 <p className="text-[11px] text-emerald-600 font-medium italic">
@@ -3850,8 +3844,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     <div
                       key={idx}
                       className={`p-4 rounded-2xl border transition-all ${hasAnswer
-                          ? 'bg-white border-emerald-300 shadow-xs'
-                          : 'bg-white/85 border-amber-200/90 hover:border-amber-400 shadow-2xs'
+                        ? 'bg-white border-emerald-300 shadow-xs'
+                        : 'bg-white/85 border-amber-200/90 hover:border-amber-400 shadow-2xs'
                         }`}
                     >
                       {/* Tiêu đề & Số thứ tự */}
@@ -3893,11 +3887,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                                 key={exIdx}
                                 type="button"
                                 onClick={() => handleToggleSuggestion(idx, ex)}
-                                className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold border transition cursor-pointer flex items-center gap-1 ${
-                                  isSelected
-                                    ? 'bg-[#c34c36] text-white border-[#c34c36] shadow-2xs hover:bg-[#a83c28]'
-                                    : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200 hover:border-amber-400'
-                                }`}
+                                className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold border transition cursor-pointer flex items-center gap-1 ${isSelected
+                                  ? 'bg-[#c34c36] text-white border-[#c34c36] shadow-2xs hover:bg-[#a83c28]'
+                                  : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200 hover:border-amber-400'
+                                  }`}
                                 title={isSelected ? `Đã chọn - Bấm để bỏ chọn "${ex}"` : `Bấm để chọn thêm "${ex}"`}
                               >
                                 {isSelected ? (
@@ -4018,11 +4011,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="VD: Nồi Cơm Điện BlueStone 1.8L - Hàng Lướt Like New 99%"
-                className={`w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none transition ${
-                  hasSubmittedStep2 && (!title || !title.trim())
-                    ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
-                    : 'border-gray-200 focus:border-[#c34c36]'
-                }`}
+                className={`w-full px-4 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none transition ${hasSubmittedStep2 && (!title || !title.trim())
+                  ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                  : 'border-gray-200 focus:border-[#c34c36]'
+                  }`}
               />
               {hasSubmittedStep2 && (!title || !title.trim()) && (
                 <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1 animate-fadeIn">
@@ -4105,11 +4097,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                         placeholder={weightUnit === 'kg' ? 'VD: 3.5' : 'VD: 3500'}
                         value={rawWeightInput}
                         onChange={(e) => handleWeightChange(e.target.value)}
-                        className={`w-full h-10 px-3.5 py-2 bg-white border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none shadow-2xs transition ${
-                          isInvalid
-                            ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
-                            : 'border-gray-200 focus:border-[#c34c36]'
-                        }`}
+                        className={`w-full h-10 px-3.5 py-2 bg-white border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none shadow-2xs transition ${isInvalid
+                          ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                          : 'border-gray-200 focus:border-[#c34c36]'
+                          }`}
                       />
                       <div className="h-5 flex items-center pl-1 text-[10px]">
                         {isInvalid ? (
@@ -4159,11 +4150,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                         placeholder={dimensionUnit === 'm' ? 'VD: 0.3' : 'VD: 30'}
                         value={rawLengthInput}
                         onChange={(e) => handleDimensionChange('length', e.target.value)}
-                        className={`w-full h-10 px-3.5 py-2 bg-white border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none shadow-2xs transition ${
-                          isInvalid
-                            ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
-                            : 'border-gray-200 focus:border-[#c34c36]'
-                        }`}
+                        className={`w-full h-10 px-3.5 py-2 bg-white border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none shadow-2xs transition ${isInvalid
+                          ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                          : 'border-gray-200 focus:border-[#c34c36]'
+                          }`}
                       />
                       <div className="h-5 flex items-center pl-1 text-[10px]">
                         {isFormatInvalid ? (
@@ -4217,11 +4207,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                         placeholder={dimensionUnit === 'm' ? 'VD: 0.25' : 'VD: 25'}
                         value={rawWidthInput}
                         onChange={(e) => handleDimensionChange('width', e.target.value)}
-                        className={`w-full h-10 px-3.5 py-2 bg-white border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none shadow-2xs transition ${
-                          isInvalid
-                            ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
-                            : 'border-gray-200 focus:border-[#c34c36]'
-                        }`}
+                        className={`w-full h-10 px-3.5 py-2 bg-white border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none shadow-2xs transition ${isInvalid
+                          ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                          : 'border-gray-200 focus:border-[#c34c36]'
+                          }`}
                       />
                       <div className="h-5 flex items-center pl-1 text-[10px]">
                         {isFormatInvalid ? (
@@ -4274,11 +4263,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                         placeholder={dimensionUnit === 'm' ? 'VD: 0.2' : 'VD: 20'}
                         value={rawHeightInput}
                         onChange={(e) => handleDimensionChange('height', e.target.value)}
-                        className={`w-full h-10 px-3.5 py-2 bg-white border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none shadow-2xs transition ${
-                          isInvalid
-                            ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
-                            : 'border-gray-200 focus:border-[#c34c36]'
-                        }`}
+                        className={`w-full h-10 px-3.5 py-2 bg-white border rounded-xl text-xs font-bold text-[#24263e] focus:outline-none shadow-2xs transition ${isInvalid
+                          ? 'border-rose-400 bg-rose-50/20 text-rose-700 focus:border-rose-500'
+                          : 'border-gray-200 focus:border-[#c34c36]'
+                          }`}
                       />
                       <div className="h-5 flex items-center pl-1 text-[10px]">
                         {isInvalid ? (
@@ -4316,18 +4304,16 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     <button
                       type="button"
                       onClick={() => handleCanDisassembleChange(true)}
-                      className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer select-none ${
-                        canDisassemble
-                          ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-xs ring-2 ring-blue-400/20'
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
-                      }`}
+                      className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer select-none ${canDisassemble
+                        ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-xs ring-2 ring-blue-400/20'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                        }`}
                     >
                       <div
-                        className={`w-4 h-4 rounded flex items-center justify-center border transition ${
-                          canDisassemble
-                            ? 'bg-blue-600 border-blue-600 text-white'
-                            : 'border-slate-300 bg-white'
-                        }`}
+                        className={`w-4 h-4 rounded flex items-center justify-center border transition ${canDisassemble
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : 'border-slate-300 bg-white'
+                          }`}
                       >
                         {canDisassemble && <Check className="w-3 h-3 stroke-[3]" />}
                       </div>
@@ -4337,18 +4323,16 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     <button
                       type="button"
                       onClick={() => handleCanDisassembleChange(false)}
-                      className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer select-none ${
-                        !canDisassemble
-                          ? 'bg-slate-100 border-slate-600 text-slate-900 shadow-xs ring-2 ring-slate-400/20'
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
-                      }`}
+                      className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer select-none ${!canDisassemble
+                        ? 'bg-slate-100 border-slate-600 text-slate-900 shadow-xs ring-2 ring-slate-400/20'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                        }`}
                     >
                       <div
-                        className={`w-4 h-4 rounded flex items-center justify-center border transition ${
-                          !canDisassemble
-                            ? 'bg-slate-700 border-slate-700 text-white'
-                            : 'border-slate-300 bg-white'
-                        }`}
+                        className={`w-4 h-4 rounded flex items-center justify-center border transition ${!canDisassemble
+                          ? 'bg-slate-700 border-slate-700 text-white'
+                          : 'border-slate-300 bg-white'
+                          }`}
                       >
                         {!canDisassemble && <Check className="w-3 h-3 stroke-[3]" />}
                       </div>
@@ -4540,13 +4524,12 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                         return (
                           <div
                             key={`${city.locode}_${v.serviceType}`}
-                            className={`p-3 rounded-xl border transition ${
-                              isFit
-                                ? 'bg-emerald-50/70 border-emerald-300'
-                                : parcelIsValid
-                                  ? 'bg-rose-50/30 border-rose-200'
-                                  : 'bg-slate-50/50 border-gray-200'
-                            }`}
+                            className={`p-3 rounded-xl border transition ${isFit
+                              ? 'bg-emerald-50/70 border-emerald-300'
+                              : parcelIsValid
+                                ? 'bg-rose-50/30 border-rose-200'
+                                : 'bg-slate-50/50 border-gray-200'
+                              }`}
                           >
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                               <div className="flex items-center gap-2 flex-wrap">
@@ -4697,27 +4680,27 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
           <div className="pt-4 border-t border-gray-100 space-y-4">
             <div className="flex flex-wrap items-center gap-4">
               <label className="flex items-center gap-2 cursor-pointer p-2 rounded-xl border border-transparent hover:bg-slate-50 transition">
-                <input 
-                  type="radio" 
-                  name="pricingMethod" 
-                  checked={!isManualPricingInStep3} 
-                  onChange={() => setIsManualPricingInStep3(false)} 
+                <input
+                  type="radio"
+                  name="pricingMethod"
+                  checked={!isManualPricingInStep3}
+                  onChange={() => setIsManualPricingInStep3(false)}
                   className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
                 />
                 <span className="text-sm font-bold text-slate-700">Dùng AI Định Giá (Đề xuất)</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer p-2 px-3 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100/70 transition shadow-2xs">
-                <input 
-                  type="radio" 
-                  name="pricingMethod" 
-                  checked={isManualPricingInStep3} 
+                <input
+                  type="radio"
+                  name="pricingMethod"
+                  checked={isManualPricingInStep3}
                   onChange={() => {
                     setIsManualPricingInStep3(true);
                     if (!finalPriceVnd && typeof originalPriceVnd === 'number' && originalPriceVnd > 0) {
                       const fastP = Math.round((originalPriceVnd * 0.5) / 10000) * 10000;
                       setFinalPriceVnd(fastP);
                     }
-                  }} 
+                  }}
                   className="w-4 h-4 text-amber-600 focus:ring-amber-500"
                 />
                 <span className="text-sm font-black text-amber-950">Tự Định Giá (Bỏ qua chờ AI, nhanh nhất ⚡)</span>
@@ -4739,11 +4722,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                       setFinalPriceVnd(numericValue ? Number(numericValue) : 0);
                     }}
                     placeholder="VD: 500.000"
-                    className={`w-full pl-4 pr-12 py-3 rounded-xl border ${
-                      hasSubmittedStep3 && (!finalPriceVnd || finalPriceVnd < 1000 || finalPriceVnd > 1000000000)
-                        ? 'border-rose-500 ring-2 ring-rose-200 bg-rose-50/20'
-                        : 'border-slate-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20'
-                    } outline-none font-black text-slate-800 transition-all tabular-nums`}
+                    className={`w-full pl-4 pr-12 py-3 rounded-xl border ${hasSubmittedStep3 && (!finalPriceVnd || finalPriceVnd < 1000 || finalPriceVnd > 1000000000)
+                      ? 'border-rose-500 ring-2 ring-rose-200 bg-rose-50/20'
+                      : 'border-slate-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20'
+                      } outline-none font-black text-slate-800 transition-all tabular-nums`}
                   />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">đ</span>
                 </div>
@@ -4964,32 +4946,32 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   </p>
                 </div>
                 {typeof originalPriceVnd === 'number' && originalPriceVnd > 0 && (
-                  originalPriceVnd < valuationResult.fairPriceMin * 0.7 || 
+                  originalPriceVnd < valuationResult.fairPriceMin * 0.7 ||
                   originalPriceVnd > valuationResult.fairPriceMax * 2.8
                 ) && (
-                  <div className="p-3.5 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-900 animate-fadeIn shadow-xs space-y-1.5">
-                    <div className="flex items-center gap-2 font-black text-rose-700 text-xs">
-                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                      <span>{lang === 'vi' ? 'Giá bạn nhập có vẻ bất hợp lý so với thị trường' : 'Declared price appears unreasonable'}</span>
+                    <div className="p-3.5 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-900 animate-fadeIn shadow-xs space-y-1.5">
+                      <div className="flex items-center gap-2 font-black text-rose-700 text-xs">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>{lang === 'vi' ? 'Giá bạn nhập có vẻ bất hợp lý so với thị trường' : 'Declared price appears unreasonable'}</span>
+                      </div>
+                      <p className="text-xs text-rose-800 leading-relaxed">
+                        {lang === 'vi' ? (
+                          <>
+                            Mức giá mua gốc bạn khai báo ({formatVND(originalPriceVnd)}) có sự chênh lệch lớn so với giá trị thị trường của sản phẩm này (khoảng <strong>{formatVND(valuationResult.fairPriceMin)} - {formatVND(valuationResult.fairPriceMax)}</strong>).
+                          </>
+                        ) : (
+                          <>
+                            Your declared price ({formatVND(originalPriceVnd)}) differs significantly from current market range (around <strong>{formatVND(valuationResult.fairPriceMin)} - {formatVND(valuationResult.fairPriceMax)}</strong>).
+                          </>
+                        )}
+                      </p>
+                      <p className="text-[11px] text-rose-700 font-medium italic">
+                        {lang === 'vi'
+                          ? `👉 AI đã tự động đối chiếu giá thị trường thực tế và phân tích độ hao mòn qua ảnh để định giá chuẩn xác (${formatVND(valuationResult.suggestedPrice)}) giúp bài đăng dễ bán nhất.`
+                          : `👉 AI automatically referenced realistic market benchmarks and visual wear to suggest a fair selling price (${formatVND(valuationResult.suggestedPrice)}).`}
+                      </p>
                     </div>
-                    <p className="text-xs text-rose-800 leading-relaxed">
-                      {lang === 'vi' ? (
-                        <>
-                          Mức giá mua gốc bạn khai báo ({formatVND(originalPriceVnd)}) có sự chênh lệch lớn so với giá trị thị trường của sản phẩm này (khoảng <strong>{formatVND(valuationResult.fairPriceMin)} - {formatVND(valuationResult.fairPriceMax)}</strong>).
-                        </>
-                      ) : (
-                        <>
-                          Your declared price ({formatVND(originalPriceVnd)}) differs significantly from current market range (around <strong>{formatVND(valuationResult.fairPriceMin)} - {formatVND(valuationResult.fairPriceMax)}</strong>).
-                        </>
-                      )}
-                    </p>
-                    <p className="text-[11px] text-rose-700 font-medium italic">
-                      {lang === 'vi' 
-                        ? `👉 AI đã tự động đối chiếu giá thị trường thực tế và phân tích độ hao mòn qua ảnh để định giá chuẩn xác (${formatVND(valuationResult.suggestedPrice)}) giúp bài đăng dễ bán nhất.`
-                        : `👉 AI automatically referenced realistic market benchmarks and visual wear to suggest a fair selling price (${formatVND(valuationResult.suggestedPrice)}).`}
-                    </p>
-                  </div>
-                )}
+                  )}
               </div>
             </div>
           )}
@@ -5046,11 +5028,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                   const numericValue = cleanVndInput(e.target.value, 11);
                   setFinalPriceVnd(numericValue ? Number(numericValue) : 0);
                 }}
-                className={`w-full px-4 py-3 bg-white border ${
-                  !finalPriceVnd || finalPriceVnd < 1000 || finalPriceVnd > 1000000000
-                    ? 'border-rose-400 focus:border-rose-500 ring-2 ring-rose-200'
-                    : 'border-gray-200 focus:border-[#c34c36]'
-                } rounded-xl text-sm font-black text-slate-900 focus:outline-none tabular-nums`}
+                className={`w-full px-4 py-3 bg-white border ${!finalPriceVnd || finalPriceVnd < 1000 || finalPriceVnd > 1000000000
+                  ? 'border-rose-400 focus:border-rose-500 ring-2 ring-rose-200'
+                  : 'border-gray-200 focus:border-[#c34c36]'
+                  } rounded-xl text-sm font-black text-slate-900 focus:outline-none tabular-nums`}
               />
             </div>
             {(!finalPriceVnd || finalPriceVnd < 1000) && (
@@ -5138,7 +5119,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <h4 className="text-base font-black text-[#24263e]">{title}</h4>
               </div>
               <div className="text-right">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Giá niêm yết</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Giá sản phẩm</span>
                 <span className="text-xl font-black text-[#c34c36]">{formatVND(finalPriceVnd)}</span>
               </div>
             </div>
@@ -5253,11 +5234,10 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
 
               <div className="flex items-center justify-between px-3 py-2 bg-slate-50/80 rounded-lg border border-slate-200/70 text-xs">
                 <span className="text-slate-500 font-medium">Khả năng tháo rời:</span>
-                <span className={`font-bold px-2 py-0.5 rounded-md text-[11px] ${
-                  canDisassemble
-                    ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                    : 'bg-slate-200 text-slate-700'
-                }`}>
+                <span className={`font-bold px-2 py-0.5 rounded-md text-[11px] ${canDisassemble
+                  ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                  : 'bg-slate-200 text-slate-700'
+                  }`}>
                   {canDisassemble ? '✓ Có (Tháo rời được)' : 'Không (Nguyên khối)'}
                 </span>
               </div>
@@ -5708,8 +5688,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 {lang === 'vi' ? 'Bạn đã hết lượt đăng tin' : 'Out of listing credits'}
               </h3>
               <p className="text-sm text-slate-600 mb-6">
-                {lang === 'vi' 
-                  ? 'Số lượt đăng bài của bạn đã hết. Vui lòng nạp thêm các gói dịch vụ để tiếp tục sử dụng tính năng này.' 
+                {lang === 'vi'
+                  ? 'Số lượt đăng bài của bạn đã hết. Vui lòng nạp thêm các gói dịch vụ để tiếp tục sử dụng tính năng này.'
                   : 'You have run out of listing credits. Please top up your package to continue.'}
               </p>
               <div className="flex flex-col gap-2.5">
@@ -5831,18 +5811,16 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-rose-200 animate-scaleIn">
             <div className="p-6 text-center">
-              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border shadow-xs ${
-                mismatchType === 'brand' ? 'bg-amber-100 border-amber-300' : 'bg-rose-100 border-rose-300'
-              }`}>
+              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border shadow-xs ${mismatchType === 'brand' ? 'bg-amber-100 border-amber-300' : 'bg-rose-100 border-rose-300'
+                }`}>
                 <AlertTriangle className={`w-8 h-8 ${mismatchType === 'brand' ? 'text-amber-600' : 'text-rose-600'}`} />
               </div>
-              <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider mb-2 inline-block ${
-                mismatchType === 'brand' ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
-              }`}>
+              <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider mb-2 inline-block ${mismatchType === 'brand' ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
+                }`}>
                 {mismatchType === 'brand' ? 'AI Vision Phát Hiện Khác Thương Hiệu' : 'AI Vision Phát Hiện Khác Loại Thiết Bị'}
               </span>
               <h3 className="text-lg font-black text-slate-900 mb-2">
-                {mismatchType === 'brand' 
+                {mismatchType === 'brand'
                   ? (lang === 'vi' ? 'Hình ảnh không khớp với Thương hiệu đã nhập!' : 'Image brand mismatch detected!')
                   : (lang === 'vi' ? 'Hình ảnh không khớp với Loại sản phẩm!' : 'Image product type mismatch detected!')}
               </h3>
@@ -5870,11 +5848,11 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                     </span>
                   </div>
                 )}
-                
+
                 <div className="pt-1.5 flex items-start gap-2 text-slate-700 leading-relaxed">
                   <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <p className="text-[12px] font-medium">
-                    {imageMismatchReason || (lang === 'vi' 
+                    {imageMismatchReason || (lang === 'vi'
                       ? 'Hình ảnh bạn tải lên có sự sai lệch với thông tin đã khai báo. Vui lòng kiểm tra lại trước khi tiếp tục.'
                       : 'The uploaded image conflicts with the declared product information.')}
                   </p>
@@ -5959,8 +5937,8 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 {lang === 'vi' ? 'Bạn đã hết lượt định giá' : 'Out of valuation credits'}
               </h3>
               <p className="text-sm text-slate-600 mb-6">
-                {lang === 'vi' 
-                  ? 'Số lượt định giá AI của bạn đã hết. Vui lòng nạp thêm gói định giá để tiếp tục.' 
+                {lang === 'vi'
+                  ? 'Số lượt định giá AI của bạn đã hết. Vui lòng nạp thêm gói định giá để tiếp tục.'
                   : 'You have run out of valuation credits. Please top up your package to continue.'}
               </p>
               <div className="flex flex-col gap-2.5">
@@ -6101,7 +6079,7 @@ export const CreateListingView: React.FC<CreateListingViewProps> = ({
                 <span className="font-bold text-[#24263e] text-right line-clamp-1">{title}</span>
               </div>
               <div className="flex justify-between items-center gap-2">
-                <span className="text-slate-500">Giá niêm yết:</span>
+                <span className="text-slate-500">Giá sản phẩm:</span>
                 <span className="font-black text-[#c34c36] text-sm">{formatVND(finalPriceVnd)}</span>
               </div>
               <div className="flex justify-between items-center gap-2">

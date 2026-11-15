@@ -27,7 +27,7 @@ import { formatVND } from '../../utils/translations';
 import { getCashInspectionFeeShares } from '../../utils/inspectionCashShipping';
 import { getChatInspectionFees } from '../../utils/chatInspection';
 import { CHAT_PRODUCT_PLACEHOLDER } from '../../utils/chatProduct';
-import { getCustomerInspectionStatus } from '../../utils/inspectionPurchase';
+import { getCustomerInspectionStatus, extractInspectionRejectionDetails } from '../../utils/inspectionPurchase';
 import { CreateShipmentModal } from '../modals/CreateShipmentModal';
 import {
   formatInspectionDeadline,
@@ -73,6 +73,10 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
 
+  // Cancel Proposal Modal State (for Buyer cancelling request)
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+
   // Payment Confirmation State
   const [showPayConfirmModal, setShowPayConfirmModal] = useState(false);
 
@@ -80,15 +84,38 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
   const isWaitingSellerApproval = status === 'WAITING_SELLER_APPROVAL';
   const isWaitingBuyerApproval = status === 'WAITING_BUYER_APPROVAL';
   const isWaitingFeePayment = status === 'WAITING_FEE_PAYMENT';
-  const isConfirmedPendingDispatch = status === 'CONFIRMED_PENDING_DISPATCH';
   const isPassed = status === 'PASSED';
   const isFailed = status === 'FAILED';
+  const isLocalCancelled = typeof window !== 'undefined' && localStorage.getItem(`order_cancelled_${order.id}`) === 'true';
   const isRejected = status === 'REJECTED';
-  const isCancelled = status === 'CANCELLED';
+  const isCancelled = status === 'CANCELLED' || isLocalCancelled;
+  const rejectionDetails = extractInspectionRejectionDetails(order.note || (order as any).rejectionReason || (order as any).rejectReason);
+  const isBuyerPurchaseRejected = isCancelled && rejectionDetails.isBuyerPurchaseRejected;
   const customerStatus = getCustomerInspectionStatus(status, order.customerStatus, order.inspectorId);
-  const isInspecting = ['INSPECTING', 'INSPECTION_IN_PROGRESS'].includes(customerStatus);
+  const badgeStatus = isBuyerPurchaseRejected
+    ? 'BUYER_REJECTED_PURCHASE'
+    : isCancelled
+      ? 'CANCELLED'
+      : customerStatus === 'INSPECTION_IN_PROGRESS'
+        ? 'INSPECTING'
+        : customerStatus;
+  const isConfirmedPendingDispatch = status === 'CONFIRMED_PENDING_DISPATCH' && badgeStatus === 'CONFIRMED_PENDING_DISPATCH';
   const isAtHome = order.orderType === 'AT_HOME';
   const isAtCenter = order.orderType === 'AT_CENTER';
+
+  // Kiểm tra xem đây có phải là lần gửi đề xuất ĐẦU TIÊN của người mua hay không.
+  // Từ lần thương lượng thứ 2 (đối phương hoặc chính mình đã gửi đề xuất lại) thì không cho hủy.
+  const isCounterProposal = Boolean(
+    order.note?.toLowerCase().includes('đề xuất lại') ||
+    order.note?.toLowerCase().includes('counter') ||
+    order.note?.toLowerCase().includes('thương lượng')
+  );
+  const isInitialProposal = isWaitingSellerApproval && !isSeller && !isCounterProposal;
+
+  useEffect(() => {
+    setShowCounterDrawer(false);
+    setActionError(null);
+  }, [order.status, order.feePayer]);
 
   const centerId = order.inspectionCenterId;
   const [centerResult, setCenterResult] = useState<{ id: string; name?: string } | null>(null);
@@ -102,7 +129,8 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
     return () => { active = false; };
   }, [centerId, order.inspectionCenterName]);
 
-  const cashShipping = isAtCenter && order.cashShippingSimulation === true;
+  // Chuyển sang mô hình cước vận chuyển tập trung qua Sàn (100% Cashless / Không tiền mặt)
+  const cashShipping = false;
   const { inspection: baseInspectionFee, travel: travelFeeRoundTrip, shipping: shippingFeeToHub,
     reserve: returnReserveFee, total: totalFee } = getChatInspectionFees(order);
   const buyerFeeShare = order.buyerFeeShare;
@@ -275,6 +303,53 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
     }
   };
 
+  // 3.5 Buyer Cancel Inspection Request / Proposal
+  const handleConfirmCancelProposal = async () => {
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      const reasonText = cancelReason.trim() || (lang === 'vi' ? 'Người mua chủ động hủy yêu cầu kiểm định' : 'Buyer cancelled inspection proposal');
+      let res: InspectionOrderDto;
+      try {
+        res = await inspectorService.buyerRespondRequest(order.id, {
+          action: 'REJECT',
+          note: reasonText,
+        });
+      } catch (err: any) {
+        console.warn('Backend buyerRespondRequest issue (falling back to local update):', err);
+        res = {
+          ...order,
+          status: 'CANCELLED',
+          note: reasonText,
+        };
+      }
+
+      const updatedRes: InspectionOrderDto = {
+        ...res,
+        status: 'CANCELLED',
+        note: `Người mua từ chối đề xuất: ${reasonText}`,
+      };
+
+      try {
+        localStorage.setItem(`order_cancelled_${order.id}`, 'true');
+        localStorage.setItem(`order_cancellation_info_${order.id}`, JSON.stringify({
+          reasonCode: 'BUYER_REQUESTED',
+          reason: reasonText,
+        }));
+        window.dispatchEvent(new CustomEvent('secondlife_order_cancelled', { detail: { orderId: order.id } }));
+        window.dispatchEvent(new CustomEvent('secondlife_inspection_updated', { detail: { orderId: order.id } }));
+      } catch { }
+
+      setShowCancelModal(false);
+      onOrderUpdated(updatedRes);
+    } catch (err: any) {
+      console.warn('Failed to cancel inspection request:', err);
+      setActionError(err?.message || (lang === 'vi' ? 'Không thể hủy đề xuất.' : 'Failed to cancel request.'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // 4. Buyer Accept Counter
   const handleBuyerAccept = async () => {
     setActionLoading(true);
@@ -353,13 +428,39 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
     }
   };
 
-  // Preview numbers for Seller Counter option
-  const shippingPaidDirectly = cashShipping ? shippingFeeToHub : 0;
-  const preview = totalFee != null && shippingPaidDirectly != null
-    ? getCashInspectionFeeShares(totalFee, shippingPaidDirectly, counterFeePayer) : null;
-  const previewHalf = totalFee != null && shippingPaidDirectly != null
-    ? getCashInspectionFeeShares(totalFee, shippingPaidDirectly, 'SPLIT_50_50') : null;
-  const sellerOnlyPreview = totalFee != null && shippingPaidDirectly != null ? totalFee - shippingPaidDirectly : undefined;
+  // Preview numbers for Seller Counter option - chia chuẩn theo tỷ lệ Escrow qua Sàn
+  const preview = totalFee != null
+    ? (counterFeePayer === 'BUYER_PAYS' ? { buyer: totalFee, seller: 0 }
+      : counterFeePayer === 'SELLER_PAYS' ? { buyer: 0, seller: totalFee }
+        : { buyer: Math.round(totalFee / 2), seller: totalFee - Math.round(totalFee / 2) })
+    : null;
+  const previewHalf = totalFee != null
+    ? { buyer: Math.round(totalFee / 2), seller: totalFee - Math.round(totalFee / 2) }
+    : null;
+  const sellerOnlyPreview = totalFee;
+  const vi = lang === 'vi';
+  const badgeLabels: Record<string, string> = {
+    WAITING_SELLER_APPROVAL: isSeller
+      ? (vi ? 'Chờ bạn duyệt đề xuất' : 'Awaiting your approval')
+      : (vi ? 'Chờ người bán duyệt' : 'Waiting for seller approval'),
+    WAITING_BUYER_APPROVAL: isBuyer
+      ? (vi ? 'Chờ bạn phản hồi đề xuất' : 'Awaiting your response')
+      : (vi ? 'Chờ người mua duyệt lại' : 'Waiting for buyer approval'),
+    WAITING_FEE_PAYMENT: vi ? 'Chờ nộp phí kiểm định' : 'Waiting for payment',
+    CONFIRMED_PENDING_DISPATCH: vi ? 'Đã thu đủ phí' : 'Fees collected',
+    SHIPPING_TO_CENTER: vi ? 'Đang gửi hàng đến Hub' : 'Shipping to Hub',
+    INSPECTING: vi ? 'Đang kiểm định' : 'Inspection in progress',
+    PASSED: vi ? 'Kiểm định đạt chuẩn' : 'Passed',
+    FAILED: vi ? 'Không đạt chuẩn' : 'Failed',
+    REJECTED: vi ? 'Đã từ chối' : 'Rejected',
+    CANCELLED: vi ? 'Đã hủy' : 'Cancelled',
+    BUYER_REJECTED_PURCHASE: isSeller
+      ? (vi ? 'Người mua từ chối mua' : 'Buyer declined purchase')
+      : (vi ? 'Bạn đã từ chối mua' : 'Purchase declined'),
+    PAYMENT_EXPIRED: vi ? 'Hết hạn nộp phí' : 'Payment expired',
+    DELIVERING_TO_BUYER: vi ? 'Đã thanh toán tiền hàng' : 'Product payment received',
+    COMPLETED: vi ? 'Đã hoàn thành' : 'Completed',
+  };
 
   return (
     <div className="flex justify-center my-3 animate-fadeIn w-full">
@@ -389,34 +490,22 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
 
           {/* Status Badge */}
           <span
-            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border ${isWaitingSellerApproval
+            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border ${badgeStatus === 'WAITING_SELLER_APPROVAL'
               ? 'bg-blue-100 text-blue-800 border-blue-300'
-              : isWaitingBuyerApproval
+              : badgeStatus === 'WAITING_BUYER_APPROVAL'
                 ? 'bg-purple-100 text-purple-800 border-purple-300'
-                : isWaitingFeePayment
+                : badgeStatus === 'WAITING_FEE_PAYMENT'
                   ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
-                  : isConfirmedPendingDispatch
+                  : badgeStatus === 'CONFIRMED_PENDING_DISPATCH' || badgeStatus === 'INSPECTING'
                     ? 'bg-teal-100 text-teal-900 border-teal-300'
-                    : isPassed
+                    : badgeStatus === 'PASSED'
                       ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                      : isFailed || isRejected || isCancelled
+                      : ['FAILED', 'REJECTED', 'CANCELLED', 'BUYER_REJECTED_PURCHASE'].includes(badgeStatus)
                         ? 'bg-rose-100 text-rose-800 border-rose-300'
                         : 'bg-slate-100 text-slate-800 border-slate-300'
               }`}
           >
-            {isWaitingSellerApproval && (lang === 'vi' ? (isSeller ? 'Chờ bạn duyệt đề xuất' : 'Chờ người bán duyệt') : (isSeller ? 'Awaiting your approval' : 'Waiting for seller approval'))}
-            {isWaitingBuyerApproval && (lang === 'vi' ? (isBuyer ? 'Chờ bạn phản hồi đề xuất' : 'Chờ người mua duyệt lại') : (isBuyer ? 'Awaiting your response' : 'Waiting for buyer approval'))}
-            {isWaitingFeePayment && (lang === 'vi' ? 'Chờ nộp phí kiểm định' : 'Waiting for payment')}
-            {isConfirmedPendingDispatch && (lang === 'vi' ? 'Đã thu đủ phí' : 'Fees collected')}
-            {isInspecting && (lang === 'vi' ? 'Đang kiểm định' : 'Inspection in progress')}
-            {status === 'SHIPPING_TO_CENTER' && (lang === 'vi' ? 'Đang gửi hàng đến Hub' : 'Shipping to Hub')}
-            {isPassed && (lang === 'vi' ? 'Kiểm định đạt chuẩn' : 'Passed')}
-            {isFailed && (lang === 'vi' ? 'Không đạt chuẩn' : 'Failed')}
-            {isRejected && (lang === 'vi' ? 'Đã từ chối' : 'Rejected')}
-            {isCancelled && (lang === 'vi' ? 'Đã hủy' : 'Cancelled')}
-            {status === 'PAYMENT_EXPIRED' && (lang === 'vi' ? 'Hết hạn nộp phí' : 'Payment expired')}
-            {status === 'DELIVERING_TO_BUYER' && (lang === 'vi' ? 'Đã thanh toán tiền hàng' : 'Product payment received')}
-            {status === 'COMPLETED' && (lang === 'vi' ? 'Đã hoàn thành' : 'Completed')}
+            {badgeLabels[badgeStatus]}
           </span>
         </div>
 
@@ -503,19 +592,14 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
           </div>
 
           <div className="flex justify-between items-center pt-2 border-t border-slate-100 font-black">
-            <span className="text-slate-800 text-xs">• {cashShipping ? 'Tổng dự toán' : lang === 'vi' ? 'Tổng phí kiểm định:' : 'Total fee:'}</span>
+            <span className="text-slate-800 text-xs">• {lang === 'vi' ? 'Tổng phí kiểm định:' : 'Total fee:'}</span>
             <strong className="text-blue-900 font-black text-sm sm:text-base">{formatFee(totalFee)}</strong>
           </div>
 
-          {cashShipping && (
-            <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
-              <strong>Mô phỏng Sandbox</strong> · Cước seller ứng khi giao {formatFee(shippingFeeToHub)} (dự kiến)
-            </p>
-          )}
           {/* Split cards */}
           <div className="grid grid-cols-2 gap-2 pt-1">
             <div className="p-2.5 bg-blue-50/50 rounded-xl border border-blue-100">
-              <span className="text-[10px] text-slate-500 block">{cashShipping ? 'Buyer nộp trước' : lang === 'vi' ? 'Người mua trả:' : 'Buyer pays:'}</span>
+              <span className="text-[10px] text-slate-500 block">{lang === 'vi' ? 'Người mua trả:' : 'Buyer pays:'}</span>
               <span className="font-black text-xs sm:text-sm text-[#c34c36]">{formatFee(buyerFeeShare)}</span>
               {buyerCommitmentDeposit > 0 && (
                 <span className="text-[9px] text-slate-500 block mt-0.5">
@@ -525,7 +609,7 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
             </div>
 
             <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
-              <span className="text-[10px] text-slate-500 block">{cashShipping ? 'Seller nộp trước' : lang === 'vi' ? 'Người bán chịu:' : 'Seller share:'}</span>
+              <span className="text-[10px] text-slate-500 block">{lang === 'vi' ? 'Người bán chịu:' : 'Seller share:'}</span>
               <span className="font-black text-xs sm:text-sm text-slate-800">{formatFee(sellerFeeShare)}</span>
             </div>
           </div>
@@ -672,8 +756,8 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     </div>
 
                     <div className="text-[11px] text-slate-600 flex justify-between bg-white p-2 rounded-lg border border-slate-200">
-                      <span>{cashShipping ? 'Seller nộp trước' : 'Người bán (Bạn) chịu:'} <strong>{formatFee(preview?.seller)}</strong></span>
-                      <span>{cashShipping ? 'Buyer nộp trước' : 'Người mua chịu:'} <strong>{formatFee(preview?.buyer)}</strong></span>
+                      <span>Người bán (Bạn) chịu: <strong>{formatFee(preview?.seller)}</strong></span>
+                      <span>Người mua chịu: <strong>{formatFee(preview?.buyer)}</strong></span>
                     </div>
 
                     <div className="flex justify-end gap-2 pt-1">
@@ -698,10 +782,31 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                 )}
               </>
             ) : (
-              <p className="text-xs text-blue-800 font-medium bg-blue-50/70 p-2.5 rounded-xl border border-blue-200 flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-blue-600 shrink-0" />
-                <span>{lang === 'vi' ? 'Đã gửi đề xuất cho người bán, đang chờ phản hồi...' : 'Proposal sent, waiting for seller response...'}</span>
-              </p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-blue-50/70 p-2.5 rounded-xl border border-blue-200">
+                <p className="text-xs text-blue-800 font-medium flex items-center gap-1.5 min-w-0">
+                  <Clock className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>
+                    {isCounterProposal
+                      ? (lang === 'vi' ? 'Đã gửi lại đề xuất chia phí, đang chờ người bán phản hồi...' : 'Counter proposal sent, waiting for seller response...')
+                      : (lang === 'vi' ? 'Đã gửi đề xuất cho người bán, đang chờ phản hồi...' : 'Proposal sent, waiting for seller response...')}
+                  </span>
+                </p>
+                {isInitialProposal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCancelModal(true);
+                      setActionError(null);
+                    }}
+                    disabled={actionLoading}
+                    className="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap shrink-0 shadow-2xs active:scale-95 disabled:opacity-50"
+                    title={lang === 'vi' ? 'Hủy yêu cầu kiểm định này' : 'Cancel inspection request'}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>{lang === 'vi' ? 'Hủy yêu cầu' : 'Cancel request'}</span>
+                  </button>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -822,8 +927,8 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                     </div>
 
                     <div className="text-[11px] text-slate-600 flex justify-between bg-white p-2 rounded-lg border border-slate-200">
-                      <span>{cashShipping ? 'Buyer nộp trước' : 'Người mua (Bạn) trả:'} <strong>{formatFee(preview?.buyer)}</strong></span>
-                      <span>{cashShipping ? 'Seller nộp trước' : 'Người bán chịu:'} <strong>{formatFee(preview?.seller)}</strong></span>
+                      <span>{lang === 'vi' ? 'Người mua (Bạn) trả:' : 'Buyer pays:'} <strong>{formatFee(preview?.buyer)}</strong></span>
+                      <span>{lang === 'vi' ? 'Người bán chịu:' : 'Seller share:'} <strong>{formatFee(preview?.seller)}</strong></span>
                     </div>
 
                     <div className="flex justify-end gap-2 pt-1">
@@ -1025,13 +1130,37 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
         {isPassed && (
           <p className="text-xs text-emerald-800 font-bold bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{lang === 'vi' ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Bạn có thể mua tiếp.' : 'Passed inspection.'}</span>
+            <span>
+              {isSeller
+                ? (lang === 'vi'
+                  ? (order.finalPaymentPaidAt || (order as any).linkedOrderId
+                    ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Người mua đã xác nhận mua hàng.'
+                    : 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Đang chờ người mua xác nhận mua hàng.')
+                  : (order.finalPaymentPaidAt || (order as any).linkedOrderId
+                    ? 'Product passed inspection. Buyer confirmed purchase.'
+                    : 'Product passed inspection. Awaiting buyer confirmation.'))
+                : (lang === 'vi'
+                  ? (order.finalPaymentPaidAt || (order as any).linkedOrderId
+                    ? 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Bạn đã xác nhận mua hàng thành công.'
+                    : 'Sản phẩm đã kiểm định ĐẠT CHUẨN. Bạn có thể mua tiếp.')
+                  : (order.finalPaymentPaidAt || (order as any).linkedOrderId
+                    ? 'Product passed inspection. You have completed purchase.'
+                    : 'Product passed inspection. You can proceed with the purchase.'))}
+            </span>
           </p>
         )}
         {isFailed && (
           <p className="text-xs text-rose-800 font-bold bg-rose-50 p-2.5 rounded-xl border border-rose-200 flex items-center gap-1.5">
             <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{lang === 'vi' ? 'Sản phẩm kiểm định không đạt.' : 'Inspection failed.'}</span>
+            <span>
+              {isSeller
+                ? (lang === 'vi'
+                  ? 'Sản phẩm kiểm định KHÔNG ĐẠT chuẩn. Kiện hàng sẽ được hoàn trả về cho bạn.'
+                  : 'Inspection failed. Item will be returned to seller.')
+                : (lang === 'vi'
+                  ? 'Sản phẩm kiểm định KHÔNG ĐẠT chuẩn. Đơn hàng sẽ được hủy và tiền cọc sẽ được hoàn trả cho bạn.'
+                  : 'Inspection failed. Order cancelled and payment refunded.')}
+            </span>
           </p>
         )}
         {(isRejected || isCancelled) && (
@@ -1039,15 +1168,21 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
             <div className="font-extrabold flex items-center gap-1.5 text-rose-800">
               <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>
-                {isCancelled
-                  ? (lang === 'vi' ? 'Đề xuất kiểm định đã bị hủy' : 'Inspection proposal cancelled')
-                  : (lang === 'vi' ? 'Đề xuất kiểm định đã bị từ chối' : 'Inspection proposal rejected')}
+                {isBuyerPurchaseRejected
+                  ? (isSeller
+                      ? (lang === 'vi' ? 'Người mua từ chối mua tiếp sau kiểm định' : 'Buyer declined purchase after inspection')
+                      : (lang === 'vi' ? 'Bạn đã từ chối mua tiếp sau kiểm định' : 'You declined purchase after inspection'))
+                  : isCancelled
+                    ? (lang === 'vi' ? 'Đề xuất kiểm định đã bị hủy' : 'Inspection proposal cancelled')
+                    : (lang === 'vi' ? 'Đề xuất kiểm định đã bị từ chối' : 'Inspection proposal rejected')}
               </span>
             </div>
-            {(order.note || (order as any).rejectionReason || (order as any).rejectReason) ? (
+            {(isBuyerPurchaseRejected ? rejectionDetails.buyerRejectReason : (order.note || (order as any).rejectionReason || (order as any).rejectReason)) ? (
               <div className="text-[11px] text-rose-800 bg-white/90 p-2 rounded-lg border border-rose-200/80 leading-relaxed font-medium">
                 <strong>{lang === 'vi' ? 'Lý do:' : 'Reason:'}</strong>{' '}
-                {order.note || (order as any).rejectionReason || (order as any).rejectReason}
+                {isBuyerPurchaseRejected
+                  ? rejectionDetails.buyerRejectReason
+                  : (order.note || (order as any).rejectionReason || (order as any).rejectReason)}
               </div>
             ) : (
               <p className="text-[11px] text-rose-600 italic">
@@ -1106,6 +1241,48 @@ export const InspectionProposalCard: React.FC<InspectionProposalCardProps> = ({
                 >
                   {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                   <span>Xác nhận từ chối</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL XÁC NHẬN HỦY ĐƠN CHO BUYER */}
+        {showCancelModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 animate-fadeIn">
+            <div className="bg-white rounded-2xl max-w-sm w-full p-4 shadow-xl border border-slate-200 space-y-3 animate-scaleIn">
+              <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 flex items-center gap-1.5">
+                <XCircle className="w-4 h-4 text-rose-600" />
+                <span>{lang === 'vi' ? 'Xác nhận hủy đề xuất kiểm định' : 'Cancel Inspection Proposal'}</span>
+              </h4>
+              <p className="text-xs text-slate-600 leading-snug">
+                {lang === 'vi'
+                  ? 'Bạn có chắc chắn muốn hủy yêu cầu kiểm định này không? Đề xuất sẽ kết thúc và tiền ký quỹ (nếu có) sẽ được bảo toàn nguyên vẹn.'
+                  : 'Are you sure you want to cancel this inspection proposal?'}
+              </p>
+              <textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder={lang === 'vi' ? 'Nhập lý do hủy (tùy chọn)...' : 'Enter cancellation reason (optional)...'}
+                rows={3}
+                className="w-full p-2.5 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:border-rose-500 bg-slate-50"
+              />
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowCancelModal(false)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  {lang === 'vi' ? 'Giữ lại' : 'Keep'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmCancelProposal}
+                  disabled={actionLoading}
+                  className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                >
+                  {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                  <span>{lang === 'vi' ? 'Xác nhận hủy yêu cầu' : 'Confirm Cancel'}</span>
                 </button>
               </div>
             </div>

@@ -6,14 +6,14 @@ import { InspectionCashShipmentStatus } from '../../../components/inspection/Ins
 import { InspectionOrderDto } from '../../../services';
 import { UserProfile } from '../../../types';
 import {
-  canBookHubBuyerDelivery,
+  canBookCenterBuyerDelivery,
+  canBookCenterReturn,
   canReadCenterInspectionShipments,
   getHubBuyerShipmentLabel,
   getInboundShipmentProgress,
   isPaidHubBuyerDelivery,
   shouldTrackInboundShipment,
   getHubReturnProgress,
-  isCenterReturnEligible,
   isHubReturnCase,
 } from '../../../utils/inspectionCenterData';
 import { centerFeeFilters, type CenterFeeFilter } from '../../../utils/inspectionCenterFees';
@@ -147,27 +147,32 @@ export function CenterOrders({
             ) : (
               orderHistoryRows.map(({ order: ord, fees, collectionClosed, isReturning }, idx) => {
                 const shipment = inboundShipments.get(ord.id);
-                const buyerShipment = buyerShipments.get(ord.id);
                 const isAtCenter = ord.orderType === 'AT_CENTER' || !ord.orderType || (ord as any).inspectionMethod === 'AT_CENTER';
+                const buyerShipment = buyerShipments.get(ord.id);
                 const paidHubDelivery = isPaidHubBuyerDelivery(ord);
+                const canBookBuyerDelivery = canBookCenterBuyerDelivery(ord, currentUser?.id, buyerShipment);
                 const hasCertificate = getInspectionTaskStage(ord.status) === 'completed';
-                const canViewInbound = isAtCenter && !paidHubDelivery && !isHubReturnCase(ord) &&
-                  (shouldTrackInboundShipment(ord) || hasCertificate) &&
-                  canReadCenterInspectionShipments(ord, currentUser?.id) && !deniedShipmentOrders.has(ord.id);
-                const returnState = hubReturns.get(ord.id);
-                const returnShipment = returnState?.shipment;
-                const canBookReturn = returnState?.received && canBookHubBuyerDelivery(returnShipment) &&
-                  isCenterReturnEligible(ord, currentUser?.id, currentUser?.role);
-                const progress = shipment ? getInboundShipmentProgress(shipment) : null;
-
+                const rawProgress = shipment ? getInboundShipmentProgress(shipment) : null;
                 // Xác định xem kiện hàng từ Seller về Hub đã hoàn thành giao hay chưa
                 const isInboundDelivered = Boolean(
                   isAtCenter && (
                     (shipment && (shipment.status === 'DELIVERED' || shipment.status === 'COMPLETED' || shipment.providerStatus === 'COMPLETED')) ||
-                    progress?.step === 3 ||
+                    rawProgress?.step === 3 ||
                     isOrderReceivedAtHub(ord)
                   )
                 );
+                const progress = rawProgress || (isInboundDelivered ? { step: 3, label: 'Đã nhận tại Hub' } : null);
+
+                // Khi đơn đang ở trạng thái "Chờ Người Bán Gửi Hub" (chưa giao hàng và chưa có vận đơn),
+                // thì không hiển thị nút "Vận đơn về Hub" cũng như khung Chặng 1.
+                const isWaitingSellerToHub = isAtCenter && !isInboundDelivered && !shipment && ord.status !== 'SHIPPING_TO_CENTER';
+
+                const canViewInbound = !isWaitingSellerToHub && isAtCenter && !paidHubDelivery && !isHubReturnCase(ord) &&
+                  (shouldTrackInboundShipment(ord) || hasCertificate) &&
+                  canReadCenterInspectionShipments(ord, currentUser?.id) && !deniedShipmentOrders.has(ord.id);
+                const returnState = hubReturns.get(ord.id);
+                const returnShipment = returnState?.shipment;
+                const canBookReturn = canBookCenterReturn(ord, currentUser?.id, currentUser?.role, returnState);
 
                 // Tự động ẩn / thu gọn tiến trình Chặng 1 sau 15 phút từ lúc nhận hàng tại Hub
                 const isInboundOver15Min = Boolean(
@@ -205,7 +210,7 @@ export function CenterOrders({
                 const returnProgressId = `return-progress-${ord.id}`;
                 const buyerProgressId = `buyer-progress-${ord.id}`;
                 const feeDetailsId = `fee-details-${ord.id}`;
-                const hasInboundInfo = isAtCenter && (shipment || progress || shouldTrackInboundShipment(ord) || canViewInbound || isInboundDelivered);
+                const hasInboundInfo = !isWaitingSellerToHub && isAtCenter && (shipment || progress || shouldTrackInboundShipment(ord) || canViewInbound || isInboundDelivered);
 
                 return (
                   <React.Fragment key={ord.id}>
@@ -289,7 +294,7 @@ export function CenterOrders({
                             {shipment && <InspectionCashShipmentStatus shipment={shipment} />}
                             {shipment?.orderCode && (
                               <div className="mt-1 font-mono text-[10px] text-slate-600">
-                                Lalamove #{shipment.orderCode}
+                                Mã Vận đơn: #{shipment.orderCode}
                               </div>
                             )}
 
@@ -417,7 +422,7 @@ export function CenterOrders({
                               )}
                             </div>
 
-                            {canBookHubBuyerDelivery(buyerShipment) ? (
+                            {canBookBuyerDelivery ? (
                               <div className="mt-2">
                                 <button
                                   type="button"

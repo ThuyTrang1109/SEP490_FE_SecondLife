@@ -116,7 +116,23 @@ export interface PostSubmitResponse {
   duplicateMatches?: string[];
 }
 
+const postDetailCache = new Map<string, { data: any; timestamp: number }>();
+const postDetailInFlight = new Map<string, Promise<any>>();
+const POST_CACHE_TTL_MS = 20_000;
+
 export const postService = {
+  /**
+   * Xóa cache bài đăng nếu cần làm mới thủ công
+   */
+  invalidateListingDetailCache(postId?: string) {
+    if (postId) {
+      postDetailCache.delete(postId);
+      postDetailInFlight.delete(postId);
+    } else {
+      postDetailCache.clear();
+      postDetailInFlight.clear();
+    }
+  },
   /**
    * Lấy danh sách sản phẩm niêm yết công khai từ Backend (GET /api/v1/listings hoặc GET /api/v1/posts)
    */
@@ -143,21 +159,45 @@ export const postService = {
 
   /**
    * Lấy chi tiết bài đăng niêm yết theo ID (GET /api/v1/posts/{postId})
+   * Tích hợp deduplication & cache in-flight để không bị gọi lặp request
    */
-  async getListingDetail(postId: string): Promise<any> {
-    try {
-      const res = await request<any>(`/v1/posts/${postId}`, {
-        method: 'GET',
-        requiresAuth: false,
-      });
-      return (res as any)?.data || res;
-    } catch (err) {
-      if (err?.status === 404 || err?.message?.includes('Listing is not available for purchase')) {
-        return null;
+  async getListingDetail(postId: string, bypassCache = false): Promise<any> {
+    if (!postId) return null;
+
+    if (!bypassCache) {
+      const cached = postDetailCache.get(postId);
+      if (cached && Date.now() - cached.timestamp < POST_CACHE_TTL_MS) {
+        return cached.data;
       }
-      console.warn(`[postService] Lỗi lấy chi tiết bài đăng ${postId}:`, err);
-      return null;
+      if (postDetailInFlight.has(postId)) {
+        return postDetailInFlight.get(postId)!;
+      }
     }
+
+    const fetchPromise = (async () => {
+      try {
+        const res = await request<any>(`/v1/posts/${postId}`, {
+          method: 'GET',
+          requiresAuth: false,
+        });
+        const result = (res as any)?.data || res;
+        postDetailCache.set(postId, { data: result, timestamp: Date.now() });
+        return result;
+      } catch (err: any) {
+        if (err?.status === 404 || err?.message?.includes('Listing is not available for purchase')) {
+          return null;
+        }
+        console.warn(`[postService] Lỗi lấy chi tiết bài đăng ${postId}:`, err);
+        return null;
+      } finally {
+        postDetailInFlight.delete(postId);
+      }
+    })();
+
+    if (!bypassCache) {
+      postDetailInFlight.set(postId, fetchPromise);
+    }
+    return fetchPromise;
   },
 
   /**

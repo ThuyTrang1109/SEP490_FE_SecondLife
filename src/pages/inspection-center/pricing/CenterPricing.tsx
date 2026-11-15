@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   CheckCircle2,
   Clock,
@@ -14,6 +15,9 @@ import {
   CheckSquare,
   CreditCard,
   AlertTriangle,
+  History,
+  Calendar,
+  X,
 } from 'lucide-react';
 import { canManageInspectionFee } from '../../../services';
 import { Language, UserProfile, InspectionComplexityLevel } from '../../../types';
@@ -79,6 +83,14 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
     travelTiers,
   } = pricing;
 
+  const [selectedHistoryLevel, setSelectedHistoryLevel] = useState<InspectionComplexityLevel | null>(null);
+  const [isTravelTiersHistoryOpen, setIsTravelTiersHistoryOpen] = useState(false);
+
+  const latestApprovedTierProposal = tierProposals.find(
+    (p) => p.tiers && p.tiers.length > 0 && p.status === 'APPROVED'
+  );
+  const latestTierProposalTime = latestApprovedTierProposal?.reviewedAt || latestApprovedTierProposal?.createdAt;
+
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Header Box */}
@@ -117,7 +129,7 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
               className="px-4 py-2.5 rounded-xl bg-[#c34c36] hover:bg-[#a63f2d] text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
             >
               <Plus className="w-4 h-4" />
-              <span>+ Đề Xuất Giá 4 Cấp Độ (L1–L4)</span>
+              <span>Đề xuất giá bốn cấp độ (L1–L4)</span>
             </button>
             <button
               type="button"
@@ -215,6 +227,8 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
             );
             const pendingProp = getPendingProposalForLevel(tier.level);
             const levelItems = approvedItemsByLevel[tier.level] || [];
+            const levelProposals = tierProposals.filter((p) => p.complexityLevel === tier.level);
+            const effectiveTime = approvedFee?.reviewedAt || approvedFee?.createdAt;
 
             return (
               <div
@@ -278,15 +292,26 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                     <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">
                       Phí kiểm định cơ sở
                     </span>
-                    <div className="h-7 flex items-center mt-0.5">
+                    <div className="min-h-7 flex flex-col justify-center mt-0.5">
                       {approvedFee && approvedFee.baseInspectionFee ? (
-                        <div className="flex items-baseline gap-1.5">
-                          <span className="text-lg font-black text-[#24263e]">
-                            {formatVND(approvedFee.baseInspectionFee)}
-                          </span>
-                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                            Hiệu lực
-                          </span>
+                        <div>
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="text-lg font-black text-[#24263e]">
+                              {formatVND(approvedFee.baseInspectionFee)}
+                            </span>
+                            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                              Hiệu lực
+                            </span>
+                          </div>
+                          {effectiveTime && (
+                            <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-1 font-mono">
+                              <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span>
+                                Áp dụng: <strong className="text-slate-700">{new Date(effectiveTime).toLocaleString('vi-VN')}</strong>
+                                {approvedFee?.reviewedByName && <span className="text-slate-400"> ({approvedFee.reviewedByName})</span>}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       ) : pendingProp ? (
                         <span className="text-xs font-bold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-lg border border-amber-200 inline-block">
@@ -329,8 +354,8 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                     )}
                   </div>
 
-                  {/* Nút hành động: Nếu đang chờ duyệt thì vô hiệu hóa nút để tránh gửi trùng lặp */}
-                  <div>
+                  {/* Nút hành động & Xem lịch sử đổi giá */}
+                  <div className="space-y-1.5">
                     {pendingProp ? (
                       <button
                         type="button"
@@ -356,6 +381,16 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                         <span>Đề xuất giá cấp {tier.level}</span>
                       </button>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedHistoryLevel(tier.level)}
+                      className="w-full py-1.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                      title={`Xem toàn bộ lịch sử thay đổi mức phí của cấp ${tier.level}`}
+                    >
+                      <History className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Lịch sử đổi giá ({levelProposals.length})</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -451,14 +486,25 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
 
       {/* Dynamic Active Travel Tiers Table */}
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+        <div className="px-5 py-3.5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Navigation className="w-4 h-4 text-slate-500" />
             <h4 className="font-bold text-xs text-slate-900 uppercase tracking-wider">
               Bảng Bậc Thang Cước Di Chuyển Hiện Hành ({travelTiers.length} bậc)
             </h4>
           </div>
-          <span className="text-[11px] text-slate-400 font-medium">Áp dụng chung toàn hệ thống</span>
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-slate-400 font-medium">Áp dụng chung toàn hệ thống</span>
+            <button
+              type="button"
+              onClick={() => setIsTravelTiersHistoryOpen(true)}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+              title="Xem lịch sử các lần điều chỉnh bậc thang cước di chuyển km"
+            >
+              <History className="w-3.5 h-3.5 text-slate-500" />
+              <span>Lịch sử điều chỉnh bậc cước</span>
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -469,20 +515,21 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                 <th className="py-3 px-4">Tên Bậc</th>
                 <th className="py-3 px-4">Khoảng Cách Áp Dụng</th>
                 <th className="py-3 px-4">Đơn Giá / km</th>
+                <th className="py-3 px-4">Thời Gian Áp Dụng / Cập Nhật</th>
                 <th className="py-3 px-4 text-center">Trạng Thái</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoadingPricing && travelTiers.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-400">
+                  <td colSpan={6} className="py-8 text-center text-slate-400">
                     <Loader2 className="w-5 h-5 animate-spin mx-auto text-[#24263e] mb-1" />
                     <span>Đang tải bảng bậc thang cước di chuyển...</span>
                   </td>
                 </tr>
               ) : travelTiers.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-400">
+                  <td colSpan={6} className="py-8 text-center text-slate-400">
                     Chưa có dữ liệu bậc thang cước di chuyển từ hệ thống.
                   </td>
                 </tr>
@@ -500,6 +547,13 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                     </td>
                     <td className="py-3 px-4 font-black text-[#c34c36] font-mono">
                       {formatVND(tier.pricePerKm || 0)} / km
+                    </td>
+                    <td className="py-3 px-4 text-slate-600 font-mono text-[11px]">
+                      {tier.updatedAt
+                        ? new Date(tier.updatedAt).toLocaleString('vi-VN')
+                        : tier.createdAt
+                          ? new Date(tier.createdAt).toLocaleString('vi-VN')
+                          : (latestTierProposalTime ? new Date(latestTierProposalTime).toLocaleString('vi-VN') : 'Đang áp dụng')}
                     </td>
                     <td className="py-3 px-4 text-center">
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -572,13 +626,14 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                 <th className="py-2.5 px-3 text-center">Trạng Thái</th>
                 <th className="py-2.5 px-3">Phản Hồi Admin</th>
                 <th className="py-2.5 px-3">Thời Gian Gửi</th>
+                <th className="py-2.5 px-3">Thời Gian Phê Duyệt</th>
                 <th className="py-2.5 px-3 text-right">Chi Tiết</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoadingPricing ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400">
+                  <td colSpan={10} className="py-8 text-center text-slate-400">
                     <Loader2 className="w-5 h-5 animate-spin mx-auto text-[#24263e] mb-1" />
                     <span>Đang tải lịch sử đề xuất...</span>
                   </td>
@@ -599,7 +654,7 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                   if (combined.length === 0) {
                     return (
                       <tr>
-                        <td colSpan={9} className="py-8 text-center text-slate-400">
+                        <td colSpan={10} className="py-8 text-center text-slate-400">
                           Chưa có đề xuất biểu phí nào phù hợp với bộ lọc hiện tại.
                         </td>
                       </tr>
@@ -665,8 +720,17 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                           !prop.reviewedByName && <span className="text-slate-400">—</span>
                         )}
                       </td>
-                      <td className="py-3 px-3 text-slate-400 text-[11px]">
+                      <td className="py-3 px-3 text-slate-600 font-mono text-[11px]">
                         {prop.createdAt ? new Date(prop.createdAt).toLocaleString('vi-VN') : '—'}
+                      </td>
+                      <td className="py-3 px-3 text-slate-600 font-mono text-[11px]">
+                        {prop.reviewedAt ? (
+                          new Date(prop.reviewedAt).toLocaleString('vi-VN')
+                        ) : prop.status === 'PENDING_APPROVAL' ? (
+                          <span className="text-amber-600 italic">Chờ duyệt</span>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td className="py-3 px-3 text-right">
                         <button
@@ -674,7 +738,7 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
                           className="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
                         >
                           <Eye className="w-3 h-3 text-slate-500" />
-                          <span>Bậc phí</span>
+                          <span>Chi tiết</span>
                         </button>
                       </td>
                     </tr>
@@ -712,6 +776,312 @@ export function CenterPricing({ currentUser, isLoadingCategories, lang, checklis
           </div>
         )}
       </div>
+
+      {/* Modal Lịch Sử Thay Đổi Biểu Phí Cấp L1 - L4 */}
+      {selectedHistoryLevel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 space-y-4 shadow-2xl border border-gray-100 text-xs max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-purple-50 text-purple-700">
+                  <History className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
+                    <span>Lịch Sử Đổi Giá Biểu Phí Cấp {selectedHistoryLevel}</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-purple-100 text-purple-800">
+                      Cấp {selectedHistoryLevel}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Toàn bộ các lần đề xuất điều chỉnh phí kiểm định cơ sở cho cấp độ này với mốc thời gian chi tiết
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedHistoryLevel(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Current Active Price Summary */}
+            {(() => {
+              const currentApproved = currentLevelFees.find(
+                (f) => String(f.complexityLevel || '').toUpperCase() === String(selectedHistoryLevel).toUpperCase() && (f.status === 'APPROVED' || !f.status)
+              );
+              const effTime = currentApproved?.reviewedAt || currentApproved?.createdAt;
+              return (
+                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase">Giá hiện hành:</span>
+                    <span className="text-base font-black text-[#24263e]">
+                      {currentApproved && currentApproved.baseInspectionFee ? formatVND(currentApproved.baseInspectionFee) : 'Chưa có giá duyệt'}
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                      Đang áp dụng
+                    </span>
+                  </div>
+                  {effTime && (
+                    <div className="text-[11px] text-slate-600 flex items-center gap-1 font-mono">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Hiệu lực từ: <strong className="text-slate-800">{new Date(effTime).toLocaleString('vi-VN')}</strong></span>
+                      {currentApproved?.reviewedByName && <span className="text-slate-500"> (Duyệt bởi: {currentApproved.reviewedByName})</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* List of Proposals */}
+            <div className="overflow-y-auto flex-1 border border-slate-100 rounded-xl">
+              {(() => {
+                const historyList = tierProposals.filter((p) => p.complexityLevel === selectedHistoryLevel);
+                if (historyList.length === 0) {
+                  return (
+                    <div className="p-8 text-center text-slate-400">
+                      Chưa có lịch sử đề xuất thay đổi mức giá nào cho Cấp {selectedHistoryLevel}.
+                    </div>
+                  );
+                }
+                return (
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-600 font-bold text-[11px] uppercase tracking-wider border-b border-slate-100 sticky top-0">
+                        <th className="py-2.5 px-3">Mã Đề Xuất</th>
+                        <th className="py-2.5 px-3">Mức Phí Đề Xuất</th>
+                        <th className="py-2.5 px-3">Thời Gian Gửi</th>
+                        <th className="py-2.5 px-3">Người Đề Xuất</th>
+                        <th className="py-2.5 px-3 text-center">Trạng Thái</th>
+                        <th className="py-2.5 px-3">Thời Gian Phê Duyệt</th>
+                        <th className="py-2.5 px-3">Người Duyệt / Ghi Chú</th>
+                        <th className="py-2.5 px-3 text-right">Chi Tiết</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {historyList.map((item, idx) => (
+                        <tr key={item.id || idx} className="hover:bg-slate-50/60 transition">
+                          <td className="py-3 px-3 font-mono font-bold text-slate-800">
+                            #{item.id ? item.id.slice(0, 8) : '---'}
+                          </td>
+                          <td className="py-3 px-3 font-black text-[#c34c36] font-mono">
+                            {formatVND(item.baseInspectionFee || 0)}
+                          </td>
+                          <td className="py-3 px-3 font-mono text-slate-600 text-[11px]">
+                            {item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : '—'}
+                          </td>
+                          <td className="py-3 px-3 text-slate-600">
+                            {item.proposedByName || item.proposedByEmail || 'TTKD'}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase ${item.status === 'APPROVED'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : item.status === 'REJECTED'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-amber-100 text-amber-800'
+                                }`}
+                            >
+                              {item.status === 'APPROVED'
+                                ? 'Đã Phê Duyệt'
+                                : item.status === 'REJECTED'
+                                  ? 'Bị Từ Chối'
+                                  : 'Chờ Admin Duyệt'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 font-mono text-slate-600 text-[11px]">
+                            {item.reviewedAt ? (
+                              new Date(item.reviewedAt).toLocaleString('vi-VN')
+                            ) : item.status === 'PENDING_APPROVAL' ? (
+                              <span className="text-amber-600 italic">Chờ duyệt</span>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-slate-600">
+                            {item.reviewedByName && (
+                              <span className="font-semibold text-slate-800 block">
+                                {item.reviewedByName}
+                              </span>
+                            )}
+                            {item.rejectReason && (
+                              <span className="text-[11px] text-rose-600 block">
+                                Lý do: {item.rejectReason}
+                              </span>
+                            )}
+                            {!item.reviewedByName && !item.rejectReason && <span className="text-slate-400">—</span>}
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedProposalDetail(item)}
+                              className="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <Eye className="w-3 h-3 text-slate-500" />
+                              <span>Xem</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+
+            <div className="pt-2 flex justify-end border-t border-slate-100 shrink-0">
+              <button
+                type="button"
+                onClick={() => setSelectedHistoryLevel(null)}
+                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 font-bold cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Lịch Sử Thay Đổi & Điều Chỉnh Bậc Thang Cước Di Chuyển Km */}
+      {isTravelTiersHistoryOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 space-y-4 shadow-2xl border border-gray-100 text-xs max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-blue-50 text-blue-700">
+                  <History className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
+                    <span>Lịch Sử Điều Chỉnh Bậc Thang Cước Di Chuyển (Km)</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Toàn bộ các phiên bản điều chỉnh bảng bậc cước km theo ngày giờ cụ thể và người phê duyệt
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTravelTiersHistoryOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* List of Travel Tier Proposals */}
+            <div className="overflow-y-auto flex-1 space-y-4 pr-1">
+              {(() => {
+                const tierHistoryList = tierProposals.filter((p) => p.tiers && p.tiers.length > 0);
+                if (tierHistoryList.length === 0) {
+                  return (
+                    <div className="p-8 text-center text-slate-400">
+                      Chưa có lịch sử phiên bản đề xuất bậc thang cước nào.
+                    </div>
+                  );
+                }
+                return tierHistoryList.map((prop, idx) => (
+                  <div
+                    key={prop.id || idx}
+                    className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-200/70">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-black text-xs text-slate-900">
+                          #{prop.id ? prop.id.slice(0, 8) : `REV-${idx + 1}`}
+                        </span>
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase ${prop.status === 'APPROVED'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : prop.status === 'REJECTED'
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-amber-100 text-amber-800'
+                            }`}
+                        >
+                          {prop.status === 'APPROVED'
+                            ? 'Đã Phê Duyệt'
+                            : prop.status === 'REJECTED'
+                              ? 'Bị Từ Chối'
+                              : 'Chờ Admin Duyệt'}
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          Gửi bởi: <strong>{prop.proposedByName || prop.proposedByEmail || 'TTKD'}</strong>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-3 text-[11px] font-mono text-slate-600 flex-wrap">
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-slate-400" />
+                          <span>Gửi: <strong>{prop.createdAt ? new Date(prop.createdAt).toLocaleString('vi-VN') : '—'}</strong></span>
+                        </div>
+                        {prop.reviewedAt && (
+                          <div className="flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                            <span>Duyệt: <strong>{new Date(prop.reviewedAt).toLocaleString('vi-VN')}</strong></span>
+                          </div>
+                        )}
+                        {prop.reviewedByName && (
+                          <span className="text-slate-500">({prop.reviewedByName})</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {prop.rejectReason && (
+                      <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px]">
+                        <strong>Lý do từ chối:</strong> {prop.rejectReason}
+                      </div>
+                    )}
+
+                    {/* Tiers Table inside this revision */}
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-100 text-[10px] uppercase">
+                            <th className="py-2 px-3">Bậc</th>
+                            <th className="py-2 px-3">Tên Bậc</th>
+                            <th className="py-2 px-3">Cự Ly</th>
+                            <th className="py-2 px-3 text-right">Đơn Giá / km</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {prop.tiers!.map((t, tIdx) => (
+                            <tr key={tIdx}>
+                              <td className="py-2 px-3 font-bold text-slate-900">
+                                #{t.tierNumber || tIdx + 1}
+                              </td>
+                              <td className="py-2 px-3 font-medium text-slate-800">
+                                {t.name || `Bậc ${t.tierNumber || tIdx + 1}`}
+                              </td>
+                              <td className="py-2 px-3 text-slate-600 font-mono">
+                                {t.fromKm ?? 0} - {t.toKm != null ? `${t.toKm} km` : 'Không giới hạn (∞)'}
+                              </td>
+                              <td className="py-2 px-3 text-right font-black text-[#c34c36] font-mono">
+                                {formatVND(t.pricePerKm || 0)} / km
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            <div className="pt-2 flex justify-end border-t border-slate-100 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsTravelTiersHistoryOpen(false)}
+                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 font-bold cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

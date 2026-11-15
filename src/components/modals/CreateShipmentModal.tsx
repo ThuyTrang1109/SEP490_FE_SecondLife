@@ -58,7 +58,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
   // Load Trung tâm kiểm định thực tế từ API và chi tiết đơn kiểm định
   const [apiCenters, setApiCenters] = useState<any[]>([]);
   const [inspectionOrderInfo, setInspectionOrderInfo] = useState<any | null>(null);
-  const cashShipping = isHubInspection && (inspectionOrderInfo?.cashShippingSimulation ?? order.cashShippingSimulation) === true;
+  const cashShipping = false;
 
   React.useEffect(() => {
     let isMounted = true;
@@ -165,12 +165,10 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
         };
       }
 
-      if (cashShipping) {
-        shipment = await shippingService.createInspectionShipment(order.id, { requestId, leg: 'SELLER_TO_CENTER' });
-      } else if (isHubInspection) {
-        // Gọi API tạo vận đơn kiểm định Chặng 1 chuyển hàng từ Người bán đến Hub
+      if (isHubInspection) {
+        // Gọi API tạo vận đơn kiểm định Chặng 1 chuyển hàng từ Người bán đến Hub (Cước trừ ví Doanh nghiệp qua Sàn)
         try {
-          shipment = await shippingService.createInspectionShipment(order.id, shipmentPayload as any);
+          shipment = await shippingService.createInspectionShipment(order.id, { requestId, leg: 'SELLER_TO_CENTER', ...shipmentPayload });
         } catch (inspErr: any) {
           const status = inspErr?.response?.status || inspErr?.status;
           if (status === 409 || status === 400 || status === 422) {
@@ -271,8 +269,7 @@ export const CreateShipmentModal: React.FC<CreateShipmentModalProps> = ({
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
                 Mã đơn hàng: <strong className="font-mono text-slate-700">#{order.id.slice(0, 12).toUpperCase()}</strong> •{' '}
-                {cashShipping ? 'Mô phỏng Sandbox · Seller ứng cước tiền mặt khi giao vận'
-                  : isHubInspection ? 'Lộ trình chuyển kiện hàng đến Trạm Kiểm Định SecondLife Hub' : 'Vận chuyển trực tiếp từ Người Bán đến Người Mua'}
+                {isHubInspection ? 'Lộ trình chuyển kiện hàng đến Trạm Kiểm Định SecondLife Hub (Cước Sàn thanh toán)' : 'Vận chuyển trực tiếp từ Người Bán đến Người Mua'}
               </p>
             </div>
           </div>

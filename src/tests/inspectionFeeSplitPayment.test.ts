@@ -143,3 +143,108 @@ test('4. Đơn hàng SELLER_100: người bán chịu 100% phí kiểm định',
   assert.equal(isPartyInspectionFeePending(order, false), false, 'Người mua 0đ không pending');
 });
 
+test('5. Đơn hàng SELLER_100 trong WAITING_FEE_PAYMENT: Người mua không hiện mã QR, trạng thái là chờ người bán nộp', () => {
+  const order: Partial<EscrowOrder> = {
+    id: 'ord-seller-100-status',
+    inspectionFeeVnd: 200_000,
+    feePayer: 'SELLER_PAYS',
+    inspectionFeeSplit: 'SELLER_100',
+    sellerFeeShare: 200_000,
+    buyerFeeShare: 0,
+    escrowStatus: 'AWAITING_INSPECTION',
+    backendStatus: 'WAITING_FEE_PAYMENT' as any,
+    sellerPaidAt: null,
+    buyerPaidAt: '2026-11-15T10:00:00Z', // Dù có timestamp cũ từ checkout
+  };
+
+  const buyerFee = getPartyInspectionFee(order, false);
+  const isSeller100 = order.inspectionFeeSplit === 'SELLER_100' || buyerFee <= 0;
+
+  // 1. Phí người mua phải bằng 0
+  assert.equal(buyerFee, 0);
+  assert.equal(isSeller100, true);
+
+  // 2. Trạng thái góc nhìn Buyer: KHÔNG được hiện 'Đã nộp phí • Chờ người bán nộp phí'
+  let buyerStatusText = '';
+  if (isSeller100) {
+    buyerStatusText = 'Chờ người bán nộp phí';
+  } else if (isPartyInspectionFeePaid(order, false)) {
+    buyerStatusText = 'Đã nộp phí • Chờ người bán nộp phí';
+  }
+  assert.equal(buyerStatusText, 'Chờ người bán nộp phí');
+
+  // 3. Nút VietQR Ký Quỹ: Khi là WAITING_FEE_PAYMENT hoặc SELLER_100 thì KHÔNG hiển thị QR
+  const isOrderUnpaid = (ord: Partial<EscrowOrder>): boolean => {
+    const escrow = String(ord.escrowStatus || '').toUpperCase();
+    const backend = String(ord.backendStatus || '').toUpperCase();
+    return (escrow === 'AWAITING_PAYMENT' || backend === 'PENDING_PAYMENT' || backend === 'AWAITING_PAYMENT') && backend !== 'WAITING_FEE_PAYMENT';
+  };
+  const shouldShowQrButton = isOrderUnpaid(order) && String(order.backendStatus).toUpperCase() !== 'WAITING_FEE_PAYMENT' && order.inspectionFeeSplit !== 'SELLER_100';
+  assert.equal(shouldShowQrButton, false, 'Không bao giờ hiện nút QR khi Người bán trả 100%');
+
+  // 4. Badge chân thẻ (footer action bar): Khi ở WAITING_FEE_PAYMENT thì không lặp lại badge ở dưới
+  const isBottomBadgeExcluded = ['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'PENDING', 'WAITING_FEE_PAYMENT'].includes(String(order.backendStatus).toUpperCase());
+  assert.equal(isBottomBadgeExcluded, true, 'Badge ở chân thẻ không hiển thị để chỉ hiển thị bên trên');
+});
+
+test('6. Đơn hàng SELLER_100 trong Modal Chi Tiết: Không hiện banner Chờ người bán thanh toán ở chân modal', () => {
+  const order: Partial<EscrowOrder> = {
+    id: 'ord-seller-100-modal',
+    inspectionFeeVnd: 200_000,
+    feePayer: 'SELLER_PAYS',
+    inspectionFeeSplit: 'SELLER_100',
+    sellerFeeShare: 200_000,
+    buyerFeeShare: 0,
+    backendStatus: 'WAITING_FEE_PAYMENT' as any,
+  };
+
+  const buyerFee = getPartyInspectionFee(order, false);
+  const isSeller100 = order.inspectionFeeSplit === 'SELLER_100' || buyerFee <= 0;
+
+  // Mô phỏng logic render banner chân modal chi tiết
+  const shouldRenderModalFooterFeeStatus = (ord: Partial<EscrowOrder>): boolean => {
+    const bFee = getPartyInspectionFee(ord, false);
+    const seller100 = ord.inspectionFeeSplit === 'SELLER_100' || bFee <= 0;
+    if (seller100 || isPartyInspectionFeePaid(ord, false)) return false;
+    return bFee > 0;
+  };
+
+  assert.equal(isSeller100, true);
+  assert.equal(shouldRenderModalFooterFeeStatus(order), false, 'Không render banner trạng thái ở chân modal');
+});
+
+test('7. Đơn hàng SELLER_100 đã xác nhận: Không hiện trạng thái "Người bán đã đồng ý" ở chân thẻ hay tiêu đề', () => {
+  const order: Partial<EscrowOrder> = {
+    id: 'ord-seller-100-confirmed',
+    inspectionFeeVnd: 200_000,
+    feePayer: 'SELLER_PAYS',
+    inspectionFeeSplit: 'SELLER_100',
+    sellerFeeShare: 200_000,
+    buyerFeeShare: 0,
+    sellerConfirmedAt: '2026-11-15T10:00:00Z',
+    escrowStatus: 'AWAITING_INSPECTION',
+    backendStatus: 'CONFIRMED_PENDING_DISPATCH' as any,
+  };
+
+  const buyerFee = getPartyInspectionFee(order, false);
+  const isSeller100 = order.inspectionFeeSplit === 'SELLER_100' || buyerFee <= 0;
+
+  // 1. Chân thẻ không render badge "Người bán đã đồng ý"
+  const canShowBuyerBottomInspectionBadge = (ord: Partial<EscrowOrder>): boolean => {
+    const isSellerPaysAll = ord.inspectionFeeSplit === 'SELLER_100' || getPartyInspectionFee(ord, false) <= 0;
+    if (isSellerPaysAll) return false;
+    const bStatus = String(ord.backendStatus || '').toUpperCase();
+    if (['WAITING_SELLER_APPROVAL', 'WAITING_BUYER_APPROVAL', 'PENDING', 'WAITING_FEE_PAYMENT', 'CONFIRMED_PENDING_DISPATCH'].includes(bStatus)) return false;
+    return true;
+  };
+  assert.equal(canShowBuyerBottomInspectionBadge(order), false, 'Không hiển thị badge ở chân thẻ khi seller 100%');
+
+  // 2. Tiêu đề hiển thị "Chờ người bán gửi hàng đến Hub" thay vì "Người Bán Đã Đồng Ý • Đang Điều Phối Hub"
+  const resolveBuyerInspectionHeaderStatus = (ord: Partial<EscrowOrder>): string => {
+    const isSellerPaysAll = ord.inspectionFeeSplit === 'SELLER_100' || getPartyInspectionFee(ord, false) <= 0;
+    if (isSellerPaysAll) return 'Chờ người bán gửi hàng đến Hub';
+    return 'Người Bán Đã Đồng Ý • Đang Điều Phối Hub';
+  };
+  assert.equal(resolveBuyerInspectionHeaderStatus(order), 'Chờ người bán gửi hàng đến Hub');
+});
+

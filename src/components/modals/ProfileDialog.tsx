@@ -178,9 +178,16 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   }, [isSeller, activeTab]);
 
   // Form states
+  const [isEditing, setIsEditing] = useState<boolean>(false);
   const [name, setName] = useState(currentUser.name || '');
   const [email, setEmail] = useState(currentUser.email || '');
   const [isEmailVerified, setIsEmailVerified] = useState<boolean>(() => Boolean(currentUser.emailVerified));
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsEditing(false);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     setIsEmailVerified(Boolean(currentUser.emailVerified));
@@ -1796,32 +1803,32 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
       case 'buyer':
         if (isEmailVerified) {
           return {
-            label: lang === 'vi' ? 'Người Mua Xác Thực (Verified Buyer)' : 'Verified Buyer',
+            label: lang === 'vi' ? 'Người mua xác thực (Verified Buyer)' : 'Verified Buyer',
             className: 'bg-blue-500/15 text-blue-600 border-blue-500/30',
           };
         }
         return {
-          label: lang === 'vi' ? 'Người Mua (Chờ Xác Thực OTP)' : 'Buyer (Pending OTP)',
+          label: lang === 'vi' ? 'Người mua (Chờ xác thực OTP)' : 'Buyer (Pending OTP)',
           className: 'bg-amber-500/15 text-amber-700 border-amber-500/30',
         };
       case 'seller':
         return {
-          label: lang === 'vi' ? 'Nhà Bán Hàng Uy Tín (Top Seller 4.9★)' : 'Verified Seller (4.9★)',
+          label: lang === 'vi' ? 'Nhà bán hàng uy tín (Top Seller 4.9★)' : 'Verified Seller (4.9★)',
           className: 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30',
         };
       case 'staff':
         return {
-          label: lang === 'vi' ? 'Nhân Viên Vận Hành (Operations Staff)' : 'Operations Staff',
+          label: lang === 'vi' ? 'Nhân viên vận hành (Operations Staff)' : 'Operations Staff',
           className: 'bg-amber-500/15 text-amber-700 border-amber-500/30',
         };
       case 'inspector':
         return {
-          label: lang === 'vi' ? 'Kỹ Sư Giám Định Hub (Certified Lab Tech)' : 'Certified Lab Tech',
+          label: lang === 'vi' ? 'Kỹ sư giám định Hub (Certified Lab Tech)' : 'Certified Lab Tech',
           className: 'bg-purple-500/15 text-purple-600 border-purple-500/30',
         };
       case 'admin':
         return {
-          label: lang === 'vi' ? 'Quản Trị Viên Hệ Thống (Supervisor)' : 'System Administrator',
+          label: lang === 'vi' ? 'Quản trị viên hệ thống (Supervisor)' : 'System Administrator',
           className: 'bg-rose-500/15 text-rose-600 border-rose-500/30',
         };
       default:
@@ -1849,7 +1856,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
           <div className="px-6 sm:px-8 pt-4 pb-3 flex items-center justify-between border-b border-slate-100/80">
             <div className="flex items-center gap-2.5">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
-                {lang === 'vi' ? 'Hồ Sơ Tài Khoản' : 'Account Profile'}
+                {lang === 'vi' ? 'Hồ sơ tài khoản' : 'Account Profile'}
               </span>
               <span className="text-slate-300 hidden sm:inline">•</span>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-50 text-slate-700 text-xs font-semibold border border-slate-200 shadow-2xs">
@@ -1977,7 +1984,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     className="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-3.5 py-1.5 rounded-xl border border-emerald-200/80 font-bold text-xs shadow-2xs cursor-pointer transition active:scale-95"
                   >
                     <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                    <span>{lang === 'vi' ? 'eKYC: Đã Xác Thực CCCD' : 'eKYC: ID Verified'}</span>
+                    <span>{lang === 'vi' ? 'eKYC: Đã xác thực CCCD' : 'eKYC: ID Verified'}</span>
                   </button>
                 ) : isCccdPending ? (
                   <button
@@ -1987,7 +1994,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 px-3.5 py-1.5 rounded-xl border border-amber-200/80 font-bold text-xs shadow-2xs cursor-pointer transition active:scale-95"
                   >
                     <Clock className="w-4 h-4 text-amber-600" />
-                    <span>{lang === 'vi' ? 'eKYC: Đang Chờ Duyệt' : 'eKYC: Pending'}</span>
+                    <span>{lang === 'vi' ? 'eKYC: Đang chờ duyệt' : 'eKYC: Pending'}</span>
                   </button>
                 ) : isSeller ? (
                   <button
@@ -1997,27 +2004,27 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     className="inline-flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 px-3.5 py-1.5 rounded-xl border border-slate-200 font-bold text-xs shadow-2xs cursor-pointer transition active:scale-95"
                   >
                     <AlertCircle className="w-4 h-4 text-amber-500" />
-                    <span>{lang === 'vi' ? 'eKYC: Chưa Xác Thực' : 'eKYC: Unverified'}</span>
+                    <span>{lang === 'vi' ? 'eKYC: Chưa xác thực' : 'eKYC: Unverified'}</span>
                   </button>
                 ) : currentUser.role === 'inspection_center' ? (
                   <div className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-800 px-3.5 py-1.5 rounded-xl border border-blue-200/80 font-bold text-xs shadow-2xs">
                     <Building className="w-4 h-4 text-blue-600" />
-                    <span>{lang === 'vi' ? 'Trạm Kiểm Định Hub' : 'Inspection Hub'}</span>
+                    <span>{lang === 'vi' ? 'Trạm kiểm định Hub' : 'Inspection Hub'}</span>
                   </div>
                 ) : currentUser.role === 'inspector' ? (
                   <div className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-800 px-3.5 py-1.5 rounded-xl border border-blue-200/80 font-bold text-xs shadow-2xs">
                     <ShieldCheck className="w-4 h-4 text-blue-600" />
-                    <span>{lang === 'vi' ? 'Kỹ Sư Kiểm Định KTV' : 'Certified Inspector'}</span>
+                    <span>{lang === 'vi' ? 'Kỹ sư kiểm định KTV' : 'Certified Inspector'}</span>
                   </div>
                 ) : currentUser.role === 'admin' ? (
                   <div className="inline-flex items-center gap-1.5 bg-purple-50 text-purple-800 px-3.5 py-1.5 rounded-xl border border-purple-200/80 font-bold text-xs shadow-2xs">
                     <ShieldCheck className="w-4 h-4 text-purple-600" />
-                    <span>{lang === 'vi' ? 'Quản Trị Viên Hệ Thống' : 'System Administrator'}</span>
+                    <span>{lang === 'vi' ? 'Quản trị viên hệ thống' : 'System Administrator'}</span>
                   </div>
                 ) : currentUser.role === 'staff' ? (
                   <div className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-800 px-3.5 py-1.5 rounded-xl border border-indigo-200/80 font-bold text-xs shadow-2xs">
                     <ShieldCheck className="w-4 h-4 text-indigo-600" />
-                    <span>{lang === 'vi' ? 'Nhân Viên Vận Hành' : 'Platform Staff'}</span>
+                    <span>{lang === 'vi' ? 'Nhân viên vận hành' : 'Platform Staff'}</span>
                   </div>
                 ) : null}
 
@@ -2030,7 +2037,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     className="inline-flex items-center gap-1.5 bg-amber-50/90 hover:bg-amber-100 text-slate-800 px-3.5 py-1.5 rounded-xl border border-amber-200/80 text-xs shadow-2xs transition active:scale-95 cursor-pointer"
                   >
                     <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                    <span>{lang === 'vi' ? 'Điểm Uy Tín: ' : 'Trust Score: '}</span>
+                    <span>{lang === 'vi' ? 'Điểm uy tín: ' : 'Trust score: '}</span>
                     <strong className="font-black text-amber-700">
                       {reputationData?.score !== undefined && reputationData?.score !== null
                         ? `${reputationData.score}/100`
@@ -2055,7 +2062,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     }`}
                 >
                   <User className={`w-4 h-4 shrink-0 ${activeTab === 'info' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                  <span>{lang === 'vi' ? 'Cá Nhân' : 'Profile'}</span>
+                  <span>{lang === 'vi' ? 'Cá nhân' : 'Profile'}</span>
                 </button>
 
                 {isSeller && (
@@ -2068,7 +2075,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       }`}
                   >
                     <Star className={`w-4 h-4 shrink-0 ${activeTab === 'reputation' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                    <span>{lang === 'vi' ? 'Điểm Uy Tín' : 'Reputation'}</span>
+                    <span>{lang === 'vi' ? 'Điểm uy tín' : 'Reputation'}</span>
                   </button>
                 )}
 
@@ -2093,7 +2100,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     }`}
                 >
                   <Shield className={`w-4 h-4 shrink-0 ${activeTab === 'security' || activeTab === 'kyc' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                  <span>{lang === 'vi' ? 'Bảo Mật' : 'Security'}</span>
+                  <span>{lang === 'vi' ? 'Bảo mật' : 'Security'}</span>
                 </button>
 
                 <button
@@ -2105,7 +2112,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     }`}
                 >
                   <AlertTriangle className={`w-4 h-4 shrink-0 ${activeTab === 'reports' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                  <span>{lang === 'vi' ? 'Khiếu Nại' : 'Reports'}</span>
+                  <span>{lang === 'vi' ? 'Khiếu nại' : 'Reports'}</span>
                 </button>
 
                 {isApprovedSeller && !['admin', 'staff', 'inspector'].includes(currentUser.role) && (
@@ -2118,7 +2125,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       }`}
                   >
                     <Store className={`w-4 h-4 shrink-0 ${activeTab === 'settings' ? 'text-[#c34c36]' : 'text-slate-500'}`} />
-                    <span>{lang === 'vi' ? 'Gian Hàng' : 'Store'}</span>
+                    <span>{lang === 'vi' ? 'Gian hàng' : 'Store'}</span>
                   </button>
                 )}
               </div>
@@ -2138,7 +2145,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                     <div className="border-b border-slate-200/80 pb-2">
                       <h3 className="font-extrabold text-[#24263e] text-sm flex items-center gap-2">
                         <User className="w-4 h-4 text-[#c34c36]" />
-                        <span>{lang === 'vi' ? 'Thông Tin Cá Nhân Cơ Bản' : 'Personal Information'}</span>
+                        <span>{lang === 'vi' ? 'Thông tin cá nhân' : 'Personal Information'}</span>
                       </h3>
                       <p className="text-[11px] text-slate-500 mt-0.5">
                         {lang === 'vi' ? 'Thông tin dùng để định danh tài khoản và liên hệ khi có giao dịch' : 'Details used for identification and transactions'}
@@ -2151,7 +2158,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                           <div>
                             <p className="text-xs font-black text-amber-950">
-                              {lang === 'vi' ? 'Tài khoản chưa xác thực Email OTP' : 'Email OTP Not Verified'}
+                              {lang === 'vi' ? 'Tài khoản chưa xác thực email OTP' : 'Email OTP Not Verified'}
                             </p>
                             <p className="text-[11px] text-amber-800 leading-snug mt-0.5">
                               {lang === 'vi'
@@ -2177,26 +2184,27 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       {/* Name */}
                       <div>
                         <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                          {lang === 'vi' ? 'Họ và Tên' : 'Full Name'}
+                          {lang === 'vi' ? 'Họ và tên' : 'Full Name'}
                         </label>
                         <div className="relative">
                           <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                           <input
                             type="text"
                             value={name}
+                            disabled={!isEditing}
                             onChange={(e) => setName(e.target.value)}
                             required
                             placeholder={lang === 'vi' ? 'Nhập họ và tên' : 'Enter full name'}
-                            className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
+                            className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs disabled:bg-slate-50 disabled:text-slate-600 disabled:cursor-default"
                           />
                         </div>
                       </div>
 
-                      {/* Email */}
+                      {/* Email - Always locked / read-only as requested */}
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
                           <label className="text-xs font-bold text-slate-700 block">
-                            {lang === 'vi' ? 'Địa Chỉ Email' : 'Email Address'}
+                            {lang === 'vi' ? 'Địa chỉ email' : 'Email Address'}
                           </label>
                           {isEmailVerified ? (
                             <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 inline-flex items-center gap-1">
@@ -2225,10 +2233,11 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           <input
                             type="email"
                             value={email}
-                            onChange={(e) => setEmail(e.target.value)}
+                            disabled
+                            readOnly
                             required
                             placeholder="email@example.com"
-                            className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
+                            className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-slate-100 font-medium text-slate-500 cursor-not-allowed select-none transition shadow-2xs"
                           />
                         </div>
                         {!isEmailVerified && (
@@ -2255,32 +2264,34 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                              {lang === 'vi' ? 'Số Điện Thoại' : 'Phone Number'}
+                              {lang === 'vi' ? 'Số điện thoại' : 'Phone Number'}
                             </label>
                             <div className="relative">
                               <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                               <input
                                 type="text"
                                 value={phone}
+                                disabled={!isEditing}
                                 onChange={(e) => setPhone(e.target.value)}
                                 required
                                 placeholder="0912 345 678"
-                                className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
+                                className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs disabled:bg-slate-50 disabled:text-slate-600 disabled:cursor-default"
                               />
                             </div>
                           </div>
 
                           <div>
                             <label className="text-xs font-bold text-slate-700 mb-1.5 block">
-                              {lang === 'vi' ? 'Ngày Sinh' : 'Date of Birth'}
+                              {lang === 'vi' ? 'Ngày sinh' : 'Date of Birth'}
                             </label>
                             <div className="relative">
                               <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                               <input
                                 type="date"
                                 value={birthday}
+                                disabled={!isEditing}
                                 onChange={(e) => setBirthday(e.target.value)}
-                                className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs"
+                                className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:border-[#c34c36] focus:ring-2 focus:ring-[#c34c36]/15 transition shadow-2xs disabled:bg-slate-50 disabled:text-slate-600 disabled:cursor-default"
                               />
                             </div>
                           </div>
@@ -2292,7 +2303,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                         <div>
                           <div className="flex items-center justify-between mb-1.5">
                             <label className="text-xs font-bold text-slate-700">
-                              {lang === 'vi' ? 'Giới Tính' : 'Gender'}
+                              {lang === 'vi' ? 'Giới tính' : 'Gender'}
                             </label>
                             {!gender && (
                               <span className="text-[11px] text-slate-400 italic">
@@ -2312,11 +2323,18 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                                 <button
                                   key={g}
                                   type="button"
-                                  onClick={() => setGender(isSelected ? '' : g)}
-                                  className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${isSelected
-                                    ? 'bg-[#c34c36]/10 border-[#c34c36] text-[#c34c36] shadow-2xs font-black'
-                                    : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                                    }`}
+                                  disabled={!isEditing}
+                                  onClick={() => {
+                                    if (!isEditing) return;
+                                    setGender(isSelected ? '' : g);
+                                  }}
+                                  className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
+                                    !isEditing ? 'cursor-default opacity-85' : 'cursor-pointer'
+                                  } ${
+                                    isSelected
+                                      ? 'bg-[#c34c36]/10 border-[#c34c36] text-[#c34c36] shadow-2xs font-black'
+                                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                                  }`}
                                 >
                                   <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-[#c34c36]' : 'bg-slate-300'}`} />
                                   <span>{labels[g]}</span>
@@ -2337,7 +2355,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                       </div>
                       <div>
                         <span className="text-xs font-bold text-slate-800 block">
-                          {lang === 'vi' ? 'Ví & Tài Khoản Ngân Hàng' : 'Wallet & Bank Account'}
+                          {lang === 'vi' ? 'Ví & tài khoản ngân hàng' : 'Wallet & Bank Account'}
                         </span>
                         <span className="text-[11px] text-slate-500">
                           {bankName && accountNumber
@@ -2361,6 +2379,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                   {currentRole !== 'admin' && (
                     <div className="space-y-2">
                       <LalamoveAddressPicker
+                        readOnly={!isEditing}
+                        hideCityPresets={true}
                         initialName={name || currentUser?.name || ''}
                         initialPhone={phone || currentUser?.phone || ''}
                         onNameChange={(val) => setName(val)}
@@ -2396,7 +2416,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           saveSellerAddress(data.address, extWard || undefined, extProv || data.city);
                         }}
                         lang={lang}
-                        title={lang === 'vi' ? 'Địa Chỉ Cư Trú / Nhận Hàng Của Bạn' : 'Your Residential / Delivery Address'}
+                        title={lang === 'vi' ? 'Địa chỉ cư trú / nhận hàng của bạn' : 'Your Residential / Delivery Address'}
                         description={lang === 'vi' ? 'Định vị GPS và ghim trên bản đồ để tự động đồng bộ khi mua hàng hoặc đăng ký bán hàng.' : 'Set GPS coordinates to auto-sync for checkout and selling.'}
                       />
                     </div>
@@ -3037,7 +3057,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                           }}
                           className="text-xs font-bold text-[#c34c36] hover:underline cursor-pointer"
                         >
-                          {lang === 'vi' ? 'Đăng ký Người Bán ngay →' : 'Register as Seller now →'}
+                          {lang === 'vi' ? 'ĐĂNG KÝ NGƯỜI BÁN NGAY →' : 'Register as Seller now →'}
                         </button>
                       )}
                     </div>
@@ -4362,34 +4382,97 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
             className="flex items-center gap-1.5 text-xs font-bold text-red-600 hover:text-red-700 transition cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
-            <span>{lang === 'vi' ? 'Đăng Xuất Khỏi Thiết Bị' : 'Log Out from Device'}</span>
+            <span>{lang === 'vi' ? 'Đăng xuất khỏi thiết bị' : 'Log Out from Device'}</span>
           </button>
 
           <div className="flex items-center gap-2.5">
-            <button
-              onClick={onClose}
-              className="px-5 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-100 text-slate-700 text-xs font-bold transition cursor-pointer"
-            >
-              {lang === 'vi' ? 'Đóng' : 'Close'}
-            </button>
-            {activeTab !== 'reputation' && (
-              <button
-                onClick={handleSave}
-                disabled={isSaving}
-                className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>{lang === 'vi' ? 'Đang lưu...' : 'Saving...'}</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-3.5 h-3.5" />
-                    <span>{lang === 'vi' ? 'Lưu Hồ Sơ' : 'Save Profile'}</span>
-                  </>
+            {activeTab === 'info' ? (
+              !isEditing ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-5 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-100 text-slate-700 text-xs font-bold transition cursor-pointer"
+                  >
+                    {lang === 'vi' ? 'Đóng' : 'Close'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                    className="px-5 py-2 rounded-xl bg-[#c34c36] hover:bg-[#a83b27] text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>{lang === 'vi' ? 'Chỉnh sửa' : 'Edit profile'}</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setName(currentUser?.name || '');
+                      setPhone(currentUser?.phone || '');
+                      setAddress(currentUser?.address || '');
+                      setBirthday(currentUser?.birthday || '');
+                      setGender(
+                        currentUser?.gender ? (currentUser.gender.toLowerCase() as 'male' | 'female' | 'other') : ''
+                      );
+                      setIsEditing(false);
+                    }}
+                    className="px-5 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-100 text-slate-700 text-xs font-bold transition cursor-pointer"
+                  >
+                    {lang === 'vi' ? 'Hủy' : 'Cancel'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>{lang === 'vi' ? 'Đang lưu...' : 'Saving...'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-3.5 h-3.5" />
+                        <span>{lang === 'vi' ? 'Lưu hồ sơ' : 'Save profile'}</span>
+                      </>
+                    )}
+                  </button>
+                </>
+              )
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-5 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-100 text-slate-700 text-xs font-bold transition cursor-pointer"
+                >
+                  {lang === 'vi' ? 'Đóng' : 'Close'}
+                </button>
+                {activeTab !== 'reputation' && (
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#c34c36] to-[#fce5da] hover:opacity-95 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>{lang === 'vi' ? 'Đang lưu...' : 'Saving...'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-3.5 h-3.5" />
+                        <span>{lang === 'vi' ? 'Lưu hồ sơ' : 'Save profile'}</span>
+                      </>
+                    )}
+                  </button>
                 )}
-              </button>
+              </>
             )}
           </div>
         </div>

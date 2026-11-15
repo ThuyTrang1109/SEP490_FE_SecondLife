@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   XCircle,
+  AlertCircle,
   AlertTriangle,
   QrCode,
   Barcode,
@@ -169,13 +170,12 @@ export const isOrderInspectionCompleted = (order: any): boolean => {
 };
 
 function getStationReport(order: EscrowOrder) {
-  if (order.inspectionStatus || order.inspectionReport) return order.inspectionReport;
+  if (order.inspectionReport) return order.inspectionReport;
   try {
     const stored = localStorage.getItem(`inspection_report_${order.id}`);
-    return stored ? JSON.parse(stored) : undefined;
-  } catch {
-    return undefined;
-  }
+    if (stored) return JSON.parse(stored);
+  } catch { }
+  return undefined;
 }
 
 export const ProductInspectionStationView: React.FC<ProductInspectionStationViewProps> = ({
@@ -481,9 +481,33 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
 
       if (effectiveReport) {
         setActualSerialNo((effectiveReport as any).serialNumber || '');
-        setAccessoriesNote((effectiveReport as any).accessoriesNote || '');
+        const rawNote = (effectiveReport as any).note || (activeOrder as any).note || effectiveReport.summaryNotes || '';
+        const packMatch = rawNote.match(/\[Bao bì:\s*([^\]]+)\]/i);
+        if (packMatch) {
+          const p = packMatch[1].toLowerCase();
+          if (p.includes('rách') || p.includes('móp') || p.includes('hư hại') || p.includes('heavy')) {
+            setPackagingStatus('HEAVY_DAMAGE');
+          } else if (p.includes('xước') || p.includes('hơi') || p.includes('slight')) {
+            setPackagingStatus('SLIGHT_DAMAGE');
+          } else {
+            setPackagingStatus('INTACT');
+          }
+        } else if ((effectiveReport as any).packagingStatus) {
+          setPackagingStatus((effectiveReport as any).packagingStatus);
+        } else {
+          setPackagingStatus('INTACT');
+        }
+
+        const accMatch = rawNote.match(/\[Phụ kiện:\s*([^\]]+)\]/i);
+        if (accMatch) {
+          setAccessoriesNote(accMatch[1]);
+        } else {
+          setAccessoriesNote((effectiveReport as any).accessoriesNote || '');
+        }
+
+        const cleanNotes = rawNote.replace(/\[(Tem|Grade|Điểm|Bao bì|Phụ kiện|Photos):.*?\]/gi, '').trim();
         setExteriorNotes((effectiveReport as any).exteriorNotes || '');
-        setInspectorNotes(effectiveReport.summaryNotes || '');
+        setInspectorNotes(cleanNotes || effectiveReport.summaryNotes || '');
         setOverallVerdict(effectiveReport.verdict || 'PASS');
         setConditionScore(effectiveReport.conditionScore || 90);
         setSelectedGrade(effectiveReport.detectedGrade || 'Like New');
@@ -505,8 +529,26 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         setIsDigitalSigned(true);
         setCurrentStep('verdict');
       } else {
+        const rawNote = (activeOrder as any).note || '';
+        const packMatch = rawNote.match(/\[Bao bì:\s*([^\]]+)\]/i);
+        if (packMatch) {
+          const p = packMatch[1].toLowerCase();
+          if (p.includes('rách') || p.includes('móp') || p.includes('hư hại') || p.includes('heavy')) {
+            setPackagingStatus('HEAVY_DAMAGE');
+          } else if (p.includes('xước') || p.includes('hơi') || p.includes('slight')) {
+            setPackagingStatus('SLIGHT_DAMAGE');
+          } else {
+            setPackagingStatus('INTACT');
+          }
+        } else if ((activeOrder as any).packagingStatus) {
+          setPackagingStatus((activeOrder as any).packagingStatus);
+        } else {
+          setPackagingStatus('INTACT');
+        }
+
+        const accMatch = rawNote.match(/\[Phụ kiện:\s*([^\]]+)\]/i);
+        setAccessoriesNote(accMatch ? accMatch[1] : ((activeOrder as any).accessoriesNote || ''));
         setActualSerialNo('');
-        setAccessoriesNote('');
         setExteriorNotes('');
         setInspectorNotes('');
         setConditionScore(0);
@@ -1092,9 +1134,17 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
       const persistedVideoUrl = isAtHomeOrder ? getInspectionRemoteMediaUrl(videoProofUrl) : undefined;
       const persistedUnboxingUrl = isAtHomeOrder ? getInspectionRemoteMediaUrl(unboxingVideoUrl) : undefined;
 
+      const packagingLabel = packagingStatus === 'INTACT' ? 'Nguyên vẹn 100%' : packagingStatus === 'SLIGHT_DAMAGE' ? 'Trầy xước nhẹ' : 'Rách nặng / Móp méo';
+      const packagingTag = `[Bao bì: ${packagingLabel}]`;
+      const accessoriesTag = accessoriesNote.trim() ? ` [Phụ kiện: ${accessoriesNote.trim()}]` : '';
+      const baseInspectorNotes = inspectorNotes.trim();
+
+      const combinedNoteAtCenter = `${packagingTag}${accessoriesTag}${baseInspectorNotes ? ` ${baseInspectorNotes}` : ''}`.trim();
+      const combinedNoteAtHome = `[Tem: ${effectiveSeal}][Grade: ${selectedGrade}][Điểm: ${conditionScore}/100]${packagingTag}${accessoriesTag}${validEvidencePhotoUrls.length > 0 ? ` [Photos: ${JSON.stringify(validEvidencePhotoUrls)}]` : ''}${baseInspectorNotes ? ` ${baseInspectorNotes}` : ''}`.trim();
+
       const payload: SubmitInspectionReportRequest = isAtCenterOrder ? {
         status: overallVerdict === 'PASS' ? 'PASSED' : 'FAILED',
-        note: inspectorNotes.trim() || undefined,
+        note: combinedNoteAtCenter || undefined,
         conditionScore,
         conditionGrade: selectedGrade,
         checklistResults: checklist.map((item) => ({
@@ -1107,7 +1157,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         evidencePhotoUrls: validEvidencePhotoUrls,
       } : {
         status: overallVerdict === 'PASS' ? 'PASSED' : 'FAILED',
-        note: `[Tem: ${effectiveSeal}][Grade: ${selectedGrade}][Điểm: ${conditionScore}/100][Bao bì: ${packagingStatus === 'INTACT' ? 'Nguyên vẹn' : packagingStatus === 'SLIGHT_DAMAGE' ? 'Hơi móp méo' : 'Hư hại'}]${accessoriesNote ? ` [Phụ kiện: ${accessoriesNote}]` : ''}${validEvidencePhotoUrls.length > 0 ? ` [Photos: ${JSON.stringify(validEvidencePhotoUrls)}]` : ''} ${inspectorNotes}`,
+        note: combinedNoteAtHome,
         conditionScore,
         conditionGrade: selectedGrade,
         tamperSealId: effectiveSeal,
@@ -1160,6 +1210,9 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
           detectedGrade: selectedGrade,
           conditionScore: conditionScore,
           tamperSealId: isAtCenterOrder ? undefined : effectiveSeal,
+          packagingStatus,
+          packagingCondition: packagingLabel,
+          accessoriesNote: accessoriesNote.trim() || undefined,
           checklistResults: checklist.map((item) => ({
             id: item.id,
             rawId: item.rawId,
@@ -1172,7 +1225,8 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
           })),
           inspectorPhotos: validEvidencePhotoUrls,
           evidencePhotoUrls: validEvidencePhotoUrls,
-          summaryNotes: isAtCenterOrder ? inspectorNotes : `[Grade: ${selectedGrade}][Điểm: ${conditionScore}/100] ${inspectorNotes}`,
+          summaryNotes: baseInspectorNotes || (isAtCenterOrder ? combinedNoteAtCenter : combinedNoteAtHome),
+          note: isAtCenterOrder ? combinedNoteAtCenter : combinedNoteAtHome,
         };
         localStorage.setItem(`inspection_report_${activeOrder.id}`, JSON.stringify(fullReport));
 
@@ -1185,7 +1239,7 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
         activeOrder.id,
         overallVerdict,
         isAtCenterOrder ? '' : effectiveSeal,
-        isAtCenterOrder ? inspectorNotes : `[Grade: ${selectedGrade}][Điểm: ${conditionScore}/100] ${inspectorNotes}`,
+        isAtCenterOrder ? combinedNoteAtCenter : combinedNoteAtHome,
         {
           conditionScore,
           conditionGrade: selectedGrade,
@@ -2129,12 +2183,6 @@ export const ProductInspectionStationView: React.FC<ProductInspectionStationView
                           Hiện Trạng Đóng Gói & Phụ Kiện Khi Tiếp Nhận
                         </span>
                       </div>
-                      {packagingStatus && (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          Đã ghi nhận bao bì (Ổn)
-                        </span>
-                      )}
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">

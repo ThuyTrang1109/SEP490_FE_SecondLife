@@ -1,6 +1,7 @@
 import type { Language, ShipmentBackend } from '../types';
 import type { InspectionOrderDto } from '../services/inspectorService';
 import { isDeliveredInspectionCashShipment } from './inspectionCashShipping';
+import { getInspectionPurchaseDecision } from './inspectionPurchase';
 
 export function getCenterTabDataNeeds(tab: string) {
   return {
@@ -131,8 +132,10 @@ export function canReadCenterInspectionShipments(order: Pick<InspectionOrderDto,
 }
 
 export function shouldTrackCenterInspectionShipments(order: InspectionOrderDto, centerId?: string, role?: string) {
+  const isCompletedCenterOrder = (order.orderType === 'AT_CENTER' || !order.orderType || (order as any).inspectionMethod === 'AT_CENTER') &&
+    ['PASSED', 'COMPLETED', 'FAILED'].includes(order.status);
   return canReadCenterInspectionShipments(order, centerId) &&
-    (shouldTrackInboundShipment(order) || isPaidHubBuyerDelivery(order) || isCenterReturnEligible(order, centerId, role));
+    (shouldTrackInboundShipment(order) || isPaidHubBuyerDelivery(order) || isCenterReturnEligible(order, centerId, role) || isCompletedCenterOrder);
 }
 
 export function getLatestInboundShipment(shipments: ShipmentBackend[]): ShipmentBackend | null {
@@ -161,6 +164,15 @@ export function canBookHubBuyerDelivery(shipment: ShipmentBackend | null | undef
   return shipment === null || shipment?.status === 'CANCELLED';
 }
 
+export function canBookCenterBuyerDelivery(
+  order: InspectionOrderDto,
+  centerId: string | undefined,
+  shipment: ShipmentBackend | null | undefined,
+) {
+  return canReadCenterInspectionShipments(order, centerId) && isPaidHubBuyerDelivery(order) &&
+    canBookHubBuyerDelivery(shipment);
+}
+
 export function isHubReturnCase(order?: Pick<InspectionOrderDto, 'orderType' | 'status'> | null) {
   return order?.orderType === 'AT_CENTER' && ['FAILED', 'CANCELLED'].includes(order.status);
 }
@@ -177,6 +189,17 @@ export function getHubReturnState(shipments: ShipmentBackend[]) {
     received: shipments.some((shipment) => shipment.leg === 'SELLER_TO_CENTER' && shipment.status === 'DELIVERED'),
     shipment: returns.find((shipment) => shipment.status !== 'CANCELLED') ?? returns[0] ?? null,
   };
+}
+
+export function canBookCenterReturn(
+  order: InspectionOrderDto,
+  centerId: string | undefined,
+  role: string | undefined,
+  state: ReturnType<typeof getHubReturnState> | undefined,
+) {
+  return isCenterReturnEligible(order, centerId, role) &&
+    (order.status === 'FAILED' || getInspectionPurchaseDecision(null, order) === 'rejected') &&
+    state?.received === true && canBookHubBuyerDelivery(state.shipment);
 }
 
 export function shouldSyncHubReturnOnOpen(shipment: ShipmentBackend | null): shipment is ShipmentBackend {

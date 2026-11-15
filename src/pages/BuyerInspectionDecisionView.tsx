@@ -1,4 +1,6 @@
 import { paths } from '../app/router/paths';
+import { navigatePath } from '../app/router/browser';
+import { chatService } from '../services/chatService';
 import React, { useState, useEffect, useMemo } from 'react';
 import { EscrowOrder, Language, UserProfile } from '../types';
 import { formatVND } from '../utils/translations';
@@ -36,16 +38,19 @@ import {
 import { CreateShipmentModal } from '../components/modals/CreateShipmentModal';
 import { DigitalInspectionCertificateModal, buildInspectionReportFromDto } from '../components/modals/DigitalInspectionCertificateModal';
 import { inspectorService, InspectionOrderDto } from '../services/inspectorService';
+import { getOrderFeed } from '../services/orderFeedService';
 import { shippingService } from '../services/shippingService';
 import { ShipmentBackend, ShippingQuoteResponseDto } from '../types';
 import { walletService, WalletBackend, notifyWalletBalanceUpdated } from '../services/walletService';
 import { saveScopedLocalNotification } from '../utils/notificationStorage';
-import { getCustomerInspectionStatus, getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel, isExpiredInspectionPurchase } from '../utils/inspectionPurchase';
+import { markListingInspectionPassed } from '../utils/listingInspection';
+import { getCustomerInspectionStatus, getInspectionPurchaseDecision, inspectionPurchaseDecisionLabel, isExpiredInspectionPurchase, extractInspectionRejectionDetails } from '../utils/inspectionPurchase';
 import { notificationWsClient } from '../services/notificationWsClient';
-import { getInspectionReportMedia, getInspectionStageOne } from '../utils/inspectionDecisionData';
+import { getInspectionReportMedia, getInspectionStageOne, getInspectionStageTwo } from '../utils/inspectionDecisionData';
 import { canAppealInspection, getHubReturnProgress, getHubReturnState, getReturnReserveMessage, isHubReturnCase } from '../utils/inspectionCenterData';
 import { InspectionAppealModal } from '../components/inspection/InspectionAppealModal';
 import { LalamoveProgress } from '../components/common/LalamoveProgress';
+import { resolveInspectionCenter } from '../utils/orderUtils';
 
 const formatAmount = (amount: number | null | undefined) => amount == null ? 'Chưa có dữ liệu' : formatVND(amount);
 
@@ -122,10 +127,59 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
       request = controller;
       if (!isBackground) setIsLoading(true);
       try {
-        const dto = await inspectorService.getOrder(effectiveOrderId, { signal: controller.signal, isBackground });
-        if (!controller.signal.aborted && dto) setInspectionDto(dto);
-      } catch (err) {
-        if (!controller.signal.aborted) console.warn('Failed to load inspection order details:', err);
+        const dto = await inspectorService.getOrder(effectiveOrderId, { signal: controller.signal, isBackground, bypassCache: true });
+        if (!controller.signal.aborted && dto) {
+          setInspectionDto(dto);
+          return;
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || controller.signal.aborted) return;
+        if (!controller.signal.aborted) {
+          console.warn('Direct getOrder failed, attempting fallback to find order:', err);
+          try {
+            const feed = await getOrderFeed({ filter: 'all', perspective: 'all', q: '', page: 0 }, effectiveOrderId, controller.signal);
+            if (!controller.signal.aborted && feed.detail?.inspection) {
+              setInspectionDto(feed.detail.inspection);
+              return;
+            }
+            const foundItem = feed.items?.find((item) =>
+              String(item.order?.id || '').toLowerCase() === effectiveOrderId.toLowerCase() ||
+              String(item.inspection?.id || '').toLowerCase() === effectiveOrderId.toLowerCase()
+            );
+            if (!controller.signal.aborted && foundItem?.inspection) {
+              setInspectionDto(foundItem.inspection);
+              return;
+            }
+            if (!controller.signal.aborted && foundItem?.order) {
+              const ord = foundItem.order as any;
+              setInspectionDto({
+                id: ord.inspectionOrderId || ord.id,
+                postId: ord.listingId || ord.post?.id,
+                postTitle: ord.listing?.title || ord.productTitle || '',
+                postPrice: ord.itemPriceVnd || 0,
+                postImageUrls: ord.listing?.images || (ord.productImageUrl ? [ord.productImageUrl] : []),
+                status: (ord.inspectionStatus || ord.backendStatus || ord.status || 'PENDING') as any,
+                note: ord.note || ord.inspectionNote || '',
+                inspectionFee: ord.inspectionFeeVnd || 0,
+                shippingFee: ord.shippingFeeVnd || 0,
+                returnShippingReserveFee: ord.returnShippingReserveFee || 0,
+                buyerFeeShare: ord.buyerFeeShare,
+                sellerFeeShare: ord.sellerFeeShare,
+                feePayer: ord.feePayer || 'SPLIT_50_50',
+                orderType: ord.inspectionMethod || ord.orderType || 'AT_CENTER',
+                centerName: ord.inspectionCenterName,
+                centerAddress: ord.inspectionCenterAddress,
+                buyerId: ord.buyerId,
+                sellerId: ord.sellerId,
+                sellerName: ord.sellerName,
+                buyerName: ord.buyerName,
+              } as any);
+              return;
+            }
+          } catch (feedErr) {
+            console.warn('Order feed fallback failed:', feedErr);
+          }
+        }
       } finally {
         if (!controller.signal.aborted) setIsLoading(false);
       }
@@ -137,19 +191,78 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     return () => { unsubscribe(); request?.abort(); };
   }, [effectiveOrderId]);
 
+  // Fallback to synthesize inspectionDto from order if inspectionDto is not yet loaded
+  useEffect(() => {
+    if (order && !inspectionDto) {
+      const ord = order as any;
+      setInspectionDto((prev) => prev || ({
+        id: ord.inspectionOrderId || ord.id,
+        postId: ord.listingId || ord.post?.id,
+        postTitle: ord.listing?.title || ord.productTitle || ord.post?.title || '',
+        postPrice: ord.itemPriceVnd || ord.productPrice || ord.post?.price || 0,
+        postImageUrls: ord.listing?.images || ord.post?.imageUrls || (ord.productImageUrl ? [ord.productImageUrl] : []),
+        status: (ord.inspectionStatus || ord.backendStatus || ord.status || 'PENDING') as any,
+        note: ord.note || ord.inspectionNote || '',
+        inspectionFee: ord.inspectionFeeVnd || ord.inspectionFee,
+        shippingFee: ord.shippingFeeVnd || ord.shippingFee,
+        returnShippingReserveFee: ord.returnShippingReserveFee,
+        buyerFeeShare: ord.buyerFeeShare,
+        sellerFeeShare: ord.sellerFeeShare,
+        feePayer: ord.feePayer,
+        orderType: ord.inspectionMethod || ord.orderType || (ord.isAtHome ? 'AT_HOME' : 'AT_CENTER'),
+        centerName: ord.inspectionCenterName || ord.centerName,
+        centerAddress: ord.inspectionCenterAddress || ord.centerAddress,
+        buyerId: ord.buyerId,
+        sellerId: ord.sellerId,
+        sellerName: ord.sellerName,
+        buyerName: ord.buyerName,
+      } as any));
+    }
+  }, [order, inspectionDto]);
+
   // Status & Role Resolution
   const backendStatus = String(inspectionDto?.status || order?.inspectionStatus || order?.backendStatus || order?.status || '').toUpperCase();
   const escrowStatus = String(order?.escrowStatus || '').toUpperCase();
 
+  const rejectionDetails = extractInspectionRejectionDetails(
+    inspectionDto?.note || (order as any)?.note || (order as any)?.inspectionNote
+  );
   const purchaseDecision = getInspectionPurchaseDecision(order, inspectionDto);
   const purchaseExpired = isExpiredInspectionPurchase(inspectionDto?.status, inspectionDto?.note);
-  const isPassed = purchaseDecision !== null || purchaseExpired;
-  const isFailed = !isPassed && (backendStatus === 'FAILED' || (!inspectionDto && escrowStatus === 'INSPECTION_FAILED'));
+  const isBuyerPurchaseRejected = purchaseDecision === 'rejected' || rejectionDetails.isBuyerPurchaseRejected;
+
+  const isCancelled =
+    !isBuyerPurchaseRejected && (
+      backendStatus === 'CANCELLED' ||
+      backendStatus === 'CANCELED' ||
+      backendStatus === 'REJECTED' ||
+      String(inspectionDto?.status || '').toUpperCase() === 'CANCELLED' ||
+      String(inspectionDto?.status || '').toUpperCase() === 'REJECTED' ||
+      String((order as any)?.status || '').toUpperCase() === 'CANCELLED' ||
+      String((order as any)?.status || '').toUpperCase() === 'REJECTED' ||
+      String((order as any)?.inspectionStatus || '').toUpperCase() === 'CANCELLED' ||
+      String((order as any)?.inspectionStatus || '').toUpperCase() === 'REJECTED'
+    );
+
+  const isPassed = !isCancelled && (purchaseDecision !== null || purchaseExpired || isBuyerPurchaseRejected);
+  const isFailed = !isPassed && !isCancelled && !isBuyerPurchaseRejected && (backendStatus === 'FAILED' || (!inspectionDto && escrowStatus === 'INSPECTION_FAILED'));
   const customerStatus = getCustomerInspectionStatus(backendStatus, inspectionDto?.customerStatus,
     inspectionDto ? inspectionDto.inspectorId : order?.inspectorId);
-  const isInspecting = !isPassed && (customerStatus === 'INSPECTING' || customerStatus === 'INSPECTION_IN_PROGRESS');
-  const isPending = !isPassed && !isFailed && !isInspecting && backendStatus !== 'CANCELLED';
-  const isShippingToCenter = !isPassed && !isFailed && !isInspecting && (
+  const isInspecting = !isPassed && !isFailed && !isCancelled && !isBuyerPurchaseRejected && (customerStatus === 'INSPECTING' || customerStatus === 'INSPECTION_IN_PROGRESS');
+  const isPending = !isPassed && !isFailed && !isInspecting && !isCancelled && !isBuyerPurchaseRejected;
+  const hasInspectionResult = Boolean(
+    isPassed ||
+    isFailed ||
+    purchaseDecision !== null ||
+    purchaseExpired ||
+    inspectionDto?.conditionGrade ||
+    (order as any)?.conditionGrade ||
+    (order as any)?.inspectionReport ||
+    backendStatus === 'PASSED' ||
+    backendStatus === 'FAILED' ||
+    backendStatus === 'COMPLETED'
+  );
+  const isShippingToCenter = !isPassed && !isFailed && !isInspecting && !isCancelled && (
     backendStatus === 'SHIPPING_TO_CENTER' ||
     Boolean((order as any)?.shippingTrackingCode) ||
     Boolean((order as any)?.inboundTrackingCode) ||
@@ -227,7 +340,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     ))
   );
   const canDecide = purchaseDecision === 'pending' && !isUserSeller;
-  const decisionSettled = purchaseDecision === 'accepted' || purchaseDecision === 'rejected' || purchaseExpired;
+  const decisionSettled = purchaseDecision === 'accepted' || purchaseDecision === 'rejected' || purchaseExpired || isBuyerPurchaseRejected;
   const canAppeal = Boolean(isUserSeller && inspectionDto && canAppealInspection(inspectionDto, currentUser?.id));
   const [, refreshAppealDeadline] = useState(0);
 
@@ -247,7 +360,26 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     return () => { active = false; };
   }, [canDecide, inspectionDto, showConfirmModal]);
 
-  // Dynamic Center Lookup
+  // Dynamic Center Lookup & Immediate Fallback
+  const fallbackCenter = useMemo(() => {
+    const directName = (inspectionDto as any)?.centerName || (order as any)?.inspectionCenterName || (order as any)?.centerName;
+    const directAddress = (inspectionDto as any)?.centerAddress || (order as any)?.inspectionCenterAddress || (order as any)?.centerAddress;
+    const directPhone = (inspectionDto as any)?.centerPhone || (order as any)?.inspectionCenterPhone || (order as any)?.centerPhone;
+    if (directName && directAddress) {
+      return {
+        name: directName,
+        address: directAddress,
+        phone: directPhone || '0875456654',
+      };
+    }
+    const resolved = resolveInspectionCenter((order as any) || (inspectionDto as any));
+    return {
+      name: directName || resolved.name,
+      address: directAddress || resolved.address,
+      phone: directPhone || resolved.phone,
+    };
+  }, [order, inspectionDto]);
+
   const [resolvedCenter, setResolvedCenter] = useState<{ name: string; address?: string; phone?: string } | null>(null);
 
   useEffect(() => {
@@ -265,7 +397,9 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
   const postTitle = inspectionDto?.postTitle || order?.listing?.title || 'Thiết bị công nghệ / gia dụng';
   const postPrice = inspectionDto?.finalItemPrice || inspectionDto?.postPrice || order?.listing?.priceVnd || order?.itemPriceVnd || 0;
   const postImage = inspectionDto?.postImageUrl || inspectionDto?.postImageUrls?.[0] || order?.listing?.photos?.front || 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=800';
-  const centerName = resolvedCenter?.name || 'Chưa có thông tin trung tâm';
+  const centerName = resolvedCenter?.name || fallbackCenter.name;
+  const centerAddress = resolvedCenter?.address || fallbackCenter.address;
+  const centerPhone = resolvedCenter?.phone || fallbackCenter.phone;
   const inspectorName = inspectionDto?.inspectorName || 'Chưa có thông tin kỹ thuật viên';
   const tamperSealId = inspectionDto?.tamperSealId;
   const conditionGrade = inspectionDto?.conditionGrade || 'Chưa có đánh giá';
@@ -325,41 +459,49 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     });
   }, [inspectionDto?.postId, canDecide, resolvedBuyerAddress]);
 
-  // Phí giao tận tay (chiều 2) tính từ Trung tâm kiểm định qua người mua (Ưu tiên: từ API báo giá -> từ DTO backend -> cước vận chuyển chuẩn)
-  const apiDeliveryFee = finalShippingQuote?.shippingFee ?? inspectionDto?.finalShippingFee ?? (order?.shippingFeeVnd || 35000);
-  const finalItemPrice = finalShippingQuote?.productPrice ?? inspectionDto?.finalItemPrice ?? postPrice;
-  const finalPriceToPay = finalShippingQuote?.totalPayable ?? (finalItemPrice + apiDeliveryFee);
-  const inspectionTransportLabel = isAtHome ? 'Phí di chuyển kỹ thuật viên' : 'Cước Lalamove giao Hub';
+  // Phí giao tận tay (chiều 2) tính từ Trung tâm kiểm định qua người mua (Ưu tiên: từ API báo giá -> từ DTO backend -> cước giao hàng chiều 2)
+  const { itemPrice: stageTwoItemPrice, deliveryFee: stageTwoDeliveryFee, total: stageTwoTotal } = getInspectionStageTwo(inspectionDto, finalShippingQuote);
+  const finalItemPrice = stageTwoItemPrice ?? postPrice;
+  const apiDeliveryFee = stageTwoDeliveryFee ?? (order as any)?.leg2ShippingFee ?? 0;
+  const finalPriceToPay = stageTwoTotal ?? (finalItemPrice + apiDeliveryFee);
+  const inspectionTransportLabel = isAtHome ? 'Phí di chuyển kỹ thuật viên' : 'Cước vận chuyển giao tới trung tâm kiểm định';
+  const stageTwoShippingLabel = (finalShippingQuote?.leg === 'CENTER_TO_BUYER' || (!isAtHome && finalShippingQuote?.leg !== 'SELLER_TO_BUYER'))
+    ? 'Tiền vận chuyển từ Hub đến người mua'
+    : 'Tiền vận chuyển từ người bán đến người mua';
 
-  const isWaitingSellerApproval =
+  const isWaitingSellerApproval = !isCancelled && (
     backendStatus === 'WAITING_SELLER_APPROVAL' ||
     backendStatus === 'PENDING_SELLER_APPROVAL' ||
     backendStatus === 'AWAITING_SELLER_APPROVAL' ||
     inspectionDto?.status === 'WAITING_SELLER_APPROVAL' ||
     (order as any)?.status === 'WAITING_SELLER_APPROVAL' ||
-    (order as any)?.inspectionStatus === 'WAITING_SELLER_APPROVAL';
+    (order as any)?.inspectionStatus === 'WAITING_SELLER_APPROVAL'
+  );
 
-  const isWaitingBuyerApproval =
+  const isWaitingBuyerApproval = !isCancelled && (
     backendStatus === 'WAITING_BUYER_APPROVAL' ||
     backendStatus === 'PENDING_BUYER_APPROVAL' ||
     backendStatus === 'AWAITING_BUYER_APPROVAL' ||
     inspectionDto?.status === 'WAITING_BUYER_APPROVAL' ||
     (order as any)?.status === 'WAITING_BUYER_APPROVAL' ||
-    (order as any)?.inspectionStatus === 'WAITING_BUYER_APPROVAL';
+    (order as any)?.inspectionStatus === 'WAITING_BUYER_APPROVAL'
+  );
 
   const feesPaid = Boolean((buyerFeeShare === 0 || inspectionDto?.buyerPaidAt) && (sellerFeeShare === 0 || inspectionDto?.sellerPaidAt));
 
-  const isWaitingFeePayment =
+  const isWaitingFeePayment = !isCancelled && (
     backendStatus === 'WAITING_FEE_PAYMENT' ||
     backendStatus === 'PENDING_PAYMENT' ||
     backendStatus === 'WAITING_PAYMENT' ||
     inspectionDto?.status === 'WAITING_FEE_PAYMENT' ||
-    (!feesPaid && !isWaitingSellerApproval && !isWaitingBuyerApproval && !isPassed && !isFailed && !isInspecting && backendStatus !== 'CANCELLED');
+    (!feesPaid && !isWaitingSellerApproval && !isWaitingBuyerApproval && !isPassed && !isFailed && !isInspecting)
+  );
 
-  const feePaymentLabel = inspectionDto?.feeSettledAt ? 'ĐÃ HẠCH TOÁN PHÍ KIỂM ĐỊNH'
-    : isWaitingSellerApproval || isWaitingBuyerApproval ? 'CHỜ DUYỆT'
-      : feesPaid ? 'ĐÃ NỘP PHÍ'
-        : isWaitingFeePayment ? 'CHỜ NỘP PHÍ' : 'CHƯA XÁC NHẬN NỘP PHÍ';
+  const feePaymentLabel = isCancelled ? 'ĐÃ HỦY / TỪ CHỐI'
+    : inspectionDto?.feeSettledAt ? 'ĐÃ HẠCH TOÁN PHÍ KIỂM ĐỊNH'
+      : isWaitingSellerApproval || isWaitingBuyerApproval ? 'CHỜ DUYỆT'
+        : feesPaid ? 'ĐÃ NỘP PHÍ'
+          : isWaitingFeePayment ? 'CHỜ NỘP PHÍ' : 'CHƯA XÁC NHẬN NỘP PHÍ';
 
   const hasHubReturn = isHubReturnCase(inspectionDto);
   useEffect(() => {
@@ -556,19 +698,105 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
       const rejectedOrder = effectiveOrderId ? await inspectorService.rejectPurchase(effectiveOrderId, fullReason) : null;
       if (rejectedOrder) setInspectionDto(rejectedOrder);
 
-      // Update local storage order status
+      // Retrieve relevant target post identifiers
+      const targetPostId = String(
+        rejectedOrder?.postId ||
+        inspectionDto?.postId ||
+        (order as any)?.postId ||
+        (order as any)?.listing?.id ||
+        (order as any)?.listingId ||
+        ''
+      ).trim();
+      const targetPostTitle =
+        rejectedOrder?.postTitle ||
+        inspectionDto?.postTitle ||
+        (order as any)?.postTitle ||
+        (order as any)?.listing?.title ||
+        postTitle;
+      const targetTamperSealId =
+        rejectedOrder?.tamperSealId ||
+        inspectionDto?.tamperSealId ||
+        (order as any)?.tamperSealId;
+      const targetConditionGrade =
+        rejectedOrder?.conditionGrade ||
+        inspectionDto?.conditionGrade ||
+        (order as any)?.conditionGrade;
+      const targetConditionScore =
+        rejectedOrder?.conditionScore ??
+        inspectionDto?.conditionScore ??
+        (order as any)?.conditionScore;
+
+      // Register inspection pass so this listing continues to show "Đã đạt kiểm định tại Hub"
+      if (targetPostId) {
+        markListingInspectionPassed(targetPostId, targetPostTitle);
+        try {
+          localStorage.setItem(`inspection_passed_${targetPostId}`, 'true');
+          localStorage.setItem(`inspection_status_${targetPostId}`, 'PASSED');
+          localStorage.setItem(`inspection_status_post_${targetPostId}`, 'PASSED');
+          localStorage.setItem(`listing_available_${targetPostId}`, 'true');
+        } catch { }
+      }
+      if (targetPostTitle) {
+        markListingInspectionPassed(undefined, targetPostTitle);
+      }
+
+      // Restore listing availability in bought_listing_ids
+      try {
+        const boughtStr = localStorage.getItem('bought_listing_ids');
+        if (boughtStr && targetPostId) {
+          const list: string[] = JSON.parse(boughtStr);
+          const filtered = list.filter((id) => id !== targetPostId);
+          localStorage.setItem('bought_listing_ids', JSON.stringify(filtered));
+        }
+      } catch { }
+
+      // Update local storage order status in recent_placed_orders
       try {
         const recentStr = localStorage.getItem('recent_placed_orders');
         if (recentStr) {
           const list: EscrowOrder[] = JSON.parse(recentStr);
-          const updated = list.map(o => o.id === effectiveOrderId ? {
-            ...o,
-            escrowStatus: 'CANCELLED' as const,
-            backendStatus: 'CANCELLED' as any,
-            inspectionStatus: 'CANCELLED',
-            inspectionNote: rejectedOrder?.note,
-          } : o);
+          const updated = list.map((o) =>
+            o.id === effectiveOrderId
+              ? {
+                  ...o,
+                  escrowStatus: 'CANCELLED' as const,
+                  backendStatus: 'CANCELLED' as any,
+                  inspectionStatus: 'CANCELLED',
+                  inspectionNote: rejectedOrder?.note || fullReason,
+                  tamperSealId: targetTamperSealId || (o as any).tamperSealId,
+                  conditionGrade: targetConditionGrade || (o as any).conditionGrade,
+                  conditionScore: targetConditionScore ?? (o as any).conditionScore,
+                  settlementOutcome: 'PASSED_BUYER_DEFAULTED',
+                  cancellationReasonCode: 'PASSED_BUYER_DEFAULTED',
+                }
+              : o
+          );
           localStorage.setItem('recent_placed_orders', JSON.stringify(updated));
+        }
+      } catch { }
+
+      // Also update all_orders_cache
+      try {
+        const allStr = localStorage.getItem('all_orders_cache');
+        if (allStr) {
+          const list: any[] = JSON.parse(allStr);
+          const updated = list.map((o) =>
+            o.id === effectiveOrderId
+              ? {
+                  ...o,
+                  escrowStatus: 'CANCELLED',
+                  backendStatus: 'CANCELLED',
+                  inspectionStatus: 'CANCELLED',
+                  inspectionNote: rejectedOrder?.note || fullReason,
+                  tamperSealId: targetTamperSealId || (o as any).tamperSealId,
+                  conditionGrade: targetConditionGrade || o.conditionGrade,
+                  conditionScore: targetConditionScore ?? o.conditionScore,
+                  settlementOutcome: 'PASSED_BUYER_DEFAULTED',
+                  cancellationReasonCode: 'PASSED_BUYER_DEFAULTED',
+                }
+              : o
+          );
+          localStorage.setItem('all_orders_cache', JSON.stringify(updated));
         }
       } catch { }
 
@@ -675,6 +903,55 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     }
   };
 
+  // Handle Open Negotiation Chat (Đưa đến đúng đoạn chat chứa yêu cầu kiểm định)
+  const [isNavigatingChat, setIsNavigatingChat] = useState<boolean>(false);
+  const handleOpenNegotiationChat = async () => {
+    const targetPostId = inspectionDto?.postId || (order as any)?.listing?.id || (order as any)?.postId;
+    const targetBuyerId = inspectionDto?.buyerId || (order as any)?.buyerId;
+    const targetSellerId = inspectionDto?.sellerId || (order as any)?.sellerId;
+    const targetInspectionId = inspectionDto?.id || effectiveOrderId;
+    const role = userRole === 'buyer' ? 'buyer' : 'seller';
+
+    if (!targetPostId) {
+      navigatePath(paths.chat(role));
+      return;
+    }
+
+    try {
+      setIsNavigatingChat(true);
+      const rooms = await chatService.getChatRooms();
+
+      // Tìm phòng chat khớp với bài đăng và người đối thoại
+      let targetRoom = rooms.find((r) => {
+        const matchesPost = r.postId && String(r.postId).toLowerCase() === String(targetPostId).toLowerCase();
+        const matchesPartner = isUserSeller
+          ? (!targetBuyerId || (r.buyerId && String(r.buyerId).toLowerCase() === String(targetBuyerId).toLowerCase()))
+          : (!targetSellerId || (r.sellerId && String(r.sellerId).toLowerCase() === String(targetSellerId).toLowerCase()));
+        return matchesPost && matchesPartner;
+      });
+
+      if (!targetRoom) {
+        targetRoom = rooms.find((r) => r.postId && String(r.postId).toLowerCase() === String(targetPostId).toLowerCase());
+      }
+
+      if (!targetRoom) {
+        targetRoom = await chatService.getOrCreateRoom(targetPostId);
+      }
+
+      const queryParam = targetInspectionId ? `?inspectionId=${encodeURIComponent(targetInspectionId)}` : '';
+      if (targetRoom?.id) {
+        navigatePath(`${paths.chat(role, targetRoom.id)}${queryParam}`);
+      } else {
+        navigatePath(`${paths.chat(role)}?postId=${encodeURIComponent(targetPostId)}${targetInspectionId ? `&inspectionId=${encodeURIComponent(targetInspectionId)}` : ''}`);
+      }
+    } catch (err) {
+      console.warn('Lỗi khi mở phòng chat thương lượng:', err);
+      navigatePath(`${paths.chat(role)}?postId=${encodeURIComponent(targetPostId)}${targetInspectionId ? `&inspectionId=${encodeURIComponent(targetInspectionId)}` : ''}`);
+    } finally {
+      setIsNavigatingChat(false);
+    }
+  };
+
   // Handle Pay Inspection Fee
   const handlePayInspectionFee = async () => {
     if (!effectiveOrderId) return;
@@ -706,11 +983,34 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
     ? Math.max(0, finalPriceToPay - currentWalletBal)
     : null;
 
-  if (isLoading || !inspectionDto) {
+  if (isLoading || (!inspectionDto && !order)) {
     return (
       <div className="mx-auto max-w-xl space-y-4 p-8 text-center text-slate-700">
         <p role="status">{isLoading ? 'Đang tải dữ liệu đơn kiểm định…' : 'Không tải được dữ liệu đơn kiểm định.'}</p>
-        {!isLoading && <button type="button" onClick={onBack} className="font-bold text-blue-700">Quay lại đơn hàng</button>}
+        {!isLoading && (
+          <div className="flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setIsLoading(true);
+                inspectorService.getOrder(effectiveOrderId, { bypassCache: true })
+                  .then((dto) => { if (dto) setInspectionDto(dto); })
+                  .catch((err) => console.warn('Retry failed:', err))
+                  .finally(() => setIsLoading(false));
+              }}
+              className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 transition cursor-pointer"
+            >
+              Thử lại
+            </button>
+            <button
+              type="button"
+              onClick={onBack}
+              className="px-4 py-2 rounded-xl border border-slate-300 font-bold text-slate-700 text-xs hover:bg-slate-50 transition cursor-pointer"
+            >
+              Quay lại đơn hàng
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -739,13 +1039,19 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   </span>
                 )}
                 {purchaseDecision && (
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700">
-                    {inspectionPurchaseDecisionLabel(purchaseDecision, lang)}
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${purchaseDecision === 'rejected' ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-700'}`}>
+                    {inspectionPurchaseDecisionLabel(purchaseDecision, lang, isUserSeller)}
                   </span>
                 )}
                 {purchaseExpired && (
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700">
                     Đã hủy do hết hạn thanh toán
+                  </span>
+                )}
+                {isCancelled && !purchaseDecision && (
+                  <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-extrabold flex items-center gap-1 border border-rose-300">
+                    <XCircle className="w-3 h-3 text-rose-600" />
+                    <span>ĐÃ HỦY / TỪ CHỐI</span>
                   </span>
                 )}
                 {isFailed && (
@@ -922,6 +1228,14 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
                 <button
+                  type="button"
+                  onClick={() => setShowCertificateModal(true)}
+                  className="px-5 py-3 rounded-2xl bg-amber-400 hover:bg-amber-300 text-amber-950 font-black text-xs sm:text-sm shadow-md transition cursor-pointer flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <Award className="w-4 h-4 text-amber-900" />
+                  <span>Xem Chứng Nhận Kiểm Định</span>
+                </button>
+                <button
                   onClick={() => setShowRejectModal(true)}
                   className="px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs sm:text-sm border border-white/25 transition cursor-pointer flex items-center justify-center shadow-sm"
                 >
@@ -932,7 +1246,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   className="px-6 py-3 rounded-2xl bg-white hover:bg-emerald-50 text-emerald-950 font-black text-xs sm:text-sm shadow-lg transition cursor-pointer flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98]"
                 >
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>Xác nhận mua ({formatVND(finalPriceToPay)})</span>
+                  <span>Xác nhận mua ({formatVND(finalItemPrice)})</span>
                 </button>
               </div>
             </div>
@@ -968,7 +1282,127 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
               )}
             </div>
           </div>
-        ) : decisionSettled ? null : isUserSeller ? (
+        ) : isBuyerPurchaseRejected ? (
+          /* Banner thông báo khi NGƯỜI MUA TỪ CHỐI MUA TIẾP SAU KIỂM ĐỊNH */
+          <div className="py-3.5 px-4 sm:py-4 sm:px-5 rounded-2xl bg-gradient-to-r from-rose-900 via-rose-800 to-[#24263e] text-white shadow-md relative overflow-hidden border border-rose-700/50">
+            <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1 sm:space-y-1.5">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-white text-[11px] font-bold border border-white/30">
+                  <XCircle className="w-3.5 h-3.5 text-rose-200" />
+                  <span>{isUserSeller ? 'Kênh Người Bán • Người Mua Từ Chối Mua Tiếp' : 'Bạn Đã Từ Chối Mua Tiếp'}</span>
+                </div>
+                <h2 className="text-base sm:text-lg font-bold tracking-tight">
+                  {isUserSeller
+                    ? 'Người mua đã từ chối mua tiếp sau kiểm định'
+                    : 'Bạn đã từ chối mua tiếp sản phẩm sau kiểm định'}
+                </h2>
+                <div className="space-y-1">
+                  <p className="text-xs text-rose-50/90 leading-relaxed max-w-3xl">
+                    <strong>Lý do từ chối:</strong> {rejectionDetails.buyerRejectReason || 'Thay đổi nhu cầu sử dụng / Lý do cá nhân'}
+                  </p>
+                  <p className="text-xs text-rose-200/90 leading-relaxed max-w-3xl">
+                    {isUserSeller
+                      ? 'Người mua đã xem kết quả kiểm định đạt chuẩn và chọn không tiếp tục mua sản phẩm. Thiết bị sẽ được Hub thu xếp đóng gói hoàn trả về địa chỉ của bạn.'
+                      : 'Bạn đã xem kết quả kiểm định kỹ thuật và chọn không tiếp tục mua sản phẩm. Thiết bị sẽ được thu xếp hoàn trả lại cho người bán.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {(escrowOrderForShipment || order) && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCertificateModal(true)}
+                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold text-xs border border-white/25 shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Award className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Xem Biên Bản Kiểm Định</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleOpenNegotiationChat}
+                  disabled={isNavigatingChat}
+                  className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold text-xs border border-white/25 shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <MessageSquare className="w-3.5 h-3.5 text-rose-200" />
+                  <span>Xem Phòng Chat</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : isCancelled ? (
+          /* Banner thông báo khi ĐỀ XUẤT KIỂM ĐỊNH BỊ TỪ CHỐI / HỦY BỎ */
+          <div className="py-3.5 px-4 sm:py-4 sm:px-5 rounded-2xl bg-gradient-to-r from-rose-900 via-rose-800 to-[#24263e] text-white shadow-md relative overflow-hidden border border-rose-700/50">
+            <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1 sm:space-y-1.5">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-white text-[11px] font-bold border border-white/30">
+                  <XCircle className="w-3.5 h-3.5 text-rose-200" />
+                  <span>{isUserSeller ? 'Kênh Người Bán • Đề Xuất Đã Bị Hủy / Từ Chối' : 'Đề Xuất Kiểm Định Đã Bị Hủy / Từ Chối'}</span>
+                </div>
+                <h2 className="text-base sm:text-lg font-bold tracking-tight">
+                  {(() => {
+                    const note = String(inspectionDto?.note || (order as any)?.note || (order as any)?.inspectionNote || '').trim();
+                    if (note.toLowerCase().includes('người bán từ chối')) {
+                      return isUserSeller ? 'Bạn đã từ chối yêu cầu kiểm định này' : 'Người bán đã từ chối yêu cầu kiểm định này';
+                    }
+                    if (note.toLowerCase().includes('người mua từ chối')) {
+                      return isUserSeller ? 'Người mua đã từ chối đề xuất kiểm định' : 'Bạn đã từ chối đề xuất kiểm định này';
+                    }
+                    return 'Đề xuất kiểm định đã kết thúc';
+                  })()}
+                </h2>
+                <p className="text-xs text-rose-50/90 leading-relaxed max-w-3xl">
+                  {(() => {
+                    const rawReason = rejectionDetails.buyerRejectReason || String(inspectionDto?.note || (order as any)?.note || (order as any)?.inspectionNote || '').trim();
+                    return rawReason
+                      ? `Lý do: ${rawReason}. Yêu cầu kiểm định này đã kết thúc, không có khoản phí nào bị trừ và sản phẩm đã được mở lại giao dịch bình thường.`
+                      : 'Yêu cầu kiểm định này đã bị hủy hoặc từ chối. Không có khoản phí nào bị trừ từ tài khoản của bạn.';
+                  })()}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleOpenNegotiationChat}
+                disabled={isNavigatingChat}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold text-xs border border-white/25 shadow-xs transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-rose-200" />
+                <span>Xem Phòng Chat</span>
+              </button>
+            </div>
+          </div>
+        ) : decisionSettled ? (
+          purchaseDecision === 'accepted' ? (
+            <div className="py-4 px-5 rounded-2xl bg-gradient-to-r from-emerald-700 via-teal-700 to-[#24263e] text-white shadow-md relative overflow-hidden">
+              <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-white text-[11px] font-bold border border-white/30">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>Đã Xác Nhận Mua Hàng</span>
+                  </div>
+                  <h2 className="text-base sm:text-lg font-bold tracking-tight">
+                    Bạn đã thanh toán GĐ 2 và xác nhận mua sản phẩm
+                  </h2>
+                  <p className="text-xs text-emerald-50/90 leading-relaxed max-w-2xl">
+                    Đơn hàng đang trong quy trình đóng gói và giao từ Hub đến bạn. Bạn có thể xem Giấy chứng nhận kiểm định chất lượng bất kỳ lúc nào.
+                  </p>
+                </div>
+                {(escrowOrderForShipment || order) && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCertificateModal(true)}
+                    className="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-amber-950 font-black text-xs shadow-sm transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                  >
+                    <Award className="w-4 h-4 text-amber-900" />
+                    <span>Xem Chứng Nhận Kiểm Định</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : null
+        ) : isUserSeller ? (
           /* Banner thông báo dành riêng cho Người bán khi đơn ĐANG XỬ LÝ */
           <div className="py-3.5 px-4 sm:py-4 sm:px-5 rounded-2xl bg-gradient-to-r from-slate-800 via-indigo-900 to-[#24263e] text-white shadow-md relative overflow-hidden">
             <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1176,7 +1610,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     {postTitle}
                   </h3>
                   <div className="flex items-center gap-3 pt-1 text-xs text-slate-600">
-                    <span>Giá niêm yết: <strong className="text-slate-900 font-extrabold">{formatAmount(postPrice)}</strong></span>
+                    <span>Giá sản phẩm: <strong className="text-slate-900 font-extrabold">{formatAmount(postPrice)}</strong></span>
                     <span>•</span>
                     <span>Tình trạng: <strong className="text-emerald-700 font-bold">{conditionGrade}</strong></span>
                   </div>
@@ -1229,30 +1663,38 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   </div>
                 </div>
                 <span
-                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border ${isWaitingSellerApproval
-                    ? 'bg-blue-100 text-blue-800 border-blue-300'
-                    : isWaitingBuyerApproval
-                      ? 'bg-purple-100 text-purple-800 border-purple-300'
-                      : isWaitingFeePayment
-                        ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
-                        : isPassed
-                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                          : isFailed || backendStatus === 'CANCELLED'
-                            ? 'bg-rose-100 text-rose-800 border-rose-300'
-                            : 'bg-teal-100 text-teal-900 border-teal-300'
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border ${isBuyerPurchaseRejected
+                    ? 'bg-rose-100 text-rose-800 border-rose-300'
+                    : isCancelled
+                      ? 'bg-rose-100 text-rose-800 border-rose-300'
+                      : isWaitingSellerApproval
+                        ? 'bg-blue-100 text-blue-800 border-blue-300'
+                        : isWaitingBuyerApproval
+                          ? 'bg-purple-100 text-purple-800 border-purple-300'
+                          : isWaitingFeePayment
+                            ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
+                            : isPassed
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                              : isFailed
+                                ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                : 'bg-teal-100 text-teal-900 border-teal-300'
                     }`}
                 >
-                  {isWaitingSellerApproval
-                    ? '⏳ Chờ Người Bán Duyệt'
-                    : isWaitingBuyerApproval
-                      ? '⏳ Chờ Người Mua Duyệt Lại'
-                      : isWaitingFeePayment
-                        ? '💳 Chờ Nạp Phí Kiểm Định'
-                        : isPassed
-                          ? '✅ Đã Đạt Chuẩn'
-                          : isFailed
-                            ? '❌ Không Đạt'
-                            : feePaymentLabel}
+                  {isBuyerPurchaseRejected
+                    ? (isUserSeller ? '❌ Người Mua Từ Chối Mua' : '❌ Bạn Đã Từ Chối Mua')
+                    : isCancelled
+                      ? '🚫 Đã Hủy / Từ Chối'
+                      : isWaitingSellerApproval
+                        ? '⏳ Chờ Người Bán Duyệt'
+                        : isWaitingBuyerApproval
+                          ? '⏳ Chờ Người Mua Duyệt Lại'
+                          : isWaitingFeePayment
+                            ? '💳 Chờ Nạp Phí Kiểm Định'
+                            : isPassed
+                              ? '✅ Đã Đạt Chuẩn'
+                              : isFailed
+                                ? '❌ Không Đạt'
+                                : feePaymentLabel}
                 </span>
               </div>
 
@@ -1262,11 +1704,11 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   <Building2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                   <div className="space-y-0.5">
                     <span className="font-bold text-slate-900 block">{centerName}</span>
-                    {resolvedCenter?.address && (
-                      <p className="text-[11px] text-slate-500">{resolvedCenter.address}</p>
+                    {centerAddress && (
+                      <p className="text-[11px] text-slate-500">{centerAddress}</p>
                     )}
-                    {resolvedCenter?.phone && (
-                      <p className="text-[11px] text-slate-500">Hotline: {resolvedCenter.phone}</p>
+                    {centerPhone && (
+                      <p className="text-[11px] text-slate-500">Hotline: {centerPhone}</p>
                     )}
                   </div>
                 </div>
@@ -1330,7 +1772,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   <div className="flex justify-between">
                     <span className="text-slate-500 font-medium">Giai đoạn 2 (Sau khi máy ĐẠT):</span>
                     <span className="font-bold text-emerald-800">
-                      Tiền sản phẩm {formatAmount(finalItemPrice)} + Cước Hub giao {formatVND(apiDeliveryFee)}
+                      Tiền sản phẩm {formatAmount(finalItemPrice)} (Chưa tính tiền vận chuyển)
                     </span>
                   </div>
                 </div>
@@ -1617,10 +2059,14 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     <span>Giai đoạn 1 (Phí kiểm định & vận chuyển):</span>
                   </span>
                   <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${feesPaid || inspectionDto.feeSettledAt ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${isBuyerPurchaseRejected || feesPaid || inspectionDto.feeSettledAt
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : isCancelled
+                        ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                        : 'bg-amber-100 text-amber-900'
                       }`}
                   >
-                    {feePaymentLabel}
+                    {isBuyerPurchaseRejected || feesPaid || inspectionDto.feeSettledAt ? 'ĐÃ NỘP PHÍ' : isCancelled ? 'ĐÃ HỦY' : feePaymentLabel}
                   </span>
                 </div>
                 <div className="space-y-1.5 text-xs text-slate-600 pl-5">
@@ -1637,7 +2083,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     <span className="font-semibold text-slate-800">{formatAmount(returnReserveFee)}</span>
                   </div>}
                   <div className="flex justify-between pt-1 border-t border-slate-200/60 font-bold text-slate-800">
-                    <span>Tổng phí kiểm định GĐ 1:</span>
+                    <span>Tổng phí kiểm định giai đoạn 1:</span>
                     <span className="text-blue-900 font-extrabold">{formatAmount(totalInspectionFee)}</span>
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 pt-1 text-[11px]">
@@ -1660,50 +2106,58 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     <Sparkles className="w-3.5 h-3.5 text-amber-600" />
                     <span>Giai đoạn 2 (Tiền sản phẩm):</span>
                   </span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${canDecide
-                    ? 'bg-amber-100 text-amber-900 animate-pulse'
-                    : isFailed
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${isBuyerPurchaseRejected
+                    ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                    : isCancelled
                       ? 'bg-rose-100 text-rose-800'
-                      : isUserSeller
-                        ? 'bg-indigo-100 text-indigo-900'
-                        : 'bg-slate-100 text-slate-600'
+                      : canDecide
+                        ? 'bg-amber-100 text-amber-900 animate-pulse'
+                        : isFailed
+                          ? 'bg-rose-100 text-rose-800'
+                          : isUserSeller
+                            ? 'bg-indigo-100 text-indigo-900'
+                            : 'bg-slate-100 text-slate-600'
                     }`}>
                     {purchaseDecision
-                      ? inspectionPurchaseDecisionLabel(purchaseDecision, lang)
-                      : isFailed
-                        ? 'KHÔNG MỞ THANH TOÁN (LỖI)'
-                        : (isUserSeller ? 'CHỜ KTV KIỂM ĐỊNH' : 'CHƯA MỞ THANH TOÁN')}
+                      ? inspectionPurchaseDecisionLabel(purchaseDecision, lang, isUserSeller)
+                      : isBuyerPurchaseRejected
+                        ? (isUserSeller ? 'Người mua từ chối mua' : 'Bạn đã từ chối mua')
+                        : isCancelled
+                          ? 'ĐÃ HỦY'
+                          : isFailed
+                            ? 'KHÔNG MỞ THANH TOÁN (LỖI)'
+                            : (isUserSeller ? 'CHỜ KTV KIỂM ĐỊNH' : 'CHƯA MỞ THANH TOÁN')}
                   </span>
                 </div>
                 <div className="space-y-1.5 text-xs text-slate-700 pl-5">
-                  <div className="flex justify-between">
-                    <span>Tiền sản phẩm:</span>
-                    <span className="font-bold text-slate-900">{formatVND(finalItemPrice)}</span>
+                  <div className="flex justify-between items-baseline gap-2">
+                    <span className="flex items-center gap-1.5 flex-wrap">
+                      <span>• Tiền sản phẩm:</span>
+                      {!hasInspectionResult && (
+                        <span className="text-[11px] text-amber-700 font-medium italic">(Chưa tính tiền vận chuyển)</span>
+                      )}
+                    </span>
+                    <span className="font-bold text-slate-900 shrink-0">{formatVND(finalItemPrice)}</span>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span>Phí giao tận tay (chiều 2):</span>
-                    {isLoadingQuote ? (
-                      <span className="flex items-center gap-1.5 text-xs text-[#c34c36] font-semibold">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        Đang tính cước qua API...
+
+                  {hasInspectionResult && (
+                    <div className="flex justify-between items-baseline gap-2">
+                      <span>• {stageTwoShippingLabel}:</span>
+                      <span className="font-bold text-slate-900 shrink-0">
+                        {isLoadingQuote && !apiDeliveryFee ? (
+                          <span className="text-slate-400 font-normal italic text-[11px]">Đang tính cước...</span>
+                        ) : (
+                          formatVND(apiDeliveryFee)
+                        )}
                       </span>
-                    ) : (
-                      <div className="text-right">
-                        <span className="font-bold text-slate-900">{formatVND(apiDeliveryFee)}</span>
-                        <span className="ml-1 text-[10px] text-blue-700 font-semibold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                          Hub ➔ Người mua
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  {quoteError && !isLoadingQuote && (
-                    <p className="text-[10px] text-amber-600 italic">
-                      ℹ️ Cước tạm tính dựa trên địa chỉ giao hàng của bạn
-                    </p>
+                    </div>
                   )}
+
                   <div className="flex justify-between pt-2 border-t border-amber-200/80 font-black text-sm text-[#24263e]">
                     <span>Tổng tiền thanh toán giai đoạn 2:</span>
-                    <span className="text-base font-black text-[#c34c36]">{formatVND(finalPriceToPay)}</span>
+                    <span className="text-base font-black text-[#c34c36]">
+                      {formatVND(hasInspectionResult ? (finalItemPrice + (apiDeliveryFee || 0)) : finalItemPrice)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1773,6 +2227,27 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                           Từ Chối
                         </button>
                       </div>
+
+                      {/* Nút Thương Lượng Lại */}
+                      <button
+                        type="button"
+                        onClick={handleOpenNegotiationChat}
+                        disabled={isSubmitting || isNavigatingChat}
+                        className="w-full py-3 px-3 bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 hover:opacity-95 text-white rounded-xl text-xs font-black transition cursor-pointer shadow-sm flex items-center justify-center gap-2 text-center disabled:opacity-50"
+                      >
+                        {isNavigatingChat ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Đang chuyển đến đoạn chat...</span>
+                          </>
+                        ) : (
+                          <>
+                            <MessageSquare className="w-4 h-4 text-indigo-200" />
+                            <span>Thương Lượng Lại</span>
+                          </>
+                        )}
+                      </button>
+
                       <button
                         type="button"
                         onClick={onBack}
@@ -1818,6 +2293,96 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                         Quay Lại Quản Lý Đơn Bán Hàng
                       </button>
                     </div>
+                  ) : isBuyerPurchaseRejected ? (
+                    <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 space-y-3">
+                      <div className="flex items-center gap-2 font-bold text-rose-900 text-sm">
+                        <XCircle className="w-4 h-4 text-rose-600" />
+                        <span>Người Mua Từ Chối Mua Tiếp</span>
+                      </div>
+                      <div className="space-y-1.5 text-xs text-rose-900 leading-relaxed">
+                        <p>
+                          <strong>Lý do từ chối:</strong> {rejectionDetails.buyerRejectReason || 'Thay đổi nhu cầu sử dụng / Lý do cá nhân'}
+                        </p>
+                        <p className="text-rose-700">
+                          Sản phẩm đã kiểm định đạt chuẩn nhưng khách hàng chọn không tiếp tục mua. Hub sẽ thực hiện thủ tục hoàn trả thiết bị về cho bạn.
+                        </p>
+                      </div>
+                      {(escrowOrderForShipment || order) && (
+                        <button
+                          type="button"
+                          onClick={() => setShowCertificateModal(true)}
+                          className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-sm"
+                        >
+                          <Award className="w-4 h-4" />
+                          <span>Xem Chứng Nhận Kiểm Định</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleOpenNegotiationChat}
+                        disabled={isNavigatingChat}
+                        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 hover:opacity-95 text-white font-black text-xs transition cursor-pointer shadow-sm flex items-center justify-center gap-2 text-center disabled:opacity-50"
+                      >
+                        {isNavigatingChat ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Đang chuyển đến đoạn chat...</span>
+                          </>
+                        ) : (
+                          <>
+                            <MessageSquare className="w-4 h-4 text-indigo-200" />
+                            <span>Mở Phòng Chat Với Người Mua</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={onBack}
+                        className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition cursor-pointer text-center"
+                      >
+                        Quay Lại Quản Lý Đơn Bán Hàng
+                      </button>
+                    </div>
+                  ) : isCancelled ? (
+                    <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 space-y-3">
+                      <div className="flex items-center gap-2 font-bold text-rose-900 text-sm">
+                        <XCircle className="w-4 h-4 text-rose-600" />
+                        <span>Đề Xuất Kiểm Định Đã Kết Thúc</span>
+                      </div>
+                      <p className="text-xs text-rose-800 leading-relaxed">
+                        {(() => {
+                          const rawReason = rejectionDetails.buyerRejectReason || String(inspectionDto?.note || (order as any)?.note || (order as any)?.inspectionNote || '').trim();
+                          return rawReason
+                            ? `Lý do: ${rawReason}`
+                            : 'Yêu cầu kiểm định này đã bị hủy hoặc từ chối. Không có chi phí nào phát sinh.';
+                        })()}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleOpenNegotiationChat}
+                        disabled={isNavigatingChat}
+                        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 hover:opacity-95 text-white font-black text-xs transition cursor-pointer shadow-sm flex items-center justify-center gap-2 text-center disabled:opacity-50"
+                      >
+                        {isNavigatingChat ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Đang chuyển đến đoạn chat...</span>
+                          </>
+                        ) : (
+                          <>
+                            <MessageSquare className="w-4 h-4 text-indigo-200" />
+                            <span>Mở Phòng Chat Với Người Mua</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={onBack}
+                        className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition cursor-pointer text-center"
+                      >
+                        Quay Lại Quản Lý Đơn Bán Hàng
+                      </button>
+                    </div>
                   ) : (
                     <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-950 space-y-3">
                       <div className="flex items-center gap-2 font-bold text-indigo-900 text-sm">
@@ -1826,7 +2391,7 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       </div>
                       <p className="text-xs text-indigo-800 leading-relaxed">
                         {isPassed
-                          ? 'Sản phẩm đã đạt kiểm định và đang chờ quyết định mua.'
+                          ? 'Sản phẩm đã đạt kiểm định và đang chờ người mua quyết định.'
                           : isFailed
                             ? 'Sản phẩm kiểm định không đạt tiêu chuẩn kỹ thuật. Bạn có thể xem kết quả trong biên bản.'
                             : 'Sản phẩm đang trong quá trình tiếp nhận & kiểm định thực tế. Bạn không thể tự mua lại sản phẩm của chính mình.'}
@@ -1853,10 +2418,21 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     </p>
                     <button
                       type="button"
-                      onClick={onBack}
-                      className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs transition cursor-pointer text-center"
+                      onClick={handleOpenNegotiationChat}
+                      disabled={isNavigatingChat}
+                      className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs transition cursor-pointer text-center flex items-center justify-center gap-2 disabled:opacity-50"
                     >
-                      Đến Phòng Chat Thương Lượng
+                      {isNavigatingChat ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Đang chuyển đến đoạn chat...</span>
+                        </>
+                      ) : (
+                        <>
+                          <MessageSquare className="w-4 h-4 text-blue-200" />
+                          <span>Đến Phòng Chat Thương Lượng</span>
+                        </>
+                      )}
                     </button>
                     <button
                       type="button"
@@ -1877,10 +2453,21 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                     </p>
                     <button
                       type="button"
-                      onClick={onBack}
-                      className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black text-xs transition cursor-pointer text-center"
+                      onClick={handleOpenNegotiationChat}
+                      disabled={isNavigatingChat}
+                      className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black text-xs transition cursor-pointer text-center flex items-center justify-center gap-2 disabled:opacity-50"
                     >
-                      Đến Phòng Chat Xem Đề Xuất Mới
+                      {isNavigatingChat ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Đang chuyển đến đoạn chat...</span>
+                        </>
+                      ) : (
+                        <>
+                          <MessageSquare className="w-4 h-4 text-purple-200" />
+                          <span>Đến Phòng Chat Xem Đề Xuất Mới</span>
+                        </>
+                      )}
                     </button>
                     <button
                       type="button"
@@ -1961,6 +2548,78 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                       Quay Lại Danh Sách Đơn Hàng
                     </button>
                   </div>
+                ) : isBuyerPurchaseRejected ? (
+                  <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 space-y-3">
+                    <div className="flex items-center gap-2 font-bold text-rose-900 text-sm">
+                      <XCircle className="w-4 h-4 text-rose-600" />
+                      <span>Bạn Đã Từ Chối Mua Tiếp</span>
+                    </div>
+                    <div className="space-y-1.5 text-xs text-rose-900 leading-relaxed">
+                      <p>
+                        <strong>Lý do từ chối:</strong> {rejectionDetails.buyerRejectReason || 'Thay đổi nhu cầu sử dụng / Lý do cá nhân'}
+                      </p>
+                      <p className="text-rose-700">
+                        Bạn đã xem kết quả kiểm định đạt chuẩn và chọn không tiếp tục mua sản phẩm. Thiết bị sẽ được chuyển hoàn lại cho người bán.
+                      </p>
+                    </div>
+                    {(escrowOrderForShipment || order) && (
+                      <button
+                        type="button"
+                        onClick={() => setShowCertificateModal(true)}
+                        className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-sm"
+                      >
+                        <Award className="w-4 h-4" />
+                        <span>Xem Chứng Nhận Kiểm Định</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={onBack}
+                      className="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer text-center"
+                    >
+                      Quay Lại Danh Sách Đơn Hàng
+                    </button>
+                  </div>
+                ) : isCancelled ? (
+                  <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 space-y-3">
+                    <div className="flex items-center gap-2 font-bold text-rose-900 text-sm">
+                      <XCircle className="w-4 h-4 text-rose-600" />
+                      <span>Đề Xuất Kiểm Định Đã Kết Thúc</span>
+                    </div>
+                    <p className="text-xs text-rose-800 leading-relaxed">
+                      {(() => {
+                        const rawReason = rejectionDetails.buyerRejectReason || String(inspectionDto?.note || (order as any)?.note || (order as any)?.inspectionNote || '').trim();
+                        return rawReason
+                          ? `Lý do: ${rawReason}`
+                          : 'Yêu cầu kiểm định này đã bị hủy hoặc từ chối. Không có chi phí nào phát sinh.';
+                      })()}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleOpenNegotiationChat}
+                      disabled={isNavigatingChat}
+                      className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 hover:opacity-95 text-white font-black text-xs transition cursor-pointer shadow-sm flex items-center justify-center gap-2 text-center disabled:opacity-50"
+                    >
+                      {isNavigatingChat ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Đang chuyển đến đoạn chat...</span>
+                        </>
+                      ) : (
+                        <>
+                          <MessageSquare className="w-4 h-4 text-indigo-200" />
+                          <span>Mở Phòng Chat Với Người Bán</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onBack}
+                      className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition cursor-pointer text-center"
+                    >
+                      Quay Lại Danh Sách Đơn Hàng
+                    </button>
+                  </div>
                 ) : !canDecide ? (
                   <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 space-y-3">
                     <div className="flex items-center gap-2 font-bold text-amber-900 text-sm">
@@ -1980,6 +2639,15 @@ export const BuyerInspectionDecisionView: React.FC<BuyerInspectionDecisionViewPr
                   </div>
                 ) : (
                   <>
+                    <button
+                      type="button"
+                      onClick={() => setShowCertificateModal(true)}
+                      className="w-full py-3 px-4 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold text-xs sm:text-sm transition cursor-pointer flex items-center justify-center gap-2 shadow-xs hover:scale-[1.01] active:scale-[0.99]"
+                    >
+                      <Award className="w-4 h-4 text-amber-600" />
+                      <span>Xem Chứng Nhận Kiểm Định</span>
+                    </button>
+
                     <button
                       onClick={() => setShowConfirmModal(true)}
                       disabled={isSubmitting || timeLeft.isExpired || isLoadingQuote}

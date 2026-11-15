@@ -79,6 +79,8 @@ export interface AdminInspectionOrderFundsDTO {
   cashShippingSimulation?: boolean;
   outboundCashPendingAmount?: number | null;
   returnReserve?: AdminReturnReserveDTO | null;
+  inspectionFeeSplit?: string | null;
+  feeSplit?: string | null;
   settlement?: AdminSettlementDTO | null;
   shipments?: AdminFundShipmentDTO[];
 }

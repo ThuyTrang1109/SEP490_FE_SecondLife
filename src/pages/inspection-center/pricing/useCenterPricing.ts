@@ -1,6 +1,11 @@
 import React, { useState, useRef } from 'react';
-import { inspectorService, InspectionTravelTierDto, InspectionFeeProposalResponse, InspectionFeeProposalStatus } from '../../../services';
-import { loadCenterPricing } from '../../../services/inspectionCenterPricing';
+import {
+  inspectorService,
+  InspectionTravelTierDto,
+  InspectionFeeProposalResponse,
+  InspectionFeeProposalStatus,
+  loadCenterPricing,
+} from '../../../services';
 import { InspectionComplexityLevel } from '../../../types';
 import { dialogService } from '../../../utils/dialogService';
 import { formatVND } from '../../../utils/translations';

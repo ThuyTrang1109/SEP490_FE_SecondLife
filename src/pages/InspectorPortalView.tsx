@@ -1581,8 +1581,8 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                   </h2>
                   <p className="text-xs text-slate-500 mt-1 font-medium">
                     {lang === 'vi'
-                      ? 'Lưu trữ toàn bộ chứng nhận chất lượng, tem niêm phong tamper-proof và kết quả thẩm định kỹ thuật.'
-                      : 'Full audit log of verified devices, tamper seals, and technical reports.'}
+                      ? 'Lưu trữ chứng nhận chất lượng và kết quả thẩm định kỹ thuật.'
+                      : 'Archive of quality certificates and technical inspection reports.'}
                   </p>
                 </div>
 
@@ -1608,7 +1608,7 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                   </div>
                 ) : (
                   completedOrders.map((ord) => {
-                    const { tamperSealId, conditionScore, detectedGrade, verdict, inspectorName } = ord.inspectionReport!;
+                    const { conditionScore, detectedGrade, verdict, inspectorName } = ord.inspectionReport!;
                     const isPass = verdict === 'PASS';
 
                     return (
@@ -1622,9 +1622,6 @@ export const InspectorPortalView: React.FC<InspectorPortalViewProps> = ({
                           </div>
                           <div className="space-y-1">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-mono text-xs font-extrabold text-[#c34c36] bg-red-50 border border-red-100 px-2 py-0.5 rounded">
-                                {tamperSealId || 'Chưa có mã niêm phong'}
-                              </span>
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isPass ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
                                 {isPass ? 'ĐẠT CHUẨN PASS' : 'TỪ CHỐI FAILED'}
                               </span>

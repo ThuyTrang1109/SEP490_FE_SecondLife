@@ -212,25 +212,55 @@ export function getReputationEventMeta(eventType: string): {
   }
 }
 
+const reputationCache = new Map<string, { data: SellerReputationDto | null; timestamp: number }>();
+const reputationInFlight = new Map<string, Promise<SellerReputationDto | null>>();
+const REPUTATION_CACHE_TTL_MS = 30_000;
+
 export const reputationService = {
   /**
    * Lấy chỉ số uy tín công khai của Người Bán theo sellerId
    * GET /api/v1/sellers/{sellerId}/reputation
+   * Tích hợp deduplication & cache in-flight để không bị gọi lặp request
    */
-  async getSellerReputation(sellerId: string): Promise<SellerReputationDto | null> {
+  async getSellerReputation(sellerId: string, bypassCache = false): Promise<SellerReputationDto | null> {
     if (!sellerId) return null;
-    try {
-      const res = await request<any>(`/sellers/${sellerId}/reputation`, {
-        method: 'GET',
-        requiresAuth: false,
-      });
-      const data = (res as any)?.data || res;
-      return data || null;
-    } catch (err) {
-      if ((err as any)?.status === 404) return null;
-      console.warn('[reputationService] getSellerReputation fallback:', err);
-      return null;
+
+    if (!bypassCache) {
+      const cached = reputationCache.get(sellerId);
+      if (cached && Date.now() - cached.timestamp < REPUTATION_CACHE_TTL_MS) {
+        return cached.data;
+      }
+      if (reputationInFlight.has(sellerId)) {
+        return reputationInFlight.get(sellerId)!;
+      }
     }
+
+    const fetchPromise = (async () => {
+      try {
+        const res = await request<any>(`/sellers/${sellerId}/reputation`, {
+          method: 'GET',
+          requiresAuth: false,
+        });
+        const data = (res as any)?.data || res;
+        const result = data || null;
+        reputationCache.set(sellerId, { data: result, timestamp: Date.now() });
+        return result;
+      } catch (err) {
+        if ((err as any)?.status === 404) {
+          reputationCache.set(sellerId, { data: null, timestamp: Date.now() });
+          return null;
+        }
+        console.warn('[reputationService] getSellerReputation fallback:', err);
+        return null;
+      } finally {
+        reputationInFlight.delete(sellerId);
+      }
+    })();
+
+    if (!bypassCache) {
+      reputationInFlight.set(sellerId, fetchPromise);
+    }
+    return fetchPromise;
   },
 
   /**

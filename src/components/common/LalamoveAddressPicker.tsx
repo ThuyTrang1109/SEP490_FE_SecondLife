@@ -28,6 +28,8 @@ interface LalamoveAddressPickerProps {
   lang?: 'vi' | 'en';
   title?: string;
   description?: string;
+  readOnly?: boolean;
+  hideCityPresets?: boolean;
 }
 
 // Preset supported cities in Vietnam according to Backend Lalamove Catalog Policy
@@ -119,6 +121,8 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
   lang = 'vi',
   title,
   description,
+  readOnly = false,
+  hideCityPresets = false,
 }) => {
   const defaultCityObj = sellerCity
     ? (ALLOWED_CITIES.find(c => c.name.toLowerCase().includes(sellerCity.toLowerCase())) || ALLOWED_CITIES[0])
@@ -351,12 +355,13 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
         });
 
         const marker = L.marker([initialLat, initialLng], {
-          draggable: true,
+          draggable: !readOnly,
           icon: pinIcon,
         }).addTo(map);
 
         // Marker drag end event
         marker.on('dragend', () => {
+          if (readOnly) return;
           const pos = marker.getLatLng();
           setLatitude(pos.lat);
           setLongitude(pos.lng);
@@ -365,6 +370,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
 
         // Map click event
         map.on('click', (e: any) => {
+          if (readOnly) return;
           marker.setLatLng(e.latlng);
           setLatitude(e.latlng.lat);
           setLongitude(e.latlng.lng);
@@ -430,6 +436,16 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
       }
     };
   }, [executeLookup, initialAddress]);
+
+  useEffect(() => {
+    if (leafletMarkerRef.current && (leafletMarkerRef.current as any).dragging) {
+      if (readOnly) {
+        (leafletMarkerRef.current as any).dragging.disable();
+      } else {
+        (leafletMarkerRef.current as any).dragging.enable();
+      }
+    }
+  }, [readOnly]);
 
   // Handle preset city click
   const handleSelectCityPreset = (city: { name: string; lat: number; lng: number; label?: string }) => {
@@ -560,168 +576,175 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
 
 
       {/* Quick City Preset Selection */}
-      <div className="p-3 bg-orange-50/70 rounded-2xl border border-orange-200/80 space-y-1.5 shadow-2xs">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 text-[11px] font-bold text-orange-950">
-            <Building2 className="w-3.5 h-3.5 text-orange-600 shrink-0" />
-            <span>{lang === 'vi' ? 'Khu vực phục vụ Lalamove:' : 'Supported Lalamove regions:'}</span>
+      {!hideCityPresets && (
+        <div className="p-3 bg-orange-50/70 rounded-2xl border border-orange-200/80 space-y-1.5 shadow-2xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold text-orange-950">
+              <Building2 className="w-3.5 h-3.5 text-orange-600 shrink-0" />
+              <span>{lang === 'vi' ? 'Khu vực phục vụ Lalamove:' : 'Supported Lalamove regions:'}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {ALLOWED_CITIES.map((c) => {
+                const isSelected = normalizeCityKey(resolvedCity) === normalizeCityKey(c.name);
+                return (
+                  <button
+                    key={c.name}
+                    type="button"
+                    onClick={() => handleSelectCityPreset(c)}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border shadow-2xs ${
+                      isSelected
+                        ? 'bg-orange-600 text-white border-orange-600 ring-2 ring-orange-200'
+                        : 'bg-white text-slate-700 border-gray-200 hover:border-orange-400 hover:text-orange-600'
+                    }`}
+                    title={c.label}
+                  >
+                    <span>{c.name}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            {ALLOWED_CITIES.map((c) => {
-              const isSelected = normalizeCityKey(resolvedCity) === normalizeCityKey(c.name);
-              return (
-                <button
-                  key={c.name}
-                  type="button"
-                  onClick={() => handleSelectCityPreset(c)}
-                  className={`px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border shadow-2xs ${
-                    isSelected
-                      ? 'bg-orange-600 text-white border-orange-600 ring-2 ring-orange-200'
-                      : 'bg-white text-slate-700 border-gray-200 hover:border-orange-400 hover:text-orange-600'
-                  }`}
-                  title={c.label}
-                >
-                  <span>{c.name}</span>
-                </button>
-              );
-            })}
-          </div>
+          <p className="text-[10px] text-orange-800/80 italic font-medium">
+            {lang === 'vi'
+              ? '✓ Hà Nội & lân cận (Bắc Ninh, Hải Phòng, Hưng Yên, Ninh Bình) | ✓ TP. Hồ Chí Minh & lân cận (Đồng Nai, Bình Dương, Vũng Tàu)'
+              : '✓ Hanoi & nearby (Bac Ninh, Hai Phong, Hung Yen, Ninh Binh) | ✓ Ho Chi Minh City & nearby (Dong Nai, Binh Duong, Vung Tau)'}
+          </p>
         </div>
-        <p className="text-[10px] text-orange-800/80 italic font-medium">
-          {lang === 'vi'
-            ? '✓ Hà Nội & lân cận (Bắc Ninh, Hải Phòng, Hưng Yên, Ninh Bình) | ✓ TP. Hồ Chí Minh & lân cận (Đồng Nai, Bình Dương, Vũng Tàu)'
-            : '✓ Hanoi & nearby (Bac Ninh, Hai Phong, Hung Yen, Ninh Binh) | ✓ Ho Chi Minh City & nearby (Dong Nai, Binh Duong, Vung Tau)'}
-        </p>
-      </div>
+      )}
 
       {/* Contact inputs: Name & Phone */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="text-[11px] font-bold text-slate-600 block mb-1">
             <User className="w-3 h-3 inline mr-1 text-slate-400" />
-            {lang === 'vi' ? 'Tên Người Liên Hệ *' : 'Contact Name *'}
+            {lang === 'vi' ? 'Tên người liên hệ *' : 'Contact Name *'}
           </label>
           <input
             type="text"
             value={contactName}
+            disabled={readOnly}
+            readOnly={readOnly}
             onChange={(e) => {
+              if (readOnly) return;
               const val = e.target.value;
               setContactName(val);
               onNameChange?.(val);
               markUnconfirmed();
             }}
             placeholder={lang === 'vi' ? 'VD: Nguyễn Văn A' : 'Full name'}
-            className="w-full h-9 px-3 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none focus:border-orange-500 shadow-2xs"
+            className="w-full h-9 px-3 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none focus:border-orange-500 shadow-2xs disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
           />
         </div>
 
         <div>
           <label className="text-[11px] font-bold text-slate-600 block mb-1">
             <Phone className="w-3 h-3 inline mr-1 text-slate-400" />
-            {lang === 'vi' ? 'Số Điện Thoại Liên Hệ *' : 'Contact Phone *'}
+            {lang === 'vi' ? 'Số điện thoại liên hệ *' : 'Contact Phone *'}
           </label>
           <input
             type="tel"
             inputMode="numeric"
             maxLength={10}
             value={contactPhone}
+            disabled={readOnly}
+            readOnly={readOnly}
             onChange={(e) => {
+              if (readOnly) return;
               const val = e.target.value.replace(/\D/g, '').slice(0, 10);
               setContactPhone(val);
               onPhoneChange?.(val);
               markUnconfirmed();
             }}
             placeholder={lang === 'vi' ? 'VD: 0912345678' : '0912345678'}
-            className="w-full h-9 px-3 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none focus:border-orange-500 shadow-2xs font-mono"
+            className="w-full h-9 px-3 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-[#24263e] focus:outline-none focus:border-orange-500 shadow-2xs font-mono disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
           />
         </div>
       </div>
 
       {/* Address Search Toolbar */}
-      <div className="space-y-2.5">
-        {/* Search input to pinpoint location on map with coordinate validation */}
-        <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-2xs space-y-1.5">
-          <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
-            <span className="flex items-center gap-1.5">
-              <Search className="w-3.5 h-3.5 text-orange-600" />
-              {lang === 'vi' ? 'Nhập địa chỉ để định vị trên bản đồ' : 'Search address to pin on map'}
-            </span>
-            <span className="text-[10px] text-slate-400 font-normal">
-              {lang === 'vi' ? '(Hệ thống sẽ chuyển thành tọa độ GPS)' : '(Converts to GPS coordinates)'}
-            </span>
-          </label>
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                maxLength={500}
-                value={searchAddressText}
-                onChange={(e) => {
-                  if (isSearchingAddress) {
-                    ++lookupSeqRef.current;
-                    lookupAbortRef.current?.abort();
-                    setIsSearchingAddress(false);
-                  }
-                  setSearchAddressText(e.target.value);
-                  setSearchValidationError(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleSearchAddressToPin();
-                  }
-                }}
-                placeholder={lang === 'vi' ? 'Nhập số nhà, tên đường, phường, quận, tỉnh/thành...' : 'Enter street address, ward, district, city...'}
-                className={`w-full h-10 px-3.5 pl-9 bg-slate-50/80 border rounded-xl text-xs font-medium text-slate-800 placeholder:text-slate-400 shadow-2xs focus:outline-none transition ${
-                  searchValidationError ? 'border-rose-400 ring-2 ring-rose-100 bg-white' : 'border-gray-200 focus:border-orange-500 focus:ring-2 focus:ring-orange-100 focus:bg-white'
-                }`}
-              />
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
-              {searchAddressText && (
-                <button
-                  type="button"
-                  onClick={() => {
+      {!readOnly && (
+        <div className="space-y-2.5">
+          {/* Search input to pinpoint location on map with coordinate validation */}
+          <div className="p-3 bg-white rounded-2xl border border-gray-200 shadow-2xs space-y-1.5">
+            <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Search className="w-3.5 h-3.5 text-orange-600" />
+                {lang === 'vi' ? 'Nhập địa chỉ để định vị trên bản đồ' : 'Search address to pin on map'}
+              </span>
+            </label>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  maxLength={500}
+                  value={searchAddressText}
+                  onChange={(e) => {
                     if (isSearchingAddress) {
                       ++lookupSeqRef.current;
                       lookupAbortRef.current?.abort();
                       setIsSearchingAddress(false);
                     }
-                    setSearchAddressText('');
+                    setSearchAddressText(e.target.value);
                     setSearchValidationError(null);
                   }}
-                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
-                >
-                  ✕
-                </button>
-              )}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSearchAddressToPin();
+                    }
+                  }}
+                  placeholder={lang === 'vi' ? 'Nhập số nhà, tên đường, phường, quận, tỉnh/thành...' : 'Enter street address, ward, district, city...'}
+                  className={`w-full h-10 px-3.5 pl-9 bg-slate-50/80 border rounded-xl text-xs font-medium text-slate-800 placeholder:text-slate-400 shadow-2xs focus:outline-none transition ${
+                    searchValidationError ? 'border-rose-400 ring-2 ring-rose-100 bg-white' : 'border-gray-200 focus:border-orange-500 focus:ring-2 focus:ring-orange-100 focus:bg-white'
+                  }`}
+                />
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+                {searchAddressText && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isSearchingAddress) {
+                        ++lookupSeqRef.current;
+                        lookupAbortRef.current?.abort();
+                        setIsSearchingAddress(false);
+                      }
+                      setSearchAddressText('');
+                      setSearchValidationError(null);
+                    }}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleSearchAddressToPin}
+                disabled={isSearchingAddress}
+                className="h-10 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer disabled:opacity-60"
+              >
+                {isSearchingAddress ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="hidden sm:inline">Đang tìm...</span>
+                  </>
+                ) : (
+                  <>
+                    <MapPin className="w-4 h-4" />
+                    <span>Tìm vị trí</span>
+                  </>
+                )}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={handleSearchAddressToPin}
-              disabled={isSearchingAddress}
-              className="h-10 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer disabled:opacity-60"
-            >
-              {isSearchingAddress ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="hidden sm:inline">Đang tìm...</span>
-                </>
-              ) : (
-                <>
-                  <MapPin className="w-4 h-4" />
-                  <span>Tìm vị trí</span>
-                </>
-              )}
-            </button>
+            {searchValidationError && (
+              <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1 mt-1 animate-fadeIn">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                <span>{searchValidationError}</span>
+              </p>
+            )}
           </div>
-          {searchValidationError && (
-            <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1 mt-1 animate-fadeIn">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
-              <span>{searchValidationError}</span>
-            </p>
-          )}
         </div>
-      </div>
+      )}
 
       {/* Map container with draggable marker */}
       <div className="relative rounded-2xl overflow-hidden border border-gray-300 shadow-xs bg-slate-100">
@@ -732,26 +755,30 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
         />
 
         {/* Map instruction overlay badge */}
-        <div className="absolute top-2.5 left-2.5 z-20 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-gray-200 shadow-xs text-[10px] font-bold text-slate-700 flex items-center gap-1.5 pointer-events-none">
-          <MapPin className="w-3.5 h-3.5 text-orange-600" />
-          <span>{lang === 'vi' ? 'Kéo ghim hoặc nhấp vào bản đồ để chọn vị trí chính xác' : 'Drag pin or click map to select spot'}</span>
-        </div>
+        {!readOnly && (
+          <div className="absolute top-2.5 left-2.5 z-20 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-gray-200 shadow-xs text-[10px] font-bold text-slate-700 flex items-center gap-1.5 pointer-events-none">
+            <MapPin className="w-3.5 h-3.5 text-orange-600" />
+            <span>{lang === 'vi' ? 'Kéo ghim hoặc nhấp vào bản đồ để chọn vị trí chính xác' : 'Drag pin or click map to select spot'}</span>
+          </div>
+        )}
 
         {/* Floating Quick GPS button directly on the map */}
-        <button
-          type="button"
-          onClick={handleGetCurrentLocation}
-          disabled={isLocatingDevice}
-          title={lang === 'vi' ? 'Định vị lại vị trí hiện tại' : 'Recenter to current location'}
-          className="absolute bottom-3 right-3 z-20 p-2.5 bg-white/95 hover:bg-orange-50 border border-gray-300 hover:border-orange-400 text-orange-600 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50 flex items-center gap-1.5 text-xs font-bold"
-        >
-          {isLocatingDevice ? (
-            <Loader2 className="w-4 h-4 animate-spin text-orange-600" />
-          ) : (
-            <Navigation className="w-4 h-4 fill-orange-600 text-orange-600" />
-          )}
-          <span className="hidden sm:inline">{lang === 'vi' ? 'Vị trí của tôi' : 'My location'}</span>
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={handleGetCurrentLocation}
+            disabled={isLocatingDevice}
+            title={lang === 'vi' ? 'Định vị lại vị trí hiện tại' : 'Recenter to current location'}
+            className="absolute bottom-3 right-3 z-20 p-2.5 bg-white/95 hover:bg-orange-50 border border-gray-300 hover:border-orange-400 text-orange-600 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50 flex items-center gap-1.5 text-xs font-bold"
+          >
+            {isLocatingDevice ? (
+              <Loader2 className="w-4 h-4 animate-spin text-orange-600" />
+            ) : (
+              <Navigation className="w-4 h-4 fill-orange-600 text-orange-600" />
+            )}
+            <span className="hidden sm:inline">{lang === 'vi' ? 'Vị trí của tôi' : 'My location'}</span>
+          </button>
+        )}
 
         {/* Loading overlay during reverse geocoding */}
         {isLookingUp && (
@@ -766,7 +793,7 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
       <div className="p-3.5 bg-white rounded-2xl border border-gray-200 space-y-2 shadow-2xs">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-            {lang === 'vi' ? 'Địa chỉ nhận hàng (Có thể chỉnh sửa bổ sung số nhà/tầng)' : 'Delivery Address (Editable details)'}
+            {lang === 'vi' ? 'Địa chỉ nhận hàng (có thể chỉnh sửa bổ sung số nhà/tầng)' : 'Delivery Address (Editable details)'}
           </span>
           {latitude && longitude && (
             <span className="text-[10px] font-mono font-bold text-slate-400">
@@ -778,12 +805,15 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
           <input
             type="text"
             value={resolvedAddress}
+            disabled={readOnly}
+            readOnly={readOnly}
             onChange={(e) => {
+              if (readOnly) return;
               setResolvedAddress(e.target.value);
               markUnconfirmed();
             }}
             placeholder={isLookingUp ? 'Đang tra cứu địa chỉ...' : 'Nhập hoặc bổ sung số nhà, tên đường, tòa nhà...'}
-            className="w-full px-3 py-2 bg-slate-50/80 border border-gray-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-orange-500 transition"
+            className="w-full px-3 py-2 bg-slate-50/80 border border-gray-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-orange-500 transition disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
           />
         </div>
       </div>
@@ -797,26 +827,26 @@ export const LalamoveAddressPicker: React.FC<LalamoveAddressPickerProps> = ({
       )}
 
       {/* Confirm Button */}
-      <div className="pt-1 flex items-center justify-between gap-3">
-        <div className="text-[11px] text-slate-500 italic">
-          {isConfirmed
-            ? (lang === 'vi' ? '✓ Vị trí đã được ghi nhận vào đơn hàng' : '✓ Location verified')
-            : (lang === 'vi' ? '* Bấm xác nhận vị trí này để tính phí' : '* Confirm this spot to calculate quote')}
+      {!readOnly && (
+        <div className="pt-1 flex items-center justify-between gap-3">
+          <div className="text-[11px] text-slate-500 italic">
+            {isConfirmed && (lang === 'vi' ? '✓ Vị trí đã được ghi nhận vào đơn hàng' : '✓ Location verified')}
+          </div>
+          <button
+            type="button"
+            onClick={handleConfirmLocation}
+            disabled={isLookingUp || isSearchingAddress || isLocatingDevice || !isLocationResolved || !resolvedAddress.trim()}
+            className={`px-4 py-2 rounded-xl font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs ${
+              isConfirmed
+                ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                : 'bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed'
+            }`}
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            <span>{isConfirmed ? (lang === 'vi' ? 'Đã chọn vị trí này' : 'Location Confirmed') : (lang === 'vi' ? 'Xác nhận vị trí này' : 'Confirm Location')}</span>
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={handleConfirmLocation}
-          disabled={isLookingUp || isSearchingAddress || isLocatingDevice || !isLocationResolved || !resolvedAddress.trim()}
-          className={`px-4 py-2 rounded-xl font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs ${
-            isConfirmed
-              ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-              : 'bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed'
-          }`}
-        >
-          <CheckCircle2 className="w-4 h-4" />
-          <span>{isConfirmed ? (lang === 'vi' ? 'Đã Chọn Vị Trí Này' : 'Location Confirmed') : (lang === 'vi' ? 'Xác Nhận Vị Trí Này' : 'Confirm Location')}</span>
-        </button>
-      </div>
+      )}
     </div>
   );
 };

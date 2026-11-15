@@ -175,11 +175,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           {currentUser && currentRole === 'admin' ? (
             <button
               onClick={() => onTabChange('admin-dashboard')}
-              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'admin-dashboard'
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'admin-dashboard'
                   ? 'bg-[#c34c36] text-white shadow-sm'
                   : 'text-white/80 hover:text-white hover:bg-white/10'
-              }`}
+                }`}
             >
               <ShieldAlert className="w-4 h-4" />
               <span>{lang === 'vi' ? 'Quản Trị Hệ Thống (Admin)' : 'Admin Dashboard'}</span>
@@ -188,11 +187,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             /* Inspector & Inspection Center Manager role: Single Inspection Center Portal */
             <button
               onClick={() => onTabChange(currentRole === 'inspection_center' ? 'inspection-center' : 'inspection-hub')}
-              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'inspection-center' || activeTab === 'inspection-hub'
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'inspection-center' || activeTab === 'inspection-hub'
                   ? 'bg-[#c34c36] text-white shadow-sm'
                   : 'text-white/80 hover:text-white hover:bg-white/10'
-              }`}
+                }`}
             >
               <Building2 className="w-4 h-4" />
               <span>{lang === 'vi' ? (currentRole === 'inspection_center' ? 'Dashboard Trưởng Trung Tâm' : 'Trung Tâm Kiểm Định') : 'Inspection Center'}</span>
@@ -202,11 +200,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <>
               <button
                 onClick={() => onTabChange('home')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                  activeTab === 'home'
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'home'
                     ? 'bg-[#c34c36] text-white shadow-sm font-black'
                     : 'text-white/80 hover:text-white hover:bg-white/10'
-                }`}
+                  }`}
               >
                 <Home className="w-3.5 h-3.5" />
                 <span>{lang === 'vi' ? 'Trang Chủ' : 'Home'}</span>
@@ -214,11 +211,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
               <button
                 onClick={() => onTabChange('marketplace')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                  activeTab === 'marketplace'
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'marketplace'
                     ? 'bg-[#c34c36] text-white shadow-sm font-black'
                     : 'text-white/80 hover:text-white hover:bg-white/10'
-                }`}
+                  }`}
               >
                 <ShoppingBag className="w-3.5 h-3.5" />
                 <span>{lang === 'vi' ? 'Sàn Đồ Cũ' : 'Marketplace'}</span>
@@ -227,11 +223,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               {currentUser && (currentRole === 'seller' || currentRole === 'staff') && (
                 <button
                   onClick={() => onTabChange('seller-dashboard')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'seller-dashboard'
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'seller-dashboard'
                       ? 'bg-[#c34c36] text-white shadow-sm font-black'
                       : 'text-white/80 hover:text-white hover:bg-white/10'
-                  }`}
+                    }`}
                 >
                   <Building2 className="w-3.5 h-3.5" />
                   <span>{lang === 'vi' ? 'Kênh Người Bán' : 'Seller Hub'}</span>
@@ -241,11 +236,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               {currentUser && !['admin', 'inspector'].includes(currentRole) && (
                 <button
                   onClick={() => onTabChange('orders')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${
-                    activeTab === 'orders'
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${activeTab === 'orders'
                       ? 'bg-[#c34c36] text-white shadow-sm font-black'
                       : 'text-white/80 hover:text-white hover:bg-white/10'
-                  }`}
+                    }`}
                 >
                   <Clock className="w-3.5 h-3.5" />
                   <span>{lang === 'vi' ? (currentRole === 'buyer' ? 'Đơn Ký Quỹ' : 'Quản Lý Đơn') : 'Orders'}</span>
@@ -260,11 +254,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               {currentUser && !['admin', 'inspector'].includes(currentRole) && (
                 <button
                   onClick={() => onTabChange('disputes')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${
-                    activeTab === 'disputes'
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${activeTab === 'disputes'
                       ? 'bg-[#c34c36] text-white shadow-sm font-black'
                       : 'text-white/80 hover:text-white hover:bg-white/10'
-                  }`}
+                    }`}
                   title={lang === 'vi' ? 'Khiếu nại & Trọng tài Escrow' : 'Disputes & Escrow Arbitration'}
                 >
                   <Scale className="w-3.5 h-3.5" />
@@ -276,11 +269,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               {currentUser && (currentRole === 'staff' || currentUser.role === 'staff') && (
                 <button
                   onClick={() => onTabChange('staff-workspace')}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    activeTab === 'staff-workspace'
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${activeTab === 'staff-workspace'
                       ? 'bg-[#c34c36] text-white shadow-sm font-black'
                       : 'text-white/80 hover:text-white hover:bg-white/10'
-                  }`}
+                    }`}
                 >
                   <FileCheck className="w-3.5 h-3.5 text-[#cea981]" />
                   <span>{lang === 'vi' ? 'Nghiệp Vụ Staff' : 'Staff Portal'}</span>
@@ -318,9 +310,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Chat Button */}
           <button
             onClick={() => onTabChange('chat')}
-            className={`p-2 rounded-xl text-white/80 hover:text-white hover:bg-white/10 relative transition cursor-pointer ${
-              activeTab === 'chat' ? 'bg-white/20 text-white shadow-sm' : ''
-            }`}
+            className={`p-2 rounded-xl text-white/80 hover:text-white hover:bg-white/10 relative transition cursor-pointer ${activeTab === 'chat' ? 'bg-white/20 text-white shadow-sm' : ''
+              }`}
             title="Chat & Smart Negotiation"
           >
             <MessageSquare className="w-4 h-4" />
@@ -368,7 +359,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               {currentUser && currentRole !== 'seller' && currentUser.role !== 'seller' && currentRole !== 'staff' ? (
                 <>
                   <Store className="w-3.5 h-3.5" />
-                  <span>{lang === 'vi' ? 'Đăng Ký Người Bán' : 'Register as Seller'}</span>
+                  <span>{lang === 'vi' ? 'ĐĂNG KÝ NGƯỜI BÁN' : 'Register as Seller'}</span>
                 </>
               ) : (
                 <>
@@ -439,9 +430,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           <>
             <button
               onClick={() => onTabChange('admin-dashboard')}
-              className={`flex items-center gap-1 py-1 px-2 rounded-md ${
-                activeTab === 'admin-dashboard' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
-              }`}
+              className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'admin-dashboard' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
+                }`}
             >
               <ShieldAlert className="w-3.5 h-3.5" />
               <span>Quản Trị Admin</span>
@@ -460,9 +450,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           <>
             <button
               onClick={() => onTabChange(currentRole === 'inspection_center' ? 'inspection-center' : 'inspection-hub')}
-              className={`flex items-center gap-1 py-1 px-2 rounded-md ${
-                activeTab === 'inspection-center' || activeTab === 'inspection-hub' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
-              }`}
+              className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'inspection-center' || activeTab === 'inspection-hub' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
+                }`}
             >
               <Building2 className="w-3.5 h-3.5" />
               <span>{currentRole === 'inspection_center' ? 'Trưởng Trạm KĐ' : 'Trung Tâm KĐ'}</span>
@@ -477,7 +466,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>Hồ Sơ</span>
             </button>
           </>
-          ) : (
+        ) : (
           <>
             <button
               onClick={() => onTabChange('home')}
@@ -532,9 +521,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             {currentUser && (currentRole === 'staff' || currentUser.role === 'staff') && (
               <button
                 onClick={() => onTabChange('staff-workspace')}
-                className={`flex items-center gap-1 py-1 px-2 rounded-md ${
-                  activeTab === 'staff-workspace' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
-                }`}
+                className={`flex items-center gap-1 py-1 px-2 rounded-md ${activeTab === 'staff-workspace' ? 'text-[#24263e] font-bold bg-white shadow-xs' : 'text-white/90'
+                  }`}
               >
                 <FileCheck className="w-3.5 h-3.5" />
                 <span>Nghiệp Vụ Staff</span>
